@@ -65,7 +65,7 @@ export const UPSTREAM_BASE = process.env.OUR_FREE_MODEL_BASE ?? 'https://opencod
  * `opencode/1.18.x` 自 2026-10-14 起被上游按名字拒掉（403 FreeTierError）。
  * ⚠️ 这个值**必须原样单独发出**：v2 的校验是整串匹配，任何前缀/后缀
  * （包括本插件的归属 UA）都会让它不再是「一个 v2 客户端」。归属因此只保留在
- * 其余车道（channel pack / EAC / Kilo），本车道发官方那一串。
+ * 其余车道（channel pack / Kilo），本车道发官方那一串。
  */
 export const CLIENT_UA = 'opencode/latest/2.0.26/cli'
 const MAX_SESSION_LENGTH = 256
