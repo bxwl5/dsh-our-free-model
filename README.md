@@ -20,19 +20,37 @@
 
 ## 安装
 
+**把本仓库链接发给你的 AI（dsh 里的助手），让它帮你装。**
+
+仓库地址：
+
 ```
-dsh plugin --profile web add /绝对路径/dsh-our-free-model
+https://github.com/bxwl5/dsh-our-free-model
 ```
 
-重启应用一次即可（`--profile` 填你实际使用的 profile 名）。
+可以直接这样对 AI 说：
 
-**以真实目录手工安装时**，在 profile 的 `vendor/` 下放入本仓库 tarball，然后在 `package.json` 的 dependencies 中加入：
+> 帮我安装这个插件：https://github.com/bxwl5/dsh-our-free-model
+> 用本地源码目录方式装到我的 web 档案，装完重启宿主。
+
+AI 需要做的事（也可以自己手动执行）：
+
+1. 把仓库克隆或解压到本地任意目录。
+2. 在该目录运行 `npm pack --ignore-scripts --pack-destination "<DSH_HOME>/profiles/<profile>/vendor"`，得到 tarball。
+3. 在 profile 的 `package.json` 的 dependencies 中加入：
 
 ```
 "dsh-our-free-model": "file:./vendor/dsh-our-free-model-2.5.7-priv.1.tgz"
 ```
 
-并在 `dsh.profile.bundles` 末尾追加 `"dsh-our-free-model"`。文件名版本跟随仓库 `package.json`，不要改成同名 npm 注册表版本。
+4. 在 `dsh.profile.bundles` 末尾追加 `"dsh-our-free-model"`。
+5. 重启宿主。
+
+也可以让 AI 直接用命令行安装：
+
+```
+dsh plugin --profile web add /绝对路径/dsh-our-free-model
+```
 
 > npm 上的同名包不是本仓库发布的，请勿从 npm 安装。
 

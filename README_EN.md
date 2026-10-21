@@ -19,19 +19,37 @@
 
 ## Install
 
-```bash
-dsh plugin --profile web add /absolute/path/to/dsh-our-free-model
+**Send this repository link to your AI (the assistant inside dsh) and let it install for you.**
+
+Repository:
+
+```
+https://github.com/bxwl5/dsh-our-free-model
 ```
 
-Restart the app once (`--profile` names the profile you actually use).
+You can just say:
 
-**To install as a real directory**, place this repository's tarball in the profile's `vendor/` and add to its `package.json` dependencies:
+> Install this plugin for me: https://github.com/bxwl5/dsh-our-free-model
+> Use the local source directory method, target my `web` profile, restart the host when done.
+
+What the AI does (or you can do by hand):
+
+1. Clone or unpack this repository anywhere locally.
+2. In that directory run `npm pack --ignore-scripts --pack-destination "<DSH_HOME>/profiles/<profile>/vendor"` to produce the tarball.
+3. Add to the profile's `package.json` dependencies:
 
 ```
 "dsh-our-free-model": "file:./vendor/dsh-our-free-model-2.5.7-priv.1.tgz"
 ```
 
-then append `"dsh-our-free-model"` to `dsh.profile.bundles`. Keep the filename version aligned with this repository's `package.json`; do not substitute a same-named npm registry version.
+4. Append `"dsh-our-free-model"` to `dsh.profile.bundles`.
+5. Restart the host.
+
+The AI can also install straight from the command line:
+
+```
+dsh plugin --profile web add /absolute/path/to/dsh-our-free-model
+```
 
 > The same-named package on npm is **not** published by this repository — do not install from npm.
 
