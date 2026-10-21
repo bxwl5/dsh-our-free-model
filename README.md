@@ -3,6 +3,8 @@
 
 # dsh-our-free-model
 
+<sub>私有快照 2.5.7-priv.1 · 已移除 EAC 协付、公告/升级/赞助/聚合功能</sub>
+
 **简体中文** | [English](README_EN.md)
 
   <img alt="许可证" src="https://img.shields.io/badge/license-MIT-263146?style=flat-square">
