@@ -24,14 +24,13 @@ const sourceFiles = [
   'packages/standalone/management.mjs',
   'packages/standalone/login-terminal.mjs',
   'packages/standalone/open-external.mjs',
-  'packages/standalone/eac.mjs',
   ...['business', 'contracts', 'credentials', 'images', 'runtime', 'worker']
     .map(name => `packages/standalone/channels/${name}.mjs`),
   'packages/standalone/web/index.html',
   'packages/standalone/web/assets.json',
-  ...['adapter', 'anthropic', 'catalog', 'channel', 'combos', 'deferred-response', 'eac', 'eac-login', 'eac-user', 'effort',
+  ...['adapter', 'anthropic', 'catalog', 'channel', 'combos', 'deferred-response', 'effort',
     'egress', 'failure', 'forward', 'http', 'image-pricing', 'kilo', 'local-optimize', 'messages', 'model-test', 'probe', 'recovery',
-    'store', 'stream', 'trust', 'upstream', 'vault', 'vault-data', 'vault-anchor']
+    'store', 'stream', 'trust', 'upstream']
     .map(name => `src/${name}.js`),
   ...['completion', 'runtime', 'stats'].map(name => `src/core/${name}.js`),
   'src/route/classify.js',

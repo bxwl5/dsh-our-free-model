@@ -207,7 +207,7 @@ export function sniffBody(text) {
  * reported as a retryable timeout. Frames arrive as they are read, so the first
  * token is not held back for the rest of the sniff window either.
  *
- * Exported for the co-paid lane's poster (`src/eac.js`), which shares the sniff
+ * Exported for the lane posters that share the sniff
  * discipline but not the headers.
  *
  * @param {ReadableStream} stream
@@ -369,7 +369,7 @@ async function readRemainder(head, signal) {
  * 拒掉，任何前后缀又会让整串不再是 v2 客户端形状。
  *
  * ⇒ 本车道的 UA 就是官方那一串，归属信息不再随行；归属仍保留在其余车道
- * （channel pack / EAC / Kilo 各自带自己的 UA）。`attributionUserAgent` 因此在本
+ * （channel pack / Kilo 各自带自己的 UA）。`attributionUserAgent` 因此在本
  * 车道上不再影响线上字节，参数保留是为了不动宿主 API 与调用方签名。
  */
 function userAgentWith(_attribution) {

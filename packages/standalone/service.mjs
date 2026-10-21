@@ -7,7 +7,6 @@ import { createModelRuntime, createRuntimeStores } from '../../src/core/runtime.
 import { generateKey, rankLanAddresses, startForwardServer, startLanRelay } from '../../src/forward.js'
 import { isLoopbackHost } from '../../src/trust.js'
 import { createManagement } from './management.mjs'
-import { createStandaloneEac } from './eac.mjs'
 import { createChannelRuntime } from './channels/runtime.mjs'
 
 const PRODUCT = 'our-free-model-standalone'
@@ -125,7 +124,6 @@ export async function startStandalone({
   let listener
   let management
   let channels
-  let eac
   let timer
   let refreshInFlight
   let closing
@@ -231,14 +229,8 @@ export async function startStandalone({
     })
     settings.flush()
     if (settings.writeFailed) throw new Error('could not persist the standalone API key')
-    eac = createStandaloneEac({
-      dataDir,
-      ...process.env.OFM_TEST_UPSTREAM ? { openExternal: async () => false } : {},
-      onSaved: () => { void runtime?.refreshSealedLane().catch(error => logger.warn?.(`EAC 清单刷新失败：${error.message}`)) },
-    })
     runtime = createModelRuntime({
       ...stores, logger, attributionUserAgent: `${PRODUCT}/${VERSION}`,
-      sealedCredential: eac.credential,
     })
     channels = await createChannelRuntime({ dataDir, logger, stats: stores.stats })
     const core = runtime
@@ -256,13 +248,13 @@ export async function startStandalone({
       },
     }
     management = createManagement({
-      stores, runtime, channels, eac,
+      stores, runtime, channels,
       info: () => ({
         product: PRODUCT, version: VERSION, dataDir,
         baseUrl: `http://${host === '::1' ? '[::1]' : host}:${listener?.port ?? requestedPort}`,
         automaticRefresh: refresh,
         networkMode: process.env.OFM_TEST_UPSTREAM ? 'fixture' : 'live',
-        capabilities: { anonymous: true, kilo: true, eac: true, accountChannels: true, webUi: true, lan: true },
+        capabilities: { anonymous: true, kilo: true, accountChannels: true, webUi: true, lan: true },
         lan: lanState(),
       }),
       onSettingsChanged: async () => {
@@ -276,7 +268,7 @@ export async function startStandalone({
       modelRows: runtime.publicModelRows,
       health: () => ({
         ok: true, service: PRODUCT, product: 'standalone', version: VERSION,
-        capabilities: { anonymous: true, kilo: true, eac: true, accountChannels: true, webUi: true },
+        capabilities: { anonymous: true, kilo: true, accountChannels: true, webUi: true },
       }),
       handleRequest: management.handleRequest,
       log: message => logger.warn?.(`our-free-model standalone: ${message}`),
@@ -317,7 +309,6 @@ export async function startStandalone({
         stopped = true
         clearTimeout(timer)
         management.dispose()
-        eac.dispose()
         runtime.dispose()
         closing = (async () => {
           try {
@@ -334,7 +325,6 @@ export async function startStandalone({
     stopped = true
     clearTimeout(timer)
     management?.dispose()
-    eac?.dispose()
     runtime?.dispose()
     await relayChanges
     await closeRelay()

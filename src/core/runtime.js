@@ -1,14 +1,13 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { FreeModelAdapter, ROUTE_MAIN, ROUTE_REGION } from '../adapter.js'
-import { buildCatalog, buildEacCatalog, buildKiloCatalog, isEacEntry, isKiloEntry, parseListing, reviveKiloCatalog } from '../catalog.js'
+import { buildCatalog, buildKiloCatalog, isKiloEntry, parseListing, reviveKiloCatalog } from '../catalog.js'
 import { buildComboCatalog, isComboEntry, normalizeCombos, pruneRotation } from '../combos.js'
 import { JsonStore, SETTINGS_INITIAL, STATS_INITIAL, STATS_VERSION, migrateStats, pruneDays, recordTurn, recordUsage, isModelHidden } from '../store.js'
 import { STATE, detectEgress, probeCatalog } from '../probe.js'
 import { CODE, UpstreamError, getJson } from '../http.js'
 import { runModelTest, modelAvailability } from '../model-test.js'
 import { DEFAULT_LEVEL } from '../effort.js'
-import { fetchSealedListing } from '../eac.js'
 import { fetchKiloListing } from '../kilo.js'
 import { sessionForConversation } from '../upstream.js'
 import { createForwardCompletion, publicModelRows } from './completion.js'
@@ -59,12 +58,9 @@ export function createModelRuntime({
   logger = console,
   attributionUserAgent = 'our-free-model',
   resolveImage,
-  sealedCredential = () => null,
-  onSealedUnavailable = () => {},
   onTopology = () => {},
 }) {
   let catalog = materializeCatalog(catalogStore.get().entries ?? [])
-  let sealedCatalog = sealedCredential() === null ? [] : buildEacCatalog(catalogStore.get().sealIds ?? [])
   let kiloCatalog = reviveKiloCatalog(catalogStore.get().kiloRows)
   /** The virtual rows a combo contributes; rebuilt last, after every real lane. */
   let comboCatalog = []
@@ -91,7 +87,7 @@ export function createModelRuntime({
   const rebuildCatalog = () => {
     const seen = new Set()
     const merged = []
-    for (const entry of [...freeCatalog, ...sealedCatalog, ...kiloCatalog]) {
+    for (const entry of [...freeCatalog, ...kiloCatalog]) {
       if (entry === null || entry === undefined || seen.has(entry.id)) continue
       seen.add(entry.id)
       merged.push(entry)
@@ -120,7 +116,6 @@ export function createModelRuntime({
   const adapter = new FreeModelAdapter({
     state,
     resolveImage,
-    sealedCredential,
     recordUsage: record => {
       if (disposed) return
       recordUsage(stats, record)
@@ -181,52 +176,12 @@ export function createModelRuntime({
     } else {
       freeCatalog = materializeCatalog(catalogStore.get().entries ?? [])
     }
-    await refreshSealedRoster()
-    if (disposed) return catalog
     await refreshKiloRoster()
     if (disposed) return catalog
     mergeCatalogs()
     if (probe) await refreshAvailability(force)
     emitTopology()
     return catalog
-  }
-
-  async function refreshSealedRoster() {
-    const credential = sealedCredential()
-    if (credential === null) {
-      sealedCatalog = []
-      onSealedUnavailable()
-      return
-    }
-    try {
-      const ids = parseListing(await fetchSealedListing(credential, { signal: lifetime.signal }))
-      if (disposed) return
-      // 独立应用授权变更时，旧账号正在返回的清单不得覆盖新状态。
-      if (Object.hasOwn(credential, 'userToken') && sealedCredential()?.userToken !== credential.userToken) return
-      if (ids.length > 0) {
-        sealedCatalog = buildEacCatalog(ids)
-        catalogStore.update({ sealIds: sealedCatalog.map(entry => entry.id) })
-      }
-    } catch (error) {
-      if (disposed) return
-      if (Object.hasOwn(credential, 'userToken') && sealedCredential()?.userToken !== credential.userToken) return
-      if (error?.code === CODE.credential) {
-        sealedCatalog = []
-        catalogStore.update({ sealIds: [] })
-        logger.warn?.('our-free-model: the sealed lane refused its credential; its models are hidden until it is accepted again')
-        return
-      }
-      logger.warn?.(`our-free-model: sealed lane listing failed (${error?.code ?? 'unknown'}); keeping its cached roster`)
-    }
-  }
-
-  async function refreshSealedLane() {
-    await refreshSealedRoster()
-    if (disposed) return
-    // The rebuild in `mergeCatalogs` drops a stale roster on its own: a closed
-    // lane's rows vanish without a filter pass over the merged view.
-    mergeCatalogs()
-    emitTopology()
   }
 
   async function refreshKiloRoster() {
@@ -264,7 +219,7 @@ export function createModelRuntime({
     // has no endpoint of its own: probing one would send the chain's own id to
     // the free lane as a model name, spending quota to collect a verdict about
     // nothing.
-    const probeable = catalog.filter(entry => !isEacEntry(entry) && !isKiloEntry(entry) && !isComboEntry(entry))
+    const probeable = catalog.filter(entry => !isKiloEntry(entry) && !isComboEntry(entry))
     const results = await probeCatalog(probeable, { attributionUserAgent, signal: lifetime.signal }, (id, result) => {
       if (disposed) return
       availability.edit(value => ({
@@ -361,14 +316,14 @@ export function createModelRuntime({
   }
 
   return {
-    testModel, state, adapter, refreshCatalog, refreshSealedLane, refreshAvailability, watchEgress, fetchListing,
+    testModel, state, adapter, refreshCatalog, refreshAvailability, watchEgress, fetchListing,
     complete: createForwardCompletion({
       adapter, signal: lifetime.signal,
       state: () => {
         const snapshot = state()
         // Hiding advertisements must not invalidate requests using a saved id.
         return { ...snapshot, membership: computeMembership(snapshot.catalog, availability.get(), {
-          ...snapshot.settings, hiddenModelIds: [], hideFreeModels: false, hideEacModels: false,
+          ...snapshot.settings, hiddenModelIds: [], hideFreeModels: false,
         }) }
       },
     }),

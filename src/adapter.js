@@ -20,13 +20,12 @@
 import { applyFingerprint, baseModelId, endpointFor, mintRequestId, sessionForConversation, wireFor } from './upstream.js'
 import { toChatMessages, toClaudeMessages, toResponseInput, toToolDefs, repairToolPairing } from './messages.js'
 import { CODE, UpstreamError, postStreamed } from './http.js'
-import { postSealedStreamed } from './eac.js'
 import { postKiloStreamed } from './kilo.js'
 import { finishReason, readStream, sanitizeUsage, windowTokens } from './stream.js'
 import { DEFAULT_LEVEL, MIN_BUDGET, budgetFor, defaultEffortFor, effortPatchFor, effortsFor, hasDeclaredEffortMenu, resolveLevel } from './effort.js'
 import { createChannel } from './channel.js'
 import { recoveryPolicy, canRecover, canRecoverSilentStop, recoveryMessages, continuationMessages, checkpointFits, addUsage, createBlockTracker } from './recovery.js'
-import { isEacEntry, isKiloEntry } from './catalog.js'
+import { isKiloEntry } from './catalog.js'
 import { isComboEntry, comboChain } from './combos.js'
 import { applyTokenSavers, saverConfig } from './token-saver/index.js'
 import { classifyFailure, describeVerdict, shouldAdvance } from './route/classify.js'
@@ -320,7 +319,6 @@ export class FreeModelAdapter {
       return { advance: false, verdict: null, ok: false }
     }
 
-    const sealed = isEacEntry(entry)
     const kilo = isKiloEntry(entry)
     // The absorbed channels speak the Chat wire regardless of what their ids
     // resemble; only the free lane splits endpoints per model.
@@ -404,11 +402,10 @@ export class FreeModelAdapter {
       // now declare menus too (see `src/catalog.js`), so the gate is the entry
       // rather than the lane — an entry without a menu still keeps the free
       // lane's token-budget behaviour, untouched.
-      if (sealed || kilo || hasDeclaredEffortMenu(entry)) {
+      if (kilo || hasDeclaredEffortMenu(entry)) {
         const patch = effortPatchFor(options.reasoningEffort, entry)
         if (patch !== null) Object.assign(payload, patch)
       }
-      if (sealed) applySealedPacingHint(payload)
       // The token savers run last, after every other mutation, so the byte counts
       // they report and the fingerprint's rename map both describe the body that
       // actually ships. Applied on estimation builds too — the checkpoint size
@@ -433,7 +430,7 @@ export class FreeModelAdapter {
       // The absorbed channels have no tool-name gate; their models see the
       // caller's tools exactly as declared, so the fingerprint pass is free-lane
       // only.
-      const renameMap = sealed || kilo ? new Map() : applyFingerprint(payload, wire === 'messages' ? 'claude' : style === 'flat')
+      const renameMap = kilo ? new Map() : applyFingerprint(payload, wire === 'messages' ? 'claude' : style === 'flat')
       const controller = new AbortController()
       const onAbort = () => controller.abort(options.signal?.reason)
       options.signal?.addEventListener('abort', onAbort, { once: true })
@@ -446,11 +443,9 @@ export class FreeModelAdapter {
       }, timeoutMs) : undefined
       timer?.unref?.()
       const channel = createChannel()
-      const request = (sealed
-        ? postSealedTurn(this.deps, payload, controller.signal, value => channel.push(value))
-        : kilo
-          ? postKiloStreamed({ body: payload, signal: controller.signal, onData: value => channel.push(value) })
-          : postStreamed({
+      const request = (kilo
+        ? postKiloStreamed({ body: payload, signal: controller.signal, onData: value => channel.push(value) })
+        : postStreamed({
           path: endpointFor(entry.id), body: payload, session,
           attributionUserAgent: snapshot.attributionUserAgent,
           signal: controller.signal,
@@ -625,7 +620,6 @@ export class FreeModelAdapter {
         if (error?.code === CODE.region) this.deps.onRegionBlocked?.(entry.id)
         const aborted = options.signal?.aborted === true
         let failure = toFailure(error)
-        if (sealed && failure.code === CODE.server) failure = { ...failure, code: 'EAC_UPSTREAM_FAILED' }
         if ((delivered || partialOutcome?.sawToolCall === true) && this.providerRetryPolicy().retryableCodes.includes(failure.code)) {
           failure = { ...failure, code: 'STREAM_CUT' }
         }
@@ -657,43 +651,6 @@ export class FreeModelAdapter {
       }
     }
   }
-}
-
-/** The co-paid reasoning models can burn minutes in the thinking channel on
- * turns that need seconds (observed: an entire small token budget spent on
- * reasoning for a one-line answer, first visible byte minutes late). The
- * effort menu owns the hard depth; this one-line prompt asks for pacing so a
- * turn does not sit silent while the model over-explores. Applied on every
- * sealed build, so the continuation and recovery payloads carry it too. */
-const SEALED_PACING_HINT =
-  'Avoid overthinking: keep your reasoning brief and proportionate to the task.'
-
-function applySealedPacingHint(payload) {
-  if (Array.isArray(payload.messages)) {
-    const system = payload.messages.find(message => message?.role === 'system' && typeof message.content === 'string')
-    if (system !== undefined) {
-      system.content = system.content === '' ? SEALED_PACING_HINT : `${system.content}\n\n${SEALED_PACING_HINT}`
-      return
-    }
-    payload.messages.unshift({ role: 'system', content: SEALED_PACING_HINT })
-    return
-  }
-  if (typeof payload.system === 'string') {
-    payload.system = payload.system === '' ? SEALED_PACING_HINT : `${payload.system}\n\n${SEALED_PACING_HINT}`
-  }
-}
-
-/**
- * One co-paid-lane turn: unlock the sealed credential for this request frame
- * and hand it straight to the lane's poster. A host the gate refuses — or a
- * seal that does not open — is a non-retryable configuration state, not a
- * transport fault: `LANE_LOCKED` is deliberately outside the retryable set so
- * a locked host fails its turn once, with a plain message and no retry storm.
- */
-async function postSealedTurn(deps, payload, signal, onData) {
-  const credential = await Promise.resolve(deps.sealedCredential?.())
-  if (credential === null || credential === undefined) throw new UpstreamError('this model lane is not available on this host', 'LANE_LOCKED')
-  return postSealedStreamed({ credential, body: payload, signal, onData })
 }
 
 function buildPayload(wire, modelId, messages, options, budget, resolveImage, warnings) {
@@ -760,7 +717,7 @@ function toFailure(error) {
  * resemble; the free lane splits its endpoints per model id.
  */
 function wireOf(entry) {
-  if (isEacEntry(entry) || isKiloEntry(entry)) return 'chat'
+  if (isKiloEntry(entry)) return 'chat'
   return wireFor(entry.id)
 }
 

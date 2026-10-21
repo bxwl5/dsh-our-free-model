@@ -74,65 +74,17 @@ window.__ModuleLoader__.load({
         'tag.context': '上下文',
         'tag.output': '最长输出',
         'tag.latency': '首字',
-        'tag.eacChannel': 'EAC 渠道 · 协付',
         'tag.new': 'NEW',
-        'tag.newTitle': '新上线的模型，经 EAC 渠道转发自 OpenCode 免费车道。',
+        'tag.newTitle': '新上线的模型。',
         'tag.hot': '爆',
         'tag.hotTitle': '当前最热门的免费模型之一。',
         'tag.fast': '高速',
         'tag.fastTitle': '响应快、吞吐高，适合长对话与连续调用。',
         'tag.kiloChannel': 'Kilo 渠道 · 免费池（prompt 可能被上游记录用于改进服务，勿发送敏感内容）',
-        'roster.noLane': 'EAC 协付模型在当前运行环境不可用：宿主未提供可识别的桌面 / Web 配置，因此不加载该渠道。',
         'section.models': '模型清单',
         'section.modelsHint': '名称与能力来自上游清单与公开能力表，可用性由本机出口实测得出。',
         'section.dash': '用量看板',
         'section.dashHint': '数据只写入本机，不会上传。',
-        'pool.levelOk': '畅通',
-        'pool.levelBusy': '繁忙',
-        'pool.capacity': '号池容量',
-        'pool.levelOver': '过载',
-        'pool.reach': '容量占用',
-        'pool.formula': 'Star {stars} × 1.5',
-        'pool.configured': '按实际配号数',
-        'pool.active': '24h 活跃',
-        'pool.live': '进行中',
-        'pool.unavailable': '号池数据暂不可用 · {reason}',
-        'pool.reasonNoLane': '当前运行环境未解锁协付车道',
-        'pool.reasonGateway': '网关应答异常',
-        'pool.reasonMalformed': '网关数据异常',
-        'pool.reasonUnreachable': '网关暂不可达',
-        'pool.reasonUnknown': '原因未知',
-        'pool.capacityUnknown': 'Star 数据暂不可用',
-        'section.eac': 'EAC 渠道授权',
-        'section.eacHint': 'EAC（协付）模型需要 GitHub 登录并 star 仓库；免费车道的模型不受影响。',
-        'eac.pillOk': '已授权',
-        'eac.pillLocked': '未授权',
-        'eac.pillRequired': '已开启强制',
-        'eac.pillCompat': '兼容期',
-        'eac.pillUnknown': '授权策略未确认',
-        'eac.pollFailed': '领取授权失败（{reason}），正在自动重试；无需重新授权。',
-        'eac.saveFailed': '授权已完成，但本机无法保存登录记录。请检查 DSH_HOME 目录权限；修复后将自动重试。',
-        'eac.cancel': '取消此次登录',
-        'eac.cancelFailed': '无法确认取消登录，请稍后重试。',
-        'eac.pillUnverified': '网关暂不可达',
-        'eac.intro': 'EAC 渠道的对话在服务器侧校验授权：用 GitHub 登录，并给 {repo} 点一个 Star，即可解锁。登录在浏览器里完成，无需复制粘贴；取消 Star 后授权会自动失效。',
-        'eac.login': '使用 GitHub 登录',
-        'eac.starting': '正在打开浏览器…',
-        'eac.waiting': '已打开浏览器授权页；若没有自动打开，请手动访问下面的地址完成授权。完成后本页会自动确认。',
-        'eac.copy': '复制链接',
-        'eac.copied': '已复制',
-        'eac.done': '授权成功：@{login}，现在可以使用 EAC 模型了。',
-        'eac.needStar': '已用 @{login} 登录，但还没有 star 仓库；请先 Star，再在授权页点「我已 star，重新检查」。',
-        'eac.expired': '这次登录等待超时了，请重新发起。',
-        'eac.sessionExpired': '登录链接已失效（服务器不再认识它），请重新发起 GitHub 登录。',
-        'eac.openManually': '浏览器没有自动打开，请手动访问下面的地址完成授权。',
-        'eac.startFailed': '无法发起登录（{reason}）。',
-        'eac.loggedIn': '已授权：@{login} · 上次复查 {when}',
-        'eac.recheck': '重新检查',
-        'eac.logout': '退出登录',
-        'eac.noLane': '当前运行环境未解锁 EAC 协付车道，无法进行 GitHub 授权。',
-        'eac.lockedTitle': '需要 GitHub 授权并 star 仓库后使用',
-        'eac.lockedNote': '未授权：点下方按钮用 GitHub 登录并 star 仓库，或到「EAC 渠道授权」区完成。',
         'section.forward': '本地转发（OpenAI 兼容）',
         'section.forwardHint': '让其它本地工具用一个 base URL 调用这些模型。',
         'section.egress': '出口代理（订阅分流）',
@@ -231,7 +183,6 @@ window.__ModuleLoader__.load({
         'pref.enabled': '启用免费模型',
         'pref.exposeRegion': '展示地区受限模型',
         'pref.hideFreeModels': '隐藏匿名与 Kilo 免费模型',
-        'pref.hideEacModels': '隐藏 EAC 模型',
         'visibility.showModel': '在模型选择器中显示',
         'visibility.hidden': '已隐藏',
         'visibility.unlisted': '未公开模型',
@@ -248,56 +199,18 @@ window.__ModuleLoader__.load({
         'bench.running': '测量中…',
         'bench.notSaved': '结果未能保存，请检查数据目录；刷新后可能丢失。',
         'bench.result': '文本响应通过 · 首帧 {ttft}ms · 输出 {tps} tok/s · 推理 {reasoning} tok',
-        'section.upgrade': '插件升级',
-        'section.upgradeHint': '更新方式取决于安装来源；由宿主管理的安装请通过原安装方式更新。',
-        'upgrade.managed': '此安装由安装它的宿主管理，请通过原安装方式更新；插件内检查、升级和热重载不可用。',
-        'upgrade.current': '运行版本',
-        'upgrade.installed': '磁盘版本',
-        'upgrade.mismatch': '运行版本与磁盘版本不一致，请先确认安装状态，再重载或重启。',
-        'upgrade.recovery': '上次升级未完整恢复。请关闭应用，使用保留的备份恢复安装目录，重新启动后检查更新。',
-        'upgrade.backup': '恢复备份',
-        'upgrade.latest': '最新版本',
-        'upgrade.checkedAt': '上次检查',
-        'upgrade.never': '从未检查',
-        'upgrade.check': '检查更新',
-        'upgrade.star': '去 GitHub 点 Star',
-        'upgrade.checking': '检查中…',
-        'upgrade.upToDate': '已是最新版本',
-        'upgrade.available': '可升级到 {version}',
-        'upgrade.apply': '立即升级',
-        'upgrade.applying': '升级中…',
-        'upgrade.phase.download': '正在下载新版本…',
-        'upgrade.phase.install': '正在安装文件…',
-        'upgrade.phase.reload': '正在热重载…',
-        'upgrade.done': '已升级到 {version}，插件已热重载生效。',
-        'upgrade.doneRefresh': '已升级到 {version}。点击刷新页面加载新界面。',
-        'upgrade.failed': '升级失败：{message}',
-        'upgrade.history': '最近一次升级',
-        'upgrade.from': '由 {from} 升级',
-        'upgrade.notes': '更新说明',
-        'upgrade.auto': '自动检查：每 {n} 小时',
-        'upgrade.autoOff': '自动检查已关闭',
-        'reload.now': '热重载插件',
-        'reload.reloading': '重载中…',
         'reload.done': '插件已热重载（第 {n} 次）。',
         'reload.refresh': '刷新页面',
-        'reload.auto': '文件变化自动热重载',
         'nav.tab.free': '免费模型',
-        'nav.tab.eac': 'EAC 模型',
         'nav.tab.channels': '白嫖模型接入',
-        'star.cta': '点个 Star',
-        'star.title': '在 GitHub 上给本仓库点 Star',
         'free.title': '免费模型',
         'free.sub': '免登录、免 Key、免配置：模型清单跟随上游刷新，可用性由这台机器实测。',
         'free.tankLabel': '免费车道可用度',
         'free.tankNote': '水位 = 当前可用模型占比（{ok}/{total}）',
         'free.tankEmpty': '尚未探测，水位按已声明模型占位。',
-        'eac.title': 'EAC 模型',
-        'eac.sub': '桌面端协付渠道：GitHub 登录并 star 本仓库后解锁，与免费车道互不影响。',
-        'eac.tankLabel': '协付池压力',
         'chan.title': '白嫖模型接入',
         'chan.sub': '把各家的免费额度接进来：登录一次，模型就出现在对话框的模型选择器里。凭据只写入本机凭据库，页面永远拿不到明文。',
-        'chan.pack.failed': '渠道包未挂载：{reason}（免费车道与 EAC 不受影响）',
+        'chan.pack.failed': '渠道包未挂载：{reason}（免费车道不受影响）',
         'chan.pack.hint': '渠道包由本插件内置（vendor/channel-pack），随插件一起升级。',
         'chan.state.on': '已接入',
         'chan.state.off': '未接入',
@@ -350,7 +263,8 @@ window.__ModuleLoader__.load({
         'nav.tab.ledger': '数据看板',
         'nav.tab.logs': '运行日志',
         'nav.tab.gateway': '网关设置',
-        'nav.tab.upgrade': '插件升级',
+        'gateway.copy': '复制',
+        'gateway.copied': '已复制',
         'chan.titleSingle': '渠道',
         'dash.title': '数据看板',
         'dash.sub': '渠道模型的 Token 消耗与推理指标：输入/输出/思考/缓存逐项统计，账号与模型双维度透视。',
@@ -546,8 +460,7 @@ window.__ModuleLoader__.load({
         'routing.deleteWarn': '删除后这个模型 ID 立即从清单消失，正在引用它的客户端会拿到 404。',
         'routing.enabled': '启用',
         'routing.channel.free': '免费车道',
-        'routing.channel.eac': 'EAC 协付',
-        'routing.channel.kilo': 'Kilo',
+                'routing.channel.kilo': 'Kilo',
         'routing.channel.combo': '链路',
         'gw.clientsTitle': '接入客户端',
         'gw.clientsHint': '免费车道转发端口（在「免费模型」页的「本地转发」里开关）的接入配方：地址与 Key 按实际绑定的端口与真实密钥生成。',
@@ -596,15 +509,13 @@ window.__ModuleLoader__.load({
         'tag.context': 'Context',
         'tag.output': 'Max output',
         'tag.latency': 'First token',
-        'tag.eacChannel': 'EAC lane · co-paid',
         'tag.new': 'NEW',
-        'tag.newTitle': 'Just added: relayed to the EAC lane from OpenCode’s free tier.',
+        'tag.newTitle': 'Just added.',
         'tag.hot': '爆',
         'tag.hotTitle': 'One of the most requested free models right now.',
         'tag.fast': 'Fast',
         'tag.fastTitle': 'Quick first token and high throughput — good for long or back-to-back turns.',
         'tag.kiloChannel': 'Kilo channel · free pool (prompts may be logged by the upstream provider — never send sensitive content)',
-        'roster.noLane': 'The co-paid EAC models are unavailable in this composition: the host did not present a recognized desktop or web profile, so the lane is not loaded.',
         'section.models': 'Model roster',
         'section.modelsHint': 'Names and capacities come from the upstream roster and published capability tables; availability is measured from this machine.',
         'section.dash': 'Usage dashboard',
@@ -634,52 +545,6 @@ window.__ModuleLoader__.load({
         'egress.error': 'The outlet failed to start: {message}',
         'section.prefs': 'Plugin settings',
         'section.prefsHint': 'Changes take full effect on the next load.',
-        'pool.levelOk': 'Healthy',
-        'pool.levelBusy': 'Busy',
-        'pool.capacity': 'Pool capacity',
-        'pool.levelOver': 'Overloaded',
-        'pool.reach': 'Capacity in use',
-        'pool.formula': '{stars} stars × 1.5',
-        'pool.configured': 'configured count',
-        'pool.active': '24h active',
-        'pool.live': 'in flight',
-        'pool.unavailable': 'Pool data unavailable · {reason}',
-        'pool.reasonNoLane': 'no co-paid lane in this composition',
-        'pool.reasonGateway': 'gateway answered an error',
-        'pool.reasonMalformed': 'gateway data malformed',
-        'pool.reasonUnreachable': 'gateway unreachable',
-        'pool.reasonUnknown': 'unknown cause',
-        'pool.capacityUnknown': 'star data unavailable',
-        'section.eac': 'EAC lane authorization',
-        'section.eacHint': 'EAC (co-paid) models need a GitHub login and a star; the free lane is unaffected.',
-        'eac.pillOk': 'authorized',
-        'eac.pillLocked': 'not authorized',
-        'eac.pillRequired': 'enforced',
-        'eac.pillCompat': 'grace period',
-        'eac.pillUnknown': 'authorization policy unverified',
-        'eac.pollFailed': 'Could not collect authorization ({reason}); retrying automatically. No new sign-in is needed.',
-        'eac.saveFailed': 'Authorization completed, but this machine could not save it. Check DSH_HOME permissions; collection will retry automatically.',
-        'eac.cancel': 'Cancel this sign-in',
-        'eac.cancelFailed': 'Could not confirm cancellation. Please try again.',
-        'eac.pillUnverified': 'gateway unreachable',
-        'eac.intro': 'EAC turns are checked server-side: sign in with GitHub and star {repo} to unlock them. The browser does the work — nothing to paste — and removing the star revokes access automatically.',
-        'eac.login': 'Sign in with GitHub',
-        'eac.starting': 'Opening the browser…',
-        'eac.waiting': 'The authorization page is open; if the browser did not come up, visit the address below to finish. This page confirms automatically.',
-        'eac.copy': 'Copy link',
-        'eac.copied': 'Copied',
-        'eac.done': 'Authorized as @{login} — EAC models are unlocked.',
-        'eac.needStar': 'Signed in as @{login}, but the repository is not starred yet. Star it, then press "I starred it — check again" on the authorization page.',
-        'eac.expired': 'This login attempt timed out; please start again.',
-        'eac.sessionExpired': 'The login link is no longer valid (the server does not know it) — please start the GitHub login again.',
-        'eac.openManually': 'The browser did not open automatically — visit the address below to finish.',
-        'eac.startFailed': 'Could not start the login ({reason}).',
-        'eac.loggedIn': 'Authorized: @{login} · last checked {when}',
-        'eac.recheck': 'Check again',
-        'eac.logout': 'Sign out',
-        'eac.noLane': 'The EAC co-paid lane is not unlocked in this composition, so GitHub authorization is unavailable.',
-        'eac.lockedTitle': 'Needs GitHub authorization and a star',
-        'eac.lockedNote': 'Not authorized: sign in with GitHub and star the repository with the button below, or from the EAC authorization section.',
         'heat.title': 'Token heatmap',
         'heat.legend': 'Less',
         'heat.legendMore': 'More',
@@ -753,7 +618,6 @@ window.__ModuleLoader__.load({
         'pref.enabled': 'Enable free models',
         'pref.exposeRegion': 'Show region-limited models',
         'pref.hideFreeModels': 'Hide anonymous and Kilo free models',
-        'pref.hideEacModels': 'Hide EAC models',
         'visibility.showModel': 'Show in model picker',
         'visibility.hidden': 'Hidden',
         'visibility.unlisted': 'Unlisted models',
@@ -770,56 +634,18 @@ window.__ModuleLoader__.load({
         'bench.running': 'Measuring…',
         'bench.notSaved': 'The result could not be saved. Check the data directory; it may be lost after refresh.',
         'bench.result': 'Text response passed · first frame {ttft}ms · {tps} tok/s · {reasoning} reasoning tokens',
-        'section.upgrade': 'Plugin upgrade',
-        'section.upgradeHint': 'Update according to the installation source; host-managed installs use their original installation method.',
-        'upgrade.managed': 'This installation is managed by the host that installed it. Update through the original installation method; in-plugin checks, upgrades and hot reload are unavailable.',
-        'upgrade.current': 'Running',
-        'upgrade.installed': 'On disk',
-        'upgrade.mismatch': 'The running and on-disk versions differ. Check the installation before reloading or restarting.',
-        'upgrade.recovery': 'The last upgrade was not fully restored. Close the app, restore the installation from the retained backup, restart, then check for updates.',
-        'upgrade.backup': 'Recovery backup',
-        'upgrade.latest': 'Latest',
-        'upgrade.checkedAt': 'Last check',
-        'upgrade.never': 'never',
-        'upgrade.check': 'Check for updates',
-        'upgrade.star': 'Star on GitHub',
-        'upgrade.checking': 'Checking…',
-        'upgrade.upToDate': 'Up to date',
-        'upgrade.available': 'Upgrade to {version} available',
-        'upgrade.apply': 'Upgrade now',
-        'upgrade.applying': 'Upgrading…',
-        'upgrade.phase.download': 'Downloading the new version…',
-        'upgrade.phase.install': 'Installing files…',
-        'upgrade.phase.reload': 'Hot-reloading…',
-        'upgrade.done': 'Upgraded to {version}; the plugin hot-reloaded into place.',
-        'upgrade.doneRefresh': 'Upgraded to {version}. Reload the page to load the new UI.',
-        'upgrade.failed': 'Upgrade failed: {message}',
-        'upgrade.history': 'Last upgrade',
-        'upgrade.from': 'from {from}',
-        'upgrade.notes': 'Release notes',
-        'upgrade.auto': 'Auto-check: every {n} h',
-        'upgrade.autoOff': 'Auto-check off',
-        'reload.now': 'Hot-reload plugin',
-        'reload.reloading': 'Reloading…',
         'reload.done': 'Plugin hot-reloaded (#{n}).',
         'reload.refresh': 'Reload page',
-        'reload.auto': 'Hot-reload on file change',
         'nav.tab.free': 'Free models',
-        'nav.tab.eac': 'EAC models',
         'nav.tab.channels': 'Free channels',
-        'star.cta': 'Star',
-        'star.title': 'Star this repository on GitHub',
         'free.title': 'Free models',
         'free.sub': 'No login, no key, no setup: the roster follows upstream, availability is measured from this machine.',
         'free.tankLabel': 'Free-lane availability',
         'free.tankNote': 'Water level = share of reachable models ({ok}/{total})',
         'free.tankEmpty': 'Not probed yet; the level stands at the declared roster.',
-        'eac.title': 'EAC models',
-        'eac.sub': 'The desktop co-paid lane: unlocked by a GitHub login plus a star, independent of the free lane.',
-        'eac.tankLabel': 'Co-paid pool pressure',
         'chan.title': 'Free channel access',
         'chan.sub': 'Bring each vendor\'s free quota in: sign in once and its models appear in the composer\'s model picker. Credentials are written to the local credential store only — this page never sees them.',
-        'chan.pack.failed': 'Channel pack not mounted: {reason} (the free and EAC lanes are unaffected)',
+        'chan.pack.failed': 'Channel pack not mounted: {reason} (the free lane is unaffected)',
         'chan.pack.hint': 'The pack ships inside this plugin (vendor/channel-pack) and upgrades with it.',
         'chan.state.on': 'Connected',
         'chan.state.off': 'Not connected',
@@ -872,7 +698,8 @@ window.__ModuleLoader__.load({
         'nav.tab.ledger': 'Dashboard',
         'nav.tab.logs': 'Request log',
         'nav.tab.gateway': 'Gateway',
-        'nav.tab.upgrade': 'Plugin upgrade',
+        'gateway.copy': 'Copy',
+        'gateway.copied': 'Copied',
         'chan.titleSingle': 'Channel',
         'dash.title': 'Usage dashboard',
         'dash.sub': 'Token spend and inference metrics for the channel models: input/output/reasoning/cache, pivoted by account and by model.',
@@ -1068,8 +895,7 @@ window.__ModuleLoader__.load({
         'routing.deleteWarn': 'Deleting it drops this model id from the roster immediately; a client still pointing at it gets a 404.',
         'routing.enabled': 'Enabled',
         'routing.channel.free': 'Free lane',
-        'routing.channel.eac': 'EAC co-paid',
-        'routing.channel.kilo': 'Kilo',
+                'routing.channel.kilo': 'Kilo',
         'routing.channel.combo': 'Chain',
         'gw.clientsTitle': 'Connect a client',
         'gw.clientsHint': 'How the free lane\'s forward port (enabled under "Local forward" on the Free models page) plugs into each client: addresses and keys below are generated from the port that actually bound and the real key.',
@@ -1242,13 +1068,7 @@ window.__ModuleLoader__.load({
 @keyframes ofm-popin{from{opacity:0;transform:translateY(16px) scale(.965)}to{opacity:1;transform:none}}
 .ofm_two{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
 /* ══ 公告中心 ══════════════════════════════════════════════════════════ */
-.ofm_upgradecards{display:flex;gap:8px;flex-wrap:wrap}
-.ofm_upnotes{max-height:220px;overflow:auto;padding:10px 12px;border-radius:10px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1)}
 /* ══ 进度条 ════════════════════════════════════════════════════════════ */
-.ofm_prog{height:4px;border-radius:99px;background:var(--dsw-alias-bg-layer-1);box-shadow:inset 0 1px 2px rgb(0 0 0 / 6%);overflow:hidden}
-.ofm_prog i{display:block;height:100%;width:40%;border-radius:99px;background:linear-gradient(90deg,color-mix(in srgb,var(--dsw-alias-state-business-primary) 55%,transparent),var(--dsw-alias-state-business-primary));animation:ofm-prog-slide 1.1s ease-in-out infinite}
-.ofm_prog i{position:relative;overflow:hidden}
-.ofm_prog i::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,color-mix(in srgb,var(--dsw-alias-bg-layer-1) 60%,transparent) 50%,transparent 70%);transform:translateX(-100%);animation:ofm-prog-shine 1.6s ease-in-out infinite}
 @keyframes ofm-prog-shine{0%{transform:translateX(-100%)}60%,100%{transform:translateX(100%)}}
 @keyframes ofm-prog-slide{0%{transform:translateX(-100%)}100%{transform:translateX(260%)}}
 /* ══ Toast（fixed 到视口，浮在所有层之上） ════════════════════════════ */
@@ -1273,18 +1093,6 @@ window.__ModuleLoader__.load({
 @media (max-width:720px){.ofm_sec_hint{margin-left:0;width:100%}.ofm_pills{margin-left:0;width:100%}}
 /* ══ 北辰 API 赞助横幅：免费模型页首屏入口，与桌面端保持独立 ═══════ */
 /* ══ GitHub star 按钮 ══════════════════════════════════════════════════ */
-.ofm_starbtn{position:relative;display:inline-flex;gap:7px;align-items:center;padding:7px 15px;border-radius:999px;border:1px solid color-mix(in srgb,var(--dsw-alias-state-business-primary) 55%,transparent);background:linear-gradient(140deg,color-mix(in srgb,var(--dsw-alias-state-business-primary) 16%,transparent),transparent 70%);color:var(--dsw-alias-state-business-primary);text-decoration:none;font-weight:650;font-size:12.5px;transition:transform .18s ease,box-shadow .22s ease,color .22s ease,background .22s ease;white-space:nowrap;overflow:hidden}
-.ofm_starbtn svg{transition:transform .5s cubic-bezier(.34,1.56,.64,1)}
-.ofm_starbtn:hover svg{transform:rotate(72deg) scale(1.12)}
-.ofm_starbtn:hover{box-shadow:0 0 0 4px color-mix(in srgb,var(--dsw-alias-state-business-primary) 10%,transparent),0 6px 16px color-mix(in srgb,var(--dsw-alias-state-business-primary) 22%,transparent)}
-.ofm_starbtn:active svg{transform:rotate(72deg) scale(.94)}
-.ofm_starbtn svg{width:14px;height:14px;fill:currentColor;transition:transform .3s cubic-bezier(.34,1.56,.64,1)}
-.ofm_starbtn:hover{transform:translateY(-1px);box-shadow:0 8px 22px color-mix(in srgb,var(--dsw-alias-state-business-primary) 34%,transparent);background:linear-gradient(140deg,var(--dsw-alias-state-business-primary),color-mix(in srgb,var(--dsw-alias-state-business-primary) 72%,#3ECFA0));color:#fff}
-.ofm_starbtn:active{transform:scale(.97)}
-.ofm_starbtn:hover svg{transform:rotate(-72deg) scale(1.12)}
-.ofm_starbtn::after{content:"";position:absolute;top:0;bottom:0;width:38%;left:-45%;background:linear-gradient(100deg,transparent,rgb(255 255 255 / 34%),transparent);transform:skewX(-18deg);transition:left .55s ease}
-.ofm_starbtn:hover::after{left:112%}
-.ofm_starlink{display:inline-flex;align-items:center;gap:6px;text-decoration:none}
 /* ══ 鱼缸（品牌装饰：玻璃缸 + 水位 + 波光 + 鱼群） ════════════════════ */
 .ofm_tank{position:relative;width:206px;height:128px;border-radius:16px;overflow:hidden;flex:none;background:linear-gradient(180deg,rgba(127,166,255,.10),rgba(127,166,255,.03));box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l1)}
 .ofm_tankwater{position:absolute;left:0;right:0;bottom:0;height:var(--lvl,0%);transition:height 1.4s cubic-bezier(.22,.61,.36,1)}
@@ -1341,7 +1149,6 @@ window.__ModuleLoader__.load({
 .ofm_navspacer{display:none}
 /* The star belongs beside the brand: grid auto-placement would push it below
    the tabs row (they come first in the DOM) and stretch it across the row. */
-.ofm_nav .ofm_starbtn{grid-column:2;grid-row:1;justify-self:end}
 .ofm_page{display:flex;flex-direction:column;gap:20px;animation:ofmpagein .4s cubic-bezier(.16,1,.3,1)}
 @keyframes ofmpagein{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 /* ── 毛玻璃表面：只给大块面用 backdrop-filter，小卡片用半透明叠层，滚动更顺 */
@@ -1467,11 +1274,10 @@ window.__ModuleLoader__.load({
 .ofm_kpi:hover .ofm_kpivalue{transform:translateY(-1px) scale(1.015);color:var(--dsw-alias-label-primary)}
 .ofm_table tbody tr{transition:background .14s var(--ease-instrument)}
 .ofm_seg button,.ofm_chip{transition:background .2s var(--ease-instrument),color .2s var(--ease-instrument),border-color .2s var(--ease-instrument),box-shadow .22s var(--ease-settle)}
-.ofm_prog i{transition:width .5s var(--ease-instrument)}
 .ofm_minibtn{transition:transform .14s var(--ease-instrument),border-color .18s var(--ease-instrument),color .18s var(--ease-instrument),background .18s var(--ease-instrument)}
 .ofm_minibtn:active:not(:disabled){transform:scale(.98);transition-duration:.09s}
 .ofm_root input,.ofm_root select,.ofm_root textarea{transition:border-color .18s var(--ease-instrument),box-shadow .2s var(--ease-instrument),background .18s var(--ease-instrument)}
-@media (prefers-reduced-motion:reduce){.ofm_glass,.ofm_kpi,.ofm_kpivalue,.ofm_minibtn,.ofm_prog i{transition:none!important}.ofm_kpi:hover,.ofm_kpi:hover .ofm_kpivalue{transform:none}}
+@media (prefers-reduced-motion:reduce){.ofm_glass,.ofm_kpi,.ofm_kpivalue,.ofm_minibtn{transition:none!important}.ofm_kpi:hover,.ofm_kpi:hover .ofm_kpivalue{transform:none}}
 
 /* ==== V5 INSTRUMENT START ==== */
 /* 精密仪器·样板间覆盖层：1px细边+内高光，无外投影；颜色全部听宿主 var(--dsw-alias-*)。
@@ -1619,7 +1425,6 @@ window.__ModuleLoader__.load({
   .ofm_root .ofm_seg button,
   .ofm_root .ofm_stat,
   .ofm_root .ofm_input,
-  .ofm_root .ofm_starbtn,
   .ofm_root .ofm_chanlogo{
     transition: border-color .12s ease, background .12s ease, box-shadow .12s ease, opacity .12s ease, color .12s ease !important;
   }
@@ -1629,7 +1434,6 @@ window.__ModuleLoader__.load({
   .ofm_root .ofm_btn:active:not(:disabled),
   .ofm_root .ofm_stat:hover,
   .ofm_root .ofm_seg button:active:not([aria-pressed="true"]),
-  .ofm_root .ofm_starbtn:active,
   .ofm_root .ofm_chan:hover .ofm_chanlogo{
     transform: none !important;
   }
@@ -1639,7 +1443,6 @@ window.__ModuleLoader__.load({
   }
   /* 扫光条砍掉 */
   .ofm_root .ofm_btn::after,
-  .ofm_root .ofm_starbtn::after{
     content: none !important;
   }
   /* 呼吸灯停跳，但保留颜色状态 */
@@ -1801,7 +1604,7 @@ window.__ModuleLoader__.load({
 }
 
 /* ── ⑧【师傅批改③】表格竖条语言统一：所有表格行 hover 都带主色竖条 ── */
-/* .ofm_newsbody table 是内容型表格，保持朴素；仅给数据表 .ofm_table 统一竖条。
+/* 仅给数据表 .ofm_table 统一竖条。
    同时把 .ofm_stat 等"类表格"卡片也纳入 hover 微提亮，保持语言一致 */
 .ofm_root .ofm_stat,
   transition: border-color .2s var(--ease-instrument), box-shadow .22s var(--ease-instrument), transform .2s var(--ease-settle) !important;
@@ -1812,21 +1615,17 @@ window.__ModuleLoader__.load({
   transform: translateY(-1px) !important;
 }
 
-/* ── ⑩【返工·收编租界】星按钮/导航标/渠道标 全部听宿主变量 ─────────────── */
-/* L1130 .ofm_starbtn:hover 混 #3ECFA0、L1181 .ofm_navmark 混 #3ECFA0 —— 统一改混 label-primary，零品牌色 */
-.ofm_root .ofm_starbtn{
+/* ── ⑩【返工·收编租界】导航标/渠道标 全部听宿主变量 ───────────────────── */
+/* L1181 .ofm_navmark 混 #3ECFA0 —— 统一改混 label-primary，零品牌色 */
   transition: transform .16s var(--ease-settle), box-shadow .2s var(--ease-instrument), color .2s var(--ease-instrument), background .2s var(--ease-instrument) !important;
 }
-.ofm_root .ofm_starbtn:hover{
   background: linear-gradient(140deg, var(--dsw-alias-state-business-primary), color-mix(in srgb, var(--dsw-alias-state-business-primary) 76%, var(--dsw-alias-label-primary))) !important;
   color: var(--dsw-alias-label-on-accent, #fff) !important;
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent), 0 6px 16px color-mix(in srgb, var(--dsw-alias-state-business-primary) 22%, transparent) !important;
 }
-.ofm_root .ofm_starbtn:active{
   transform: scale(.97) !important;
 }
 /* 扫光条改走 --ease-instrument，与 .ofm_btn 同语言 */
-.ofm_root .ofm_starbtn::after{
   transition: left .5s var(--ease-instrument) !important;
 }
 /* 导航标：去掉 #3ECFA0 混色，改混 label-primary；外投影换成内高光+轻凹槽 */
@@ -2370,7 +2169,7 @@ window.__ModuleLoader__.load({
 
     // ── model roster ──────────────────────────────────────────────────────────
     function ModelCard(props) {
-      const { model: m, t, onBench, bench, locked, eacLogin, onVisibility, busy } = props
+      const { model: m, t, onBench, bench, onVisibility, busy } = props
       const listed = m.availabilitySource === 'listing'
       const manual = m.availabilitySource === 'manual'
       const stateKey = `state.${m.availability}`
@@ -2392,8 +2191,6 @@ window.__ModuleLoader__.load({
         : undefined
       return h('article', { className: 'ofm_card' + (dim ? ' dim' : '') + (m.pinned === true ? ' pinned' : '') },
         h('div', { className: 'ofm_cardhead' },
-          m.channel === 'eac' ? h('span', { className: 'ofm_chantag', title: t('tag.eacChannel') }, 'EAC') : null,
-          m.channel === 'eac' && locked === true ? h('span', { className: 'ofm_chantag', title: t('eac.lockedTitle') }, '🔒') : null,
           m.channel === 'kilo' ? h('span', { className: 'ofm_chantag', title: t('tag.kiloChannel') }, 'Kilo') : null,
           h('span', { className: 'ofm_cardname', title: m.name }, m.name),
           m.isNew === true ? h('span', { className: 'ofm_newtag', title: t('tag.newTitle') }, t('tag.new')) : null,
@@ -2412,13 +2209,6 @@ window.__ModuleLoader__.load({
               `${t('tag.rung')} ${kilo(rung.tokens)}`),
           levels === undefined ? null
             : h('span', { className: 'ofm_tag', title: t('tag.levelsTitle') }, `${t('tag.levels')} ${levels}`)),
-        m.channel === 'eac' && locked === true
-          ? h(Fragment, null,
-            h('p', { className: 'ofm_note' }, t('eac.lockedNote')),
-            eacLogin === undefined ? null : h('div', { className: 'ofm_row' },
-              h(Button, { kind: 'primary', disabled: eacLogin.busy || eacLogin.pending !== null, onClick: eacLogin.login },
-                eacLogin.busy ? t('eac.starting') : t('eac.login'))))
-          : null,
         listed ? h('p', { className: 'ofm_note' }, t('hint.listed'))
           : manual && m.availability !== 'available' ? h('p', { className: 'ofm_note' }, m.detail || t(stateKey))
           : m.availability === 'region-blocked' ? h('p', { className: 'ofm_note' }, t('hint.region'))
@@ -2438,17 +2228,14 @@ window.__ModuleLoader__.load({
     }
 
     function Roster(props) {
-      const { summary, t, onBench, benches = {}, auth, eacLogin, only, onApply, busy } = props
-      // `only` splits the same roster across the two model pages: the EAC page
+      const { summary, t, onBench, benches = {}, onApply, busy } = props
       // shows the co-paid entries, the free page everything else. Filtering
       // here (rather than in each page) keeps one definition of what a route
       // group means.
-      const roster = only === undefined ? summary.catalog
-        : only === 'eac' ? summary.catalog.filter(m => m.channel === 'eac')
-          : summary.catalog.filter(m => m.channel !== 'eac')
+      const roster = summary.catalog
       // Featured rows lead their group: the pinned flag rides the catalog row, so
-      // the order is the same on the EAC page and in the onboarding roster, and a
-      // row that is not featured keeps its upstream order.
+      // the order is the same on every page, and a row that is not featured keeps
+      // its upstream order.
       const lead = list => [...list].sort((a, b) => (b.pinned === true ? 1 : 0) - (a.pinned === true ? 1 : 0))
       const available = lead(roster.filter(m => m.route === 'our-free-model'))
       const limited = lead(roster.filter(m => m.route === 'our-free-model-region'))
@@ -2457,31 +2244,20 @@ window.__ModuleLoader__.load({
         const ids = summary.settings.hiddenModelIds ?? []
         return onApply({ hiddenModelIds: ids.includes(model.id) ? ids.filter(id => id !== model.id) : [...ids, model.id] })
       }
-      // 只有拿到过明确判定（网关答过 /eac/status）且未授权时才上锁：状态未知
-      // 不该显示一把凭空的锁，网关不可达时本地记录仍算已授权。
-      const locked = auth !== undefined && auth.available === true && auth.authorized !== true
       const group = (title, list, hint) => list.length === 0 ? null
         : h('div', { className: 'ofm_sec', style: { gap: 8 } },
           h('div', { className: 'ofm_row' }, h('span', { className: 'ofm_sec_title', style: { fontSize: 12.5 } }, title),
             hint === undefined ? null : h('span', { className: 'ofm_sec_hint' }, hint)),
           h('div', { className: 'ofm_grid' }, list.map(m => h(ModelCard, {
-            key: m.id, model: m, t, onBench, locked: m.channel === 'eac' && locked, eacLogin,
+            key: m.id, model: m, t, onBench,
             onVisibility: toggleModel, busy,
             bench: { running: benches[m.id]?.running === true, ...benches[m.id]?.result === undefined ? {} : { result: benches[m.id].result } },
           }))))
-      // The lane closed at the gate is the one "no EAC models" case the page can
-      // explain without a log (issue #60): on a host the kernel gave no profile,
-      // the group never renders and nothing else on the page names the reason.
-      const laneNote = summary.laneAvailable === false && !summary.catalog.some(m => m.channel === 'eac')
-        ? h('p', { className: 'ofm_note' }, t('roster.noLane')) : null
       return h(Fragment, null,
-        laneNote,
         onApply === undefined ? null : h('div', { className: 'ofm_sec' },
           h('p', { className: 'ofm_note' }, t('visibility.hint')),
           h(Switch, { checked: summary.settings.hideFreeModels === true, disabled: busy,
-            label: t('pref.hideFreeModels'), onChange: () => onApply({ hideFreeModels: summary.settings.hideFreeModels !== true }) }),
-          h(Switch, { checked: summary.settings.hideEacModels === true, disabled: busy,
-            label: t('pref.hideEacModels'), onChange: () => onApply({ hideEacModels: summary.settings.hideEacModels !== true }) })),
+            label: t('pref.hideFreeModels'), onChange: () => onApply({ hideFreeModels: summary.settings.hideFreeModels !== true }) })),
         group(t('roster.selectable'), available),
         group(t('state.region-blocked'), limited, t('hint.region')),
         group(t('visibility.unlisted'), unlisted))
@@ -2504,7 +2280,6 @@ window.__ModuleLoader__.load({
      * The aquarium itself: water level, waves, bubbles, three fish and a glass
      * frame. It is deliberately a *pure* visual — every page that shows one
      * decides what the level means (free lane: share of models reachable;
-     * EAC lane: the co-paid pool's 24h pressure), because a tank whose meaning
      * changes with the caller is the only way to put the same object at the top
      * of two pages without either one lying about its numbers.
      */
@@ -2529,256 +2304,8 @@ window.__ModuleLoader__.load({
         h('div', { className: 'ofm_tankglass' }))
     }
 
-    /**
-     * The co-paid pool snapshot, shared by the EAC page's tank and its detail
-     * panel. One hook so the page and the panel never disagree: both read the
-     * same 30-second poll. `pool === undefined` means "still loading", `null`
-     * means "the host has no lane or the gateway is dark" — the caller decides
-     * whether that is a muted line or nothing at all.
-     */
-    function usePool() {
-      const [pool, setPool] = useState(undefined)
-      const [poolError, setPoolError] = useState('')
-      useEffect(() => {
-        let alive = true
-        // The gateway can be slow under exactly the load this panel reports;
-        // the 8s api() default would abort while the backend is still waiting.
-        const load = () => api('/pool', { timeout: 25_000 })
-          .then(data => {
-            if (!alive) return
-            setPool(data?.pool != null ? data : null)
-            setPoolError('')
-          })
-          .catch(error => {
-            if (!alive) return
-            setPool(null)
-            // The backend tags the failure with a fixed reason code; map it to
-            // readable text instead of hiding the panel in silence.
-            const code = /\(([^)]+)\)\s*$/.exec(String(error?.message ?? ''))?.[1] ?? ''
-            setPoolError(code)
-          })
-        load()
-        const timer = setInterval(load, 30_000)
-        return () => { alive = false; clearInterval(timer) }
-      }, [])
-      return { pool, poolError }
-    }
 
-    /** The pool's load verdict and the numbers behind it, from one snapshot. */
-    function poolReading(pool) {
-      const active = Number.isFinite(pool.active24h) ? pool.active24h : null
-      const capacityKnown = Number.isFinite(pool.pool) && pool.pool > 0
-      // Two readings, on purpose: the tank cannot hold more than full, but the
-      // page must not round a pool running at 147% of its provisioned capacity
-      // down to "100%" — that reads as "exactly at capacity", which is a
-      // different, calmer sentence than what the gateway is saying.
-      const rawPct = capacityKnown && active !== null ? Math.round(100 * active / pool.pool) : null
-      const pct = rawPct === null ? null : Math.max(0, Math.min(100, rawPct))
-      // A gateway build that predates the level verdict answers without one.
-      // The plugin then applies the same default thresholds locally, so an
-      // upgraded panel never reads a calm color off an unupgraded server —
-      // and once the gateway does send its verdict, that one wins.
-      const level = pool.level === 'over' || (pool.level === undefined && pool.inflight >= 80) ? 'over'
-        : pool.level === 'busy' || (pool.level === undefined && pool.inflight >= 30) ? 'busy' : 'ok'
-      return { active, capacityKnown, pct, rawPct, level }
-    }
 
-    /** The GitHub star every call to action on this page carries. */
-    const STAR_GLYPH = 'M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25z'
-
-    /** The repository every page's star button points at, opened in a new tab. */
-    function StarButton(props) {
-      const { t, repo = POOL_REPO_URL } = props
-      const label = t('star.cta')
-      return h('a', {
-        className: 'ofm_starbtn',
-        href: `https://github.com/${repo.replace(/^https?:\/\/github\.com\//, '')}`,
-        target: '_blank',
-        rel: 'noreferrer noopener',
-        title: `${t('star.title')} · ${repo}`,
-      }, h('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' },
-        h('path', { d: STAR_GLYPH })),
-        label)
-    }
-    /** Where the pool's capacity number comes from, in one sentence. */
-    function capacityText(pool, t) {
-      if (pool.poolSource === 'formula') return t('pool.formula').replace('{stars}', String(pool.stars ?? '—'))
-      if (pool.poolSource === 'configured') return t('pool.configured')
-      return t('pool.capacityUnknown')
-    }
-
-    // ── EAC 渠道授权（GitHub 登录 + Star） ────────────────────────────────────
-    // 闸门在服务器：网关拒绝没有用户令牌的对话，而这个面板是取得令牌的唯一入口。
-    // 三种状态如实呈现——未登录 / 已登录但未 star / 已授权——并且登录全程无需
-    // 复制粘贴：后端把授权页交给系统浏览器，前端轮询网关领取令牌。令牌本身从不
-    // 到达浏览器，这里只显示登录名与判定结果。
-    //
-    // 登录流（发起、轮询、busy/notice）住在 SettingsPage 级的 hook 里：页头的
-    // 未授权按钮、上锁模型卡的「去授权」和这个面板必须共享同一个进行中的会话，
-    // 各挂一份轮询会互相抢令牌的领取权。
-    const EAC_LOGIN_TTL = 10 * 60_000
-    const EAC_LOGIN_KEY = `ofm.eac.pending:${API}`
-    function rememberEacLogin(pending) {
-      try {
-        if (pending === null) sessionStorage.removeItem(EAC_LOGIN_KEY)
-        else sessionStorage.setItem(EAC_LOGIN_KEY, JSON.stringify(pending))
-      } catch { /* restricted browser storage: this mounted page can still log in */ }
-    }
-    function restoreEacLogin() {
-      try {
-        const value = JSON.parse(sessionStorage.getItem(EAC_LOGIN_KEY))
-        if (value !== null && /^[A-Za-z0-9_-]{16,64}$/.test(value.link)
-          && typeof value.url === 'string' && /^https?:\/\//.test(value.url)
-          && Number.isFinite(value.startedAt) && value.startedAt <= Date.now()
-          && Date.now() - value.startedAt < EAC_LOGIN_TTL) return value
-      } catch { /* absent or malformed */ }
-      rememberEacLogin(null)
-      return null
-    }
-    function useEacLogin({ t, summary, onAuth }) {
-      const [busy, setBusy] = useState(false)
-      const [notice, setNotice] = useState('')
-      const [pending, setPending] = useState(restoreEacLogin)
-      const [copied, setCopied] = useState(false)
-      const starting = useRef(false)
-      const cancelling = useRef(false)
-      const attempt = useRef(0)
-      const pendingRef = useRef(pending)
-      pendingRef.current = pending
-      const updatePending = value => {
-        pendingRef.current = value
-        rememberEacLogin(value)
-        setPending(value)
-      }
-      const refresh = useCallback(() => {
-        api('/eac/status', { timeout: 20_000 }).then(onAuth).catch(() => onAuth({ available: true, authorized: false, login: '', unverified: true }))
-      }, [onAuth])
-      const latest = useRef(summary)
-      latest.current = summary
-      const latestT = useRef(t)
-      latestT.current = t
-
-      // Schedule only after completion: slow gateway responses must not create
-      // overlapping collectors. The link survives settings-page remounts.
-      useEffect(() => {
-        if (pending === null) return undefined
-        let alive = true
-        let timer
-        const poll = async () => {
-          const t = latestT.current
-          if (!alive || cancelling.current) return
-          if (Date.now() - pending.startedAt >= EAC_LOGIN_TTL) {
-            updatePending(null); setNotice(t('eac.expired')); return
-          }
-          try {
-            const result = await api(`/eac/login/poll?link=${encodeURIComponent(pending.link)}`, { timeout: 22_000 })
-            if (!alive || cancelling.current || pendingRef.current?.link !== pending.link) return
-            if (result.status === 'ok') {
-              updatePending(null)
-              setNotice(t('eac.done').replace('{login}', result.login ?? ''))
-              refresh(); latest.current?.reload?.()
-              return
-            }
-            if (result.status === 'expired') {
-              updatePending(null); setNotice(t('eac.sessionExpired')); return
-            }
-            if (result.status === 'unstarred') setNotice(t('eac.needStar').replace('{login}', result.login ?? ''))
-            else setNotice('')
-          } catch (error) {
-            if (!alive || cancelling.current || pendingRef.current?.link !== pending.link) return
-            const reason = String(error?.message ?? '')
-            if (reason === 'cancelled') { updatePending(null); setNotice(''); return }
-            // Never render response HTML, URL or credentials as diagnostics.
-            const safe = /^gateway-http-\d{3}$/.test(reason) ? `HTTP ${reason.slice(-3)}`
-              : ['unreachable', 'malformed', 'not-writable', 'cancelled', 'no-lane', 'bad-link', 'timeout'].includes(reason) ? reason : 'unreachable'
-            setNotice(reason === 'not-writable' ? t('eac.saveFailed') : t('eac.pollFailed').replace('{reason}', safe))
-          }
-          if (alive && pendingRef.current?.link === pending.link) timer = setTimeout(poll, 2500)
-        }
-        timer = setTimeout(poll, 2500)
-        return () => { alive = false; clearTimeout(timer) }
-      }, [pending, refresh])
-
-      const cancel = async () => {
-        const currentPending = pendingRef.current
-        if (currentPending === null || cancelling.current) return
-        cancelling.current = true
-        attempt.current++; setBusy(true)
-        try {
-          const result = await post(`/eac/login/cancel?link=${encodeURIComponent(currentPending.link)}`)
-          if (result.ok !== true && result.status !== 'ok') throw new Error('cancellation unconfirmed')
-          updatePending(null)
-          if (result.status === 'ok') {
-            setNotice(latestT.current('eac.done').replace('{login}', result.login ?? ''))
-            refresh(); latest.current?.reload?.()
-          } else setNotice('')
-        } catch {
-          const t = latestT.current
-          setNotice(t('eac.cancelFailed'))
-          // A failed cancellation must retain the link and restart the serial
-          // loop. The Host may already have saved it or accepted cancellation.
-          updatePending({ ...currentPending })
-        } finally { cancelling.current = false; setBusy(false) }
-      }
-      const login = async () => {
-        if (starting.current || cancelling.current || pendingRef.current !== null) return
-        starting.current = true
-        const current = ++attempt.current
-        setBusy(true); setNotice('')
-        try {
-          const started = await post('/eac/login/start', undefined, 30_000)
-          if (current !== attempt.current) return
-          if (started?.error !== undefined) { setNotice(t('eac.startFailed').replace('{reason}', started.error)); return }
-          updatePending({ link: started.link, url: started.url, startedAt: Date.now() })
-          if (started.opened !== true) setNotice(t('eac.openManually'))
-        } catch (error) {
-          if (current === attempt.current) setNotice(t('eac.startFailed').replace('{reason}', 'unreachable'))
-        } finally { starting.current = false; setBusy(false) }
-      }
-      const logout = async () => {
-        attempt.current++; updatePending(null); setBusy(true)
-        try {
-          await post('/eac/logout')
-          refresh(); latest.current?.reload?.()
-        } catch { setNotice(t('eac.startFailed').replace('{reason}', 'unreachable')) } finally { setBusy(false) }
-      }
-      return { busy, notice, pending, copied, setCopied, refresh, login, logout, cancel }
-    }
-
-    function EacAuth(props) {
-      const { t, auth, eacLogin } = props
-      const { busy, notice, pending, copied, setCopied, refresh, login, logout, cancel } = eacLogin
-
-      if (auth === undefined) return h('p', { className: 'ofm_note' }, t('loading'))
-      if (auth.available !== true) return h('p', { className: 'ofm_note' }, t('eac.noLane'))
-      const repo = auth.repo !== undefined && auth.repo !== '' ? auth.repo : 'Ebony-Vinyl/dsh-our-free-model'
-      return h(Fragment, null,
-        h('div', { className: 'ofm_row' },
-          auth.authorized === true
-            ? h(Pill, { strong: true, tone: 'ok' }, t('eac.pillOk'))
-            : h(Pill, { strong: true, tone: 'warn' }, t('eac.pillLocked')),
-          auth.required === true ? h(Pill, { tone: 'err' }, t('eac.pillRequired')) : h(Pill, null, auth.required === false ? t('eac.pillCompat') : t('eac.pillUnknown')),
-          auth.unverified === true ? h(Pill, { tone: 'warn' }, t('eac.pillUnverified')) : null),
-        h('p', { className: 'ofm_note' }, t('eac.intro').replace('{repo}', repo)),
-        auth.authorized === true
-          ? h('div', { className: 'ofm_row' },
-            h('span', { className: 'ofm_note' }, t('eac.loggedIn').replace('{login}', auth.login !== '' && auth.login !== undefined ? auth.login : '—').replace('{when}', ago(auth.lastCheck, t.locale))),
-            h(Button, { disabled: busy, onClick: refresh }, t('eac.recheck')),
-            h(Button, { disabled: busy, onClick: logout }, t('eac.logout')))
-          : h('div', { className: 'ofm_row' },
-            h(Button, { kind: 'primary', disabled: busy || pending !== null, onClick: login }, busy ? t('eac.starting') : t('eac.login')),
-            h(StarButton, { t, repo })),
-        pending !== null
-          ? h('div', { className: 'ofm_callout' },
-            h('div', null,
-              h('div', null, t('eac.waiting')),
-              h(Button, { kind: 'ghost', disabled: busy, onClick: cancel }, t('eac.cancel')),
-              h('div', { style: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 } },
-                h('a', { href: pending.url, target: '_blank', rel: 'noreferrer noopener', className: 'ofm_mono', style: { padding: '4px 8px', flex: 1, minWidth: 0, overflowWrap: 'anywhere' } }, pending.url),
-                h(Button, { kind: 'ghost', onClick: () => copy(pending.url, ok => { if (ok) { setCopied(true); setTimeout(() => setCopied(false), 1600) } }) }, copied ? t('eac.copied') : t('eac.copy')))))
-          : null,
-        notice !== '' ? h('p', { className: 'ofm_note' }, notice) : null)
-    }
 
     function Dashboard(props) {
       const { stats, t } = props
@@ -3145,8 +2672,7 @@ window.__ModuleLoader__.load({
           h(Switch, { checked: settings.enabled !== false, label: t('pref.enabled'), onChange: () => onApply({ enabled: !(settings.enabled !== false) }) }),
           h(Switch, { checked: settings.exposeRegionModels !== false, label: t('pref.exposeRegion'), onChange: () => onApply({ exposeRegionModels: !(settings.exposeRegionModels !== false) }) })),
         h('div', { className: 'ofm_row', style: { gap: 20 } },
-          h(Switch, { checked: settings.hideFreeModels === true, disabled: busy, label: t('pref.hideFreeModels'), onChange: () => onApply({ hideFreeModels: settings.hideFreeModels !== true }) }),
-          h(Switch, { checked: settings.hideEacModels === true, disabled: busy, label: t('pref.hideEacModels'), onChange: () => onApply({ hideEacModels: settings.hideEacModels !== true }) })),
+          h(Switch, { checked: settings.hideFreeModels === true, disabled: busy, label: t('pref.hideFreeModels'), onChange: () => onApply({ hideFreeModels: settings.hideFreeModels !== true }) })),
         h('div', { className: 'ofm_row' },
           field(t('pref.interval'), h('input', { className: 'ofm_input', style: { maxWidth: 100 }, value: draft?.probeIntervalMinutes ?? 15, onChange: e => setDraft(c => ({ ...c, probeIntervalMinutes: Number(e.target.value.replace(/\D/g, '')) || 0 })) })),
           field(t('pref.maxTokens'), h('input', { className: 'ofm_input', style: { maxWidth: 120 }, value: draft?.defaultMaxTokens ?? 32768, onChange: e => setDraft(c => ({ ...c, defaultMaxTokens: Number(e.target.value.replace(/\D/g, '')) || 0 })) })),
@@ -3157,178 +2683,6 @@ window.__ModuleLoader__.load({
     }
 
 
-    // ── in-app upgrade ───────────────────────────────────────────────────────
-    function syncUpgradeOwner(control, data) {
-      const managed = data?.managed === true
-      if (control.current.managed !== managed) {
-        control.current.managed = managed
-        control.current.generation += 1
-        control.current.phase = ''
-      }
-    }
-    // Status requests may overlap (SSE, an action, or a remount). Only the newest
-    // mounted request may publish an installation owner or an error.
-    function useUpgradeStatus(control) {
-      const [state, setState] = useState({ status: 'loading', data: undefined, error: '' })
-      const sequence = useRef(0)
-      const mounted = useRef(true)
-      const reload = useCallback(async () => {
-        const request = ++sequence.current
-        control.current.ready = false
-        setState(current => ({ ...current, status: 'loading', error: '' }))
-        try {
-          const data = await api('/update/status')
-          if (!mounted.current || request !== sequence.current) return
-          syncUpgradeOwner(control, data)
-          control.current.data = data
-          control.current.ready = true
-          setState({ status: 'ready', data, error: '' })
-          return data
-        } catch (error) {
-          if (!mounted.current || request !== sequence.current) return
-          setState(current => ({ ...current, status: 'error', error: String(error?.message ?? error) }))
-        }
-      }, [])
-      useEffect(() => {
-        mounted.current = true
-        void reload()
-        return () => { mounted.current = false; sequence.current += 1; control.current.generation += 1 }
-      }, [reload])
-      return { ...state, reload }
-    }
-    function UpgradePanel(props) {
-      const { t, settings, onApply, busy } = props
-      const control = useRef({ managed: false, generation: 0, phase: '', ready: false })
-      const status = useUpgradeStatus(control)
-      const [phase, setPhase] = useState('')
-      const [message, setMessage] = useState('')
-      const [error, setError] = useState('')
-      const data = status.data
-      const managed = data?.managed === true
-      syncUpgradeOwner(control, data)
-      control.current.data = data
-      control.current.ready = status.status === 'ready'
-      useEffect(() => {
-        setPhase(''); setMessage(''); setError('')
-      }, [managed])
-      useEffect(() => {
-        const handler = event => {
-          control.current.generation += 1
-          control.current.phase = ''
-          const version = event.detail?.version ?? ''
-          setPhase(''); setError('')
-          setMessage(control.current.managed || version === '' ? '' : t('upgrade.done').replace('{version}', version))
-          void status.reload()
-        }
-        window.addEventListener('ofm:upgraded', handler)
-        return () => window.removeEventListener('ofm:upgraded', handler)
-      }, [status.reload, t])
-      const begin = next => {
-        const snapshot = control.current.data
-        if (control.current.managed || !control.current.ready || control.current.phase !== '' || snapshot?.applying === true) return null
-        if (next !== 'checking' && snapshot?.recoveryRequired === true) return null
-        if (next === 'applying' && snapshot?.available !== true) return null
-        control.current.phase = next
-        const token = ++control.current.generation
-        setPhase(next); setError(''); setMessage('')
-        return token
-      }
-      const current = token => token === control.current.generation && !control.current.managed
-      const finish = token => {
-        if (!current(token)) return false
-        control.current.phase = ''; setPhase('')
-        return true
-      }
-      const check = async () => {
-        const token = begin('checking')
-        if (token === null) return
-        try {
-          await post('/update/check', undefined, 60_000)
-          if (finish(token)) void status.reload()
-        } catch (err) {
-          if (!finish(token)) return
-          await status.reload()
-          if (current(token)) setError(String(err?.message ?? err))
-        }
-      }
-      const applyUpgrade = async () => {
-        const token = begin('applying')
-        if (token === null) return
-        setMessage(t('upgrade.phase.download'))
-        try {
-          const result = await post('/update/apply', {}, 600_000)
-          // The response releases controls even when hot reload closes SSE.
-          if (!finish(token)) return
-          setMessage(result?.version === undefined ? t('upgrade.phase.install') : t('upgrade.doneRefresh').replace('{version}', result.version))
-          void status.reload()
-        } catch (err) {
-          if (!finish(token)) return
-          setMessage('')
-          await status.reload()
-          if (current(token)) setError(String(err?.message ?? err))
-        }
-      }
-      const reload = async () => {
-        const token = begin('reloading')
-        if (token === null) return
-        setMessage(t('upgrade.phase.reload'))
-        try { await post('/reload') } catch (err) {
-          if (!current(token)) return
-          setMessage('')
-          await status.reload()
-          if (current(token)) setError(String(err?.message ?? err))
-        } finally { finish(token) }
-      }
-      const notes = useMemo(() => parseSafeHtml(data?.notes ?? ''), [data?.notes])
-      const upToDate = !managed && status.status === 'ready' && data !== undefined && data.latest !== '' && data.available === false
-        && data.applying !== true && data.recoveryRequired !== true && data.versionMismatch !== true
-      return h(Panel, null,
-        h('div', { className: 'ofm_upgradecards' },
-          h('span', { className: 'ofm_pill strong' }, `${t('upgrade.current')}: ${data?.current || '…'}`),
-          data?.installedVersion !== undefined ? h('span', { className: 'ofm_pill' }, `${t('upgrade.installed')}: ${data.installedVersion || '…'}`) : null,
-          data?.latest !== undefined && data.latest !== '' ? h('span', { className: 'ofm_pill' }, `${t('upgrade.latest')}: ${data.latest}`) : null,
-          !managed && data?.available === true ? h('span', { className: 'ofm_pill' }, h('span', { className: 'ofm_dot warn' }), t('upgrade.available').replace('{version}', data.latest)) : null,
-          upToDate ? h('span', { className: 'ofm_pill' }, h('span', { className: 'ofm_dot ok' }), t('upgrade.upToDate')) : null,
-          h('span', { className: 'ofm_pill' }, `${t('upgrade.checkedAt')}: ${data?.checkedAt ? ago(data.checkedAt, t.locale) : t('upgrade.never')}`)),
-        h('div', { className: 'ofm_row' },
-          h(Button, { disabled: managed || phase !== '' || status.status !== 'ready' || data?.applying === true, onClick: check }, !managed && phase === 'checking' ? t('upgrade.checking') : t('upgrade.check')),
-          data?.available === true ? h(Button, { kind: 'primary', disabled: managed || status.status !== 'ready' || phase !== '' || data.applying === true || data.recoveryRequired === true, onClick: applyUpgrade }, !managed && phase === 'applying' ? t('upgrade.applying') : t('upgrade.apply')) : null,
-          h('a', {
-            className: 'ofm_btn ofm_starlink',
-            href: 'https://github.com/Ebony-Vinyl/dsh-our-free-model',
-            target: '_blank',
-            rel: 'noopener noreferrer',
-          }, h('span', { 'aria-hidden': 'true' }, '\u2606'), t('upgrade.star'))),
-        managed ? h('div', { className: 'ofm_callout', role: 'status' }, t('upgrade.managed')) : null,
-        status.status === 'error' ? h('div', { className: 'ofm_callout ofm_error' }, t('loadFailed'), ' ', status.error) : null,
-        !managed && phase === 'applying' ? h('div', { className: 'ofm_prog', role: 'progressbar', 'aria-label': t('upgrade.applying') }, h('i')) : null,
-        !managed && data?.recoveryRequired === true ? h('div', { className: 'ofm_callout ofm_error' },
-          h('div', null, t('upgrade.recovery'),
-            data.recoveryBackup ? h('p', { className: 'ofm_note' }, `${t('upgrade.backup')}: ${data.recoveryBackup}`) : null)) : null,
-        !managed && data?.versionMismatch === true ? h('div', { className: 'ofm_callout' }, t('upgrade.mismatch')) : null,
-        !managed && message !== '' ? h('p', { className: 'ofm_note' }, message) : null,
-        !managed && (error || data?.error) ? h('div', { className: 'ofm_callout ofm_error' }, t('upgrade.failed').replace('{message}', error || data.error)) : null,
-        notes.length > 0 ? h('div', { className: 'ofm_sec', style: { gap: 4 } },
-          h('span', { className: 'ofm_note' }, t('upgrade.notes')),
-          h('div', { className: 'ofm_upnotes ofm_newsbody' }, ...htmlToReact(notes))) : null,
-        data?.lastApplied !== undefined ? h('p', { className: 'ofm_note' },
-          `${t('upgrade.history')}: ${data.lastApplied.ok === true ? '✓' : '✗'} `,
-          t('upgrade.from').replace('{from}', data.lastApplied.from ?? '?'),
-          ` → ${data.lastApplied.to ?? '?'} · ${ago(data.lastApplied.at, t.locale)}`,
-          data.lastApplied.ok === false && data.lastApplied.error ? ` — ${data.lastApplied.error}` : '') : null,
-        !managed ? h('p', { className: 'ofm_note' }, (settings.updateCheckHours ?? 0) > 0 ? t('upgrade.auto').replace('{n}', String(settings.updateCheckHours)) : t('upgrade.autoOff')) : null,
-        h('div', { className: 'ofm_row' },
-          h(Button, { disabled: managed || status.status !== 'ready' || phase !== '' || data?.applying === true || data?.recoveryRequired === true, onClick: reload }, phase === 'reloading' && !managed ? t('reload.reloading') : t('reload.now')),
-          h(Switch, { checked: !managed && settings.autoReloadWatch === true, disabled: managed || status.status !== 'ready' || phase !== '' || busy, label: t('reload.auto'), onChange: () => { if (!control.current.managed && control.current.ready && control.current.phase === '' && !busy) onApply({ autoReloadWatch: !(settings.autoReloadWatch === true) }) } }),
-          managed ? null : h('span', { className: 'ofm_note' }, t('reload.done').replace('{n}', String(settings.reloadCount ?? 0)))))
-    }
-
-    function UpgradePage(props) {
-      const { t, settings, onApply, busy } = props
-      return h('div', { className: 'ofm_page' },
-        h(PageHero, { title: t('section.upgrade'), sub: t('section.upgradeHint') }),
-        h(UpgradePanel, { t, settings, onApply, busy }))
-    }
 
 
     // ── 白嫖模型接入页 ────────────────────────────────────────────────────────
@@ -3396,7 +2750,6 @@ window.__ModuleLoader__.load({
      * does the same instead of proxying through our JSON API, so channel traffic
      * keeps the connection's admission and the credential store stays the only
      * place a token exists. `connection` is read opportunistically: a shell that
-     * does not offer it still renders the free and EAC pages, with this one
      * explaining itself instead of breaking.
      */
     function sameChannelTransport(left, right) {
@@ -4424,14 +3777,14 @@ window.__ModuleLoader__.load({
               h('div', { className: 'ofm_row' },
                 h('span', { className: 'ofm_note' }, t('gw.endpoint')),
                 gatewayUrl === '' ? h('span', { className: 'ofm_note' }, '—')
-                  : h(Fragment, null, h('code', { className: 'ofm_mono' }, gatewayUrl), h(Button, { kind: 'ghost', onClick: () => copy(gatewayUrl, () => {}) }, t('eac.copy')))),
+                  : h(Fragment, null, h('code', { className: 'ofm_mono' }, gatewayUrl), h(Button, { kind: 'ghost', onClick: () => copy(gatewayUrl, () => {}) }, t('gateway.copy')))),
               h('div', { className: 'ofm_row' },
                 h('span', { className: 'ofm_note' }, t('gw.key')),
                 apiKeyValue === '' ? h('span', { className: 'ofm_note' }, t('gw.keyNone'))
                   : h(Fragment, null,
                     h('code', { className: 'ofm_mono' }, keyShown ? apiKeyValue : '••••••••••••••••'),
                     h(Button, { kind: 'ghost', onClick: () => setKeyShown(value => !value) }, keyShown ? t('gw.hide') : t('gw.show')),
-                    h(Button, { kind: 'ghost', onClick: () => copy(apiKeyValue, () => {}) }, t('eac.copy'))),
+                    h(Button, { kind: 'ghost', onClick: () => copy(apiKeyValue, () => {}) }, t('gateway.copy'))),
                 h('span', { className: 'ofm_note' }, apiKeyInfo === null ? t('gw.keyNoneHint') : t('gw.keyNote'))),
               h('div', { className: 'ofm_row' },
                 h('span', { className: 'ofm_note' }, `${t('gw.models')} ${models.length}`),
@@ -4463,12 +3816,12 @@ window.__ModuleLoader__.load({
               relay.relay?.running === true ? h('div', { className: 'ofm_row' },
                 h('span', { className: 'ofm_note' }, t('gw.relayUrl')),
                 h('code', { className: 'ofm_mono' }, `http://${relay.relay.host === '0.0.0.0' || relay.relay.host === '::' ? '<lan-ip>' : relay.relay.host}:${relay.relay.port}/v1`),
-                h(Button, { kind: 'ghost', onClick: () => copy(`http://${relay.relay.host}:${relay.relay.port}/v1`, () => {}) }, t('eac.copy'))) : null,
+                h(Button, { kind: 'ghost', onClick: () => copy(`http://${relay.relay.host}:${relay.relay.port}/v1`, () => {}) }, t('gateway.copy'))) : null,
               h('div', { className: 'ofm_row' },
                 h('span', { className: 'ofm_note' }, t('gw.relayKey')),
                 h('code', { className: 'ofm_mono' }, relayKey === '' ? '••••••••••••••••' : relayKey),
                 h(Button, { kind: 'ghost', onClick: () => void showRelayKey() }, t('gw.show')),
-                relayKey === '' ? null : h(Button, { kind: 'ghost', onClick: () => copy(relayKey, () => {}) }, t('eac.copy')),
+                relayKey === '' ? null : h(Button, { kind: 'ghost', onClick: () => copy(relayKey, () => {}) }, t('gateway.copy')),
                 h(Button, {
                   kind: 'ghost', disabled: relayBusy,
                   onClick: async () => { try { setRelayKey((await post('/chan-gateway/rotate')).key ?? '') } catch (error) { setNotice(String(error?.message ?? error)) } },
@@ -4589,7 +3942,7 @@ window.__ModuleLoader__.load({
       return h(Button, {
         kind: 'ghost',
         onClick: () => copy(text, ok => { if (ok) setDone(true) }),
-      }, done ? t('eac.copied') : t('eac.copy'))
+      }, done ? t('gateway.copied') : t('gateway.copy'))
     }
 
     /** A switch with its one-line explanation underneath. */
@@ -4619,7 +3972,6 @@ window.__ModuleLoader__.load({
 
     const LANE_LABEL = t => ({
       free: t('routing.channel.free'),
-      eac: t('routing.channel.eac'),
       kilo: t('routing.channel.kilo'),
       combo: t('routing.channel.combo'),
     })
@@ -5086,22 +4438,6 @@ window.__ModuleLoader__.load({
       const [benches, setBenches] = useState({})
       const summary = useAsync(() => api('/summary'), [])
       const stats = useAsync(() => api('/stats'), [])
-      // GitHub 授权状态由这一层持有：模型卡的锁标记与 EAC 面板必须看到同一个
-      // 判定，登录 / 退出后两边同时更新；60 秒轮询兜住别处（另一台机器）的变动。
-      const [eacAuth, setEacAuth] = useState(undefined)
-      useEffect(() => {
-        let alive = true
-        const load = () => api('/eac/status', { timeout: 20_000 })
-          .then(data => { if (alive) setEacAuth(data) })
-          .catch(() => { if (alive) setEacAuth({ available: false, authorized: false, login: '' }) })
-        load()
-        const timer = setInterval(load, 60_000)
-        return () => { alive = false; clearInterval(timer) }
-      }, [])
-      // 登录流只有这一份：EAC 面板、页头的未授权按钮、上锁模型卡的「去授权」
-      // 共享同一个进行中的会话（同一轮询、同一条提示），见 useEacLogin。
-      const eacLogin = useEacLogin({ t, summary, onAuth: setEacAuth })
-
       const apply = async patch => {
         setBusy(true)
         try {
@@ -5142,7 +4478,7 @@ window.__ModuleLoader__.load({
       // read as a permanently green slice of this gauge.
       const counts = data.catalog.filter(m => !m.channel).reduce((acc, m) => ({ ...acc, [m.availabilitySource === 'listing' ? 'unknown' : m.availability]: (acc[m.availabilitySource === 'listing' ? 'unknown' : m.availability] ?? 0) + 1 }), {})
       return h(Shell, {
-        t: tagged, data, counts, summary, stats, eacAuth, setEacAuth, eacLogin,
+        t: tagged, data, counts, summary, stats,
         busy, setBusy, apply, bench, benches, ctx: props.ctx,
       })
     }
@@ -5153,15 +4489,14 @@ window.__ModuleLoader__.load({
     // different questions and mixing them pushed the model roster — the thing
     // people actually open this page for — below the fold:
     //   免费模型       the no-account lane (this plugin's own gateway),
-    //   EAC 模型       the desktop co-paid lane behind GitHub auth,
     //   白嫖模型接入   the thirteen enabled account channels and their logins.
     // The active page lives in localStorage so a reload — or the hot reload the
     // upgrader triggers — comes back to the page the user was reading.
     const TAB_KEY = 'ofm.tab'
-    const TABS = ['free', 'eac', 'channels', 'saver', 'routing', 'ledger', 'logs', 'gateway', 'upgrade']
+    const TABS = ['free', 'channels', 'saver', 'routing', 'ledger', 'logs', 'gateway']
 
     function Shell(props) {
-      const { t, data, counts, summary, stats, eacAuth, setEacAuth, eacLogin, busy, setBusy, apply, bench, benches, ctx } = props
+      const { t, data, counts, summary, stats, busy, setBusy, apply, bench, benches, ctx } = props
       const [tab, setTab] = useState(() => {
         try {
           const saved = window.localStorage?.getItem(TAB_KEY)
@@ -5200,14 +4535,12 @@ window.__ModuleLoader__.load({
 
       const tabs = [
         ['free', t('nav.tab.free'), counts.available ?? 0],
-        ['eac', t('nav.tab.eac'), data.catalog.filter(m => m.channel === 'eac').length],
         ['channels', t('nav.tab.channels'), CHANNEL_PROVIDERS.length],
         ['saver', t('nav.tab.saver'), null],
         ['routing', t('nav.tab.routing'), data.catalog.filter(m => m.channel === 'combo').length],
         ['ledger', t('nav.tab.ledger'), null],
         ['logs', t('nav.tab.logs'), null],
         ['gateway', t('nav.tab.gateway'), null],
-        ['upgrade', t('nav.tab.upgrade'), null],
       ]
       const nav = h('nav', { className: 'ofm_nav' },
         h('span', { className: 'ofm_navbrand' },
@@ -5222,8 +4555,7 @@ window.__ModuleLoader__.load({
             ref: node => { tabRefs.current[id] = node },
             onClick: () => setTab(id),
           }, label, num === null ? null : h('span', { className: 'ofm_tabnum' }, String(num))))),
-        h('span', { className: 'ofm_navspacer' }),
-        h(StarButton, { t }))
+        h('span', { className: 'ofm_navspacer' }))
 
       const page = tab === 'channels'
         ? h(ChannelsPage, { t, ctx, summary })
@@ -5237,11 +4569,7 @@ window.__ModuleLoader__.load({
                   ? h(LogsPage, { t, ctx })
                   : tab === 'gateway'
                     ? h(GatewayPage, { t, ctx })
-                    : tab === 'upgrade'
-                      ? h(UpgradePage, { t, settings: data.settings, onApply: apply, busy })
-                    : tab === 'eac'
-                      ? h(EacPage, { t, data, counts, summary, stats, eacAuth, setEacAuth, eacLogin, busy, catalogBusy, apply, bench, benches, refresh, reprobe })
-                      : h(FreePage, { t, data, counts, summary, stats, eacAuth, eacLogin, busy, catalogBusy, apply, bench, benches, refresh, reprobe })
+                    : h(FreePage, { t, data, counts, summary, stats, busy, catalogBusy, apply, bench, benches, refresh, reprobe })
 
       return h('div', { className: 'ofm_root ofm_shell' },
         h('div', { className: 'ofm_aurora', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
@@ -5251,10 +4579,10 @@ window.__ModuleLoader__.load({
 
 
     function FreePage(props) {
-      const { t, data, counts, summary, stats, eacAuth, eacLogin, busy, catalogBusy, apply, bench, benches, refresh, reprobe } = props
+      const { t, data, counts, summary, stats, busy, catalogBusy, apply, bench, benches, refresh, reprobe } = props
       // The denominator is the free lane's own roster — the only slice the
       // verdicts describe. Dividing by the whole catalog (which also carries
-      // the never-probed EAC and Kilo entries) read a 6-of-10 lane as ~17%.
+      // the never-probed Kilo entries) read a 6-of-10 lane as ~17%.
       const total = data.catalog.filter(m => !m.channel).length
       const ok = counts.available ?? 0
       // The tank reads the free lane's own health: the share of the declared
@@ -5284,8 +4612,7 @@ window.__ModuleLoader__.load({
               h('div', { className: 'ofm_pooltop' },
                 h('span', { className: `ofm_poolbadge ${level}` },
                   h('span', { className: 'ofm_pooldot' }),
-                  `${t('free.tankLabel')} ${pct ?? '—'}%`),
-                h(StarButton, { t })),
+                  `${t('free.tankLabel')} ${pct ?? '—'}%`)),
               h('div', { className: 'ofm_poolstats' },
                 h('div', { className: 'ofm_stat' }, h('b', null, String(ok)), h('span', null, t('state.available'))),
                 h('div', { className: `ofm_stat${(counts['region-blocked'] ?? 0) > 0 ? ' hot' : ''}` },
@@ -5299,7 +4626,7 @@ window.__ModuleLoader__.load({
               h('div', { className: 'ofm_row' },
                 h(Button, { disabled: busy || catalogBusy, onClick: refresh }, catalogBusy || summary.status === 'loading' ? t('probing') : t('refresh')),
                 h(Button, { disabled: busy || catalogBusy, onClick: reprobe }, t('reprobe')))))),
-        h(Section, { title: t('section.models'), hint: t('section.modelsHint') }, h(Roster, { summary: data, t, onBench: bench, benches, auth: eacAuth, eacLogin, only: 'free', onApply: apply, busy })),
+        h(Section, { title: t('section.models'), hint: t('section.modelsHint') }, h(Roster, { summary: data, t, onBench: bench, benches, onApply: apply, busy })),
         h(Section, { title: t('section.dash'), hint: t('section.dashHint') },
           stats.status === 'ready' && stats.data !== undefined ? h(Dashboard, { stats: stats.data, summary: data, t })
             : h('p', { className: 'ofm_note' }, t('loading'))),
@@ -5309,62 +4636,6 @@ window.__ModuleLoader__.load({
 )
     }
 
-    function EacPage(props) {
-      const { t, data, summary, eacAuth, setEacAuth, eacLogin, busy, catalogBusy, apply, bench, benches, refresh, reprobe } = props
-      const { pool, poolError } = usePool()
-      const reading = pool === undefined || pool === null ? null : poolReading(pool)
-      const levelText = reading === null ? '' : reading.level === 'over' ? t('pool.levelOver') : reading.level === 'busy' ? t('pool.levelBusy') : t('pool.levelOk')
-      const eacCount = data.catalog.filter(m => m.channel === 'eac').length
-      const reasonText = pool === null
-        ? (({ 'no-lane': t('pool.reasonNoLane'), 'gateway-status': t('pool.reasonGateway'), malformed: t('pool.reasonMalformed'), unreachable: t('pool.reasonUnreachable') })[poolError]
-          ?? (poolError !== '' ? poolError : t('pool.reasonUnknown')))
-        : ''
-      return h('div', { className: 'ofm_page' },
-        h('header', { className: 'ofm_hero ofm_glass' },
-          h('div', { className: 'ofm_pagehead' },
-            h('div', { className: 'ofm_pagetitle' },
-              h('h2', null, t('eac.title')),
-              h('p', { className: 'ofm_pagesub' }, t('eac.sub'))),
-            h('div', { className: 'ofm_pills' },
-              h(Pill, { strong: true, tone: eacAuth?.authorized === true ? 'ok' : 'warn' },
-                eacAuth?.authorized === true ? t('eac.pillOk') : t('eac.pillLocked')),
-              h(Pill, null, `${t('section.models')} ${eacCount}`),
-              h(Pill, null, `${t('pref.egress')} ${data.egress?.country ?? data.egress?.ip ?? '—'}`))),
-          h('div', { className: 'ofm_tankrow' },
-            h(Tank, { pct: reading?.pct ?? null, level: reading?.level ?? 'ok', size: 'xl', label: `${t('eac.tankLabel')} ${reading?.rawPct ?? '—'}%` }),
-            h('div', { className: 'ofm_tankside' },
-              h('div', { className: 'ofm_pooltop' },
-                reading === null
-                  ? h('span', { className: 'ofm_poolbadge' }, h('span', { className: 'ofm_pooldot' }),
-                    pool === undefined ? t('loading') : t('pool.unavailable').replace('{reason}', reasonText))
-                  : h('span', { className: `ofm_poolbadge ${reading.level}` },
-                    h('span', { className: 'ofm_pooldot' }),
-                    `${levelText} · ${t('pool.live')} ${pool.inflight}`),
-                // 未授权时把登录入口放到页头：撞到「没授权」的用户第一眼看到的
-                // 位置就该有钥匙，而不是要先找到下方的授权区。
-                eacAuth?.available === true && eacAuth?.authorized !== true
-                  ? h(Button, { kind: 'primary', disabled: eacLogin.busy || eacLogin.pending !== null, onClick: eacLogin.login },
-                    eacLogin.busy ? t('eac.starting') : t('eac.login'))
-                  : null,
-                h(StarButton, { t })),
-              reading === null ? null : h(Fragment, null,
-                h('div', { className: 'ofm_poolstats' },
-                  h('div', { className: `ofm_stat${reading.level === 'over' ? ' hot' : ''}` },
-                    h('b', null, String(pool.inflight)), h('span', null, t('pool.live'))),
-                  h('div', { className: 'ofm_stat' },
-                    h('b', null, reading.active === null ? '—' : String(reading.active)), h('span', null, t('pool.active'))),
-                  h('div', { className: 'ofm_stat' },
-                    h('b', null, reading.capacityKnown ? String(pool.pool) : '—'), h('span', null, t('pool.capacity')))),
-                h('div', { className: 'ofm_poolmeta' },
-                  h('span', { className: 'ofm_note' }, `${t('pool.reach')} ${reading.rawPct ?? '—'}%`),
-                  h('span', { className: 'ofm_note' }, capacityText(pool, t)))),
-              h('div', { className: 'ofm_row' },
-                h(Button, { disabled: busy || catalogBusy, onClick: refresh }, catalogBusy || summary.status === 'loading' ? t('probing') : t('refresh')),
-                h(Button, { disabled: busy || catalogBusy, onClick: reprobe }, t('reprobe')))))),
-        h(Section, { title: t('section.eac'), hint: t('section.eacHint') }, h(EacAuth, { t, auth: eacAuth, eacLogin })),
-        h(Section, { title: t('section.models'), hint: t('section.modelsHint') }, h(Roster, { summary: data, t, onBench: bench, benches, auth: eacAuth, eacLogin, only: 'eac', onApply: apply, busy }))
-)
-    }
 
 
     // ── registration ──────────────────────────────────────────────────────────
@@ -5427,7 +4698,7 @@ window.__ModuleLoader__.load({
     exports.inject = inject
     exports.name = 'our-free-model'
     // Headless test seams use the same stub React as scripts/client-lint.mjs.
-    exports.__test = { parseSafeHtml, safeUrl, sanitizeStyle, htmlToDom, buildHeatCells, Heatmap, ChannelsPage, UpgradePanel, useEacLogin, EacAuth, DICT, useChannelRpc, Shell, CSS }
+    exports.__test = { parseSafeHtml, safeUrl, sanitizeStyle, htmlToDom, buildHeatCells, Heatmap, ChannelsPage, DICT, useChannelRpc, Shell, CSS }
     return module.exports
   },
 })

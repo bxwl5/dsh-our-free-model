@@ -159,7 +159,6 @@ try {
     assert.equal(summary.dataDir, dataDir)
     assert.equal(summary.automaticRefresh, false)
     assert.equal(summary.networkMode, 'live')
-    assert.equal(summary.capabilities.eac, true)
     assert.ok(!JSON.stringify(summary).includes(key))
     const stats = await (await request('/api/management/stats')).json()
     assert.equal(stats.requests, 0)
@@ -300,10 +299,10 @@ try {
     assert.equal(JSON.stringify(summary).includes(key), false)
     assert.equal((await request('/api/management/models/test', { body: { model } })).status, 200,
       'hidden history ids remain callable')
-    assert.equal((await request('/api/management/settings', { body: { hiddenModelIds: [], hideFreeModels: true, hideEacModels: true } })).status, 200)
+    assert.equal((await request('/api/management/settings', { body: { hiddenModelIds: [], hideFreeModels: true } })).status, 200)
     assert.deepEqual(await listing(), [])
     assert.equal((await (await request('/api/management/summary')).json()).catalog.length, 2)
-    const hiddenSettings = { hiddenModelIds: [model], hideFreeModels: false, hideEacModels: true }
+    const hiddenSettings = { hiddenModelIds: [model], hideFreeModels: false }
     assert.equal((await request('/api/management/settings', { body: hiddenSettings })).status, 200)
     const stored = JSON.parse(fs.readFileSync(service.keyFile, 'utf8'))
     for (const [name, value] of Object.entries(hiddenSettings)) assert.deepEqual(stored[name], value)
@@ -348,7 +347,6 @@ try {
     assert.equal(service.runtime.state().settings.defaultMaxTokens, 8192)
     assert.equal(service.runtime.state().settings.standaloneProbe, true)
     assert.deepEqual(service.runtime.state().settings.hiddenModelIds, [model])
-    assert.equal(service.runtime.state().settings.hideEacModels, true)
     assert.equal(service.runtime.state().settings.hideFreeModels, false)
     assert.equal((await request('/api/management/summary')).status, 401)
     const token = new URLSearchParams(new URL(service.managementUrl).hash.slice(1)).get('login')
@@ -361,7 +359,7 @@ try {
     cookie = await login({ key })
     const visible = await (await request('/v1/models', { headers: { authorization: `Bearer ${key}` } })).json()
     assert.equal(visible.data.some(row => row.id === model), false)
-    assert.equal((await request('/api/management/settings', { body: { hiddenModelIds: [], hideEacModels: false } })).status, 200)
+    assert.equal((await request('/api/management/settings', { body: { hiddenModelIds: [] } })).status, 200)
     assert.equal((await (await request('/v1/models', { headers: { authorization: `Bearer ${key}` } })).json()).data.some(row => row.id === model), true)
   })
   await check('设置变更重新安排周期任务且 --no-refresh 保持无自动请求', async () => {
