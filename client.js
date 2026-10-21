@@ -1442,7 +1442,7 @@ window.__ModuleLoader__.load({
     width: 14px !important;
   }
   /* 扫光条砍掉 */
-  .ofm_root .ofm_btn::after,
+  .ofm_root .ofm_btn::after{
     content: none !important;
   }
   /* 呼吸灯停跳，但保留颜色状态 */
@@ -1606,10 +1606,10 @@ window.__ModuleLoader__.load({
 /* ── ⑧【师傅批改③】表格竖条语言统一：所有表格行 hover 都带主色竖条 ── */
 /* 仅给数据表 .ofm_table 统一竖条。
    同时把 .ofm_stat 等"类表格"卡片也纳入 hover 微提亮，保持语言一致 */
-.ofm_root .ofm_stat,
+.ofm_root .ofm_stat{
   transition: border-color .2s var(--ease-instrument), box-shadow .22s var(--ease-instrument), transform .2s var(--ease-settle) !important;
 }
-.ofm_root .ofm_stat:hover,
+.ofm_root .ofm_stat:hover{
   border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 38%, var(--dsw-alias-border-l1)) !important;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 7%) !important;
   transform: translateY(-1px) !important;
@@ -1617,17 +1617,6 @@ window.__ModuleLoader__.load({
 
 /* ── ⑩【返工·收编租界】导航标/渠道标 全部听宿主变量 ───────────────────── */
 /* L1181 .ofm_navmark 混 #3ECFA0 —— 统一改混 label-primary，零品牌色 */
-  transition: transform .16s var(--ease-settle), box-shadow .2s var(--ease-instrument), color .2s var(--ease-instrument), background .2s var(--ease-instrument) !important;
-}
-  background: linear-gradient(140deg, var(--dsw-alias-state-business-primary), color-mix(in srgb, var(--dsw-alias-state-business-primary) 76%, var(--dsw-alias-label-primary))) !important;
-  color: var(--dsw-alias-label-on-accent, #fff) !important;
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent), 0 6px 16px color-mix(in srgb, var(--dsw-alias-state-business-primary) 22%, transparent) !important;
-}
-  transform: scale(.97) !important;
-}
-/* 扫光条改走 --ease-instrument，与 .ofm_btn 同语言 */
-  transition: left .5s var(--ease-instrument) !important;
-}
 /* 导航标：去掉 #3ECFA0 混色，改混 label-primary；外投影换成内高光+轻凹槽 */
 .ofm_root .ofm_navmark{
   background: linear-gradient(145deg, var(--dsw-alias-state-business-primary), color-mix(in srgb, var(--dsw-alias-state-business-primary) 58%, var(--dsw-alias-label-primary))) !important;

@@ -32,8 +32,8 @@ const settings = { enabled: true }
 const summary = { settings, catalog: [], networkMode: 'fixture' }
 const context = {
   ...react, h: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat(Infinity) }), Fragment: 'fragment',
-  Sidebar: 'Sidebar', Topbar: 'Topbar', SponsorNotice: 'SponsorNotice', Overview: 'Overview', Connection: 'Connection', ChannelMount: 'ChannelMount', LazyPage: 'LazyPage', LoadingScreen: 'LoadingScreen', LoginScreen: 'LoginScreen', AlertCircle: 'AlertCircle',
-  pageNames: ['overview', 'models', 'usage', 'channels', 'eac', 'settings', 'connection'], API: '/api/management',
+  Sidebar: 'Sidebar', Topbar: 'Topbar', Overview: 'Overview', Connection: 'Connection', ChannelMount: 'ChannelMount', LazyPage: 'LazyPage', LoadingScreen: 'LoadingScreen', LoginScreen: 'LoginScreen', AlertCircle: 'AlertCircle',
+  pageNames: ['overview', 'models', 'usage', 'channels', 'settings', 'connection'], API: '/api/management',
   messageOf: error => error.message, AbortSignal, URLSearchParams, location: { hash: '' }, history: {},
   window: { scrollTo() {}, addEventListener() {}, removeEventListener() {}, setInterval() { return 1 }, clearInterval() {} },
   document: { hidden: false }, navigator: { clipboard: { writeText: async () => {} } },
@@ -57,8 +57,6 @@ assert.ok(all(tree).some(node => node.type === 'LazyPage' && node.props.name ===
 assert.ok(!all(tree).some(node => node.type === 'Connection'), '密钥页面离开后卸载，清除显示的密钥')
 host().navigate('channels'); tree = render()
 assert.equal(all(tree).find(node => node.type === 'ChannelMount').props.key, 'channels', '账号渠道使用独立嵌套根容器')
-host().navigate('eac'); tree = render()
-assert.equal(all(tree).find(node => node.type === 'ChannelMount').props.key, 'eac', 'EAC 切换时更换容器，避免旧 React 根覆盖新页面')
 let releaseOldKey
 context.fetch = async url => url.endsWith('/key') ? new Promise(resolve => { releaseOldKey = resolve }) : { ok: true, json: async () => ({}) }
 const oldKey = host().getApiKey().catch(error => error)
