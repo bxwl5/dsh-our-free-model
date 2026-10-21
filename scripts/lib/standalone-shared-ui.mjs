@@ -8,11 +8,10 @@ function replaceOnce(from, to) {
 }
 const anchor = '    exports.apply = apply'
 if (source.split(anchor).length !== 2) throw new Error('共享页面导出位置改变')
-source = source.replace(anchor, "    exports.standalone = { ChannelsPage, ChannelCard, EacAuth, useEacLogin, DICT, CSS, Tank, usePool, poolReading, capacityText, CHANNEL_PROVIDERS, LedgerPage, LogsPage }\n" + anchor)
+source = source.replace(anchor, "    exports.standalone = { ChannelsPage, ChannelCard, DICT, CSS, Tank, CHANNEL_PROVIDERS, LedgerPage, LogsPage }\n" + anchor)
 const api = "try { return new URL('api/our-free-model', document.baseURI).pathname } catch { return '/api/our-free-model' }"
 if (source.split(api).length !== 2) throw new Error('共享页面 API 位置改变')
 source = source.replace(api, "return '/api/management'")
-replaceOnce("api('/pool', { timeout: 25_000 })", "api('/eac/pool', { timeout: 25_000 })")
 // 原页面 POST 空 body；独立管理接口要求 JSON 对象。
 replaceOnce("...body === undefined ? {} : { body: JSON.stringify(body) },", "body: JSON.stringify(body ?? {}),")
 replaceOnce("h(PageHero, { t, titleKey: 'dash.title', subKey: 'dash.sub' },",
