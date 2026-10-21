@@ -1,4 +1,4 @@
-export type Page = 'overview' | 'models' | 'usage' | 'channels' | 'eac' | 'settings' | 'connection' | 'sponsor'
+export type Page = 'overview' | 'models' | 'usage' | 'channels' | 'settings' | 'connection'
 export interface Model {
   id: string
   name: string
@@ -23,7 +23,6 @@ export interface ServiceSettings {
   exposeRegionModels: boolean
   hiddenModelIds: string[]
   hideFreeModels: boolean
-  hideEacModels: boolean
   streamRecovery: boolean
   standaloneProbe: boolean
   probeIntervalMinutes: number
@@ -38,7 +37,6 @@ export interface Summary {
   catalogSyncedAt: number
   settings: ServiceSettings
   channels: { state: string; error?: string }
-  eacAuth?: { local?: boolean; authorized?: boolean; login?: string }
   catalog: Model[]
 }
 export interface Stats {

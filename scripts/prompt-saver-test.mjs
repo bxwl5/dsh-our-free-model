@@ -339,46 +339,6 @@ check('the last of several breakpoints is the anchor', () => {
   assert.deepEqual(body.system.map(block => block.text), ['a', 'b', segment(CAVEMAN), 'c'])
 })
 
-// ── composition with the sealed lane ─────────────────────────────────────────
-// `applySealedPacingHint` is private to src/adapter.js, so the test replicates
-// the one mutation it makes (append to the system message, or add one). The
-// hint text is pinned to the source so the replica cannot drift silently.
-
-const PACING_HINT = 'Avoid overthinking: keep your reasoning brief and proportionate to the task.'
-
-check('the adapter still carries the pacing hint this composition test replicates', () => {
-  const source = fs.readFileSync(new URL('../src/adapter.js', import.meta.url), 'utf8')
-  assert.ok(source.includes(PACING_HINT), 'src/adapter.js no longer carries the sealed-lane pacing hint')
-})
-
-check('a prompt injected after the pacing hint leaves both texts intact', () => {
-  const body = { model: 'm', messages: [{ role: 'user', content: 'hi' }], stream: true }
-  // What applySealedPacingHint does when the body has no system message yet.
-  body.messages.unshift({ role: 'system', content: PACING_HINT })
-  const hinted = JSON.parse(JSON.stringify(body))
-  injectSystem(body, 'chat', CAVEMAN)
-  injectSystem(body, 'chat', PONYTAIL)
-  const content = body.messages[0].content
-  assert.ok(content.startsWith(PACING_HINT), 'the hint keeps the position it was appended at')
-  assert.equal(occurrences(content, PACING_HINT), 1, 'the hint must survive, exactly once')
-  assert.equal(occurrences(content, CAVEMAN), 1)
-  assert.equal(occurrences(content, PONYTAIL), 1)
-  injectSystem(body, 'chat', CAVEMAN)
-  assert.equal(occurrences(content, CAVEMAN), 1, 'a re-injection must not duplicate anything')
-  // The off switch returns the hinted body exactly — the hint is not ours to remove.
-  stripInjected(body, 'chat')
-  assert.deepEqual(body, hinted)
-})
-
-check('a hint appended after an injection is preserved by the off switch', () => {
-  const body = { messages: [{ role: 'system', content: 'You are helpful.' }, { role: 'user', content: 'hi' }] }
-  injectSystem(body, 'chat', CAVEMAN)
-  // What applySealedPacingHint does when a system message already exists.
-  body.messages[0].content = `${body.messages[0].content}\n\n${PACING_HINT}`
-  stripInjected(body, 'chat')
-  assert.equal(body.messages[0].content, `You are helpful.\n\n${PACING_HINT}`)
-})
-
 // ── fail-open ────────────────────────────────────────────────────────────────
 
 check('an unknown wire changes nothing and reports the reason', () => {

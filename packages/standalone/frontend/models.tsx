@@ -12,7 +12,7 @@ const availabilityNames: Record<string, string> = {
   available: '已探测可用', listed: '清单已收录', unknown: '未探测',
   unavailable: '不可用', throttled: '限流中', 'region-blocked': '地区受限',
 }
-const sourceNames: Record<string, string> = { anonymous: '匿名模型', kilo: 'Kilo 免费池', eac: 'EAC 协付' }
+const sourceNames: Record<string, string> = { anonymous: '匿名模型', kilo: 'Kilo 免费池' }
 const channelName = (id: string) => sourceNames[id]
   ?? providers.find(provider => provider.id === id)?.name ?? id
 const number = (value: number) => new Intl.NumberFormat('zh-CN').format(value)
@@ -38,7 +38,7 @@ export function Models({ summary, host, active }: { summary: Summary; host: Host
   const activeRef = useRef(active)
   activeRef.current = active
   const models = useMemo<Model[]>(() => filterModels(summary.catalog, filters), [summary.catalog, filters])
-  const channels = useMemo(() => [...new Set(['anonymous', 'kilo', 'eac', ...summary.catalog.map(model => model.channel), filters.channel])]
+  const channels = useMemo(() => [...new Set(['anonymous', 'kilo', ...summary.catalog.map(model => model.channel), filters.channel])]
     .filter(id => id !== 'all'), [summary.catalog, filters.channel])
   const focusedIndex = focusedId ? models.findIndex(model => model.id === focusedId) : -1
   const rangeExtractor = useCallback((range: Range) => {
@@ -188,8 +188,6 @@ export function Models({ summary, host, active }: { summary: Summary; host: Host
     <div className="model-list-toolbar">
       <label><input type="checkbox" role="switch" checked={summary.settings.hideFreeModels === true}
         disabled={visibilitySaving} onChange={event => { void saveVisibility({ hideFreeModels: event.target.checked }) }} /> {visibility.hideFree}</label>
-      <label><input type="checkbox" role="switch" checked={summary.settings.hideEacModels === true}
-        disabled={visibilitySaving} onChange={event => { void saveVisibility({ hideEacModels: event.target.checked }) }} /> {visibility.hideEac}</label>
     </div>
     {test && <section className={`model-test-result model-test-${test.state}`} aria-label="模型测试结果" aria-live="polite">
       <div className="model-test-heading"><div><strong>
@@ -236,7 +234,7 @@ export function Models({ summary, host, active }: { summary: Summary; host: Host
                 {!model.routable && <small>{model.hiddenByUser ? visibility.hidden : '未公开'}</small>}
                 {model.ttftMs != null && <small>首响应 {number(model.ttftMs)} ms</small>}</div>
               <div role="cell" className="model-row-actions">
-                {['anonymous', 'kilo', 'eac', 'aggregate', 'combo'].includes(model.channel) && <Button variant="ghost"
+                {['anonymous', 'kilo', 'aggregate', 'combo'].includes(model.channel) && <Button variant="ghost"
                   disabled={visibilitySaving || model.hiddenByGroup === true}
                   title={model.hiddenByGroup ? visibility.groupHidden : model.hiddenByUser ? visibility.show : visibility.hide}
                   aria-label={`${model.hiddenByUser ? visibility.show : visibility.hide}：${model.id}`}

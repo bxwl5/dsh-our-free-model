@@ -82,7 +82,7 @@ export function managementSettings(value) {
 }
 
 /** 管理读写要求鉴权；登录恢复仅允许同源页面触发固定本机动作。 */
-export function createManagement({ stores, runtime, channels, eac, info, onSettingsChanged, loginTerminal = openLoginTerminal }) {
+export function createManagement({ stores, runtime, channels, info, onSettingsChanged, loginTerminal = openLoginTerminal }) {
   let bootstrap = { token: crypto.randomBytes(32).toString('base64url'), until: Date.now() + BOOTSTRAP_MS }
   const sessions = new Map()
   let cookieName
@@ -140,7 +140,6 @@ export function createManagement({ stores, runtime, channels, eac, info, onSetti
     return {
       ...info(),
       channels: channels?.state(),
-      eacAuth: eac?.cached(),
       settings: managementSettings(stores.settings.get()),
       catalogSyncedAt: stores.settings.get().catalogSyncedAt ?? 0,
       probedAt: available.at ?? 0,
@@ -225,23 +224,6 @@ export function createManagement({ stores, runtime, channels, eac, info, onSetti
         try { json(res, 200, await channels.rpc(body, controller.signal)) }
         finally { res.removeListener('close', abort) }
       }
-    } else if (eac && pathname.startsWith(`${PREFIX}/eac/`)) {
-      const params = new URL(req.url, 'http://localhost').searchParams
-      const route = pathname.slice(PREFIX.length)
-      let result
-      if (method === 'GET' && route === '/eac/status') result = await eac.status()
-      else if (method === 'GET' && route === '/eac/login/poll') result = await eac.poll(params.get('link') ?? '')
-      else if (method === 'GET' && route === '/eac/pool') result = await eac.pool()
-      else if (method === 'POST') {
-        await readBody(req)
-        if (route === '/eac/login/start') result = await eac.start()
-        else if (route === '/eac/login/cancel') result = eac.cancel(params.get('link') ?? '')
-        else if (route === '/eac/logout') result = await eac.logout()
-      }
-      if (result === undefined) throw fail(404, 'EAC 接口不存在')
-      if (result.error) throw fail(502, result.error)
-      if (result.ok === false) throw fail(500, '无法移除本地授权')
-      json(res, 200, result)
     } else if (method === 'POST' && pathname === `${PREFIX}/settings`) {
       const patch = validateSettings(await readBody(req))
       persist(patch)

@@ -119,23 +119,23 @@ console.log('ok  client probe isolation/retry, account action labels, hidden sta
 
 const catalog = [
   { id: 'free' }, { id: 'region' }, { id: 'kilo', channel: 'kilo' },
-  { id: 'eac', channel: 'eac' }, { id: 'aggregate', channel: 'aggregate' },
+  { id: 'aggregate', channel: 'aggregate' },
   { id: 'combo', channel: 'combo' }, { id: 'account', channel: 'buddy' },
 ]
 const refused = { results: { free: { state: 'unavailable' }, region: { state: 'unavailable' } } }
 const membership = settings => Object.values(computeMembership(catalog, refused, settings)).flat()
 assert.deepEqual(membership({}), catalog.map(row => row.id), 'default fallback preserves the advertised catalog')
-assert.deepEqual(membership({ hideFreeModels: true }), ['eac', 'aggregate', 'combo', 'account'])
-assert.deepEqual(membership({ hideEacModels: true, hiddenModelIds: ['free'] }), ['region', 'kilo', 'aggregate', 'combo', 'account'])
-assert.deepEqual(membership({ hideFreeModels: true, hideEacModels: true, hiddenModelIds: ['combo'] }), ['aggregate', 'account'],
+assert.deepEqual(membership({ hideFreeModels: true }), ['aggregate', 'combo', 'account'])
+assert.deepEqual(membership({ hiddenModelIds: ['free'] }), ['region', 'kilo', 'aggregate', 'combo', 'account'])
+assert.deepEqual(membership({ hideFreeModels: true, hiddenModelIds: ['combo'] }), ['aggregate', 'account'],
   'refusedAll cannot restore preferences; unrelated channels remain isolated')
 const region = computeMembership(catalog, { results: { region: { state: 'region-blocked' } } }, { hiddenModelIds: ['region'] })
 assert.equal(Object.values(region).flat().includes('region'), false)
-for (const patch of [{ hideFreeModels: 1 }, { hideEacModels: null }, { hiddenModelIds: [''] }, { hiddenModelIds: [3] }, null, []]) {
+for (const patch of [{ hideFreeModels: 1 }, { hiddenModelIds: [''] }, { hiddenModelIds: [3] }, null, []]) {
   assert.throws(() => validateModelVisibility(patch), error => error.statusCode === 400)
 }
 assert.deepEqual(publicModelVisibility({ hiddenModelIds: ['free', 'free', null], forwardKey: 'private' }),
-  { hiddenModelIds: ['free'], hideFreeModels: false, hideEacModels: false })
+  { hiddenModelIds: ['free'], hideFreeModels: false })
 
 for (const language of ['zh', 'en']) {
   cells.length = 0
@@ -153,10 +153,6 @@ for (const language of ['zh', 'en']) {
   assert.deepEqual(writes.pop(), { hiddenModelIds: [] })
   nodes(roster).find(node => node.props.label === translate('pref.hideFreeModels')).props.onChange()
   assert.deepEqual(writes.pop(), { hideFreeModels: true })
-  cells.length = 0
-  const preferences = render(Preferences, { summary, t: translate, onApply: patch => writes.push(patch) })
-  nodes(preferences).find(node => node.props.label === translate('pref.hideEacModels')).props.onChange()
-  assert.deepEqual(writes.pop(), { hideEacModels: true })
 }
 console.log('ok  visibility fallback isolation, validation, recovery controls and bilingual plugin actions')
 

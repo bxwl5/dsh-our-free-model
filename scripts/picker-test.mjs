@@ -206,7 +206,7 @@ check('it keeps the refused models rather than dropping them', (await advertised
 check('and says so in the log', ctx.__logs.some(line => line.includes('refused all')), true)
 const visibleId = 'space-bunny-free'
 const beforeVisibilityEvents = ctx.__captured.events.filter(event => event === 'emit:llm/adapters-updated').length
-const hiddenSave = await callRoute(api(), 'POST', '/api/our-free-model/settings', { hiddenModelIds: [visibleId, visibleId], hideEacModels: true })
+const hiddenSave = await callRoute(api(), 'POST', '/api/our-free-model/settings', { hiddenModelIds: [visibleId, visibleId] })
 check('picker visibility settings save successfully', hiddenSave.status, 200)
 check('hidden ids are canonical and persisted', JSON.parse(fs.readFileSync(path.join(scratch, 'our-free-model', 'settings.json'), 'utf8')).hiddenModelIds, [visibleId])
 check('refusedAll never restores an explicitly hidden model', (await advertised(ROUTE_MAIN)).includes(visibleId), false)
@@ -215,13 +215,13 @@ check('visibility changes broadcast topology invalidation',
 const hiddenSummary = (await callRoute(api(), 'GET', '/api/our-free-model/summary')).json
 check('management keeps hidden rows with a recovery marker', hiddenSummary.catalog.find(row => row.id === visibleId)?.hiddenByUser, true)
 check('a hidden id still resolves for history', (await adapter.resolveModel(ROUTE_MAIN, visibleId)).id, visibleId)
-for (const patch of [null, [], { hiddenModelIds: [null] }, { hiddenModelIds: [''] }, { hideEacModels: 1 }, { hideFreeModels: 'true' }, { enabled: false, hiddenModelIds: [3] }]) {
+for (const patch of [null, [], { hiddenModelIds: [null] }, { hiddenModelIds: [''] }, { hideFreeModels: 'true' }, { enabled: false, hiddenModelIds: [3] }]) {
   check('invalid visibility patch is refused atomically', (await callRoute(api(), 'POST', '/api/our-free-model/settings', patch)).status, 400)
 }
 check('invalid patch does not change existing settings', (await callRoute(api(), 'GET', '/api/our-free-model/summary')).json.settings.enabled, true)
 await callRoute(api(), 'POST', '/api/our-free-model/settings', { hideFreeModels: true })
 check('whole free group remains hidden during lane-wide refusal', await advertised(ROUTE_MAIN), [])
-await callRoute(api(), 'POST', '/api/our-free-model/settings', { hiddenModelIds: [], hideFreeModels: false, hideEacModels: false })
+await callRoute(api(), 'POST', '/api/our-free-model/settings', { hiddenModelIds: [], hideFreeModels: false })
 
 stub.api.refuseAll = false
 await callRoute(api(), 'POST', '/api/our-free-model/reprobe')

@@ -24,7 +24,6 @@ await test('classified stream failures survive every local forwarding protocol',
   process.env.OUR_FREE_MODEL_BASE = base
   process.env.OUR_FREE_MODEL_KILO_BASE = base
   const { readSse, postStreamed, classifyFailure } = await import('../src/http.js')
-  const { postSealedStreamed } = await import('../src/eac.js')
   const { postKiloStreamed } = await import('../src/kilo.js')
   const { foldForwardOutcome } = await import('../src/core/completion.js')
   const { startForwardServer } = await import('../src/forward.js')
@@ -34,7 +33,6 @@ await test('classified stream failures survive every local forwarding protocol',
   const options = { body, onData: () => {}, timeoutMs: 2000 }
   const posters = {
     anonymous: () => postStreamed({ ...options, path: '/chat/completions', session: 'fixture' }),
-    EAC: () => postSealedStreamed({ ...options, credential: { mode: 'direct', base, apiKey: 'fixture' } }),
     Kilo: () => postKiloStreamed(options),
   }
   for (const [name, post] of Object.entries(posters)) {
@@ -144,7 +142,7 @@ await test('classified stream failures survive every local forwarding protocol',
       assert.equal(value.error.code, code)
       assert.equal(value.error.privateField, undefined)
       if (code === 'RATE_LIMIT') assert.equal(response.headers.get('retry-after'), '3')
-      if (['LANE_LOCKED', 'QUOTA_EXHAUSTED', 'EAC_UPSTREAM_FAILED', 'NO_PROGRESS'].includes(code)) assert.equal(response.headers.get('x-should-retry'), 'false')
+      if (['LANE_LOCKED', 'QUOTA_EXHAUSTED', 'NO_PROGRESS'].includes(code)) assert.equal(response.headers.get('x-should-retry'), 'false')
     })
     if (stream) await t.test(`${protocol}: a failure after content stays an error event`, async () => {
       chunks = [{ type: 'text-delta', text: 'partial', index: 0 }, { type: 'finish', reason: { kind: 'error', failure: { code: 'LANE_LOCKED', message: 'rejected' } } }]

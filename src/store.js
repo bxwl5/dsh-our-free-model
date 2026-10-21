@@ -158,7 +158,6 @@ export const SETTINGS_INITIAL = {
   /** Advertisement only: retain catalog entries and historical model resolution. */
   hiddenModelIds: [],
   hideFreeModels: false,
-  hideEacModels: false,
   /** Minutes between background availability re-probes. */
   probeIntervalMinutes: 15,
   /** Serve the OpenAI-compatible forward listener for other local harnesses. */
@@ -226,7 +225,6 @@ export function publicModelVisibility(settings) {
     hiddenModelIds: [...new Set((Array.isArray(settings?.hiddenModelIds) ? settings.hiddenModelIds : [])
       .filter(validHiddenModelId))].slice(0, 1000),
     hideFreeModels: settings?.hideFreeModels === true,
-    hideEacModels: settings?.hideEacModels === true,
   }
 }
 
@@ -236,7 +234,7 @@ export function validateModelVisibility(patch) {
     throw Object.assign(new TypeError('settings must be a JSON object'), { statusCode: 400 })
   }
   const result = {}
-  for (const key of ['hideFreeModels', 'hideEacModels', 'hiddenModelIds']) {
+  for (const key of ['hideFreeModels', 'hiddenModelIds']) {
     if (!Object.hasOwn(patch, key)) continue
     const value = patch[key]
     if (key === 'hiddenModelIds'
@@ -253,7 +251,6 @@ export function isModelHidden(entry, settings) {
   return (Array.isArray(settings?.hiddenModelIds) && settings.hiddenModelIds.includes(entry.id))
     || (settings?.hideFreeModels === true && (!entry.channel || entry.channel === 'anonymous' || entry.channel === 'kilo'
       || (entry.channel === 'combo' && Array.isArray(entry.lanes) && entry.lanes.length > 0 && entry.lanes.every(lane => lane === 'free'))))
-    || (settings?.hideEacModels === true && entry.channel === 'eac')
 }
 
 export const STATS_INITIAL = {
