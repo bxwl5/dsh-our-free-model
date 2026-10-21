@@ -62,7 +62,7 @@ try {
   await check('仅选择完整运行资源，临时包在源码仓库之外，不带工具索引及用户数据', () => {
     stageDesktopService(serviceRoot)
     fs.copyFileSync(process.execPath, path.join(scratch, process.platform === 'win32' ? 'node.exe' : 'node'))
-    for (const file of ['src/providers/registry.json', 'src/core/runtime.js', 'packages/standalone/web/assets.json',
+    for (const file of ['src/core/runtime.js', 'packages/standalone/web/assets.json',
       'packages/standalone/management.mjs', 'packages/standalone/channels/worker.mjs', 'vendor/channel-pack/qoder-auth-wasm.wasm']) {
       assert.ok(fs.existsSync(path.join(serviceRoot, file)), file)
     }

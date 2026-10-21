@@ -8,9 +8,6 @@
  * against the gateway is separate and costs minutes and quota, so it stays a
  * deliberate act: `node scripts/host-selftest.mjs`.
  *
- * The default includes the manifest check because shipping a manifest that
- * disagrees with its files breaks the in-app upgrade for every user at once
- * (issue #1), and nothing else fails when that happens.
  */
 import { spawn } from 'node:child_process'
 import path from 'node:path'
@@ -31,23 +28,13 @@ if (!['all', 'contributor', 'release'].includes(options.mode)) {
   process.exit(1)
 }
 const { mode, only } = options
-const releaseSuites = new Set(['manifest', 'release', 'catalog'])
+const releaseSuites = new Set(['catalog'])
 
 const suites = [
-  ['manifest', 'build-manifest.mjs', ['--check']],
-  ['release', 'release-e2e.mjs', []],
-  ['release-preparation', 'release-preparation-test.mjs', []],
   ['client-lint', 'client-lint.mjs', []],
-  ['sponsor', 'sponsor-test.mjs', []],
   ['heatmap', 'heatmap-test.mjs', []],
   ['trust', 'trust-test.mjs', []],
   ['sanitize', 'sanitize-test.mjs', []],
-  ['feed', 'feed-test.mjs', []],
-  ['picks', 'picks-test.mjs', []],
-  ['picks-ui', 'picks-ui-test.mjs', []],
-  ['updater', 'updater-test.mjs', []],
-  ['upgrade-ui', 'upgrade-ui-test.mjs', []],
-  ['reload', 'reload-test.mjs', []],
   ['forward', 'forward-test.mjs', []],
   ['chan-relay', 'chan-relay-test.mjs', []],
   ['channel-pack', 'channel-pack-test.mjs', []],
@@ -106,21 +93,17 @@ const suites = [
   ['rtk', 'rtk-test.mjs', []],
   ['rtk-shape', 'rtk-shape-test.mjs', []],
   ['local-optimize', 'local-optimize-test.mjs', []],
-  ['registry', 'registry-test.mjs', []],
   ['route', 'route-test.mjs', []],
   ['combo-advance', 'combo-advance-test.mjs', []],
   ['prompt-saver', 'prompt-saver-test.mjs', []],
   ['anthropic', 'anthropic-test.mjs', []],
-  ['aggregate', 'aggregate-test.mjs', []],
-  ['aggregate-wiring', 'aggregate-wiring-test.mjs', []],
   ['model-test', 'model-test-test.mjs', []],
   ['model-test-probe-race', 'model-test-probe-race-test.mjs', []],
   ['model-test-finish-integration', 'model-test-finish-integration-test.mjs', []],
-  ['bench-integration', 'bench-integration-test.mjs', []],
   ['plugin-bench-ui', 'plugin-bench-ui-test.mjs', []],
   ['codearts-direct-fetch', 'codearts-direct-fetch-test.mjs', []],
   ['gateway-source', 'gateway-source-test.mjs', []],
-].filter(([name]) => (mode === 'contributor' ? !['manifest', 'release'].includes(name)
+].filter(([name]) => (mode === 'contributor' ? ![].includes(name)
   : mode === 'release' ? releaseSuites.has(name) : true)
   && (only === null || name.startsWith(only)))
 

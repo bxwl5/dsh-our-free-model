@@ -2,7 +2,6 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { FreeModelAdapter, ROUTE_MAIN, ROUTE_REGION } from '../adapter.js'
 import { buildCatalog, buildEacCatalog, buildKiloCatalog, isEacEntry, isKiloEntry, parseListing, reviveKiloCatalog } from '../catalog.js'
-import { buildAggregateCatalog, isAggregateEntry } from '../aggregate.js'
 import { buildComboCatalog, isComboEntry, normalizeCombos, pruneRotation } from '../combos.js'
 import { JsonStore, SETTINGS_INITIAL, STATS_INITIAL, STATS_VERSION, migrateStats, pruneDays, recordTurn, recordUsage, isModelHidden } from '../store.js'
 import { STATE, detectEgress, probeCatalog } from '../probe.js'
@@ -67,9 +66,6 @@ export function createModelRuntime({
   let catalog = materializeCatalog(catalogStore.get().entries ?? [])
   let sealedCatalog = sealedCredential() === null ? [] : buildEacCatalog(catalogStore.get().sealIds ?? [])
   let kiloCatalog = reviveKiloCatalog(catalogStore.get().kiloRows)
-  /** The aggregate lane: one row per enabled provider/model the user configured.
-   *  Derived from settings, not from a listing, so it is rebuilt on every merge. */
-  let aggregateCatalog = []
   /** The virtual rows a combo contributes; rebuilt last, after every real lane. */
   let comboCatalog = []
   /** The free lane's own roster: the base every other lane is merged onto. */
@@ -95,7 +91,7 @@ export function createModelRuntime({
   const rebuildCatalog = () => {
     const seen = new Set()
     const merged = []
-    for (const entry of [...freeCatalog, ...sealedCatalog, ...kiloCatalog, ...aggregateCatalog]) {
+    for (const entry of [...freeCatalog, ...sealedCatalog, ...kiloCatalog]) {
       if (entry === null || entry === undefined || seen.has(entry.id)) continue
       seen.add(entry.id)
       merged.push(entry)
@@ -111,7 +107,6 @@ export function createModelRuntime({
     catalog = merged
   }
   const mergeCatalogs = () => {
-    aggregateCatalog = buildAggregateCatalog(settings.get().aggregate ?? {})
     rebuildCatalog()
   }
   mergeCatalogs()
@@ -265,13 +260,11 @@ export function createModelRuntime({
     // The absorbed channels get no per-model probes: their verdicts would be
     // spent against a different gateway than the one that serves them, and a
     // roster the listing named is advertised as-is (its health is the listing
-    // round's, refreshed on the same cadence). The aggregate lane is excluded
-    // for a sharper reason — a probe there is a *real request to a provider the
-    // user pays for*, spent to learn something the settings page already knows
-    // (whether a key is configured). A combo is excluded because it has no
-    // endpoint of its own: probing one would send the chain's own id to the free
-    // lane as a model name, spending quota to collect a verdict about nothing.
-    const probeable = catalog.filter(entry => !isEacEntry(entry) && !isKiloEntry(entry) && !isAggregateEntry(entry) && !isComboEntry(entry))
+    // round's, refreshed on the same cadence). A combo is excluded because it
+    // has no endpoint of its own: probing one would send the chain's own id to
+    // the free lane as a model name, spending quota to collect a verdict about
+    // nothing.
+    const probeable = catalog.filter(entry => !isEacEntry(entry) && !isKiloEntry(entry) && !isComboEntry(entry))
     const results = await probeCatalog(probeable, { attributionUserAgent, signal: lifetime.signal }, (id, result) => {
       if (disposed) return
       availability.edit(value => ({
@@ -380,9 +373,8 @@ export function createModelRuntime({
       },
     }),
     publicModelRows: () => publicModelRows(state()),
-    // A settings write that changes the aggregate lane or the chains (a key
-    // saved, a provider switched off, a combo edited) rebuilds the merged view
-    // without a listing round: the aggregate rows come from settings alone.
+    // A settings write that changes the chains (a combo edited) rebuilds the
+    // merged view without a listing round.
     syncAggregateCatalog() {
       if (disposed) return catalog
       mergeCatalogs()

@@ -103,16 +103,12 @@ check(
 
 const { FreeModelAdapter, ROUTE_MAIN } = await import('../src/adapter.js')
 const { buildCatalog, buildKiloCatalog } = await import('../src/catalog.js')
-const { buildAggregateCatalog } = await import('../src/aggregate.js')
 const kiloEntries = buildKiloCatalog([
   { id: 'kilo-auto/free', isFree: true, context_length: window },
   { id: 'openrouter/free', isFree: true, context_length: window },
 ])
 const freeEntry = { ...buildCatalog(['mimo-v2.6-flash-free'])[0], contextWindow: window }
 const sealedEntry = { ...freeEntry, id: 'eac:fixture', channel: 'eac', wire: 'chat' }
-const aggregate = { providers: { cerebras: { enabled: true, apiKey: 'fixture', baseUrl: base, models: ['fixture-large'] } } }
-const aggregateEntry = buildAggregateCatalog(aggregate)[0]
-assert.ok(aggregateEntry, 'aggregate fixture must resolve a real configured catalog entry')
 
 async function drive(entry, bodies, { abort = false } = {}) {
   responses = [...bodies]
@@ -120,7 +116,7 @@ async function drive(entry, bodies, { abort = false } = {}) {
   const records = []
   const controller = new AbortController()
   const adapter = new FreeModelAdapter({
-    state: () => ({ catalog: [entry], membership: { [ROUTE_MAIN]: [entry.id] }, settings: { enabled: true, aggregate } }),
+    state: () => ({ catalog: [entry], membership: { [ROUTE_MAIN]: [entry.id] }, settings: { enabled: true } }),
     recordUsage: row => records.push(row), recordTurn: () => {},
     sealedCredential: () => ({ mode: 'direct', base, apiKey: 'fixture' }),
   })
@@ -202,7 +198,7 @@ try {
   })
   for (const [name, entry] of [
     ['other Kilo model', kiloEntries[1]], ['free lane', freeEntry],
-    ['EAC lane', sealedEntry], ['aggregate lane', aggregateEntry],
+    ['EAC lane', sealedEntry],
   ]) {
     for (const error of [false, true]) {
       await test(`non-target usage preserved: ${name}, ${error ? 'failure' : 'success'}`, async () => {

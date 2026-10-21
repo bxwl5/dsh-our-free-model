@@ -127,27 +127,6 @@ check('provenance records where the kernel coupling lives',
 check('no release artifact is claimed before one exists',
   [provenance.mojobox?.recordInstalled, provenance.mojobox?.artifactDigest], [false, null])
 
-// ── integrity: the catalog digests are the release digests ────────────────────
-sub('integrity')
-const feedManifest = readJson('feed/manifest.json')
-check('integrity version tracks the release manifest', integrity.version, feedManifest.version)
-check('integrity lists exactly the files the release manifest does',
-  [integrity.algorithm, integrity.files?.length], ['sha256', feedManifest.files.length])
-const feedByPath = new Map(feedManifest.files.map(row => [row.path, row]))
-const drifted = (integrity.files ?? []).filter(row => {
-  const other = feedByPath.get(row.path)
-  return other === undefined || other.sha256 !== row.sha256 || other.size !== row.size
-})
-check('every integrity digest equals the release manifest digest', drifted.map(row => row.path), [])
-const spot = ['index.js', 'package.json', 'adapter/kernel.js']
-const recomputed = spot.map(rel => {
-  const body = publishedBytes(fs.readFileSync(path.join(repo, rel)))
-  return crypto.createHash('sha256').update(body).digest('hex')
-})
-if (contributor) console.log('pending release: signed digest alignment is owned by the maintainer')
-else check('the digests are the bytes on disk (LF-normalised), not copies',
-  spot.every((rel, index) => integrity.files.find(row => row.path === rel)?.sha256 === recomputed[index]), true)
-
 // ── adapter isolation ─────────────────────────────────────────────────────────
 sub('isolation')
 /** Every file the package ships, however deep — the same walk the release e2e does. */

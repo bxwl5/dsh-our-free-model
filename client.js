@@ -29,9 +29,6 @@ window.__ModuleLoader__.load({
 
     const NS = 'settings.ourFreeModel'
     const inject = ['slots', 'locale']
-    const SPONSOR_CARD_URL = 'https://beichenapi.com/register?aff=DL49WAC2DQNG'
-    // Sponsor artwork, scaled proportionally for the existing 56px tile.
-    const SPONSOR_LOGO = 'data:image/png;base64,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'
 
 
     // ── copy ──────────────────────────────────────────────────────────────────
@@ -39,7 +36,6 @@ window.__ModuleLoader__.load({
       zh: {
         'meta.title': 'Our Free Model',
         'meta.description': '在 DeepSeek Harness 内直连免密免费模型：清单随上游更新、地区可用性自动探测、思考强度真实生效，并附 Token 看板与 OpenAI 兼容转发端口。',
-        'ann.pitch': '你只需在 dsh 里装上这个插件，无需登录、注册、填 API Key 或任何其它操作，就能用上包括 Muse Spark 1.3、MiMo V2.6 在内的前沿模型——完全免费，不限量。',
         nav: 'Our Free Model',
         title: 'Our Free Model',
         refresh: '刷新清单',
@@ -252,61 +248,9 @@ window.__ModuleLoader__.load({
         'bench.running': '测量中…',
         'bench.notSaved': '结果未能保存，请检查数据目录；刷新后可能丢失。',
         'bench.result': '文本响应通过 · 首帧 {ttft}ms · 输出 {tps} tok/s · 推理 {reasoning} tok',
-        'ann.preamble': '前言',
-        'ann.models': '模型清单',
-        'ann.newlane': '新模型上线',
-        'ann.steps': '使用步骤',
-        'ann.features': '功能介绍',
-        'ann.later': '稍后再说',
-        'ann.page': '第 {n} / {total} 页',
-        'ann.openSettings': '打开设置页',
-        'ann.p1': '免密：安装即可用，不需要注册、不需要填任何 API Key。',
-        'ann.p2': '清单跟随上游：模型集合、上下文长度与能力每次刷新都重新拉取。',
-        'ann.p3': '诚实的能力声明：探测不出来的能力不会显示，思考强度档位是真实生效的输出上限。',
-        'ann.n1': '两个新模型已通过 EAC 渠道上线，由 OpenCode 免费车道转发：DeepSeek V4.1 Flash Free 与 GLM 5.3 Flash Free。',
-        'ann.n2': '它们排在 EAC 模型页最前面，带红色 NEW / 爆 徽标和「高速」标签，一眼就能找到。',
-        'ann.n3': '两个模型都真实支持思考档位（低 / 高 / 最大），DeepSeek 还能关闭思考；档位直接下发到上游，不是提示词。',
-        'ann.s1': '在输入框的模型选择器里选 “Our Free Model” 分组下的任意模型。',
-        'ann.s2': '需要更强推理时点开 Effort 档位；它是真实下发的输出预算，不是提示词。',
-        'ann.s3': '想被其它本地工具调用：设置页 → 本地转发 → 启用，把 Base URL 和 Key 填进去。',
-        'ann.s4': '地区受限模型会在你切换网络出口后自动重新归类，无需手动操作。',
-        'ann.f1': '模型清单：可用性、上下文长度、是否支持视觉、是否可调思考。',
-        'ann.f2': 'Token 热力图与总量曲线，支持总计与按模型分别查看。',
-        'ann.f3': '输出速度（tok/s）与首字延迟（TTFT）逐次采样。',
-        'ann.f4': 'OpenAI 兼容转发端口 + 可生成的 API Key。',
-        'ann.f5': '全部数据留在本机，不上传任何遥测。',
-        'ann.updates': '公告与升级',
-        'ann.u1': '公告中心：仓库主人推送的新公告会实时到达，支持图文排版（HTML）。',
-        'ann.u2': '系统通知：开启后，新公告与插件更新会弹出系统级通知。',
-        'ann.u3': '应用内升级：自主管理的安装可在设置页升级；宿主管理的安装请通过原安装方式更新。',
-        'ann.u4': '自主管理的安装可尝试应用内升级与热重载；宿主管理的安装请通过原安装方式更新，按宿主提示重新加载。',
-        'section.news': '公告中心',
-        'section.newsHint': '公告由仓库主人推送，本页实时接收。',
         'section.upgrade': '插件升级',
         'section.upgradeHint': '更新方式取决于安装来源；由宿主管理的安装请通过原安装方式更新。',
         'upgrade.managed': '此安装由安装它的宿主管理，请通过原安装方式更新；插件内检查、升级和热重载不可用。',
-        'news.unread': '{n} 条未读',
-        'news.allRead': '全部已读',
-        'news.markRead': '标记已读',
-        'news.expand': '展开公告',
-        'news.collapse': '收起公告',
-        'news.refresh': '检查新公告',
-        'news.refreshing': '检查中…',
-        'news.empty': '暂无公告。仓库主人推送的新公告会出现在这里。',
-        'news.emptyHint': '公告内容支持图文排版，由仓库主人在插件仓库中编辑发布。',
-        'news.osEnable': '开启系统通知',
-        'news.osOn': '系统通知已开启',
-        'news.osOff': '系统通知未开启',
-        'news.osDenied': '浏览器拒绝了通知权限；需要在系统/浏览器设置里手动恢复。',
-        'news.link': '查看详情',
-        'news.urgentTitle': '重要公告',
-        'news.gotIt': '知道了',
-        'news.lastFetch': '最近拉取',
-        'news.fetchFailed': '公告源暂不可达（显示的是缓存）',
-        'level.info': '通知',
-        'level.update': '更新',
-        'level.warn': '注意',
-        'level.urgent': '紧急',
         'upgrade.current': '运行版本',
         'upgrade.installed': '磁盘版本',
         'upgrade.mismatch': '运行版本与磁盘版本不一致，请先确认安装状态，再重载或重启。',
@@ -338,57 +282,13 @@ window.__ModuleLoader__.load({
         'reload.done': '插件已热重载（第 {n} 次）。',
         'reload.refresh': '刷新页面',
         'reload.auto': '文件变化自动热重载',
-        'toast.annTitle': '新公告',
-        'toast.updateTitle': '插件可升级',
-        'toast.updateBody': '发现新版本 {latest}（当前 {current}），可到设置页升级。',
         'nav.tab.free': '免费模型',
         'nav.tab.eac': 'EAC 模型',
         'nav.tab.channels': '白嫖模型接入',
-        'nav.tab.picks': '推荐项目',
         'star.cta': '点个 Star',
         'star.title': '在 GitHub 上给本仓库点 Star',
-        'picks.title': '推荐项目',
-        'picks.sub': '同一作者的一组开源项目：把 Agent 装进原生桌面、让上百个插件和谐共存、把视频和设计留在这台机器上。用得上，就顺手点个 Star。',
-        'picks.foot': 'Star 是开源项目唯一的「工资条」——它决定作者还能投入多少时间。这里的项目都免费、开源、无广告，点一下就是最实在的支持。',
-        'picks.stars': 'Stars',
-        'picks.forks': 'Forks',
-        'picks.fork': 'Fork',
-        'picks.totalStars': '{c} 个推荐项目共 {n} 个 Star',
-        'picks.updated': '最近更新',
-        'picks.stale': '缓存数据',
-        'picks.liveFailed': '暂时读不到 GitHub 数据，数字稍后自动补上——不影响下面的链接。',
-        'picks.getDesktop': '下载安装',
-        'picks.getPack': '安装说明',
-        'picks.getDesign': '安装说明',
-        'picks.star': '点个 Star',
-        'picks.starHint': '在 GitHub 上打开并点 Star',
-        'picks.desktop.badge': '桌面工作台',
-        'picks.desktop.tagline': '把 Agent 的能力，组织成一张真正能工作的桌面。',
-        'picks.desktop.body': '基于 DeepSeek Harness 的开源桌面工作台：Tauri 原生窗口、随包 Node 运行时，双击即进入工作。项目文件、会话变更、插件目录与皮肤市场都在一处，Windows / Linux / macOS 都有安装包。',
-        'picks.desktop.tag1': 'Tauri 原生窗口',
-        'picks.desktop.tag2': '随包运行时',
-        'picks.desktop.tag3': '文件协作与还原',
-        'picks.desktop.tag4': '插件市场与皮肤',
-        'picks.pack.badge': '插件整合包',
-        'picks.pack.tagline': '揽尽万象：让数百个 DSH 插件和谐共存。',
-        'picks.pack.body': '为 DSH Desktop 提供插件目录、批量安装、更新与移除管理，内置 72 个基线子插件、皮肤预览与 Prompt 合集；固定摘要清单逐字节校验，装出来的环境完整可信。',
-        'picks.pack.tag1': '72 个基线插件',
-        'picks.pack.tag2': '批量安装 / 更新',
-        'picks.pack.tag3': '皮肤预览',
-        'picks.pack.tag4': '摘要校验',
-        'picks.design.badge': '设计工作台',
-        'picks.design.tagline': '在本地把视频和设计做完，不把素材交给别人。',
-        'picks.design.body': 'DeepSeek Harness 的本地视频制作与设计插件：多轨剪辑、模板与设计体系、原生预览画布，成品导出为真实文件。全流程在本机完成，素材与工程留在自己硬盘上。',
-        'picks.design.tag1': '多轨剪辑',
-        'picks.design.tag2': '模板与设计体系',
-        'picks.design.tag3': '原生预览画布',
-        'picks.design.tag4': '真实文件导出',
         'free.title': '免费模型',
         'free.sub': '免登录、免 Key、免配置：模型清单跟随上游刷新，可用性由这台机器实测。',
-        'sponsor.bannerTag': '中转站',
-        'sponsor.bannerTitle': '北辰 API 中转站',
-        'sponsor.bannerDescription': 'OFM 官方合作中转站，为用户提供稳定、开放、高性价比的大模型 API 接入服务。支持 Claude、ChatGPT、Grok、Gemini、智谱 GLM、Kimi、DeepSeek 等主流模型，适合在 Codex、Gemini CLI、Claude Code 及其他开发工具中统一配置使用。邀请可获百分之十的返现。',
-        'sponsor.bannerCta': '立即查看',
         'free.tankLabel': '免费车道可用度',
         'free.tankNote': '水位 = 当前可用模型占比（{ok}/{total}）',
         'free.tankEmpty': '尚未探测，水位按已声明模型占位。',
@@ -552,85 +452,10 @@ window.__ModuleLoader__.load({
         'chan.auto.ran': '今日已自动签到',
         'chan.auto.off': '今日尚未签到',
         'chan.auto.last': '上次结果：{result}',
-        'nav.tab.aggregate': '聚合渠道',
         'nav.tab.saver': '省 Token',
         'nav.tab.routing': '路由',
-        'agg.title': '聚合渠道',
-        'agg.sub': '把第三方 OpenAI 兼容端点接进同一条模型清单：写入本机的 Key 只以指纹回显，保存后清单与模型选择器一起更新。',
-        'agg.registryCount': '注册表 {n} 家',
-        'agg.configuredCount': '已配置 {n} 家',
-        'agg.addProvider': '添加提供商',
-        'agg.addTitle': '选择提供商',
-        'agg.addHint': '可按分类、协议与认证方式筛选。标了「不可驱动」的提供商需要交互式登录或云侧凭据，本车道不会调用它们。',
-        'agg.search': '搜索名称或 ID',
-        'agg.filterCategory': '分类',
-        'agg.filterFormat': '协议',
-        'agg.filterAuth': '认证',
-        'agg.filterAll': '全部',
-        'agg.showing': '显示 {shown} / {total} 家',
-        'agg.noMatch': '没有匹配的提供商。',
-        'agg.notUsable': '不可驱动',
-        'agg.notUsableWhy': '本车道不会调用它：认证方式是「{kind}」，需要交互式登录或云侧凭据，只能由宿主自己接管。',
-        'agg.credential': '获取 Key',
-        'agg.modelCount': '{n} 个模型',
-        'agg.select': '配置',
-        'agg.configuredTitle': '已配置的提供商',
-        'agg.configuredHint': '保存后立即生效：清单与模型选择器一起更新。',
-        'agg.empty': '还没有接入任何聚合提供商',
-        'agg.emptyHint': '这一页把第三方端点接进模型清单：聚合站、免费额度池、本机推理服务都行。填入 Key 与可选的 Base URL，它们的模型就会出现在模型选择器里，也能成为降级链的一环。',
-        'agg.filterEmpty': '没有符合筛选条件的已配置提供商。',
-        'agg.contributes': '当前贡献 {n} 个模型',
-        'agg.contributesNone': '当前未贡献任何模型',
-        'agg.hasKey': '已存 Key {hint}',
-        'agg.noKey': '未存 Key',
         'agg.enabled': '启用',
         'agg.disabled': '已停用',
-        'agg.key': 'API Key',
-        'agg.keyPlaceholder': '粘贴新的 API Key（留空则保持不变）',
-        'agg.keyKeep': '留空保持当前 Key 不变；要删除请用下面的清除按钮。',
-        'agg.keyClear': '清除已保存的 Key',
-        'agg.keyClearWarn': '清除后该提供商立即停止贡献模型，直到重新填入 Key。',
-        'agg.baseUrl': 'Base URL',
-        'agg.baseUrlHint': '留空则使用注册表默认值。',
-        'agg.baseUrlDefault': '注册表默认：{url}',
-        'agg.baseUrlEnv': '也可用环境变量 {env} 覆盖',
-        'agg.models': '模型覆盖',
-        'agg.modelsHint': '逗号或换行分隔的模型 ID；留空则用它自己声明的清单。',
-        'agg.modelsPlaceholder': 'model-a, model-b',
-        'agg.test': '测试',
-        'agg.testing': '测试中…',
-        'agg.testOk': '验证通过',
-        'agg.testFailed': '验证失败',
-        'agg.testUnverified': '无法验证',
-        'agg.testUnverifiedWhy': '该提供商不提供模型列表接口，验证它要花掉一次真实生成——这里不做。',
-        'agg.testAt': '最近测试 {when}',
-        'agg.neverTested': '尚未测试',
-        'agg.discover': '发现模型',
-        'agg.discovering': '发现中…',
-        'agg.discovered': '发现 {n} 个模型',
-        'agg.discoveredNone': '该提供商不提供模型列表。',
-        'agg.discoveredUse': '填入模型覆盖',
-        'agg.save': '保存',
-        'agg.saving': '保存中…',
-        'agg.add': '添加',
-        'agg.remove': '移除',
-        'agg.removeConfirm': '确认移除',
-        'agg.removeWarn': '移除后它贡献的模型立即从清单消失，已保存的 Key 一并删除。',
-        'agg.cancel': '取消',
-        'agg.saved': '已保存',
-        'agg.savedBody': '{name} 的配置已保存。',
-        'agg.removedBody': '{name} 已移除。',
-        'agg.failed': '操作失败',
-        'agg.loadFailed': '无法读取提供商注册表',
-        'agg.category.apikey': 'API Key',
-        'agg.category.free': '完全免费',
-        'agg.category.freeTier': '免费额度',
-        'agg.category.local': '本机',
-        'agg.category.oauth': 'OAuth',
-        'agg.auth.apiKey': 'API Key',
-        'agg.auth.none': '免认证',
-        'agg.auth.oauth': 'OAuth 登录',
-        'agg.auth.adc': '云侧凭据',
         'saver.title': '省 Token',
         'saver.sub': '在请求离开本机之前压缩它：工具输出重编码、提示词瘦身，以及五个不占用上游请求的本地应答。',
         'saver.master': '启用 Token 压缩',
@@ -723,7 +548,6 @@ window.__ModuleLoader__.load({
         'routing.channel.free': '免费车道',
         'routing.channel.eac': 'EAC 协付',
         'routing.channel.kilo': 'Kilo',
-        'routing.channel.aggregate': '聚合',
         'routing.channel.combo': '链路',
         'gw.clientsTitle': '接入客户端',
         'gw.clientsHint': '免费车道转发端口（在「免费模型」页的「本地转发」里开关）的接入配方：地址与 Key 按实际绑定的端口与真实密钥生成。',
@@ -734,7 +558,6 @@ window.__ModuleLoader__.load({
       en: {
         'meta.title': 'Our Free Model',
         'meta.description': 'Free no-key models inside DeepSeek Harness: a roster that follows upstream, live regional availability, genuinely enforced thinking levels, a token dashboard and an OpenAI-compatible local forward port.',
-        'ann.pitch': 'All you do is install this plugin in dsh — no login, no sign-up, no API key, no other step of any kind. The frontier models are simply there, Muse Spark 1.3 and MiMo V2.6 among them. Completely free, with no usage cap.',
         nav: 'Our Free Model',
         title: 'Our Free Model',
         refresh: 'Refresh roster',
@@ -947,61 +770,9 @@ window.__ModuleLoader__.load({
         'bench.running': 'Measuring…',
         'bench.notSaved': 'The result could not be saved. Check the data directory; it may be lost after refresh.',
         'bench.result': 'Text response passed · first frame {ttft}ms · {tps} tok/s · {reasoning} reasoning tokens',
-        'ann.preamble': 'Preamble',
-        'ann.models': 'Model roster',
-        'ann.newlane': 'New models',
-        'ann.steps': 'How to use',
-        'ann.features': 'What it does',
-        'ann.later': 'Later',
-        'ann.page': 'Page {n} of {total}',
-        'ann.openSettings': 'Open settings',
-        'ann.p1': 'No credentials: install and use it — no sign-up, no API key to paste.',
-        'ann.p2': 'The roster follows upstream: models, context lengths and capabilities are re-fetched on every refresh.',
-        'ann.p3': 'Honest capability claims: anything a probe cannot confirm stays hidden, and each effort level is a real output budget.',
-        'ann.n1': 'Two new models are live on the EAC lane, relayed from OpenCode’s free tier: DeepSeek V4.1 Flash Free and GLM 5.3 Flash Free.',
-        'ann.n2': 'They lead the EAC models page, marked with a red NEW / 爆 badge and a “Fast” tag.',
-        'ann.n3': 'Both expose real thinking levels (Low / High / Max), and DeepSeek can also switch thinking off; the level goes to the upstream as-is, not as a prompt hint.',
-        'ann.s1': 'Pick any model under the “Our Free Model” group in the composer’s model selector.',
-        'ann.s2': 'For harder reasoning, open the Effort menu — it sends a real budget, not a prompt hint.',
-        'ann.s3': 'To serve other local tools: Settings → Local forward → enable, then copy the base URL and key.',
-        'ann.s4': 'Region-limited models reclassify themselves once your network egress changes.',
-        'ann.f1': 'Model roster: availability, context length, vision, tunable thinking.',
-        'ann.f2': 'Token heatmap and cumulative curve, per total or per model.',
-        'ann.f3': 'Per-call samples of output speed (tok/s) and time to first token.',
-        'ann.f4': 'OpenAI-compatible forward port with a generated API key.',
-        'ann.f5': 'Everything stays on this machine — no telemetry.',
-        'ann.updates': 'News & upgrades',
-        'ann.u1': 'Announcement center: pushes from the repository owner arrive live, with rich (HTML) layout.',
-        'ann.u2': 'OS notifications: once enabled, new announcements and plugin updates raise system-level toasts.',
-        'ann.u3': 'In-app upgrades: self-managed installs can update from settings; host-managed installs use their original installation method.',
-        'ann.u4': 'Self-managed installs can use in-app upgrades and hot reload. For host-managed installs, update through the original installation method and reload as instructed by the host.',
-        'section.news': 'Announcement center',
-        'section.newsHint': 'Published by the repository owner; this page receives them live.',
         'section.upgrade': 'Plugin upgrade',
         'section.upgradeHint': 'Update according to the installation source; host-managed installs use their original installation method.',
         'upgrade.managed': 'This installation is managed by the host that installed it. Update through the original installation method; in-plugin checks, upgrades and hot reload are unavailable.',
-        'news.unread': '{n} unread',
-        'news.allRead': 'Mark all read',
-        'news.markRead': 'Mark read',
-        'news.expand': 'Show announcements',
-        'news.collapse': 'Hide announcements',
-        'news.refresh': 'Check for new announcements',
-        'news.refreshing': 'Checking…',
-        'news.empty': 'No announcements yet. Anything the owner pushes will appear here.',
-        'news.emptyHint': 'Announcements support rich layout and are published by editing the plugin repository.',
-        'news.osEnable': 'Enable OS notifications',
-        'news.osOn': 'OS notifications on',
-        'news.osOff': 'OS notifications off',
-        'news.osDenied': 'Notification permission was denied; restore it in your system or browser settings.',
-        'news.link': 'Read more',
-        'news.urgentTitle': 'Important announcement',
-        'news.gotIt': 'Got it',
-        'news.lastFetch': 'Last fetch',
-        'news.fetchFailed': 'Feed unreachable right now (showing the cached copy)',
-        'level.info': 'Notice',
-        'level.update': 'Update',
-        'level.warn': 'Heads-up',
-        'level.urgent': 'Urgent',
         'upgrade.current': 'Running',
         'upgrade.installed': 'On disk',
         'upgrade.mismatch': 'The running and on-disk versions differ. Check the installation before reloading or restarting.',
@@ -1033,57 +804,13 @@ window.__ModuleLoader__.load({
         'reload.done': 'Plugin hot-reloaded (#{n}).',
         'reload.refresh': 'Reload page',
         'reload.auto': 'Hot-reload on file change',
-        'toast.annTitle': 'New announcement',
-        'toast.updateTitle': 'Plugin update available',
-        'toast.updateBody': 'Version {latest} is out (installed {current}). Upgrade from the settings page.',
         'nav.tab.free': 'Free models',
         'nav.tab.eac': 'EAC models',
         'nav.tab.channels': 'Free channels',
-        'nav.tab.picks': 'Picks',
         'star.cta': 'Star',
         'star.title': 'Star this repository on GitHub',
-        'picks.title': 'Recommended projects',
-        'picks.sub': 'A set of open-source projects by the same author: bringing the agent to a native desktop, keeping hundreds of plugins working together, and keeping video and design work on this machine. If they are useful, a star is the thanks they understand.',
-        'picks.foot': 'A star is the only payslip an open-source project gets — it decides how much more time the author can spend. Every project here is free, open source and ad-free; one click is the most concrete support there is.',
-        'picks.stars': 'Stars',
-        'picks.forks': 'Forks',
-        'picks.fork': 'Fork',
-        'picks.totalStars': '{n} stars across {c} projects',
-        'picks.updated': 'Last push',
-        'picks.stale': 'cached',
-        'picks.liveFailed': 'GitHub numbers are unreachable right now; they will fill in later — the links below are unaffected.',
-        'picks.getDesktop': 'Download',
-        'picks.getPack': 'Install guide',
-        'picks.getDesign': 'Install guide',
-        'picks.star': 'Star it',
-        'picks.starHint': 'Open GitHub and star',
-        'picks.desktop.badge': 'Desktop workbench',
-        'picks.desktop.tagline': 'Agent capability, organized into a desktop that actually works.',
-        'picks.desktop.body': 'An open-source desktop workbench built on DeepSeek Harness: a Tauri native window with Node bundled in, so a double-click lands you in the work. Project files, session changes, a plugin catalog and a skin market in one place — with installers for Windows, Linux and macOS.',
-        'picks.desktop.tag1': 'Tauri native window',
-        'picks.desktop.tag2': 'Bundled runtime',
-        'picks.desktop.tag3': 'File changes & revert',
-        'picks.desktop.tag4': 'Plugin market & skins',
-        'picks.pack.badge': 'Plugin suite',
-        'picks.pack.tagline': 'Embracing all creation: hundreds of DSH plugins, living together.',
-        'picks.pack.body': 'A catalog, batch install, update and removal manager for DSH Desktop, carrying 72 baseline sub-plugins, skin previews and prompt sets; a pinned digest manifest verifies every byte, so an install is complete and trustworthy.',
-        'picks.pack.tag1': '72 baseline plugins',
-        'picks.pack.tag2': 'Batch install / update',
-        'picks.pack.tag3': 'Skin previews',
-        'picks.pack.tag4': 'Digest verification',
-        'picks.design.badge': 'Design workbench',
-        'picks.design.tagline': 'Finish video and design work locally, without handing your footage to anyone.',
-        'picks.design.body': 'A local video-production and design plugin for DeepSeek Harness: multi-track editing, templates and a design system, a native preview canvas, and exports that are real files. The whole pipeline runs on this machine, so footage and projects stay on your own disk.',
-        'picks.design.tag1': 'Multi-track editing',
-        'picks.design.tag2': 'Templates & design system',
-        'picks.design.tag3': 'Native preview canvas',
-        'picks.design.tag4': 'Real file export',
         'free.title': 'Free models',
         'free.sub': 'No login, no key, no setup: the roster follows upstream, availability is measured from this machine.',
-        'sponsor.bannerTag': 'Relay',
-        'sponsor.bannerTitle': 'Beichen API relay',
-        'sponsor.bannerDescription': 'OFM’s official relay partner provides stable, open and cost-effective model API access. Claude, ChatGPT, Grok, Gemini, GLM, Kimi and DeepSeek are supported for one consistent setup in Codex, Gemini CLI, Claude Code and other developer tools. Invite others to receive 10% cashback.',
-        'sponsor.bannerCta': 'View now',
         'free.tankLabel': 'Free-lane availability',
         'free.tankNote': 'Water level = share of reachable models ({ok}/{total})',
         'free.tankEmpty': 'Not probed yet; the level stands at the declared roster.',
@@ -1247,85 +974,10 @@ window.__ModuleLoader__.load({
         'chan.auto.ran': 'Checked in today',
         'chan.auto.off': 'Not checked in today',
         'chan.auto.last': 'Last result: {result}',
-        'nav.tab.aggregate': 'Aggregate',
         'nav.tab.saver': 'Token savers',
         'nav.tab.routing': 'Routing',
-        'agg.title': 'Aggregate providers',
-        'agg.sub': 'Bring third-party OpenAI-compatible endpoints into the same model roster: a key written here is echoed back as a fingerprint only, and saving updates the roster and the model picker together.',
-        'agg.registryCount': '{n} in the registry',
-        'agg.configuredCount': '{n} configured',
-        'agg.addProvider': 'Add provider',
-        'agg.addTitle': 'Choose a provider',
-        'agg.addHint': 'Filter by category, wire format and auth kind. A provider marked "not drivable" needs an interactive login or cloud credentials, and this lane never calls it.',
-        'agg.search': 'Search name or id',
-        'agg.filterCategory': 'Category',
-        'agg.filterFormat': 'Format',
-        'agg.filterAuth': 'Auth',
-        'agg.filterAll': 'All',
-        'agg.showing': 'Showing {shown} of {total}',
-        'agg.noMatch': 'No provider matches.',
-        'agg.notUsable': 'Not drivable',
-        'agg.notUsableWhy': 'This lane never calls it: its auth kind is "{kind}", which needs an interactive login or cloud-side credentials, so only the host can take it over.',
-        'agg.credential': 'Get a key',
-        'agg.modelCount': '{n} models',
-        'agg.select': 'Configure',
-        'agg.configuredTitle': 'Configured providers',
-        'agg.configuredHint': 'Changes take effect immediately: saving updates the roster and the model picker together.',
-        'agg.empty': 'No aggregate provider is connected yet',
-        'agg.emptyHint': 'This page brings third-party endpoints into the model roster: an aggregator, a free-tier pool, a local inference server. Fill in a key and an optional base URL and their models appear in the model picker — and can become a link in a fallback chain.',
-        'agg.filterEmpty': 'No configured provider matches the filter.',
-        'agg.contributes': 'Contributes {n} models',
-        'agg.contributesNone': 'Contributes no model right now',
-        'agg.hasKey': 'Key {hint}',
-        'agg.noKey': 'No key stored',
         'agg.enabled': 'Enabled',
         'agg.disabled': 'Disabled',
-        'agg.key': 'API key',
-        'agg.keyPlaceholder': 'Paste a new API key (leave empty to keep the current one)',
-        'agg.keyKeep': 'Empty keeps the stored key; use the clear button below to delete it.',
-        'agg.keyClear': 'Clear the stored key',
-        'agg.keyClearWarn': 'Clearing it stops this provider from contributing models until a key is entered again.',
-        'agg.baseUrl': 'Base URL',
-        'agg.baseUrlHint': 'Empty uses the registry default.',
-        'agg.baseUrlDefault': 'Registry default: {url}',
-        'agg.baseUrlEnv': 'Can also be overridden by the {env} environment variable',
-        'agg.models': 'Model override',
-        'agg.modelsHint': 'Model ids separated by commas or newlines; empty uses the list the provider declares.',
-        'agg.modelsPlaceholder': 'model-a, model-b',
-        'agg.test': 'Test',
-        'agg.testing': 'Testing…',
-        'agg.testOk': 'Verified',
-        'agg.testFailed': 'Failed',
-        'agg.testUnverified': 'Not verifiable',
-        'agg.testUnverifiedWhy': 'This provider declares no model listing, so verifying it would cost one real generation — not done here.',
-        'agg.testAt': 'Last test {when}',
-        'agg.neverTested': 'Not tested yet',
-        'agg.discover': 'Discover models',
-        'agg.discovering': 'Discovering…',
-        'agg.discovered': 'Found {n} models',
-        'agg.discoveredNone': 'This provider declares no model listing.',
-        'agg.discoveredUse': 'Use these as the override',
-        'agg.save': 'Save',
-        'agg.saving': 'Saving…',
-        'agg.add': 'Add',
-        'agg.remove': 'Remove',
-        'agg.removeConfirm': 'Confirm removal',
-        'agg.removeWarn': 'Removing it drops its models from the roster immediately and deletes the stored key.',
-        'agg.cancel': 'Cancel',
-        'agg.saved': 'Saved',
-        'agg.savedBody': 'The configuration for {name} is saved.',
-        'agg.removedBody': '{name} was removed.',
-        'agg.failed': 'Action failed',
-        'agg.loadFailed': 'Cannot read the provider registry',
-        'agg.category.apikey': 'API key',
-        'agg.category.free': 'Fully free',
-        'agg.category.freeTier': 'Free tier',
-        'agg.category.local': 'Local',
-        'agg.category.oauth': 'OAuth',
-        'agg.auth.apiKey': 'API key',
-        'agg.auth.none': 'No auth',
-        'agg.auth.oauth': 'OAuth login',
-        'agg.auth.adc': 'Cloud credentials',
         'saver.title': 'Token savers',
         'saver.sub': 'Compact a request before it leaves this machine: tool output re-encoded, the prompt slimmed, and five answers produced locally without an upstream call.',
         'saver.master': 'Enable token compaction',
@@ -1418,7 +1070,6 @@ window.__ModuleLoader__.load({
         'routing.channel.free': 'Free lane',
         'routing.channel.eac': 'EAC co-paid',
         'routing.channel.kilo': 'Kilo',
-        'routing.channel.aggregate': 'Aggregate',
         'routing.channel.combo': 'Chain',
         'gw.clientsTitle': 'Connect a client',
         'gw.clientsHint': 'How the free lane\'s forward port (enabled under "Local forward" on the Free models page) plugs into each client: addresses and keys below are generated from the port that actually bound and the real key.',
@@ -1587,57 +1238,10 @@ window.__ModuleLoader__.load({
        scrim into document.body so third-party sidebar stacking contexts cannot trap
        the fixed overlay. Mask colour, blur and z-index mirror the Modal layer of the
        shell so this reads as first-party. */
-.ofm_scrim{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;background:var(--dsw-alias-bg-mask-1, rgb(0 0 0 / 32%));backdrop-filter:var(--dsw-mask-blur, blur(8px)) saturate(140%);-webkit-backdrop-filter:var(--dsw-mask-blur, blur(8px)) saturate(140%);animation:ofm-fadein .24s ease}
 @keyframes ofm-fadein{from{opacity:0}to{opacity:1}}
-.ofm_ann{width:min(620px,92vw);max-height:min(86vh,640px);border-radius:18px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 94%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 8%),0 28px 80px rgb(0 0 0 / 40%);overflow:hidden;display:flex;flex-direction:column;animation:ofm-popin .36s cubic-bezier(.16,1,.3,1)}
 @keyframes ofm-popin{from{opacity:0;transform:translateY(16px) scale(.965)}to{opacity:1;transform:none}}
-.ofm_annhead{padding:18px 22px 12px;display:flex;flex-direction:column;gap:8px;background:linear-gradient(150deg,color-mix(in srgb,var(--dsw-alias-state-business-primary) 8%,transparent),transparent 75%)}
-.ofm_anntitle{margin:0;font-size:18px;font-weight:730;letter-spacing:-.4px}
-.ofm_annsub{margin:0;font-size:12px;color:var(--dsw-alias-label-tertiary)}
-.ofm_steps{display:flex;gap:6px;padding:0 22px 14px}
-.ofm_step{height:3px;flex:1;border-radius:99px;background:var(--dsw-alias-border-l2);transition:background .3s ease}
-.ofm_step[data-on="true"]{background:var(--dsw-alias-state-business-primary);box-shadow:0 0 6px color-mix(in srgb,var(--dsw-alias-state-business-primary) 55%,transparent)}
-.ofm_annbody{padding:2px 22px 18px;max-height:min(48vh,420px);overflow:auto;display:flex;flex-direction:column;gap:12px}
-.ofm_annbody h3{margin:0;font-size:13.5px;font-weight:660}
-.ofm_annbody p,.ofm_annbody li{font-size:12.5px;line-height:1.72;color:var(--dsw-alias-label-secondary);margin:0}
-.ofm_annbody ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px}
-.ofm_annfoot{display:flex;align-items:center;gap:10px;padding:13px 22px;border-top:1px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 72%,transparent)}
-.ofm_annfoot .spacer{margin-left:auto}
-.ofm_kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
-.ofm_kvc{padding:9px 12px;border-radius:12px;border:1px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 74%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 4%);display:flex;flex-direction:column;gap:3px}
-.ofm_kvc b{font-size:12.5px;font-variant-numeric:tabular-nums}
-.ofm_kvc span{font-size:10.5px;color:var(--dsw-alias-label-tertiary)}
 .ofm_two{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
 /* ══ 公告中心 ══════════════════════════════════════════════════════════ */
-.ofm_news{display:flex;flex-direction:column;gap:10px}
-.ofm_newsitem{display:flex;flex-direction:column;gap:7px;padding:13px 15px;border-radius:13px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 80%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 4%);position:relative;transition:border-color .18s ease,transform .2s cubic-bezier(.32,.72,0,1),box-shadow .22s ease}
-.ofm_newsitem:hover{transform:translateY(-1px);box-shadow:inset 0 1px 0 rgb(255 255 255 / 7%),0 8px 22px rgb(0 0 0 / 10%)}
-.ofm_newsitem.unread{border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 55%,transparent)}
-.ofm_newsdot{position:absolute;top:14px;right:14px;width:8px;height:8px;border-radius:50%;background:var(--dsw-alias-state-business-primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--dsw-alias-state-business-primary) 18%,transparent)}
-.ofm_newshead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-right:16px}
-.ofm_newstitle{font-size:13px;font-weight:650;letter-spacing:-.1px}
-.ofm_level{font-size:10.5px;font-weight:600;padding:2px 9px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);white-space:nowrap}
-.ofm_level.info{color:var(--dsw-alias-state-business-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 9%,transparent)}
-.ofm_level.update{color:var(--dsw-alias-state-success-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-success-primary) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 9%,transparent)}
-.ofm_level.warn{color:var(--dsw-alias-state-warning-primary,#f0a441);border-color:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 9%,transparent)}
-.ofm_level.urgent{color:#fff;background:var(--dsw-alias-state-error-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 85%,#000)}
-.ofm_newsmeta{display:flex;gap:10px;font-size:11px;color:var(--dsw-alias-label-tertiary);flex-wrap:wrap}
-.ofm_newsbody{font-size:12.5px;line-height:1.7;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
-.ofm_newsbody p{margin:0 0 6px}
-.ofm_newsbody p:last-child{margin-bottom:0}
-.ofm_newsbody h1,.ofm_newsbody h2,.ofm_newsbody h3,.ofm_newsbody h4{margin:6px 0 4px;font-size:13px;line-height:1.4}
-.ofm_newsbody ul,.ofm_newsbody ol{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:3px}
-.ofm_newsbody code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:6px;padding:1px 5px}
-.ofm_newsbody pre{margin:4px 0;padding:8px 10px;border-radius:10px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);overflow-x:auto}
-.ofm_newsbody pre code{background:transparent;border:0;padding:0}
-.ofm_newsbody blockquote{margin:4px 0;padding:2px 10px;border-left:3px solid color-mix(in srgb,var(--dsw-alias-state-business-primary) 55%,transparent);color:var(--dsw-alias-label-tertiary)}
-.ofm_newsbody img{max-width:100%;border-radius:8px}
-.ofm_newsbody a{color:var(--dsw-alias-state-business-primary);text-decoration:none}
-.ofm_newsbody a:hover{text-decoration:underline}
-.ofm_newsbody table{border-collapse:collapse;font-size:12px}
-.ofm_newsbody th,.ofm_newsbody td{border:1px solid var(--dsw-alias-border-l1);padding:3px 8px}
-.ofm_newsbody hr{border:0;border-top:1px solid var(--dsw-alias-border-l1);margin:8px 0}
-.ofm_newsbody mark{background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 30%,transparent);border-radius:2px;padding:0 2px}
 .ofm_upgradecards{display:flex;gap:8px;flex-wrap:wrap}
 .ofm_upnotes{max-height:220px;overflow:auto;padding:10px 12px;border-radius:10px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1)}
 /* ══ 进度条 ════════════════════════════════════════════════════════════ */
@@ -1666,27 +1270,8 @@ window.__ModuleLoader__.load({
 .ofm_toastclose:hover{color:var(--dsw-alias-label-primary)}
 @keyframes ofm-toast-rise{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
 /* ══ 模态 ══════════════════════════════════════════════════════════════ */
-.ofm_modal{width:min(520px,92vw);max-height:min(80vh,600px);border-radius:18px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 95%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 8%),0 28px 80px rgb(0 0 0 / 42%);display:flex;flex-direction:column;overflow:hidden;animation:ofm-popin .34s cubic-bezier(.16,1,.3,1)}
-.ofm_modalhead{padding:17px 20px 11px;display:flex;align-items:center;gap:10px;font-size:15px;font-weight:720;letter-spacing:-.2px}
-.ofm_modalbody{padding:4px 20px 16px;overflow:auto;font-size:12.5px;line-height:1.7;color:var(--dsw-alias-label-secondary)}
-.ofm_modalbody p{margin:0 0 6px}
-.ofm_modalfoot{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px;border-top:1px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 72%,transparent)}
 @media (max-width:720px){.ofm_sec_hint{margin-left:0;width:100%}.ofm_pills{margin-left:0;width:100%}}
 /* ══ 北辰 API 赞助横幅：免费模型页首屏入口，与桌面端保持独立 ═══════ */
-.ofm_sponsor_banner{position:relative;display:grid;grid-template-columns:56px minmax(0,1fr) auto;align-items:center;gap:14px;padding:13px 16px;border:1px solid rgb(121 151 204 / 42%);border-radius:14px;overflow:hidden;background:linear-gradient(115deg,#0b1425 0%,#17253d 54%,#263654 100%);color:#f3f7ff;box-shadow:0 9px 20px rgb(12 24 49 / 20%),inset 0 1px 0 rgb(255 255 255 / 13%)}
-.ofm_sponsor_banner::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.36;background-image:linear-gradient(rgb(126 164 225 / 15%) 1px,transparent 1px),linear-gradient(90deg,rgb(126 164 225 / 15%) 1px,transparent 1px);background-size:32px 32px;mask-image:linear-gradient(90deg,black,transparent 85%)}
-.ofm_sponsor_banner::after{content:"";position:absolute;inset:auto -12% -80% 35%;height:180%;pointer-events:none;background:radial-gradient(ellipse,rgb(96 137 222 / 22%),transparent 68%);transform:rotate(-7deg)}
-.ofm_sponsor_banner>*{position:relative;z-index:1}
-.ofm_sponsor_logo{display:flex;flex-direction:column;align-items:center;justify-content:center;width:56px;height:56px;border-radius:14px;background:#f8fbff;color:#c8470b;box-shadow:0 5px 11px rgb(0 0 0 / 22%),inset 0 0 0 1px rgb(255 255 255 / 80%);transform:rotate(4deg);font-weight:800;letter-spacing:-1px;line-height:1}
-.ofm_sponsor_logo span{font-size:16px}
-.ofm_sponsor_logo small{margin-top:4px;padding-top:3px;border-top:1px solid currentColor;font-size:7px;letter-spacing:1px}
-.ofm_sponsor_bannerbody{min-width:0}
-.ofm_sponsor_kicker{display:inline-flex;align-items:center;padding:2px 8px;border:1px solid rgb(0 194 232 / 55%);border-radius:999px;background:rgb(0 144 186 / 18%);color:#38d9f4;font-size:10px;font-weight:700;letter-spacing:.2px}
-.ofm_sponsor_banner h3{margin:4px 0 3px;color:#f6f8ff;font-size:clamp(17px,2vw,22px);font-weight:780;letter-spacing:-.45px;line-height:1.15}
-.ofm_sponsor_banner p{max-width:75ch;margin:0;color:rgb(220 229 246 / 82%);font-size:10.5px;line-height:1.45}
-.ofm_sponsor_cta{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-width:92px;padding:8px 12px;border:1px solid rgb(255 255 255 / 72%);border-radius:10px;background:linear-gradient(180deg,#f9fbff,#dfe8f7);box-shadow:0 4px 10px rgb(0 0 0 / 18%),inset 0 1px 0 #fff;color:#253651;font-size:11px;font-weight:750;text-decoration:none;white-space:nowrap;transition:transform .18s var(--ease-instrument),box-shadow .18s ease,filter .18s ease}
-.ofm_sponsor_cta:hover{transform:translateY(-2px);filter:brightness(1.04);box-shadow:0 9px 20px rgb(0 0 0 / 24%),inset 0 1px 0 #fff}
-.ofm_sponsor_cta:active{transform:translateY(0)}
 /* ══ GitHub star 按钮 ══════════════════════════════════════════════════ */
 .ofm_starbtn{position:relative;display:inline-flex;gap:7px;align-items:center;padding:7px 15px;border-radius:999px;border:1px solid color-mix(in srgb,var(--dsw-alias-state-business-primary) 55%,transparent);background:linear-gradient(140deg,color-mix(in srgb,var(--dsw-alias-state-business-primary) 16%,transparent),transparent 70%);color:var(--dsw-alias-state-business-primary);text-decoration:none;font-weight:650;font-size:12.5px;transition:transform .18s ease,box-shadow .22s ease,color .22s ease,background .22s ease;white-space:nowrap;overflow:hidden}
 .ofm_starbtn svg{transition:transform .5s cubic-bezier(.34,1.56,.64,1)}
@@ -1761,7 +1346,13 @@ window.__ModuleLoader__.load({
 @keyframes ofmpagein{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 /* ── 毛玻璃表面：只给大块面用 backdrop-filter，小卡片用半透明叠层，滚动更顺 */
 .ofm_glass{background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 68%,transparent);backdrop-filter:blur(16px) saturate(150%);-webkit-backdrop-filter:blur(16px) saturate(150%);border:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 78%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 6%),0 12px 34px rgb(0 0 0 / 9%)}
-.ofm_root .ofm_hero,.ofm_root .ofm_panel,.ofm_root .ofm_ann,.ofm_root .ofm_modal{background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 70%,transparent);backdrop-filter:blur(18px) saturate(155%);-webkit-backdrop-filter:blur(18px) saturate(155%);box-shadow:inset 0 1px 0 rgb(255 255 255 / 7%),0 14px 40px rgb(0 0 0 / 10%)}
+.ofm_scrim{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;background:var(--dsw-alias-bg-mask-1, rgb(0 0 0 / 32%));backdrop-filter:var(--dsw-mask-blur, blur(8px)) saturate(140%);-webkit-backdrop-filter:var(--dsw-mask-blur, blur(8px)) saturate(140%);animation:ofm-fadein .24s ease}
+.ofm_modal{width:min(520px,92vw);max-height:min(80vh,600px);border-radius:18px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 95%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 8%),0 28px 80px rgb(0 0 0 / 42%);display:flex;flex-direction:column;overflow:hidden;animation:ofm-popin .34s cubic-bezier(.16,1,.3,1)}
+.ofm_modalhead{padding:17px 20px 11px;display:flex;align-items:center;gap:10px;font-size:15px;font-weight:720;letter-spacing:-.2px}
+.ofm_modalbody{padding:4px 20px 16px;overflow:auto;font-size:12.5px;line-height:1.7;color:var(--dsw-alias-label-secondary)}
+.ofm_modalbody p{margin:0 0 6px}
+.ofm_modalfoot{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px;border-top:1px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 72%,transparent)}
+.ofm_root .ofm_hero,.ofm_root .ofm_panel,.ofm_root .ofm_modal{background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 70%,transparent);backdrop-filter:blur(18px) saturate(155%);-webkit-backdrop-filter:blur(18px) saturate(155%);box-shadow:inset 0 1px 0 rgb(255 255 255 / 7%),0 14px 40px rgb(0 0 0 / 10%)}
 /* ══ 鱼缸加大版（页头） ════════════════════════════════════════════════ */
 .ofm_tankrow{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
 .ofm_tankside{flex:1;min-width:236px;display:flex;flex-direction:column;gap:11px;justify-content:center}
@@ -2027,7 +1618,6 @@ window.__ModuleLoader__.load({
   .ofm_root .ofm_switch i::after,
   .ofm_root .ofm_seg button,
   .ofm_root .ofm_stat,
-  .ofm_root .ofm_kvc,
   .ofm_root .ofm_input,
   .ofm_root .ofm_starbtn,
   .ofm_root .ofm_chanlogo{
@@ -2038,7 +1628,6 @@ window.__ModuleLoader__.load({
   .ofm_root .ofm_btn:hover:not(:disabled),
   .ofm_root .ofm_btn:active:not(:disabled),
   .ofm_root .ofm_stat:hover,
-  .ofm_root .ofm_kvc:hover,
   .ofm_root .ofm_seg button:active:not([aria-pressed="true"]),
   .ofm_root .ofm_starbtn:active,
   .ofm_root .ofm_chan:hover .ofm_chanlogo{
@@ -2213,13 +1802,11 @@ window.__ModuleLoader__.load({
 
 /* ── ⑧【师傅批改③】表格竖条语言统一：所有表格行 hover 都带主色竖条 ── */
 /* .ofm_newsbody table 是内容型表格，保持朴素；仅给数据表 .ofm_table 统一竖条。
-   同时把 .ofm_kvc / .ofm_stat 等"类表格"卡片也纳入 hover 微提亮，保持语言一致 */
+   同时把 .ofm_stat 等"类表格"卡片也纳入 hover 微提亮，保持语言一致 */
 .ofm_root .ofm_stat,
-.ofm_root .ofm_kvc{
   transition: border-color .2s var(--ease-instrument), box-shadow .22s var(--ease-instrument), transform .2s var(--ease-settle) !important;
 }
 .ofm_root .ofm_stat:hover,
-.ofm_root .ofm_kvc:hover{
   border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 38%, var(--dsw-alias-border-l1)) !important;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 7%) !important;
   transform: translateY(-1px) !important;
@@ -2312,7 +1899,6 @@ window.__ModuleLoader__.load({
 .ofm_pickhead{display:flex;align-items:center;gap:7px;min-width:0}
 .ofm_pickhead b{font-size:12.5px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ofm_pickmeta{display:flex;gap:7px;flex-wrap:wrap;font-size:10.5px;color:var(--dsw-alias-label-tertiary);min-width:0}
-.ofm_picknote{font-size:10.5px;line-height:1.5;color:var(--dsw-alias-label-tertiary);overflow-wrap:anywhere}
 .ofm_meter{height:9px;border-radius:99px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);overflow:hidden}
 .ofm_meter i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,color-mix(in srgb,var(--dsw-alias-state-business-primary) 62%,transparent),var(--dsw-alias-state-business-primary));transition:width .55s cubic-bezier(.22,.61,.36,1)}
 .ofm_member{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:10px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l1) 82%,transparent);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 58%,transparent);font-size:11.5px;transition:border-color .16s ease,background .16s ease}
@@ -2326,48 +1912,9 @@ window.__ModuleLoader__.load({
    入场逐张错峰（--i 由调用方给），悬停抬升；主 CTA 是渐变星按钮，带一圈呼吸
    光环与悬停扫光；数字用 count-up 落地。全部只动 transform/opacity/颜色。
    动效降级：文件末尾的 reduced-motion 块统一关掉位移与动画。 */
-.ofm_recogrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(360px,100%),1fr));gap:14px;align-items:stretch}
-.ofm_recocard{position:relative;display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:18px;border:1px solid var(--dsw-alias-border-l2);background:linear-gradient(168deg,color-mix(in srgb,var(--dsw-alias-bg-layer-3) 86%,transparent),color-mix(in srgb,var(--dsw-alias-bg-layer-2) 80%,transparent));box-shadow:inset 0 1px 0 rgb(255 255 255 / 7%),0 2px 8px rgb(0 0 0 / 5%),0 14px 34px color-mix(in srgb,var(--dsw-alias-state-business-primary) 6%,transparent);overflow:hidden;animation:ofm-reco-in .5s var(--ease-instrument) backwards;animation-delay:calc(var(--i,0)*90ms);transition:transform .24s var(--ease-instrument),box-shadow .28s ease,border-color .2s ease}
-.ofm_recocard::before{content:"";position:absolute;inset:-45% 45% 50% -35%;pointer-events:none;opacity:0;background:radial-gradient(58% 58% at 32% 32%,color-mix(in srgb,var(--dsw-alias-state-business-primary) 13%,transparent),transparent 72%);transition:opacity .4s ease}
-.ofm_recocard:hover::before{opacity:1}
-.ofm_recocard:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 55%,var(--dsw-alias-border-l2));box-shadow:inset 0 1px 0 rgb(255 255 255 / 10%),0 18px 44px color-mix(in srgb,var(--dsw-alias-state-business-primary) 15%,transparent)}
 @keyframes ofm-reco-in{from{opacity:0;transform:translateY(16px) scale(.985)}to{opacity:1;transform:none}}
-.ofm_recotop{display:flex;align-items:center;gap:11px;min-width:0}
-.ofm_recomark{display:flex;align-items:center;justify-content:center;width:42px;height:42px;flex:none;border-radius:13px;color:var(--dsw-alias-label-on-accent,#fff);background:linear-gradient(145deg,var(--dsw-alias-state-business-primary),color-mix(in srgb,var(--dsw-alias-state-business-primary) 55%,var(--dsw-alias-label-primary)));box-shadow:inset 0 1px 0 rgb(255 255 255 / 28%),0 4px 12px color-mix(in srgb,var(--dsw-alias-state-business-primary) 24%,transparent);transition:transform .3s var(--ease-settle)}
-.ofm_recomark svg{width:22px;height:22px;fill:currentColor}
-.ofm_recocard:hover .ofm_recomark{transform:rotate(-4deg) scale(1.06)}
-.ofm_recoid{display:flex;flex-direction:column;gap:2px;min-width:0}
-.ofm_reconame{font-size:15px;font-weight:700;letter-spacing:-.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ofm_recorepo{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ofm_recobadge{margin-left:auto;flex:none;font-size:10.5px;font-weight:650;padding:3px 10px;border-radius:999px;border:1px solid color-mix(in srgb,var(--dsw-alias-state-business-primary) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 10%,transparent);color:var(--dsw-alias-state-business-primary);white-space:nowrap}
-.ofm_recotagline{margin:0;font-size:13.5px;font-weight:650;line-height:1.5;letter-spacing:-.1px}
-.ofm_recobody{margin:0;flex:1;font-size:12px;line-height:1.75;color:var(--dsw-alias-label-secondary)}
-.ofm_recochips{display:flex;gap:6px;flex-wrap:wrap}
-.ofm_recochip{font-size:10.5px;padding:3px 9px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 66%,transparent);color:var(--dsw-alias-label-secondary);transition:border-color .16s ease,color .16s ease,transform .16s ease}
-.ofm_recochip:hover{border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 45%,var(--dsw-alias-border-l1));color:var(--dsw-alias-label-primary);transform:translateY(-1px)}
-.ofm_recofoot{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:auto;padding-top:12px;border-top:1px solid var(--dsw-alias-border-l1)}
-.ofm_recofacts{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--dsw-alias-label-tertiary)}
-.ofm_recofact{display:flex;align-items:baseline;gap:5px}
-.ofm_recofact b{font-size:13.5px;font-weight:700;color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums}
-.ofm_recoacts{display:flex;gap:8px;align-items:center;margin-left:auto}
-.ofm_recogo{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 58%,transparent);color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600;text-decoration:none;white-space:nowrap;transition:border-color .16s ease,color .16s ease,transform .16s ease,background .16s ease}
-.ofm_recogo:hover{border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 50%,var(--dsw-alias-border-l2));color:var(--dsw-alias-label-primary);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 82%,transparent);transform:translateY(-1px)}
-.ofm_recogo svg{width:12px;height:12px;fill:currentColor;opacity:.7;transition:transform .2s var(--ease-instrument)}
-.ofm_recogo:hover svg{transform:translateX(2px)}
-.ofm_recostar{position:relative;display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:999px;overflow:hidden;font-size:13px;font-weight:700;letter-spacing:.1px;text-decoration:none;white-space:nowrap;color:var(--dsw-alias-label-on-accent,#fff);background:linear-gradient(135deg,var(--dsw-alias-state-business-primary),color-mix(in srgb,var(--dsw-alias-state-business-primary) 58%,var(--dsw-alias-label-primary)));box-shadow:inset 0 1px 0 rgb(255 255 255 / 26%),0 6px 18px color-mix(in srgb,var(--dsw-alias-state-business-primary) 28%,transparent);transition:transform .18s var(--ease-settle),box-shadow .24s var(--ease-instrument),filter .2s ease}
-.ofm_recostar:hover{transform:translateY(-2px) scale(1.02);filter:saturate(1.06);box-shadow:inset 0 1px 0 rgb(255 255 255 / 32%),0 12px 28px color-mix(in srgb,var(--dsw-alias-state-business-primary) 34%,transparent)}
-.ofm_recostar:active{transform:scale(.97)}
-.ofm_recostar svg{width:16px;height:16px;fill:currentColor;transition:transform .5s var(--ease-settle)}
-.ofm_recostar:hover svg{transform:rotate(72deg) scale(1.15)}
-.ofm_recostar::after{content:"";position:absolute;top:0;bottom:0;width:36%;left:-45%;pointer-events:none;background:linear-gradient(100deg,transparent,rgb(255 255 255 / 38%),transparent);transform:skewX(-18deg);transition:left .6s var(--ease-instrument)}
-.ofm_recostar:hover::after{left:115%}
-.ofm_recostarring{position:absolute;inset:0;border-radius:inherit;pointer-events:none;border:1px solid color-mix(in srgb,var(--dsw-alias-state-business-primary) 62%,transparent);animation:ofm-reco-ring 2.8s var(--ease-instrument) infinite}
 @keyframes ofm-reco-ring{0%{opacity:.6;transform:scale(1)}70%,100%{opacity:0;transform:scale(1.22)}}
-.ofm_recoglow{position:absolute;inset:-50% -12% auto;height:175%;z-index:0;pointer-events:none;background:radial-gradient(42% 52% at 24% 62%,color-mix(in srgb,var(--dsw-alias-state-business-primary) 15%,transparent),transparent 70%),radial-gradient(38% 46% at 78% 38%,color-mix(in srgb,var(--dsw-alias-state-success-primary) 11%,transparent),transparent 72%);filter:blur(10px);animation:ofm-reco-aurora 18s ease-in-out infinite alternate}
 @keyframes ofm-reco-aurora{from{transform:translate3d(-3%,1%,0) scale(1)}to{transform:translate3d(3%,-2%,0) scale(1.08)}}
-.ofm_reconote{margin:0;font-size:11px;line-height:1.6;color:var(--dsw-alias-label-tertiary)}
-@media (max-width:600px){.ofm_recogrid{grid-template-columns:1fr}.ofm_recoacts{width:100%;margin-left:0}}
-@media (prefers-reduced-motion:reduce){.ofm_recocard,.ofm_recostar,.ofm_recogo,.ofm_recochip,.ofm_recomark{animation:none;transition:border-color .12s ease,background .12s ease,box-shadow .12s ease,opacity .12s ease,color .12s ease}.ofm_recocard:hover,.ofm_recostar:hover,.ofm_recostar:active,.ofm_recogo:hover,.ofm_recochip:hover,.ofm_recocard:hover .ofm_recomark{transform:none}.ofm_recostar::after,.ofm_recostarring,.ofm_recoglow{display:none}}
 `
 
     // ── helpers ───────────────────────────────────────────────────────────────
@@ -2698,47 +2245,6 @@ window.__ModuleLoader__.load({
         return card
       } catch { /* a toast must never break its caller */ }
       return undefined
-    }
-
-    /** Modal surface for `urgent` announcements; dismiss runs the ack callback. */
-    function showUrgentModal({ title, html, confirmLabel, onClose }) {
-      try {
-        document.querySelector('.ofm_scrim[data-ofm-urgent]')?.remove()
-        const scrim = document.createElement('div')
-        scrim.className = 'ofm_scrim'
-        scrim.setAttribute('data-ofm-urgent', 'true')
-        const modal = document.createElement('div')
-        modal.className = 'ofm_modal'
-        modal.setAttribute('role', 'alertdialog')
-        modal.setAttribute('aria-modal', 'true')
-        const head = document.createElement('div')
-        head.className = 'ofm_modalhead'
-        head.textContent = title ?? ''
-        const body = document.createElement('div')
-        body.className = 'ofm_modalbody'
-        for (const node of htmlToDom(parseSafeHtml(html ?? ''))) body.appendChild(node)
-        const foot = document.createElement('div')
-        foot.className = 'ofm_modalfoot'
-        const ok = document.createElement('button')
-        ok.type = 'button'
-        ok.className = 'ofm_btn primary'
-        ok.textContent = confirmLabel ?? 'OK'
-        ok.addEventListener('click', () => { scrim.remove(); onClose?.() })
-        foot.appendChild(ok)
-        modal.appendChild(head)
-        modal.appendChild(body)
-        modal.appendChild(foot)
-        scrim.appendChild(modal)
-        document.body.appendChild(scrim)
-      } catch { /* a modal must never break its caller */ }
-    }
-
-    /** OS-level notification, only when the user both opted in and granted. */
-    function osNotify(title, body) {
-      try {
-        if (typeof Notification !== 'function' || Notification.permission !== 'granted') return
-        new Notification(title, { body: String(body ?? '').slice(0, 200) })
-      } catch { /* the in-app toast still fires */ }
     }
 
     const Switch = (props) => h('button', {
@@ -3650,88 +3156,6 @@ window.__ModuleLoader__.load({
           h('span', { className: 'ofm_pill' }, `${t('pref.probedAt')}: ${ago(summary.probedAt, t.locale)}`)))
     }
 
-    // ── announcement center ──────────────────────────────────────────────────
-    const LEVEL_KEY = { info: 'level.info', update: 'level.update', warn: 'level.warn', urgent: 'level.urgent' }
-
-    function NewsPanel(props) {
-      const { t } = props
-      const news = useAsync(() => api('/announcements'), [])
-      const [busy, setBusy] = useState(false)
-      const [osError, setOsError] = useState('')
-      // Collapsed by default: the header row carries the status, and the body
-      // opens only while there is something unread to read.
-      const [open, setOpen] = useState(false)
-      const items = news.data?.items ?? []
-      const unread = news.data?.unread ?? 0
-      useEffect(() => {
-        if (unread > 0) setOpen(true)
-      }, [unread])
-      // Live refresh: the push subscription broadcasts to window on arrival.
-      useEffect(() => {
-        const handler = () => news.reload()
-        window.addEventListener('ofm:announcements', handler)
-        return () => window.removeEventListener('ofm:announcements', handler)
-      }, [news.reload])
-      const notifyOs = news.data?.notifyOs === true
-      const ack = async payload => {
-        setBusy(true)
-        try { await post('/announcements/ack', payload); news.reload() } finally { setBusy(false) }
-      }
-      const refresh = async () => {
-        setBusy(true)
-        try { await post('/announcements/refresh', undefined, 60_000); news.reload() } finally { setBusy(false) }
-      }
-      const enableOs = async () => {
-        setOsError('')
-        if (typeof Notification === 'undefined') { setOsError(t('news.osDenied')); return }
-        let permission = 'default'
-        try { permission = await Notification.requestPermission() } catch { permission = Notification.permission }
-        if (permission !== 'granted') { setOsError(t('news.osDenied')); return }
-        try { await post('/settings', { notifyOs: true }) } catch { /* server state lags; permission is the gate */ }
-        news.reload()
-      }
-      return h(Panel, null,
-        h('div', { className: 'ofm_row' },
-          unread > 0 ? h('span', { className: 'ofm_pill strong' }, t('news.unread').replace('{n}', String(unread))) : null,
-          news.data?.error ? h('span', { className: 'ofm_pill' }, h('span', { className: 'ofm_dot warn' }), t('news.fetchFailed')) : null,
-          h('span', { className: 'ofm_pill' }, `${t('news.lastFetch')}: ${ago(news.data?.fetchedAt, t.locale)}`),
-          h('span', { className: 'spacer', style: { marginLeft: 'auto' } }),
-          h(Button, { kind: 'ghost', onClick: () => setOpen(value => !value) }, open ? t('news.collapse') : t('news.expand')),
-          h(Button, { disabled: busy || news.status !== 'ready', onClick: refresh }, busy ? t('news.refreshing') : t('news.refresh'))),
-        open ? h(Fragment, null,
-          h('div', { className: 'ofm_row' },
-            notifyOs
-              ? h('span', { className: 'ofm_pill' }, h('span', { className: 'ofm_dot ok' }), t('news.osOn'))
-              : h(Button, { onClick: enableOs }, t('news.osEnable')),
-            osError !== '' ? h('span', { className: 'ofm_note' }, osError)
-              : notifyOs ? null : h('span', { className: 'ofm_pill' }, h('span', { className: 'ofm_dot' }), t('news.osOff')),
-            unread > 0 ? h('span', { style: { marginLeft: 'auto' } }, h(Button, { kind: 'ghost', disabled: busy, onClick: () => ack({ all: true }) }, t('news.allRead'))) : null),
-          news.status === 'loading' && news.data === undefined ? h('p', { className: 'ofm_note' }, t('loading')) : null,
-          news.status === 'error' ? h('p', { className: 'ofm_note' }, news.error) : null,
-          news.status === 'ready' && items.length === 0 ? h('p', { className: 'ofm_note' }, t('news.empty'), ' ', h('span', { style: { color: 'var(--dsw-alias-label-tertiary)' } }, t('news.emptyHint'))) : null,
-          h('div', { className: 'ofm_news' }, items.map(item => h(NewsItem, {
-            key: item.id, item, t, locale: t.locale, busy,
-            onAck: () => ack({ id: item.id }),
-          })))) : null)
-    }
-
-    function NewsItem(props) {
-      const { item, t, locale, busy, onAck } = props
-      const body = useMemo(() => parseSafeHtml(item.html ?? ''), [item.html])
-      const acknowledged = item.acked === true
-      return h('article', { className: 'ofm_newsitem' + (acknowledged ? '' : ' unread') },
-        acknowledged ? null : h('span', { className: 'ofm_newsdot', 'aria-hidden': 'true' }),
-        h('div', { className: 'ofm_newshead' },
-          h('span', { className: 'ofm_level ' + item.level }, t(LEVEL_KEY[item.level] ?? 'level.info')),
-          h('span', { className: 'ofm_newstitle' }, item.title),
-          acknowledged ? null : h(Button, { kind: 'ghost', disabled: busy, onClick: onAck }, t('news.markRead'))),
-        h('div', { className: 'ofm_newsmeta' },
-          h('span', null, item.createdAt > 0 ? new Date(item.createdAt).toLocaleDateString() : ''),
-          h('span', null, ago(item.createdAt, locale)),
-          item.pinned === true ? h('span', null, '📌') : null),
-        h('div', { className: 'ofm_newsbody' }, ...htmlToReact(body)),
-        item.link?.url ? h('div', null, h('a', { href: item.link.url, target: '_blank', rel: 'noopener noreferrer' }, item.link.label || t('news.link'))) : null)
-    }
 
     // ── in-app upgrade ───────────────────────────────────────────────────────
     function syncUpgradeOwner(control, data) {
@@ -3906,152 +3330,6 @@ window.__ModuleLoader__.load({
         h(UpgradePanel, { t, settings, onApply, busy }))
     }
 
-    // ── 推荐项目页 ────────────────────────────────────────────────────────────
-    // 这一页只有一个任务：让人点开仓库、点下 Star。所以文案是「说清它解决什么
-    // 问题」，动作是「一眼能看到的星按钮」，数字是宿主 /picks 取回的真实 Star /
-    // Fork / 最近提交——拿不到就整块不显示，绝不用占位数字凑版面（这块页面的
-    // 全部说服力都在数字是真的）。每张卡片的文案按语言直写 t('字面量')，字典
-    // 保持可 grep；各仓库的地址与「第二个动作」在这里各写一份。
-    const RECO_LINKS = {
-      desktop: { repo: 'https://github.com/Ebony-Vinyl/EAC-Desktop', extra: 'https://github.com/Ebony-Vinyl/EAC-Desktop/releases' },
-      pack: { repo: 'https://github.com/Ebony-Vinyl/EAC-Pack', extra: 'https://github.com/Ebony-Vinyl/EAC-Pack#git-安装' },
-      designWorld: { repo: 'https://github.com/Ebony-Vinyl/EAC-design-world', extra: 'https://github.com/Ebony-Vinyl/EAC-design-world#安装' },
-    }
-    const RECO_DESKTOP_MARK = 'M1.4 3.1h13.2a.7.7 0 01.7.7v6a.7.7 0 01-.7.7H1.4a.7.7 0 01-.7-.7v-6a.7.7 0 01.7-.7zM5.6 12h4.8v1.4H5.6z'
-    const RECO_PACK_MARK = 'M8 1.2l6.3 3.2L8 7.6 1.7 4.4 8 1.2zM12.9 7.3l1.4.7L8 11.2 1.7 8l1.4-.7L8 9.8l4.9-2.5zM12.9 10.6l1.4.7L8 14.5 1.7 11.3l1.4-.7L8 13.1l4.9-2.5z'
-    const RECO_DESIGN_MARK = 'M2.6 1.6h7.1l3.7 3.7v7.1a2 2 0 01-2 2H2.6a2 2 0 01-2-2V3.6a2 2 0 012-2zm.9 1.9v7.6h9V6.1h-2.5a1 1 0 01-1-1V3.5H3.5zm8.7 2.1h.6v-1.4l-.6-.6v2zM4.2 7.1h7.6a.7.7 0 010 1.4H4.2a.7.7 0 010-1.4zm0 3h5.2a.7.7 0 010 1.4H4.2a.7.7 0 010-1.4z'
-    const RECO_EXT_MARK = 'M3.75 2A1.75 1.75 0 002 3.75v8.5C2 13.216 2.784 14 3.75 14h8.5A1.75 1.75 0 0014 12.25v-4.5a.75.75 0 00-1.5 0v4.5a.25.25 0 01-.25.25h-8.5a.25.25 0 01-.25-.25v-8.5a.25.25 0 01.25-.25h4.5a.75.75 0 000-1.5h-4.5zM9.5 2a.75.75 0 000 1.5h2.19L7.22 7.97a.75.75 0 101.06 1.06l4.47-4.47v2.19a.75.75 0 001.5 0v-4a.75.75 0 00-.75-.75h-4z'
-
-    /** 2,034 — a star count is read, not computed, so it keeps its separators. */
-    const grouped = value => String(Math.max(0, Math.round(Number(value) || 0))).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-
-    /**
-     * 0 → n in about a second, once per arrival.
-     *
-     * The page's whole argument is that these numbers are real and moving, and a
-     * number that counts up reads as a live reading rather than a printed one.
-     * Reduced motion skips straight to the value — the number is the point, the
-     * motion is not.
-     */
-    function useCountUp(target) {
-      const [value, setValue] = useState(target ?? null)
-      useEffect(() => {
-        if (typeof target !== 'number') return
-        const reduced = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-          && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        if (reduced) { setValue(target); return }
-        const started = Date.now()
-        let raf = 0
-        const tick = () => {
-          const progress = Math.min(1, (Date.now() - started) / 900)
-          setValue(Math.round(target * (1 - Math.pow(1 - progress, 3))))
-          if (progress < 1) raf = requestAnimationFrame(tick)
-        }
-        raf = requestAnimationFrame(tick)
-        return () => cancelAnimationFrame(raf)
-      }, [target])
-      return value
-    }
-
-    function RecoCard(props) {
-      const { t, index, stat, mark, name, repo, badge, tagline, body, chips, repoUrl, extraUrl, extraLabel } = props
-      const stars = stat !== null && typeof stat.stars === 'number' ? stat.stars : null
-      const shown = useCountUp(stars)
-      const forks = stat !== null && typeof stat.forks === 'number' ? stat.forks : null
-      const pushedAt = stat !== null && typeof stat.pushedAt === 'number' ? stat.pushedAt : null
-      const stale = stat !== null && stat.stale === true
-      // One fork is one fork; the label is the only place the page can tell.
-      const forkLabel = forks === 1 ? t('picks.fork') : t('picks.forks')
-      return h('article', { className: 'ofm_recocard', style: { '--i': String(index) } },
-        h('div', { className: 'ofm_recotop' },
-          h('span', { className: 'ofm_recomark', 'aria-hidden': 'true' }, h('svg', { viewBox: '0 0 16 16' }, h('path', { d: mark }))),
-          h('div', { className: 'ofm_recoid' },
-            h('span', { className: 'ofm_reconame' }, name),
-            h('span', { className: 'ofm_recorepo' }, repo)),
-          h('span', { className: 'ofm_recobadge' }, badge)),
-        h('p', { className: 'ofm_recotagline' }, tagline),
-        h('p', { className: 'ofm_recobody' }, body),
-        h('div', { className: 'ofm_recochips' }, chips.map(chip => h('span', { key: chip, className: 'ofm_recochip' }, chip))),
-        h('div', { className: 'ofm_recofoot' },
-          h('div', { className: 'ofm_recofacts' },
-            stars === null ? null : h('span', { className: 'ofm_recofact' },
-              h('b', null, grouped(shown ?? stars)),
-              h('span', null, t('picks.stars')),
-              stale ? h('span', { className: 'ofm_reconote' }, t('picks.stale')) : null),
-            forks === null ? null : h('span', { className: 'ofm_recofact' }, h('b', null, grouped(forks)), h('span', null, forkLabel)),
-            pushedAt === null ? null : h('span', { className: 'ofm_recofact' }, h('b', null, ago(pushedAt, t.locale)), h('span', null, t('picks.updated')))),
-          h('div', { className: 'ofm_recoacts' },
-            h('a', { className: 'ofm_recogo', href: extraUrl, target: '_blank', rel: 'noreferrer noopener' },
-              extraLabel,
-              h('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' }, h('path', { d: RECO_EXT_MARK }))),
-            h('a', {
-              className: 'ofm_recostar', href: repoUrl, target: '_blank', rel: 'noreferrer noopener',
-              title: `${t('picks.starHint')} · ${repo}`,
-            },
-              h('span', { className: 'ofm_recostarring', 'aria-hidden': 'true' }),
-              h('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' }, h('path', { d: STAR_GLYPH })),
-              t('picks.star')))))
-    }
-
-    function PicksPage(props) {
-      const { t } = props
-      const picks = useAsync(() => api('/picks'), [])
-      const repos = picks.data?.repos ?? []
-      const statOf = id => repos.find(row => row.id === id) ?? null
-      // A cold read gives the host four seconds to reach GitHub, so a slow first
-      // answer can land after the page is already on screen. One delayed re-read
-      // fills the numbers in; the flag makes sure it is one, not a poll.
-      const [retried, setRetried] = useState(false)
-      const numbers = repos.some(row => typeof row.stars === 'number')
-      useEffect(() => {
-        if (retried || numbers || picks.status !== 'ready') return undefined
-        const timer = setTimeout(() => { setRetried(true); picks.reload() }, 6000)
-        return () => clearTimeout(timer)
-      }, [retried, numbers, picks.status, picks.reload])
-      // The project count and star total cover the same successfully read rows.
-      const counted = repos.filter(row => Number.isFinite(row.stars))
-      const total = counted.reduce((sum, row) => sum + row.stars, 0)
-      return h('div', { className: 'ofm_page' },
-        h('header', { className: 'ofm_hero ofm_glass' },
-          h('span', { className: 'ofm_recoglow', 'aria-hidden': 'true' }),
-          h('div', { className: 'ofm_pagehead' },
-            h('div', { className: 'ofm_pagetitle' },
-              h('h2', null, t('picks.title')),
-              h('p', { className: 'ofm_pagesub' }, t('picks.sub'))),
-            h('div', { className: 'ofm_pills' },
-              total > 0 ? h(Pill, { strong: true }, t('picks.totalStars').replace('{n}', grouped(total)).replace('{c}', grouped(counted.length))) : null,
-              h(StarButton, { t })))),
-        h('div', { className: 'ofm_recogrid' },
-          h(RecoCard, {
-            t, index: 0, stat: statOf('eac-desktop'), mark: RECO_DESKTOP_MARK,
-            name: 'EAC-Desktop', repo: 'Ebony-Vinyl/EAC-Desktop',
-            badge: t('picks.desktop.badge'),
-            tagline: t('picks.desktop.tagline'),
-            body: t('picks.desktop.body'),
-            chips: [t('picks.desktop.tag1'), t('picks.desktop.tag2'), t('picks.desktop.tag3'), t('picks.desktop.tag4')],
-            repoUrl: RECO_LINKS.desktop.repo, extraUrl: RECO_LINKS.desktop.extra, extraLabel: t('picks.getDesktop'),
-          }),
-          h(RecoCard, {
-            t, index: 1, stat: statOf('eac-pack'), mark: RECO_PACK_MARK,
-            name: 'EAC-Pack', repo: 'Ebony-Vinyl/EAC-Pack',
-            badge: t('picks.pack.badge'),
-            tagline: t('picks.pack.tagline'),
-            body: t('picks.pack.body'),
-            chips: [t('picks.pack.tag1'), t('picks.pack.tag2'), t('picks.pack.tag3'), t('picks.pack.tag4')],
-            repoUrl: RECO_LINKS.pack.repo, extraUrl: RECO_LINKS.pack.extra, extraLabel: t('picks.getPack'),
-          }),
-          h(RecoCard, {
-            t, index: 2, stat: statOf('eac-design-world'), mark: RECO_DESIGN_MARK,
-            name: 'EAC-design-world', repo: 'Ebony-Vinyl/EAC-design-world',
-            badge: t('picks.design.badge'),
-            tagline: t('picks.design.tagline'),
-            body: t('picks.design.body'),
-            chips: [t('picks.design.tag1'), t('picks.design.tag2'), t('picks.design.tag3'), t('picks.design.tag4')],
-            repoUrl: RECO_LINKS.designWorld.repo, extraUrl: RECO_LINKS.designWorld.extra, extraLabel: t('picks.getDesign'),
-          })),
-        picks.status === 'error' ? h('p', { className: 'ofm_reconote' }, t('picks.liveFailed')) : null,
-        h('p', { className: 'ofm_reconote' }, t('picks.foot')))
-    }
 
     // ── 白嫖模型接入页 ────────────────────────────────────────────────────────
     // Real channel logos carried over from the upstream Channel Pack client (see
@@ -5322,22 +4600,6 @@ window.__ModuleLoader__.load({
         hint === undefined ? null : h('span', null, hint))
     }
 
-    // Labels for the ids the host serves. Literal t() calls inside an object
-    // literal rather than a key table, because a key the copy lint cannot see is
-    // a key it reports as unused (the same shape the pool-reason table uses).
-    const AGG_CATEGORY = t => ({
-      apikey: t('agg.category.apikey'),
-      free: t('agg.category.free'),
-      'free-tier': t('agg.category.freeTier'),
-      local: t('agg.category.local'),
-      oauth: t('agg.category.oauth'),
-    })
-    const AGG_AUTH = t => ({
-      apiKey: t('agg.auth.apiKey'),
-      none: t('agg.auth.none'),
-      oauth: t('agg.auth.oauth'),
-      adc: t('agg.auth.adc'),
-    })
     const SAVER_LEVEL = t => ({
       off: t('saver.level.off'),
       lite: t('saver.level.lite'),
@@ -5347,33 +4609,6 @@ window.__ModuleLoader__.load({
       wenyan: t('saver.level.wenyan'),
       'wenyan-ultra': t('saver.level.wenyanUltra'),
     })
-    const LANE_LABEL = t => ({
-      free: t('routing.channel.free'),
-      eac: t('routing.channel.eac'),
-      kilo: t('routing.channel.kilo'),
-      aggregate: t('routing.channel.aggregate'),
-      combo: t('routing.channel.combo'),
-    })
-
-    /**
-     * Auth kinds this lane cannot drive.
-     *
-     * `oauth` needs an interactive login and `adc` a cloud-side credential, so
-     * the aggregate lane skips them when it builds the catalog. Offering one in
-     * the picker would be offering a provider whose key field can never work, so
-     * they are shown and marked instead of hidden — "this exists and this lane
-     * will not call it" is the honest sentence.
-     */
-    const AGG_UNUSABLE = new Set(['oauth', 'adc'])
-
-    /** `a, b` / `a\nb` -> `['a','b']`, the shape POST /providers stores. */
-    const parseModelIds = value => String(value ?? '').split(/[\n,]+/).map(part => part.trim()).filter(part => part !== '')
-
-    /** How many catalog rows one provider contributes right now, read from
-     *  /summary: "configured" must never imply "in the model picker". */
-    const contributedBy = (catalog, providerId) => (catalog ?? [])
-      .filter(row => row.channel === 'aggregate' && row.providerId === providerId).length
-
     const miniBtn = (label, onClick, options = {}) => h('button', {
       type: 'button',
       className: 'ofm_minibtn' + (options.danger === true ? ' danger' : ''),
@@ -5382,309 +4617,16 @@ window.__ModuleLoader__.load({
       onClick,
     }, label)
 
-    /**
-     * The add-provider picker: the whole registry, filtered.
-     *
-     * Every row carries what the decision needs — category, wire format, auth
-     * kind, how many models ship with it, where to get a key and the free-tier
-     * note — because "which of these 76 is worth a key" is the actual question.
-     * Rows are capped; the counts say how many matched.
-     */
-    function ProviderPicker(props) {
-      const { t, registry, onPick } = props
-      const [query, setQuery] = useState('')
-      const [category, setCategory] = useState('')
-      const [format, setFormat] = useState('')
-      const [auth, setAuth] = useState('')
-      const categories = AGG_CATEGORY(t)
-      const auths = AGG_AUTH(t)
-      const needle = query.trim().toLowerCase()
-      const matched = registry.filter(row => {
-        if (category !== '' && row.category !== category) return false
-        if (format !== '' && row.format !== format) return false
-        if (auth !== '' && row.authKind !== auth) return false
-        if (needle === '') return true
-        return `${row.id} ${row.name}`.toLowerCase().includes(needle)
-      })
-      const shown = matched.slice(0, 48)
-      const formats = [...new Set(registry.map(row => row.format))].sort()
-      return h('div', { className: 'ofm_panel ofm_rise' },
-        h('div', { className: 'ofm_paneltitle' }, t('agg.addTitle'),
-          h('span', { className: 'ofm_sec_hint' }, t('agg.showing').replace('{shown}', String(shown.length)).replace('{total}', String(matched.length)))),
-        h('div', { className: 'ofm_row' },
-          h('div', { className: 'ofm_field', style: { flex: '1 1 180px' } },
-            h('span', null, t('agg.search')),
-            h('input', { className: 'ofm_input', value: query, placeholder: t('agg.search'), onChange: event => setQuery(event.target.value) })),
-          h('div', { className: 'ofm_field' }, h('span', null, t('agg.filterCategory')),
-            h('select', { className: 'ofm_input', value: category, onChange: event => setCategory(event.target.value) },
-              h('option', { value: '' }, t('agg.filterAll')),
-              Object.keys(categories).map(id => h('option', { key: id, value: id }, categories[id])))),
-          h('div', { className: 'ofm_field' }, h('span', null, t('agg.filterFormat')),
-            h('select', { className: 'ofm_input', value: format, onChange: event => setFormat(event.target.value) },
-              h('option', { value: '' }, t('agg.filterAll')),
-              formats.map(id => h('option', { key: id, value: id }, id)))),
-          h('div', { className: 'ofm_field' }, h('span', null, t('agg.filterAuth')),
-            h('select', { className: 'ofm_input', value: auth, onChange: event => setAuth(event.target.value) },
-              h('option', { value: '' }, t('agg.filterAll')),
-              Object.keys(auths).map(id => h('option', { key: id, value: id }, auths[id]))))),
-        h('p', { className: 'ofm_note' }, t('agg.addHint')),
-        shown.length === 0
-          ? h('p', { className: 'ofm_note' }, t('agg.noMatch'))
-          : h('div', { className: 'ofm_picklist' }, shown.map((row, index) => {
-            const blocked = AGG_UNUSABLE.has(row.authKind)
-            return h('div', {
-              key: row.id, className: 'ofm_pickrow ofm_rise',
-              style: { animationDelay: `${Math.min(index, 12) * 18}ms` },
-            },
-            h('span', { className: 'ofm_pickhead' },
-              h('b', { title: row.name }, row.name),
-              blocked ? h('span', { className: 'ofm_tagpill dead' }, t('agg.notUsable')) : null),
-            h('span', { className: 'ofm_pickmeta' },
-              h('span', { className: 'ofm_tag' }, categories[row.category] ?? row.category),
-              h('span', { className: 'ofm_tag' }, row.format),
-              h('span', { className: 'ofm_tag' }, auths[row.authKind] ?? row.authKind),
-              h('span', null, t('agg.modelCount').replace('{n}', String(row.modelCount)))),
-            blocked
-              ? h('span', { className: 'ofm_picknote' }, t('agg.notUsableWhy').replace('{kind}', auths[row.authKind] ?? row.authKind))
-              : h('span', { className: 'ofm_row' },
-                row.credentialUrl === '' ? null
-                  : h('a', { className: 'ofm_starlink', href: row.credentialUrl, target: '_blank', rel: 'noreferrer' }, t('agg.credential')),
-                miniBtn(t('agg.select'), () => onPick(row))),
-            row.notes === '' ? null : h('span', { className: 'ofm_picknote' }, row.notes))
-          })))
-    }
+    const LANE_LABEL = t => ({
+      free: t('routing.channel.free'),
+      eac: t('routing.channel.eac'),
+      kilo: t('routing.channel.kilo'),
+      combo: t('routing.channel.combo'),
+    })
 
-    /**
-     * One provider's editor, shared by "configure" and "add".
-     *
-     * The key box starts empty on purpose and an empty box means *keep*: the host
-     * distinguishes an absent field from an empty string, and conflating them is
-     * what silently kept a key the user believed they had deleted. Deleting one
-     * is therefore its own button, and it says what it does.
-     */
-    function ProviderEditor(props) {
-      const { t, provider, state, contributions, onSaved, onRemoved, onChanged, showContributions = true } = props
-      const fresh = state === undefined
-      const [enabled, setEnabled] = useState(state?.enabled !== false)
-      const [baseUrl, setBaseUrl] = useState(state?.baseUrl ?? '')
-      const [key, setKey] = useState('')
-      const [models, setModels] = useState((state?.models ?? []).join(', '))
-      const [verdict, setVerdict] = useState(state?.lastTest ?? null)
-      const [found, setFound] = useState(null)
-      const [confirm, setConfirm] = useState(false)
-      const [busy, setBusy] = useState('')
-      const [error, setError] = useState('')
-
-      const run = async (kind, action) => {
-        setBusy(kind)
-        setError('')
-        try { await action() } catch (failure) { setError(String(failure?.message ?? failure)) } finally { setBusy('') }
-      }
-      const save = () => run('save', async () => {
-        const body = { providerId: provider.id, enabled, baseUrl, models: parseModelIds(models) }
-        if (key !== '') body.apiKey = key
-        const answer = await post('/providers', body)
-        setKey('')
-        onSaved(answer.aggregate, provider, fresh)
-      })
-      const clearKey = () => run('clear', async () => {
-        const answer = await post('/providers', { providerId: provider.id, apiKey: '' })
-        setKey('')
-        onSaved(answer.aggregate, provider, false)
-      })
-      const test = () => run('test', async () => {
-        // A listing probe, not a generation: the host verifies the key by asking
-        // for the model list, so this costs no tokens. `status: 0` with ok:false
-        // is its own verdict — "cannot be verified without spending a
-        // generation" — and reads as a warning, not as a rejected key.
-        const answer = await post('/providers/test', { providerId: provider.id }, 60_000)
-        setVerdict({ at: Date.now(), ok: answer.ok === true, status: Number(answer.status) || 0, message: String(answer.message ?? '') })
-      })
-      const discover = () => run('discover', async () => {
-        const answer = await post('/providers/discover', { providerId: provider.id }, 60_000)
-        setFound(Array.isArray(answer.models) ? answer.models : null)
-        // The host persisted the ids and rebuilt the catalog; re-read both views
-        // so the contribution counts and the key fingerprint stay true.
-        onChanged?.()
-      })
-
-      return h('div', { className: 'ofm_rise', style: { display: 'flex', flexDirection: 'column', gap: 10 } },
-        h('div', { className: 'ofm_pickmeta' },
-          h('span', { className: 'ofm_tag' }, AGG_CATEGORY(t)[provider.category] ?? provider.category),
-          h('span', { className: 'ofm_tag' }, provider.format),
-          h('span', { className: 'ofm_tag' }, AGG_AUTH(t)[provider.authKind] ?? provider.authKind),
-          // The card prints this one line above the editor, so it is suppressed
-          // there; the add-provider flow renders the editor alone and keeps it.
-          showContributions === false ? null : h('span', null, t('agg.contributes').replace('{n}', String(contributions)))),
-        h('div', { className: 'ofm_duo' },
-          ToggleRow({
-            label: t('agg.enabled'), checked: enabled, disabled: busy !== '',
-            onChange: () => { if (busy === '') setEnabled(value => !value) },
-          }),
-          field(t('agg.key'),
-            h('input', {
-              className: 'ofm_input', type: 'password', value: key, placeholder: t('agg.keyPlaceholder'),
-              autoComplete: 'off', disabled: busy !== '',
-              onChange: event => setKey(event.target.value),
-            })),
-          field(t('agg.baseUrl'),
-            h('input', {
-              className: 'ofm_input', value: baseUrl, placeholder: provider.baseUrl, disabled: busy !== '',
-              onChange: event => setBaseUrl(event.target.value),
-            })),
-          field(t('agg.models'),
-            h('textarea', {
-              className: 'ofm_input', rows: 2, value: models, placeholder: t('agg.modelsPlaceholder'),
-              disabled: busy !== '',
-              onChange: event => setModels(event.target.value),
-            }))),
-        h('div', { className: 'ofm_row' },
-          h('span', { className: 'ofm_note' }, t('agg.keyKeep')),
-          state?.hasKey === true ? h('span', { className: 'ofm_note' }, t('agg.hasKey').replace('{hint}', state.keyHint)) : h('span', { className: 'ofm_note' }, t('agg.noKey')),
-          state?.hasKey === true ? miniBtn(t('agg.keyClear'), clearKey, { danger: true, disabled: busy !== '', title: t('agg.keyClearWarn') }) : null),
-        h('div', { className: 'ofm_row' },
-          h('span', { className: 'ofm_note' }, t('agg.baseUrlHint')),
-          provider.baseUrl === '' ? null : h('span', { className: 'ofm_note' }, t('agg.baseUrlDefault').replace('{url}', provider.baseUrl)),
-          provider.baseUrlOverrideEnv === '' ? null : h('span', { className: 'ofm_note' }, t('agg.baseUrlEnv').replace('{env}', provider.baseUrlOverrideEnv))),
-        h('p', { className: 'ofm_note' }, t('agg.modelsHint')),
-        h('div', { className: 'ofm_row' },
-          h(Button, { kind: 'primary', disabled: busy !== '', onClick: save }, busy === 'save' ? t('agg.saving') : fresh ? t('agg.add') : t('agg.save')),
-          miniBtn(t('agg.test'), test, { disabled: busy !== '' }),
-          miniBtn(t('agg.discover'), discover, { disabled: busy !== '' }),
-          h('span', { className: 'spacer', style: { marginLeft: 'auto' } }),
-          fresh ? null : (confirm
-            ? h(Fragment, null,
-              miniBtn(t('agg.removeConfirm'), () => run('remove', async () => {
-                const answer = await post('/providers/remove', { providerId: provider.id })
-                onRemoved(answer.aggregate, provider)
-              }), { danger: true, disabled: busy !== '' }),
-              miniBtn(t('agg.cancel'), () => setConfirm(false), { disabled: busy !== '' }))
-            : miniBtn(t('agg.remove'), () => setConfirm(true), { danger: true, disabled: busy !== '' }))),
-        confirm ? h('p', { className: 'ofm_note' }, t('agg.removeWarn')) : null,
-        h('div', { className: 'ofm_row' },
-          verdict === null ? h('span', { className: 'ofm_note' }, t('agg.neverTested'))
-            : h(Fragment, null,
-              h(Pill, { tone: verdict.ok === true ? 'ok' : verdict.status === 0 ? 'warn' : 'err' },
-                verdict.ok === true ? t('agg.testOk') : verdict.status === 0 ? t('agg.testUnverified') : t('agg.testFailed')),
-              h('span', { className: 'ofm_note' }, t('agg.testAt').replace('{when}', ago(verdict.at, t.locale)))),
-          busy === 'test' ? h('span', { className: 'ofm_note' }, t('agg.testing')) : null,
-          busy === 'discover' ? h('span', { className: 'ofm_note' }, t('agg.discovering')) : null),
-        verdict !== null && verdict.ok !== true && verdict.status === 0
-          ? h('p', { className: 'ofm_note' }, t('agg.testUnverifiedWhy')) : null,
-        verdict !== null && verdict.message !== '' ? h('p', { className: 'ofm_note' }, verdict.message) : null,
-        found === null
-          ? null
-          : h('div', { className: 'ofm_row' },
-            h('span', { className: 'ofm_note' }, found.length === 0 ? t('agg.discoveredNone') : t('agg.discovered').replace('{n}', String(found.length))),
-            found.length === 0 ? null : miniBtn(t('agg.discoveredUse'), () => setModels(found.join(', ')))),
-        error === '' ? null : h('div', { className: 'ofm_callout ofm_error' },
-          h('div', null, h('b', null, t('agg.failed')), h('div', null, error))))
-    }
-
-    /** A configured provider as one card: identity, what it contributes, and its
-     *  editor. The editor is inline rather than behind a fold because every field
-     *  on it is something the card's own state can disagree with. */
-    function ProviderCard(props) {
-      const { t, provider, state, contributions, onSaved, onRemoved, onChanged, index } = props
-      return h('div', { className: 'ofm_card ofm_rise', style: { animationDelay: `${Math.min(index, 8) * 22}ms` } },
-        h('div', { className: 'ofm_cardhead' },
-          h('span', { className: 'ofm_cardname', title: provider.name }, provider.name),
-          state.enabled === false ? h('span', { className: 'ofm_tagpill dead' }, t('agg.disabled')) : null),
-        h('div', { className: 'ofm_id' }, provider.id),
-        h('div', { className: 'ofm_metrics' },
-          h('span', null, contributions > 0 ? t('agg.contributes').replace('{n}', String(contributions)) : t('agg.contributesNone')),
-          h('span', null, state.hasKey === true ? t('agg.hasKey').replace('{hint}', state.keyHint) : t('agg.noKey'))),
-        h(ProviderEditor, { t, provider, state, contributions, onSaved, onRemoved, onChanged, showContributions: false }))
-    }
-
-    /**
-     * 聚合渠道: the registry, the configured providers and their editors.
-     *
-     * The catalog is read from the summary the shell already holds, so the
-     * "contributes N models" line is the picker's own view rather than a second
-     * derivation — and every write asks the shell to re-read it, because saving a
-     * provider changes what the model picker offers.
-     */
-    function AggregatePage(props) {
-      const { t, summary } = props
-      const panel = usePanel(() => api('/providers'), [])
-      const [adding, setAdding] = useState(false)
-      const [draft, setDraft] = useState(null)
-      const [query, setQuery] = useState('')
-      const [category, setCategory] = useState('')
-      const catalog = summary?.data?.catalog ?? []
-      const registry = panel.data?.registry ?? []
-      const configured = panel.data?.configured?.providers ?? {}
-      const categories = AGG_CATEGORY(t)
-
-      const afterWrite = (aggregate, provider, isNew) => {
-        if (aggregate !== undefined && aggregate !== null) panel.patch({ configured: aggregate })
-        if (isNew) { setAdding(false); setDraft(null) }
-        summary?.reload?.()
-        showToast({ title: t('agg.saved'), body: t('agg.savedBody').replace('{name}', provider.name), holdMs: 3600 })
-      }
-      const afterRemove = (aggregate, provider) => {
-        if (aggregate !== undefined && aggregate !== null) panel.patch({ configured: aggregate })
-        summary?.reload?.()
-        showToast({ title: t('agg.saved'), body: t('agg.removedBody').replace('{name}', provider.name), holdMs: 3600 })
-      }
-      const afterDiscover = () => { panel.reload(); summary?.reload?.() }
-
-      const needle = query.trim().toLowerCase()
-      const rows = Object.keys(configured)
-        .map(id => ({ id, provider: registry.find(entry => entry.id === id) ?? null, state: configured[id] }))
-        .filter(row => row.provider !== null)
-        .filter(row => category === '' || row.provider.category === category)
-        .filter(row => needle === '' || `${row.id} ${row.provider.name}`.toLowerCase().includes(needle))
-
-      return h('div', { className: 'ofm_page' },
-        h(PageHero, { title: t('agg.title'), sub: t('agg.sub') },
-          h('div', { className: 'ofm_pills' },
-            h(Pill, null, t('agg.registryCount').replace('{n}', String(registry.length))),
-            h(Pill, { strong: true }, t('agg.configuredCount').replace('{n}', String(Object.keys(configured).length)))),
-          h(Button, {
-            kind: adding ? 'ghost' : 'primary',
-            onClick: () => { setAdding(value => !value); setDraft(null) },
-          }, adding ? t('agg.cancel') : t('agg.addProvider'))),
-        panel.status === 'loading' ? h(PanelSkeleton) : null,
-        panel.status === 'error'
-          ? h(PanelError, { t, title: t('agg.loadFailed'), message: panel.error, onRetry: panel.reload })
-          : null,
-        panel.status === 'ready'
-          ? h(Fragment, null,
-            draft !== null
-              ? h('div', { className: 'ofm_panel ofm_rise' },
-                h('div', { className: 'ofm_paneltitle' }, draft.name, h('span', { className: 'ofm_sec_hint' }, draft.id)),
-                h(ProviderEditor, {
-                  t, provider: draft, state: undefined, contributions: 0,
-                  onSaved: afterWrite, onRemoved: afterRemove, onChanged: afterDiscover,
-                }))
-              : adding
-                ? h(ProviderPicker, { t, registry, onPick: setDraft })
-                : null,
-            h(Section, { title: t('agg.configuredTitle'), hint: t('agg.configuredHint') },
-              h('div', { className: 'ofm_row' },
-                h('div', { className: 'ofm_field', style: { flex: '1 1 180px' } },
-                  h('span', null, t('agg.search')),
-                  h('input', { className: 'ofm_input', value: query, placeholder: t('agg.search'), onChange: event => setQuery(event.target.value) })),
-                h('div', { className: 'ofm_field' }, h('span', null, t('agg.filterCategory')),
-                  h('select', { className: 'ofm_input', value: category, onChange: event => setCategory(event.target.value) },
-                    h('option', { value: '' }, t('agg.filterAll')),
-                    Object.keys(categories).map(id => h('option', { key: id, value: id }, categories[id]))))),
-              Object.keys(configured).length === 0
-                ? h('div', { className: 'ofm_panel' },
-                  h('div', { className: 'ofm_paneltitle' }, t('agg.empty')),
-                  h('p', { className: 'ofm_note' }, t('agg.emptyHint')))
-                : rows.length === 0
-                  ? h('p', { className: 'ofm_note' }, t('agg.filterEmpty'))
-                  : h('div', { className: 'ofm_grid' }, rows.map((row, index) => h(ProviderCard, {
-                    key: row.id, t, index, provider: row.provider, state: row.state,
-                    contributions: contributedBy(catalog, row.id),
-                    onSaved: afterWrite, onRemoved: afterRemove, onChanged: afterDiscover,
-                  })))))
-          : null)
-    }
-
+    // Labels for the ids the host serves. Literal t() calls inside an object
+    // literal rather than a key table, because a key the copy lint cannot see is
+    // a key it reports as unused (the same shape the pool-reason table uses).
     /** The segmented level picker the two prompt savers share. */
     function LevelPicker(props) {
       const { t, levels, value, disabled, onChange } = props
@@ -6216,7 +5158,7 @@ window.__ModuleLoader__.load({
     // The active page lives in localStorage so a reload — or the hot reload the
     // upgrader triggers — comes back to the page the user was reading.
     const TAB_KEY = 'ofm.tab'
-    const TABS = ['free', 'eac', 'channels', 'aggregate', 'saver', 'routing', 'ledger', 'logs', 'gateway', 'upgrade', 'picks']
+    const TABS = ['free', 'eac', 'channels', 'saver', 'routing', 'ledger', 'logs', 'gateway', 'upgrade']
 
     function Shell(props) {
       const { t, data, counts, summary, stats, eacAuth, setEacAuth, eacLogin, busy, setBusy, apply, bench, benches, ctx } = props
@@ -6260,14 +5202,12 @@ window.__ModuleLoader__.load({
         ['free', t('nav.tab.free'), counts.available ?? 0],
         ['eac', t('nav.tab.eac'), data.catalog.filter(m => m.channel === 'eac').length],
         ['channels', t('nav.tab.channels'), CHANNEL_PROVIDERS.length],
-        ['aggregate', t('nav.tab.aggregate'), data.catalog.filter(m => m.channel === 'aggregate').length],
         ['saver', t('nav.tab.saver'), null],
         ['routing', t('nav.tab.routing'), data.catalog.filter(m => m.channel === 'combo').length],
         ['ledger', t('nav.tab.ledger'), null],
         ['logs', t('nav.tab.logs'), null],
         ['gateway', t('nav.tab.gateway'), null],
         ['upgrade', t('nav.tab.upgrade'), null],
-        ['picks', t('nav.tab.picks'), null],
       ]
       const nav = h('nav', { className: 'ofm_nav' },
         h('span', { className: 'ofm_navbrand' },
@@ -6287,8 +5227,6 @@ window.__ModuleLoader__.load({
 
       const page = tab === 'channels'
         ? h(ChannelsPage, { t, ctx, summary })
-        : tab === 'aggregate'
-          ? h(AggregatePage, { t, summary })
           : tab === 'saver'
             ? h(SaverPage, { t })
             : tab === 'routing'
@@ -6301,8 +5239,6 @@ window.__ModuleLoader__.load({
                     ? h(GatewayPage, { t, ctx })
                     : tab === 'upgrade'
                       ? h(UpgradePage, { t, settings: data.settings, onApply: apply, busy })
-                    : tab === 'picks'
-                      ? h(PicksPage, { t })
                     : tab === 'eac'
                       ? h(EacPage, { t, data, counts, summary, stats, eacAuth, setEacAuth, eacLogin, busy, catalogBusy, apply, bench, benches, refresh, reprobe })
                       : h(FreePage, { t, data, counts, summary, stats, eacAuth, eacLogin, busy, catalogBusy, apply, bench, benches, refresh, reprobe })
@@ -6313,17 +5249,6 @@ window.__ModuleLoader__.load({
         page)
     }
 
-    function SponsorBanner({ t }) {
-      return h('aside', { className: 'ofm_sponsor_banner', 'aria-label': t('sponsor.bannerTitle') },
-        h('div', { className: 'ofm_sponsor_logo', 'aria-hidden': 'true' },
-          h('img', { src: SPONSOR_LOGO, alt: '', width: 56, height: 56, style: { display: 'block', objectFit: 'contain', borderRadius: 'inherit' } })),
-        h('div', { className: 'ofm_sponsor_bannerbody' },
-          h('span', { className: 'ofm_sponsor_kicker' }, t('sponsor.bannerTag')),
-          h('h3', null, t('sponsor.bannerTitle')),
-          h('p', null, t('sponsor.bannerDescription'))),
-        h('a', { className: 'ofm_sponsor_cta', href: SPONSOR_CARD_URL, target: '_blank', rel: 'noopener noreferrer' },
-          h('span', null, t('sponsor.bannerCta')), h('span', { 'aria-hidden': 'true' }, '↗')))
-    }
 
     function FreePage(props) {
       const { t, data, counts, summary, stats, eacAuth, eacLogin, busy, catalogBusy, apply, bench, benches, refresh, reprobe } = props
@@ -6344,7 +5269,6 @@ window.__ModuleLoader__.load({
       // and would paint a perfectly usable lane amber.
       const level = ratio >= 0.6 ? 'ok' : ratio >= 0.3 ? 'busy' : 'over'
       return h('div', { className: 'ofm_page' },
-        h(SponsorBanner, { t }),
         h('header', { className: 'ofm_hero ofm_glass' },
           h('div', { className: 'ofm_pagehead' },
             h('div', { className: 'ofm_pagetitle' },
@@ -6381,8 +5305,8 @@ window.__ModuleLoader__.load({
             : h('p', { className: 'ofm_note' }, t('loading'))),
         h(Section, { title: t('section.forward'), hint: t('section.forwardHint') }, h(Forward, { settings: data.settings, t, onApply: apply, busy })),
         h(Section, { title: t('section.egress'), hint: t('section.egressHint') }, h(Egress, { settings: data.settings, t, onApply: apply, busy })),
-        h(Section, { title: t('section.prefs'), hint: t('section.prefsHint') }, h(Preferences, { summary: data, t, onApply: apply, busy })),
-        h(Section, { title: t('section.news'), hint: t('section.newsHint') }, h(NewsPanel, { t })))
+        h(Section, { title: t('section.prefs'), hint: t('section.prefsHint') }, h(Preferences, { summary: data, t, onApply: apply, busy }))
+)
     }
 
     function EacPage(props) {
@@ -6396,7 +5320,6 @@ window.__ModuleLoader__.load({
           ?? (poolError !== '' ? poolError : t('pool.reasonUnknown')))
         : ''
       return h('div', { className: 'ofm_page' },
-        h(SponsorBanner, { t }),
         h('header', { className: 'ofm_hero ofm_glass' },
           h('div', { className: 'ofm_pagehead' },
             h('div', { className: 'ofm_pagetitle' },
@@ -6439,93 +5362,10 @@ window.__ModuleLoader__.load({
                 h(Button, { disabled: busy || catalogBusy, onClick: refresh }, catalogBusy || summary.status === 'loading' ? t('probing') : t('refresh')),
                 h(Button, { disabled: busy || catalogBusy, onClick: reprobe }, t('reprobe')))))),
         h(Section, { title: t('section.eac'), hint: t('section.eacHint') }, h(EacAuth, { t, auth: eacAuth, eacLogin })),
-        h(Section, { title: t('section.models'), hint: t('section.modelsHint') }, h(Roster, { summary: data, t, onBench: bench, benches, auth: eacAuth, eacLogin, only: 'eac', onApply: apply, busy })),
-        h(Section, { title: t('section.news'), hint: t('section.newsHint') }, h(NewsPanel, { t })))
+        h(Section, { title: t('section.models'), hint: t('section.modelsHint') }, h(Roster, { summary: data, t, onBench: bench, benches, auth: eacAuth, eacLogin, only: 'eac', onApply: apply, busy }))
+)
     }
 
-    // ── announcement ──────────────────────────────────────────────────────────
-    const PAGES = ['ann.preamble', 'ann.newlane', 'ann.models', 'ann.steps', 'ann.features', 'ann.updates']
-
-    function announcementPortalHost() {
-      let host = document.querySelector('[data-ofm-announcement-root]')
-      if (host === null) {
-        host = document.createElement('div')
-        host.setAttribute('data-ofm-announcement-root', 'true')
-        document.body.appendChild(host)
-      }
-      return host
-    }
-
-    function Announcement(props) {
-      const { t, complete, openSection, page, setPage, summary, acknowledged } = props
-      useEffect(() => { if (acknowledged) complete() }, [acknowledged, complete])
-      /* Not `#root.inert`, even though the shell does that for its own onboarding
-         modals: those portal out of `#root`, while a slot-mounted step stays
-         inside it, and inert has no opt-out for descendants. Measured with it on,
-         `document.elementFromPoint` over the next-page button returned BODY — the
-         dialog could not be clicked at all. The full-viewport scrim already
-         swallows every pointer event aimed at the app behind it. */
-      if (acknowledged) return null
-      const last = page === PAGES.length - 1
-      const finish = async () => {
-        try { await post(`/announcement/ack?version=${encodeURIComponent(summary?.announcementVersion ?? '')}`) } catch { /* ack is best effort */ }
-        complete()
-      }
-      const host = announcementPortalHost()
-      useEffect(() => () => {
-        if (host.parentNode !== null) host.parentNode.removeChild(host)
-      }, [host])
-      return ReactDOM.createPortal(h('div', { className: 'ofm_scrim' },
-        h('div', { className: 'ofm_ann', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('title') },
-          h('div', { className: 'ofm_annhead' },
-            h('h2', { className: 'ofm_anntitle' }, t('title')),
-            h('p', { className: 'ofm_annsub' }, t(PAGES[page]))),
-          h('div', { className: 'ofm_steps', 'aria-hidden': 'true' },
-            PAGES.map((key, index) => h('span', { key, className: 'ofm_step', 'data-on': index <= page ? 'true' : 'false' }))),
-          h('div', { className: 'ofm_annbody' }, h(PageBody, { page, t, summary })),
-          h('div', { className: 'ofm_annfoot' },
-            h('span', { className: 'ofm_note' }, t('ann.page').replace('{n}', page + 1).replace('{total}', PAGES.length)),
-            h('span', { className: 'spacer' }),
-            page === 0 ? h(Button, { kind: 'ghost', onClick: finish }, t('ann.later')) : h(Button, { kind: 'ghost', onClick: () => setPage(p => Math.max(0, p - 1)) }, '‹'),
-            last
-              ? h(Button, { kind: 'primary', onClick: async () => { await finish(); openSection?.('our-free-model') } }, t('ann.openSettings'))
-              : h(Button, { kind: 'primary', onClick: () => setPage(p => Math.min(PAGES.length - 1, p + 1)) }, '›')))), host)
-    }
-
-    const list = (t, keys) => keys.map(key => h('li', { key }, t(key)))
-
-    function PageBody(props) {
-      const { page, t, summary } = props
-      if (page === 0) return h(Fragment, null,
-        h('h3', null, t('ann.preamble')),
-        h('p', null, t('ann.pitch')),
-        h('ul', null, list(t, ['ann.p1', 'ann.p2', 'ann.p3'])))
-      if (page === 1) return h(Fragment, null,
-        h('h3', null, t('ann.newlane')),
-        h('ul', null, list(t, ['ann.n1', 'ann.n2', 'ann.n3'])))
-      if (page === 2) {
-        // Advertised models first: this page is the tour a new user reads before
-        // they pick anything, and a refused id at the top of it is a bad first
-        // impression of a lane that is actually working.
-        const rows = (summary?.catalog ?? []).slice().sort((a, b) => (a.route === null ? 1 : 0) - (b.route === null ? 1 : 0))
-        if (rows.length === 0) return h('p', null, t('loading'))
-        return h(Fragment, null,
-          h('h3', null, t('ann.models')),
-          h('div', { className: 'ofm_kv' }, rows.slice(0, 8).map(m => h('div', { key: m.id, className: 'ofm_kvc' },
-            h('b', null, m.name),
-            h('span', null, `${t(`state.${m.availability}`)} · ${m.vision ? t('tag.vision') : t('tag.text')} · ${kilo(m.contextWindow)}`)))),
-          rows.some(m => m.availability === 'region-blocked') ? h('p', { className: 'ofm_note' }, t('hint.region')) : null)
-      }
-      if (page === 3) return h(Fragment, null,
-        h('h3', null, t('ann.steps')),
-        h('ul', null, list(t, ['ann.s1', 'ann.s2', 'ann.s3', 'ann.s4'])))
-      if (page === 4) return h(Fragment, null,
-        h('h3', null, t('ann.features')),
-        h('ul', null, list(t, ['ann.f1', 'ann.f2', 'ann.f3', 'ann.f4', 'ann.f5'])))
-      return h(Fragment, null,
-        h('h3', null, t('ann.updates')),
-        h('ul', null, list(t, ['ann.u1', 'ann.u2', 'ann.u3', 'ann.u4'])))
-    }
 
     // ── registration ──────────────────────────────────────────────────────────
     // The shell mirrors the active language onto <html lang>, so a render-time
@@ -6549,92 +5389,6 @@ window.__ModuleLoader__.load({
         document.head.appendChild(style)
         return () => style.remove()
       }, 'our-free-model: styles')
-
-      // ── push subscription ───────────────────────────────────────────────────
-      // One EventSource for the whole app surface: new announcements become
-      // toasts (and OS notifications when opted in), urgent ones open a modal,
-      // update availability and completed upgrades broadcast onto window so
-      // whichever panel is mounted can refresh itself. EventSource reconnects
-      // by itself; the hot reload closes every stream server-side, so a swap
-      // simply shows up as a fresh `hello` a second later.
-      ctx.effect(() => {
-        if (typeof EventSource !== 'function') return
-        let osEnabled = false
-        let disposed = false
-        let source
-        let retryTimer
-        // 重连轮次必须活在 open() 之外：open() 每次重连都会重入，计数器若在里面
-        // 会被清零，退避就永远是第一档而不是 30s 翻倍到 5 分钟。
-        let retries = 0
-        api('/announcements').then(payload => { osEnabled = payload?.notifyOs === true }).catch(() => {})
-        const open = () => {
-          if (disposed) return
-          source = new EventSource(`${API}/events`)
-          // 断连保护：服务端不可达时 EventSource 默认无限自动重连（持续占连接池）。
-          // 连续失败达到上限先关闭让出连接，但按退避（30s 翻倍、封顶 5 分钟）定时
-          // 重新打开——永久关闭让公告/更新/升级推送在宿主重启或休眠后整体静默失效，
-          // 只有刷新页面才能恢复；退避重连在恢复连接性的同时保住连接池。
-          let errCount = 0
-          source.onopen = () => { errCount = 0; retries = 0 }
-          source.onerror = () => {
-            errCount += 1
-            if (errCount < 5) return
-            try { source.close() } catch { /* 已关闭 */ }
-            if (disposed || retryTimer !== undefined) return
-            retryTimer = setTimeout(() => {
-              retryTimer = undefined
-              open()
-            }, Math.min(30_000 * 2 ** retries, 300_000))
-            retries += 1
-          }
-          source.addEventListener('announcements', event => {
-            errCount = 0
-            let data
-            try { data = JSON.parse(event.data) } catch { return }
-            for (const item of data.items ?? []) {
-              osNotify(t('toast.annTitle'), item.title)
-              if (item.level === 'urgent') {
-                showUrgentModal({
-                  title: `${t('news.urgentTitle')} · ${item.title}`,
-                  html: item.html ?? '',
-                  confirmLabel: t('news.gotIt'),
-                  onClose: () => { void post('/announcements/ack', { id: item.id }).catch(() => {}) },
-                })
-              } else {
-                showToast({ title: t('toast.annTitle'), body: item.title, tone: item.level === 'warn' ? 'warn' : undefined })
-              }
-            }
-            window.dispatchEvent(new CustomEvent('ofm:announcements', { detail: data }))
-          })
-          source.addEventListener('update', event => {
-            let data
-            try { data = JSON.parse(event.data) } catch { return }
-            osNotify(t('toast.updateTitle'), t('toast.updateBody').replace('{latest}', data.latest ?? '').replace('{current}', data.current ?? ''))
-            showToast({
-              title: t('toast.updateTitle'),
-              body: t('toast.updateBody').replace('{latest}', data.latest ?? '').replace('{current}', data.current ?? ''),
-              tone: 'warn', holdMs: 14000,
-            })
-            window.dispatchEvent(new CustomEvent('ofm:update', { detail: data }))
-          })
-          source.addEventListener('upgraded', event => {
-            let data
-            try { data = JSON.parse(event.data) } catch { data = {} }
-            window.dispatchEvent(new CustomEvent('ofm:upgraded', { detail: data }))
-          })
-          source.addEventListener('hello', event => {
-            let data
-            try { data = JSON.parse(event.data) } catch { data = {} }
-            window.dispatchEvent(new CustomEvent('ofm:hello', { detail: data }))
-          })
-        }
-        open()
-        return () => {
-          disposed = true
-          if (retryTimer !== undefined) { clearTimeout(retryTimer); retryTimer = undefined }
-          try { source?.close() } catch { /* already closed */ }
-        }
-      }, 'our-free-model: push subscription')
 
       // A hot reload or in-app upgrade swaps this bundle while the page stays
       // open. The only durable marker across that swap is localStorage, so the
@@ -6668,54 +5422,12 @@ window.__ModuleLoader__.load({
         locale: NS,
       }, props => h(SettingsPage, { ...props, locale: localeTag(ctx), ctx })))
 
-      ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
-        name: 'settings.onboarding',
-        id: 'our-free-model-announcement',
-        order: -50,
-        locale: NS,
-      }, props => h(AnnouncementGate, { ...props, t: Object.assign(x => t(x), { locale: localeTag(ctx) }) })))
-    }
-    /**
-     * Owns the announcement's readiness.
-     *
-     * The onboarding coordinator mounts one ordered step at a time and waits for
-     * the registrant to either show something or call `complete`. This renders
-     * null until the ack state is known — a step that paints a skeleton then
-     * removes it is worse than one that waits — and completes immediately when
-     * the user already acknowledged the current copy version.
-     */
-    function AnnouncementGate(props) {
-      const { t, complete, openSection, explicit } = props
-      const [ack, setAck] = useState(undefined)
-      const [summary, setSummary] = useState(undefined)
-      const [page, setPage] = useState(0)
-      useEffect(() => {
-        let alive = true
-        api('/announcement')
-          .then(payload => { if (alive) setAck(payload) })
-          .catch(() => { if (alive) setAck({ acknowledged: true, version: '' }) })
-        api('/summary').then(payload => { if (alive) setSummary(payload) }).catch(() => {})
-        // 超时兜底：3 秒拿不到 ack（后端挂起/超时/异常）→ 当作已 ack 主动放行——
-        // 本组件是 settings.onboarding 协调器最先执行的 step（order:-50），complete 依赖 ack；
-        // ack 永远 undefined 会永久卡住 onboarding 流程（连带阻塞后续 step 与主题启动画面）。
-        const timer = setTimeout(() => {
-          if (alive) setAck(current => current ?? { acknowledged: true, version: '' })
-        }, 3000)
-        return () => { alive = false; clearTimeout(timer) }
-      }, [])
-      const acknowledged = ack?.acknowledged === true && explicit !== true
-      useEffect(() => {
-        if (ack === undefined) return
-        if (acknowledged) complete?.()
-      }, [ack, acknowledged, complete])
-      if (ack === undefined || acknowledged) return null
-      return h(Announcement, { t, complete, openSection, page, setPage, summary, acknowledged: false })
     }
     exports.apply = apply
     exports.inject = inject
     exports.name = 'our-free-model'
     // Headless test seams use the same stub React as scripts/client-lint.mjs.
-    exports.__test = { parseSafeHtml, safeUrl, sanitizeStyle, htmlToDom, buildHeatCells, Heatmap, ChannelsPage, UpgradePanel, useEacLogin, EacAuth, PicksPage, RecoCard, DICT, useChannelRpc, Shell, CSS }
+    exports.__test = { parseSafeHtml, safeUrl, sanitizeStyle, htmlToDom, buildHeatCells, Heatmap, ChannelsPage, UpgradePanel, useEacLogin, EacAuth, DICT, useChannelRpc, Shell, CSS }
     return module.exports
   },
 })

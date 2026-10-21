@@ -194,13 +194,6 @@ export const SETTINGS_INITIAL = {
     rtk: true,
     prompts: { caveman: 'off', ponytail: 'off' },
   },
-  /** The aggregate lane: third-party providers reached with the user's own key.
-   *  Keys live in this 0600 file, never in a shared settings document, and the
-   *  API masks them on the way out. */
-  aggregate: {
-    enabled: true,
-    providers: {},
-  },
   /** Named fallback chains. A combo is a virtual model whose answer comes from
    *  the first link that produces output; see src/combos.js.
    *  Ships one sensible default so a fresh install shows a single "推荐免费组"
@@ -221,37 +214,8 @@ export const SETTINGS_INITIAL = {
    *  question with a canned string — each is individually switchable, and the
    *  detector is conservative enough to be off for anything else. */
   localOptimize: { enabled: true, quota: true, prefix: true, title: true, suggestion: true, filepath: true },
-  /** Acknowledged announcement copy version. */
-  announcementAck: '',
   /** Last full catalog refresh timestamp. */
   catalogSyncedAt: 0,
-  /** Owner override for the announcement/update feed location. `{repo}` expands
-   *  to the plugin repository slug; empty means the shipped GitHub sources. */
-  feedUrl: '',
-  /** Minutes between announcement-feed polls; floored at 5. */
-  feedPollMinutes: 30,
-  /** Raise OS-level notifications for new announcements and updates (the
-   *  browser asks for permission on the user's click). */
-  notifyOs: false,
-  /** Announcement ids the user has acknowledged. */
-  announcementsAcked: [],
-  /** Hours between automatic update checks; 0 disables them entirely. */
-  updateCheckHours: 6,
-  /** Version whose update availability has already been pushed. */
-  updateNotifiedFor: '',
-  /** Watch the installed package and hot-reload on change (development aid). */
-  autoReloadWatch: false,
-  /** Who owns the installed bytes: `self` updates in-app from the repository;
-   *  `managed` — written by a distribution pack's installer, or passed as the
-   *  bundle config `distribution` — stands the self-updater, the announcement
-   *  feed and the hot reload down. The settings API never accepts this field,
-   *  so an install that shipped managed stays managed. */
-  distribution: 'self',
-  /** When the running code was hot-reloaded into place, and how many times. */
-  reloadedAt: 0,
-  reloadCount: 0,
-  /** Version installed by the in-app upgrader, for the settings page. */
-  installedVersion: '',
 }
 
 const validHiddenModelId = value => typeof value === 'string' && value.length > 0

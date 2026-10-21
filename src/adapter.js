@@ -22,7 +22,6 @@ import { toChatMessages, toClaudeMessages, toResponseInput, toToolDefs, repairTo
 import { CODE, UpstreamError, postStreamed } from './http.js'
 import { postSealedStreamed } from './eac.js'
 import { postKiloStreamed } from './kilo.js'
-import { postAggregateStreamed, isAggregateEntry } from './aggregate.js'
 import { finishReason, readStream, sanitizeUsage, windowTokens } from './stream.js'
 import { DEFAULT_LEVEL, MIN_BUDGET, budgetFor, defaultEffortFor, effortPatchFor, effortsFor, hasDeclaredEffortMenu, resolveLevel } from './effort.js'
 import { createChannel } from './channel.js'
@@ -323,10 +322,8 @@ export class FreeModelAdapter {
 
     const sealed = isEacEntry(entry)
     const kilo = isKiloEntry(entry)
-    const aggregate = isAggregateEntry(entry)
     // The absorbed channels speak the Chat wire regardless of what their ids
-    // resemble; only the free lane splits endpoints per model, and an aggregate
-    // row carries the wire its provider actually serves.
+    // resemble; only the free lane splits endpoints per model.
     const wire = plan.wire ?? wireOf(entry)
     const style = STYLE_FOR_WIRE[wire]
     const warnings = []
@@ -435,9 +432,8 @@ export class FreeModelAdapter {
       attemptSavings = savingsSink.report ?? null
       // The absorbed channels have no tool-name gate; their models see the
       // caller's tools exactly as declared, so the fingerprint pass is free-lane
-      // only. The aggregate lane is somebody else's gateway entirely — renaming
-      // its tools to this lane's gate placeholders would break the caller's calls.
-      const renameMap = sealed || kilo || aggregate ? new Map() : applyFingerprint(payload, wire === 'messages' ? 'claude' : style === 'flat')
+      // only.
+      const renameMap = sealed || kilo ? new Map() : applyFingerprint(payload, wire === 'messages' ? 'claude' : style === 'flat')
       const controller = new AbortController()
       const onAbort = () => controller.abort(options.signal?.reason)
       options.signal?.addEventListener('abort', onAbort, { once: true })
@@ -454,16 +450,7 @@ export class FreeModelAdapter {
         ? postSealedTurn(this.deps, payload, controller.signal, value => channel.push(value))
         : kilo
           ? postKiloStreamed({ body: payload, signal: controller.signal, onData: value => channel.push(value) })
-          : aggregate
-            ? postAggregateStreamed({
-              config: settings.aggregate ?? {},
-              providerId: entry.providerId,
-              modelId: entry.modelId,
-              body: payload,
-              signal: controller.signal,
-              onData: value => channel.push(value),
-            })
-            : postStreamed({
+          : postStreamed({
           path: endpointFor(entry.id), body: payload, session,
           attributionUserAgent: snapshot.attributionUserAgent,
           signal: controller.signal,
@@ -770,11 +757,9 @@ function toFailure(error) {
  * Which wire serves one catalog row.
  *
  * The absorbed channels speak the Chat wire regardless of what their ids
- * resemble; an aggregate row carries the wire its provider actually serves; the
- * free lane splits its endpoints per model id.
+ * resemble; the free lane splits its endpoints per model id.
  */
 function wireOf(entry) {
-  if (isAggregateEntry(entry)) return entry.wire ?? 'chat'
   if (isEacEntry(entry) || isKiloEntry(entry)) return 'chat'
   return wireFor(entry.id)
 }

@@ -233,23 +233,15 @@ check('the next honest round hides them again', (await advertised(ROUTE_MAIN)).i
 // is NaN, and a timer armed with NaN fires once a millisecond — a whole catalog
 // probe per second against a lane the plugin exists not to hammer; the same 0 on
 // the output ceiling is `min(capacity, 0)`, i.e. every turn cut to the floor.
-await callRoute(api(), 'POST', '/api/our-free-model/settings', { probeIntervalMinutes: 22, feedPollMinutes: 44, defaultMaxTokens: 20000 })
-check('a real value is taken as given', readSettings(), [22, 44, 20000])
-await callRoute(api(), 'POST', '/api/our-free-model/settings', { probeIntervalMinutes: 'abc', feedPollMinutes: 0, defaultMaxTokens: 0 })
-check('a cleared or nonsense field falls back to what was there, not to an extreme', readSettings(), [22, 44, 20000])
+await callRoute(api(), 'POST', '/api/our-free-model/settings', { probeIntervalMinutes: 22, defaultMaxTokens: 20000 })
+check('a real value is taken as given', readSettings(), [22, 20000])
+await callRoute(api(), 'POST', '/api/our-free-model/settings', { probeIntervalMinutes: 'abc', defaultMaxTokens: 0 })
+check('a cleared or nonsense field falls back to what was there, not to an extreme', readSettings(), [22, 20000])
 
 function readSettings() {
   const row = JSON.parse(fs.readFileSync(path.join(scratch, 'our-free-model', 'settings.json'), 'utf8'))
-  return [row.probeIntervalMinutes, row.feedPollMinutes, row.defaultMaxTokens]
+  return [row.probeIntervalMinutes, row.defaultMaxTokens]
 }
-
-// The ack version rides a query string with no length limit of its own and lands
-// in settings.json beside every other setting; nothing downstream ever compares
-// more than a version id, so the write is capped on the way in rather than
-// letting a caller pick the file's shape.
-await callRoute(api(), 'POST', `/api/our-free-model/announcement/ack?version=${'v'.repeat(4096)}`)
-const ackedVersion = JSON.parse(fs.readFileSync(path.join(scratch, 'our-free-model', 'settings.json'), 'utf8')).announcementAck
-check('an oversized ack version is capped before it reaches disk', typeof ackedVersion === 'string' && ackedVersion.length <= 64, true)
 
 // The forward listener spends this machine's free lane, so it binds loopback and
 // nothing else: a routable address in the settings file would put the whole

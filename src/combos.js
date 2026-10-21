@@ -11,7 +11,7 @@
  * `combo` list of real model ids, so the picker advertises it beside the real
  * models and the forward gateway dials it by name. `combo:` is the prefix, and
  * it is deliberately not a valid provider id — `parseProviderModelId` refuses
- * it, so an aggregate row can never be mistaken for a combo.
+ * it, so a channel row can never be mistaken for a combo.
  *
  * Two strategies:
  *

@@ -74,8 +74,8 @@ globalThis.setTimeout = realSetTimeout
 check('apply() survives a composition with no web server', bootError?.message ?? 'none', 'none')
 const adapter = ctx.__captured.adapters[0]?.adapter
 check('the adapter still registers', typeof adapter?.listModels, 'function')
-check('the probe loop and the egress watch armed on plain timers', armed.sort((a, b) => a - b), [120_000, 900_000, 1_800_000])
-check('the probe loop and the egress watch armed on plain timers', armed.sort((a, b) => a - b), [120_000, 900_000, 1_800_000])
+check('the probe loop and the egress watch armed on plain timers', armed.sort((a, b) => a - b), [120_000, 900_000])
+check('the probe loop and the egress watch armed on plain timers', armed.sort((a, b) => a - b), [120_000, 900_000])
 // Compared by period, not by count: `armed` holds the three long loops while
 // `unrefed` also holds the 40-second and 50-millisecond one-shots, so a count
 // comparison stayed true after any one of the three stopped unref'ing itself —

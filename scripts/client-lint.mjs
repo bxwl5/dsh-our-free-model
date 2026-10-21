@@ -40,10 +40,6 @@ new Function('window', 'document', 'navigator', source)(globalThis.window, globa
 const problems = []
 const record = globalThis.__registered
 
-if (!source.includes("ReactDOM.createPortal") || !source.includes("data-ofm-announcement-root") || !source.includes('document.body.appendChild(host)')) {
-  problems.push('announcement overlay must use a body-level portal host')
-}
-
 if (record === undefined) {
   problems.push('the bundle never registered itself with the module loader')
 } else {

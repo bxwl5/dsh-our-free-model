@@ -16,7 +16,6 @@ if (args.length === 1 && args[0] === '--sources-only') {
   try {
     const files = standaloneSourceFiles()
     assert.equal(new Set(files).size, files.length)
-    assert.ok(!files.includes('src/updater.js'))
     assert.ok(files.every(file => !/(^|\/)(?:node_modules|\.git|settings\.json|channel-credentials\.json|service\.lock|\.env)(\/|$)/.test(file)))
     for (const file of files) {
       const source = path.join(repositoryRoot, file)
@@ -215,7 +214,7 @@ try {
   await check('package excludes host plugins, installed dependencies and user data', () => {
     const paths = manifest.files.map(file => file.path)
     assert.ok(paths.every(file => !/(^|\/)(?:node_modules|\.git|\.aoci|settings\.json|channel-credentials\.json|service\.lock|\.env)(\/|$)/.test(file)))
-    for (const unwanted of ['index.js', 'client.js', 'src/updater.js', 'src/reload.js', 'feed/manifest.json']) assert.ok(!paths.includes(unwanted))
+    for (const unwanted of ['index.js', 'client.js']) assert.ok(!paths.includes(unwanted))
     assert.ok(paths.includes('vendor/channel-pack/qoder-auth-wasm.wasm'))
     assert.ok(paths.includes('runtime/LICENSE'))
     assert.ok(paths.includes('THIRD_PARTY_NOTICES.txt'))

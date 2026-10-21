@@ -26,7 +26,6 @@ await test('classified stream failures survive every local forwarding protocol',
   const { readSse, postStreamed, classifyFailure } = await import('../src/http.js')
   const { postSealedStreamed } = await import('../src/eac.js')
   const { postKiloStreamed } = await import('../src/kilo.js')
-  const { postAggregateStreamed } = await import('../src/aggregate.js')
   const { foldForwardOutcome } = await import('../src/core/completion.js')
   const { startForwardServer } = await import('../src/forward.js')
   const { readStream } = await import('../src/stream.js')
@@ -37,7 +36,6 @@ await test('classified stream failures survive every local forwarding protocol',
     anonymous: () => postStreamed({ ...options, path: '/chat/completions', session: 'fixture' }),
     EAC: () => postSealedStreamed({ ...options, credential: { mode: 'direct', base, apiKey: 'fixture' } }),
     Kilo: () => postKiloStreamed(options),
-    aggregate: () => postAggregateStreamed({ ...options, config: { enabled: true, providers: { openai_api: { enabled: true, apiKey: 'fixture', baseUrl: base } } }, providerId: 'openai_api', modelId: 'fixture' }),
   }
   for (const [name, post] of Object.entries(posters)) {
     for (const formatted of [false, true]) await t.test(`${name}: heartbeat followed by ${formatted ? 'multiline' : 'compact'} JSON refusal`, async () => {

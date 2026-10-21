@@ -43,16 +43,10 @@ import { createEacLoginPoller } from './src/eac-login.js'
 import { unlockSealedLane } from './src/vault.js'
 import { DEFAULT_LEVEL, budgetLadder, hasDeclaredEffortMenu } from './src/effort.js'
 import { modelAvailability } from './src/model-test.js'
-import { AnnouncementFeed } from './src/feed.js'
-import { createPickStats } from './src/picks.js'
-import { PluginUpdater } from './src/updater.js'
-import { selfReload, watchPackage, isReloading } from './src/reload.js'
 import { createPushHub } from './src/push.js'
 import { rejectionFor, isLoopbackHost, connectionAdmissionView } from './src/trust.js'
 import { resolveAttributionUserAgent } from './adapter/kernel.js'
-import { buildAggregateCatalog, fetchProviderModels, isAggregateEntry, testProvider } from './src/aggregate.js'
 import { buildComboCatalog, isComboEntry, normalizeCombos, pruneRotation } from './src/combos.js'
-import { getProvider, listProviders } from './src/providers/index.js'
 import { addSavings, describeSavingsTotal, emptySavings, saverConfig, savingsPercent } from './src/token-saver/index.js'
 import { CAVEMAN_LEVELS, PONYTAIL_LEVELS } from './src/token-saver/prompts.js'
 import { OPTIMIZATIONS } from './src/local-optimize.js'
@@ -105,9 +99,6 @@ export const version = readPackageVersion()
  *   `ctx.get()`, which is the opportunistic lookup that answers `undefined`.
  */
 export const inject = ['llm']
-
-/** Where the plugin's own announcement copy lives; bump it to re-announce. */
-export const ANNOUNCEMENT_VERSION = '2026-10-17.3'
 
 /**
  * Who owns the plugin's bytes — the distribution mode:
@@ -337,74 +328,8 @@ export function apply(ctx, config) {
   // ── push channel ────────────────────────────────────────────────────────────
   const push = createPushHub({ logger })
 
-  /** Set of announcement ids the user has acknowledged. */
-  const ackedIds = () => new Set(Array.isArray(settings.get().announcementsAcked) ? settings.get().announcementsAcked : [])
-
-  const feed = new AnnouncementFeed({
-    settings: () => settings.get(),
-    cacheFile: path.join(dataDir, 'feed.json'),
-    onArrival: items => {
-      push.emit('announcements', { items, unread: feedView().unread })
-      refreshUpdatePush?.()
-    },
-    log: message => logger.info?.(message),
-  })
-  feed.load()
-
-  // The recommendation page's star counts. Not part of the feed: the feed is
-  // the owner's channel to the user, this is a read of GitHub's public numbers,
-  // and a failure here only ever costs the page its figures.
-  const picks = createPickStats({
-    cacheFile: path.join(dataDir, 'picks.json'),
-    log: message => logger.info?.(message),
-  })
-
-  /**
-   * The announcement view the settings page reads. A managed install polls no
-   * feed and caches no copy — the pack speaks for the plugin — so its view is a
-   * fixed empty one that names its source honestly.
-   */
-  const MANAGED_FEED_VIEW = { items: [], unread: 0, fetchedAt: 0, source: 'managed', error: '', lastError: '' }
-  function feedView() {
-    return managed ? MANAGED_FEED_VIEW : feed.view({ ackedIds: ackedIds() })
-  }
-
-  const updater = new PluginUpdater({
-    pkgDir: PKG_DIR,
-    dataDir,
-    settings: () => settings.get(),
-    log: message => logger.info?.(message),
-    runningVersion: packageVersion,
-  })
-  /** Update versions we have already pushed a notification for. */
-  let updateNotifiedFor = typeof settings.get().updateNotifiedFor === 'string' ? settings.get().updateNotifiedFor : ''
-
-  /** Push an `update` event once per version (manual checks force a re-push). */
-  function pushUpdate(force = false) {
-    if (disposed || managed) return
-    const status = updater.status()
-    if (status.available !== true || status.latest === '') return
-    if (!force && status.latest === updateNotifiedFor) return
-    updateNotifiedFor = status.latest
-    settings.update({ updateNotifiedFor: status.latest })
-    push.emit('update', { current: status.current, latest: status.latest, notes: status.notes })
-  }
-  let refreshUpdatePush = undefined
   /** Set when this generation is disposed; late async callbacks must stand down. */
   let disposed = false
-
-  // The successor offers a notification callback, but only the caller that
-  // confirmed selfReload() and committed the outcome may invoke it. Booting a
-  // replacement is not yet evidence that every fiber started successfully.
-  const pendingUpgrade = globalThis[Symbol.for('our-free-model.pending-upgrade')]
-  if (pendingUpgrade?.version === packageVersion) {
-    pendingUpgrade.notify = () => {
-      if (disposed) return
-      settings.update({ installedVersion: packageVersion })
-      settings.flush()
-      push.emit('upgraded', { version: packageVersion, clientChanged: true })
-    }
-  }
 
   const modelRuntime = createModelRuntime({
     ...stores,
@@ -911,67 +836,6 @@ export function apply(ctx, config) {
     outletRestartTimer.unref?.()
   }
 
-  // ── hot reload + in-app upgrade ─────────────────────────────────────────────
-  /**
-   * Swap the running plugin for the code on disk. Called for explicit reloads
-   * for development. A failed ordinary reload only restores runtime state;
-   * it must never overwrite current edits with an unrelated upgrade backup.
-   */
-  async function reloadFromDisk() {
-    const status = updater.status()
-    if (status.applying) throw new Error('an upgrade is already running')
-    if (status.recoveryRequired) throw new Error('restore the retained upgrade backup before reloading')
-    const result = await selfReload(ctx, { logger, packageUrl: PKG_URL.href, entryUrl: ENTRY_URL })
-    if (result.ok) return result
-    throw new Error(result.error)
-  }
-
-  async function applyUpgrade(version) {
-    if (managed) throw httpError(409, MANAGED_MESSAGE)
-    if (isReloading()) throw new Error('a reload is already in progress')
-    const pendingKey = Symbol.for('our-free-model.pending-upgrade')
-    let pending
-    try {
-      const result = await updater.apply({
-        version,
-        activate: async installed => {
-          pending = { version: installed.version }
-          globalThis[pendingKey] = pending
-          return selfReload(ctx, { logger, packageUrl: PKG_URL.href, entryUrl: ENTRY_URL, expectedVersion: installed.version })
-        },
-      })
-      // Notification uses the successor's stores and hub. The predecessor's
-      // effects have already been disposed by the swap.
-      try { pending?.notify?.() } catch (error) { logger.warn?.(`our-free-model: upgrade notification failed (${error?.message ?? error})`) }
-      return { ...result, reloaded: true }
-    } finally {
-      if (globalThis[pendingKey] === pending) globalThis[pendingKey] = undefined
-    }
-  }
-
-  /**
-   * Watch the installed package and hot-reload when its files change.
-   * Off by default; the settings page flips it for development and demos.
-   */
-  let watcher = undefined
-  function syncWatcher() {
-    const wanted = settings.get().autoReloadWatch === true
-    if (wanted && watcher === undefined) {
-      watcher = watchPackage(PKG_DIR, {
-        logger,
-        onChange: () => {
-          const status = updater.status()
-          if (isReloading() || status.applying || status.recoveryRequired) return
-          logger.info?.('our-free-model: watched files changed; hot-reloading')
-          void reloadFromDisk().catch(error => logger.warn?.(`our-free-model: hot reload failed (${error?.message ?? error})`))
-        },
-      })
-    } else if (!wanted && watcher !== undefined) {
-      watcher()
-      watcher = undefined
-    }
-  }
-
   // ── browser-facing API ──────────────────────────────────────────────────────
   /**
    * Read a service the composition may or may not mount.
@@ -1048,83 +912,6 @@ export function apply(ctx, config) {
     onVisibilityChanged: emitTopology,
     pool: fetchPoolSnapshot,
     eacAuth,
-    picks,
-    // ── the aggregate lane's settings surface ────────────────────────────────
-    // The registry is static data; the configured half is the settings file with
-    // every key masked. Writing one provider rebuilds the catalog and re-emits
-    // the topology, because a provider the picker cannot see is a provider the
-    // user cannot use, and the picker is driven by `llm/adapters-updated`.
-    providers: {
-      registry: publicProviderRegistry,
-      configured: () => publicAggregate(settings.get().aggregate),
-      save: async patch => {
-        if (patch === null || typeof patch !== 'object') throw httpError(400, 'the request body must be a JSON object')
-        const id = String(patch.providerId ?? '').trim()
-        const provider = getProvider(id)
-        if (provider === null) throw httpError(400, `unknown provider "${id}"`)
-        const section = settings.get().aggregate ?? {}
-        const providers = { ...(section.providers ?? {}) }
-        const previous = providers[id] ?? {}
-        const next = { ...previous, addedAt: Number.isFinite(previous.addedAt) && previous.addedAt > 0 ? previous.addedAt : Date.now() }
-        if (patch.enabled !== undefined) next.enabled = patch.enabled === true
-        // An absent field keeps the stored value; an empty string clears it. That
-        // is the difference between "the page did not touch the key" and "the user
-        // emptied the box", and conflating them silently kept a key the user
-        // believed they had removed.
-        if (typeof patch.apiKey === 'string') next.apiKey = patch.apiKey.trim().slice(0, 512)
-        if (typeof patch.baseUrl === 'string') {
-          const url = patch.baseUrl.trim()
-          if (url !== '' && !/^https?:\/\//i.test(url)) throw httpError(400, 'baseUrl must be an http(s) URL')
-          next.baseUrl = url.slice(0, 512)
-        }
-        if (Array.isArray(patch.models)) next.models = patch.models.map(value => String(value ?? '').trim()).filter(value => value !== '').slice(0, 300)
-        providers[id] = next
-        settings.update({ aggregate: { ...section, providers } })
-        settings.flush()
-        syncAggregateCatalog()
-        return publicAggregate(settings.get().aggregate)
-      },
-      remove: async id => {
-        const section = settings.get().aggregate ?? {}
-        const providers = { ...(section.providers ?? {}) }
-        delete providers[String(id ?? '').trim()]
-        settings.update({ aggregate: { ...section, providers } })
-        settings.flush()
-        syncAggregateCatalog()
-        return publicAggregate(settings.get().aggregate)
-      },
-      test: async id => {
-        const providerId = String(id ?? '').trim()
-        if (getProvider(providerId) === null) throw httpError(400, `unknown provider "${providerId}"`)
-        const result = await testProvider(settings.get().aggregate ?? {}, providerId)
-        // The verdict is persisted so the page can show "verified 3 minutes ago"
-        // without spending a probe on every mount. It is a reading, not a
-        // credential, so it rides the public section as-is.
-        const section = settings.get().aggregate ?? {}
-        const providers = { ...(section.providers ?? {}) }
-        if (providers[providerId] !== undefined) {
-          providers[providerId] = { ...providers[providerId], lastTest: { at: Date.now(), ok: result.ok === true, status: result.status ?? 0, message: String(result.message ?? '').slice(0, 300) } }
-          settings.update({ aggregate: { ...section, providers } })
-          settings.flush()
-        }
-        return result
-      },
-      discover: async id => {
-        const providerId = String(id ?? '').trim()
-        if (getProvider(providerId) === null) throw httpError(400, `unknown provider "${providerId}"`)
-        const ids = await fetchProviderModels(settings.get().aggregate ?? {}, providerId)
-        if (ids === null) return { models: null, note: 'this provider declares no model listing' }
-        const section = settings.get().aggregate ?? {}
-        const providers = { ...(section.providers ?? {}) }
-        if (providers[providerId] !== undefined) {
-          providers[providerId] = { ...providers[providerId], discovered: ids.slice(0, 300) }
-          settings.update({ aggregate: { ...section, providers } })
-          settings.flush()
-          syncAggregateCatalog()
-        }
-        return { models: ids }
-      },
-    },
     // ── fallback chains ─────────────────────────────────────────────────────
     combos: {
       list: () => ({
@@ -1305,33 +1092,6 @@ export function apply(ctx, config) {
       lastReload: globalThis[Symbol.for('our-free-model.last-reload')] ?? undefined,
       purgeSample: globalThis[Symbol.for('our-free-model.purge-sample')] ?? undefined,
     }),
-    announcements: {
-      view: feedView,
-      /** Persist the complete acked set the caller assembled (full-replace
-       *  semantics: the caller decides additions *and* clearings). */
-      ack: ids => {
-        settings.update({ announcementsAcked: [...ids] })
-        settings.flush()
-        return feedView()
-      },
-      refresh: () => feed.poll(),
-    },
-    update: {
-      status: () => managed
-        ? { ...updater.status(), managed: true, available: false, latest: '' }
-        : { ...updater.status(), notifiedFor: updateNotifiedFor },
-      check: async () => {
-        if (managed) throw httpError(409, MANAGED_MESSAGE)
-        const result = await updater.check()
-        pushUpdate(true)
-        return result
-      },
-      apply: applyUpgrade,
-    },
-    hotReload: () => {
-      if (managed) throw httpError(409, MANAGED_MESSAGE)
-      return reloadFromDisk()
-    },
     /** Fixed for this generation; the settings API cannot flip it (see below). */
     managedDistribution: managed,
     push,
@@ -1377,8 +1137,6 @@ export function apply(ctx, config) {
   function helloPayload() {
     return {
       version: packageVersion,
-      announcements: { unread: feedView().unread, fetchedAt: feedView().fetchedAt },
-      update: { available: updater.status().available, latest: updater.status().latest },
       reloadedAt: settings.get().reloadedAt ?? 0,
     }
   }
@@ -1406,8 +1164,7 @@ export function apply(ctx, config) {
     // reads have been disposed (the rejection gets swallowed, quota burned).
     modelRuntime.dispose()
     push.dispose()
-    watcher?.()
-  }, 'our-free-model: push + watcher')
+  }, 'our-free-model: push + stores')
 
   ctx.effect(() => {
     void (async () => {
@@ -1441,21 +1198,10 @@ export function apply(ctx, config) {
         logger.warn?.(`our-free-model: startup refresh failed (${error?.message ?? error})`)
       }
       if (disposed) return
-      syncWatcher()
       emitTopology()
       push.emit('hello', helloPayload())
     })().catch(error => logger.warn?.(`our-free-model: startup refresh failed (${error?.message ?? error})`))
   }, 'our-free-model: boot refresh')
-
-  // Feed poll: shortly after boot, then on the configured period. Concurrency
-  // with a manual refresh is harmless — polls share one in-flight request.
-  // A managed install polls nothing: the pack speaks for the plugin.
-  ctx.effect(() => {
-    if (managed) return
-    const first = setTimeout(() => { void feed.poll() }, 12_000)
-    first.unref?.()
-    return () => clearTimeout(first)
-  }, 'our-free-model: first feed poll')
 
   /**
    * Run one task every `ms` for as long as this generation lives.
@@ -1486,13 +1232,6 @@ export function apply(ctx, config) {
     ctx.effect(() => () => clearTimeout(handle), 'our-free-model: interval')
   }
 
-  if (!managed) {
-    every(() => {
-      void feed.poll()
-      const hours = settings.get().updateCheckHours ?? 6
-      if (hours > 0) void updater.check().then(() => pushUpdate(false)).catch(() => {})
-    }, () => positiveOr(settings.get().feedPollMinutes, 30, 5) * 60_000)
-  }
   // The probe period is in minutes, and one minute is the floor — a value of 0 or
   // a negative one would otherwise spin. This used to read `Math.max(60, …)`,
   // which floored every interval below an hour *including the shipped default of
@@ -1520,23 +1259,6 @@ export function apply(ctx, config) {
         egressWarned = true
       })
   }, 120_000)
-  // The first update check waits for the boot refresh to settle, then runs once
-  // even when the periodic poll is disabled (hours === 0 means opt out fully).
-  // Managed installs check nothing — the pack that installed them decides.
-  ctx.effect(() => {
-    if (managed) return
-    const first = setTimeout(() => {
-      const hours = settings.get().updateCheckHours ?? 6
-      if (hours <= 0) return
-      void updater.check().then(() => pushUpdate(false)).catch(() => {})
-    }, 40_000)
-    first.unref?.()
-    return () => clearTimeout(first)
-  }, 'our-free-model: first update check')
-
-  // Keep the module-level "notified" marker in sync with the stored one so a
-  // reload does not re-toast the same version.
-  refreshUpdatePush = () => pushUpdate(false)
 
   function emitTopology() {
     try { ctx.emit?.('llm/adapters-updated') } catch { /* no listener surface */ }
@@ -1674,32 +1396,6 @@ export function createApiRoutes(deps) {
       if (method === 'GET' && routePath === '/outlet') {
         return send(200, await deps.outletStatus())
       }
-      // ── the aggregate lane ─────────────────────────────────────────────────
-      if (method === 'GET' && routePath === '/providers') {
-        const id = url.searchParams.get('id')
-        if (id !== null && id !== '') {
-          const provider = getProvider(id)
-          if (provider === null) return send(404, { error: `unknown provider "${id}"` })
-          return send(200, { provider, configured: publicAggregate(deps.settings.get().aggregate).providers[id] ?? null })
-        }
-        return send(200, { registry: deps.providers.registry(), configured: deps.providers.configured() })
-      }
-      if (method === 'POST' && routePath === '/providers') {
-        const body = await readJson(req)
-        return send(200, { ok: true, aggregate: await deps.providers.save(body) })
-      }
-      if (method === 'POST' && routePath === '/providers/remove') {
-        const body = await readJson(req)
-        return send(200, { ok: true, aggregate: await deps.providers.remove(body?.providerId) })
-      }
-      if (method === 'POST' && routePath === '/providers/test') {
-        const body = await readJson(req)
-        return send(200, await deps.providers.test(body?.providerId))
-      }
-      if (method === 'POST' && routePath === '/providers/discover') {
-        const body = await readJson(req)
-        return send(200, await deps.providers.discover(body?.providerId))
-      }
       // ── fallback chains ────────────────────────────────────────────────────
       if (method === 'GET' && routePath === '/combos') {
         return send(200, deps.combos.list())
@@ -1732,7 +1428,7 @@ export function createApiRoutes(deps) {
         return send(200, deps.clients())
       }
       if (method === 'GET' && routePath === '/meta') {
-        return send(200, { ...deps.meta(), feed: { fetchedAt: deps.announcements.view().fetchedAt, source: deps.announcements.view().source, error: deps.announcements.view().error }, update: deps.update.status() })
+        return send(200, deps.meta())
       }
       if (method === 'POST' && routePath === '/eac/login/start') {
         const started = await deps.eacAuth.start()
@@ -1767,80 +1463,11 @@ export function createApiRoutes(deps) {
           return send(404, { error: `pool unavailable (${reason})` })
         }
       }
-      if (method === 'GET' && routePath === '/announcement') {
-        // A managed install also stands down the owner's onboarding copy: the
-        // pack, not the plugin, speaks for what is new.
-        const acknowledged = deps.managedDistribution === true || deps.settings.get().announcementAck === ANNOUNCEMENT_VERSION
-        return send(200, { version: ANNOUNCEMENT_VERSION, acknowledged })
-      }
-      if (method === 'POST' && routePath === '/announcement/ack') {
-        // Bounded like every other write to this file: the query string is
-        // caller-controlled, and the comparison downstream only ever matches a
-        // version id — nothing needs the whole string.
-        deps.settings.update({ announcementAck: String(url.searchParams.get('version') ?? ANNOUNCEMENT_VERSION).slice(0, 64) })
-        deps.settings.flush()
-        return send(200, { ok: true })
-      }
-      if (method === 'GET' && routePath === '/announcements') {
-        const view = deps.announcements.view()
-        return send(200, { ...view, acked: [...ackedSet(deps)], notifyOs: deps.settings.get().notifyOs === true })
-      }
-      if (method === 'GET' && routePath === '/picks') {
-        return send(200, await deps.picks.view())
-      }
-      if (method === 'POST' && routePath === '/announcements/ack') {
-        const body = await readJson(req)
-        const acked = ackedSet(deps)
-        if (body.all === true) {
-          // "mark all read": every announcement currently in the feed.
-          for (const item of deps.announcements.view().items) acked.add(item.id)
-        }
-        if (typeof body.id === 'string' && body.id !== '') acked.add(body.id)
-        deps.announcements.ack(acked)
-        return send(200, { ok: true, view: deps.announcements.view() })
-      }
-      if (method === 'POST' && routePath === '/announcements/refresh') {
-        // Managed installs poll no feed; a manual refresh is a polite no-op
-        // rather than a network round the pack never asked for.
-        if (deps.managedDistribution !== true) await deps.announcements.refresh()
-        return send(200, { ok: true, view: deps.announcements.view() })
-      }
-      if (method === 'GET' && routePath === '/update/status') {
-        return send(200, deps.update.status())
-      }
-      if (method === 'POST' && routePath === '/update/check') {
-        const result = await deps.update.check()
-        return send(200, { ...result, status: deps.update.status() })
-      }
-      if (method === 'POST' && routePath === '/update/apply') {
-        const body = await readJson(req)
-        const result = await deps.update.apply(body?.version === undefined ? undefined : String(body.version))
-        return send(200, { ok: true, ...result })
-      }
-      if (method === 'POST' && routePath === '/reload') {
-        // A managed install does not swap its own bytes; the pack owns them.
-        if (deps.managedDistribution === true) return send(409, { error: 'this installation is managed; updates are handled by the pack that installed it' })
-        const status = deps.update.status()
-        if (status.applying || status.recoveryRequired) return send(409, {
-          error: status.applying ? 'an upgrade is already running' : 'restore the retained upgrade backup before reloading',
-        })
-        // Answer first, then swap: the response rides an already-accepted
-        // socket, but the client should not wait on the reload finishing. The
-        // swap closure is `deps.hotReload`, applied inside `apply` — this
-        // module-level handler has no access to the fiber's own context.
-        send(202, { ok: true, note: 'hot reload started' })
-        setTimeout(() => {
-          Promise.resolve()
-            .then(() => deps.hotReload())
-            .catch(error => deps.logger?.warn?.(`our-free-model: hot reload failed (${error?.message ?? error})`))
-        }, 50).unref?.()
-        return
-      }
       if (method === 'POST' && routePath === '/settings') {
         const patch = await readJson(req)
         const visibility = validateModelVisibility(patch)
         const current = deps.settings.get()
-        const next = sanitizeSettings({ ...current, ...pick(patch, ['enabled', 'exposeRegionModels', 'probeIntervalMinutes', 'defaultMaxTokens', 'announcementAck', 'feedUrl', 'feedPollMinutes', 'notifyOs', 'updateCheckHours', 'autoReloadWatch']), ...visibility }, current)
+        const next = sanitizeSettings({ ...current, ...pick(patch, ['enabled', 'exposeRegionModels', 'probeIntervalMinutes', 'defaultMaxTokens', 'autoReloadWatch']), ...visibility }, current)
         if (patch.forward !== undefined) {
           const forward = { ...(current.forward ?? {}), ...pick(patch.forward, ['enabled', 'host', 'port']) }
           // The listener spends this machine's lane, and a routable bind address
@@ -1971,10 +1598,6 @@ export function createApiRoutes(deps) {
   }
 }
 
-function ackedSet(deps) {
-  const value = deps.settings.get().announcementsAcked
-  return new Set(Array.isArray(value) ? value : [])
-}
 
 function pick(source, keys) {
   const out = {}
@@ -2023,61 +1646,6 @@ function publicTokenSaver(section) {
     cavemanLevels: CAVEMAN_LEVELS,
     ponytailLevels: PONYTAIL_LEVELS,
   }
-}
-
-/**
- * The aggregate section with every key replaced by a fingerprint.
- *
- * A provider key is a bearer credential for somebody else's account — the one
- * thing in this document that must never be echoed. It stays in the 0600
- * settings file; `hasKey` plus the last four characters are all the panel needs
- * to tell "configured" from "not configured" and to let a user recognise which
- * key is stored. The value itself is served only to the page that set it, and
- * only as a mask.
- */
-function publicAggregate(section) {
-  const providers = section?.providers ?? {}
-  const out = {}
-  for (const [id, value] of Object.entries(providers)) {
-    if (value === null || typeof value !== 'object') continue
-    const key = typeof value.apiKey === 'string' ? value.apiKey : ''
-    out[id] = {
-      enabled: value.enabled !== false,
-      hasKey: key !== '',
-      keyHint: key === '' ? '' : `…${key.slice(-4)}`,
-      baseUrl: typeof value.baseUrl === 'string' ? value.baseUrl : '',
-      models: Array.isArray(value.models) ? value.models : [],
-      discovered: Array.isArray(value.discovered) ? value.discovered : [],
-      addedAt: Number.isFinite(value.addedAt) ? value.addedAt : 0,
-      lastTest: value.lastTest ?? null,
-    }
-  }
-  return { enabled: section?.enabled !== false, providers: out }
-}
-
-/** The provider registry, compact enough for one settings page to hold. */
-function publicProviderRegistry() {
-  return listProviders().map(provider => ({
-    id: provider.id,
-    name: provider.name,
-    category: provider.category,
-    authKind: provider.auth?.kind ?? 'apiKey',
-    credentialUrl: provider.auth?.url ?? '',
-    baseUrl: provider.baseUrl ?? '',
-    baseUrlOverrideEnv: provider.baseUrlOverrideEnv ?? '',
-    format: provider.format,
-    website: provider.website ?? '',
-    notes: provider.notes ?? '',
-    local: provider.local === true,
-    modelCount: Array.isArray(provider.models) ? provider.models.length : 0,
-    models: (Array.isArray(provider.models) ? provider.models : []).map(model => ({
-      id: model.id,
-      name: model.name ?? model.id,
-      contextWindow: model.contextWindow ?? null,
-      vision: model.vision === true,
-      reasoning: model.reasoning === true,
-    })),
-  }))
 }
 
 /** The five local answers, in evaluation order. */
@@ -2223,16 +1791,10 @@ function publicSettings(settings, forwardInfo, egressInfo) {
     exposeRegionModels: settings.exposeRegionModels !== false,
     probeIntervalMinutes: settings.probeIntervalMinutes ?? 15,
     defaultMaxTokens: settings.defaultMaxTokens ?? 32768,
-    announcementAck: settings.announcementAck ?? '',
-    feedUrl: typeof settings.feedUrl === 'string' ? settings.feedUrl : '',
-    feedPollMinutes: settings.feedPollMinutes ?? 30,
-    notifyOs: settings.notifyOs === true,
-    updateCheckHours: settings.updateCheckHours ?? 6,
     autoReloadWatch: settings.autoReloadWatch === true,
     reloadedAt: settings.reloadedAt ?? 0,
     reloadCount: settings.reloadCount ?? 0,
     tokenSaver: publicTokenSaver(settings.tokenSaver),
-    aggregate: publicAggregate(settings.aggregate),
     combos: normalizeCombos(settings.combos).map(combo => ({
       id: combo.id,
       name: combo.name,
@@ -2284,14 +1846,12 @@ function buildSummary(deps) {
   const state = deps.state()
   const snapshot = deps.availability.get()
   const forwardInfo = deps.forwardInfo()
-  const update = deps.update.status()
-  const feedView = deps.announcements.view()
   const defaultMaxTokens = deps.settings.get().defaultMaxTokens
   // Lanes that carry no availability verdict of their own. The absorbed channels
-  // and the aggregate lane are named by a listing round that already succeeded,
-  // and a combo is a view over rows that were themselves named — none of them is
-  // pinged. A listing is not an inference verdict; explicit tests add their own samples.
-  const unprobed = entry => isEacEntry(entry) || isKiloEntry(entry) || isAggregateEntry(entry) || isComboEntry(entry)
+  // are named by a listing round that already succeeded, and a combo is a view
+  // over rows that were themselves named — none of them is pinged. A listing is
+  // not an inference verdict; explicit tests add their own samples.
+  const unprobed = entry => isEacEntry(entry) || isKiloEntry(entry) || isComboEntry(entry)
   return {
     catalog: state.catalog.map(entry => ({
       ...entry,
@@ -2313,10 +1873,8 @@ function buildSummary(deps) {
     egress: forwardInfo.egress ?? snapshot.egress ?? null,
     outlet: deps.egressInfo(),
     probedAt: snapshot.at ?? 0,
-    announcementVersion: ANNOUNCEMENT_VERSION,
     version: deps.meta().version,
     distribution: deps.meta().distribution,
-    announcements: { unread: feedView.unread, fetchedAt: feedView.fetchedAt },
     // One bit for the settings page: false with an empty EAC group means the
     // gate never opened (a host the kernel gave no profile context), which is a
     // different sentence from "the relay is down" (issue #60).
@@ -2328,6 +1886,5 @@ function buildSummary(deps) {
     // Whether the absorbed free-channel pack is live on this host, and its
     // failure reason when it is not (see the mount in `apply`).
     channels: deps.channels?.() ?? { state: 'unknown', error: '' },
-    update: { available: update.available, latest: update.latest, current: update.current, checkedAt: update.checkedAt, applying: update.applying, managed: update.managed === true },
   }
 }

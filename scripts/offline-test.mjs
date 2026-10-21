@@ -183,29 +183,12 @@ const dataDir = home => path.join(home, 'our-free-model')
   const meta = await callRoute(api(), 'GET', '/api/our-free-model/meta')
   check('the config flag puts /meta under managed distribution', meta.json.distribution, 'managed')
 
-  const status = await callRoute(api(), 'GET', '/api/our-free-model/update/status')
-  check('update status reports managed rather than availability', [status.json.managed, status.json.available], [true, false])
-
-  const refusedCheck = await callRoute(api(), 'POST', '/api/our-free-model/update/check')
-  check('a manual update check is refused', refusedCheck.status, 409)
-  check('with the reason stated', /managed/i.test(refusedCheck.json?.error ?? ''), true)
-  check('an update apply is refused too', (await callRoute(api(), 'POST', '/api/our-free-model/update/apply', {})).status, 409)
-  check('and hot reload, which would swap bytes under the manager', (await callRoute(api(), 'POST', '/api/our-free-model/reload')).status, 409)
-
-  const announcements = await callRoute(api(), 'GET', '/api/our-free-model/announcements')
-  check('the announcement feed reports its managed stand-down', [announcements.json.items, announcements.json.unread, announcements.json.source], [[], 0, 'managed'])
-  await callRoute(api(), 'POST', '/api/our-free-model/announcements/refresh')
-  const after = await callRoute(api(), 'GET', '/api/our-free-model/announcements')
-  check('a manual refresh stays a no-op', [after.json.items, after.json.source], [[], 'managed'])
-  check('no feed fetch was attempted', ctx.__logs.filter(line => /feed|announcement/.test(line) && /fail|error/i.test(line)), [])
-
   const flipped = await callRoute(api(), 'POST', '/api/our-free-model/settings', { distribution: 'self' })
   const metaAfter = await callRoute(api(), 'GET', '/api/our-free-model/meta')
   check('the settings API cannot un-manage an installation', [flipped.status, metaAfter.json.distribution], [200, 'managed'])
 
   const stillAlive = await callRoute(api(), 'GET', '/api/our-free-model/summary')
   check('the model lane is untouched by the gate', [stillAlive.status, (stillAlive.json.catalog ?? []).length > 0], [200, true])
-  check('and no feed cache was written', fs.existsSync(path.join(dataDir(home), 'feed.json')), false)
 
   dispose(ctx)
   fs.rmSync(home, { recursive: true, force: true })
@@ -216,7 +199,6 @@ const dataDir = home => path.join(home, 'our-free-model')
   const { ctx, api, home } = await boot({ settings: { distribution: 'managed' } })
   const meta = await callRoute(api(), 'GET', '/api/our-free-model/meta')
   check('a pre-seeded settings file manages the plugin too', meta.json.distribution, 'managed')
-  check('and closes the same update route', (await callRoute(api(), 'POST', '/api/our-free-model/update/check')).status, 409)
   dispose(ctx)
   fs.rmSync(home, { recursive: true, force: true })
 }
