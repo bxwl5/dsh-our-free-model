@@ -1,8 +1,8 @@
 name: test
 
-# main is the live update source. Contributor checks do not need a signing key,
-# but the separate release-readiness check must pass before merging shipped
-# changes into main. Maintainers prepare signatures on the reviewed candidate.
+# Offline checks: the suites never touch the network. This repository ships no
+# in-app updater and no signed manifest, so there is no release-signing job —
+# the release records under catalog/ are verified by catalog-test.mjs instead.
 on:
   push:
     branches: [main]
@@ -36,21 +36,6 @@ jobs:
         env:
           TEST_MODE: ${{ github.event_name == 'pull_request' && 'contributor' || 'all' }}
         run: node scripts/test-all.mjs --mode "$TEST_MODE"
-
-  # Keep this check required on main. A red result on a source PR means the
-  # maintainer still has release preparation to do, not that the author needs
-  # access to the publisher's private key.
-  release-readiness:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-      - run: npm run test:release
 
   # The adapter seam (and only it) is kept under strict TypeScript checking. This
   # job installs development dependencies without running lifecycle scripts.
