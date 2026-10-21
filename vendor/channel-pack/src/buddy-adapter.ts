@@ -38,6 +38,10 @@ import {
 import type { BuddyCredential, BuddyRemoteModel } from './buddy.js'
 import { CODEBUDDY, resolveUserAgent, type BuddyFallbackModel, type BuddyProduct } from './product.js'
 import { normalizeHarnessMessages } from './message-shape.js'
+import {
+  isTencentContentFingerprintProvider,
+  rewriteTencentContentFingerprints,
+} from './openai-gateway/tencent-fingerprint.js'
 import { projectRequestImage, type ImageRequestTarget } from './image-budget.js'
 import { createBlankReasoningSuppressor, createReasoningLoopDetector, hasUsableToolName, isProseTruncatedByStopString, isReasoningLoopGuardEnabled, isTruncatedArguments, normalizeToolArguments, readWithIdleTimeout, reasoningLoopFailure, resolveEmptyResponseReason, resolveToolPairing, splitThinkTaggedContent, stripBareThinkCloseTagIfEnabled, stripCourseLeakFromHistoryContent, stripCourseLeakIfEnabled } from './sse.js'
 import {
@@ -1349,6 +1353,29 @@ export class BuddyAdapter extends LlmAdapter {
     }
     if (this.product.id === 'workbuddy' && (messages.length === 0 || messages[0].role !== 'system')) {
       messages.unshift({ role: 'system', content: 'You are a helpful assistant.' })
+    }
+    // ── 腾讯系内容级风控指纹清洗（11128）──
+    //
+    // ⚠️ 位置至关重要：必须在 `serializeMessages(...)` **之后**、且在全部
+    // `messages.unshift(...)` **之后**。原因见 ./openai-gateway/tencent-fingerprint.ts：
+    // identity 句在当前链路上是作为一条 `role:'system'` 消息存在于
+    // `options.messages[]` 里、由 `serializeMessages` 原样透传到 wire 的，
+    // 只改 `options.system` 那个 unshift 分支在桌面端**不执行**（实测：只在那里
+    // 做替换，重启后仍然 400）；而在 unshift 之前清洗则会漏洗 `options.system`。
+    //
+    // 上游按**角色**判定：`system` 与 `assistant` 拦，`user` / `tool` 放行。
+    // `assistant` 必须一起清 —— 多轮会话会把模型自己含指纹的回复持久化并每轮
+    // 原样回传，形成「首次命中后这个会话每轮都失败」的自锁，这正是
+    // 「新会话能过、旧会话过不了」的成因。
+    // 改写只作用于**内容**，逐字符等义替换；未命中指纹的文本原样返回，
+    // 以保住服务端的前缀缓存命中。
+    if (isTencentContentFingerprintProvider(this.product.id)) {
+      for (const message of messages) {
+        if (message.role === 'user' || message.role === 'tool') continue
+        if (typeof message.content === 'string' && message.content.length > 0) {
+          message.content = rewriteTencentContentFingerprints(message.content, this.product.id)
+        }
+      }
     }
     const tools = options.tools?.map((tool) => ({
       type: 'function' as const,

@@ -9,7 +9,7 @@
  * 客户端侧只显示 `provider_code=INVALID_REQUEST reason=unknown`。
  * DSH 直连同一模型则完全正常 —— 差别只在于**外部客户端往 system 里注了什么**。
  *
- * ## 为什么这一层只改 system、且只对腾讯系
+ * ## 为什么这一层只改非 user 角色、且只对腾讯系
  *
  * 本机逐组实测（`www.workbuddy.ai` 与 `copilot.tencent.com` **两个端点表现一致**，
  * 同账号 / 同模型 / 同 UA 与 X-* 头 / `max_tokens=16`，被拦不耗额度）：
@@ -25,14 +25,18 @@
  * | 同一句放进 **user** 消息 | — | ✅ 200 |
  * | 同一句放进 **tool** 消息 | — | ✅ 200 |
  * | 指纹在**第二条** system（非 `messages[0]`） | — | ❌ 400/11128 |
+ * | **指纹放进 `assistant` 历史** | — | ❌ 400/11128 |
  * | 只差一个词（`normally` 替 `usually`） | — | ✅ 200 |
  * | 内层多一个空格 | `Main branch  (you will…)` | ✅ 200 |
  * | 全小写 / 全大写 | — | ❌ 400/11128 |
  *
  * 由此得到三条**不能违反**的实现约束：
  *
- * 1. **只改 `system`**：`user` / `tool` 里同一句**不拦**（上表第 6、7 行）。
- *    改写它们只会白白破坏用户的原话与工具输出，且换不来任何收益。
+ * 1. **改 `system` 与 `assistant`，跳过 `user` / `tool`**：后两者里同一句**不拦**
+ *    （上表第 6、7 行）。改写它们只会白白破坏用户的原话与工具输出，且换不来
+ *    任何收益。**但 `assistant` 必须改** —— 多轮会话会把模型自己含指纹的回复
+ *    持久化并每轮原样回传，于是「首次命中之后，这个会话每一轮都失败」形成自锁。
+ *    这正是「新会话能过、旧会话过不了」的成因。
  * 2. **改写**所有** system 消息**，不只 `messages[0]`：非首位的 system 同样被拦
  *    （上表第 8 行）。WorkBuddy 网关那条「首条必须是 system」的硬要求是**另一回事**
  *    （见 `account-probe.ts` 的 `PROBE_SYSTEM`），与本文件无关。
@@ -40,16 +44,30 @@
  *    `replaceAll` 的字面量比对必须带 `i`；但**只差一个词**或**多一个空格**都不拦，
  *    说明服务端认的是**逐字符的字面量**，**不能**把它泛化成正则/关键词。
  *
- * ## 为什么落在网关，而不是 `buddy-adapter`
+ * ## 调用点必须落在**出站 wire 数组**上
  *
- * - **DSH 直连不受影响**，这是有依据的：`buddy-adapter.serializeMessages` 只把
- *   `role==='system'` 的内容放进 wire 的 system，用户正文与工具结果分别进
- *   `role:'user'` / `role:'tool'`（见该文件 328–369 行），而上面第 6、7 行实测
- *   那两个角色不拦。DSH 自己的系统提示词也不含这些模板句。
- * - 改在适配器里等于**对 DSH 自己的提示词做静默改写**，越过「不伪造上游行为」的
- *   既有边界，且会让直连与经网关两条路的行为不可比。
- * - 网关是**外部客户端入口**：指纹来自客户端，网关正是知道 provider 与消息角色
+ * ⚠️ 只改 `options.system` **不生效**：identity 句在当前链路上是作为一条
+ * `role:'system'` 消息存在于 `options.messages[]` 里，由
+ * `buddy-adapter.serializeMessages` 原样透传到 wire；`options.system` 那个
+ * `unshift` 分支在桌面端根本不执行（实测：只在那里做替换，重启后仍然 400）。
+ * 因此清洗循环必须放在 `serializeMessages(...)` **返回之后**、且在所有
+ * `messages.unshift(...)` **之后** —— 否则 `options.system` 里的指纹会漏洗。
+ *
+ * ## 两层防御：网关 + 适配器
+ *
+ * - **网关层**（`openai-gateway/messages.ts`、`responses.ts`）：外部客户端
+ *   （ZCode 等）经本插件的 OpenAI 网关进来时，在把 OpenAI 消息转成 harness
+ *   消息的过程中改写 `system` 内容。指纹来自客户端，网关正是知道 provider
  *   的那一层。
+ * - **适配器层**（`buddy-adapter.ts` 的 `serializeMessages` 之后）：**权威的一层**。
+ *   它作用在最终要发出去的 wire 数组上，同时覆盖两个入口 —— DSH 直连与经网关，
+ *   因为网关转换出的 harness 消息同样要经这个适配器序列化。
+ *
+ * ⚠️ 曾经认为「DSH 直连不受影响」，**这个判断是错的**：DSH 内核
+ * `@deepseek-ai/dsh-system-prompt` 的 `harness:identity` section 正是以
+ * `You are an AI agent powered by DeepSeek Harness.` 开头，于是 DSH 自己的
+ * 请求就会命中。适配器层因此不是「多余的第二道」，而是**必须有**的一道 —— 没有
+ * 它，DSH 直连 buddy 渠道必然失败。
  *
  * ## ⚠️ 千万不要把 11128 加进 `isContentRejection`
  *
@@ -84,6 +102,21 @@ interface ContentFingerprint {
  * 照抄别家客户端的常量而没实测过 = 给上游加了一条没人验证过的改写。
  */
 const CONTENT_FINGERPRINTS: readonly ContentFingerprint[] = [
+  {
+    // DSH 内核 `@deepseek-ai/dsh-system-prompt` 的 `harness:identity` 首句。
+    // 实测（本机 DSH 0.2.1-rc.2 / 2026-10-21）该句在 system 与 **assistant
+    // 历史**里都拦；重新登录 / 换号 / 换网络都不会好转 —— 它是**内容级**判定。
+    //
+    // ⚠️ find **不带末尾句号**：上游对带 / 不带句号两种写法都拦，而
+    // `escapeRegExp` 会把 "." 转义成字面点号。去掉句号后一条规则同时覆盖
+    // 两种写法，原文的句号也会保留在替换结果里。
+    // ⚠️ replace 必须是**中性表达并去掉品牌词**：`DeepSeek Harness` 本身就是
+    // 被检测的目标；把 `agent` 改成 `assistant` 只是碰巧绕开一个短语，上游
+    // 随时可能把 `assistant` 也加进名单。
+    find: 'You are an AI agent powered by DeepSeek Harness',
+    replace: 'You are an AI assistant',
+    note: 'DSH harness:identity 首句；上游锚定内容开头、忽略大小写、末尾句号可选',
+  },
   {
     // ZCode 内建常量：`$Js="Main branch (you will usually use this for PRs)"`。
     // 每个 git 仓库里的会话都会被注入（拼在 `Main branch … : <分支名>` 这一行）。
