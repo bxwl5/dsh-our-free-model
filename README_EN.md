@@ -46,31 +46,4 @@ After restarting, the composer's model picker gains an **Our Free Model** group.
 
 The settings page has seven parts: free models, channels, token savers, routing, dashboard, request log and gateway.
 
-## Where the models come from
-
-Two keyless lanes — an anonymous free lane and the Kilo free pool — both dialled directly, with no third party relaying your traffic. Thirteen account channels (CodeArts, CodeBuddy, TRAE, Cline, Gemini and more) are also built in; credentials only ever reach the host's credential store.
-
-Your prompts and images go to the upstream behind the model you chose, exactly as with any model API. Beyond that the plugin uploads nothing: usage data and settings stay on this machine.
-
-## Please note
-
-- The keyless allowance is the upstream's to grant and may be throttled or withdrawn. A burst returns 429; the next probe restores the model.
-- The Kilo pool states that prompts may be logged by the upstream to improve its services — do not send sensitive content.
-- The forward port binds this machine only. Enabling LAN access lets anyone on your network spend your quota with the key, so enable it only on trusted networks.
-- Some models are slow to first token, or think silently for a long time. That is upstream behaviour.
-
-## Uninstall
-
-Remove the bundle entry from the profile's `package.json`. The plugin leaves no patch behind, and its data directory is plain JSON you can delete.
-
-## Development
-
-```bash
-npm test   # offline suites plus the manifest consistency check
-```
-
-Requires Node 22.19 or newer. No install step, no dependencies.
-
-## License
-
 MIT, see [LICENSE](LICENSE). This project has no affiliation with, and no endorsement from, any model provider.
