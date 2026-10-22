@@ -10,6 +10,7 @@ import { registerTraeLlm } from './trae-adapter.js'
 import { registerClineLlm } from './cline-adapter.js'
 import { registerCommandCodeLlm } from './commandcode-adapter.js'
 import { CommandCodeAuth } from './commandcode-service.js'
+import { registerMonkeyCodeLlm } from './monkeycode-adapter.js'
 import { registerLoomyLlm, parseLoomyRemoteModels } from './loomy-adapter.js'
 import { registerRaccoonLlm } from './raccoon-adapter.js'
 import { CODEARTS_CREDENTIAL_REF, CodeArtsAuth } from './service.js'
@@ -48,6 +49,7 @@ import { QODER, QODER_CN } from './qoder-product.js'
 import { TRAE } from './trae-product.js'
 import { CLINE } from './cline-product.js'
 import { COMMANDCODE } from './commandcode-product.js'
+import { MONKEYCODE } from './monkeycode-product.js'
 import { configureDeadModelStore, withDeadModelPruning } from './dead-model-store.js'
 import type { CodeArtsCredential, BuddyCredential } from './types.js'
 import type { LobsteraiCredential } from './lobsterai.js'
@@ -55,6 +57,7 @@ import type { QoderCredential } from './qoder.js'
 import type { TraeCredential } from './trae.js'
 import type { ClineCredential } from './cline.js'
 import type { CommandCodeCredential } from './commandcode.js'
+import type { MonkeyCodeCredential } from './monkeycode.js'
 import type { LoomyCredential } from './loomy.js'
 import type { RaccoonCredential } from './raccoon.js'
 import { MinimaxAuth } from './minimax-auth.js'
@@ -988,6 +991,30 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
     },
     accountPool: pool,
     product: COMMANDCODE,
+  })
+
+  // ===== MonkeyCode（长亭百智云）=====
+  // 只读渠道：账号 / 额度 / 模型目录 / 签到。对话走 WebSocket，
+  // 当前版本明确不支持（见 monkeycode-adapter.ts 模块头注释）。
+  // 登录是「粘贴 Cookie」——该上游没有可脚本化的授权流程。
+  let activeMonkeyCodeAccountId = ''
+  const monkeyCodeAdapter = registerMonkeyCodeLlm(ctx, {
+    fetchImpl: network.fetch,
+    resolveCredential: async () => {
+      const available = await pool.getAvailableAccount(MONKEYCODE.id, '')
+      activeMonkeyCodeAccountId = available?.entry.id ?? ''
+      if (activeMonkeyCodeAccountId.length > 0) reportLedgerAccount(MONKEYCODE.id, activeMonkeyCodeAccountId)
+      if (available) return available.credential as MonkeyCodeCredential
+      const resolved = await ctx.credentials.resolve(credentialRef(MONKEYCODE.defaultCredentialRef))
+      if (!resolved) return undefined
+      try {
+        return JSON.parse(resolved.value) as MonkeyCodeCredential
+      } catch {
+        return undefined
+      }
+    },
+    accountPool: pool,
+    product: MONKEYCODE,
   })
 
   // ===== Loomy（讯飞办公助手）服务 =====
