@@ -12,6 +12,7 @@ import { registerCommandCodeLlm } from './commandcode-adapter.js'
 import { CommandCodeAuth } from './commandcode-service.js'
 import { registerMonkeyCodeLlm } from './monkeycode-adapter.js'
 import { registerOrcaTermLlm } from './orcaterm-adapter.js'
+import { registerKukuLlm } from './kuku-adapter.js'
 import { registerLoomyLlm, parseLoomyRemoteModels } from './loomy-adapter.js'
 import { registerRaccoonLlm } from './raccoon-adapter.js'
 import { CODEARTS_CREDENTIAL_REF, CodeArtsAuth } from './service.js'
@@ -52,6 +53,7 @@ import { CLINE } from './cline-product.js'
 import { COMMANDCODE } from './commandcode-product.js'
 import { MONKEYCODE } from './monkeycode-product.js'
 import { ORCATERM } from './orcaterm-product.js'
+import { KUKU } from './kuku-product.js'
 import { configureDeadModelStore, withDeadModelPruning } from './dead-model-store.js'
 import type { CodeArtsCredential, BuddyCredential } from './types.js'
 import type { LobsteraiCredential } from './lobsterai.js'
@@ -61,6 +63,7 @@ import type { ClineCredential } from './cline.js'
 import type { CommandCodeCredential } from './commandcode.js'
 import type { MonkeyCodeCredential } from './monkeycode.js'
 import type { OrcaTermCredential } from './orcaterm.js'
+import type { KukuCredential } from './kuku.js'
 import type { LoomyCredential } from './loomy.js'
 import type { RaccoonCredential } from './raccoon.js'
 import { MinimaxAuth } from './minimax-auth.js'
@@ -1041,6 +1044,28 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
     },
     accountPool: pool,
     product: ORCATERM,
+  })
+
+  // ===== KukuAI（百度文库）=====
+  // 建消息 → SSE，完整对话能力。认证是 BDUSS Cookie（百度账号体系）。
+  let activeKukuAccountId = ''
+  const kukuAdapter = registerKukuLlm(ctx, {
+    fetchImpl: network.fetch,
+    resolveCredential: async () => {
+      const available = await pool.getAvailableAccount(KUKU.id, '')
+      activeKukuAccountId = available?.entry.id ?? ''
+      if (activeKukuAccountId.length > 0) reportLedgerAccount(KUKU.id, activeKukuAccountId)
+      if (available) return available.credential as KukuCredential
+      const resolved = await ctx.credentials.resolve(credentialRef(KUKU.defaultCredentialRef))
+      if (!resolved) return undefined
+      try {
+        return JSON.parse(resolved.value) as KukuCredential
+      } catch {
+        return undefined
+      }
+    },
+    accountPool: pool,
+    product: KUKU,
   })
 
   // ===== Loomy（讯飞办公助手）服务 =====

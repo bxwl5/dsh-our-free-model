@@ -2716,6 +2716,7 @@ window.__ModuleLoader__.load({
       { id: 'commandcode', name: 'Command Code', org: 'Command Code', accent: '#111827', note: '浏览器授权，长期 API Key', login: 'browser' },
       { id: 'monkeycode', name: 'MonkeyCode', org: '长亭科技', accent: '#F97316', note: '粘贴 Cookie；每日签到 100 积分', login: 'cookie' },
       { id: 'orcaterm', name: 'OrcaTerm', org: '腾讯云', accent: '#00A4FF', note: '粘贴 Cookie，支持完整对话', login: 'cookie' },
+      { id: 'kuku', name: 'KukuAI', org: '百度文库', accent: '#2932E1', note: '粘贴 BDUSS Cookie', login: 'cookie' },
     ]
 
     /** 与现有 RPC 的能力对应：余额、每日领取及独立签到状态分别判断。 */

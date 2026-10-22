@@ -116,10 +116,11 @@ try {
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(adapters.has('opencode'), false, 'disabled account provider is not registered')
   // 13 个既有渠道 + Command Code（新增）。
-  assert.equal(adapters.size, 16, 'all other account providers remain registered')
+  assert.equal(adapters.size, 17, 'all other account providers remain registered')
   assert.equal(adapters.has('commandcode'), true, 'Command Code is registered')
   assert.equal(adapters.has('monkeycode'), true, 'MonkeyCode is registered')
   assert.equal(adapters.has('orcaterm'), true, 'OrcaTerm is registered')
+  assert.equal(adapters.has('kuku'), true, 'KukuAI is registered')
   verifyChannelImagePricing(adapters)
   console.log('ok  十三渠道同步图片计价：缺失及默认方法兜底，厂商计价优先，重复图片与已卸载图片正确计数')
   assert.equal(writes.length, 0, 'mount neither creates nor deletes credentials')
@@ -227,7 +228,7 @@ try {
     visit(node.children)
   }
   visit(tree)
-  assert.equal(cards.length, 16)
+  assert.equal(cards.length, 17)
   assert.equal(cards.includes('opencode'), false)
   assert.deepEqual([...cards].sort(), [...adapters.keys()].sort(), 'UI and mounted account providers agree')
   console.log('ok  actual channel page: 13 account cards, OpenCode removed')
@@ -289,6 +290,8 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   await verifyMonkeyCode()
   const { verifyOrcaTerm } = await import('./orcaterm-test.mjs')
   await verifyOrcaTerm()
+  const { verifyKuku } = await import('./kuku-test.mjs')
+  await verifyKuku()
   await verifyLoopResumeEvents()
   let hostValidate
   await realLlmInvariant.apply({ invariants: { register(_name, install) {
