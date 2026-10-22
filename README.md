@@ -27,30 +27,13 @@
 ```
 https://github.com/bxwl5/dsh-our-free-model
 ```
+> 打开DSH设置的添加插件，输入仓库地址
 
 可以直接这样对 AI 说：
 
 > 帮我安装这个插件：https://github.com/bxwl5/dsh-our-free-model
-> 用本地源码目录方式装到我的 web 档案，装完重启宿主。
 
-AI 需要做的事（也可以自己手动执行）：
 
-1. 把仓库克隆或解压到本地任意目录。
-2. 在该目录运行 `npm pack --ignore-scripts --pack-destination "<DSH_HOME>/profiles/<profile>/vendor"`，得到 tarball。
-3. 在 profile 的 `package.json` 的 dependencies 中加入：
-
-```
-"dsh-our-free-model": "file:./vendor/dsh-our-free-model-2.5.7-priv.1.tgz"
-```
-
-4. 在 `dsh.profile.bundles` 末尾追加 `"dsh-our-free-model"`。
-5. 重启宿主。
-
-也可以让 AI 直接用命令行安装：
-
-```
-dsh plugin --profile web add /绝对路径/dsh-our-free-model
-```
 
 > npm 上的同名包不是本仓库发布的，请勿从 npm 安装。
 
