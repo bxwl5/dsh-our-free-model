@@ -8,6 +8,8 @@ import { registerLobsteraiLlm } from './lobsterai-adapter.js'
 import { registerQoderLlm } from './qoder-adapter.js'
 import { registerTraeLlm } from './trae-adapter.js'
 import { registerClineLlm } from './cline-adapter.js'
+import { registerCommandCodeLlm } from './commandcode-adapter.js'
+import { CommandCodeAuth } from './commandcode-service.js'
 import { registerLoomyLlm, parseLoomyRemoteModels } from './loomy-adapter.js'
 import { registerRaccoonLlm } from './raccoon-adapter.js'
 import { CODEARTS_CREDENTIAL_REF, CodeArtsAuth } from './service.js'
@@ -45,12 +47,14 @@ import { LOBSTERAI } from './lobsterai-product.js'
 import { QODER, QODER_CN } from './qoder-product.js'
 import { TRAE } from './trae-product.js'
 import { CLINE } from './cline-product.js'
+import { COMMANDCODE } from './commandcode-product.js'
 import { configureDeadModelStore, withDeadModelPruning } from './dead-model-store.js'
 import type { CodeArtsCredential, BuddyCredential } from './types.js'
 import type { LobsteraiCredential } from './lobsterai.js'
 import type { QoderCredential } from './qoder.js'
 import type { TraeCredential } from './trae.js'
 import type { ClineCredential } from './cline.js'
+import type { CommandCodeCredential } from './commandcode.js'
 import type { LoomyCredential } from './loomy.js'
 import type { RaccoonCredential } from './raccoon.js'
 import { MinimaxAuth } from './minimax-auth.js'
@@ -955,6 +959,35 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
     // 「请求记录」的账号归属（见上面的 `activeClineAccountId`）。
     currentAccountId: () => activeClineAccountId.length > 0 ? activeClineAccountId : undefined,
     product: CLINE,
+  })
+
+  // ===== Command Code =====
+  // 与既有渠道都不同源：单个长期 API Key（无 refresh_token 轮换），
+  // 标准 Bearer 鉴权，标准 OpenAI 兼容推理体。
+  // 登录是浏览器 OAuth + 本地回调（见 commandcode-auth.ts），
+  // 无斜杠命令，入口在 Channel Pack 的 Command Code 面板。
+  // 服务名由 CommandCodeAuth 依 product.id 派生，注册为 ctx.commandcodeAuth。
+  // 无 refresh 流程（长期 API Key），故这里不需要 RefreshScheduler。
+  const commandCode = new CommandCodeAuth(ctx, { fetcher: network.fetch })
+  let activeCommandCodeAccountId = ''
+  const commandCodeAdapter = registerCommandCodeLlm(ctx, {
+    fetchImpl: network.fetch,
+    resolveCredential: async () => {
+      const available = await pool.getAvailableAccount(COMMANDCODE.id, '')
+      activeCommandCodeAccountId = available?.entry.id ?? ''
+      if (activeCommandCodeAccountId.length > 0) reportLedgerAccount(COMMANDCODE.id, activeCommandCodeAccountId)
+      if (available) return available.credential as CommandCodeCredential
+      // 回退到单凭据 ref：账号池为空时仍允许用一份直接写入的 Key。
+      const resolved = await ctx.credentials.resolve(credentialRef(COMMANDCODE.defaultCredentialRef))
+      if (!resolved) return undefined
+      try {
+        return JSON.parse(resolved.value) as CommandCodeCredential
+      } catch {
+        return undefined
+      }
+    },
+    accountPool: pool,
+    product: COMMANDCODE,
   })
 
   // ===== Loomy（讯飞办公助手）服务 =====

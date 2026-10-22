@@ -17,6 +17,7 @@
  * 因此 `stream()` 在 401 时直接抛 AUTH，不做重试。
  */
 
+import type { Context } from '@deepseek-ai/cordis'
 import { LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions,
@@ -48,6 +49,7 @@ import {
   serializeMessages,
 } from './openai-compat.js'
 import { providerCatalogVisible } from './account-pool.js'
+import { registerAdapterIdempotent } from './llm-register-compat.js'
 
 /** 首 token 空闲超时（毫秒）。 */
 const FIRST_TOKEN_TIMEOUT_MS = 300_000
@@ -287,4 +289,17 @@ export class CommandCodeAdapter extends LlmAdapter {
       jitterRatio: 0.25,
     }
   }
+}
+
+/**
+ * 把 Command Code 注册到内核的 llm 服务。
+ *
+ * 返回适配器实例：Channel Pack 的「显示列表」需要直接持有引用
+ * （`ctx.llm` 不透传自定义方法）。
+ */
+export function registerCommandCodeLlm(ctx: Context, options: CommandCodeAdapterOptions): CommandCodeAdapter {
+  const product = options.product ?? COMMANDCODE
+  const adapter = new CommandCodeAdapter(options)
+  registerAdapterIdempotent(ctx.llm, [product.id], adapter)
+  return adapter
 }
