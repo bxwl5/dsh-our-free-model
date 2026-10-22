@@ -275,6 +275,8 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   await verifyChannelPrFixes()
   const { verifyTencentFingerprint } = await import('./tencent-fingerprint-test.mjs')
   await verifyTencentFingerprint()
+  const { verifyCommandCodeAuth } = await import('./commandcode-auth-test.mjs')
+  await verifyCommandCodeAuth()
   await verifyLoopResumeEvents()
   let hostValidate
   await realLlmInvariant.apply({ invariants: { register(_name, install) {
