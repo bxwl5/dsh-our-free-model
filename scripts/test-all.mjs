@@ -96,6 +96,7 @@ const suites = [
   ['plugin-bench-ui', 'plugin-bench-ui-test.mjs', []],
   ['codearts-direct-fetch', 'codearts-direct-fetch-test.mjs', []],
   ['gateway-source', 'gateway-source-test.mjs', []],
+  ['commandcode', 'commandcode-test.mjs', []],
 ].filter(([name]) => (mode === 'contributor' ? ![].includes(name)
   : mode === 'release' ? releaseSuites.has(name) : true)
   && (only === null || name.startsWith(only)))
