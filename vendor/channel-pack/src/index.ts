@@ -11,6 +11,7 @@ import { registerClineLlm } from './cline-adapter.js'
 import { registerCommandCodeLlm } from './commandcode-adapter.js'
 import { CommandCodeAuth } from './commandcode-service.js'
 import { registerMonkeyCodeLlm } from './monkeycode-adapter.js'
+import { registerOrcaTermLlm } from './orcaterm-adapter.js'
 import { registerLoomyLlm, parseLoomyRemoteModels } from './loomy-adapter.js'
 import { registerRaccoonLlm } from './raccoon-adapter.js'
 import { CODEARTS_CREDENTIAL_REF, CodeArtsAuth } from './service.js'
@@ -50,6 +51,7 @@ import { TRAE } from './trae-product.js'
 import { CLINE } from './cline-product.js'
 import { COMMANDCODE } from './commandcode-product.js'
 import { MONKEYCODE } from './monkeycode-product.js'
+import { ORCATERM } from './orcaterm-product.js'
 import { configureDeadModelStore, withDeadModelPruning } from './dead-model-store.js'
 import type { CodeArtsCredential, BuddyCredential } from './types.js'
 import type { LobsteraiCredential } from './lobsterai.js'
@@ -58,6 +60,7 @@ import type { TraeCredential } from './trae.js'
 import type { ClineCredential } from './cline.js'
 import type { CommandCodeCredential } from './commandcode.js'
 import type { MonkeyCodeCredential } from './monkeycode.js'
+import type { OrcaTermCredential } from './orcaterm.js'
 import type { LoomyCredential } from './loomy.js'
 import type { RaccoonCredential } from './raccoon.js'
 import { MinimaxAuth } from './minimax-auth.js'
@@ -1015,6 +1018,29 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
     },
     accountPool: pool,
     product: MONKEYCODE,
+  })
+
+  // ===== OrcaTerm（腾讯云 LightAI）=====
+  // 完整对话能力：建会话 → SSE（协议明确，见 orcaterm-auth.ts）。
+  // 登录与 MonkeyCode 同形态：用户在官方控制台登录后粘贴 ot_session Cookie。
+  let activeOrcaTermAccountId = ''
+  const orcaTermAdapter = registerOrcaTermLlm(ctx, {
+    fetchImpl: network.fetch,
+    resolveCredential: async () => {
+      const available = await pool.getAvailableAccount(ORCATERM.id, '')
+      activeOrcaTermAccountId = available?.entry.id ?? ''
+      if (activeOrcaTermAccountId.length > 0) reportLedgerAccount(ORCATERM.id, activeOrcaTermAccountId)
+      if (available) return available.credential as OrcaTermCredential
+      const resolved = await ctx.credentials.resolve(credentialRef(ORCATERM.defaultCredentialRef))
+      if (!resolved) return undefined
+      try {
+        return JSON.parse(resolved.value) as OrcaTermCredential
+      } catch {
+        return undefined
+      }
+    },
+    accountPool: pool,
+    product: ORCATERM,
   })
 
   // ===== Loomy（讯飞办公助手）服务 =====
