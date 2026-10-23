@@ -13,6 +13,7 @@ import { CommandCodeAuth } from './commandcode-service.js'
 import { registerMonkeyCodeLlm } from './monkeycode-adapter.js'
 import { registerOrcaTermLlm } from './orcaterm-adapter.js'
 import { registerKukuLlm } from './kuku-adapter.js'
+import { registerAccioLlm } from './accio-adapter.js'
 import { registerLoomyLlm, parseLoomyRemoteModels } from './loomy-adapter.js'
 import { registerRaccoonLlm } from './raccoon-adapter.js'
 import { CODEARTS_CREDENTIAL_REF, CodeArtsAuth } from './service.js'
@@ -54,6 +55,7 @@ import { COMMANDCODE } from './commandcode-product.js'
 import { MONKEYCODE } from './monkeycode-product.js'
 import { ORCATERM } from './orcaterm-product.js'
 import { KUKU } from './kuku-product.js'
+import { ACCIO, ACCIO_CN } from './accio-product.js'
 import { configureDeadModelStore, withDeadModelPruning } from './dead-model-store.js'
 import type { CodeArtsCredential, BuddyCredential } from './types.js'
 import type { LobsteraiCredential } from './lobsterai.js'
@@ -64,6 +66,7 @@ import type { CommandCodeCredential } from './commandcode.js'
 import type { MonkeyCodeCredential } from './monkeycode.js'
 import type { OrcaTermCredential } from './orcaterm.js'
 import type { KukuCredential } from './kuku.js'
+import type { AccioCredential } from './accio.js'
 import type { LoomyCredential } from './loomy.js'
 import type { RaccoonCredential } from './raccoon.js'
 import { MinimaxAuth } from './minimax-auth.js'
@@ -1066,6 +1069,37 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
     },
     accountPool: pool,
     product: KUKU,
+  })
+
+  // ===== Accio（阿里，国际 / 国内两个地区）=====
+  // 两地共用同一网关，差别只在 x-package-region 与登录站点。
+  // ⚠️ token 不走 Authorization 头（GET 拼 query、POST 放 body），
+  // 这是它独有的，见 accio.ts 模块头注释。
+  let activeAccioAccountId = ''
+  const makeAccioResolver = (product: typeof ACCIO | typeof ACCIO_CN) => async () => {
+    const available = await pool.getAvailableAccount(product.id, '')
+    activeAccioAccountId = available?.entry.id ?? ''
+    if (activeAccioAccountId.length > 0) reportLedgerAccount(product.id, activeAccioAccountId)
+    if (available) return available.credential as AccioCredential
+    const resolved = await ctx.credentials.resolve(credentialRef(product.defaultCredentialRef))
+    if (!resolved) return undefined
+    try {
+      return JSON.parse(resolved.value) as AccioCredential
+    } catch {
+      return undefined
+    }
+  }
+  const accioAdapter = registerAccioLlm(ctx, {
+    fetchImpl: network.fetch,
+    resolveCredential: makeAccioResolver(ACCIO),
+    accountPool: pool,
+    product: ACCIO,
+  })
+  const accioCnAdapter = registerAccioLlm(ctx, {
+    fetchImpl: network.fetch,
+    resolveCredential: makeAccioResolver(ACCIO_CN),
+    accountPool: pool,
+    product: ACCIO_CN,
   })
 
   // ===== Loomy（讯飞办公助手）服务 =====

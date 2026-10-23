@@ -1,0 +1,260 @@
+/**
+ * Accio API：OAuth 换 token、续期、模型目录、额度、SSE 推理。
+ *
+ * ⚠️ 所有调用都**不带 Authorization 头** —— token 走 query 或 body。
+ */
+
+import {
+  ACCIO_GENERATE_PATH,
+  ACCIO_LLM_CONFIG_PATH,
+  ACCIO_QUOTA_PATH,
+  ACCIO_REFRESH_PATH,
+  ACCIO_TOKEN_PATH,
+  ACCIO_USERINFO_PATH,
+  type AccioProduct,
+} from './accio-product.js'
+import {
+  accioHeaders,
+  buildGenerateBody,
+  isCredentialUsable,
+  parseAdkFrame,
+  parseTokenResponse,
+  type AccioCredential,
+} from './accio.js'
+
+/** 用授权码换 token。 */
+export async function exchangeCode(
+  fetcher: typeof fetch,
+  product: AccioProduct,
+  code: string,
+  verifier: string,
+  redirectUri: string,
+  signal?: AbortSignal,
+): Promise<AccioCredential> {
+  const response = await fetcher(`${product.gatewayBase}${ACCIO_TOKEN_PATH}`, {
+    method: 'POST',
+    headers: accioHeaders(product),
+    body: JSON.stringify({
+      code,
+      codeVerifier: verifier,
+      clientId: product.clientId,
+      redirectUri,
+    }),
+    ...(signal === undefined ? {} : { signal }),
+  })
+  if (!response.ok) throw new Error(`Accio：换 token 返回 HTTP ${response.status}`)
+  const credential = parseTokenResponse(await response.json().catch(() => undefined))
+  if (credential === undefined) throw new Error('Accio：换 token 响应缺少 accessToken')
+  return credential
+}
+
+/** 续期。 */
+export async function refreshCredential(
+  fetcher: typeof fetch,
+  product: AccioProduct,
+  credential: AccioCredential,
+  signal?: AbortSignal,
+): Promise<AccioCredential | undefined> {
+  if (credential.refresh_token === undefined) return undefined
+  try {
+    const response = await fetcher(`${product.gatewayBase}${ACCIO_REFRESH_PATH}`, {
+      method: 'POST',
+      headers: accioHeaders(product),
+      body: JSON.stringify({
+        accessToken: credential.access_token,
+        refreshToken: credential.refresh_token,
+      }),
+      ...(signal === undefined ? {} : { signal }),
+    })
+    if (!response.ok) return undefined
+    const refreshed = parseTokenResponse(await response.json().catch(() => undefined))
+    if (refreshed === undefined) return undefined
+    // 续期响应可能不带 refresh_token —— 沿用旧的。
+    return {
+      ...refreshed,
+      refresh_token: refreshed.refresh_token ?? credential.refresh_token,
+      ...(credential.account_id === undefined ? {} : { account_id: credential.account_id }),
+      ...(credential.nickname === undefined ? {} : { nickname: credential.nickname }),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+/** 读用户资料（token 走 query）。 */
+export async function fetchUserInfo(
+  fetcher: typeof fetch,
+  product: AccioProduct,
+  credential: AccioCredential,
+  signal?: AbortSignal,
+): Promise<{ accountId?: string; nickname?: string } | undefined> {
+  try {
+    const query = new URLSearchParams({ accessToken: credential.access_token }).toString()
+    const response = await fetcher(`${product.gatewayBase}${ACCIO_USERINFO_PATH}?${query}`, {
+      method: 'GET',
+      headers: accioHeaders(product),
+      ...(signal === undefined ? {} : { signal }),
+    })
+    if (!response.ok) return undefined
+    const body: unknown = await response.json().catch(() => undefined)
+    if (typeof body !== 'object' || body === null) return undefined
+    const record = body as Record<string, unknown>
+    const data = typeof record.data === 'object' && record.data !== null ? record.data as Record<string, unknown> : record
+    return {
+      ...(typeof data.userId === 'string' ? { accountId: data.userId } : {}),
+      ...(typeof data.nickname === 'string' ? { nickname: data.nickname } : {}),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+/** 读额度。返回用量百分比（0–1）。 */
+export async function fetchQuota(
+  fetcher: typeof fetch,
+  product: AccioProduct,
+  credential: AccioCredential,
+  signal?: AbortSignal,
+): Promise<{ usedPercent?: number; resetAtMs?: number } | undefined> {
+  try {
+    const query = new URLSearchParams({ accessToken: credential.access_token }).toString()
+    const response = await fetcher(`${product.gatewayBase}${ACCIO_QUOTA_PATH}?${query}`, {
+      method: 'GET',
+      headers: accioHeaders(product),
+      ...(signal === undefined ? {} : { signal }),
+    })
+    if (!response.ok) return undefined
+    const body: unknown = await response.json().catch(() => undefined)
+    if (typeof body !== 'object' || body === null) return undefined
+    const record = body as Record<string, unknown>
+    const data = typeof record.data === 'object' && record.data !== null ? record.data as Record<string, unknown> : record
+    const used = typeof data.usedPercent === 'number' ? data.usedPercent
+      : typeof data.used_percent === 'number' ? data.used_percent
+      : undefined
+    const resetRaw = typeof data.resetAt === 'number' ? data.resetAt : undefined
+    return {
+      ...(used === undefined ? {} : { usedPercent: used }),
+      ...(resetRaw === undefined ? {} : { resetAtMs: resetRaw < 1e12 ? resetRaw * 1000 : resetRaw }),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 拉模型目录（POST，body 带 token）。
+ *
+ * 形状不对抛错（不返回空数组）—— 空数组会被误读成「账号没有模型」。
+ */
+export async function fetchModels(
+  fetcher: typeof fetch,
+  product: AccioProduct,
+  credential: AccioCredential,
+  signal?: AbortSignal,
+): Promise<Array<{ id: string; name: string; contextWindow: number; maxTokens?: number }>> {
+  const response = await fetcher(`${product.gatewayBase}${ACCIO_LLM_CONFIG_PATH}`, {
+    method: 'POST',
+    headers: accioHeaders(product),
+    body: JSON.stringify({ token: credential.access_token }),
+    ...(signal === undefined ? {} : { signal }),
+  })
+  if (!response.ok) throw new Error(`Accio：模型目录返回 HTTP ${response.status}`)
+  const body: unknown = await response.json().catch(() => undefined)
+  if (typeof body !== 'object' || body === null) throw new Error('Accio：模型目录响应不是对象')
+  const record = body as Record<string, unknown>
+  const list = Array.isArray(record.models) ? record.models
+    : Array.isArray(record.data) ? record.data
+    : undefined
+  if (list === undefined) throw new Error('Accio：模型目录缺少 models 数组')
+  const rows: Array<{ id: string; name: string; contextWindow: number; maxTokens?: number }> = []
+  for (const raw of list) {
+    if (typeof raw !== 'object' || raw === null) continue
+    const item = raw as Record<string, unknown>
+    const id = typeof item.id === 'string' ? item.id : typeof item.model === 'string' ? item.model : undefined
+    if (id === undefined) continue
+    const name = typeof item.name === 'string' ? item.name : typeof item.displayName === 'string' ? item.displayName : id
+    const contextRaw = item.contextWindow ?? item.context_window ?? item.maxInputTokens
+    const contextWindow = typeof contextRaw === 'number' && contextRaw > 0 ? contextRaw : 128_000
+    const maxRaw = item.maxTokens ?? item.max_output_tokens
+    const maxTokens = typeof maxRaw === 'number' && maxRaw > 0 ? Math.min(maxRaw, contextWindow) : undefined
+    rows.push({ id, name, contextWindow, ...(maxTokens === undefined ? {} : { maxTokens }) })
+  }
+  if (rows.length === 0) throw new Error('Accio：模型目录为空')
+  return rows
+}
+
+/** 对话选项。 */
+export interface ChatOptions {
+  model: string
+  messages: readonly { role: string; content: unknown }[]
+  system?: string
+  tools?: readonly { name: string; description?: string; parameters?: unknown }[]
+  signal?: AbortSignal
+}
+
+/**
+ * 流式推理（异步生成器）。
+ *
+ * ⚠️ 上游的业务错误**不体现在 HTTP 状态码上**（常是 200 + 帧里的 error_code），
+ * 故每帧都要判 error_code。
+ */
+export async function* streamChat(
+  fetcher: typeof fetch,
+  product: AccioProduct,
+  credential: AccioCredential,
+  options: ChatOptions,
+): AsyncGenerator<{ text?: string; reasoning?: string }, void, undefined> {
+  if (!isCredentialUsable(credential)) {
+    throw new Error('Accio：没有可用凭据，请先登录')
+  }
+  const { createHash, randomUUID } = await import('node:crypto')
+  const requestId = randomUUID()
+  // 上游要求 sg_k=<md5(requestId)>。
+  const sgK = createHash('md5').update(requestId).digest('hex')
+
+  const response = await fetcher(`${product.llmBase}${ACCIO_GENERATE_PATH}?sg_k=${sgK}`, {
+    method: 'POST',
+    headers: { ...accioHeaders(product), Accept: 'text/event-stream' },
+    body: JSON.stringify(buildGenerateBody({
+      token: credential.access_token,
+      messages: options.messages,
+      ...(options.system === undefined ? {} : { system: options.system }),
+      ...(options.tools === undefined ? {} : { tools: options.tools }),
+    })),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  })
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    throw new Error(`Accio：推理返回 HTTP ${response.status}${text === '' ? '' : `：${text.slice(0, 200)}`}`)
+  }
+  if (response.body === null) throw new Error('Accio：推理响应没有正文')
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let newline = buffer.indexOf('\n')
+      while (newline !== -1) {
+        const line = buffer.slice(0, newline).replace(/\r$/, '')
+        buffer = buffer.slice(newline + 1)
+        newline = buffer.indexOf('\n')
+        if (!line.startsWith('data:')) continue
+        const raw = line.slice(5).trim()
+        if (raw === '' || raw === '[DONE]') continue
+        let parsed: unknown
+        try { parsed = JSON.parse(raw) } catch { continue }
+        const frame = parseAdkFrame(parsed)
+        if (frame === undefined) continue
+        if (frame.kind === 'done') return
+        if (frame.kind === 'error') throw new Error(`Accio 上游错误：${frame.message}`)
+        yield frame
+      }
+    }
+  } finally {
+    void reader.cancel().catch(() => undefined)
+  }
+}
