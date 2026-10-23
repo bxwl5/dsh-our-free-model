@@ -44,6 +44,8 @@ const suites = [
   ['channel-credits-ui', 'channel-credits-ui-test.mjs', []],
   ['channel-model-actions', 'channel-model-actions-test.mjs', []],
   ['channel-login', 'channel-login-test.mjs', []],
+  // 登录方式矩阵的漂移守卫：文档 / client.js 的 login 字段 / ADOPTABLE_CHANNELS 三方一致。
+  ['channel-login-methods', 'channel-login-methods-test.mjs', []],
   ['open-external', 'open-external-test.mjs', []],
   ['channel-image-pricing', 'channel-image-pricing-test.mjs', []],
   ['forward-boot', 'forward-boot-test.mjs', []],
