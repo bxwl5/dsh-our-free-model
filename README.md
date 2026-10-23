@@ -69,7 +69,7 @@ https://github.com/bxwl5/dsh-our-free-model
 | OfficeAce 果办 | 浏览器授权（轮询授权码） | ✅ |
 | Accio / Accio 国内版 | 浏览器授权 | ✅ |
 | OrcaTerm | 粘贴 Cookie（`ot_session`） | ✅ |
-| KukuAI | 粘贴 Cookie（`BDUSS`） | ✅ |
+| KukuAI | 百度 App 扫码（本地弹窗页） | ✅ |
 | MonkeyCode | 粘贴 Cookie（`nebula_session`） | ✅ |
 | AutoClaw（国内） | 手机号 + 短信验证码（本地弹窗页） | ✅ |
 | AutoClaw 国际版 | 粘贴令牌 | ✅ |

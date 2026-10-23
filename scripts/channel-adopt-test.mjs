@@ -28,7 +28,7 @@ async function main() {
   // 真·粘贴型：上游没有可脚本化的 OAuth，只能由用户复制 Cookie / 令牌。
   // AutoClaw 国内站已改为「本地页 + 短信验证码」登录（autoclaw-login-page.ts），
   // 只有国际站仍只能粘贴令牌。
-  const pasteOnly = ['monkeycode', 'orcaterm', 'kuku', 'autoclaw-intl']
+  const pasteOnly = ['monkeycode', 'orcaterm', 'autoclaw-intl']
   for (const provider of pasteOnly) {
     const hint = adoptableChannelHint(provider)
     assert.equal(typeof hint, 'string', `${provider} 必须有粘贴提示`)
@@ -36,7 +36,7 @@ async function main() {
   }
   // OAuth 渠道**必须**走单点登录（不能误设成粘贴框）：
   // 这些渠道的上游有浏览器授权流程，做成粘贴框是体验倒退。
-  const oauth = ['commandcode', 'officeace', 'accio', 'accio-cn', 'autoclaw']
+  const oauth = ['commandcode', 'officeace', 'accio', 'accio-cn', 'autoclaw', 'kuku']
   for (const provider of oauth) {
     assert.equal(adoptableChannelHint(provider), undefined, `${provider} 应走 OAuth，不应在粘贴表里`)
   }
@@ -72,7 +72,7 @@ async function main() {
   assert.equal(parseAutoClaw({ token: 'abc' }), undefined)
   assert.equal(parseAutoClaw({}), undefined)
 
-  console.log('ok  channel-adopt: 4 个粘贴型渠道有提示；解析函数合法/非法/噪声输入形状校验')
+  console.log('ok  channel-adopt: 3 个粘贴型渠道有提示；解析函数合法/非法/噪声输入形状校验')
 }
 
 /** account.adopt RPC 端到端（需要 channel-pack-test.mjs 的 mount 环境）。
@@ -91,7 +91,6 @@ async function rpcProbes({ call, creds }) {
   for (const [provider, bad] of [
     ['monkeycode', 'nebula_session=abc'],
     ['orcaterm', 'foo=bar'],
-    ['kuku', 'BDUSS=short'],
     ['autoclaw-intl', 'Bearer "x'],
   ]) {
     const result = await call('account.adopt', { provider, credential: bad })
@@ -104,7 +103,6 @@ async function rpcProbes({ call, creds }) {
   for (const [provider, noisy, expectedToken] of [
     ['monkeycode', `  Cookie: "nebula_session=${SESSION}; Path=/; HttpOnly"`, `nebula_session=${SESSION}`],
     ['orcaterm', `Bearer ot_session=${SESSION}\r\n`, `ot_session=${SESSION}`],
-    ['kuku', `Cookie: BDUSS=${BDUSS}; Path=/`, `BDUSS=${BDUSS}`],
     ['autoclaw-intl', `  "${TOKEN}"  `, TOKEN],
   ]) {
     const result = await call('account.adopt', { provider, credential: noisy })

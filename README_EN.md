@@ -79,7 +79,7 @@ The settings page has seven parts: free models, channels, token savers, routing,
 | OfficeAce | browser (polling) | ✅ |
 | Accio / Accio CN | browser | ✅ |
 | OrcaTerm | paste cookie (`ot_session`) | ✅ |
-| KukuAI | paste cookie (`BDUSS`) | ✅ |
+| KukuAI | Baidu App QR scan (local page) | ✅ |
 | MonkeyCode | paste cookie (`nebula_session`) | ✅ |
 | AutoClaw (CN) | phone + SMS code | ✅ |
 | AutoClaw Intl | paste token | ✅ |

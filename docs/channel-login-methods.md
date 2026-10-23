@@ -1,7 +1,7 @@
 # 渠道登录方式矩阵
 
-> 一句话：22 个账号渠道里，**17 个的登录全自动完成**（浏览器/本地页/短信码，不需要手抄凭据），
-> **1 个（`loomy`）在微信未绑手机号时会在弹窗内补要短信码**，**4 个只能粘贴凭据**。本文的「一键」指：点「添加账号」后只需在浏览器内完成授权，
+> 一句话：22 个账号渠道里，**18 个的登录全自动完成**（浏览器/本地页/短信码/扫码，不需要手抄凭据），
+> **1 个（`loomy`）在微信未绑手机号时会在弹窗内补要短信码**，**3 个只能粘贴凭据**。本文的「一键」指：点「添加账号」后只需在浏览器内完成授权，
 > 插件自己把 token 收回来，**不需要手动复制任何东西**。
 
 ## 1. 总表
@@ -27,11 +27,11 @@
 | 17 | `raccoon` | 微信扫码 / 短信，本地页承载 | ✅ | 微信扫码或短信 | 是 | `channel-pack-rpc.ts:1848` 起、`raccoon-oauth.ts:116,140` |
 | 18 | `monkeycode` | 粘贴 Cookie（`nebula_session`） | ❌ | 手动复制 Cookie | 否 | `channel-pack-rpc.ts:4448` |
 | 19 | `orcaterm` | 粘贴 Cookie（`ot_session`） | ❌ | 手动复制 Cookie | 否 | `channel-pack-rpc.ts:4455` |
-| 20 | `kuku` | 粘贴 Cookie（`BDUSS`） | ❌ | 手动复制 Cookie | 否 | `channel-pack-rpc.ts:4462` |
+| 20 | `kuku` | 百度 App 扫码，**本地弹窗页**承载 | ✅ | 手机扫码 + 确认 | 是（本地页） | `kuku-qr-login.ts`、`kuku-qr-login-page.ts` |
 | 21 | `autoclaw` | 手机号 + 短信验证码，**本地弹窗页**承载 | ✅ | 输手机号 + 验证码 | 是（本地页） | `autoclaw-login-page.ts`、`autoclaw-sms.ts` |
 | 22 | `autoclaw-intl` | 粘贴令牌 | ❌ | 手动复制令牌 | 否 | `channel-pack-rpc.ts:4476` |
 
-统计：**一键 17 / 半自动 1 / 纯粘贴 4**。
+统计：**一键 18 / 半自动 1 / 纯粘贴 3**。
 
 ## 2. 三种流为什么不能统一
 
@@ -106,7 +106,7 @@
 | 事项 | 状态 | 说明 |
 | --- | --- | --- |
 | `autoclaw`（国内）短信登录 | **已实现，真机验证通过** | 手机号 + 验证码，**本地弹窗页**承载（范式照 `raccoon`）：`autoclaw-login-page.ts` + `autoclaw-sms.ts`，对外仍返回 `loginUrl`，前端走既有两步式 → **客户端零改动**。2026-10-24 真机换到 24h token。⚠️ 常量逆向所得，失效时该渠道暂不可用（粘贴入口已移除）。 |
-| `kuku` 扫码登录 | 可行（B 档，接近一键） | 百度 passport `getqrcode` → `logincheck` 轮询，确认后直接下发 `BDUSS`/`STOKEN`；仓库已有本地弹窗页（`loomy-wechat-login.ts`）+ 零依赖二维码（`raccoon-qr.ts`）+ `login.poll` 三件套可复用。 |
+| `kuku` 扫码登录 | **已实现** | 百度 passport 扫码：`kuku-qr-login.ts`（协议）+ `kuku-qr-login-page.ts`（本地页 + 长轮询）。两个只有真连才暴露的坑已修：`/channel/unicast` 是**长轮询**（未扫码约 30s 才回，需 45s 超时）；`bdusslogin` **成功响应没有 errno**（写 `errno===0` 会判失败每次真登录）。 |
 | `autoclaw-intl` OAuth | 可行但工作量大 | Z.ai OAuth loopback（端口白名单 18432/19654/19723/53699）+ 阿里滑块；国际账号无手机号，短信路不通（仍走粘贴）。 |
 | `orcaterm` 书签收号 | 半自动，待实测 | `ot_session` 非 HttpOnly，用户在已登录页点一次书签回传；未知项是 https 页 → `http://127.0.0.1` 的 PNA/混合内容限制。 |
 | `monkeycode` | 维持粘贴 | 设备码 client_id 写死 `monkeyai-runtime`、scope 仅 `device:*`；会话 Cookie HttpOnly ⇒ 内嵌浏览器也取不到。 |
