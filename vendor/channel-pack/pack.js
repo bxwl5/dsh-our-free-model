@@ -29640,7 +29640,7 @@ var init_login = __esm({
 
 // vendor/channel-pack/src/index.ts
 import { credentialRef as credentialRef16 } from "@deepseek-ai/dsh-credentials";
-import { LlmError as LlmError27 } from "@deepseek-ai/dsh-llm";
+import { LlmError as LlmError28 } from "@deepseek-ai/dsh-llm";
 import Schema2 from "@deepseek-ai/schemastery";
 
 // vendor/channel-pack/src/llm-adapter.ts
@@ -45195,8 +45195,171 @@ function registerAutoClawLlm(ctx, options) {
   return adapter;
 }
 
+// vendor/channel-pack/src/catpaw-adapter.ts
+import { LlmAdapter as LlmAdapter14, LlmError as LlmError17 } from "@deepseek-ai/dsh-llm";
+
+// vendor/channel-pack/src/catpaw-product.ts
+var CATPAW_FALLBACK_MODELS = [
+  { id: "catpaw-default", name: "CatPaw", contextWindow: 128e3 }
+];
+var CATPAW = {
+  id: "catpaw",
+  displayName: "CatPaw",
+  gatewayBase: "https://catx.nocode.cn",
+  apiBase: "https://ai.catpaw.meituan.com",
+  defaultCredentialRef: "CATPAW_CREDENTIAL",
+  fallbackModels: CATPAW_FALLBACK_MODELS
+};
+var CATPAW_MODEL_TYPES_PATH = "/api/agent/maas/model-types";
+var CATPAW_TOKEN_HEADER = "X-Passport-Token";
+
+// vendor/channel-pack/src/catpaw.ts
+function stringValue6(value) {
+  return typeof value === "string" && value !== "" ? value : void 0;
+}
+function isRecord7(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isCredentialUsable8(credential) {
+  if (credential === void 0) return false;
+  const token = credential.access_token;
+  return typeof token === "string" && token !== "" && token === token.trim();
+}
+function catPawHeaders(product, credential) {
+  return {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    [CATPAW_TOKEN_HEADER]: credential.access_token,
+    ...credential.user_uid === void 0 ? {} : { "X-User-Uid": credential.user_uid },
+    Origin: product.apiBase,
+    Referer: `${product.apiBase}/`
+  };
+}
+function parseModelTypes(value) {
+  const body = isRecord7(value) && isRecord7(value.data) ? value.data : value;
+  const list = Array.isArray(body) ? body : isRecord7(body) && Array.isArray(body.modelTypes) ? body.modelTypes : isRecord7(body) && Array.isArray(body.models) ? body.models : isRecord7(body) && Array.isArray(body.data) ? body.data : void 0;
+  if (list === void 0) return [];
+  const rows = [];
+  for (const raw of list) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const item = raw;
+    const id = stringValue6(item.modelTypeId) ?? stringValue6(item.id) ?? stringValue6(item.host_model_id);
+    if (id === void 0) continue;
+    const name2 = stringValue6(item.name) ?? stringValue6(item.displayName) ?? id;
+    const contextRaw = item.contextWindow ?? item.context_length ?? item.default_context_window;
+    const contextWindow = typeof contextRaw === "number" && contextRaw > 0 ? contextRaw : 128e3;
+    const maxRaw = item.maxTokens ?? item.max_output_tokens;
+    const maxTokens = typeof maxRaw === "number" && maxRaw > 0 ? Math.min(maxRaw, contextWindow) : void 0;
+    rows.push({ id, name: name2, contextWindow, ...maxTokens === void 0 ? {} : { maxTokens } });
+  }
+  return rows;
+}
+async function fetchModelTypes(fetcher, product, credential, signal) {
+  const response = await fetcher(`${product.apiBase}${CATPAW_MODEL_TYPES_PATH}`, {
+    method: "POST",
+    headers: catPawHeaders(product, credential),
+    body: JSON.stringify({}),
+    ...signal === void 0 ? {} : { signal }
+  });
+  if (!response.ok) throw new Error(`CatPaw\uFF1A\u6A21\u578B\u76EE\u5F55\u8FD4\u56DE HTTP ${response.status}`);
+  const rows = parseModelTypes(await response.json().catch(() => void 0));
+  if (rows.length === 0) throw new Error("CatPaw\uFF1A\u6A21\u578B\u76EE\u5F55\u4E3A\u7A7A\u6216\u5F62\u6001\u672A\u8BC6\u522B");
+  return rows;
+}
+
+// vendor/channel-pack/src/catpaw-adapter.ts
+var CatPawAdapter = class extends LlmAdapter14 {
+  constructor(options) {
+    super();
+    this.options = options;
+    this.product = options.product ?? CATPAW;
+    this.fetchImpl = options.fetchImpl ?? fetch;
+  }
+  product;
+  fetchImpl;
+  remoteModels;
+  loading;
+  providerInfo(provider) {
+    const id = typeof provider === "string" && provider.length > 0 ? provider : this.product.id;
+    return { id, name: this.product.displayName };
+  }
+  async ensureRemoteModels() {
+    if (this.remoteModels !== void 0) return;
+    if (this.loading !== void 0) return this.loading;
+    this.loading = (async () => {
+      try {
+        const credential = await this.options.resolveCredential();
+        if (!isCredentialUsable8(credential)) return;
+        this.remoteModels = await fetchModelTypes(this.fetchImpl, this.product, credential);
+      } catch {
+      } finally {
+        this.loading = void 0;
+      }
+    })();
+    return this.loading;
+  }
+  async listModels(_provider) {
+    if (this.options.accountPool !== void 0 && !await providerCatalogVisible(this.options.accountPool, this.product.id)) {
+      return [];
+    }
+    await this.ensureRemoteModels();
+    const source = this.remoteModels ?? this.product.fallbackModels;
+    const disabled = this.options.accountPool?.disabledModelsFor(this.product.id);
+    const listed = disabled === void 0 || disabled.size === 0 ? source : source.filter((model) => !disabled.has(model.id));
+    return listed.map((model) => ({
+      provider: this.product.id,
+      id: model.id,
+      name: model.name,
+      inputModalities: ["text"]
+    }));
+  }
+  async resolveModel(provider, model, _signal) {
+    await this.ensureRemoteModels();
+    const source = this.remoteModels ?? this.product.fallbackModels;
+    const entry = source.find((candidate) => candidate.id === model);
+    const resolved = {
+      provider,
+      id: model,
+      name: entry?.name ?? model,
+      inputModalities: ["text"]
+    };
+    if (entry?.contextWindow !== void 0) resolved.context = { contextWindow: entry.contextWindow };
+    if (entry?.maxTokens !== void 0 && entry.maxTokens > 0) resolved.defaultMaxTokens = entry.maxTokens;
+    return resolved;
+  }
+  async prepareCall(provider, model, signal) {
+    return {
+      model: await this.resolveModel(provider, model, signal),
+      stream: (options) => this.stream(options)
+    };
+  }
+  /**
+   * 对话推理 —— **当前明确不支持**。
+   *
+   * 抛 `UNSUPPORTED_CONTENT` 并说明原因，而不是返回空流：
+   * 空流会被 DSH 当成「模型返回了空回答」，用户看到空白回复加成功标记。
+   */
+  // eslint-disable-next-line require-yield
+  async *stream(_options) {
+    throw new LlmError17(
+      "CatPaw\uFF1A\u5BF9\u8BDD\u529F\u80FD\u6682\u672A\u652F\u6301\uFF08\u8BE5\u6E20\u9053\u7684\u5BF9\u8BDD\u662F\u6709\u72B6\u6001\u4F1A\u8BDD\u534F\u8BAE\uFF0C\u9700\u8981round/event/turn \u65F6\u5E8F\u4E0E\u6307\u7EB9\u94FE\uFF1B\u5F53\u524D\u7248\u672C\u53EA\u63D0\u4F9B\u51ED\u636E\u4E0E\u6A21\u578B\u76EE\u5F55\uFF0C\u63A8\u7406\u80FD\u529B\u5F85\u540E\u7EED\u7248\u672C\u5B9E\u73B0\uFF09",
+      "UNSUPPORTED_CONTENT"
+    );
+  }
+  /** 只读渠道：无重试意义。 */
+  providerRetryPolicy() {
+    return { retryableCodes: [], maxRetries: 0, initialDelayMs: 1e3, maxDelayMs: 1e3, jitterRatio: 0 };
+  }
+};
+function registerCatPawLlm(ctx, options) {
+  const product = options.product ?? CATPAW;
+  const adapter = new CatPawAdapter(options);
+  registerAdapterIdempotent(ctx.llm, [product.id], adapter);
+  return adapter;
+}
+
 // vendor/channel-pack/src/loomy-adapter.ts
-import { LlmAdapter as LlmAdapter14, LlmError as LlmError17, ReasoningEffortId as ReasoningEffortId8 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter15, LlmError as LlmError18, ReasoningEffortId as ReasoningEffortId8 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/loomy.ts
 var LOOMY_API_BASE = "https://loomyad.xunfei.cn/api/v1";
@@ -45364,7 +45527,7 @@ function fallbackToRemote(model) {
     ...model.defaultEffort !== void 0 ? { defaultEffort: model.defaultEffort } : {}
   };
 }
-var LoomyAdapter = class extends LlmAdapter14 {
+var LoomyAdapter = class extends LlmAdapter15 {
   constructor(options) {
     super();
     this.options = options;
@@ -45506,10 +45669,10 @@ var LoomyAdapter = class extends LlmAdapter14 {
     let imageUrls;
     if (imageRefs.size > 0) {
       if (!this.inputModalitiesFor(entry).includes("image")) {
-        throw new LlmError17(`loomy: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`, "UNSUPPORTED_CONTENT");
+        throw new LlmError18(`loomy: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`, "UNSUPPORTED_CONTENT");
       }
       if (this.options.readImage === void 0) {
-        throw new LlmError17("loomy: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
+        throw new LlmError18("loomy: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
       }
       imageUrls = /* @__PURE__ */ new Map();
       for (const [id, ref] of imageRefs) {
@@ -45524,7 +45687,7 @@ var LoomyAdapter = class extends LlmAdapter14 {
       credential = await this.options.refresh(accountId || void 0) ?? await this.options.resolveCredential(options.model);
     }
     if (credential === void 0 || credential.access_token.length === 0) {
-      throw new LlmError17("loomy: no usable credential; log in first", "MISSING_CREDENTIAL");
+      throw new LlmError18("loomy: no usable credential; log in first", "MISSING_CREDENTIAL");
     }
     const messages = serializeMessages4(options.messages, imageUrls);
     const wireMessages = options.system !== void 0 && options.system.length > 0 ? [{ role: "system", content: options.system }, ...messages] : messages;
@@ -45561,7 +45724,7 @@ var LoomyAdapter = class extends LlmAdapter14 {
       } catch (error) {
         if (options.signal?.aborted) throw error;
         if (isTransportError4(error)) {
-          throw new LlmError17(
+          throw new LlmError18(
             `loomy: transport error: ${error instanceof Error ? error.message : String(error)}`,
             "TRANSPORT",
             { cause: error }
@@ -45580,7 +45743,7 @@ var LoomyAdapter = class extends LlmAdapter14 {
           await response.body?.cancel();
           credential = await this.options.refresh(accountId || void 0) ?? await this.options.resolveCredential(options.model);
           if (credential === void 0 || credential.access_token.length === 0) {
-            throw new LlmError17("loomy: credential expired and refresh failed", "AUTH", { status: response.status });
+            throw new LlmError18("loomy: credential expired and refresh failed", "AUTH", { status: response.status });
           }
           response = await send(credential.access_token);
         }
@@ -45591,7 +45754,7 @@ var LoomyAdapter = class extends LlmAdapter14 {
             quota ||= isLoomyQuotaError(JSON.parse(errorText));
           } catch {
           }
-          throw new LlmError17(
+          throw new LlmError18(
             `loomy: ${errorDetail4(errorText)}`,
             quota ? "QUOTA_EXCEEDED" : httpErrorCode4(response.status),
             { status: response.status }
@@ -45609,7 +45772,7 @@ var LoomyAdapter = class extends LlmAdapter14 {
         }
         return;
       } catch (error) {
-        if (options.signal?.aborted || !(error instanceof LlmError17) || error.code !== "QUOTA_EXCEEDED") throw error;
+        if (options.signal?.aborted || !(error instanceof LlmError18) || error.code !== "QUOTA_EXCEEDED") throw error;
         if (accountId) {
           await this.options.accountPool?.updateModelRateLimit(accountId, options.model, nextUtc8DayStartMs());
         }
@@ -45643,7 +45806,7 @@ function registerLoomyLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/raccoon-adapter.ts
-import { LlmAdapter as LlmAdapter15, LlmError as LlmError18, ReasoningEffortId as ReasoningEffortId9 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter16, LlmError as LlmError19, ReasoningEffortId as ReasoningEffortId9 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/raccoon.ts
 import { createCipheriv, randomBytes as randomBytes3 } from "node:crypto";
@@ -45858,7 +46021,7 @@ function fallbackToRemote2(model) {
     supportsImage: model.supportsImage
   };
 }
-var RaccoonAdapter = class extends LlmAdapter15 {
+var RaccoonAdapter = class extends LlmAdapter16 {
   constructor(options) {
     super();
     this.options = options;
@@ -45975,10 +46138,10 @@ var RaccoonAdapter = class extends LlmAdapter15 {
     let imageUrls;
     if (imageRefs.size > 0) {
       if (!this.inputModalitiesFor(entry).includes("image")) {
-        throw new LlmError18(`raccoon: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`, "UNSUPPORTED_CONTENT");
+        throw new LlmError19(`raccoon: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`, "UNSUPPORTED_CONTENT");
       }
       if (this.options.readImage === void 0) {
-        throw new LlmError18("raccoon: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
+        throw new LlmError19("raccoon: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
       }
       imageUrls = /* @__PURE__ */ new Map();
       const readImage = this.options.readImage;
@@ -45999,7 +46162,7 @@ var RaccoonAdapter = class extends LlmAdapter15 {
       credential = await this.options.refresh(accountId || void 0) ?? await this.options.resolveCredential(options.model);
     }
     if (credential === void 0 || credential.access_token.length === 0) {
-      throw new LlmError18("raccoon: no usable credential; log in first", "MISSING_CREDENTIAL");
+      throw new LlmError19("raccoon: no usable credential; log in first", "MISSING_CREDENTIAL");
     }
     const messages = serializeMessages4(options.messages, imageUrls);
     const wireMessages = options.system !== void 0 && options.system.length > 0 ? [{ role: "system", content: options.system }, ...messages] : messages;
@@ -46049,7 +46212,7 @@ var RaccoonAdapter = class extends LlmAdapter15 {
       } catch (error) {
         if (options.signal?.aborted) throw error;
         if (isTransportError4(error)) {
-          throw new LlmError18(
+          throw new LlmError19(
             `raccoon: transport error: ${error instanceof Error ? error.message : String(error)}`,
             "TRANSPORT",
             { cause: error }
@@ -46068,7 +46231,7 @@ var RaccoonAdapter = class extends LlmAdapter15 {
           await response.body?.cancel();
           const refreshed = await this.options.refresh(accountId || void 0) ?? await this.options.resolveCredential(options.model);
           if (refreshed === void 0 || refreshed.access_token.length === 0) {
-            throw new LlmError18("raccoon: credential expired and refresh failed", "AUTH", { status: response.status });
+            throw new LlmError19("raccoon: credential expired and refresh failed", "AUTH", { status: response.status });
           }
           credential = refreshed;
           response = await send();
@@ -46080,7 +46243,7 @@ var RaccoonAdapter = class extends LlmAdapter15 {
             quota ||= isQuotaError(JSON.parse(errorText));
           } catch {
           }
-          throw new LlmError18(
+          throw new LlmError19(
             `raccoon: ${errorDetail4(errorText)}`,
             quota ? "QUOTA_EXCEEDED" : httpErrorCode4(response.status),
             { status: response.status }
@@ -46098,7 +46261,7 @@ var RaccoonAdapter = class extends LlmAdapter15 {
         }
         return;
       } catch (error) {
-        if (options.signal?.aborted || !(error instanceof LlmError18) || error.code !== "QUOTA_EXCEEDED") throw error;
+        if (options.signal?.aborted || !(error instanceof LlmError19) || error.code !== "QUOTA_EXCEEDED") throw error;
         if (accountId) {
           await this.options.accountPool?.updateModelRateLimit(accountId, options.model, nextUtc8DayStartMs());
         }
@@ -57000,7 +57163,7 @@ function emptyCheckinStatus(active, actionRequired = false) {
 }
 
 // vendor/channel-pack/src/zcode-adapter.ts
-import { EMPTY_RESPONSE_CODE as EMPTY_RESPONSE_CODE2, LlmAdapter as LlmAdapter16, LlmError as LlmError20, ReasoningEffortId as ReasoningEffortId10 } from "@deepseek-ai/dsh-llm";
+import { EMPTY_RESPONSE_CODE as EMPTY_RESPONSE_CODE2, LlmAdapter as LlmAdapter17, LlmError as LlmError21, ReasoningEffortId as ReasoningEffortId10 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/zcode-identity.ts
 var OFFICIAL_CLI_PREFIX = "You are ZCode, an interactive coding agent";
@@ -57091,7 +57254,7 @@ function withContextPrefix(messages, now = /* @__PURE__ */ new Date()) {
 }
 
 // vendor/channel-pack/src/zcode-anthropic.ts
-import { LlmError as LlmError19, ToolCallId as ToolCallId6 } from "@deepseek-ai/dsh-llm";
+import { LlmError as LlmError20, ToolCallId as ToolCallId6 } from "@deepseek-ai/dsh-llm";
 function parseToolArguments(raw) {
   if (raw === void 0 || raw === null) return {};
   if (typeof raw === "object") return raw;
@@ -57319,7 +57482,7 @@ async function* consumeAnthropicSse(body, options) {
       const error = payload.error;
       const message2 = typeof error === "object" && error !== null ? error.message : void 0;
       const type2 = typeof error === "object" && error !== null ? error.type : void 0;
-      throw new LlmError19(
+      throw new LlmError20(
         `${options.label}: ${typeof message2 === "string" ? message2 : JSON.stringify(payload).slice(0, 300)}`,
         // overloaded 是暂时性的，值得重试；其余按服务端错误处理。
         type2 === "overloaded_error" ? "RATE_LIMIT" : "SERVER"
@@ -57414,7 +57577,7 @@ async function* consumeAnthropicSse(body, options) {
     }
   }
   if (!sawAny) {
-    throw new LlmError19(
+    throw new LlmError20(
       `${options.label}: \u6A21\u578B\u8FD4\u56DE\u4E86\u7A7A\u54CD\u5E94\uFF08\u65E0\u4EFB\u4F55 text / thinking / tool \u5185\u5BB9\uFF09`,
       "EMPTY_RESPONSE"
     );
@@ -57614,7 +57777,7 @@ function resolveRequestTimeoutMs(product) {
   const raw = Number(process.env.DSH_ZCODE_REQUEST_TIMEOUT_MS);
   return Number.isFinite(raw) ? raw : product.requestTimeoutMs;
 }
-var ZcodeAdapter = class extends LlmAdapter16 {
+var ZcodeAdapter = class extends LlmAdapter17 {
   constructor(options) {
     super();
     this.options = options;
@@ -57876,13 +58039,13 @@ var ZcodeAdapter = class extends LlmAdapter16 {
       const all = await this.loadModels();
       const entry = all.find((item) => item.id === options.model);
       if (!this.inputModalitiesFor(entry).includes("image")) {
-        throw new LlmError20(
+        throw new LlmError21(
           `zcode: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`,
           "UNSUPPORTED_CONTENT"
         );
       }
       if (this.options.readImage === void 0) {
-        throw new LlmError20(
+        throw new LlmError21(
           "zcode: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1\uFF08\u5BBF\u4E3B\u672A\u63D0\u4F9B attachments.readImage\uFF09",
           "UNSUPPORTED_CONTENT"
         );
@@ -57940,7 +58103,7 @@ var ZcodeAdapter = class extends LlmAdapter16 {
       }
     }
     const timedOut = () => controller.signal.aborted && options.signal?.aborted !== true;
-    const timeoutError = (cause) => new LlmError20(
+    const timeoutError = (cause) => new LlmError21(
       `zcode: \u8BF7\u6C42\u8D85\u65F6\uFF08${timeoutMs}ms \u5185\u672A\u5B8C\u6210\uFF09\u2014\u2014 \u4E0A\u6E38\u53EF\u80FD\u957F\u65F6\u95F4\u4E0D\u8FD4\u56DE\u6570\u636E`,
       "TIMEOUT",
       cause === void 0 ? void 0 : { cause }
@@ -58021,7 +58184,7 @@ var ZcodeAdapter = class extends LlmAdapter16 {
               break;
             }
           }
-          throw new LlmError20(
+          throw new LlmError21(
             `zcode: ${describeUpstreamError(response.status, text)}`,
             "QUOTA_EXCEEDED",
             { status: response.status }
@@ -58079,7 +58242,7 @@ var ZcodeAdapter = class extends LlmAdapter16 {
           shape: describeZcodeRequestShape(body.system, body.messages),
           now: Date.now()
         }) : void 0;
-        throw new LlmError20(
+        throw new LlmError21(
           `zcode: ${describeUpstreamError(response.status, text, diagnostic)}`,
           httpErrorCodeForZcode(response.status, text),
           { status: response.status }
@@ -58087,7 +58250,7 @@ var ZcodeAdapter = class extends LlmAdapter16 {
       }
       if (switchedAccount) continue;
       if (response === void 0) {
-        throw new LlmError20("zcode: \u4E0A\u6E38\u8BF7\u6C42\u672A\u53D1\u51FA\uFF08\u5185\u90E8\u72B6\u6001\u5F02\u5E38\uFF09", "SERVER");
+        throw new LlmError21("zcode: \u4E0A\u6E38\u8BF7\u6C42\u672A\u53D1\u51FA\uFF08\u5185\u90E8\u72B6\u6001\u5F02\u5E38\uFF09", "SERVER");
       }
       if (response.body === null) {
         if (quotaRound < this.product.quotaSwitchMax) {
@@ -58098,7 +58261,7 @@ var ZcodeAdapter = class extends LlmAdapter16 {
             continue;
           }
         }
-        throw new LlmError20(
+        throw new LlmError21(
           zcodeEntitlementErrorMessage(options.model, tried.size),
           "QUOTA_EXCEEDED"
         );
@@ -58126,7 +58289,7 @@ var ZcodeAdapter = class extends LlmAdapter16 {
               continue;
             }
           }
-          throw new LlmError20(
+          throw new LlmError21(
             zcodeEntitlementErrorMessage(options.model, tried.size),
             "QUOTA_EXCEEDED",
             { cause: error }
@@ -58151,7 +58314,7 @@ var ZcodeAdapter = class extends LlmAdapter16 {
       credential = await this.options.resolveCredential(options.model);
     }
     if (credential === void 0) {
-      throw new LlmError20(
+      throw new LlmError21(
         "zcode: \u6CA1\u6709\u53EF\u7528\u7684\u51ED\u636E \u2014\u2014 \u8BF7\u5728 Channel Pack \u7684 ZCode \u9762\u677F\u70B9\u300C\u6DFB\u52A0\u8D26\u53F7\u300D\u5B8C\u6210\u767B\u5F55\uFF08\u672C\u63D2\u4EF6\u53EA\u7528\u5B83\u81EA\u5DF1\u7684\u6388\u6743\u6D41\u7A0B\uFF0C\u4E0D\u4F1A\u8BFB\u53D6\u672C\u673A ZCode \u5BA2\u6237\u7AEF\u7684\u767B\u5F55\u6001\uFF09",
         "MISSING_CREDENTIAL"
       );
@@ -58190,13 +58353,13 @@ var ZcodeAdapter = class extends LlmAdapter16 {
       if (error instanceof GateAbortedError) throw error;
       if (userSignal?.aborted === true) throw error;
       if (signal.aborted) {
-        throw new LlmError20(
+        throw new LlmError21(
           `zcode: \u8BF7\u6C42\u8D85\u65F6\uFF08${timeoutMs}ms \u5185\u672A\u5B8C\u6210\uFF09\u2014\u2014 \u4E0A\u6E38\u53EF\u80FD\u957F\u65F6\u95F4\u4E0D\u8FD4\u56DE\u6570\u636E`,
           "TIMEOUT",
           { cause: error }
         );
       }
-      throw new LlmError20(
+      throw new LlmError21(
         `zcode: \u8BF7\u6C42\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`,
         "TRANSPORT",
         { cause: error }
@@ -58271,7 +58434,7 @@ var ZcodeAdapter = class extends LlmAdapter16 {
   }
 };
 function isFastEntitlementMiss(error, elapsedMs) {
-  if (!(error instanceof LlmError20)) return false;
+  if (!(error instanceof LlmError21)) return false;
   if (error.code !== EMPTY_RESPONSE_CODE2) return false;
   return elapsedMs < ZCODE_FAST_EMPTY_MS;
 }
@@ -58284,7 +58447,7 @@ async function defaultAdapterSleep(ms, signal) {
   await new Promise((resolve2, reject) => {
     const onAbort = () => {
       clearTimeout(timer);
-      reject(new LlmError20("zcode: \u9000\u907F\u7B49\u5F85\u671F\u95F4\u8BF7\u6C42\u5DF2\u53D6\u6D88", "TRANSPORT"));
+      reject(new LlmError21("zcode: \u9000\u907F\u7B49\u5F85\u671F\u95F4\u8BF7\u6C42\u5DF2\u53D6\u6D88", "TRANSPORT"));
     };
     const timer = setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
@@ -59261,7 +59424,7 @@ async function fetchMinimaxCreditBalance(credential, fetcher = fetch, product = 
 
 // vendor/channel-pack/src/gemini.ts
 import { randomBytes as randomBytes8 } from "node:crypto";
-import { LlmError as LlmError21, ReasoningEffortId as ReasoningEffortId11 } from "@deepseek-ai/dsh-llm";
+import { LlmError as LlmError22, ReasoningEffortId as ReasoningEffortId11 } from "@deepseek-ai/dsh-llm";
 var GEMINI_ENDPOINT_DAILY = "https://daily-cloudcode-pa.googleapis.com";
 var GEMINI_ENDPOINT_SANDBOX = "https://daily-cloudcode-pa.sandbox.googleapis.com";
 var GEMINI_ENDPOINTS = [GEMINI_ENDPOINT_DAILY, GEMINI_ENDPOINT_SANDBOX];
@@ -59422,7 +59585,7 @@ function geminiCanonicalModelId(modelId) {
 }
 function geminiModelSpec(modelId, effort) {
   if (geminiCanonicalModelId(modelId) !== GEMINI_UPSTREAM_FLASH) {
-    throw new LlmError21(
+    throw new LlmError22(
       `gemini: \u6A21\u578B "${modelId}" \u4E0D\u5728\u672C provider \u76EE\u5F55\u4E2D\uFF08\u4EC5\u652F\u6301 ${GEMINI_UPSTREAM_FLASH}\uFF09`,
       "INVALID_REQUEST",
       // ⚠️ `status` 只落在 `LlmError.failure`（不是顶层属性），且网关的
@@ -60994,14 +61157,14 @@ async function fetchTraeCreditBalance(credential, _product, fetcher = fetch) {
 
 // vendor/channel-pack/src/account-probe.ts
 import { credentialRef as credentialRef10 } from "@deepseek-ai/dsh-credentials";
-import { createUserMessage, LlmError as LlmError23 } from "@deepseek-ai/dsh-llm";
+import { createUserMessage, LlmError as LlmError24 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/gemini-adapter.ts
 import {
   CONTEXT_WINDOW_EXCEEDED_CODE as CONTEXT_WINDOW_EXCEEDED_CODE3,
   isContextWindowExceededError as isContextWindowExceededError3,
-  LlmAdapter as LlmAdapter17,
-  LlmError as LlmError22,
+  LlmAdapter as LlmAdapter18,
+  LlmError as LlmError23,
   ReasoningEffortId as ReasoningEffortId12
 } from "@deepseek-ai/dsh-llm";
 
@@ -61478,7 +61641,7 @@ var GEMINI_TOKEN_COUNT_OVERFLOW = /\btoken\s+count\b[\s\S]{0,60}?\bexceeds?\s+th
 function isGeminiContextOverflow(text) {
   return isContextWindowExceededError3(text) || GEMINI_TOKEN_COUNT_OVERFLOW.test(text);
 }
-var GeminiAdapter = class extends LlmAdapter17 {
+var GeminiAdapter = class extends LlmAdapter18 {
   constructor(options) {
     super();
     this.options = options;
@@ -61571,7 +61734,7 @@ var GeminiAdapter = class extends LlmAdapter17 {
     }
     if (imageRefs.size === 0) return void 0;
     if (entry?.supportsImage !== true) {
-      throw new LlmError22(
+      throw new LlmError23(
         `gemini: \u6A21\u578B "${model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`,
         "UNSUPPORTED_CONTENT"
       );
@@ -61583,7 +61746,7 @@ var GeminiAdapter = class extends LlmAdapter17 {
       if (inline === void 0) {
         const readImage = this.options.readImage;
         if (readImage === void 0) {
-          throw new LlmError22(
+          throw new LlmError23(
             "gemini: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1\uFF08readImage / readImageRequest \u5747\u672A\u63D0\u4F9B\uFF09",
             "UNSUPPORTED_CONTENT"
           );
@@ -61591,7 +61754,7 @@ var GeminiAdapter = class extends LlmAdapter17 {
         try {
           inline = await readImage(ref);
         } catch (error) {
-          throw new LlmError22(
+          throw new LlmError23(
             "gemini: \u56FE\u7247\u9644\u4EF6\u8BFB\u53D6\u5931\u8D25\uFF1B\u9644\u4EF6\u670D\u52A1\u53EF\u80FD\u672A\u5C31\u7EEA\uFF0C\u6216\u8BE5\u5BF9\u8C61\u5DF2\u4E0D\u5B58\u5728\u3002",
             "UNSUPPORTED_CONTENT",
             { cause: error }
@@ -61599,20 +61762,20 @@ var GeminiAdapter = class extends LlmAdapter17 {
         }
       }
       if (inline === void 0) {
-        throw new LlmError22(
+        throw new LlmError23(
           "gemini: \u56FE\u7247\u9644\u4EF6\u8BFB\u53D6\u4E0D\u5230\u5185\u5BB9\uFF1B\u9644\u4EF6\u670D\u52A1\u53EF\u80FD\u672A\u5C31\u7EEA\uFF0C\u6216\u8BE5\u5BF9\u8C61\u5DF2\u4E0D\u5B58\u5728\u3002",
           "UNSUPPORTED_CONTENT"
         );
       }
       if (inline.data.byteLength > GEMINI_MAX_IMAGE_BYTES_INLINE) {
-        throw new LlmError22(
+        throw new LlmError23(
           `gemini: \u56FE\u7247\u4F53\u79EF ${inline.data.byteLength} \u5B57\u8282\u8D85\u8FC7\u4E0A\u6E38\u5185\u8054\u4E0A\u9650 ${GEMINI_MAX_IMAGE_BYTES_INLINE} \u5B57\u8282`,
           "UNSUPPORTED_CONTENT"
         );
       }
       const data = normalizeBase64(Buffer.from(inline.data).toString("base64"));
       if (data === void 0) {
-        throw new LlmError22("gemini: \u56FE\u7247\u7F16\u7801\u4E0D\u662F\u5408\u6CD5 base64", "UNSUPPORTED_CONTENT");
+        throw new LlmError23("gemini: \u56FE\u7247\u7F16\u7801\u4E0D\u662F\u5408\u6CD5 base64", "UNSUPPORTED_CONTENT");
       }
       images.set(id, { mediaType: inline.mediaType === "" ? "image/png" : inline.mediaType, data });
     }
@@ -61632,7 +61795,7 @@ var GeminiAdapter = class extends LlmAdapter17 {
   async *stream(options) {
     const entry = this.loadModels().find((item) => item.id === geminiCanonicalModelId(options.model));
     if (entry === void 0) {
-      throw new LlmError22(
+      throw new LlmError23(
         `gemini: \u6A21\u578B "${options.model}" \u4E0D\u5728\u672C provider \u76EE\u5F55\u4E2D\uFF08\u4EC5\u652F\u6301 ${GEMINI_UPSTREAM_FLASH}\uFF09`,
         "INVALID_REQUEST",
         // 模型名写错是确定性失败：带上 404，网关才不会把它当 502 让客户端白重试。
@@ -61645,7 +61808,7 @@ var GeminiAdapter = class extends LlmAdapter17 {
       credential = await this.options.resolveCredential(options.model);
     }
     if (credential === void 0 || credential.access_token === "") {
-      throw new LlmError22("gemini: no usable credential; log in first", "MISSING_CREDENTIAL");
+      throw new LlmError23("gemini: no usable credential; log in first", "MISSING_CREDENTIAL");
     }
     const requested = options.reasoningEffort === void 0 ? void 0 : String(options.reasoningEffort);
     const declared = entry === void 0 ? void 0 : geminiReasoningInfo(entry);
@@ -61687,7 +61850,7 @@ var GeminiAdapter = class extends LlmAdapter17 {
             ...options.signal === void 0 ? {} : { signal: options.signal }
           });
           if (probe.error !== void 0) {
-            throw new LlmError22(
+            throw new LlmError23(
               `gemini: \u9879\u76EE\u53F7\u63A2\u6D4B\u5931\u8D25\uFF0C\u672A\u53D1\u63A8\u7406\uFF08\u4E0E\u539F\u7248\u4E00\u81F4\uFF09\u2014 ${probe.error}`,
               "SERVER"
             );
@@ -61726,7 +61889,7 @@ var GeminiAdapter = class extends LlmAdapter17 {
         const wire = marshalAlphabetical(envelope);
         const wireBytes = Buffer.byteLength(wire, "utf8");
         if (wireBytes > GEMINI_MAX_REQUEST_BODY_BYTES) {
-          throw new LlmError22(
+          throw new LlmError23(
             `gemini: \u8BF7\u6C42\u4F53 ${wireBytes} \u5B57\u8282\u8D85\u8FC7\u4E0A\u9650 ${GEMINI_MAX_REQUEST_BODY_BYTES} \u5B57\u8282`,
             CONTEXT_WINDOW_EXCEEDED_CODE3
           );
@@ -61741,8 +61904,8 @@ var GeminiAdapter = class extends LlmAdapter17 {
             signal: options.signal
           });
         } catch (error) {
-          if (error instanceof LlmError22) throw error;
-          throw new LlmError22(
+          if (error instanceof LlmError23) throw error;
+          throw new LlmError23(
             `gemini: \u8BF7\u6C42\u53D1\u9001\u5931\u8D25 \u2014 ${error instanceof Error ? error.message : String(error)}`,
             "TRANSPORT",
             { cause: error }
@@ -61750,7 +61913,7 @@ var GeminiAdapter = class extends LlmAdapter17 {
         }
         if (response.ok) {
           if (response.body === null) {
-            throw new LlmError22("gemini: \u54CD\u5E94\u7F3A\u5C11 body", "EMPTY_RESPONSE");
+            throw new LlmError23("gemini: \u54CD\u5E94\u7F3A\u5C11 body", "EMPTY_RESPONSE");
           }
           const body = response.body;
           try {
@@ -61821,7 +61984,7 @@ var GeminiAdapter = class extends LlmAdapter17 {
               continue;
             }
           }
-          throw new LlmError22(
+          throw new LlmError23(
             `gemini: \u6A21\u578B ${options.model} \u7684\u6240\u6709\u8D26\u53F7\u5747\u4E0D\u53EF\u7528\uFF08\u9650\u6D41\u6216\u989D\u5EA6\u8017\u5C3D\uFF09\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5`,
             "QUOTA_EXCEEDED",
             { status }
@@ -61846,15 +62009,15 @@ var GeminiAdapter = class extends LlmAdapter17 {
     const detail = text === "" ? "" : ` \u2014 ${text.slice(0, 500)}`;
     const message2 = `gemini: HTTP ${status}${detail}`;
     if (status === 400 && isGeminiContextOverflow(text)) {
-      return new LlmError22(message2, CONTEXT_WINDOW_EXCEEDED_CODE3, { status });
+      return new LlmError23(message2, CONTEXT_WINDOW_EXCEEDED_CODE3, { status });
     }
     if (status === 400 && isGeminiQuotaText(text)) {
-      return new LlmError22(message2, "QUOTA_EXCEEDED", { status });
+      return new LlmError23(message2, "QUOTA_EXCEEDED", { status });
     }
-    if (status === 429) return new LlmError22(message2, "RATE_LIMIT", { status });
-    if (status === 403 || status === 404) return new LlmError22(message2, "SERVER", { status });
-    if (status === 401) return new LlmError22(message2, "AUTH", { status });
-    return new LlmError22(message2, httpErrorCode4(status), { status });
+    if (status === 429) return new LlmError23(message2, "RATE_LIMIT", { status });
+    if (status === 403 || status === 404) return new LlmError23(message2, "SERVER", { status });
+    if (status === 401) return new LlmError23(message2, "AUTH", { status });
+    return new LlmError23(message2, httpErrorCode4(status), { status });
   }
 };
 function registerGeminiLlm(ctx, options) {
@@ -61870,7 +62033,7 @@ var PROBE_PROMPT = "\u53EA\u56DE\u7B54\u4E24\u4E2A\u5B57\uFF1A\u6536\u5230";
 var PROBE_SYSTEM = "You are a helpful assistant.";
 var PROBE_TIMEOUT_MS = 12e4;
 function isRateLimitFailure(error) {
-  if (error instanceof LlmError23) {
+  if (error instanceof LlmError24) {
     if (error.code === "RATE_LIMIT" || error.code === "QUOTA_EXCEEDED" || error.code === "QUOTA") return true;
   }
   const message2 = error instanceof Error ? error.message : String(error);
@@ -67327,7 +67490,7 @@ function mountOpenAiGateway(ctx, pool) {
 }
 
 // vendor/channel-pack/src/loop-recovery.ts
-import { createUserMessage as createUserMessage2, LlmError as LlmError24 } from "@deepseek-ai/dsh-llm";
+import { createUserMessage as createUserMessage2, LlmError as LlmError25 } from "@deepseek-ai/dsh-llm";
 var LOOP_RESUME_PROMPT = "\u7EE7\u7EED\u672A\u5B8C\u6210\u7684\u4EFB\u52A1\u3002\u4E0A\u4E00\u8F6E\u4F60\u7684\u601D\u8003\u9677\u5165\u4E86\u91CD\u590D\uFF08\u540C\u4E00\u6BB5\u63A8\u7406\u53CD\u590D\u51FA\u73B0\uFF09\u800C\u88AB\u4E2D\u6B62 \u2014\u2014 \u8BF7\u6362\u4E00\u79CD\u601D\u8DEF\uFF0C\u4E0D\u8981\u91CD\u590D\u521A\u624D\u90A3\u6BB5\u63A8\u7406\uFF0C\u76F4\u63A5\u63A8\u8FDB\u4EFB\u52A1\u3002";
 var LOOP_RESUME_DEFAULT_MAX = 2;
 var LOOP_RESUME_MAX_LIMIT = 10;
@@ -67348,7 +67511,7 @@ function resolveLoopResumePolicy(env = process.env) {
   };
 }
 function isReasoningLoopFailure(error) {
-  if (error instanceof LlmError24) return error.code === REASONING_LOOP_CODE;
+  if (error instanceof LlmError25) return error.code === REASONING_LOOP_CODE;
   if (typeof error !== "object" || error === null) return false;
   return error.code === REASONING_LOOP_CODE;
 }
@@ -68444,7 +68607,7 @@ function parseMinimaxModelsPayload(payload) {
 }
 
 // vendor/channel-pack/src/minimax-adapter.ts
-import { LlmAdapter as LlmAdapter18, LlmError as LlmError25, ReasoningEffortId as ReasoningEffortId15 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter19, LlmError as LlmError26, ReasoningEffortId as ReasoningEffortId15 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/minimax-messages.ts
 import { ToolCallId as ToolCallId8 } from "@deepseek-ai/dsh-llm";
@@ -68796,7 +68959,7 @@ function minimaxReasoningInfo(entry) {
   const defaultEffort = entry.defaultEffort !== void 0 && ids.includes(entry.defaultEffort) ? ReasoningEffortId15(entry.defaultEffort) : void 0;
   return { efforts, ...defaultEffort === void 0 ? {} : { defaultEffort } };
 }
-var MinimaxAdapter = class extends LlmAdapter18 {
+var MinimaxAdapter = class extends LlmAdapter19 {
   constructor(options) {
     super();
     this.options = options;
@@ -68920,7 +69083,7 @@ var MinimaxAdapter = class extends LlmAdapter18 {
       credential = await this.options.resolveCredential(options.model);
     }
     if (credential === void 0 || credential.access_token === "") {
-      throw new LlmError25("minimax: no usable credential; log in first", "MISSING_CREDENTIAL");
+      throw new LlmError26("minimax: no usable credential; log in first", "MISSING_CREDENTIAL");
     }
     const entry = (await this.loadModels()).find((item) => item.id === options.model);
     const imageRefs = /* @__PURE__ */ new Map();
@@ -68930,13 +69093,13 @@ var MinimaxAdapter = class extends LlmAdapter18 {
     let images;
     if (imageRefs.size > 0) {
       if (entry?.supportsImage !== true) {
-        throw new LlmError25(
+        throw new LlmError26(
           `minimax: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`,
           "UNSUPPORTED_CONTENT"
         );
       }
       if (this.options.readImage === void 0) {
-        throw new LlmError25(
+        throw new LlmError26(
           "minimax: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1\uFF08readImage \u672A\u63D0\u4F9B\uFF09",
           "UNSUPPORTED_CONTENT"
         );
@@ -68977,14 +69140,14 @@ var MinimaxAdapter = class extends LlmAdapter18 {
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       const code = response.status === 402 ? "QUOTA_EXCEEDED" : httpErrorCode4(response.status);
-      throw new LlmError25(
+      throw new LlmError26(
         `minimax: HTTP ${response.status}${text === "" ? "" : ` \u2014 ${text.slice(0, 500)}`}`,
         code,
         { status: response.status }
       );
     }
     if (response.body === null) {
-      throw new LlmError25("minimax: \u54CD\u5E94\u7F3A\u5C11 body", "EMPTY_RESPONSE");
+      throw new LlmError26("minimax: \u54CD\u5E94\u7F3A\u5C11 body", "EMPTY_RESPONSE");
     }
     yield* consumeMinimaxSse({ body: response.body, signal: options.signal });
   }
@@ -69798,7 +69961,7 @@ function createGeminiSigStore(ctx) {
 }
 
 // vendor/channel-pack/src/opencode-adapter.ts
-import { LlmAdapter as LlmAdapter19, LlmError as LlmError26, ReasoningEffortId as ReasoningEffortId16 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter20, LlmError as LlmError27, ReasoningEffortId as ReasoningEffortId16 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/opencode-messages.ts
 var FREE_LANE_GATE_TOOLS = ["read", "shell"];
@@ -70248,7 +70411,7 @@ function resolveOpencodeEffort(model, requested, capabilities) {
   if (translated.kind === "mapped") return { effort: translated.effort, outcome: "mapped" };
   return { outcome: "dropped" };
 }
-var OpencodeAdapter = class extends LlmAdapter19 {
+var OpencodeAdapter = class extends LlmAdapter20 {
   constructor(options) {
     super();
     this.options = options;
@@ -70342,10 +70505,10 @@ var OpencodeAdapter = class extends LlmAdapter19 {
   async *stream(options) {
     const slots = await this.options.identitySlots();
     if (slots.length === 0) {
-      throw new LlmError26("opencode: \u6CA1\u6709\u53EF\u7528\u901A\u9053", "MISSING_CREDENTIAL");
+      throw new LlmError27("opencode: \u6CA1\u6709\u53EF\u7528\u901A\u9053", "MISSING_CREDENTIAL");
     }
     if (pickSlot(slots, options.model, /* @__PURE__ */ new Set()) === void 0) {
-      throw new LlmError26(
+      throw new LlmError27(
         `opencode: \u6A21\u578B "${options.model}" \u9700\u8981 API key \u8D26\u53F7\u901A\u9053\uFF08\u533F\u540D\u901A\u9053\u53EA\u652F\u6301\u514D\u8D39\u6A21\u578B\uFF09\uFF0C\u8BF7\u5148\u5728 Channel Pack \u7684 OpenCode \u9762\u677F\u6DFB\u52A0\u4E00\u4E2A\u8D26\u53F7`,
         "MISSING_CREDENTIAL"
       );
@@ -70355,7 +70518,7 @@ var OpencodeAdapter = class extends LlmAdapter19 {
     for (; ; ) {
       const slot2 = pickSlot(slots, options.model, tried);
       if (slot2 === void 0) {
-        throw new LlmError26(
+        throw new LlmError27(
           `opencode: \u6240\u6709\u901A\u9053\u5BF9\u8BE5\u6A21\u578B\u5747\u53D7\u9650${limited.length > 0 ? `\uFF08${limited.join("\u3001")}\uFF09` : ""}`,
           "QUOTA_EXCEEDED"
         );
@@ -70371,13 +70534,13 @@ var OpencodeAdapter = class extends LlmAdapter19 {
         return;
       } catch (error) {
         if (delivered) throw error;
-        if (error instanceof LlmError26 && error.code === "QUOTA_EXCEEDED") throw error;
+        if (error instanceof LlmError27 && error.code === "QUOTA_EXCEEDED") throw error;
         const info = classifyOpencodeFailure(error);
         if (info.kind === "free_tier") {
           this.options.warn?.(
             `opencode: \u514D\u8D39\u901A\u9053\u88AB FreeTierError \u62D2\u7EDD \u2014\u2014 \u68C0\u67E5 session id \u5F62\u72B6\uFF08\u5E94\u4E3A ses_ + 12hex + 14base62\uFF09\uFF1A${info.detail}`
           );
-          throw new LlmError26(
+          throw new LlmError27(
             `opencode: \u514D\u8D39\u901A\u9053\u88AB\u4E0A\u6E38\u62D2\u7EDD\uFF08FreeTierError\uFF09\u3002\u8BE5\u9519\u8BEF\u7531\u8BF7\u6C42\u5F62\u72B6\u89E6\u53D1\uFF08session id \u5F62\u72B6\u4E0D\u5BF9\u65F6\u51FA\u73B0\uFF09\uFF0C\u6362 API key \u6216\u6362\u51FA\u53E3\u90FD\u65E0\u6548\u3002`,
             "AUTH",
             { status: 403 }
@@ -70421,13 +70584,13 @@ var OpencodeAdapter = class extends LlmAdapter19 {
     if (refs.size === 0) return void 0;
     const capabilities = getOpencodeCapabilitiesSync();
     if (!supportsOpencodeImage(capabilities.find((c) => c.id === model))) {
-      throw new LlmError26(
+      throw new LlmError27(
         `opencode: \u6A21\u578B "${model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165\uFF08\u80FD\u529B\u4EE5\u8FDC\u7AEF models.dev \u4E3A\u51C6\uFF09`,
         "UNSUPPORTED_CONTENT"
       );
     }
     if (this.options.readImage === void 0) {
-      throw new LlmError26("opencode: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
+      throw new LlmError27("opencode: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
     }
     const readImage = this.options.readImage;
     const out = /* @__PURE__ */ new Map();
@@ -70480,7 +70643,7 @@ var OpencodeAdapter = class extends LlmAdapter19 {
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       const retryAfterMs = retryAfterMsFromResponse(response.headers);
-      throw new LlmError26(
+      throw new LlmError27(
         `opencode: HTTP ${response.status} \u2014 ${text.slice(0, 300)}`,
         httpErrorCode4(response.status),
         {
@@ -70732,7 +70895,7 @@ function apply(ctx, config = {}) {
       modelId ?? ""
     );
     if (limited === void 0) return;
-    throw new LlmError27(
+    throw new LlmError28(
       `${product.displayName}\uFF1A\u6A21\u578B ${modelId} \u7684\u53EF\u7528\u8D26\u53F7\u5747\u5728\u9650\u6D41\u4E2D\uFF0C\u6700\u8FD1\u4E00\u4E2A\u5C06\u4E8E ${new Date(limited.resetAtMs).toLocaleString("zh-CN")} \u89E3\u7981\u3002\u53EF\u6539\u7528\u5176\u5B83 provider / \u6A21\u578B\uFF0C\u6216\u7B49\u5F85\u89E3\u7981\u540E\u518D\u8BD5\uFF08\u65E0\u9700\u91CD\u65B0\u767B\u5F55\uFF09\u3002`,
       "QUOTA_EXCEEDED"
     );
@@ -71129,6 +71292,25 @@ function apply(ctx, config = {}) {
     resolveCredential: makeAutoClawResolver(AUTOCLAW_INTL),
     accountPool: pool,
     product: AUTOCLAW_INTL
+  });
+  let activeCatPawAccountId = "";
+  const catPawAdapter = registerCatPawLlm(ctx, {
+    fetchImpl: network.fetch,
+    resolveCredential: async () => {
+      const available2 = await pool.getAvailableAccount(CATPAW.id, "");
+      activeCatPawAccountId = available2?.entry.id ?? "";
+      if (activeCatPawAccountId.length > 0) reportLedgerAccount(CATPAW.id, activeCatPawAccountId);
+      if (available2) return available2.credential;
+      const resolved = await ctx.credentials.resolve(credentialRef16(CATPAW.defaultCredentialRef));
+      if (!resolved) return void 0;
+      try {
+        return JSON.parse(resolved.value);
+      } catch {
+        return void 0;
+      }
+    },
+    accountPool: pool,
+    product: CATPAW
   });
   const loomy = new LoomyAuth(ctx);
   const resolveLoomyCredentialByRef = async (refName) => {

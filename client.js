@@ -2722,6 +2722,7 @@ window.__ModuleLoader__.load({
       { id: 'officeace', name: 'OfficeAce 果办', org: '华为云', accent: '#C7000B', note: '浏览器授权，每日签到', login: 'browser' },
       { id: 'autoclaw', name: 'AutoClaw', org: '智谱', accent: '#3D5AFE', note: '粘贴令牌，国内站', login: 'token' },
       { id: 'autoclaw-intl', name: 'AutoClaw 国际版', org: '智谱', accent: '#7986CB', note: '粘贴令牌，国际站', login: 'token' },
+      { id: 'catpaw', name: 'CatPaw', org: '美团', accent: '#FFB400', note: '粘贴令牌；对话待支持', login: 'token' },
     ]
 
     /** 与现有 RPC 的能力对应：余额、每日领取及独立签到状态分别判断。 */

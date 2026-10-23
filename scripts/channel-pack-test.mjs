@@ -116,7 +116,7 @@ try {
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(adapters.has('opencode'), false, 'disabled account provider is not registered')
   // 13 个既有渠道 + Command Code（新增）。
-  assert.equal(adapters.size, 22, 'all other account providers remain registered')
+  assert.equal(adapters.size, 23, 'all other account providers remain registered')
   assert.equal(adapters.has('commandcode'), true, 'Command Code is registered')
   assert.equal(adapters.has('monkeycode'), true, 'MonkeyCode is registered')
   assert.equal(adapters.has('orcaterm'), true, 'OrcaTerm is registered')
@@ -126,6 +126,7 @@ try {
   assert.equal(adapters.has('officeace'), true, 'OfficeAce is registered')
   assert.equal(adapters.has('autoclaw'), true, 'AutoClaw is registered')
   assert.equal(adapters.has('autoclaw-intl'), true, 'AutoClaw Intl is registered')
+  assert.equal(adapters.has('catpaw'), true, 'CatPaw is registered')
   verifyChannelImagePricing(adapters)
   console.log('ok  十三渠道同步图片计价：缺失及默认方法兜底，厂商计价优先，重复图片与已卸载图片正确计数')
   assert.equal(writes.length, 0, 'mount neither creates nor deletes credentials')
@@ -233,7 +234,7 @@ try {
     visit(node.children)
   }
   visit(tree)
-  assert.equal(cards.length, 22)
+  assert.equal(cards.length, 23)
   assert.equal(cards.includes('opencode'), false)
   assert.deepEqual([...cards].sort(), [...adapters.keys()].sort(), 'UI and mounted account providers agree')
   console.log('ok  actual channel page: 13 account cards, OpenCode removed')
@@ -303,6 +304,8 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   await verifyOfficeAce()
   const { verifyAutoClaw } = await import('./autoclaw-test.mjs')
   await verifyAutoClaw()
+  const { verifyCatPaw } = await import('./catpaw-test.mjs')
+  await verifyCatPaw()
   await verifyLoopResumeEvents()
   let hostValidate
   await realLlmInvariant.apply({ invariants: { register(_name, install) {

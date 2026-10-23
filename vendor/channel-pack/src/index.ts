@@ -16,6 +16,7 @@ import { registerKukuLlm } from './kuku-adapter.js'
 import { registerAccioLlm } from './accio-adapter.js'
 import { registerOfficeAceLlm } from './officeace-adapter.js'
 import { registerAutoClawLlm } from './autoclaw-adapter.js'
+import { registerCatPawLlm } from './catpaw-adapter.js'
 import { registerLoomyLlm, parseLoomyRemoteModels } from './loomy-adapter.js'
 import { registerRaccoonLlm } from './raccoon-adapter.js'
 import { CODEARTS_CREDENTIAL_REF, CodeArtsAuth } from './service.js'
@@ -60,6 +61,7 @@ import { KUKU } from './kuku-product.js'
 import { ACCIO, ACCIO_CN } from './accio-product.js'
 import { OFFICEACE } from './officeace-product.js'
 import { AUTOCLAW, AUTOCLAW_INTL } from './autoclaw-product.js'
+import { CATPAW } from './catpaw-product.js'
 import { configureDeadModelStore, withDeadModelPruning } from './dead-model-store.js'
 import type { CodeArtsCredential, BuddyCredential } from './types.js'
 import type { LobsteraiCredential } from './lobsterai.js'
@@ -73,6 +75,7 @@ import type { KukuCredential } from './kuku.js'
 import type { AccioCredential } from './accio.js'
 import type { OfficeAceCredential } from './officeace.js'
 import type { AutoClawCredential } from './autoclaw.js'
+import type { CatPawCredential } from './catpaw.js'
 import type { LoomyCredential } from './loomy.js'
 import type { RaccoonCredential } from './raccoon.js'
 import { MinimaxAuth } from './minimax-auth.js'
@@ -1159,6 +1162,29 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
     resolveCredential: makeAutoClawResolver(AUTOCLAW_INTL),
     accountPool: pool,
     product: AUTOCLAW_INTL,
+  })
+
+  // ===== CatPaw（美团）=====
+  // 只读渠道：凭据 + 模型目录。对话是有状态会话协议（round/event/turn），
+  // 当前版本明确不支持（见 catpaw-adapter.ts 模块头注释）。
+  let activeCatPawAccountId = ''
+  const catPawAdapter = registerCatPawLlm(ctx, {
+    fetchImpl: network.fetch,
+    resolveCredential: async () => {
+      const available = await pool.getAvailableAccount(CATPAW.id, '')
+      activeCatPawAccountId = available?.entry.id ?? ''
+      if (activeCatPawAccountId.length > 0) reportLedgerAccount(CATPAW.id, activeCatPawAccountId)
+      if (available) return available.credential as CatPawCredential
+      const resolved = await ctx.credentials.resolve(credentialRef(CATPAW.defaultCredentialRef))
+      if (!resolved) return undefined
+      try {
+        return JSON.parse(resolved.value) as CatPawCredential
+      } catch {
+        return undefined
+      }
+    },
+    accountPool: pool,
+    product: CATPAW,
   })
 
   // ===== Loomy（讯飞办公助手）服务 =====
