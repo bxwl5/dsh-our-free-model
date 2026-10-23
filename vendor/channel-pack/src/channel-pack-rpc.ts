@@ -40,7 +40,8 @@ import { LOOMY } from './loomy-product.js'
 import { buddyExpiringWindowDays } from './buddy-balance-rank.js'
 import { normalizeCookie as normalizeMonkeyCodeCookie } from './monkeycode.js'
 import { normalizeCookie as normalizeOrcaTermCookie } from './orcaterm.js'
-import { normalizeCookie as normalizeKukuCookie } from './kuku.js'
+import { KUKU } from './kuku-product.js'
+import { startKukuLoginFlow } from './kuku-qr-login-page.js'
 import { parseCredential as parseAutoClawCredential } from './autoclaw.js'
 import { AUTOCLAW } from './autoclaw-product.js'
 import { resolveAutoclawDeviceId } from './autoclaw-sms.js'
@@ -1573,6 +1574,32 @@ function registerChannelPackEndpoints(
             })
           }).catch((error: unknown) => {
             ctx.logger.warn(`[channel-pack] background ${AUTOCLAW.id} login failed for ${id}: ${String(error)}`)
+            recordLoginFailure(id, error)
+            void pool.removeAccount(id).catch(() => {})
+          })
+          return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } }
+        } else if (provider === KUKU.id) {
+          // KukuAI：百度 passport 扫码登录（本地弹窗页承载二维码 + 长轮询）。
+          // 与 autoclaw/raccoon 同型：建占位账号 → 返回 loginUrl → 后台等结果。
+          const started = await startKukuLoginFlow({ fetcher: codeartsFetcher })
+          await pool.addAccount({
+            id,
+            provider,
+            nickname: id,
+            enabled: true,
+            credentialRef: refName,
+            refreshable: false,
+            createdAt: Date.now(),
+          })
+          started.result.then(async (credential) => {
+            await ctx.credentials.set(credentialRef(refName), JSON.stringify(credential))
+            await pool.updateAccount(id, {
+              nickname: credential.nickname ?? id,
+              // Cookie 型渠道没有续期端点，只能重新扫码/粘贴。
+              refreshable: false,
+            })
+          }).catch((error: unknown) => {
+            ctx.logger.warn(`[channel-pack] background ${KUKU.id} login failed for ${id}: ${String(error)}`)
             recordLoginFailure(id, error)
             void pool.removeAccount(id).catch(() => {})
           })
@@ -4521,13 +4548,6 @@ const ADOPTABLE_CHANNELS: Readonly<Record<string, AdoptableChannel>> = {
     hint: '浏览器 Cookie（必须含 ot_session=…）',
     parse: (text) => {
       const cookie = normalizeOrcaTermCookie(text)
-      return cookie === undefined ? undefined : { access_token: cookie, created_at: Date.now() }
-    },
-  },
-  kuku: {
-    hint: '浏览器 Cookie（必须含 BDUSS=…）',
-    parse: (text) => {
-      const cookie = normalizeKukuCookie(text)
       return cookie === undefined ? undefined : { access_token: cookie, created_at: Date.now() }
     },
   },
