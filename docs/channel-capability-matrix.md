@@ -30,29 +30,30 @@
 与 `scripts/channel-adopt-test.mjs` 的 `pasteOnly` 清单。其余 17 个在插件内即可完成授权
 （浏览器授权 / 设备码 / 本地页扫码或短信）。
 
-### 1.2 「十二 / 十三渠道」口径核对（结论）
+### 1.2 计数口径核对（结论：22 与 13，已无 12）
 
-仓库里同时流通三种计数，**它们不是同一件事**：
+仓库里流通两种**互不相同**的计数，收敛后的口径如下：
 
 | 计数 | 它到底在数什么 | 权威来源 | 移除粘贴型渠道后 |
 | --- | --- | --- | --- |
-| **22** | 账号渠道（provider）条数 | README 双语渠道表、`client.js` 卡片表、`channel-pack-test` 的两处 22 断言 | 23 → 22 |
-| **13** | 「带额度 / 签到能力的渠道」契约集合 | `client.js` 的 `CHANNEL_CREDITS`（13 条）、`scripts/channel-credits-rpc-test.mjs` 的 13 providers 列表、`package.json` 描述、`vendor/channel-pack/NOTICE.md` | **不变（仍 13）** |
-| **12** | 无对应代码表：只出现在 `scripts/channel-pack-test.mjs` 的两行日志文案 | 无 | —— |
+| **22** | 账号渠道（provider）条数 | README 双语渠道表、`client.js` 卡片表、`scripts/channel-pack-test.mjs` 的 `adapters.size === 22` 与 `cards.length === 22`、`vendor/channel-pack/src/index.ts` 注册段 | 23 → 22 |
+| **13** | 「带额度 / 签到能力的渠道」契约集合 | `client.js` 的 `CHANNEL_CREDITS`（13 条）、`scripts/channel-credits-rpc-test.mjs` 的 13 providers 列表、`scripts/channel-credits-ui-test.mjs` 的 9 个可领取 + workbuddy / cline / raccoon / gemini、`package.json` 描述、`vendor/channel-pack/NOTICE.md` | **不变（仍 13）** |
 
 核对结论（逐条有证据）：
 
 1. 被移除的那个渠道**从未**登记在 `CHANNEL_CREDITS` 里，也不在
    `scripts/channel-credits-rpc-test.mjs` 的 13 providers 列表中 —— 它的能力只到
-   「凭据 + 模型目录」，故「13」不会因它减少；
-2. `scripts/channel-pack-test.mjs` 的两行日志已写成「十二渠道…」，但同一文件
-   20 行之内仍断言 `adapters.size === 22`、`cards.length === 22`，且
-   `scripts/channel-credits-rpc-test.mjs` 结尾仍打印 `all 13 providers` ——
-   **12 / 13 / 22 三种口径同树并存**；
+   「凭据 + 模型目录」，故「13」不因它减少；账号渠道集则是 23 → 22。
+2. 曾经的混乱来自**日志文案**而非断言：`scripts/channel-pack-test.mjs` 的几行日志
+   一度写成「十二渠道 / 12 providers / 12 account cards」，而同一文件断言的是
+   `adapters.size === 22`、`cards.length === 22` —— 12 在任何地方都找不到对应的
+   12 元清单。现已全部改为与断言同值：
+   - 图片计价日志（遍历全部已挂载适配器）→ `22 个账号渠道`；
+   - 挂载日志 → `22 providers`；
+   - 账号卡片日志 → `22 account cards`；
+   - 额度日志 → `共享渠道余额（13 条额度契约）`（此行跟随额度契约集，**应为 13**）。
 3. 结论：本文以 **README 为准**（账号渠道 22 + 免密车道 2 + 粘贴型 5）。
-   「十二渠道」这个数字在当前代码树里找不到对应的 12 元清单，属于待收敛的
-   文案口径；建议二选一 —— 把测试日志改成实际值（22），或把「渠道」明确定义为
-   某一具体清单并同步全部文案。
+   任何新增的计数文案都必须与同一文件里的断言同值，并同步本节；维护要求见 §5 第 3 条。
 
 > 本文不收录已从仓库整链移除的渠道：其源码、卡片、凭据解析与测试均已删除，
 > 矩阵中不再出现。
@@ -290,11 +291,35 @@
 
 | 结论 | 取证命令 / 文件 |
 | --- | --- |
-| 账号渠道 22、免密车道 2、粘贴型 5 | `grep -n "账号渠道（22" README.md; grep -n "Account channels (22)" README_EN.md`；`node scripts/channel-adopt-test.mjs` |
+| 账号渠道 22、免密车道 2、粘贴型 5 | `grep -n "账号渠道（22" README.md; grep -n "Account channels (22)" README_EN.md`；`node scripts/channel-pack-test.mjs --source`（粘贴型提示与形状解析用例） |
 | 卡片与已挂载 provider 一致（各 22） | `node scripts/channel-pack-test.mjs`（断言 `adapters.size === 22`、`cards.length === 22`） |
 | 额度 / 签到的渠道集合（13 条契约） | `node scripts/channel-credits-rpc-test.mjs`；`vendor/channel-pack/src/channel-pack-rpc.ts` 的 `credits.balances` / `credits.claimAll` / `credits.status` 分派 |
 | 图片双桥 / 单桥 | `vendor/channel-pack/src/index.ts` 各注册块的 `readImage` / `readImageRequest` |
+| 发布产物与源码同步（防「改了 src 忘了重打包」） | `node scripts/channel-pack-test.mjs` —— 打包模式**也跑** `account.adopt` 端到端；产物重建见 §4.1 |
 | 上游端点是否还活着（手动探活，默认不入 CI） | `node scripts/channel-probe.mjs`（见其文件头用法与已固化实测坑） |
+
+
+### 4.1 产物重建（发布形态，必做）
+
+`vendor/channel-pack/pack.js` 与 `packages/standalone/channels/business.mjs` 是**发布产物**：
+`package.json` 的 `files` 只发 `pack.js`、不发 `src/`。改完 `vendor/channel-pack/src/**` 必须重建，
+否则装机版停留在旧逻辑 —— 2026-10-23 发生过一次：形状校验加固与 `credentials.set` 只进了 src，
+`pack.js` 里仍是 `credentials.write`（真实 host 无此方法），装机版 `account.adopt` 直接失败，
+而当时打包模式回归全绿（adopt 用例被 `sourceMode` 门控）。
+
+```bash
+# 必须在仓库根执行：esbuild 的模块注释按 cwd 取相对路径，换目录会让整份产物多出路径差异
+cp packages/standalone/node_modules/@esbuild/linux-x64/bin/esbuild /tmp/esbuild-0.25.9
+chmod +x /tmp/esbuild-0.25.9
+OFM_ESBUILD_DIR="$PWD/packages/standalone" ESBUILD_BINARY_PATH=/tmp/esbuild-0.25.9 \
+  node scripts/build-channel-pack.mjs
+node scripts/build-standalone-channels.mjs          # 再生成 business.mjs
+node scripts/build-standalone-channels.mjs --check  # 复验
+```
+
+esbuild 取自仓库自身（`packages/standalone/package-lock.json` 钉 0.25.9）；该版本可逐行复现
+已提交产物，除预期的源码改动外**无版本 churn**。二进制必须先复制到 U 盘之外：本工作区挂在
+`vfat` 且带 `showexec` / `nosuid` / `nodev`，**U 盘上的非 `.exe` 文件一律不可执行**，直接调用会 `EACCES`。
 
 ---
 
@@ -305,5 +330,6 @@
    的渠道表加端点（每条注明源码常量来源）。
 2. **能力状态变化**（例如「模块内有实现但未接入」被接线）：改本文件 §2 与 §3 的对应行，
    并在 §4 补一条可复现命令。
-3. **口径**：任何「渠道数」文案改动都必须同时覆盖 §1 列出的四处来源；若与本文 §1.2 的
-   三种口径不一致，先在 §1.2 记录再改文案，避免再次出现「日志说 12、断言说 22」。
+3. **口径**：任何「渠道数」文案改动都必须同时覆盖 §1 列出的来源，且日志数字必须与**同一文件里的
+   断言**同值（账号渠道一律 22；额度 / 签到契约一律 13），并同步本文 §1.2 —— 避免再次出现
+   「日志说 12、断言说 22」。改动 `src/**` 后必须按 §4.1 重建产物。
