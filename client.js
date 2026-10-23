@@ -218,6 +218,11 @@ window.__ModuleLoader__.load({
         'chan.meta.accounts': '账号',
         'chan.meta.models': '模型',
         'chan.act.add': '添加账号',
+        'chan.paste.label': '粘贴凭据',
+        'chan.paste.cookie': '在浏览器登录官方站点后，从开发者工具复制 Cookie 粘贴到这里',
+        'chan.paste.token': '粘贴访问令牌（API Key / Token）',
+        'chan.paste.submit': '保存凭据',
+        'chan.paste.cancel': '取消',
         'chan.zcode.provider': '登录渠道',
         'chan.zcode.bigmodel': 'bigmodel.cn',
         'chan.zcode.zai': 'z.ai 国际版',
@@ -653,6 +658,11 @@ window.__ModuleLoader__.load({
         'chan.meta.accounts': 'Accounts',
         'chan.meta.models': 'Models',
         'chan.act.add': 'Add account',
+        'chan.paste.label': 'Paste credential',
+        'chan.paste.cookie': 'Sign in on the official site, then copy the Cookie from devtools and paste it here',
+        'chan.paste.token': 'Paste an access token (API key / token)',
+        'chan.paste.submit': 'Save credential',
+        'chan.paste.cancel': 'Cancel',
         'chan.zcode.provider': 'Sign-in route',
         'chan.zcode.bigmodel': 'bigmodel.cn',
         'chan.zcode.zai': 'z.ai international',
@@ -2713,13 +2723,13 @@ window.__ModuleLoader__.load({
       { id: 'minimax', name: 'MiniMax Code', org: 'MiniMax', accent: '#E4007F', note: '设备码 + PKCE，每日签到', login: 'browser' },
       { id: 'zcode', name: 'ZCode', org: '智谱', accent: '#3B6EF6', note: '浏览器登录（需本机可开浏览器）', login: 'browser' },
       { id: 'gemini', name: 'Gemini', org: 'Google Code Assist', accent: '#4285F4', note: '本地回调 OAuth 免费线', login: 'browser' },
-      { id: 'commandcode', name: 'Command Code', org: 'Command Code', accent: '#111827', note: '浏览器授权，长期 API Key', login: 'browser' },
+      { id: 'commandcode', name: 'Command Code', org: 'Command Code', accent: '#111827', note: '粘贴 API Key', login: 'token' },
       { id: 'monkeycode', name: 'MonkeyCode', org: '长亭科技', accent: '#F97316', note: '粘贴 Cookie；每日签到 100 积分', login: 'cookie' },
       { id: 'orcaterm', name: 'OrcaTerm', org: '腾讯云', accent: '#00A4FF', note: '粘贴 Cookie，支持完整对话', login: 'cookie' },
       { id: 'kuku', name: 'KukuAI', org: '百度文库', accent: '#2932E1', note: '粘贴 BDUSS Cookie', login: 'cookie' },
-      { id: 'accio', name: 'Accio', org: '阿里系', accent: '#FF6A00', note: 'OAuth 登录，国际站', login: 'browser' },
-      { id: 'accio-cn', name: 'Accio 国内版', org: '阿里系', accent: '#FF8C42', note: 'OAuth 登录，国内站', login: 'browser' },
-      { id: 'officeace', name: 'OfficeAce 果办', org: '华为云', accent: '#C7000B', note: '浏览器授权，每日签到', login: 'browser' },
+      { id: 'accio', name: 'Accio', org: '阿里系', accent: '#FF6A00', note: '粘贴访问令牌，国际站', login: 'token' },
+      { id: 'accio-cn', name: 'Accio 国内版', org: '阿里系', accent: '#FF8C42', note: '粘贴访问令牌，国内站', login: 'token' },
+      { id: 'officeace', name: 'OfficeAce 果办', org: '华为云', accent: '#C7000B', note: '粘贴凭据 JSON', login: 'token' },
       { id: 'autoclaw', name: 'AutoClaw', org: '智谱', accent: '#3D5AFE', note: '粘贴令牌，国内站', login: 'token' },
       { id: 'autoclaw-intl', name: 'AutoClaw 国际版', org: '智谱', accent: '#7986CB', note: '粘贴令牌，国际站', login: 'token' },
       { id: 'catpaw', name: 'CatPaw', org: '美团', accent: '#FFB400', note: '粘贴令牌；对话待支持', login: 'token' },
@@ -2828,6 +2838,12 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState('')
       const [notice, setNotice] = useState('')
       const [login, setLogin] = useState(null)
+      // 粘贴型渠道（无自动化 OAuth）：展开一个输入框接收 Cookie / 令牌。
+      // 判据用渠道列表上的 `login` 字段（'cookie' / 'token'），与后端
+      // `account.adopt` 支持的渠道一一对应。
+      const pasteMode = channel.login === 'cookie' || channel.login === 'token'
+      const [pasteOpen, setPasteOpen] = useState(false)
+      const [pasteText, setPasteText] = useState('')
       const modelBatchPending = useRef(false)
       const [balanceError, setBalanceError] = useState('')
       const [balanceLoading, setBalanceLoading] = useState(false)
@@ -2963,6 +2979,28 @@ window.__ModuleLoader__.load({
         loginAttempt.current = null
         setBusy(value => value === 'add' ? '' : value)
       }, [rpc])
+      /**
+       * 提交粘贴的凭据。
+       *
+       * 走后端 `account.adopt` —— 它用各渠道自己的解析函数做形状校验，
+       * 避免「UI 收下了、适配器用不了」的半残凭据。
+       */
+      const submitPaste = async () => {
+        const text = pasteText.trim()
+        if (text === '' || busy !== '' || !rpc) return
+        setBusy('add'); setNotice('')
+        try {
+          const value = await rpc('account.adopt', { provider: channel.id, credential: text }, 90_000)
+          const accountId = value?.accountId
+          if (typeof accountId !== 'string' || accountId === '') throw new Error('bad-answer')
+          setPasteText(''); setPasteOpen(false)
+          setNotice(t('chan.login.done').replace('{login}', channel.name))
+          onChanged(); void loadAccounts(); void loadCredits(); void loadBalances(true)
+        } catch (error) {
+          onError(channel, error)
+        } finally { setBusy('') }
+      }
+
       const startLogin = async () => {
         if (loginAttempt.current && !loginAttempt.current.cancelled) return
         const attempt = { popup: null, cancelled: false, transport: channelTransport(rpc) }
@@ -3133,7 +3171,35 @@ window.__ModuleLoader__.load({
               'aria-pressed': zcodeProvider === 'zai',
               onClick: () => chooseZcodeProvider('zai'),
             }, t('chan.zcode.zai'))) : null,
-          h('button', { type: 'button', className: 'ofm_btn', disabled: busy !== '' || !rpc, 'aria-busy': busy === 'add' ? 'true' : undefined, onClick: startLogin }, busy === 'add' ? '…' : t('chan.act.add')),
+          h('button', {
+            type: 'button', className: 'ofm_btn',
+            disabled: busy !== '' || !rpc,
+            'aria-busy': busy === 'add' ? 'true' : undefined,
+            'aria-expanded': pasteMode ? pasteOpen : undefined,
+            onClick: pasteMode ? () => setPasteOpen(value => !value) : startLogin,
+          }, busy === 'add' ? '…' : t('chan.act.add')),
+          // 粘贴型渠道的输入区：展开后接收 Cookie / 令牌，提交走 account.adopt。
+          pasteMode && pasteOpen ? h('div', { className: 'chan-paste' },
+            h('textarea', {
+              className: 'ofm_input chan-paste-input',
+              rows: 3,
+              'aria-label': t('chan.paste.label'),
+              placeholder: channel.login === 'cookie'
+                ? t('chan.paste.cookie')
+                : t('chan.paste.token'),
+              value: pasteText,
+              onChange: event => setPasteText(event.target.value),
+            }),
+            h('div', { className: 'chan-paste-actions' },
+              h('button', {
+                type: 'button', className: 'ofm_btn', disabled: busy !== '' || pasteText.trim() === '' || !rpc,
+                'aria-busy': busy === 'add' ? 'true' : undefined,
+                onClick: () => void submitPaste(),
+              }, busy === 'add' ? '…' : t('chan.paste.submit')),
+              h('button', {
+                type: 'button', className: 'ofm_btn ghost',
+                onClick: () => { setPasteText(''); setPasteOpen(false) },
+              }, t('chan.paste.cancel')))) : null,
           accountsCount > 0 ? h('button', {
             type: 'button', className: 'ofm_btn ghost', disabled: busy !== '' || !rpc, 'aria-busy': busy === 'refreshAll' ? 'true' : undefined,
             onClick: () => accountAction('refreshAll', '', async () => {

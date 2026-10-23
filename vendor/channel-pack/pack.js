@@ -43614,6 +43614,12 @@ function unwrapData(value) {
   if ("data" in value && isRecord2(value.data)) return value.data;
   return value;
 }
+function normalizeCookie(raw) {
+  const trimmed = raw.replace(/[\r\n]+/g, " ").trim();
+  if (trimmed === "") return void 0;
+  if (!trimmed.includes(`${MONKEYCODE_SESSION_COOKIE}=`)) return void 0;
+  return trimmed;
+}
 function isCredentialUsable2(credential) {
   if (credential === void 0) return false;
   const cookie = credential.access_token;
@@ -43810,6 +43816,12 @@ function stringValue2(value) {
 }
 function isRecord3(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function normalizeCookie2(raw) {
+  const trimmed = raw.replace(/[\r\n]+/g, " ").trim();
+  if (trimmed === "") return void 0;
+  if (!trimmed.includes(`${ORCATERM_SESSION_COOKIE}=`)) return void 0;
+  return trimmed;
 }
 function isCredentialUsable3(credential) {
   if (credential === void 0) return false;
@@ -44090,6 +44102,12 @@ function stringValue3(value) {
 }
 function isRecord4(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function normalizeCookie3(raw) {
+  const trimmed = raw.replace(/[\r\n]+/g, " ").trim();
+  if (trimmed === "") return void 0;
+  if (!trimmed.includes(`${KUKU_SESSION_COOKIE}=`)) return void 0;
+  return trimmed;
 }
 function isCredentialUsable4(credential) {
   if (credential === void 0) return false;
@@ -44801,6 +44819,34 @@ function basicAuthHeader(credential) {
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return `Basic ${btoa(binary)}`;
 }
+function parseCredential(value) {
+  if (!isRecord6(value)) return void 0;
+  const baseUrl = stringValue5(value.baseUrl) ?? stringValue5(value.base_url) ?? stringValue5(value.api_base) ?? stringValue5(value.apiBase);
+  const appKey = stringValue5(value.appKey) ?? stringValue5(value.app_key);
+  const appSecret = stringValue5(value.appSecret) ?? stringValue5(value.app_secret);
+  if (baseUrl === void 0 || appKey === void 0 || appSecret === void 0) return void 0;
+  return {
+    base_url: baseUrl,
+    app_key: appKey,
+    app_secret: appSecret,
+    ...stringValue5(value.access_key) === void 0 ? {} : { access_key: stringValue5(value.access_key) },
+    ...stringValue5(value.accessKey) === void 0 ? {} : { access_key: stringValue5(value.accessKey) },
+    ...stringValue5(value.secret_key) === void 0 ? {} : { secret_key: stringValue5(value.secret_key) },
+    ...stringValue5(value.secretKey) === void 0 ? {} : { secret_key: stringValue5(value.secretKey) },
+    ...stringValue5(value.security_token) === void 0 ? {} : { security_token: stringValue5(value.security_token) },
+    ...stringValue5(value.project_id) === void 0 ? {} : { project_id: stringValue5(value.project_id) },
+    ...stringValue5(value.account_id) === void 0 ? {} : { account_id: stringValue5(value.account_id) },
+    ...stringValue5(value.nickname) === void 0 ? {} : { nickname: stringValue5(value.nickname) },
+    ...Array.isArray(value.model_info) ? { model_info: value.model_info } : {},
+    created_at: Date.now()
+  };
+}
+function stringValue5(value) {
+  return typeof value === "string" && value !== "" ? value : void 0;
+}
+function isRecord6(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 function isCredentialUsable6(credential) {
   if (credential === void 0) return false;
   return typeof credential.base_url === "string" && credential.base_url !== "" && typeof credential.app_key === "string" && credential.app_key !== "" && typeof credential.app_secret === "string" && credential.app_secret !== "";
@@ -45003,10 +45049,10 @@ var AUTOCLAW_INTL = {
 var AUTOCLAW_MODEL_CONFIG_PATH = "/proxy/autoclaw-model-config";
 
 // vendor/channel-pack/src/autoclaw.ts
-function stringValue5(value) {
+function stringValue6(value) {
   return typeof value === "string" && value !== "" ? value : void 0;
 }
-function isRecord6(value) {
+function isRecord7(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function isCredentialUsable7(credential) {
@@ -45026,16 +45072,31 @@ function autoClawHeaders(product, credential) {
 function chatEndpoint(product) {
   return `${product.apiBase}${product.proxyPrefix}/chat/completions`;
 }
+function parseCredential2(value) {
+  if (!isRecord7(value)) return void 0;
+  const token = stringValue6(value.access_token) ?? stringValue6(value.accessToken) ?? stringValue6(value.token);
+  if (token === void 0) return void 0;
+  const expiresRaw = value.expire_time ?? value.expiresAt ?? value.expires_at;
+  const expireTime = typeof expiresRaw === "number" && Number.isFinite(expiresRaw) ? expiresRaw < 1e12 ? expiresRaw * 1e3 : expiresRaw : void 0;
+  return {
+    access_token: token,
+    ...stringValue6(value.refresh_token) === void 0 && stringValue6(value.refreshToken) === void 0 ? {} : { refresh_token: stringValue6(value.refresh_token) ?? stringValue6(value.refreshToken) },
+    ...expireTime === void 0 ? {} : { expire_time: expireTime },
+    ...stringValue6(value.account_id) === void 0 ? {} : { account_id: stringValue6(value.account_id) },
+    ...stringValue6(value.nickname) === void 0 ? {} : { nickname: stringValue6(value.nickname) },
+    created_at: Date.now()
+  };
+}
 function parseModelConfig(value) {
-  const list = Array.isArray(value) ? value : isRecord6(value) && Array.isArray(value.models) ? value.models : isRecord6(value) && Array.isArray(value.data) ? value.data : void 0;
+  const list = Array.isArray(value) ? value : isRecord7(value) && Array.isArray(value.models) ? value.models : isRecord7(value) && Array.isArray(value.data) ? value.data : void 0;
   if (list === void 0) return [];
   const rows = [];
   for (const raw of list) {
     if (typeof raw !== "object" || raw === null) continue;
     const item = raw;
-    const id = stringValue5(item.id) ?? stringValue5(item.model) ?? stringValue5(item.name);
+    const id = stringValue6(item.id) ?? stringValue6(item.model) ?? stringValue6(item.name);
     if (id === void 0) continue;
-    const name2 = stringValue5(item.name) ?? stringValue5(item.displayName) ?? id;
+    const name2 = stringValue6(item.name) ?? stringValue6(item.displayName) ?? id;
     const contextRaw = item.contextWindow ?? item.context_length ?? item.maxInputTokens;
     const contextWindow = typeof contextRaw === "number" && contextRaw > 0 ? contextRaw : 128e3;
     const maxRaw = item.maxTokens ?? item.max_output_tokens;
@@ -45214,10 +45275,10 @@ var CATPAW_MODEL_TYPES_PATH = "/api/agent/maas/model-types";
 var CATPAW_TOKEN_HEADER = "X-Passport-Token";
 
 // vendor/channel-pack/src/catpaw.ts
-function stringValue6(value) {
+function stringValue7(value) {
   return typeof value === "string" && value !== "" ? value : void 0;
 }
-function isRecord7(value) {
+function isRecord8(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function isCredentialUsable8(credential) {
@@ -45235,17 +45296,29 @@ function catPawHeaders(product, credential) {
     Referer: `${product.apiBase}/`
   };
 }
+function parseCredential3(value) {
+  if (!isRecord8(value)) return void 0;
+  const token = stringValue7(value.access_token) ?? stringValue7(value.accessToken) ?? stringValue7(value.token) ?? stringValue7(value.passportToken);
+  if (token === void 0) return void 0;
+  return {
+    access_token: token,
+    ...stringValue7(value.user_uid) === void 0 && stringValue7(value.userUid) === void 0 ? {} : { user_uid: stringValue7(value.user_uid) ?? stringValue7(value.userUid) },
+    ...stringValue7(value.account_id) === void 0 ? {} : { account_id: stringValue7(value.account_id) },
+    ...stringValue7(value.nickname) === void 0 ? {} : { nickname: stringValue7(value.nickname) },
+    created_at: Date.now()
+  };
+}
 function parseModelTypes(value) {
-  const body = isRecord7(value) && isRecord7(value.data) ? value.data : value;
-  const list = Array.isArray(body) ? body : isRecord7(body) && Array.isArray(body.modelTypes) ? body.modelTypes : isRecord7(body) && Array.isArray(body.models) ? body.models : isRecord7(body) && Array.isArray(body.data) ? body.data : void 0;
+  const body = isRecord8(value) && isRecord8(value.data) ? value.data : value;
+  const list = Array.isArray(body) ? body : isRecord8(body) && Array.isArray(body.modelTypes) ? body.modelTypes : isRecord8(body) && Array.isArray(body.models) ? body.models : isRecord8(body) && Array.isArray(body.data) ? body.data : void 0;
   if (list === void 0) return [];
   const rows = [];
   for (const raw of list) {
     if (typeof raw !== "object" || raw === null) continue;
     const item = raw;
-    const id = stringValue6(item.modelTypeId) ?? stringValue6(item.id) ?? stringValue6(item.host_model_id);
+    const id = stringValue7(item.modelTypeId) ?? stringValue7(item.id) ?? stringValue7(item.host_model_id);
     if (id === void 0) continue;
-    const name2 = stringValue6(item.name) ?? stringValue6(item.displayName) ?? id;
+    const name2 = stringValue7(item.name) ?? stringValue7(item.displayName) ?? id;
     const contextRaw = item.contextWindow ?? item.context_length ?? item.default_context_window;
     const contextWindow = typeof contextRaw === "number" && contextRaw > 0 ? contextRaw : 128e3;
     const maxRaw = item.maxTokens ?? item.max_output_tokens;
@@ -46541,7 +46614,7 @@ var CODEARTS_EXPIRY_ACCESSORS = {
   identityOf: (credential) => credential.access_key_id ?? ""
 };
 var CODEARTS_CREDENTIAL_REF = "CODEARTS_ACCESS_TOKEN";
-function parseCredential(value) {
+function parseCredential4(value) {
   try {
     return JSON.parse(value);
   } catch {
@@ -46595,7 +46668,7 @@ var CodeArtsAuth = class extends Service2 {
   async readCredential(refName) {
     const resolved = await this.ctx.credentials.resolve(credentialRef2(refName));
     if (!resolved) return void 0;
-    return parseCredential(resolved.value);
+    return parseCredential4(resolved.value);
   }
   /**
    * 判断两份凭据是否「同一份」（用于识别他处是否已经续过）。
@@ -46654,7 +46727,7 @@ var CodeArtsAuth = class extends Service2 {
       void this.refreshModels(options.pool).catch(() => {
       });
     }
-    const credential = parseCredential(flow.access);
+    const credential = parseCredential4(flow.access);
     if (options.accountId && options.pool) {
       const expiresAt = credential?.expires_at ? Date.parse(credential.expires_at) : void 0;
       await options.pool.addAccount({
@@ -46812,7 +46885,7 @@ var CodeArtsAuth = class extends Service2 {
           if (entry.refreshable) await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        credential = parseCredential(resolved.value);
+        credential = parseCredential4(resolved.value);
         if (credential === void 0 || !isCodeArtsRefreshable(credential)) {
           if (entry.refreshable) await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -46919,7 +46992,7 @@ var CodeArtsAuth = class extends Service2 {
     for (const entry of pool.listAccountsByProvider("codearts")) {
       const resolved = await this.ctx.credentials.resolve(credentialRef2(entry.credentialRef));
       if (!resolved) continue;
-      const credential = parseCredential(resolved.value);
+      const credential = parseCredential4(resolved.value);
       if (credential?.access_key_id && credential.secret_access_key) return credential;
     }
     return void 0;
@@ -47258,7 +47331,7 @@ var BUDDY_EXPIRY_ACCESSORS = {
   identityOf: (credential) => credential.access_token ?? ""
 };
 var BUDDY_CREDENTIAL_REF = "BUDDY_ACCESS_TOKEN";
-function parseCredential2(value) {
+function parseCredential5(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -47317,7 +47390,7 @@ var BuddyAuth = class extends Service3 {
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential2(flow.access);
+    const credential = parseCredential5(flow.access);
     if (flowOptions.accountId && flowOptions.pool) {
       await flowOptions.pool.addAccount({
         id: flowOptions.accountId,
@@ -47349,7 +47422,7 @@ var BuddyAuth = class extends Service3 {
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential2(credentialJson);
+    const credential = parseCredential5(credentialJson);
     if (accountId && pool) {
       await pool.updateAccount(accountId, {
         nickname: credential?.nickname ?? accountId,
@@ -47367,7 +47440,7 @@ var BuddyAuth = class extends Service3 {
     let refreshable = false;
     const resolved = await this.ctx.credentials.resolve(ref);
     if (resolved) {
-      const credential = parseCredential2(resolved.value);
+      const credential = parseCredential5(resolved.value);
       if (credential) {
         expiresAt = credentialExpiresAtMs(credential);
         refreshable = isRefreshable(credential) && !this.refreshTokenInvalid;
@@ -47386,7 +47459,7 @@ var BuddyAuth = class extends Service3 {
     const ref = credentialRef3(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
-    const credential = parseCredential2(resolved.value);
+    const credential = parseCredential5(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isRefreshable(credential)) {
       throw new RefreshTokenExpiredError2("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -47440,7 +47513,7 @@ var BuddyAuth = class extends Service3 {
     const ref = credentialRef3(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential2(resolved.value);
+    const credential = parseCredential5(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isRefreshable(credential)) {
       throw new RefreshTokenExpiredError2("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -47487,7 +47560,7 @@ var BuddyAuth = class extends Service3 {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        const credential = parseCredential2(resolved.value);
+        const credential = parseCredential5(resolved.value);
         if (!credential || !isRefreshable(credential)) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -47536,7 +47609,7 @@ var BuddyAuth = class extends Service3 {
   scheduleRefresh() {
     void this.ctx.credentials.resolve(credentialRef3(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
-      const credential = parseCredential2(resolved.value);
+      const credential = parseCredential5(resolved.value);
       if (!credential || !isRefreshable(credential)) return;
       const expiresAt = credentialExpiresAtMs(credential);
       if (expiresAt !== void 0) this.scheduler.arm(expiresAt);
@@ -47546,7 +47619,7 @@ var BuddyAuth = class extends Service3 {
   async checkExpired() {
     const resolved = await this.ctx.credentials.resolve(credentialRef3(this.credentialRefName));
     if (!resolved) return true;
-    const credential = parseCredential2(resolved.value);
+    const credential = parseCredential5(resolved.value);
     return credential === void 0 ? true : isExpired(credential);
   }
   /**
@@ -47567,7 +47640,7 @@ var BuddyAuth = class extends Service3 {
     }
     const resolved = await this.ctx.credentials.resolve(credentialRef3(this.credentialRefName));
     if (!resolved) return [];
-    const credential = parseCredential2(resolved.value);
+    const credential = parseCredential5(resolved.value);
     if (!credential) return [];
     return fetchModels3(credential, this.fetchImpl, void 0, this.product);
   }
@@ -47755,7 +47828,7 @@ var RefreshTokenExpiredError3 = class extends Error {
     this.name = "RefreshTokenExpiredError";
   }
 };
-function parseCredential3(value) {
+function parseCredential6(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -47872,7 +47945,7 @@ var LobsteraiAuth = class extends Service4 {
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential3(flow.access);
+    const credential = parseCredential6(flow.access);
     if (flowOptions.accountId !== void 0 && flowOptions.pool !== void 0) {
       await flowOptions.pool.addAccount({
         id: flowOptions.accountId,
@@ -47947,7 +48020,7 @@ var LobsteraiAuth = class extends Service4 {
     let refreshable = false;
     const resolved = await this.ctx.credentials.resolve(ref);
     if (resolved) {
-      const credential = parseCredential3(resolved.value);
+      const credential = parseCredential6(resolved.value);
       if (credential) {
         expiresAt = lobsteraiCredentialExpiresAtMs(credential);
         refreshable = isLobsteraiRefreshable(credential) && !this.refreshTokenInvalid;
@@ -47973,7 +48046,7 @@ var LobsteraiAuth = class extends Service4 {
     const ref = credentialRef4(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
-    const credential = parseCredential3(resolved.value);
+    const credential = parseCredential6(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isLobsteraiRefreshable(credential)) {
       throw new RefreshTokenExpiredError3("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -48015,7 +48088,7 @@ var LobsteraiAuth = class extends Service4 {
     const ref = credentialRef4(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential3(resolved.value);
+    const credential = parseCredential6(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isLobsteraiRefreshable(credential)) {
       throw new RefreshTokenExpiredError3("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -48068,7 +48141,7 @@ var LobsteraiAuth = class extends Service4 {
       try {
         const resolved = await this.ctx.credentials.resolve(credentialRef4(entry.credentialRef));
         if (!resolved) continue;
-        const credential = parseCredential3(resolved.value);
+        const credential = parseCredential6(resolved.value);
         if (credential === void 0) continue;
         const target = lobsteraiDisplayNickname(credential, entry.id);
         if (target !== entry.nickname) {
@@ -48149,7 +48222,7 @@ var LobsteraiAuth = class extends Service4 {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        const credential = parseCredential3(resolved.value);
+        const credential = parseCredential6(resolved.value);
         if (!credential || !isLobsteraiRefreshable(credential)) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -48198,7 +48271,7 @@ var LobsteraiAuth = class extends Service4 {
   scheduleRefresh() {
     void this.ctx.credentials.resolve(credentialRef4(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
-      const credential = parseCredential3(resolved.value);
+      const credential = parseCredential6(resolved.value);
       if (!credential || !isLobsteraiRefreshable(credential)) return;
       const expiresAt = lobsteraiCredentialExpiresAtMs(credential);
       if (expiresAt !== void 0) this.scheduler.arm(expiresAt);
@@ -48208,7 +48281,7 @@ var LobsteraiAuth = class extends Service4 {
   async checkExpired() {
     const resolved = await this.ctx.credentials.resolve(credentialRef4(this.credentialRefName));
     if (!resolved) return true;
-    const credential = parseCredential3(resolved.value);
+    const credential = parseCredential6(resolved.value);
     return credential === void 0 ? true : isLobsteraiExpired(credential);
   }
   /**
@@ -48220,7 +48293,7 @@ var LobsteraiAuth = class extends Service4 {
   async resolveStoredCredential() {
     const resolved = await this.ctx.credentials.resolve(credentialRef4(this.credentialRefName));
     if (!resolved) return void 0;
-    return parseCredential3(resolved.value);
+    return parseCredential6(resolved.value);
   }
   /**
    * `GET /api/models/available` → 远端模型列表。
@@ -48384,7 +48457,7 @@ var RefreshTokenExpiredError4 = class extends Error {
     this.name = "RefreshTokenExpiredError";
   }
 };
-function parseCredential4(value) {
+function parseCredential7(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -48479,7 +48552,7 @@ var QoderAuth = class extends Service5 {
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential4(flow.access);
+    const credential = parseCredential7(flow.access);
     if (flowOptions.accountId !== void 0 && flowOptions.pool !== void 0) {
       await flowOptions.pool.addAccount({
         id: flowOptions.accountId,
@@ -48509,7 +48582,7 @@ var QoderAuth = class extends Service5 {
     let refreshable = false;
     const resolved = await this.ctx.credentials.resolve(ref);
     if (resolved) {
-      const credential = parseCredential4(resolved.value);
+      const credential = parseCredential7(resolved.value);
       if (credential) {
         expiresAt = qoderCredentialExpiresAtMs(credential);
         refreshable = isQoderRefreshable(credential) && !this.refreshTokenInvalid;
@@ -48535,7 +48608,7 @@ var QoderAuth = class extends Service5 {
     const ref = credentialRef5(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
-    const credential = parseCredential4(resolved.value);
+    const credential = parseCredential7(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isQoderRefreshable(credential)) {
       throw new RefreshTokenExpiredError4("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -48577,7 +48650,7 @@ var QoderAuth = class extends Service5 {
     const ref = credentialRef5(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential4(resolved.value);
+    const credential = parseCredential7(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isQoderRefreshable(credential)) {
       throw new RefreshTokenExpiredError4("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -48660,7 +48733,7 @@ var QoderAuth = class extends Service5 {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        const credential = parseCredential4(resolved.value);
+        const credential = parseCredential7(resolved.value);
         if (!credential || !isQoderRefreshable(credential)) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -48710,7 +48783,7 @@ var QoderAuth = class extends Service5 {
   scheduleRefresh() {
     void this.ctx.credentials.resolve(credentialRef5(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
-      const credential = parseCredential4(resolved.value);
+      const credential = parseCredential7(resolved.value);
       if (!credential || !isQoderRefreshable(credential)) return;
       const expiresAt = qoderCredentialExpiresAtMs(credential);
       if (expiresAt !== void 0) this.scheduler.arm(expiresAt);
@@ -48720,7 +48793,7 @@ var QoderAuth = class extends Service5 {
   async checkExpired() {
     const resolved = await this.ctx.credentials.resolve(credentialRef5(this.credentialRefName));
     if (!resolved) return true;
-    const credential = parseCredential4(resolved.value);
+    const credential = parseCredential7(resolved.value);
     return credential === void 0 ? true : isQoderExpired(credential);
   }
   /**
@@ -48731,7 +48804,7 @@ var QoderAuth = class extends Service5 {
   async resolveStoredCredential() {
     const resolved = await this.ctx.credentials.resolve(credentialRef5(this.credentialRefName));
     if (!resolved) return void 0;
-    return parseCredential4(resolved.value);
+    return parseCredential7(resolved.value);
   }
 };
 
@@ -49128,7 +49201,7 @@ var RefreshTokenExpiredError5 = class extends Error {
     this.name = "RefreshTokenExpiredError";
   }
 };
-function parseCredential5(value) {
+function parseCredential8(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -49227,7 +49300,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
     this.lastRefreshError = void 0;
     this.modelsCache = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential5(flow.access);
+    const credential = parseCredential8(flow.access);
     if (flowOptions.accountId !== void 0 && flowOptions.pool !== void 0) {
       await flowOptions.pool.addAccount({
         id: flowOptions.accountId,
@@ -49260,7 +49333,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
     let refreshable = false;
     const resolved = await this.ctx.credentials.resolve(ref);
     if (resolved) {
-      const credential = parseCredential5(resolved.value);
+      const credential = parseCredential8(resolved.value);
       if (credential) {
         expiresAt = traeCredentialExpiresAtMs(credential);
         refreshable = isTraeRefreshable(credential) && !this.refreshTokenInvalid;
@@ -49285,7 +49358,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
     const ref = credentialRef6(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
-    const credential = parseCredential5(resolved.value);
+    const credential = parseCredential8(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isTraeRefreshable(credential)) {
       throw new RefreshTokenExpiredError5("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -49328,7 +49401,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
     const ref = credentialRef6(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential5(resolved.value);
+    const credential = parseCredential8(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isTraeRefreshable(credential)) {
       throw new RefreshTokenExpiredError5("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -49410,7 +49483,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        const credential = parseCredential5(resolved.value);
+        const credential = parseCredential8(resolved.value);
         if (!credential || !isTraeRefreshable(credential)) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -49480,7 +49553,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
         const ref = credentialRef6(entry.credentialRef);
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) continue;
-        let credential = parseCredential5(resolved.value);
+        let credential = parseCredential8(resolved.value);
         if (credential === void 0) continue;
         if ((credential.phone === void 0 || credential.phone.length === 0) && (credential.email === void 0 || credential.email.length === 0)) {
           const info = await this.fetchUserContact(credential);
@@ -49546,7 +49619,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
   scheduleRefresh() {
     void this.ctx.credentials.resolve(credentialRef6(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
-      const credential = parseCredential5(resolved.value);
+      const credential = parseCredential8(resolved.value);
       if (!credential || !isTraeRefreshable(credential)) return;
       const expiresAt = traeCredentialExpiresAtMs(credential);
       if (expiresAt !== void 0) this.scheduler.arm(expiresAt);
@@ -49556,7 +49629,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
   async checkExpired() {
     const resolved = await this.ctx.credentials.resolve(credentialRef6(this.credentialRefName));
     if (!resolved) return true;
-    const credential = parseCredential5(resolved.value);
+    const credential = parseCredential8(resolved.value);
     return credential === void 0 ? true : isTraeExpired(credential);
   }
   /**
@@ -49593,7 +49666,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
     if (credential === void 0) {
       const resolved = await this.ctx.credentials.resolve(credentialRef6(this.credentialRefName));
       if (!resolved) return [];
-      credential = parseCredential5(resolved.value);
+      credential = parseCredential8(resolved.value);
       if (credential === void 0) return [];
     }
     if (credential.access_token.length === 0) return [];
@@ -49873,7 +49946,7 @@ var RefreshTokenExpiredError6 = class extends Error {
     this.name = "RefreshTokenExpiredError";
   }
 };
-function parseCredential6(value) {
+function parseCredential9(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -49973,7 +50046,7 @@ var ClineAuth = class extends Service7 {
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential6(flow.access);
+    const credential = parseCredential9(flow.access);
     if (flowOptions.accountId !== void 0 && flowOptions.pool !== void 0) {
       await flowOptions.pool.addAccount({
         id: flowOptions.accountId,
@@ -50004,7 +50077,7 @@ var ClineAuth = class extends Service7 {
     let refreshable = false;
     const resolved = await this.ctx.credentials.resolve(ref);
     if (resolved) {
-      const credential = parseCredential6(resolved.value);
+      const credential = parseCredential9(resolved.value);
       if (credential) {
         expiresAt = clineCredentialExpiresAtMs(credential);
         refreshable = isClineRefreshable(credential) && !this.refreshTokenInvalid;
@@ -50030,7 +50103,7 @@ var ClineAuth = class extends Service7 {
     const ref = credentialRef7(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
-    const credential = parseCredential6(resolved.value);
+    const credential = parseCredential9(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isClineRefreshable(credential)) {
       throw new RefreshTokenExpiredError6("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -50072,7 +50145,7 @@ var ClineAuth = class extends Service7 {
     const ref = credentialRef7(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential6(resolved.value);
+    const credential = parseCredential9(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isClineRefreshable(credential)) {
       throw new RefreshTokenExpiredError6("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -50156,7 +50229,7 @@ var ClineAuth = class extends Service7 {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        const credential = parseCredential6(resolved.value);
+        const credential = parseCredential9(resolved.value);
         if (!credential || !isClineRefreshable(credential)) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -50205,7 +50278,7 @@ var ClineAuth = class extends Service7 {
   scheduleRefresh() {
     void this.ctx.credentials.resolve(credentialRef7(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
-      const credential = parseCredential6(resolved.value);
+      const credential = parseCredential9(resolved.value);
       if (!credential || !isClineRefreshable(credential)) return;
       const expiresAt = clineCredentialExpiresAtMs(credential);
       if (expiresAt !== void 0) this.scheduler.arm(expiresAt);
@@ -50215,7 +50288,7 @@ var ClineAuth = class extends Service7 {
   async checkExpired() {
     const resolved = await this.ctx.credentials.resolve(credentialRef7(this.credentialRefName));
     if (!resolved) return true;
-    const credential = parseCredential6(resolved.value);
+    const credential = parseCredential9(resolved.value);
     return credential === void 0 ? true : isClineExpired(credential);
   }
   /**
@@ -50226,7 +50299,7 @@ var ClineAuth = class extends Service7 {
   async resolveStoredCredential() {
     const resolved = await this.ctx.credentials.resolve(credentialRef7(this.credentialRefName));
     if (!resolved) return void 0;
-    return parseCredential6(resolved.value);
+    return parseCredential9(resolved.value);
   }
 };
 
@@ -51140,7 +51213,7 @@ var RefreshTokenExpiredError7 = class extends Error {
     this.name = "RefreshTokenExpiredError";
   }
 };
-function parseCredential7(value) {
+function parseCredential10(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -51283,7 +51356,7 @@ var LoomyAuth = class extends Service8 {
   /** 解析当前单凭据（默认 ref）。 */
   async resolveDefaultCredential() {
     const resolved = await this.ctx.credentials.resolve(credentialRef8(this.credentialRefName));
-    return resolved === void 0 ? void 0 : parseCredential7(resolved.value);
+    return resolved === void 0 ? void 0 : parseCredential10(resolved.value);
   }
   /** 只读登录状态。 */
   async status() {
@@ -51332,7 +51405,7 @@ var LoomyAuth = class extends Service8 {
     const ref = credentialRef8(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential7(resolved.value);
+    const credential = parseCredential10(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     await this.probeCredential(credential);
     await syncAccountExpiry({
@@ -51399,7 +51472,7 @@ var LoomyAuth = class extends Service8 {
       try {
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) continue;
-        credential = parseCredential7(resolved.value);
+        credential = parseCredential10(resolved.value);
       } catch {
         continue;
       }
@@ -63569,6 +63642,50 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
       if (handled !== void 0) return handled;
     }
     switch (method) {
+      /**
+       * 用手动粘贴的凭据添加账号。
+       *
+       * 这是**粘贴型渠道**（MonkeyCode / OrcaTerm / KukuAI / CatPaw /
+       * AutoClaw / Accio / OfficeAce / Command Code）唯一的「添加账号」入口 ——
+       * 它们的上游没有可脚本化的 OAuth，用户只能在官方页面登录后复制
+       * Cookie 或令牌。
+       *
+       * ⚠️ 形状校验**复用各渠道自己的解析函数**（见 `ADOPTABLE_CHANNELS`）：
+       * 另写一套判据会出现「UI 收下了、适配器用不了」的半残凭据。
+       */
+      case "account.adopt": {
+        const req = payload;
+        const provider = typeof req.provider === "string" ? req.provider : "";
+        const text = typeof req.credential === "string" ? req.credential : "";
+        const channel = ADOPTABLE_CHANNELS[provider];
+        if (channel === void 0) {
+          return { ok: false, error: { code: "bad-request", message: `provider does not accept pasted credentials: ${provider}` } };
+        }
+        if (text.trim() === "") {
+          return { ok: false, error: { code: "bad-request", message: "credential is empty" } };
+        }
+        const parsed = channel.parse(text);
+        if (parsed === void 0) {
+          return { ok: false, error: { code: "bad-request", message: `\u51ED\u636E\u5F62\u72B6\u4E0D\u5408\u6CD5\uFF0C\u5E94\u4E3A\uFF1A${channel.hint}` } };
+        }
+        const id = `${provider}-${shortId()}`;
+        const refName = `${provider.toUpperCase().replace(/-/g, "_")}_ACCOUNT_${shortId().toUpperCase()}`;
+        try {
+          await ctx.credentials.write(credentialRef13(refName), JSON.stringify(parsed));
+        } catch (error) {
+          return { ok: false, error: { code: "internal", message: `\u51ED\u636E\u5199\u5165\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}` } };
+        }
+        await pool.addAccount({
+          id,
+          provider,
+          nickname: provider,
+          enabled: true,
+          credentialRef: refName,
+          createdAt: Date.now(),
+          refreshable: false
+        });
+        return { ok: true, value: { accountId: id } };
+      }
       case "account.list": {
         const req = payload;
         const accounts = await pool.listAccounts(req.provider);
@@ -65749,6 +65866,84 @@ function reply(rpcId, result) {
   const value = typeof result === "object" && result !== null && result.ok === false ? { ...result, error: { ...result.error, details: {} } } : result;
   return Response.json({ type: "server-response", rpcId, result: value });
 }
+var ADOPTABLE_CHANNELS = {
+  commandcode: {
+    hint: "API Key\uFF08\u5F62\u5982 cmd-\u2026\uFF09",
+    parse: (text) => {
+      const key = text.trim();
+      return key === "" ? void 0 : { access_token: key, created_at: Date.now() };
+    }
+  },
+  monkeycode: {
+    hint: "\u6D4F\u89C8\u5668 Cookie\uFF08\u5FC5\u987B\u542B nebula_session=\u2026\uFF09",
+    parse: (text) => {
+      const cookie = normalizeCookie(text);
+      return cookie === void 0 ? void 0 : { access_token: cookie, created_at: Date.now() };
+    }
+  },
+  orcaterm: {
+    hint: "\u6D4F\u89C8\u5668 Cookie\uFF08\u5FC5\u987B\u542B ot_session=\u2026\uFF09",
+    parse: (text) => {
+      const cookie = normalizeCookie2(text);
+      return cookie === void 0 ? void 0 : { access_token: cookie, created_at: Date.now() };
+    }
+  },
+  kuku: {
+    hint: "\u6D4F\u89C8\u5668 Cookie\uFF08\u5FC5\u987B\u542B BDUSS=\u2026\uFF09",
+    parse: (text) => {
+      const cookie = normalizeCookie3(text);
+      return cookie === void 0 ? void 0 : { access_token: cookie, created_at: Date.now() };
+    }
+  },
+  catpaw: {
+    hint: "\u901A\u884C\u8BC1\u4EE4\u724C\uFF08X-Passport-Token \u7684\u503C\uFF09",
+    parse: (text) => {
+      const parsed = parseCredential3({ token: text });
+      return parsed === void 0 ? void 0 : { ...parsed };
+    }
+  },
+  autoclaw: {
+    hint: "\u8BBF\u95EE\u4EE4\u724C\uFF08Bearer token\uFF09",
+    parse: (text) => {
+      const parsed = parseCredential2({ token: text });
+      return parsed === void 0 ? void 0 : { ...parsed };
+    }
+  },
+  "autoclaw-intl": {
+    hint: "\u8BBF\u95EE\u4EE4\u724C\uFF08Bearer token\uFF0C\u56FD\u9645\u7AD9\uFF09",
+    parse: (text) => {
+      const parsed = parseCredential2({ token: text });
+      return parsed === void 0 ? void 0 : { ...parsed };
+    }
+  },
+  accio: {
+    hint: "\u8BBF\u95EE\u4EE4\u724C\uFF08accessToken\uFF09",
+    parse: (text) => {
+      const token = text.trim();
+      return token === "" ? void 0 : { access_token: token, created_at: Date.now() };
+    }
+  },
+  "accio-cn": {
+    hint: "\u8BBF\u95EE\u4EE4\u724C\uFF08accessToken\uFF0C\u56FD\u5185\u7AD9\uFF09",
+    parse: (text) => {
+      const token = text.trim();
+      return token === "" ? void 0 : { access_token: token, created_at: Date.now() };
+    }
+  },
+  officeace: {
+    hint: "\u51ED\u636E JSON\uFF08\u542B baseUrl / appKey / appSecret\uFF09",
+    parse: (text) => {
+      let raw;
+      try {
+        raw = JSON.parse(text);
+      } catch {
+        return void 0;
+      }
+      const parsed = parseCredential(raw);
+      return parsed === void 0 ? void 0 : { ...parsed };
+    }
+  }
+};
 
 // vendor/channel-pack/src/openai-gateway/server.ts
 import { createServer as createServer8 } from "node:http";

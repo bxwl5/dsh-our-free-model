@@ -306,6 +306,8 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   await verifyAutoClaw()
   const { verifyCatPaw } = await import('./catpaw-test.mjs')
   await verifyCatPaw()
+  const { verifyChannelAdopt } = await import('./channel-adopt-test.mjs')
+  await verifyChannelAdopt()
   await verifyLoopResumeEvents()
   let hostValidate
   await realLlmInvariant.apply({ invariants: { register(_name, install) {

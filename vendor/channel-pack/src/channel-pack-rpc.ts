@@ -4,7 +4,7 @@
  * 使用 DSH 的 connection.fetch.register() 模式注册 HTTP API 端点，
  * 与 dsh-im 的 registerManagementRpc 一致。
  * 通道名 channel-pack → 路径 /api/channel-pack
- * 端点方法：account.list / account.create / account.update / account.delete /
+ * 端点方法：account.list / account.create / account.adopt（粘贴凭据）/ account.update / account.delete /
  *           account.reorder / account.refresh / account.retest / account.retestAll /
  *           account.test / account.reset / account.resetAll / login.poll /
  *           credits.status / credits.claimAll / credits.balances /
@@ -38,6 +38,12 @@ import type { TraeAuth } from './trae-auth.js'
 import type { ClineAuth } from './cline-auth.js'
 import { LOOMY } from './loomy-product.js'
 import { buddyExpiringWindowDays } from './buddy-balance-rank.js'
+import { normalizeCookie as normalizeMonkeyCodeCookie } from './monkeycode.js'
+import { normalizeCookie as normalizeOrcaTermCookie } from './orcaterm.js'
+import { normalizeCookie as normalizeKukuCookie } from './kuku.js'
+import { parseCredential as parseCatPawCredential } from './catpaw.js'
+import { parseCredential as parseAutoClawCredential } from './autoclaw.js'
+import { parseCredential as parseOfficeAceCredential } from './officeace.js'
 import type { LoomyAuth } from './loomy-auth.js'
 import type { LoomyCredential } from './loomy.js'
 import { RACCOON } from './raccoon-product.js'
@@ -1393,6 +1399,51 @@ function registerChannelPackEndpoints(
       if (handled !== undefined) return handled
     }
     switch (method) {
+      /**
+       * 用手动粘贴的凭据添加账号。
+       *
+       * 这是**粘贴型渠道**（MonkeyCode / OrcaTerm / KukuAI / CatPaw /
+       * AutoClaw / Accio / OfficeAce / Command Code）唯一的「添加账号」入口 ——
+       * 它们的上游没有可脚本化的 OAuth，用户只能在官方页面登录后复制
+       * Cookie 或令牌。
+       *
+       * ⚠️ 形状校验**复用各渠道自己的解析函数**（见 `ADOPTABLE_CHANNELS`）：
+       * 另写一套判据会出现「UI 收下了、适配器用不了」的半残凭据。
+       */
+      case 'account.adopt': {
+        const req = payload as { provider?: unknown; credential?: unknown }
+        const provider = typeof req.provider === 'string' ? req.provider : ''
+        const text = typeof req.credential === 'string' ? req.credential : ''
+        const channel = ADOPTABLE_CHANNELS[provider]
+        if (channel === undefined) {
+          return { ok: false, error: { code: 'bad-request', message: `provider does not accept pasted credentials: ${provider}` } }
+        }
+        if (text.trim() === '') {
+          return { ok: false, error: { code: 'bad-request', message: 'credential is empty' } }
+        }
+        const parsed = channel.parse(text)
+        if (parsed === undefined) {
+          return { ok: false, error: { code: 'bad-request', message: `凭据形状不合法，应为：${channel.hint}` } }
+        }
+        const id = `${provider}-${shortId()}`
+        const refName = `${provider.toUpperCase().replace(/-/g, '_')}_ACCOUNT_${shortId().toUpperCase()}`
+        try {
+          await ctx.credentials.write(credentialRef(refName), JSON.stringify(parsed))
+        } catch (error) {
+          return { ok: false, error: { code: 'internal', message: `凭据写入失败：${error instanceof Error ? error.message : String(error)}` } }
+        }
+        await pool.addAccount({
+          id,
+          provider,
+          nickname: provider,
+          enabled: true,
+          credentialRef: refName,
+          createdAt: Date.now(),
+          refreshable: false,
+        })
+        return { ok: true, value: { accountId: id } }
+      }
+
       case 'account.list': {
         const req = payload as RpcListAccountsRequest
         const accounts = await pool.listAccounts(req.provider)
@@ -4272,4 +4323,104 @@ function reply(rpcId: string, result: unknown): Response {
     ? { ...result as Record<string, unknown>, error: { ...(result as Record<string, unknown>).error as Record<string, unknown>, details: {} } }
     : result
   return Response.json({ type: 'server-response', rpcId, result: value })
+}
+
+// ── 需要手动粘贴凭据的渠道（无自动化登录流程）──────────────
+//
+// 这些渠道的上游没有设备码或本地回调 OAuth，只能由用户在官方页面登录后
+// 复制 Cookie / 令牌粘贴进来。`account.adopt` 就是它们的「添加账号」入口。
+//
+// ⚠️ 每个渠道的凭据**形状校验必须复用该渠道自己的解析函数** ——
+// 不要在 RPC 里另写一套判据，否则 UI 收下了、适配器用不了。
+/** 粘贴凭据的渠道描述。 */
+interface AdoptableChannel {
+  /** 用户该粘贴什么（提示文案用）。 */
+  hint: string
+  /** 校验并归一凭据；返回 `undefined` 表示形状不合法。 */
+  parse: (text: string) => Record<string, unknown> | undefined
+}
+
+/** 粘贴型渠道表。键是 provider id。 */
+const ADOPTABLE_CHANNELS: Readonly<Record<string, AdoptableChannel>> = {
+  commandcode: {
+    hint: 'API Key（形如 cmd-…）',
+    parse: (text) => {
+      const key = text.trim()
+      return key === '' ? undefined : { access_token: key, created_at: Date.now() }
+    },
+  },
+  monkeycode: {
+    hint: '浏览器 Cookie（必须含 nebula_session=…）',
+    parse: (text) => {
+      const cookie = normalizeMonkeyCodeCookie(text)
+      return cookie === undefined ? undefined : { access_token: cookie, created_at: Date.now() }
+    },
+  },
+  orcaterm: {
+    hint: '浏览器 Cookie（必须含 ot_session=…）',
+    parse: (text) => {
+      const cookie = normalizeOrcaTermCookie(text)
+      return cookie === undefined ? undefined : { access_token: cookie, created_at: Date.now() }
+    },
+  },
+  kuku: {
+    hint: '浏览器 Cookie（必须含 BDUSS=…）',
+    parse: (text) => {
+      const cookie = normalizeKukuCookie(text)
+      return cookie === undefined ? undefined : { access_token: cookie, created_at: Date.now() }
+    },
+  },
+  catpaw: {
+    hint: '通行证令牌（X-Passport-Token 的值）',
+    parse: (text) => {
+      const parsed = parseCatPawCredential({ token: text })
+      return parsed === undefined ? undefined : { ...parsed }
+    },
+  },
+  autoclaw: {
+    hint: '访问令牌（Bearer token）',
+    parse: (text) => {
+      const parsed = parseAutoClawCredential({ token: text })
+      return parsed === undefined ? undefined : { ...parsed }
+    },
+  },
+  'autoclaw-intl': {
+    hint: '访问令牌（Bearer token，国际站）',
+    parse: (text) => {
+      const parsed = parseAutoClawCredential({ token: text })
+      return parsed === undefined ? undefined : { ...parsed }
+    },
+  },
+  accio: {
+    hint: '访问令牌（accessToken）',
+    parse: (text) => {
+      const token = text.trim()
+      return token === '' ? undefined : { access_token: token, created_at: Date.now() }
+    },
+  },
+  'accio-cn': {
+    hint: '访问令牌（accessToken，国内站）',
+    parse: (text) => {
+      const token = text.trim()
+      return token === '' ? undefined : { access_token: token, created_at: Date.now() }
+    },
+  },
+  officeace: {
+    hint: '凭据 JSON（含 baseUrl / appKey / appSecret）',
+    parse: (text) => {
+      let raw: unknown
+      try {
+        raw = JSON.parse(text)
+      } catch {
+        return undefined
+      }
+      const parsed = parseOfficeAceCredential(raw)
+      return parsed === undefined ? undefined : { ...parsed }
+    },
+  },
+}
+
+/** 列出可粘贴凭据的渠道（UI 据此决定「添加账号」的交互形态）。 */
+export function adoptableChannelHint(provider: string): string | undefined {
+  return ADOPTABLE_CHANNELS[provider]?.hint
 }
