@@ -1,7 +1,7 @@
 # 渠道登录方式矩阵
 
-> 一句话：22 个账号渠道里，**16 个的登录在浏览器/本地页内完成**（不需要手抄凭据），
-> **1 个（`loomy`）在微信未绑手机号时会在弹窗内补要短信码**，**5 个只能粘贴凭据**。本文的「一键」指：点「添加账号」后只需在浏览器内完成授权，
+> 一句话：22 个账号渠道里，**17 个的登录全自动完成**（浏览器/本地页/短信码，不需要手抄凭据），
+> **1 个（`loomy`）在微信未绑手机号时会在弹窗内补要短信码**，**4 个只能粘贴凭据**。本文的「一键」指：点「添加账号」后只需在浏览器内完成授权，
 > 插件自己把 token 收回来，**不需要手动复制任何东西**。
 
 ## 1. 总表
@@ -28,10 +28,10 @@
 | 18 | `monkeycode` | 粘贴 Cookie（`nebula_session`） | ❌ | 手动复制 Cookie | 否 | `channel-pack-rpc.ts:4448` |
 | 19 | `orcaterm` | 粘贴 Cookie（`ot_session`） | ❌ | 手动复制 Cookie | 否 | `channel-pack-rpc.ts:4455` |
 | 20 | `kuku` | 粘贴 Cookie（`BDUSS`） | ❌ | 手动复制 Cookie | 否 | `channel-pack-rpc.ts:4462` |
-| 21 | `autoclaw` | 粘贴令牌 | ❌ | 手动复制令牌 | 否 | `channel-pack-rpc.ts:4469` |
+| 21 | `autoclaw` | 手机号 + 短信验证码，**本地弹窗页**承载 | ✅ | 输手机号 + 验证码 | 是（本地页） | `autoclaw-login-page.ts`、`autoclaw-sms.ts` |
 | 22 | `autoclaw-intl` | 粘贴令牌 | ❌ | 手动复制令牌 | 否 | `channel-pack-rpc.ts:4476` |
 
-统计：**一键 16 / 半自动 1 / 纯粘贴 5**。
+统计：**一键 17 / 半自动 1 / 纯粘贴 4**。
 
 ## 2. 三种流为什么不能统一
 
@@ -44,10 +44,10 @@
   `gemini` 的端口是动态 0（不是固定 8845）。
 - **轮询 token**（`buddy`/`workbuddy`、`officeace`）：浏览器授权在**上游服务端**完成，
   插件只用 `state` 或授权码轮询结果，所以不起本地端口。
-- **本地页承载扫码**（`loomy`、`raccoon`）：起本地页显示二维码/短信表单，用户在页面里
-  完成，插件轮询登录态。两者都不需要手抄凭据，故计入「一键」；`loomy` 的界面声明是
-  `browser+sms`，**仅当该微信账号未绑手机号时**弹窗内会补要手机号 + 短信码（面板本身不渲染
-  短信表单，`login.sendSms` 是未被前端调用的备用 RPC），因此单独标成「半自动」。
+- **本地页承载扫码/短信**（`loomy`、`raccoon`、`autoclaw`）：起本地页显示二维码或短信表单，
+  用户在页面里完成，插件轮询登录态；对外统一返回 `loginUrl`，前端无需改动。都不需要手抄
+  凭据，故计入「一键」；`loomy` 的界面声明是 `browser+sms`，**仅当该微信账号未绑手机号时**
+  弹窗内会补要手机号 + 短信码（面板本身不渲染短信表单），因此单独标成「半自动」。
 - **粘贴**（5 个）：上游没有可脚本化的授权流，只能手工复制。
 
 ## 3. 与界面的口径一致性
@@ -58,27 +58,31 @@
 
 ## 4. 未登录时看不看得到模型（实测）
 
-**结论：可以，但有一个例外，且默认是关的。**
+**结论：默认就能看到（2026-10-24 起），`zcode` 是唯一例外。**
 
 机制：DSH 会把 `listModels` 返回空的 provider **整组隐藏**
 （`dsh-api-session-controller/lib/index.js:604` 的 `.filter(group => group.models.length > 0)`）。
 本插件用 `providerCatalogVisible()` 门控，见 `vendor/channel-pack/src/account-pool.ts:1306-1330`，
-开关是环境变量 **`DSH_HIDE_MODELS_WITHOUT_ACCOUNT`**：默认开启（=隐藏），
-显式设 `0` / `false` / `no` / `off` 时**显示**。
+开关是环境变量 **`DSH_HIDE_MODELS_WITHOUT_ACCOUNT`**：**默认不隐藏**（未登录也展示静态模型表），
+显式设 `1` / `true` / `yes` / `on` 时才恢复「未登录就隐藏」。
 
 实测（2026-10-24，离线挂载发布态 `pack.js`，无凭据、fetch 全失败）：
 
 | 开关 | 结果 |
 | --- | --- |
-| 默认 / `=1` | 22 个账号渠道的 `listModels` **全部 0 条**；未登录唯一可见的是插件自带免密车道兜底 **8 条**（`src/core/runtime.js:15-19`） |
-| `=0` | **21/22** 渠道可见，合计 **163 条**（离线兜底下限）；`zcode` 仍 0 条 |
+| 默认 | **21/22** 渠道可见（合计 163 条，离线兜底下限）；`zcode` 仍 0 条 |
+| `=1` | 22 个账号渠道的 `listModels` **全部 0 条**；未登录唯一可见的是插件自带免密车道兜底 **8 条**（`src/core/runtime.js:15-19`） |
+
+**登录后会刷新**：适配器的远端目录只在**拉取成功**时写缓存（`cline-adapter.ts` 的
+`if (!gotRemote) return false`、`buddy-adapter.ts` 的 `models.length === 0` 早退），
+未登录时只播报静态兜底表、不写缓存 —— 所以登录后下一次取目录会带凭据重新拉，列表自然变全。
 
 两个必须知道的边界：
 
 1. **`zcode` 是例外**：它的 `listModels` 先过 `ready()` 凭据判定（`zcode-adapter.ts:441`），
-   环境变量救不了 —— 文档里不能说「设 0 就全显示」。
-2. **未登录时只有 `cline` 会真发 HTTP**（`models.dev` + recommended-models，各 20 s 超时），
-   其余渠道无凭据即短路返回静态表。若默认改成「显示」，首屏会多两条超时告警。
+   未登录时无论开关如何都是 0 条 —— 不要承诺「默认就全显示」。
+2. **`cline` 已做无凭据保护**：未登录时只播报静态兜底表、**不发远端请求**（否则
+   `models.dev` + recommended-models 各 20 s，首屏会白等）。其余渠道无凭据即短路。
 
 其它实测事实：
 
@@ -93,7 +97,7 @@
 
 | 方案 | 改动 | 风险 |
 | --- | --- | --- |
-| A 仅文档（当前） | 0 代码，只写清开关与例外 | 无 |
+| A 仅文档 | 0 代码，只写清开关与例外 | 无（**当前已采用默认显示**） |
 | B 设置页加「未登录也显示（预览）」开关，默认关 | 手写约 250–300 行；关键是预览态把 `fetchRemoteModels` 包成 `[]` 以避开 `cline` 的 20 s×2；需重建产物 | 中（发布内容） |
 | C 默认显示 + 名字标记 | 同 B + 默认值翻转 | 高（与「未登录隐藏」原需求冲突，且污染模型名） |
 
@@ -101,12 +105,12 @@
 
 | 事项 | 状态 | 说明 |
 | --- | --- | --- |
-| `autoclaw`（国内）短信登录 | **协议已验证，待接线** | 手机号 + 短信码：`POST /userapi/v1/agent-send-code` → `/userapi/v1/agent-login`，`X-Auth-Sign=md5(appId&ts&appKey)`；零新依赖。协议与坑见 `项目文件/research/autoclaw-sms-implementation.md`，自测工具 `scripts/autoclaw-sms-probe.mjs --selftest`（默认不发短信）。**接线前需真机验证一次。** |
+| `autoclaw`（国内）短信登录 | **已实现，真机验证通过** | 手机号 + 验证码，**本地弹窗页**承载（范式照 `raccoon`）：`autoclaw-login-page.ts` + `autoclaw-sms.ts`，对外仍返回 `loginUrl`，前端走既有两步式 → **客户端零改动**。2026-10-24 真机换到 24h token。⚠️ 常量逆向所得，失效时该渠道暂不可用（粘贴入口已移除）。 |
 | `kuku` 扫码登录 | 可行（B 档，接近一键） | 百度 passport `getqrcode` → `logincheck` 轮询，确认后直接下发 `BDUSS`/`STOKEN`；仓库已有本地弹窗页（`loomy-wechat-login.ts`）+ 零依赖二维码（`raccoon-qr.ts`）+ `login.poll` 三件套可复用。 |
-| `autoclaw-intl` OAuth | 可行但工作量大 | Z.ai OAuth loopback（端口白名单 18432/19654/19723/53699）+ 阿里滑块；国际账号无手机号，短信路不通。 |
+| `autoclaw-intl` OAuth | 可行但工作量大 | Z.ai OAuth loopback（端口白名单 18432/19654/19723/53699）+ 阿里滑块；国际账号无手机号，短信路不通（仍走粘贴）。 |
 | `orcaterm` 书签收号 | 半自动，待实测 | `ot_session` 非 HttpOnly，用户在已登录页点一次书签回传；未知项是 https 页 → `http://127.0.0.1` 的 PNA/混合内容限制。 |
 | `monkeycode` | 维持粘贴 | 设备码 client_id 写死 `monkeyai-runtime`、scope 仅 `device:*`；会话 Cookie HttpOnly ⇒ 内嵌浏览器也取不到。 |
-| 未登录展示模型列表 | 已有环境变量开关 | 见 §4；是否做成设置页开关待定（方案 B）。 |
+| 未登录展示模型列表 | **已改为默认显示** | 见 §4：默认展示静态模型表、登录后刷新；`DSH_HIDE_MODELS_WITHOUT_ACCOUNT=1` 才隐藏；`zcode` 例外。 |
 | 登录失败无反馈 | **已修** | 12 个渠道原先失败只写日志；现统一 `recordLoginFailure`，`login.poll` 能拿到原因（`scripts/login-failure-reporting-test.mjs` 守卫）。 |
 
 ## 6. 维护约定

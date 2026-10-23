@@ -71,16 +71,17 @@ https://github.com/bxwl5/dsh-our-free-model
 | OrcaTerm | 粘贴 Cookie（`ot_session`） | ✅ |
 | KukuAI | 粘贴 Cookie（`BDUSS`） | ✅ |
 | MonkeyCode | 粘贴 Cookie（`nebula_session`） | ✅ |
-| AutoClaw / AutoClaw 国际版 | 粘贴令牌 | ✅ |
+| AutoClaw（国内） | 手机号 + 短信验证码（本地弹窗页） | ✅ |
+| AutoClaw 国际版 | 粘贴令牌 | ✅ |
 
 **关于粘贴型渠道**：这些上游没有可脚本化的授权流程，需要先在官方站点登录，再从开发者工具复制 Cookie 或令牌粘贴进来。
 
-**关于 AutoClaw**：它的 OAuth 强制要求阿里云验证码 SDK（`AliyunCaptcha.js`，场景 `sq51tr`），插件内无法自动完成，故用粘贴令牌。
+**关于 AutoClaw**：国内站用**手机号 + 短信验证码**登录（无需浏览器；也可点「改用粘贴令牌」走旧路）。国际站的 OAuth 强制要求阿里云验证码 SDK（`AliyunCaptcha.js`，场景 `sq51tr`），插件内无法自动完成，故只能用粘贴令牌。
 
-**看不到某个渠道的模型？** 模型选择器只列**已登录渠道**的模型：没有可用账号的渠道会整组隐藏，
-免得列出一堆点了不能用的条目。想先看看某渠道有哪些模型，给它加一个账号即可；只想看不想登录时，
-把环境变量 `DSH_HIDE_MODELS_WITHOUT_ACCOUNT` 设为 `0`，未登录渠道也会列出其静态模型表
-（点进去仍需登录才能用）。各渠道支持哪种登录方式见
+**看不到某个渠道的模型？** 默认会列出全部账号渠道的模型：未登录时给的是静态模型表，
+登录后下一次打开选择器会自动刷新成完整目录（远端目录只在拉取成功时缓存，不会被兜底表占据）。
+唯一例外是 `zcode`（它需要凭据才能确定目录）。想恢复「未登录就隐藏」的旧行为，把环境变量
+`DSH_HIDE_MODELS_WITHOUT_ACCOUNT` 设为 `1`。各渠道支持哪种登录方式见
 [docs/channel-login-methods.md](docs/channel-login-methods.md)。
 
 MIT，见 [LICENSE](LICENSE)。本项目与任何模型提供方无隶属或背书关系。

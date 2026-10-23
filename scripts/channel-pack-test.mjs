@@ -128,6 +128,20 @@ try {
   assert.equal(adapters.has('autoclaw-intl'), true, 'AutoClaw Intl is registered')
   verifyChannelImagePricing(adapters)
   console.log('ok  22 个账号渠道同步图片计价：缺失及默认方法兜底，厂商计价优先，重复图片与已卸载图片正确计数')
+  // 未登录也展示渠道模型（2026-10-24 起默认）：kuku 没有任何账号，静态兜底表仍应可见；
+  // 显式 DSH_HIDE_MODELS_WITHOUT_ACCOUNT=1 才恢复「未登录就隐藏」。
+  // 这条锁死「默认值」与「登录后能刷新」的前提：未登录时不拉远端、不污染远端缓存。
+  const kukuAdapter = adapters.get('kuku')
+  assert.ok(kukuAdapter !== undefined, 'kuku 适配器已注册')
+  const preloginModels = await kukuAdapter.listModels('kuku')
+  assert.ok(preloginModels.length > 0, '默认应展示未登录渠道的静态模型表')
+  process.env.DSH_HIDE_MODELS_WITHOUT_ACCOUNT = '1'
+  try {
+    assert.deepEqual(await kukuAdapter.listModels('kuku'), [], '显式隐藏时应返回空数组')
+  } finally {
+    delete process.env.DSH_HIDE_MODELS_WITHOUT_ACCOUNT
+  }
+  console.log('ok  未登录渠道默认展示静态模型（kuku 兜底表）；DSH_HIDE_MODELS_WITHOUT_ACCOUNT=1 时隐藏')
   assert.equal(writes.length, 0, 'mount neither creates nor deletes credentials')
   assert.equal(fetched.some(url => url.includes('opencode') || url.includes('models.dev')), false, 'no OpenCode capability/catalog warmup')
   assert.deepEqual(ctx.accountPool.listAccountsByProvider('opencode'), state.accounts, 'historical account data survives')
@@ -317,6 +331,8 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   await verifyMonkeyCodeWs()
   const { verifyChannelAdoptParsers } = await import('./channel-adopt-test.mjs')
   await verifyChannelAdoptParsers()
+  const { verifyAutoclawSms } = await import('./autoclaw-sms-test.mjs')
+  await verifyAutoclawSms()
   // OAuth 渠道后台登录失败必须让 login.poll 拿到可读原因（本用例只用
   // directLane 注入的本地替身上游，不出网）。
   const { verifyChannelOauthFailure } = await import('./channel-oauth-failure-test.mjs')

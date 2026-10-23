@@ -28,6 +28,13 @@ const SEND_CODE_PATH = '/userapi/v1/agent-send-code'
 const LOGIN_PATH = '/userapi/v1/agent-login'
 const PHONE_RE = /^1[3-9]\d{9}$/
 
+/** 归一手机号：容忍空格/横线/`+86`/`86` 前缀（用户可能直接粘贴通讯录格式）。 */
+export function normalizePhone(raw) {
+  const digits = String(raw ?? '').replace(/[\s-]/g, '')
+  const local = digits.startsWith('+86') ? digits.slice(3) : digits.startsWith('86') && digits.length === 13 ? digits.slice(2) : digits
+  return PHONE_RE.test(local) ? local : ''
+}
+
 /** `X-Auth-Sign = md5(appId & timestamp & appKey)`，timestamp 为**秒**。 */
 export function sign(appId, timestamp, appKey) {
   return createHash('md5').update(`${appId}&${timestamp}&${appKey}`).digest('hex')
@@ -153,12 +160,14 @@ async function selftest() {
 }
 
 function parseArgs(argv) {
-  const args = { send: false, selftest: false, phone: '', device: '', base: DEFAULT_BASE }
+  const args = { send: false, login: false, selftest: false, phone: '', code: '', device: '', base: DEFAULT_BASE }
   for (let index = 2; index < argv.length; index += 1) {
     const flag = argv[index]
     if (flag === '--send') args.send = true
     else if (flag === '--selftest') args.selftest = true
     else if (flag === '--phone') args.phone = argv[++index] ?? ''
+    else if (flag === '--login') args.login = true
+    else if (flag === '--code') args.code = argv[++index] ?? ''
     else if (flag === '--device') args.device = argv[++index] ?? ''
     else if (flag === '--base') args.base = argv[++index] ?? DEFAULT_BASE
     else throw new Error(`未知参数：${flag}`)
@@ -169,11 +178,25 @@ function parseArgs(argv) {
 async function main() {
   const args = parseArgs(process.argv)
   if (args.selftest) return selftest()
-  if (args.send) {
-    if (!PHONE_RE.test(args.phone)) throw new Error('--send 需要 --phone 且为 11 位手机号')
+  const phone = normalizePhone(args.phone)
+  if ((args.send || args.login) && phone === '') throw new Error('需要 --phone（11 位手机号，可带 +86）')
+  if (args.login) {
+    if (!/^\d{4,8}$/.test(args.code)) throw new Error('--login 需要 --code（短信验证码）')
     const deviceId = args.device || randomUUID()
-    console.log(`⚠️  将向 ${args.phone} 真实发送一条短信（device_id=${deviceId}）`)
-    const sent = await post(args.base, SEND_CODE_PATH, sendCodeBody(args.phone, deviceId))
+    const result = await post(args.base, LOGIN_PATH, loginBody(phone, args.code, deviceId))
+    const credential = toCredential(result.data, deviceId, phone)
+    const mask = (value) => (value.length <= 12 ? '***' : `${value.slice(0, 6)}…${value.slice(-4)}（${value.length} 字符）`)
+    console.log('ok  agent-login 成功')
+    console.log(`  access_token: ${mask(credential.access_token)}`)
+    console.log(`  refresh_token: ${credential.refresh_token ? mask(credential.refresh_token) : '（无）'}`)
+    console.log(`  expires_at: ${credential.expires_at ? new Date(credential.expires_at).toISOString() : '（未声明，按需续期）'}`)
+    console.log(`  user_id: ${credential.user_id ?? '（无）'}  user_phone: ${credential.user_phone ?? phone}`)
+    return
+  }
+  if (args.send) {
+    const deviceId = args.device || randomUUID()
+    console.log(`⚠️  将向 ${phone} 真实发送一条短信（device_id=${deviceId}）`)
+    const sent = await post(args.base, SEND_CODE_PATH, sendCodeBody(phone, deviceId))
     console.log(`发码成功：code=${sent.code}（msgid 由上游短信下发，本端点不返回）`)
     console.log('下一步：拿到验证码后调用 agent-login，或等实现接入插件后走 UI。')
     return

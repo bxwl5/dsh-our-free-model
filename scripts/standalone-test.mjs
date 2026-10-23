@@ -6,6 +6,11 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
+// 这些用例断言的是「免密车道 + Kilo」的目录形状（合并 / 隐藏过滤），与
+// 「未登录渠道是否可见」无关；显式关闭可见性保持期望稳定。
+// 默认可见性（未登录也列静态模型表）由 channel-pack-test 的 kuku 断言覆盖。
+process.env.DSH_HIDE_MODELS_WITHOUT_ACCOUNT = '1'
+
 const root = fileURLToPath(new URL('..', import.meta.url))
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'ofm-standalone-'))
 const dataDir = path.join(scratch, 'standalone')

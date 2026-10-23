@@ -43,7 +43,7 @@ function parseDocTiers() {
   return tiers
 }
 
-const CLIENT_TO_TIER = { browser: '✅', 'browser+sms': '⚠️', cookie: '❌', token: '❌' }
+const CLIENT_TO_TIER = { browser: '✅', 'browser+sms': '⚠️', cookie: '❌', token: '❌', sms: '✅' }
 
 const client = parseClientLogins()
 const adoptable = parseAdoptableChannels()
@@ -56,11 +56,19 @@ for (const [id, login] of client) {
 }
 
 // ── 2) 粘贴表与会话/文档三方对齐 ──
-assert.deepEqual(
-  [...adoptable].sort(),
-  [...client].filter(([, login]) => login === 'cookie' || login === 'token').map(([id]) => id).sort(),
-  'ADOPTABLE_CHANNELS 必须正好等于界面声明的 cookie/token 渠道',
-)
+// 纯粘贴渠道必须都在 ADOPTABLE_CHANNELS 里；反向允许 `sms` 渠道保留粘贴兜底
+// （AutoClaw 的 appKey 是逆向常数，失效时用户仍可回到粘贴令牌）。
+const pasteChannels = [...client].filter(([, login]) => login === 'cookie' || login === 'token').map(([id]) => id)
+for (const id of pasteChannels) {
+  assert.ok(adoptable.has(id), `${id} 是纯粘贴渠道，必须在 ADOPTABLE_CHANNELS 里`)
+}
+for (const id of adoptable) {
+  const kind = client.get(id)
+  assert.ok(
+    kind === 'cookie' || kind === 'token' || kind === 'sms',
+    `${id} 的 login='${kind}' 不应出现在粘贴表（只允许 cookie/token，或 sms 的兜底）`,
+  )
+}
 
 // ── 3) 文档覆盖：id 集合与界面一致，档位与 login 一致 ──
 assert.deepEqual([...doc.keys()].sort(), [...client.keys()].sort(), '文档总表的渠道集合与 client.js 不一致')

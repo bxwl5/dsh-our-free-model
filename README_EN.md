@@ -81,17 +81,18 @@ The settings page has seven parts: free models, channels, token savers, routing,
 | OrcaTerm | paste cookie (`ot_session`) | ✅ |
 | KukuAI | paste cookie (`BDUSS`) | ✅ |
 | MonkeyCode | paste cookie (`nebula_session`) | ✅ |
-| AutoClaw / AutoClaw Intl | paste token | ✅ |
+| AutoClaw (CN) | phone + SMS code | ✅ |
+| AutoClaw Intl | paste token | ✅ |
 
 **On paste-based channels** — these upstreams expose no scriptable authorization flow. Sign in on the official site first, then copy the cookie or token out of the browser's developer tools.
 
-**On AutoClaw** — its OAuth flow hard-requires the Aliyun CAPTCHA SDK (`AliyunCaptcha.js`, scenario `sq51tr`), which the plugin cannot complete on its own, hence the pasted-token route.
+**On AutoClaw** — the mainland site signs in with a **phone number plus SMS code** (no browser; "paste a token instead" still works). The international site's OAuth hard-requires the Aliyun CAPTCHA SDK (`AliyunCaptcha.js`, scenario `sq51tr`), which the plugin cannot complete on its own, hence the pasted-token route there.
 
-**Can't see a channel's models?** The picker only lists models of channels you are signed in to;
-a channel with no usable account is hidden as a whole, so the list does not fill up with rows that
-cannot work. Add an account to see them; or, to browse without signing in, set the
-`DSH_HIDE_MODELS_WITHOUT_ACCOUNT` environment variable to `0` and signed-out channels list their
-static catalog (using them still requires a sign-in). Per-channel sign-in methods:
-[docs/channel-login-methods.md](docs/channel-login-methods.md).
+**Can't see a channel's models?** Every account channel is listed by default: a signed-out channel
+shows its static catalog, and the next time you open the picker after signing in it refreshes to the
+full remote catalog (remote results are only cached on a successful fetch, never replaced by the
+fallback). The only exception is `zcode`, which needs a credential to know its catalog. To restore
+the old "hide signed-out channels" behaviour, set `DSH_HIDE_MODELS_WITHOUT_ACCOUNT=1`. Per-channel
+sign-in methods: [docs/channel-login-methods.md](docs/channel-login-methods.md).
 
 MIT, see [LICENSE](LICENSE). This project has no affiliation with, and no endorsement from, any model provider.
