@@ -91,9 +91,12 @@ async function main() {
       const url = new URL(started.loginUrl)
       const state = url.searchParams.get('state')
       assert.ok(state, '授权 URL 必须带 state')
+      // 授权 URL 对齐官方 CLI：新路径 + 127.0.0.1 回调 + mode=redirect。
+      assert.equal(url.pathname, '/studio/auth/cli', '旧 /cli/authorize 已 404，必须用新路径')
+      assert.equal(url.searchParams.get('mode'), 'redirect')
       const cbParam = url.searchParams.get('callback')
-      if (cbParam !== `http://localhost:${started.port}/callback`) console.error('DEBUG callback:', JSON.stringify(cbParam), 'port:', started.port)
-      assert.equal(cbParam, `http://localhost:${started.port}/callback`)
+      if (cbParam !== `http://127.0.0.1:${started.port}/callback`) console.error('DEBUG callback:', JSON.stringify(cbParam), 'port:', started.port)
+      assert.equal(cbParam, `http://127.0.0.1:${started.port}/callback`)
 
       // 错误 state 必须被拒绝（400），且不影响后续正确回调。
       const badState = await new Promise((resolve, reject) => {
@@ -137,6 +140,29 @@ async function main() {
       await assert.rejects(() => bad.result, /401|无效/)
     } finally {
       await bad.close()
+    }
+
+    // ── 官方 Studio 当前主形状：application/x-www-form-urlencoded 回调 ──
+    const formLogin = await startCommandCodeLogin({ product, fetcher: realFetch, timeoutMs: 5000 })
+    try {
+      const state = new URL(formLogin.loginUrl).searchParams.get('state')
+      const formStatus = await new Promise((resolve, reject) => {
+        const body = new URLSearchParams({
+          apiKey: 'good-key', state, userId: 'u-1', userName: 'alice', keyName: 'cli',
+        }).toString()
+        const req = http.request(`http://127.0.0.1:${formLogin.port}${COMMANDCODE_CALLBACK_PATH}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Connection: 'close' },
+        }, res => { res.resume(); resolve(res.statusCode) })
+        req.on('error', reject)
+        req.end(body)
+      })
+      assert.equal(formStatus, 200, 'form-urlencoded 回调返回 200')
+      const { credential } = await formLogin.result
+      assert.equal(credential.access_token, 'good-key')
+      assert.equal(credential.account_id, 'u-1')
+      assert.equal(credential.nickname, 'alice')
+    } finally {
+      await formLogin.close()
     }
 
     // ── 超时 ──

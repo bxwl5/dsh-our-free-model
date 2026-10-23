@@ -27849,7 +27849,7 @@ var init_commandcode_product = __esm({
       fallbackModels: COMMANDCODE_FALLBACK_MODELS
     };
     ALL_COMMANDCODE_PRODUCTS = [COMMANDCODE];
-    COMMANDCODE_STUDIO_AUTH_PATH = "/cli/authorize";
+    COMMANDCODE_STUDIO_AUTH_PATH = "/studio/auth/cli";
     COMMANDCODE_WHOAMI_PATH = "/alpha/whoami";
     COMMANDCODE_CREDITS_PATH = "/alpha/billing/credits";
     COMMANDCODE_MODELS_PATH = "/provider/v1/models";
@@ -27923,9 +27923,9 @@ function isCredentialUsable(credential) {
   return typeof key === "string" && key !== "" && key === key.trim();
 }
 function buildCommandCodeAuthUrl(product, port, state) {
-  const callback = `http://localhost:${port}/callback`;
-  const query = new URLSearchParams({ callback, state });
-  return `${product.studioBase}/cli/authorize?${query.toString()}`;
+  const callback = `http://127.0.0.1:${port}/callback`;
+  const query = new URLSearchParams({ callback, state, mode: "redirect" });
+  return `${product.studioBase}${COMMANDCODE_STUDIO_AUTH_PATH}?${query.toString()}`;
 }
 function parseCallbackCredentials(value) {
   if (!isRecord2(value)) return void 0;
@@ -27945,6 +27945,7 @@ function parseCallbackCredentials(value) {
 var init_commandcode = __esm({
   "vendor/channel-pack/src/commandcode.ts"() {
     "use strict";
+    init_commandcode_product();
   }
 });
 
@@ -28054,12 +28055,18 @@ async function startCommandCodeLogin(options) {
     request2.on("end", () => {
       if (aborted) return;
       void (async () => {
+        const raw = Buffer.concat(chunks).toString("utf8");
+        const contentType = String(request2.headers["content-type"] ?? "").toLowerCase();
         let payload;
-        try {
-          payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-        } catch {
-          response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" }).end("\u767B\u5F55\u56DE\u8C03\u4E0D\u662F\u5408\u6CD5 JSON");
-          return;
+        if (contentType.includes("application/x-www-form-urlencoded")) {
+          payload = Object.fromEntries(new URLSearchParams(raw));
+        } else {
+          try {
+            payload = JSON.parse(raw);
+          } catch {
+            response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" }).end("\u767B\u5F55\u56DE\u8C03\u4E0D\u662F\u5408\u6CD5 JSON");
+            return;
+          }
         }
         const gotState = payload?.state;
         if (gotState !== state) {

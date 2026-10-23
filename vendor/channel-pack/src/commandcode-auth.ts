@@ -42,7 +42,14 @@ import {
   type CommandCodeCredits,
 } from './commandcode.js'
 
-/** 回调路径。Studio 授权完成后会 POST 到这个路径。 */
+/**
+ * 回调路径。Studio 授权完成后会 POST 到这个路径。
+ *
+ * 载荷形状两种都接（官方 CLI `command-code@1.87.3` 的 createAuthServer 同样双形状）：
+ * - `application/json`：`{ apiKey, state, userId, userName, keyName }`（官方称 legacy，仍收）；
+ * - `application/x-www-form-urlencoded`：官方 Studio 授权页当前的表单回发形状。
+ *   字段名完全相同；只认 JSON 会让表单回发在浏览器里报「不是合法 JSON」。
+ */
 export const COMMANDCODE_CALLBACK_PATH = '/callback'
 
 /** 打开浏览器的注入点（测试可替换）。 */
@@ -222,12 +229,20 @@ export async function startCommandCodeLogin(options: CommandCodeLoginOptions): P
     request.on('end', () => {
       if (aborted) return
       void (async () => {
+        const raw = Buffer.concat(chunks).toString('utf8')
+        const contentType = String(request.headers['content-type'] ?? '').toLowerCase()
         let payload: unknown
-        try {
-          payload = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-        } catch {
-          response.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }).end('登录回调不是合法 JSON')
-          return
+        if (contentType.includes('application/x-www-form-urlencoded')) {
+          // 官方 Studio 授权页当前用表单回发（官方 CLI 的 handleBrowserCallback
+          // 正是按 URLSearchParams 解析）；JSON 形状官方仍收，两种都接。
+          payload = Object.fromEntries(new URLSearchParams(raw))
+        } else {
+          try {
+            payload = JSON.parse(raw)
+          } catch {
+            response.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }).end('登录回调不是合法 JSON')
+            return
+          }
         }
         const gotState = (payload as Record<string, unknown> | null)?.state
         if (gotState !== state) {

@@ -113,8 +113,15 @@ export function commandCodeProductById(id: string): CommandCodeProduct | undefin
 // ── 端点路径常量 ──
 // 抽成常量而非散落字面量：登录、模型、身份、计费四处都要用。
 
-/** 浏览器授权页路径（挂 `studioBase`）。 */
-export const COMMANDCODE_STUDIO_AUTH_PATH = '/cli/authorize'
+/**
+ * 浏览器授权页路径（挂 `studioBase`）。
+ *
+ * 依据官方 CLI `command-code@1.87.3` 的 `buildCommandAuthUrl`（源码原文）与
+ * 2026-10-23 LIVE 实测：`/studio/auth/cli` 未登录时 302 → `/signin?returnTo=…`，
+ * 旧 `/cli/authorize` 直接 404（官方 changelog 0.32.5「fix: CLI login UX and
+ * dead studio links (#1979)」）。
+ */
+export const COMMANDCODE_STUDIO_AUTH_PATH = '/studio/auth/cli'
 /** 身份校验（挂 `apiBase`）。 */
 export const COMMANDCODE_WHOAMI_PATH = '/alpha/whoami'
 /** 计费/额度（挂 `apiBase`）。 */

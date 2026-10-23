@@ -13,7 +13,7 @@
  * 3. **推理体是标准 OpenAI Chat Completions**，直接复用既有 SSE 解码。
  */
 
-import type { CommandCodeProduct } from './commandcode-product.js'
+import { COMMANDCODE_STUDIO_AUTH_PATH, type CommandCodeProduct } from './commandcode-product.js'
 
 /**
  * Command Code 凭据（持久化到 `ctx.credentials` 的 JSON）。
@@ -190,16 +190,24 @@ export function isCredentialUsable(credential: CommandCodeCredential | undefined
 /**
  * 构造浏览器授权 URL。
  *
- * 与官方 CLI 一致：`{studioBase}{authPath}?callback=<本地回调>&state=<防伪随机串>`
+ * 与官方 CLI（`command-code@1.87.3`）逐字对齐：
+ * `{studioBase}{authPath}?callback=<本地回调>&state=<防伪随机串>&mode=redirect`
+ *
+ * 三个事实来自官方 CLI `buildCommandAuthUrl` 源码 + 2026-10-23 LIVE 实测：
+ * - 授权路径是 `/studio/auth/cli`；旧的 `/cli/authorize` 已 404（死链）；
+ * - 官方回调地址用 `http://127.0.0.1:<port>/callback`，**不是** `localhost`。
+ *   本模块的回调服务器只 `listen(port, '127.0.0.1')`；在同时启用 IPv4/IPv6
+ *   的机器上 `localhost` 可能先解析到 `::1`，导致浏览器回调连不上；
+ * - URL 固定带 `mode=redirect`（官方登录流程从不传 `client` 参数）。
  *
  * @param product 产品配置
  * @param port 本地回调端口
  * @param state 一次性防伪串（回调必须原样带回）
  */
 export function buildCommandCodeAuthUrl(product: CommandCodeProduct, port: number, state: string): string {
-  const callback = `http://localhost:${port}/callback`
-  const query = new URLSearchParams({ callback, state })
-  return `${product.studioBase}/cli/authorize?${query.toString()}`
+  const callback = `http://127.0.0.1:${port}/callback`
+  const query = new URLSearchParams({ callback, state, mode: 'redirect' })
+  return `${product.studioBase}${COMMANDCODE_STUDIO_AUTH_PATH}?${query.toString()}`
 }
 
 /**

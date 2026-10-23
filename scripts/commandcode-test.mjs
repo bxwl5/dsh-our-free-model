@@ -55,8 +55,15 @@ async function main() {
 
   // ── 授权 URL ──
   const url = buildCommandCodeAuthUrl(COMMANDCODE, 5959, 'state-xyz')
-  assert.equal(url, 'https://commandcode.ai/cli/authorize?callback=http%3A%2F%2Flocalhost%3A5959%2Fcallback&state=state-xyz')
+  // 官方 CLI command-code@1.87.3 的 buildCommandAuthUrl 形状：
+  // /studio/auth/cli + callback=http://127.0.0.1:<port>/callback + state + mode=redirect。
+  assert.equal(
+    url,
+    'https://commandcode.ai/studio/auth/cli?callback=http%3A%2F%2F127.0.0.1%3A5959%2Fcallback&state=state-xyz&mode=redirect',
+  )
   assert.ok(url.startsWith(COMMANDCODE.studioBase), '授权页挂在 studioBase 下')
+  assert.ok(url.includes('/studio/auth/cli'), '旧 /cli/authorize 已 404，必须用新路径')
+  assert.ok(!url.includes('localhost'), '回调主机固定 127.0.0.1（回调服务器只绑 IPv4）')
 
   // ── 回调载荷 ──
   const cb = parseCallbackCredentials({ apiKey: 'k', state: 's', userId: 'u', userName: 'n', keyName: 'cli' })
