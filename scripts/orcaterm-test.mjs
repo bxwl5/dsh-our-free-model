@@ -14,11 +14,23 @@ async function main() {
   const { OrcaTermAdapter } = await import('../vendor/channel-pack/src/orcaterm-adapter.ts')
   const { fetch: realFetch } = await import('undici')
 
-  // ── Cookie 归一 ──
-  assert.equal(normalizeCookie('ot_session=abc; x=1'), 'ot_session=abc; x=1')
-  assert.equal(normalizeCookie('  ot_session=abc\r\n'), 'ot_session=abc')
+  // ── Cookie 归一（形状校验加固：长度/字符集/噪声清洗）──
+  assert.equal(normalizeCookie(`ot_session=0123456789abcdef0123456789abcdef; x=1`), `ot_session=0123456789abcdef0123456789abcdef; x=1`)
+  assert.equal(normalizeCookie(`  ot_session=0123456789abcdef0123456789abcdef\r\n`), `ot_session=0123456789abcdef0123456789abcdef`)
   assert.equal(normalizeCookie('foo=bar'), undefined)
-  assert.equal(isCredentialUsable({ access_token: 'ot_session=x' }), true)
+  assert.equal(normalizeCookie(`ot_session=abc; x=1`), undefined, '会话值过短拒绝')
+  assert.equal(normalizeCookie(`xot_session=0123456789abcdef0123456789abcdef`), undefined, '值内嵌会话字段名不算数')
+  assert.equal(normalizeCookie(`Cookie: ot_session=0123456789abcdef0123456789abcdef`), `ot_session=0123456789abcdef0123456789abcdef`, '剥 Cookie: 头名')
+  assert.equal(normalizeCookie(`Bearer ot_session=0123456789abcdef0123456789abcdef`), `ot_session=0123456789abcdef0123456789abcdef`, '剥 Bearer 前缀')
+  assert.equal(normalizeCookie(`"ot_session=0123456789abcdef0123456789abcdef"`), `ot_session=0123456789abcdef0123456789abcdef`, '剥成对引号')
+  assert.equal(
+    normalizeCookie(`ot_session=0123456789abcdef0123456789abcdef; Path=/; HttpOnly`),
+    `ot_session=0123456789abcdef0123456789abcdef`,
+    '剥尾部 Set-Cookie 属性段',
+  )
+  assert.equal(normalizeCookie(`ot_session=0123456789abcdef0123456789abcdef; 中文=x`), undefined, '非可打印 ASCII 拒绝')
+  assert.equal(normalizeCookie(`ot_session=0123456789abcdef0123456789abcdef; x=${'y'.repeat(9000)}`), undefined, '整串超长拒绝')
+  assert.equal(isCredentialUsable({ access_token: `ot_session=0123456789abcdef0123456789abcdef` }), true)
   assert.equal(isCredentialUsable({ access_token: 'x=1' }), false)
 
   // ── SSE 帧解析：四种形态 ──

@@ -1427,7 +1427,11 @@ function registerChannelPackEndpoints(
         const id = `${provider}-${shortId()}`
         const refName = `${provider.toUpperCase().replace(/-/g, '_')}_ACCOUNT_${shortId().toUpperCase()}`
         try {
-          await ctx.credentials.write(credentialRef(refName), JSON.stringify(parsed))
+          // ⚠️ host 的 credentials 契约只有 `set` / `unset` / `resolve` / `describe`
+          // （见 @deepseek-ai/dsh-credentials）。这里原先误写成 `write`（全仓仅此
+          // 一处），真实环境下 TypeError 会被下方 catch 吞成「凭据写入失败」，
+          // 导致 adopt 永远落不了盘 —— 与本文件其余 5 处 `credentials.set` 对齐。
+          await ctx.credentials.set(credentialRef(refName), JSON.stringify(parsed))
         } catch (error) {
           return { ok: false, error: { code: 'internal', message: `凭据写入失败：${error instanceof Error ? error.message : String(error)}` } }
         }

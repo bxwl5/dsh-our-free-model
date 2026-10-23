@@ -14,11 +14,23 @@ async function main() {
   const { KukuAdapter } = await import('../vendor/channel-pack/src/kuku-adapter.ts')
   const { fetch: realFetch } = await import('undici')
 
-  // ── Cookie 归一（BDUSS）──
-  assert.equal(normalizeCookie('BDUSS=abc; STOKEN=x'), 'BDUSS=abc; STOKEN=x')
-  assert.equal(normalizeCookie('  BDUSS=abc\r\n'), 'BDUSS=abc')
+  // ── Cookie 归一（BDUSS；形状校验加固：长度/字符集/噪声清洗）──
+  assert.equal(normalizeCookie(`BDUSS=abcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh; STOKEN=x`), `BDUSS=abcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh; STOKEN=x`)
+  assert.equal(normalizeCookie(`  BDUSS=abcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh\r\n`), `BDUSS=abcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh`)
   assert.equal(normalizeCookie('foo=bar'), undefined, '缺 BDUSS 拒绝')
-  assert.equal(isCredentialUsable({ access_token: 'BDUSS=x' }), true)
+  assert.equal(normalizeCookie(`BDUSS=abc; STOKEN=x`), undefined, 'BDUSS 过短拒绝')
+  assert.equal(normalizeCookie(`XBDUSS=abcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh`), undefined, '值内嵌字段名不算数')
+  assert.equal(normalizeCookie(`Cookie: BDUSS=abcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh`), `BDUSS=abcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh`, '剥 Cookie: 头名')
+  assert.equal(normalizeCookie(`Bearer BDUSS=abcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh`), `BDUSS=abcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh`, '剥 Bearer 前缀')
+  assert.equal(normalizeCookie(`"BDUSS=abcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh"`), `BDUSS=abcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh`, '剥成对引号')
+  assert.equal(
+    normalizeCookie(`BDUSS=abcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh; Path=/; Secure`),
+    `BDUSS=abcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh`,
+    '剥尾部 Set-Cookie 属性段',
+  )
+  assert.equal(normalizeCookie(`BDUSS=abcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh; 中文=x`), undefined, '非可打印 ASCII 拒绝')
+  assert.equal(normalizeCookie(`BDUSS=abcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh; x=${'y'.repeat(9000)}`), undefined, '整串超长拒绝')
+  assert.equal(isCredentialUsable({ access_token: `BDUSS=abcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh` }), true)
   assert.equal(isCredentialUsable({ access_token: 'x=1' }), false)
 
   // ── sendmsg 载荷 ──

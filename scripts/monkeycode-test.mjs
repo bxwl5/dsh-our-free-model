@@ -14,12 +14,25 @@ async function main() {
   const { MonkeyCodeAdapter } = await import('../vendor/channel-pack/src/monkeycode-adapter.ts')
   const { fetch: realFetch } = await import('undici')
 
-  // ── Cookie 归一 ──
-  assert.equal(normalizeCookie(`nebula_session=abc; _ga=x`), 'nebula_session=abc; _ga=x')
-  assert.equal(normalizeCookie(`  nebula_session=abc\r\n  `), 'nebula_session=abc', '换行被清理')
+  // ── Cookie 归一（形状校验加固：长度/字符集/噪声清洗）──
+  assert.equal(normalizeCookie(`nebula_session=0123456789abcdef0123456789abcdef; _ga=x`), `nebula_session=0123456789abcdef0123456789abcdef; _ga=x`)
+  assert.equal(normalizeCookie(`  nebula_session=0123456789abcdef0123456789abcdef\r\n  `), `nebula_session=0123456789abcdef0123456789abcdef`, '换行被清理')
   assert.equal(normalizeCookie('foo=bar'), undefined, '缺会话字段拒绝')
   assert.equal(normalizeCookie(''), undefined)
-  assert.equal(isCredentialUsable({ access_token: 'nebula_session=x' }), true)
+  assert.equal(normalizeCookie(`nebula_session=abc; _ga=x`), undefined, '会话值过短拒绝')
+  assert.equal(normalizeCookie(`xnebula_session=0123456789abcdef0123456789abcdef`), undefined, '值内嵌会话字段名不算数')
+  assert.equal(normalizeCookie(`Cookie: nebula_session=0123456789abcdef0123456789abcdef`), `nebula_session=0123456789abcdef0123456789abcdef`, '剥 Cookie: 头名')
+  assert.equal(normalizeCookie(`Bearer nebula_session=0123456789abcdef0123456789abcdef`), `nebula_session=0123456789abcdef0123456789abcdef`, '剥 Bearer 前缀')
+  assert.equal(normalizeCookie(`"nebula_session=0123456789abcdef0123456789abcdef"`), `nebula_session=0123456789abcdef0123456789abcdef`, '剥成对引号')
+  assert.equal(
+    normalizeCookie(`nebula_session=0123456789abcdef0123456789abcdef; Path=/; HttpOnly; Secure`),
+    `nebula_session=0123456789abcdef0123456789abcdef`,
+    '剥尾部 Set-Cookie 属性段',
+  )
+  assert.equal(normalizeCookie(`nebula_session=0123456789abcdef0123456789abcdef; _ga=x; Path=/`), `nebula_session=0123456789abcdef0123456789abcdef; _ga=x`, '属性段只剥尾部')
+  assert.equal(normalizeCookie(`nebula_session=0123456789abcdef0123456789abcdef; 中文=x`), undefined, '非可打印 ASCII 拒绝')
+  assert.equal(normalizeCookie(`nebula_session=0123456789abcdef0123456789abcdef; x=${'y'.repeat(9000)}`), undefined, '整串超长拒绝')
+  assert.equal(isCredentialUsable({ access_token: `nebula_session=0123456789abcdef0123456789abcdef` }), true)
   assert.equal(isCredentialUsable({ access_token: 'other=x' }), false)
 
   // ── 信封剥离 ──
@@ -68,13 +81,13 @@ async function main() {
 
   try {
     // ── 登录 ──
-    const cred = await loginWithCookie(realFetch, product, 'nebula_session=good')
+    const cred = await loginWithCookie(realFetch, product, 'nebula_session=good-token-0123456789abcdef')
     assert.equal(cred.account_id, 'u-1')
     assert.equal(cred.nickname, 'alice')
     // 无效 Cookie 抛错
     await assert.rejects(() => loginWithCookie(realFetch, product, 'foo=bar'), /nebula_session/)
     mode = 'expired'
-    await assert.rejects(() => loginWithCookie(realFetch, product, 'nebula_session=bad'), /无效或已过期/)
+    await assert.rejects(() => loginWithCookie(realFetch, product, 'nebula_session=bad-token-0123456789abcdef'), /无效或已过期/)
     mode = 'ok'
 
     // ── 钱包 / 模型 / 签到 ──

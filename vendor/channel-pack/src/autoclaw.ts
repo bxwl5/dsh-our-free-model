@@ -66,11 +66,35 @@ export function chatEndpoint(product: AutoClawProduct): string {
   return `${product.apiBase}${product.proxyPrefix}/chat/completions`
 }
 
-/** 从凭据 JSON 解析（字段名兼容多种拼写）。 */
+/** 访问令牌的长度上下限（形状检查，不联网）。 */
+const TOKEN_MIN = 16
+const TOKEN_MAX = 4096
+
+/** 清洗并校验一个 Bearer 访问令牌；形状不合法返回 `undefined`。 */
+function normalizeAccessToken(raw: string): string | undefined {
+  let token = raw.trim()
+  token = token.replace(/^bearer\s+/i, '')
+  token = token.replace(/^"([^"]*)"$/, '$1').trim()
+  if (token.length < TOKEN_MIN || token.length > TOKEN_MAX) return undefined
+  if (!/^[\x21-\x7E]+$/.test(token)) return undefined
+  return token
+}
+
+/**
+ * 从凭据 JSON 解析（字段名兼容多种拼写）。
+ *
+ * `access_token` 经 {@link normalizeAccessToken} 清洗与形状校验 ——
+ * `account.adopt` 粘贴的令牌常带 `Bearer ` 前缀、成对引号或首尾空白；
+ * 长度 16–4096、可打印 ASCII 无空白，不满足即拒绝（`abc` 这种短值
+ * 收下也只会换来一次上游 401）。智谱系 API key 形如 `id.secret`，
+ * 实测远长于下限 16。
+ */
 export function parseCredential(value: unknown): AutoClawCredential | undefined {
   if (!isRecord(value)) return undefined
-  const token = stringValue(value.access_token) ?? stringValue(value.accessToken)
+  const tokenRaw = stringValue(value.access_token) ?? stringValue(value.accessToken)
     ?? stringValue(value.token)
+  if (tokenRaw === undefined) return undefined
+  const token = normalizeAccessToken(tokenRaw)
   if (token === undefined) return undefined
   const expiresRaw = value.expire_time ?? value.expiresAt ?? value.expires_at
   const expireTime = typeof expiresRaw === 'number' && Number.isFinite(expiresRaw)

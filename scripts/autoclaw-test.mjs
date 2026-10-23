@@ -18,10 +18,19 @@ async function main() {
   assert.equal(isCredentialUsable({ access_token: ' tok ' }), false)
   assert.equal(isCredentialExpired({ access_token: 't', expire_time: Date.now() - 1 }), true)
   assert.equal(isCredentialExpired({ access_token: 't' }), false)
-  assert.equal(parseCredential({ accessToken: 'a' }).access_token, 'a', '驼峰兼容')
-  assert.equal(parseCredential({ token: 'b' }).access_token, 'b', 'token 字段兼容')
+  assert.equal(parseCredential({ accessToken: 'autoclaw-token-1234567890' }).access_token, 'autoclaw-token-1234567890', '驼峰兼容')
+  assert.equal(parseCredential({ token: 'autoclaw-token-1234567890' }).access_token, 'autoclaw-token-1234567890', 'token 字段兼容')
   assert.equal(parseCredential({}), undefined)
-  assert.equal(parseCredential({ token: 'c', expiresAt: 1_700_000_000 }).expire_time, 1_700_000_000_000, '秒级抬毫秒')
+  assert.equal(parseCredential({ token: 'c0123456789abcdef', expiresAt: 1_700_000_000 }).expire_time, 1_700_000_000_000, '秒级抬毫秒')
+  // 形状校验加固：长度下限 16 拒短值；噪声清洗（Bearer/空白/引号/换行）；字符集可打印 ASCII
+  assert.equal(parseCredential({ token: 'abc' }), undefined, '过短令牌拒绝')
+  assert.equal(parseCredential({ token: `Bearer autoclaw-token-1234567890` }).access_token, 'autoclaw-token-1234567890', '剥 Bearer 前缀')
+  assert.equal(parseCredential({ token: `  autoclaw-token-1234567890  ` }).access_token, 'autoclaw-token-1234567890', '剥首尾空白')
+  assert.equal(parseCredential({ token: `"autoclaw-token-1234567890"` }).access_token, 'autoclaw-token-1234567890', '剥成对引号')
+  assert.equal(parseCredential({ token: `autoclaw-token-1234567890\n` }).access_token, 'autoclaw-token-1234567890', '剥尾部换行')
+  assert.equal(parseCredential({ token: `autoclaw-token-1234567890中文` }), undefined, '非 ASCII 拒绝')
+  assert.equal(parseCredential({ token: 'x'.repeat(5000) }), undefined, '超长令牌拒绝')
+  assert.equal(parseCredential({ token: `autoclaw-token-1234567890 autoclaw-token-1234567890` }), undefined, '含空白的令牌拒绝（Bearer 头值不允许空白）')
 
   // ── ⚠️ 认证头是 X-Authorization ──
   const h = autoClawHeaders(AUTOCLAW, { access_token: 'tok' })
