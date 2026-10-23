@@ -104,12 +104,12 @@ export class CommandCodeAuth extends Service {
 
   /** 写入凭据（覆盖）。 */
   async save(credential: CommandCodeCredential): Promise<void> {
-    await this.ctx.credentials.write(this.credentialRefName, JSON.stringify(credential))
+    await this.ctx.credentials.set(this.credentialRefName, JSON.stringify(credential))
   }
 
   /** 删除凭据（登出）。 */
   async logout(): Promise<void> {
-    await this.ctx.credentials.delete?.(this.credentialRefName)
+    await this.ctx.credentials.unset(this.credentialRefName)
   }
 
   /**

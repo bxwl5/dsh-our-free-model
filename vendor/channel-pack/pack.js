@@ -44439,11 +44439,11 @@ var CommandCodeAuth = class extends Service {
   }
   /** 写入凭据（覆盖）。 */
   async save(credential) {
-    await this.ctx.credentials.write(this.credentialRefName, JSON.stringify(credential));
+    await this.ctx.credentials.set(this.credentialRefName, JSON.stringify(credential));
   }
   /** 删除凭据（登出）。 */
   async logout() {
-    await this.ctx.credentials.delete?.(this.credentialRefName);
+    await this.ctx.credentials.unset(this.credentialRefName);
   }
   /**
    * 启动登录并返回授权 URL（**不等待**用户完成）。
@@ -44548,11 +44548,35 @@ function unwrapData(value) {
   if ("data" in value && isRecord3(value.data)) return value.data;
   return value;
 }
+var SESSION_VALUE_MIN = 20;
+var SESSION_VALUE_MAX = 4096;
+var COOKIE_MAX = 8192;
+var SET_COOKIE_ATTRIBUTE = /^(?:path|domain|expires|max-age|secure|httponly|samesite|priority|partitioned|comment)$/i;
+function stripSetCookieAttributes(text) {
+  const parts = text.split(";");
+  let end = parts.length;
+  while (end > 1) {
+    const name2 = parts[end - 1].trim().split("=")[0].trim();
+    if (SET_COOKIE_ATTRIBUTE.test(name2)) end -= 1;
+    else break;
+  }
+  return parts.slice(0, end).join(";").trim();
+}
 function normalizeCookie(raw) {
-  const trimmed = raw.replace(/[\r\n]+/g, " ").trim();
-  if (trimmed === "") return void 0;
-  if (!trimmed.includes(`${MONKEYCODE_SESSION_COOKIE}=`)) return void 0;
-  return trimmed;
+  let text = raw.replace(/[\r\n]+/g, " ").trim();
+  text = text.replace(/^cookie\s*:\s*/i, "").replace(/^bearer\s+/i, "");
+  text = text.replace(/^"([^"]*)"$/, "$1").trim();
+  text = stripSetCookieAttributes(text);
+  if (text === "") return void 0;
+  if (text.length > COOKIE_MAX) return void 0;
+  if (!/^[\x20-\x7E]+$/.test(text)) return void 0;
+  const prefix = `${MONKEYCODE_SESSION_COOKIE}=`;
+  const hit = text.split(";").find((part) => part.trim().startsWith(prefix));
+  if (hit === void 0) return void 0;
+  const value = hit.trim().slice(prefix.length).trim();
+  if (value.length < SESSION_VALUE_MIN || value.length > SESSION_VALUE_MAX) return void 0;
+  if (!/^[\x21-\x7E]+$/.test(value)) return void 0;
+  return text;
 }
 function isCredentialUsable2(credential) {
   if (credential === void 0) return false;
@@ -45265,11 +45289,35 @@ function stringValue4(value) {
 function isRecord5(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+var SESSION_VALUE_MIN2 = 20;
+var SESSION_VALUE_MAX2 = 4096;
+var COOKIE_MAX2 = 8192;
+var SET_COOKIE_ATTRIBUTE2 = /^(?:path|domain|expires|max-age|secure|httponly|samesite|priority|partitioned|comment)$/i;
+function stripSetCookieAttributes2(text) {
+  const parts = text.split(";");
+  let end = parts.length;
+  while (end > 1) {
+    const name2 = parts[end - 1].trim().split("=")[0].trim();
+    if (SET_COOKIE_ATTRIBUTE2.test(name2)) end -= 1;
+    else break;
+  }
+  return parts.slice(0, end).join(";").trim();
+}
 function normalizeCookie2(raw) {
-  const trimmed = raw.replace(/[\r\n]+/g, " ").trim();
-  if (trimmed === "") return void 0;
-  if (!trimmed.includes(`${ORCATERM_SESSION_COOKIE}=`)) return void 0;
-  return trimmed;
+  let text = raw.replace(/[\r\n]+/g, " ").trim();
+  text = text.replace(/^cookie\s*:\s*/i, "").replace(/^bearer\s+/i, "");
+  text = text.replace(/^"([^"]*)"$/, "$1").trim();
+  text = stripSetCookieAttributes2(text);
+  if (text === "") return void 0;
+  if (text.length > COOKIE_MAX2) return void 0;
+  if (!/^[\x20-\x7E]+$/.test(text)) return void 0;
+  const prefix = `${ORCATERM_SESSION_COOKIE}=`;
+  const hit = text.split(";").find((part) => part.trim().startsWith(prefix));
+  if (hit === void 0) return void 0;
+  const value = hit.trim().slice(prefix.length).trim();
+  if (value.length < SESSION_VALUE_MIN2 || value.length > SESSION_VALUE_MAX2) return void 0;
+  if (!/^[\x21-\x7E]+$/.test(value)) return void 0;
+  return text;
 }
 function isCredentialUsable3(credential) {
   if (credential === void 0) return false;
@@ -45551,11 +45599,35 @@ function stringValue5(value) {
 function isRecord6(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+var SESSION_VALUE_MIN3 = 20;
+var SESSION_VALUE_MAX3 = 4096;
+var COOKIE_MAX3 = 8192;
+var SET_COOKIE_ATTRIBUTE3 = /^(?:path|domain|expires|max-age|secure|httponly|samesite|priority|partitioned|comment)$/i;
+function stripSetCookieAttributes3(text) {
+  const parts = text.split(";");
+  let end = parts.length;
+  while (end > 1) {
+    const name2 = parts[end - 1].trim().split("=")[0].trim();
+    if (SET_COOKIE_ATTRIBUTE3.test(name2)) end -= 1;
+    else break;
+  }
+  return parts.slice(0, end).join(";").trim();
+}
 function normalizeCookie3(raw) {
-  const trimmed = raw.replace(/[\r\n]+/g, " ").trim();
-  if (trimmed === "") return void 0;
-  if (!trimmed.includes(`${KUKU_SESSION_COOKIE}=`)) return void 0;
-  return trimmed;
+  let text = raw.replace(/[\r\n]+/g, " ").trim();
+  text = text.replace(/^cookie\s*:\s*/i, "").replace(/^bearer\s+/i, "");
+  text = text.replace(/^"([^"]*)"$/, "$1").trim();
+  text = stripSetCookieAttributes3(text);
+  if (text === "") return void 0;
+  if (text.length > COOKIE_MAX3) return void 0;
+  if (!/^[\x20-\x7E]+$/.test(text)) return void 0;
+  const prefix = `${KUKU_SESSION_COOKIE}=`;
+  const hit = text.split(";").find((part) => part.trim().startsWith(prefix));
+  if (hit === void 0) return void 0;
+  const value = hit.trim().slice(prefix.length).trim();
+  if (value.length < SESSION_VALUE_MIN3 || value.length > SESSION_VALUE_MAX3) return void 0;
+  if (!/^[\x21-\x7E]+$/.test(value)) return void 0;
+  return text;
 }
 function isCredentialUsable4(credential) {
   if (credential === void 0) return false;
@@ -46200,9 +46272,21 @@ function autoClawHeaders(product, credential) {
 function chatEndpoint(product) {
   return `${product.apiBase}${product.proxyPrefix}/chat/completions`;
 }
+var TOKEN_MIN = 16;
+var TOKEN_MAX = 4096;
+function normalizeAccessToken(raw) {
+  let token = raw.trim();
+  token = token.replace(/^bearer\s+/i, "");
+  token = token.replace(/^"([^"]*)"$/, "$1").trim();
+  if (token.length < TOKEN_MIN || token.length > TOKEN_MAX) return void 0;
+  if (!/^[\x21-\x7E]+$/.test(token)) return void 0;
+  return token;
+}
 function parseCredential2(value) {
   if (!isRecord9(value)) return void 0;
-  const token = stringValue8(value.access_token) ?? stringValue8(value.accessToken) ?? stringValue8(value.token);
+  const tokenRaw = stringValue8(value.access_token) ?? stringValue8(value.accessToken) ?? stringValue8(value.token);
+  if (tokenRaw === void 0) return void 0;
+  const token = normalizeAccessToken(tokenRaw);
   if (token === void 0) return void 0;
   const expiresRaw = value.expire_time ?? value.expiresAt ?? value.expires_at;
   const expireTime = typeof expiresRaw === "number" && Number.isFinite(expiresRaw) ? expiresRaw < 1e12 ? expiresRaw * 1e3 : expiresRaw : void 0;
@@ -64624,7 +64708,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
         const id = `${provider}-${shortId()}`;
         const refName = `${provider.toUpperCase().replace(/-/g, "_")}_ACCOUNT_${shortId().toUpperCase()}`;
         try {
-          await ctx.credentials.write(credentialRef13(refName), JSON.stringify(parsed));
+          await ctx.credentials.set(credentialRef13(refName), JSON.stringify(parsed));
         } catch (error) {
           return { ok: false, error: { code: "internal", message: `\u51ED\u636E\u5199\u5165\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}` } };
         }

@@ -10,6 +10,7 @@
  *    噪声凭据清洗后收下，落盘值即清洗值，账号池有条目。
  *    同时锁死 adopt 写入走 host 契约的 credentials.set（原实现误写成
  *    ctx.credentials.write —— 真实 host 没有该方法，adopt 落不了盘）。
+ *    第 3 层与加载方式无关，按上一条：源码与打包产物**两种模式都跑**。
  */
 import assert from 'node:assert/strict'
 
@@ -71,7 +72,14 @@ async function main() {
   console.log('ok  channel-adopt: 5 个粘贴型渠道有提示；解析函数合法/非法/噪声输入形状校验')
 }
 
-/** account.adopt RPC 端到端（需要 channel-pack-test.mjs 的 mount 环境）。 */
+/** account.adopt RPC 端到端（需要 channel-pack-test.mjs 的 mount 环境）。
+ *
+ * 只依赖 { call, creds }，与模块加载方式无关，故**源码与打包产物两种模式都要跑**。
+ * 产物（vendor/channel-pack/pack.js、packages/standalone/channels/business.mjs）
+ * 才是发布形态：这条用例就是「改了 src 却忘记重打包」的探测器 —— 历史缺口里
+ * 形状校验加固与 credentials.set 只进了 src，而本用例原先被 sourceMode 门控，
+ * 打包模式因此一路全绿。
+ */
 async function rpcProbes({ call, creds }) {
   const before = new Set(creds.keys())
   const keysNow = () => new Set(creds.keys())
@@ -121,7 +129,17 @@ async function rpcProbes({ call, creds }) {
   console.log('ok  channel-adopt RPC: 非法凭据 bad-request 拒收不落盘；噪声清洗后收下且落盘为清洗值；账号池有条目')
 }
 
-export async function verifyChannelAdopt({ call, creds } = {}) {
+/** 源码侧形状用例：直连 `src/*.ts`，只有 source 模式能加载。 */
+export async function verifyChannelAdoptParsers() {
   await main()
-  if (call) await rpcProbes({ call, creds })
+}
+
+/** 两种模式通用的 adopt RPC 端到端（发布形态探测器）。 */
+export async function verifyChannelAdoptRpc({ call, creds } = {}) {
+  await rpcProbes({ call, creds })
+}
+
+export async function verifyChannelAdopt({ call, creds } = {}) {
+  await verifyChannelAdoptParsers()
+  if (call) await verifyChannelAdoptRpc({ call, creds })
 }

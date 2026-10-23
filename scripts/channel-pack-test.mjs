@@ -115,7 +115,7 @@ try {
   apply(ctx, { disableOpencode: true })
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(adapters.has('opencode'), false, 'disabled account provider is not registered')
-  // 13 个既有渠道 + Command Code（新增）。
+  // 22 个账号渠道（OpenCode 由 disableOpencode 关闭不计入；已移除的粘贴型渠道不再注册）。
   assert.equal(adapters.size, 22, 'all other account providers remain registered')
   assert.equal(adapters.has('commandcode'), true, 'Command Code is registered')
   assert.equal(adapters.has('monkeycode'), true, 'MonkeyCode is registered')
@@ -127,7 +127,7 @@ try {
   assert.equal(adapters.has('autoclaw'), true, 'AutoClaw is registered')
   assert.equal(adapters.has('autoclaw-intl'), true, 'AutoClaw Intl is registered')
   verifyChannelImagePricing(adapters)
-  console.log('ok  十二渠道同步图片计价：缺失及默认方法兜底，厂商计价优先，重复图片与已卸载图片正确计数')
+  console.log('ok  22 个账号渠道同步图片计价：缺失及默认方法兜底，厂商计价优先，重复图片与已卸载图片正确计数')
   assert.equal(writes.length, 0, 'mount neither creates nor deletes credentials')
   assert.equal(fetched.some(url => url.includes('opencode') || url.includes('models.dev')), false, 'no OpenCode capability/catalog warmup')
   assert.deepEqual(ctx.accountPool.listAccountsByProvider('opencode'), state.accounts, 'historical account data survives')
@@ -153,7 +153,15 @@ try {
   }
   assert.equal((await call('account.list', { provider: 'opencode' })).value.accounts.length, 1)
   assert.equal(writes.length, 0, 'rejected RPCs leave credentials untouched')
-  console.log(`ok  ${sourceMode ? 'source modules' : 'generated pack'}: 12 providers, no OpenCode registration/warmup, historical data retained, account RPCs refused`)
+  console.log(`ok  ${sourceMode ? 'source modules' : 'generated pack'}: 22 providers, no OpenCode registration/warmup, historical data retained, account RPCs refused`)
+  // account.adopt 端到端必须在**两种模式**都跑：pack.js / business.mjs 才是发布形态，
+  // 改了 src 忘记重打包时只有这条断言能发现（历史缺口：形状校验加固与
+  // credentials.set 只进了 src、没进 pack.js，而 adopt 用例原先被 sourceMode
+  // 门控，打包模式因此全绿）。源码专用的解析函数直测仍留在 verifySourceRegressions。
+  {
+    const { verifyChannelAdoptRpc } = await import('./channel-adopt-test.mjs')
+    await verifyChannelAdoptRpc({ call, creds })
+  }
   if (sourceMode) await verifySourceRegressions({ ctx, adapters, call, creds })
   await verifyChannelCreditsRpc({ ctx, call, creds })
   console.log('ok  实际渠道 RPC：七渠道仅账号池凭据即可查余额，ZCode 账号池回退及缺凭据反馈')
@@ -236,10 +244,10 @@ try {
   assert.equal(cards.length, 22)
   assert.equal(cards.includes('opencode'), false)
   assert.deepEqual([...cards].sort(), [...adapters.keys()].sort(), 'UI and mounted account providers agree')
-  console.log('ok  actual channel page: 12 account cards, OpenCode removed')
+  console.log('ok  actual channel page: 22 account cards, OpenCode removed')
   await verifyChannelModelActions()
   await verifyChannelCreditsUi()
-  console.log('ok  共享渠道余额：十三渠道能力、失败原因、重试、签到反馈和请求交错')
+  console.log('ok  共享渠道余额（13 条额度契约）：能力、失败原因、重试、签到反馈和请求交错')
   console.log('ok  共享渠道卡片：批量开关、单次请求、重复点击保护和失败恢复')
 
   // The retained OFM anonymous lane still enumerates and streams without any
@@ -307,8 +315,8 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   // 以及「建任务 → 连 WS → 逐帧产出」的适配器端到端（本地假上游，不出网）。
   const { verifyMonkeyCodeWs } = await import('./monkeycode-ws-test.mjs')
   await verifyMonkeyCodeWs()
-  const { verifyChannelAdopt } = await import('./channel-adopt-test.mjs')
-  await verifyChannelAdopt({ call, creds })
+  const { verifyChannelAdoptParsers } = await import('./channel-adopt-test.mjs')
+  await verifyChannelAdoptParsers()
   // OAuth 渠道后台登录失败必须让 login.poll 拿到可读原因（本用例只用
   // directLane 注入的本地替身上游，不出网）。
   const { verifyChannelOauthFailure } = await import('./channel-oauth-failure-test.mjs')
