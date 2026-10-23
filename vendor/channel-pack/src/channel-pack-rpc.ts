@@ -1054,6 +1054,21 @@ function registerChannelPackEndpoints(
   const pendingLoginFailures = new Map<string, string>()
 
   /**
+   * 记录一条后台登录失败原因，供下一次 `login.poll` 读走。
+   *
+   * ⚠️ 此前有 12 个渠道的分支只 `logger.warn` + 删除占位账号：前端 `login.poll`
+   * 既看不到账号、也看不到失败表，只能干等 10 分钟超时并显示「登录已过期」，
+   * 真实原因（回调端口被占 / 授权被拒 / 网络失败 / state 失效）永远到不了用户眼前。
+   * `commandcode` / `officeace` / `accio` / `gemini` 四个分支早已这么写，这里统一。
+   */
+  const recordLoginFailure = (accountId: string, error: unknown): void => {
+    pendingLoginFailures.set(
+      accountId,
+      (error instanceof Error ? error.message : String(error)).slice(0, 500),
+    )
+  }
+
+  /**
    * 用量徽标的显示偏好（`$DSH_HOME/channel-pack/ui-preferences.json`）。
    *
    * ⚠️ 与账号池**分开**的独立文档：`state.json` 是整体替换语义，同机另一条工作区
@@ -1517,6 +1532,7 @@ function registerChannelPackEndpoints(
             })
           }).catch((err) => {
             ctx.logger.warn(`[channel-pack] background ${product.id} login failed for ${id}: ${err}`)
+            recordLoginFailure(id, err)
             // 登录失败：移除占位条目，避免留下无凭据的幽灵账号
             void pool.removeAccount(id).catch(() => {})
           })
@@ -1644,6 +1660,7 @@ function registerChannelPackEndpoints(
             })
           }).catch((error: unknown) => {
             ctx.logger.warn(`[channel-pack] background codearts login failed for ${id}: ${String(error)}`)
+            recordLoginFailure(id, error)
             // 登录失败：移除占位条目，避免留下无凭据的幽灵账号
             void pool.removeAccount(id).catch(() => {})
           })
@@ -1672,6 +1689,7 @@ function registerChannelPackEndpoints(
             })
           }).catch((error: unknown) => {
             ctx.logger.warn(`[channel-pack] background ${LOBSTERAI.id} login failed for ${id}: ${String(error)}`)
+            recordLoginFailure(id, error)
             void pool.removeAccount(id).catch(() => {})
           })
           return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } }
@@ -1720,6 +1738,7 @@ function registerChannelPackEndpoints(
             })
           }).catch((error: unknown) => {
             ctx.logger.warn(`[channel-pack] background ${product.id} login failed for ${id}: ${String(error)}`)
+            recordLoginFailure(id, error)
             // 登录失败：移除占位条目，避免留下无凭据的幽灵账号
             void pool.removeAccount(id).catch(() => {})
           })
@@ -1750,6 +1769,7 @@ function registerChannelPackEndpoints(
             })
           }).catch((error: unknown) => {
             ctx.logger.warn(`[channel-pack] background ${TRAE.id} login failed for ${id}: ${String(error)}`)
+            recordLoginFailure(id, error)
             // 登录失败：移除占位条目，避免留下无凭据的幽灵账号
             void pool.removeAccount(id).catch(() => {})
           })
@@ -1786,6 +1806,7 @@ function registerChannelPackEndpoints(
             })
           }).catch((error: unknown) => {
             ctx.logger.warn(`[channel-pack] background ${CLINE.id} login failed for ${id}: ${String(error)}`)
+            recordLoginFailure(id, error)
             // 登录失败：移除占位条目，避免留下无凭据的幽灵账号
             void pool.removeAccount(id).catch(() => {})
           })
@@ -1840,6 +1861,7 @@ function registerChannelPackEndpoints(
             })
           }).catch((error: unknown) => {
             ctx.logger.warn(`[channel-pack] background ${LOOMY.id} wechat login failed for ${id}: ${String(error)}`)
+            recordLoginFailure(id, error)
             // 登录失败：移除占位条目，避免留下无凭据的幽灵账号
             void pool.removeAccount(id).catch(() => {})
           })
@@ -1895,6 +1917,7 @@ function registerChannelPackEndpoints(
             })
           }).catch((error: unknown) => {
             ctx.logger.warn(`[channel-pack] background ${RACCOON.id} login failed for ${id}: ${String(error)}`)
+            recordLoginFailure(id, error)
             // 登录失败：移除占位条目，避免留下无凭据的幽灵账号
             void pool.removeAccount(id).catch(() => {})
           })
@@ -1949,6 +1972,7 @@ function registerChannelPackEndpoints(
             })
           }).catch((error: unknown) => {
             ctx.logger.warn(`[channel-pack] background ${MINIMAX.id} login failed for ${id}: ${String(error)}`)
+            recordLoginFailure(id, error)
             // 登录失败：移除占位条目，避免留下无凭据的幽灵账号
             void pool.removeAccount(id).catch(() => {})
           })
@@ -2057,6 +2081,7 @@ function registerChannelPackEndpoints(
             await pool.updateAccount(id, { nickname: `ZCode ${label}` })
           }).catch((error: unknown) => {
             ctx.logger.warn(`[channel-pack] background ${ZCODE.id} login failed for ${id}: ${String(error)}`)
+            recordLoginFailure(id, error)
             // 登录失败：移除占位条目，避免留下无凭据的幽灵账号
             void pool.removeAccount(id).catch(() => {})
           })

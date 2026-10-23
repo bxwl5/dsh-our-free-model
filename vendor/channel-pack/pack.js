@@ -64512,6 +64512,12 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
   };
   const pendingSmsMsgid = /* @__PURE__ */ new Map();
   const pendingLoginFailures = /* @__PURE__ */ new Map();
+  const recordLoginFailure = (accountId, error) => {
+    pendingLoginFailures.set(
+      accountId,
+      (error instanceof Error ? error.message : String(error)).slice(0, 500)
+    );
+  };
   const badgePreferences = createBadgePreferenceStore(ctx);
   const autoCheckin = createAutoCheckin({
     store: createAutoCheckinStore(ctx),
@@ -64776,6 +64782,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             });
           }).catch((err) => {
             ctx.logger.warn(`[channel-pack] background ${product.id} login failed for ${id}: ${err}`);
+            recordLoginFailure(id, err);
             void pool.removeAccount(id).catch(() => {
             });
           });
@@ -64889,6 +64896,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             });
           }).catch((error) => {
             ctx.logger.warn(`[channel-pack] background codearts login failed for ${id}: ${String(error)}`);
+            recordLoginFailure(id, error);
             void pool.removeAccount(id).catch(() => {
             });
           });
@@ -64915,6 +64923,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             });
           }).catch((error) => {
             ctx.logger.warn(`[channel-pack] background ${LOBSTERAI.id} login failed for ${id}: ${String(error)}`);
+            recordLoginFailure(id, error);
             void pool.removeAccount(id).catch(() => {
             });
           });
@@ -64948,6 +64957,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             });
           }).catch((error) => {
             ctx.logger.warn(`[channel-pack] background ${product2.id} login failed for ${id}: ${String(error)}`);
+            recordLoginFailure(id, error);
             void pool.removeAccount(id).catch(() => {
             });
           });
@@ -64975,6 +64985,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             });
           }).catch((error) => {
             ctx.logger.warn(`[channel-pack] background ${TRAE.id} login failed for ${id}: ${String(error)}`);
+            recordLoginFailure(id, error);
             void pool.removeAccount(id).catch(() => {
             });
           });
@@ -64999,6 +65010,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             });
           }).catch((error) => {
             ctx.logger.warn(`[channel-pack] background ${CLINE.id} login failed for ${id}: ${String(error)}`);
+            recordLoginFailure(id, error);
             void pool.removeAccount(id).catch(() => {
             });
           });
@@ -65035,6 +65047,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             });
           }).catch((error) => {
             ctx.logger.warn(`[channel-pack] background ${LOOMY.id} wechat login failed for ${id}: ${String(error)}`);
+            recordLoginFailure(id, error);
             void pool.removeAccount(id).catch(() => {
             });
           });
@@ -65079,6 +65092,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             });
           }).catch((error) => {
             ctx.logger.warn(`[channel-pack] background ${RACCOON.id} login failed for ${id}: ${String(error)}`);
+            recordLoginFailure(id, error);
             void pool.removeAccount(id).catch(() => {
             });
           });
@@ -65120,6 +65134,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             });
           }).catch((error) => {
             ctx.logger.warn(`[channel-pack] background ${MINIMAX.id} login failed for ${id}: ${String(error)}`);
+            recordLoginFailure(id, error);
             void pool.removeAccount(id).catch(() => {
             });
           });
@@ -65168,6 +65183,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             await pool.updateAccount(id, { nickname: `ZCode ${label}` });
           }).catch((error) => {
             ctx.logger.warn(`[channel-pack] background ${ZCODE.id} login failed for ${id}: ${String(error)}`);
+            recordLoginFailure(id, error);
             void pool.removeAccount(id).catch(() => {
             });
           });

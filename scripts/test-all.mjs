@@ -46,6 +46,8 @@ const suites = [
   ['channel-login', 'channel-login-test.mjs', []],
   // 登录方式矩阵的漂移守卫：文档 / client.js 的 login 字段 / ADOPTABLE_CHANNELS 三方一致。
   ['channel-login-methods', 'channel-login-methods-test.mjs', []],
+  // 后台登录失败必须上报给 login.poll（静态守卫，防新增分支只写日志）。
+  ['login-failure-reporting', 'login-failure-reporting-test.mjs', []],
   ['open-external', 'open-external-test.mjs', []],
   ['channel-image-pricing', 'channel-image-pricing-test.mjs', []],
   ['forward-boot', 'forward-boot-test.mjs', []],
