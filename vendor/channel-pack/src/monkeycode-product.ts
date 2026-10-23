@@ -82,6 +82,15 @@ export const MONKEYCODE_CHECKIN_PATH = '/api/v1/users/wallet/checkin'
 /** 平台可选模型。 */
 export const MONKEYCODE_MODELS_PATH = '/api/v1/users/models/available'
 
+/** 建任务（对话入口）。 */
+export const MONKEYCODE_TASKS_PATH = '/api/v1/users/tasks'
+/** 任务流 WebSocket。 */
+export const MONKEYCODE_STREAM_PATH = '/api/v1/users/tasks/stream'
+/** 公共 devbox 镜像 id（建任务必填）。 */
+export const MONKEYCODE_PUBLIC_IMAGE_ID = '2e214f06-79ba-4535-9ac1-89adc2d9c6cc'
+/** 公共托管主机占位符（建任务必填）。 */
+export const MONKEYCODE_PUBLIC_HOST = 'public_host'
+
 /** Cookie 名（登录后浏览器种下）。 */
 export const MONKEYCODE_SESSION_COOKIE = 'nebula_session'
 

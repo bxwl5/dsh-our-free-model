@@ -1432,14 +1432,24 @@ function registerChannelPackEndpoints(
         } catch (error) {
           return { ok: false, error: { code: 'internal', message: `凭据写入失败：${error instanceof Error ? error.message : String(error)}` } }
         }
+        // 昵称优先用凭据里已解析出的身份，退化为 provider 名。
+        // 只写 `provider` 会让账号列表显示成 "monkeycode" 这种 id，
+        // 用户分不清是哪个号（多账号时尤其明显）。
+        const nickname = typeof parsed.nickname === 'string' && parsed.nickname !== ''
+          ? parsed.nickname
+          : typeof parsed.account_id === 'string' && parsed.account_id !== ''
+            ? parsed.account_id
+            : provider
         await pool.addAccount({
           id,
           provider,
-          nickname: provider,
+          nickname,
           enabled: true,
           credentialRef: refName,
           createdAt: Date.now(),
-          refreshable: false,
+          // 有 refresh_token 的渠道（Accio）才可静默续期；
+          // Cookie 型渠道（MonkeyCode/OrcaTerm/KukuAI/CatPaw）只能重新粘贴。
+          refreshable: typeof parsed.refresh_token === 'string' && parsed.refresh_token !== '',
         })
         return { ok: true, value: { accountId: id } }
       }
@@ -1528,6 +1538,10 @@ function registerChannelPackEndpoints(
             })
           }).catch((err) => {
             ctx.logger.warn(`[channel-pack] background ${provider} login failed for ${id}: ${err}`)
+            // ⚠️ 只写日志不够：占位条目随即被删除，前端 `login.poll` 就再也拿不到
+            // 任何线索，只能干等到 10 分钟超时才显示「登录已过期」（本缺陷）。
+            // 与 codearts / gemini 同款：原因放进失败表，由下一次 poll 读走。
+            pendingLoginFailures.set(id, (err instanceof Error ? err.message : String(err)).slice(0, 500))
             void pool.removeAccount(id).catch(() => {})
           })
           return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } }
@@ -1559,6 +1573,10 @@ function registerChannelPackEndpoints(
             await pool.updateAccount(id, { nickname: credential.nickname ?? id })
           })().catch((err) => {
             ctx.logger.warn(`[channel-pack] background ${provider} login failed for ${id}: ${err}`)
+            // ⚠️ 只写日志不够：占位条目随即被删除，前端 `login.poll` 就再也拿不到
+            // 任何线索，只能干等到 10 分钟超时才显示「登录已过期」（本缺陷）。
+            // 与 codearts / gemini 同款：原因放进失败表，由下一次 poll 读走。
+            pendingLoginFailures.set(id, (err instanceof Error ? err.message : String(err)).slice(0, 500))
             void pool.removeAccount(id).catch(() => {})
           })
           return { ok: true, value: { accountId: id, loginUrl } }
@@ -1581,6 +1599,10 @@ function registerChannelPackEndpoints(
             })
           }).catch((err) => {
             ctx.logger.warn(`[channel-pack] background ${provider} login failed for ${id}: ${err}`)
+            // ⚠️ 只写日志不够：占位条目随即被删除，前端 `login.poll` 就再也拿不到
+            // 任何线索，只能干等到 10 分钟超时才显示「登录已过期」（本缺陷）。
+            // 与 codearts / gemini 同款：原因放进失败表，由下一次 poll 读走。
+            pendingLoginFailures.set(id, (err instanceof Error ? err.message : String(err)).slice(0, 500))
             void pool.removeAccount(id).catch(() => {})
           })
           return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } }

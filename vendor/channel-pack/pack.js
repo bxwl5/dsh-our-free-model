@@ -64275,14 +64275,17 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
         } catch (error) {
           return { ok: false, error: { code: "internal", message: `\u51ED\u636E\u5199\u5165\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}` } };
         }
+        const nickname = typeof parsed.nickname === "string" && parsed.nickname !== "" ? parsed.nickname : typeof parsed.account_id === "string" && parsed.account_id !== "" ? parsed.account_id : provider;
         await pool.addAccount({
           id,
           provider,
-          nickname: provider,
+          nickname,
           enabled: true,
           credentialRef: refName,
           createdAt: Date.now(),
-          refreshable: false
+          // 有 refresh_token 的渠道（Accio）才可静默续期；
+          // Cookie 型渠道（MonkeyCode/OrcaTerm/KukuAI/CatPaw）只能重新粘贴。
+          refreshable: typeof parsed.refresh_token === "string" && parsed.refresh_token !== ""
         });
         return { ok: true, value: { accountId: id } };
       }
@@ -64360,6 +64363,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             });
           }).catch((err) => {
             ctx.logger.warn(`[channel-pack] background ${provider} login failed for ${id}: ${err}`);
+            pendingLoginFailures.set(id, (err instanceof Error ? err.message : String(err)).slice(0, 500));
             void pool.removeAccount(id).catch(() => {
             });
           });
@@ -64395,6 +64399,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             await pool.updateAccount(id, { nickname: credential.nickname ?? id });
           })().catch((err) => {
             ctx.logger.warn(`[channel-pack] background ${provider} login failed for ${id}: ${err}`);
+            pendingLoginFailures.set(id, (err instanceof Error ? err.message : String(err)).slice(0, 500));
             void pool.removeAccount(id).catch(() => {
             });
           });
@@ -64422,6 +64427,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             });
           }).catch((err) => {
             ctx.logger.warn(`[channel-pack] background ${provider} login failed for ${id}: ${err}`);
+            pendingLoginFailures.set(id, (err instanceof Error ? err.message : String(err)).slice(0, 500));
             void pool.removeAccount(id).catch(() => {
             });
           });

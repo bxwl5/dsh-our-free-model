@@ -54,4 +54,28 @@ https://github.com/bxwl5/dsh-our-free-model
 
 设置页共七部分：免费模型、渠道接入、省 Token、路由、数据看板、运行日志、网关设置。
 
+## 渠道
+
+**免密车道（2 个）**：匿名免费车道（OpenCode）、Kilo 免费池。都不需要账号。
+
+**账号渠道（23 个）**，在「渠道接入」页添加：
+
+| 渠道 | 登录方式 | 对话 |
+|---|---|---|
+| CodeArts / CodeBuddy / WorkBuddy / LobsterAI | 浏览器授权 | ✅ |
+| Qoder / Qoder 中国版 / TRAE / Cline / Gemini | 浏览器授权 | ✅ |
+| Loomy / Raccoon / MiniMax Code / ZCode | 浏览器授权 | ✅ |
+| Command Code | 浏览器授权（自动回调） | ✅ |
+| OfficeAce 果办 | 浏览器授权（轮询授权码） | ✅ |
+| Accio / Accio 国内版 | 浏览器授权 | ✅ |
+| OrcaTerm | 粘贴 Cookie（`ot_session`） | ✅ |
+| KukuAI | 粘贴 Cookie（`BDUSS`） | ✅ |
+| MonkeyCode | 粘贴 Cookie（`nebula_session`） | 仅账号/额度/模型/签到 |
+| CatPaw | 粘贴令牌（`X-Passport-Token`） | 仅凭据/模型目录 |
+| AutoClaw / AutoClaw 国际版 | 粘贴令牌 | ✅ |
+
+**关于粘贴型渠道**：这些上游没有可脚本化的授权流程，需要先在官方站点登录，再从开发者工具复制 Cookie 或令牌粘贴进来。
+
+**关于 AutoClaw**：它的 OAuth 强制要求阿里云验证码 SDK（`AliyunCaptcha.js`，场景 `sq51tr`），插件内无法自动完成，故用粘贴令牌。
+
 MIT，见 [LICENSE](LICENSE)。本项目与任何模型提供方无隶属或背书关系。

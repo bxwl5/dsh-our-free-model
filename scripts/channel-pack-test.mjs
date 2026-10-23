@@ -308,6 +308,10 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   await verifyCatPaw()
   const { verifyChannelAdopt } = await import('./channel-adopt-test.mjs')
   await verifyChannelAdopt()
+  // OAuth 渠道后台登录失败必须让 login.poll 拿到可读原因（本用例只用
+  // directLane 注入的本地替身上游，不出网）。
+  const { verifyChannelOauthFailure } = await import('./channel-oauth-failure-test.mjs')
+  await verifyChannelOauthFailure({ call })
   await verifyLoopResumeEvents()
   let hostValidate
   await realLlmInvariant.apply({ invariants: { register(_name, install) {

@@ -64,4 +64,28 @@ After restarting, the composer's model picker gains an **Our Free Model** group.
 
 The settings page has seven parts: free models, channels, token savers, routing, dashboard, request log and gateway.
 
+## Channels
+
+**Keyless lanes (2)** — anonymous free lane (OpenCode) and the Kilo free pool. Neither needs an account.
+
+**Account channels (23)**, added under Channels in settings:
+
+| Channel | Sign-in | Chat |
+|---|---|---|
+| CodeArts / CodeBuddy / WorkBuddy / LobsterAI | browser | ✅ |
+| Qoder / Qoder CN / TRAE / Cline / Gemini | browser | ✅ |
+| Loomy / Raccoon / MiniMax Code / ZCode | browser | ✅ |
+| Command Code | browser (auto callback) | ✅ |
+| OfficeAce | browser (polling) | ✅ |
+| Accio / Accio CN | browser | ✅ |
+| OrcaTerm | paste cookie (`ot_session`) | ✅ |
+| KukuAI | paste cookie (`BDUSS`) | ✅ |
+| MonkeyCode | paste cookie (`nebula_session`) | accounts/credits/models/check-in only |
+| CatPaw | paste token (`X-Passport-Token`) | credentials/model catalog only |
+| AutoClaw / AutoClaw Intl | paste token | ✅ |
+
+**On paste-based channels** — these upstreams expose no scriptable authorization flow. Sign in on the official site first, then copy the cookie or token out of the browser's developer tools.
+
+**On AutoClaw** — its OAuth flow hard-requires the Aliyun CAPTCHA SDK (`AliyunCaptcha.js`, scenario `sq51tr`), which the plugin cannot complete on its own, hence the pasted-token route.
+
 MIT, see [LICENSE](LICENSE). This project has no affiliation with, and no endorsement from, any model provider.

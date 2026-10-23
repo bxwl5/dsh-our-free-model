@@ -19,6 +19,17 @@
  */
 
 import {
+  openWebSocket,
+  parseTaskStreamEvent,
+  toWebSocketUrl,
+} from './monkeycode-ws.js'
+import {
+  MONKEYCODE_PUBLIC_HOST,
+  MONKEYCODE_PUBLIC_IMAGE_ID,
+  MONKEYCODE_STREAM_PATH,
+  MONKEYCODE_TASKS_PATH,
+} from './monkeycode-product.js'
+import {
   MONKEYCODE_CHECKIN_PATH,
   MONKEYCODE_ME_PATH,
   MONKEYCODE_MODELS_PATH,
@@ -233,4 +244,78 @@ export async function probeCredential(
   if (result.status === 0) return 'network_error'
   if (result.status === 401 || result.status === 403) return 'expired'
   return result.ok ? 'valid' : 'network_error'
+}
+
+/**
+ * 建任务（对话入口）。
+ *
+ * 上游把「一次对话」建模成一个任务：提交需求正文 → 拿 task id →
+ * 挂 WebSocket 拉流。字段来自 `monkeycode2api` 实测：
+ * - `cli_name` 固定 `opencode`（平台可用的 agent 运行时）
+ * - `image_id` / `host_id` 必填（缺了会 400 参数错误）
+ * - `task_type: 'chat'` 表示轻量对话（不建沙箱）
+ */
+export async function createTask(
+  fetcher: typeof fetch,
+  product: MonkeyCodeProduct,
+  credential: MonkeyCodeCredential,
+  options: { content: string; modelId: string; signal?: AbortSignal },
+): Promise<string> {
+  const result = await call(fetcher, product, credential, MONKEYCODE_TASKS_PATH, {
+    method: 'POST',
+    body: {
+      content: options.content,
+      cli_name: 'opencode',
+      model_id: options.modelId,
+      image_id: MONKEYCODE_PUBLIC_IMAGE_ID,
+      host_id: MONKEYCODE_PUBLIC_HOST,
+      task_type: 'chat',
+      resource: { core: 2, memory: 8 * 1024 * 1024 * 1024, life: 7200 },
+    },
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  })
+  if (result.status === 0) throw new Error('MonkeyCode：建任务失败（网络不可达）')
+  if (result.status === 401 || result.status === 403) throw new Error('MonkeyCode：凭据无效或已过期，请重新粘贴 Cookie')
+  if (!result.ok) throw new Error(`MonkeyCode：建任务返回 HTTP ${result.status}`)
+  const body = unwrapData(result.body)
+  const taskId = isRecord(body) ? (typeof body.id === 'string' ? body.id : undefined) : undefined
+  if (taskId === undefined || taskId === '') throw new Error('MonkeyCode：建任务响应缺少 id')
+  return taskId
+}
+
+/**
+ * 跑一轮对话：建任务 → 连 WebSocket → 逐帧产出增量。
+ *
+ * ⚠️ **WS 事件格式未经实机确认**（参考实现 monkeycode2api 自己写明
+ * 「事件语法无法在无实机下 100% 敲定」）。因此解析是**容错**的：
+ * 认不出的帧直接忽略，不当作错误 —— 宁可少显示一点，也不要因为一个
+ * 未知事件类型把整轮对话打死。
+ */
+export async function* streamChat(
+  fetcher: typeof fetch,
+  product: MonkeyCodeProduct,
+  credential: MonkeyCodeCredential,
+  options: { content: string; modelId: string; signal?: AbortSignal },
+): AsyncGenerator<{ text: string }, void, undefined> {
+  const taskId = await createTask(fetcher, product, credential, options)
+  const url = toWebSocketUrl(product.apiBase, MONKEYCODE_STREAM_PATH, {
+    id: taskId,
+    mode: 'develop',
+  })
+  const client = await openWebSocket(url, {
+    headers: monkeyCodeHeaders(product, credential),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  })
+  try {
+    for await (const frame of client.frames()) {
+      // 只处理文本帧：二进制帧在上游无既定语义，忽略。
+      if (frame.opcode !== 1) continue
+      const event = parseTaskStreamEvent(frame.payload)
+      if (event.kind === 'done') return
+      if (event.kind === 'error') throw new Error(`MonkeyCode 上游错误：${event.message}`)
+      if (event.kind === 'text' && event.text !== '') yield { text: event.text }
+    }
+  } finally {
+    client.close()
+  }
 }
