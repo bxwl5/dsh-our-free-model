@@ -68,7 +68,7 @@ The settings page has seven parts: free models, channels, token savers, routing,
 
 **Keyless lanes (2)** — anonymous free lane (OpenCode) and the Kilo free pool. Neither needs an account.
 
-**Account channels (23)**, added under Channels in settings:
+**Account channels (22)**, added under Channels in settings:
 
 | Channel | Sign-in | Chat |
 |---|---|---|
@@ -81,7 +81,6 @@ The settings page has seven parts: free models, channels, token savers, routing,
 | OrcaTerm | paste cookie (`ot_session`) | ✅ |
 | KukuAI | paste cookie (`BDUSS`) | ✅ |
 | MonkeyCode | paste cookie (`nebula_session`) | ✅ |
-| CatPaw | paste token (`X-Passport-Token`) | credentials/model catalog only |
 | AutoClaw / AutoClaw Intl | paste token | ✅ |
 
 **On paste-based channels** — these upstreams expose no scriptable authorization flow. Sign in on the official site first, then copy the cookie or token out of the browser's developer tools.

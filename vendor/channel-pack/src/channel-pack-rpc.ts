@@ -41,7 +41,6 @@ import { buddyExpiringWindowDays } from './buddy-balance-rank.js'
 import { normalizeCookie as normalizeMonkeyCodeCookie } from './monkeycode.js'
 import { normalizeCookie as normalizeOrcaTermCookie } from './orcaterm.js'
 import { normalizeCookie as normalizeKukuCookie } from './kuku.js'
-import { parseCredential as parseCatPawCredential } from './catpaw.js'
 import { parseCredential as parseAutoClawCredential } from './autoclaw.js'
 import { parseCredential as parseOfficeAceCredential } from './officeace.js'
 import type { LoomyAuth } from './loomy-auth.js'
@@ -1402,7 +1401,7 @@ function registerChannelPackEndpoints(
       /**
        * 用手动粘贴的凭据添加账号。
        *
-       * 这是**粘贴型渠道**（MonkeyCode / OrcaTerm / KukuAI / CatPaw /
+       * 这是**粘贴型渠道**（MonkeyCode / OrcaTerm / KukuAI /
        * AutoClaw / Accio / OfficeAce / Command Code）唯一的「添加账号」入口 ——
        * 它们的上游没有可脚本化的 OAuth，用户只能在官方页面登录后复制
        * Cookie 或令牌。
@@ -1448,7 +1447,7 @@ function registerChannelPackEndpoints(
           credentialRef: refName,
           createdAt: Date.now(),
           // 有 refresh_token 的渠道（Accio）才可静默续期；
-          // Cookie 型渠道（MonkeyCode/OrcaTerm/KukuAI/CatPaw）只能重新粘贴。
+          // Cookie 型渠道（MonkeyCode/OrcaTerm/KukuAI）只能重新粘贴。
           refreshable: typeof parsed.refresh_token === 'string' && parsed.refresh_token !== '',
         })
         return { ok: true, value: { accountId: id } }
@@ -4460,13 +4459,6 @@ const ADOPTABLE_CHANNELS: Readonly<Record<string, AdoptableChannel>> = {
     parse: (text) => {
       const cookie = normalizeKukuCookie(text)
       return cookie === undefined ? undefined : { access_token: cookie, created_at: Date.now() }
-    },
-  },
-  catpaw: {
-    hint: '通行证令牌（X-Passport-Token 的值）',
-    parse: (text) => {
-      const parsed = parseCatPawCredential({ token: text })
-      return parsed === undefined ? undefined : { ...parsed }
     },
   },
   autoclaw: {

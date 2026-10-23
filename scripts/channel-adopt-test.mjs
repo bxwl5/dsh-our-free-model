@@ -4,9 +4,9 @@ import assert from 'node:assert/strict'
 async function main() {
   const { adoptableChannelHint } = await import('../vendor/channel-pack/src/channel-pack-rpc.ts')
 
-  // 8 个粘贴型渠道都必须有提示文案（UI 据此决定「添加账号」的交互形态）。
+  // 5 个粘贴型渠道都必须有提示文案（UI 据此决定「添加账号」的交互形态）。
   // 真·粘贴型：上游没有可脚本化的 OAuth，只能由用户复制 Cookie / 令牌。
-  const pasteOnly = ['monkeycode', 'orcaterm', 'kuku', 'catpaw', 'autoclaw', 'autoclaw-intl']
+  const pasteOnly = ['monkeycode', 'orcaterm', 'kuku', 'autoclaw', 'autoclaw-intl']
   for (const provider of pasteOnly) {
     const hint = adoptableChannelHint(provider)
     assert.equal(typeof hint, 'string', `${provider} 必须有粘贴提示`)
@@ -23,7 +23,7 @@ async function main() {
     assert.equal(adoptableChannelHint(provider), undefined, `${provider} 不应支持粘贴`)
   }
 
-  console.log('ok  channel-adopt: 6 个粘贴型渠道有提示；Command Code / OfficeAce / Accio 走 OAuth 不误入')
+  console.log('ok  channel-adopt: 5 个粘贴型渠道有提示；Command Code / OfficeAce / Accio 走 OAuth 不误入')
 }
 
 export async function verifyChannelAdopt() { await main() }

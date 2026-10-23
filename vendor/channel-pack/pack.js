@@ -4988,13 +4988,13 @@ var require_util2 = __commonJS({
     function TAOCheck() {
       return "success";
     }
-    function appendFetchMetadata(httpRequest) {
-      if (!isURLPotentiallyTrustworthy(requestCurrentURL(httpRequest))) {
+    function appendFetchMetadata(httpRequest2) {
+      if (!isURLPotentiallyTrustworthy(requestCurrentURL(httpRequest2))) {
         return;
       }
       let header = null;
-      header = httpRequest.mode;
-      httpRequest.headersList.set("sec-fetch-mode", header, true);
+      header = httpRequest2.mode;
+      httpRequest2.headersList.set("sec-fetch-mode", header, true);
     }
     function appendRequestOriginHeader(request2) {
       let serializedOrigin = request2.origin;
@@ -22967,90 +22967,90 @@ var require_fetch = __commonJS({
     async function httpNetworkOrCacheFetch(fetchParams, isAuthenticationFetch = false, isNewConnectionFetch = false) {
       const request2 = fetchParams.request;
       let httpFetchParams = null;
-      let httpRequest = null;
+      let httpRequest2 = null;
       let response = null;
       const httpCache = null;
       const revalidatingFlag = false;
       if (request2.window === "no-window" && request2.redirect === "error") {
         httpFetchParams = fetchParams;
-        httpRequest = request2;
+        httpRequest2 = request2;
       } else {
         if (request2.body?.source != null) {
-          httpRequest = cloneRequest(request2);
+          httpRequest2 = cloneRequest(request2);
         } else {
-          httpRequest = cloneRequest({ ...request2, body: null });
-          httpRequest.body = request2.body;
+          httpRequest2 = cloneRequest({ ...request2, body: null });
+          httpRequest2.body = request2.body;
         }
         httpFetchParams = { ...fetchParams };
-        httpFetchParams.request = httpRequest;
+        httpFetchParams.request = httpRequest2;
       }
       const includeCredentials = request2.credentials === "include" || request2.credentials === "same-origin" && request2.responseTainting === "basic";
-      const contentLength = httpRequest.body ? httpRequest.body.length : null;
+      const contentLength = httpRequest2.body ? httpRequest2.body.length : null;
       let contentLengthHeaderValue = null;
-      if (httpRequest.body == null && ["POST", "PUT"].includes(httpRequest.method)) {
+      if (httpRequest2.body == null && ["POST", "PUT"].includes(httpRequest2.method)) {
         contentLengthHeaderValue = "0";
       }
       if (contentLength != null) {
         contentLengthHeaderValue = isomorphicEncode(`${contentLength}`);
       }
-      if (contentLengthHeaderValue != null && !httpRequest.headersList.contains("content-length", true)) {
-        httpRequest.headersList.append("content-length", contentLengthHeaderValue, true);
+      if (contentLengthHeaderValue != null && !httpRequest2.headersList.contains("content-length", true)) {
+        httpRequest2.headersList.append("content-length", contentLengthHeaderValue, true);
       }
-      if (contentLength != null && httpRequest.keepalive) {
+      if (contentLength != null && httpRequest2.keepalive) {
       }
-      if (webidl.is.URL(httpRequest.referrer)) {
-        httpRequest.headersList.append("referer", isomorphicEncode(httpRequest.referrer.href), true);
+      if (webidl.is.URL(httpRequest2.referrer)) {
+        httpRequest2.headersList.append("referer", isomorphicEncode(httpRequest2.referrer.href), true);
       }
-      appendRequestOriginHeader(httpRequest);
-      appendFetchMetadata(httpRequest);
-      if (!httpRequest.headersList.contains("user-agent", true)) {
-        httpRequest.headersList.append("user-agent", defaultUserAgent, true);
+      appendRequestOriginHeader(httpRequest2);
+      appendFetchMetadata(httpRequest2);
+      if (!httpRequest2.headersList.contains("user-agent", true)) {
+        httpRequest2.headersList.append("user-agent", defaultUserAgent, true);
       }
-      if (httpRequest.cache === "default" && (httpRequest.headersList.contains("if-modified-since", true) || httpRequest.headersList.contains("if-none-match", true) || httpRequest.headersList.contains("if-unmodified-since", true) || httpRequest.headersList.contains("if-match", true) || httpRequest.headersList.contains("if-range", true))) {
-        httpRequest.cache = "no-store";
+      if (httpRequest2.cache === "default" && (httpRequest2.headersList.contains("if-modified-since", true) || httpRequest2.headersList.contains("if-none-match", true) || httpRequest2.headersList.contains("if-unmodified-since", true) || httpRequest2.headersList.contains("if-match", true) || httpRequest2.headersList.contains("if-range", true))) {
+        httpRequest2.cache = "no-store";
       }
-      if (httpRequest.cache === "no-cache" && !httpRequest.preventNoCacheCacheControlHeaderModification && !httpRequest.headersList.contains("cache-control", true)) {
-        httpRequest.headersList.append("cache-control", "max-age=0", true);
+      if (httpRequest2.cache === "no-cache" && !httpRequest2.preventNoCacheCacheControlHeaderModification && !httpRequest2.headersList.contains("cache-control", true)) {
+        httpRequest2.headersList.append("cache-control", "max-age=0", true);
       }
-      if (httpRequest.cache === "no-store" || httpRequest.cache === "reload") {
-        if (!httpRequest.headersList.contains("pragma", true)) {
-          httpRequest.headersList.append("pragma", "no-cache", true);
+      if (httpRequest2.cache === "no-store" || httpRequest2.cache === "reload") {
+        if (!httpRequest2.headersList.contains("pragma", true)) {
+          httpRequest2.headersList.append("pragma", "no-cache", true);
         }
-        if (!httpRequest.headersList.contains("cache-control", true)) {
-          httpRequest.headersList.append("cache-control", "no-cache", true);
+        if (!httpRequest2.headersList.contains("cache-control", true)) {
+          httpRequest2.headersList.append("cache-control", "no-cache", true);
         }
       }
-      if (httpRequest.headersList.contains("range", true)) {
-        httpRequest.headersList.append("accept-encoding", "identity", true);
+      if (httpRequest2.headersList.contains("range", true)) {
+        httpRequest2.headersList.append("accept-encoding", "identity", true);
       }
-      if (!httpRequest.headersList.contains("accept-encoding", true)) {
-        if (urlHasHttpsScheme(requestCurrentURL(httpRequest))) {
-          httpRequest.headersList.append("accept-encoding", "br, gzip, deflate, zstd", true);
+      if (!httpRequest2.headersList.contains("accept-encoding", true)) {
+        if (urlHasHttpsScheme(requestCurrentURL(httpRequest2))) {
+          httpRequest2.headersList.append("accept-encoding", "br, gzip, deflate, zstd", true);
         } else {
-          httpRequest.headersList.append("accept-encoding", "gzip, deflate", true);
+          httpRequest2.headersList.append("accept-encoding", "gzip, deflate", true);
         }
       }
-      httpRequest.headersList.delete("host", true);
+      httpRequest2.headersList.delete("host", true);
       if (includeCredentials) {
-        if (!httpRequest.headersList.contains("authorization", true)) {
+        if (!httpRequest2.headersList.contains("authorization", true)) {
           let authorizationValue = null;
-          if (hasAuthenticationEntry(httpRequest) && (httpRequest.useURLCredentials === void 0 || !includesCredentials(requestCurrentURL(httpRequest)))) {
-          } else if (includesCredentials(requestCurrentURL(httpRequest)) && isAuthenticationFetch) {
-            const { username, password } = requestCurrentURL(httpRequest);
+          if (hasAuthenticationEntry(httpRequest2) && (httpRequest2.useURLCredentials === void 0 || !includesCredentials(requestCurrentURL(httpRequest2)))) {
+          } else if (includesCredentials(requestCurrentURL(httpRequest2)) && isAuthenticationFetch) {
+            const { username, password } = requestCurrentURL(httpRequest2);
             authorizationValue = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
           }
           if (authorizationValue !== null) {
-            httpRequest.headersList.append("Authorization", authorizationValue, false);
+            httpRequest2.headersList.append("Authorization", authorizationValue, false);
           }
         }
       }
       if (httpCache == null) {
-        httpRequest.cache = "no-store";
+        httpRequest2.cache = "no-store";
       }
-      if (httpRequest.cache !== "no-store" && httpRequest.cache !== "reload") {
+      if (httpRequest2.cache !== "no-store" && httpRequest2.cache !== "reload") {
       }
       if (response == null) {
-        if (httpRequest.cache === "only-if-cached") {
+        if (httpRequest2.cache === "only-if-cached") {
           return makeNetworkError("only if cached");
         }
         const forwardResponse = await httpNetworkFetch(
@@ -23058,7 +23058,7 @@ var require_fetch = __commonJS({
           includeCredentials,
           isNewConnectionFetch
         );
-        if (!safeMethodsSet.has(httpRequest.method) && forwardResponse.status >= 200 && forwardResponse.status <= 399) {
+        if (!safeMethodsSet.has(httpRequest2.method) && forwardResponse.status >= 200 && forwardResponse.status <= 399) {
         }
         if (revalidatingFlag && forwardResponse.status === 304) {
         }
@@ -23066,12 +23066,12 @@ var require_fetch = __commonJS({
           response = forwardResponse;
         }
       }
-      response.urlList = [...httpRequest.urlList];
-      if (httpRequest.headersList.contains("range", true)) {
+      response.urlList = [...httpRequest2.urlList];
+      if (httpRequest2.headersList.contains("range", true)) {
         response.rangeRequested = true;
       }
       response.requestIncludesCredentials = includeCredentials;
-      if (response.status === 401 && httpRequest.responseTainting !== "cors" && includeCredentials && (request2.useURLCredentials !== void 0 || isTraversableNavigable(request2.traversableForUserPrompts))) {
+      if (response.status === 401 && httpRequest2.responseTainting !== "cors" && includeCredentials && (request2.useURLCredentials !== void 0 || isTraversableNavigable(request2.traversableForUserPrompts))) {
         if (request2.body != null) {
           if (request2.body.source == null) {
             return response;
@@ -27872,11 +27872,11 @@ function numberValue(value) {
   }
   return void 0;
 }
-function isRecord(value) {
+function isRecord2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function parseWhoami(value) {
-  if (!isRecord(value)) return void 0;
+  if (!isRecord2(value)) return void 0;
   const userId = stringValue(value.userId) ?? stringValue(value.user_id) ?? stringValue(value.id);
   if (userId === void 0) return void 0;
   return {
@@ -27898,8 +27898,8 @@ function credentialFromWhoami(apiKey, whoami) {
   };
 }
 function parseCredits(value) {
-  if (!isRecord(value)) return void 0;
-  const body = isRecord(value.data) ? value.data : value;
+  if (!isRecord2(value)) return void 0;
+  const body = isRecord2(value.data) ? value.data : value;
   const balance = numberValue(body.balance) ?? numberValue(body.credits) ?? numberValue(body.remaining) ?? numberValue(body.available);
   const limit = numberValue(body.limit) ?? numberValue(body.total) ?? numberValue(body.quota);
   const used = numberValue(body.used) ?? numberValue(body.consumed);
@@ -27928,7 +27928,7 @@ function buildCommandCodeAuthUrl(product, port, state) {
   return `${product.studioBase}/cli/authorize?${query.toString()}`;
 }
 function parseCallbackCredentials(value) {
-  if (!isRecord(value)) return void 0;
+  if (!isRecord2(value)) return void 0;
   const apiKey = stringValue(value.apiKey);
   const state = stringValue(value.state);
   const userId = stringValue(value.userId);
@@ -28231,7 +28231,7 @@ var init_accio_product = __esm({
 });
 
 // vendor/channel-pack/src/accio.ts
-function stringValue4(value) {
+function stringValue6(value) {
   return typeof value === "string" && value !== "" ? value : void 0;
 }
 function numberValue2(value) {
@@ -28242,7 +28242,7 @@ function numberValue2(value) {
   }
   return void 0;
 }
-function isRecord5(value) {
+function isRecord7(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function isCredentialUsable5(credential) {
@@ -28264,11 +28264,11 @@ function accioHeaders(product) {
   };
 }
 function parseTokenResponse(value) {
-  if (!isRecord5(value)) return void 0;
-  const body = isRecord5(value.data) ? value.data : value;
-  const accessToken = stringValue4(body.accessToken) ?? stringValue4(body.access_token);
+  if (!isRecord7(value)) return void 0;
+  const body = isRecord7(value.data) ? value.data : value;
+  const accessToken = stringValue6(body.accessToken) ?? stringValue6(body.access_token);
   if (accessToken === void 0) return void 0;
-  const refreshToken2 = stringValue4(body.refreshToken) ?? stringValue4(body.refresh_token);
+  const refreshToken2 = stringValue6(body.refreshToken) ?? stringValue6(body.refresh_token);
   const expiresRaw = numberValue2(body.expiresAt) ?? numberValue2(body.expires_at);
   const expireTime = expiresRaw === void 0 ? void 0 : expiresRaw < 1e12 ? expiresRaw * 1e3 : expiresRaw;
   return {
@@ -28284,7 +28284,7 @@ function buildGenerateBody(options) {
     contents.push({ role: "user", parts: [{ text: options.system.trim() }] });
   }
   for (const message2 of options.messages) {
-    const text = contentToText10(message2.content);
+    const text = contentToText11(message2.content);
     if (text.trim() === "") continue;
     contents.push({
       // harness 的 assistant → Gemini 的 model。
@@ -28305,24 +28305,24 @@ function buildGenerateBody(options) {
   return body;
 }
 function parseAdkFrame(value) {
-  if (!isRecord5(value)) return void 0;
+  if (!isRecord7(value)) return void 0;
   const errorCode = value.error_code ?? value.errorCode;
   if (errorCode !== void 0 && errorCode !== 0 && errorCode !== "0") {
     return {
       kind: "error",
-      message: stringValue4(value.error_message) ?? stringValue4(value.errorMessage) ?? `error_code=${String(errorCode)}`
+      message: stringValue6(value.error_message) ?? stringValue6(value.errorMessage) ?? `error_code=${String(errorCode)}`
     };
   }
   if (value.turn_complete === true) {
-    return { kind: "done", ...stringValue4(value.finish_reason) === void 0 ? {} : { finishReason: stringValue4(value.finish_reason) } };
+    return { kind: "done", ...stringValue6(value.finish_reason) === void 0 ? {} : { finishReason: stringValue6(value.finish_reason) } };
   }
   const content = value.content;
-  if (!isRecord5(content) || !Array.isArray(content.parts)) return void 0;
+  if (!isRecord7(content) || !Array.isArray(content.parts)) return void 0;
   const texts = [];
   const reasonings = [];
   for (const part of content.parts) {
-    if (!isRecord5(part)) continue;
-    const text = stringValue4(part.text);
+    if (!isRecord7(part)) continue;
+    const text = stringValue6(part.text);
     if (text === void 0) continue;
     if (part.thought === true) reasonings.push(text);
     else texts.push(text);
@@ -28331,7 +28331,7 @@ function parseAdkFrame(value) {
   if (texts.length > 0) return { kind: "delta", text: texts.join("") };
   return void 0;
 }
-function contentToText10(content) {
+function contentToText11(content) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   const parts = [];
@@ -28340,16 +28340,16 @@ function contentToText10(content) {
       parts.push(block);
       continue;
     }
-    if (!isRecord5(block)) continue;
-    const text = stringValue4(block.text);
+    if (!isRecord7(block)) continue;
+    const text = stringValue6(block.text);
     if (text !== void 0) parts.push(text);
   }
   return parts.join("\n");
 }
 async function createPkcePair() {
-  const { randomBytes: randomBytes14, createHash: createHash10 } = await import("node:crypto");
-  const verifier = randomBytes14(32).toString("base64url");
-  const challenge = createHash10("sha256").update(verifier).digest("base64url");
+  const { randomBytes: randomBytes15, createHash: createHash11 } = await import("node:crypto");
+  const verifier = randomBytes15(32).toString("base64url");
+  const challenge = createHash11("sha256").update(verifier).digest("base64url");
   return { verifier, challenge };
 }
 function buildAccioAuthUrl(product, redirectUri, state, challenge) {
@@ -28380,7 +28380,7 @@ __export(accio_auth_exports, {
   fetchUserInfo: () => fetchUserInfo,
   refreshCredential: () => refreshCredential,
   startAccioLogin: () => startAccioLogin,
-  streamChat: () => streamChat3
+  streamChat: () => streamChat4
 });
 import { createServer as createServer2 } from "node:http";
 import { randomUUID as randomUUID5 } from "node:crypto";
@@ -28499,13 +28499,13 @@ async function fetchModels2(fetcher, product, credential, signal) {
   if (rows.length === 0) throw new Error("Accio\uFF1A\u6A21\u578B\u76EE\u5F55\u4E3A\u7A7A");
   return rows;
 }
-async function* streamChat3(fetcher, product, credential, options) {
+async function* streamChat4(fetcher, product, credential, options) {
   if (!isCredentialUsable5(credential)) {
     throw new Error("Accio\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
   }
-  const { createHash: createHash10, randomUUID: randomUUID17 } = await import("node:crypto");
+  const { createHash: createHash11, randomUUID: randomUUID17 } = await import("node:crypto");
   const requestId = randomUUID17();
-  const sgK = createHash10("md5").update(requestId).digest("hex");
+  const sgK = createHash11("md5").update(requestId).digest("hex");
   const response = await fetcher(`${product.llmBase}${ACCIO_GENERATE_PATH}?sg_k=${sgK}`, {
     method: "POST",
     headers: { ...accioHeaders(product), Accept: "text/event-stream" },
@@ -28855,31 +28855,31 @@ function basicAuthHeader(credential) {
   return `Basic ${btoa(binary)}`;
 }
 function parseCredential(value) {
-  if (!isRecord6(value)) return void 0;
-  const baseUrl = stringValue5(value.baseUrl) ?? stringValue5(value.base_url) ?? stringValue5(value.api_base) ?? stringValue5(value.apiBase);
-  const appKey = stringValue5(value.appKey) ?? stringValue5(value.app_key);
-  const appSecret = stringValue5(value.appSecret) ?? stringValue5(value.app_secret);
+  if (!isRecord8(value)) return void 0;
+  const baseUrl = stringValue7(value.baseUrl) ?? stringValue7(value.base_url) ?? stringValue7(value.api_base) ?? stringValue7(value.apiBase);
+  const appKey = stringValue7(value.appKey) ?? stringValue7(value.app_key);
+  const appSecret = stringValue7(value.appSecret) ?? stringValue7(value.app_secret);
   if (baseUrl === void 0 || appKey === void 0 || appSecret === void 0) return void 0;
   return {
     base_url: baseUrl,
     app_key: appKey,
     app_secret: appSecret,
-    ...stringValue5(value.access_key) === void 0 ? {} : { access_key: stringValue5(value.access_key) },
-    ...stringValue5(value.accessKey) === void 0 ? {} : { access_key: stringValue5(value.accessKey) },
-    ...stringValue5(value.secret_key) === void 0 ? {} : { secret_key: stringValue5(value.secret_key) },
-    ...stringValue5(value.secretKey) === void 0 ? {} : { secret_key: stringValue5(value.secretKey) },
-    ...stringValue5(value.security_token) === void 0 ? {} : { security_token: stringValue5(value.security_token) },
-    ...stringValue5(value.project_id) === void 0 ? {} : { project_id: stringValue5(value.project_id) },
-    ...stringValue5(value.account_id) === void 0 ? {} : { account_id: stringValue5(value.account_id) },
-    ...stringValue5(value.nickname) === void 0 ? {} : { nickname: stringValue5(value.nickname) },
+    ...stringValue7(value.access_key) === void 0 ? {} : { access_key: stringValue7(value.access_key) },
+    ...stringValue7(value.accessKey) === void 0 ? {} : { access_key: stringValue7(value.accessKey) },
+    ...stringValue7(value.secret_key) === void 0 ? {} : { secret_key: stringValue7(value.secret_key) },
+    ...stringValue7(value.secretKey) === void 0 ? {} : { secret_key: stringValue7(value.secretKey) },
+    ...stringValue7(value.security_token) === void 0 ? {} : { security_token: stringValue7(value.security_token) },
+    ...stringValue7(value.project_id) === void 0 ? {} : { project_id: stringValue7(value.project_id) },
+    ...stringValue7(value.account_id) === void 0 ? {} : { account_id: stringValue7(value.account_id) },
+    ...stringValue7(value.nickname) === void 0 ? {} : { nickname: stringValue7(value.nickname) },
     ...Array.isArray(value.model_info) ? { model_info: value.model_info } : {},
     created_at: Date.now()
   };
 }
-function stringValue5(value) {
+function stringValue7(value) {
   return typeof value === "string" && value !== "" ? value : void 0;
 }
-function isRecord6(value) {
+function isRecord8(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function isCredentialUsable6(credential) {
@@ -28902,8 +28902,8 @@ async function fetchState(fetcher, product, signal) {
   });
   if (!response.ok) throw new Error(`OfficeAce\uFF1A\u53D6 state \u8FD4\u56DE HTTP ${response.status}`);
   const body = await response.json().catch(() => void 0);
-  const record = isRecord6(body) ? isRecord6(body.data) ? body.data : body : void 0;
-  const state = record === void 0 ? void 0 : stringValue5(record.state);
+  const record = isRecord8(body) ? isRecord8(body.data) ? body.data : body : void 0;
+  const state = record === void 0 ? void 0 : stringValue7(record.state);
   if (state === void 0) throw new Error("OfficeAce\uFF1A\u53D6 state \u54CD\u5E94\u7F3A\u5C11 state");
   return state;
 }
@@ -28937,8 +28937,8 @@ async function pollAuthCode(fetcher, product, state, options = {}) {
     }
     if (!response.ok) throw new Error(`OfficeAce\uFF1A\u53D6\u6388\u6743\u7801\u8FD4\u56DE HTTP ${response.status}`);
     const body = await response.json().catch(() => void 0);
-    const record = isRecord6(body) ? isRecord6(body.data) ? body.data : body : void 0;
-    const code = record === void 0 ? void 0 : stringValue5(record.code);
+    const record = isRecord8(body) ? isRecord8(body.data) ? body.data : body : void 0;
+    const code = record === void 0 ? void 0 : stringValue7(record.code);
     if (code === void 0) throw new Error("OfficeAce\uFF1A\u53D6\u6388\u6743\u7801\u54CD\u5E94\u7F3A\u5C11 code");
     return code;
   }
@@ -28967,22 +28967,22 @@ async function exchangeCodeForSts(fetcher, product, code, verifier, dpopKey, sig
     throw new Error(`OfficeAce\uFF1A\u6362\u4E34\u65F6\u51ED\u636E\u8FD4\u56DE HTTP ${response.status}${text === "" ? "" : `\uFF1A${text.slice(0, 200)}`}`);
   }
   const body = await response.json().catch(() => void 0);
-  if (!isRecord6(body)) throw new Error("OfficeAce\uFF1A\u6362\u4E34\u65F6\u51ED\u636E\u54CD\u5E94\u4E0D\u662F\u5BF9\u8C61");
+  if (!isRecord8(body)) throw new Error("OfficeAce\uFF1A\u6362\u4E34\u65F6\u51ED\u636E\u54CD\u5E94\u4E0D\u662F\u5BF9\u8C61");
   const credential = parseCredential(body);
   if (credential !== void 0) return credential;
-  const accessKey = stringValue5(body.access_key) ?? stringValue5(body.accessKey);
-  const secretKey = stringValue5(body.secret_key) ?? stringValue5(body.secretKey);
-  const baseUrl = stringValue5(body.baseUrl) ?? stringValue5(body.base_url);
+  const accessKey = stringValue7(body.access_key) ?? stringValue7(body.accessKey);
+  const secretKey = stringValue7(body.secret_key) ?? stringValue7(body.secretKey);
+  const baseUrl = stringValue7(body.baseUrl) ?? stringValue7(body.base_url);
   if (accessKey === void 0 || secretKey === void 0 || baseUrl === void 0) {
     throw new Error("OfficeAce\uFF1A\u6362\u4E34\u65F6\u51ED\u636E\u54CD\u5E94\u7F3A\u5C11\u5FC5\u9700\u5B57\u6BB5");
   }
   return {
     base_url: baseUrl,
-    app_key: stringValue5(body.appKey) ?? stringValue5(body.app_key) ?? "",
-    app_secret: stringValue5(body.appSecret) ?? stringValue5(body.app_secret) ?? "",
+    app_key: stringValue7(body.appKey) ?? stringValue7(body.app_key) ?? "",
+    app_secret: stringValue7(body.appSecret) ?? stringValue7(body.app_secret) ?? "",
     access_key: accessKey,
     secret_key: secretKey,
-    ...stringValue5(body.security_token) === void 0 ? {} : { security_token: stringValue5(body.security_token) },
+    ...stringValue7(body.security_token) === void 0 ? {} : { security_token: stringValue7(body.security_token) },
     created_at: Date.now()
   };
 }
@@ -29019,13 +29019,13 @@ async function validatePermission(fetcher, product, credential, signal) {
   });
   if (!response.ok) throw new Error(`OfficeAce\uFF1A\u8EAB\u4EFD\u6821\u9A8C\u8FD4\u56DE HTTP ${response.status}`);
   const body = await response.json().catch(() => void 0);
-  if (!isRecord6(body)) return {};
-  const subscription = isRecord6(body.subscription) ? body.subscription : void 0;
+  if (!isRecord8(body)) return {};
+  const subscription = isRecord8(body.subscription) ? body.subscription : void 0;
   const modelInfo = subscription !== void 0 && Array.isArray(subscription.model_info) ? subscription.model_info : void 0;
   return {
-    ...stringValue5(body.account_id) === void 0 ? {} : { accountId: stringValue5(body.account_id) },
-    ...stringValue5(body.nickname) === void 0 ? {} : { nickname: stringValue5(body.nickname) },
-    ...stringValue5(body.project_id) === void 0 ? {} : { projectId: stringValue5(body.project_id) },
+    ...stringValue7(body.account_id) === void 0 ? {} : { accountId: stringValue7(body.account_id) },
+    ...stringValue7(body.nickname) === void 0 ? {} : { nickname: stringValue7(body.nickname) },
+    ...stringValue7(body.project_id) === void 0 ? {} : { projectId: stringValue7(body.project_id) },
     ...modelInfo === void 0 ? {} : { modelInfo }
   };
 }
@@ -30418,10 +30418,10 @@ var init_webapi = __esm({
 });
 
 // vendor/channel-pack/src/oauth.ts
-import { createHash as createHash5, randomBytes as randomBytes4 } from "node:crypto";
+import { createHash as createHash6, randomBytes as randomBytes5 } from "node:crypto";
 function generatePkcePair() {
-  const codeVerifier = randomBytes4(48).toString("base64url");
-  const codeChallenge = createHash5("sha256").update(codeVerifier).digest("base64url");
+  const codeVerifier = randomBytes5(48).toString("base64url");
+  const codeChallenge = createHash6("sha256").update(codeVerifier).digest("base64url");
   return { codeVerifier, codeChallenge };
 }
 async function generateDpopKeyPair() {
@@ -30437,7 +30437,7 @@ async function signDpopJws(keyPair, htm, htu) {
     htm,
     htu,
     iat: Math.floor(Date.now() / 1e3),
-    jti: randomBytes4(32).toString("hex")
+    jti: randomBytes5(32).toString("hex")
   };
   return new SignJWT(payload).setProtectedHeader({ alg: "ES256", typ: "dpop+jwt", jwk: keyPair.publicKeyJwk }).sign(key);
 }
@@ -30556,7 +30556,7 @@ __export(login_exports, {
 });
 import { createServer as createServer3 } from "node:http";
 import { spawn } from "node:child_process";
-import { getRandomValues, randomUUID as randomUUID6, randomBytes as randomBytes5 } from "node:crypto";
+import { getRandomValues, randomUUID as randomUUID6, randomBytes as randomBytes6 } from "node:crypto";
 function generateRandomSecret() {
   const bytes = getRandomValues(new Uint8Array(32));
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -30818,7 +30818,7 @@ function listenOnCallbackPort(server) {
   });
 }
 async function startOAuthFlow(options = {}) {
-  const ticketId = randomBytes5(32).toString("hex");
+  const ticketId = randomBytes6(32).toString("hex");
   const pkce = generatePkcePair();
   const keyPair = await generateDpopKeyPair();
   const { port, server, result } = await startOAuthCallbackServer(ticketId, pkce, keyPair, options);
@@ -30881,7 +30881,7 @@ var init_login = __esm({
 
 // vendor/channel-pack/src/index.ts
 import { credentialRef as credentialRef16 } from "@deepseek-ai/dsh-credentials";
-import { LlmError as LlmError28 } from "@deepseek-ai/dsh-llm";
+import { LlmError as LlmError27 } from "@deepseek-ai/dsh-llm";
 import Schema2 from "@deepseek-ai/schemastery";
 
 // vendor/channel-pack/src/llm-adapter.ts
@@ -44523,15 +44523,22 @@ var MONKEYCODE = {
   fallbackModels: MONKEYCODE_FALLBACK_MODELS
 };
 var MONKEYCODE_MODELS_PATH = "/api/v1/users/models/available";
+var MONKEYCODE_TASKS_PATH = "/api/v1/users/tasks";
+var MONKEYCODE_STREAM_PATH = "/api/v1/users/tasks/stream";
+var MONKEYCODE_PUBLIC_IMAGE_ID = "2e214f06-79ba-4535-9ac1-89adc2d9c6cc";
+var MONKEYCODE_PUBLIC_HOST = "public_host";
 var MONKEYCODE_SESSION_COOKIE = "nebula_session";
 
 // vendor/channel-pack/src/monkeycode.ts
-function isRecord2(value) {
+function stringValue2(value) {
+  return typeof value === "string" && value !== "" ? value : void 0;
+}
+function isRecord3(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function unwrapData(value) {
-  if (!isRecord2(value)) return value;
-  if ("data" in value && isRecord2(value.data)) return value.data;
+  if (!isRecord3(value)) return value;
+  if ("data" in value && isRecord3(value.data)) return value.data;
   return value;
 }
 function normalizeCookie(raw) {
@@ -44552,6 +44559,455 @@ function monkeyCodeHeaders(product, credential) {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     Cookie: credential.access_token
   };
+}
+function flattenMessages(messages, system) {
+  const parts = [];
+  if (system !== void 0 && system.trim() !== "") parts.push(system.trim());
+  for (const message2 of messages) {
+    const text = contentToText8(message2.content);
+    if (text.trim() === "") continue;
+    parts.push(text.trim());
+  }
+  return parts.join("\n\n");
+}
+function contentToText8(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  const parts = [];
+  for (const block of content) {
+    if (typeof block === "string") {
+      parts.push(block);
+      continue;
+    }
+    if (!isRecord3(block)) continue;
+    const text = stringValue2(block.text);
+    if (text !== void 0) parts.push(text);
+  }
+  return parts.join("\n");
+}
+
+// vendor/channel-pack/src/monkeycode-ws.ts
+import { createHash as createHash5, randomBytes as randomBytes3 } from "node:crypto";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+var WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+var WS_OPCODE = {
+  continuation: 0,
+  text: 1,
+  binary: 2,
+  close: 8,
+  ping: 9,
+  pong: 10
+};
+var WS_MAX_PAYLOAD = 16 * 1024 * 1024;
+function wsAcceptKey(key) {
+  return createHash5("sha1").update(`${key}${WS_GUID}`).digest("base64");
+}
+function createWsKey() {
+  return randomBytes3(16).toString("base64");
+}
+function parseFrame(buffer, maxPayload = WS_MAX_PAYLOAD) {
+  if (buffer.length < 2) return void 0;
+  const first = buffer[0];
+  const second = buffer[1];
+  const fin = (first & 128) !== 0;
+  const opcode = first & 15;
+  const masked = (second & 128) !== 0;
+  let length = second & 127;
+  let offset = 2;
+  if (length === 126) {
+    if (buffer.length < 4) return void 0;
+    length = buffer.readUInt16BE(2);
+    offset = 4;
+  } else if (length === 127) {
+    if (buffer.length < 10) return void 0;
+    const big = buffer.readBigUInt64BE(2);
+    if (big > BigInt(Number.MAX_SAFE_INTEGER)) throw new RangeError("ws frame length exceeds Number.MAX_SAFE_INTEGER");
+    length = Number(big);
+    offset = 10;
+  }
+  if (length > maxPayload) throw new RangeError(`ws frame too large: ${length} > ${maxPayload}`);
+  let maskKey;
+  if (masked) {
+    if (buffer.length < offset + 4) return void 0;
+    maskKey = buffer.subarray(offset, offset + 4);
+    offset += 4;
+  }
+  if (buffer.length < offset + length) return void 0;
+  const payload = Buffer.from(buffer.subarray(offset, offset + length));
+  if (maskKey !== void 0) {
+    for (let index = 0; index < payload.length; index += 1) payload[index] = payload[index] ^ maskKey[index & 3];
+  }
+  return { frame: { fin, opcode, payload }, consumed: offset + length };
+}
+function encodeFrame(opcode, payload, options = {}) {
+  const body = typeof payload === "string" ? Buffer.from(payload, "utf8") : Buffer.from(payload);
+  const fin = options.fin !== false;
+  const mask = options.mask !== false;
+  const head = [(fin ? 128 : 0) | opcode & 15];
+  const maskBit = mask ? 128 : 0;
+  if (body.length < 126) {
+    head.push(body.length | maskBit);
+  } else if (body.length <= 65535) {
+    head.push(126 | maskBit, body.length >>> 8 & 255, body.length & 255);
+  } else {
+    head.push(127 | maskBit);
+    const length = BigInt(body.length);
+    for (let shift = 7; shift >= 0; shift -= 1) head.push(Number(length >> BigInt(shift * 8) & 0xffn));
+  }
+  const headBuffer = Buffer.from(head);
+  if (!mask) return Buffer.concat([headBuffer, body]);
+  const maskKey = randomBytes3(4);
+  const masked = Buffer.allocUnsafe(body.length);
+  for (let index = 0; index < body.length; index += 1) masked[index] = body[index] ^ maskKey[index & 3];
+  return Buffer.concat([headBuffer, maskKey, masked]);
+}
+var SocketReader = class {
+  queue = [];
+  ended = false;
+  failure;
+  notify;
+  detach;
+  constructor(socket, initial, idleTimeoutMs) {
+    if (initial.length > 0) this.queue.push(initial);
+    const onData = (chunk) => {
+      this.queue.push(chunk);
+      this.wake();
+    };
+    const onEnd = () => {
+      this.ended = true;
+      this.wake();
+    };
+    const onClose = () => {
+      this.ended = true;
+      this.wake();
+    };
+    const onError = (error) => {
+      this.failure = error;
+      this.wake();
+    };
+    const onTimeout = () => {
+      this.failure = new Error(`ws idle timeout after ${idleTimeoutMs}ms`);
+      this.wake();
+      socket.destroy();
+    };
+    socket.on("data", onData);
+    socket.on("end", onEnd);
+    socket.on("close", onClose);
+    socket.on("error", onError);
+    if (idleTimeoutMs > 0) {
+      socket.setTimeout(idleTimeoutMs);
+      socket.on("timeout", onTimeout);
+    }
+    this.detach = () => {
+      socket.off("data", onData);
+      socket.off("end", onEnd);
+      socket.off("close", onClose);
+      socket.off("error", onError);
+      socket.off("timeout", onTimeout);
+      if (idleTimeoutMs > 0) socket.setTimeout(0);
+    };
+  }
+  wake() {
+    const notify = this.notify;
+    this.notify = void 0;
+    notify?.();
+  }
+  /** 取下个字节块；流正常结束返回 `undefined`，出错抛错。 */
+  async read() {
+    for (; ; ) {
+      const chunk = this.queue.shift();
+      if (chunk !== void 0) return chunk;
+      if (this.failure !== void 0) throw this.failure;
+      if (this.ended) return void 0;
+      await new Promise((resolve2) => {
+        this.notify = resolve2;
+      });
+    }
+  }
+  dispose() {
+    this.detach();
+  }
+};
+var MonkeyCodeWsClient = class {
+  constructor(socket, initial, options = {}) {
+    this.socket = socket;
+    this.maxPayload = options.maxPayload ?? WS_MAX_PAYLOAD;
+    this.reader = new SocketReader(socket, initial, options.idleTimeoutMs ?? 12e4);
+    const signal = options.signal;
+    if (signal !== void 0) {
+      const onAbort = () => {
+        this.destroy(new Error("ws aborted"));
+      };
+      if (signal.aborted) onAbort();
+      else {
+        signal.addEventListener("abort", onAbort, { once: true });
+        this.removeAbort = () => {
+          signal.removeEventListener("abort", onAbort);
+        };
+      }
+    }
+  }
+  reader;
+  maxPayload;
+  removeAbort;
+  closed = false;
+  /**
+   * 逐帧读取**原始帧**（含 ping / pong / close 控制帧），不做任何自动应答。
+   *
+   * ⚠️ 需要自动回 pong、按 close 优雅收尾时用 {@link messages}；
+   * 直接消费本方法必须自己处理控制帧，否则对端会因收不到 pong 而断开。
+   */
+  async *frames() {
+    let buffer = Buffer.alloc(0);
+    try {
+      for (; ; ) {
+        const chunk = await this.reader.read();
+        if (chunk === void 0) {
+          if (buffer.length > 0) throw new Error(`ws stream ended mid-frame (${buffer.length} trailing bytes)`);
+          return;
+        }
+        buffer = buffer.length === 0 ? chunk : Buffer.concat([buffer, chunk]);
+        let parsed;
+        while ((parsed = parseFrame(buffer, this.maxPayload)) !== void 0) {
+          buffer = buffer.subarray(parsed.consumed);
+          yield parsed.frame;
+        }
+      }
+    } finally {
+      this.reader.dispose();
+    }
+  }
+  /** 逐条读取上游消息（text / binary）。 */
+  async *messages() {
+    for await (const frame of this.frames()) {
+      if (frame.opcode === WS_OPCODE.ping) {
+        this.sendPong(frame.payload);
+        continue;
+      }
+      if (frame.opcode === WS_OPCODE.pong) continue;
+      if (frame.opcode === WS_OPCODE.close) {
+        this.close();
+        return;
+      }
+      if (frame.opcode === WS_OPCODE.text || frame.opcode === WS_OPCODE.binary) {
+        yield { opcode: frame.opcode, text: frame.payload.toString("utf8"), data: frame.payload };
+        continue;
+      }
+    }
+  }
+  /** 回 pong（RFC 6455 §5.5.3：pong 必须回带 ping 的负载）。 */
+  sendPong(payload = Buffer.alloc(0)) {
+    this.write(WS_OPCODE.pong, payload);
+  }
+  /** 发送 close 帧（默认 1000 normal closure）。 */
+  sendClose(code = 1e3) {
+    const payload = Buffer.alloc(2);
+    payload.writeUInt16BE(code, 0);
+    this.write(WS_OPCODE.close, payload);
+  }
+  /** 主动关闭：先发 close，再结束 socket。 */
+  close() {
+    if (this.closed) return;
+    this.closed = true;
+    try {
+      this.sendClose(1e3);
+    } catch {
+    }
+    this.removeAbort?.();
+    this.reader.dispose();
+    if (!this.socket.destroyed) this.socket.end();
+  }
+  /** 立即销毁（取消、协议错误）。 */
+  destroy(error) {
+    if (this.closed) return;
+    this.closed = true;
+    this.removeAbort?.();
+    this.reader.dispose();
+    if (!this.socket.destroyed) this.socket.destroy(error);
+  }
+  write(opcode, payload) {
+    if (this.socket.destroyed) return;
+    try {
+      this.socket.write(encodeFrame(opcode, payload));
+    } catch {
+    }
+  }
+};
+var WsHandshakeError = class extends Error {
+  constructor(message2, status) {
+    super(message2);
+    this.status = status;
+    this.name = "WsHandshakeError";
+  }
+};
+function openWebSocket(url, options = {}) {
+  return new Promise((resolve2, reject) => {
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      reject(new Error(`ws: invalid url "${url}"`));
+      return;
+    }
+    const secure = parsed.protocol === "wss:" || parsed.protocol === "https:";
+    if (!secure && parsed.protocol !== "ws:" && parsed.protocol !== "http:") {
+      reject(new Error(`ws: unsupported protocol "${parsed.protocol}"`));
+      return;
+    }
+    const key = createWsKey();
+    const headers = {
+      Connection: "Upgrade",
+      Upgrade: "websocket",
+      "Sec-WebSocket-Key": key,
+      "Sec-WebSocket-Version": "13",
+      ...options.headers ?? {}
+    };
+    const requestFn = secure ? httpsRequest : httpRequest;
+    const request2 = requestFn({
+      protocol: secure ? "https:" : "http:",
+      hostname: parsed.hostname,
+      port: parsed.port === "" ? secure ? 443 : 80 : Number(parsed.port),
+      path: `${parsed.pathname}${parsed.search}`,
+      method: "GET",
+      headers
+    });
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbort);
+      request2.destroy();
+      reject(error);
+    };
+    const onAbort = () => {
+      finish(new Error("ws handshake aborted"));
+    };
+    const timer = setTimeout(
+      () => {
+        finish(new WsHandshakeError("ws handshake timed out"));
+      },
+      options.handshakeTimeoutMs ?? 15e3
+    );
+    if (options.signal !== void 0) {
+      if (options.signal.aborted) {
+        onAbort();
+        return;
+      }
+      options.signal.addEventListener("abort", onAbort, { once: true });
+    }
+    request2.on("upgrade", (response, socket, head) => {
+      if (settled) {
+        socket.destroy();
+        return;
+      }
+      const rawAccept = response.headers["sec-websocket-accept"];
+      const accept = Array.isArray(rawAccept) ? rawAccept[0] : rawAccept;
+      const expected = wsAcceptKey(key);
+      if (accept !== expected) {
+        settled = true;
+        clearTimeout(timer);
+        options.signal?.removeEventListener("abort", onAbort);
+        socket.destroy();
+        reject(new WsHandshakeError("ws handshake rejected: Sec-WebSocket-Accept mismatch"));
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbort);
+      resolve2(new MonkeyCodeWsClient(socket, head, options));
+    });
+    request2.on("response", (response) => {
+      response.resume();
+      finish(new WsHandshakeError(`ws handshake failed: HTTP ${response.statusCode ?? 0}`, response.statusCode));
+    });
+    request2.on("error", (error) => {
+      finish(error);
+    });
+    request2.end();
+  });
+}
+var TERMINAL_TYPES = /* @__PURE__ */ new Set(["done", "finish", "completed", "error", "abort"]);
+var TEXT_TYPES = /* @__PURE__ */ new Set(["round", "message", "assistant", "delta", "text", "content", "delta_text"]);
+var TEXT_FIELDS = ["content", "text", "delta", "message"];
+var NESTED_TEXT_FIELDS = ["content", "text", "delta"];
+function isRecord4(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function stringValue3(value) {
+  return typeof value === "string" && value !== "" ? value : void 0;
+}
+function textFromValue(value) {
+  const direct = stringValue3(value);
+  if (direct !== void 0) return direct;
+  if (!isRecord4(value)) return void 0;
+  for (const field of NESTED_TEXT_FIELDS) {
+    const nested = stringValue3(value[field]);
+    if (nested !== void 0) return nested;
+  }
+  return void 0;
+}
+function extractText(record) {
+  for (const field of TEXT_FIELDS) {
+    if (!(field in record)) continue;
+    const text = textFromValue(record[field]);
+    if (text !== void 0) return text;
+  }
+  if (isRecord4(record.data)) {
+    for (const field of TEXT_FIELDS) {
+      if (!(field in record.data)) continue;
+      const text = textFromValue(record.data[field]);
+      if (text !== void 0) return text;
+    }
+  }
+  return void 0;
+}
+function extractErrorMessage(record, type) {
+  const direct = stringValue3(record.message) ?? stringValue3(record.msg) ?? stringValue3(record.error) ?? stringValue3(record.reason) ?? stringValue3(record.content);
+  if (direct !== void 0) return direct;
+  if (isRecord4(record.error)) {
+    const nested = stringValue3(record.error.message) ?? stringValue3(record.error.msg) ?? stringValue3(record.error.reason);
+    if (nested !== void 0) return nested;
+  }
+  if (isRecord4(record.data)) {
+    const nested = stringValue3(record.data.message) ?? stringValue3(record.data.msg) ?? stringValue3(record.data.error);
+    if (nested !== void 0) return nested;
+  }
+  return `\u4E0A\u6E38\u8FD4\u56DE ${type} \u4E8B\u4EF6`;
+}
+function parseTaskStreamEvent(raw) {
+  const text = typeof raw === "string" ? raw : raw.toString("utf8");
+  if (text.trim() === "") return { kind: "ignore" };
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { kind: "ignore" };
+  }
+  if (!isRecord4(parsed)) return { kind: "ignore" };
+  const type = stringValue3(parsed.type) ?? stringValue3(parsed.event) ?? stringValue3(parsed.kind);
+  if (type === void 0) {
+    const loose = extractText(parsed);
+    return loose === void 0 ? { kind: "ignore" } : { kind: "text", text: loose };
+  }
+  const normalized = type.toLowerCase();
+  if (normalized === "error" || normalized === "abort") {
+    return { kind: "error", message: extractErrorMessage(parsed, normalized) };
+  }
+  if (TERMINAL_TYPES.has(normalized)) return { kind: "done" };
+  if (TEXT_TYPES.has(normalized)) {
+    const body = extractText(parsed);
+    return body === void 0 ? { kind: "ignore" } : { kind: "text", text: body };
+  }
+  return { kind: "ignore" };
+}
+function toWebSocketUrl(apiBase, path2, query = {}) {
+  const base = new URL(apiBase);
+  const protocol = base.protocol === "https:" || base.protocol === "wss:" ? "wss:" : "ws:";
+  const url = new URL(path2, `${protocol}//${base.host}`);
+  for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
+  return url.toString();
 }
 
 // vendor/channel-pack/src/monkeycode-auth.ts
@@ -44604,6 +45060,49 @@ async function fetchModels(fetcher, product, credential, signal) {
   }
   if (rows.length === 0) throw new Error("MonkeyCode\uFF1A\u6A21\u578B\u76EE\u5F55\u4E3A\u7A7A");
   return rows;
+}
+async function createTask(fetcher, product, credential, options) {
+  const result = await call(fetcher, product, credential, MONKEYCODE_TASKS_PATH, {
+    method: "POST",
+    body: {
+      content: options.content,
+      cli_name: "opencode",
+      model_id: options.modelId,
+      image_id: MONKEYCODE_PUBLIC_IMAGE_ID,
+      host_id: MONKEYCODE_PUBLIC_HOST,
+      task_type: "chat",
+      resource: { core: 2, memory: 8 * 1024 * 1024 * 1024, life: 7200 }
+    },
+    ...options.signal === void 0 ? {} : { signal: options.signal }
+  });
+  if (result.status === 0) throw new Error("MonkeyCode\uFF1A\u5EFA\u4EFB\u52A1\u5931\u8D25\uFF08\u7F51\u7EDC\u4E0D\u53EF\u8FBE\uFF09");
+  if (result.status === 401 || result.status === 403) throw new Error("MonkeyCode\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u7C98\u8D34 Cookie");
+  if (!result.ok) throw new Error(`MonkeyCode\uFF1A\u5EFA\u4EFB\u52A1\u8FD4\u56DE HTTP ${result.status}`);
+  const body = unwrapData(result.body);
+  const taskId = isRecord(body) ? typeof body.id === "string" ? body.id : void 0 : void 0;
+  if (taskId === void 0 || taskId === "") throw new Error("MonkeyCode\uFF1A\u5EFA\u4EFB\u52A1\u54CD\u5E94\u7F3A\u5C11 id");
+  return taskId;
+}
+async function* streamChat(fetcher, product, credential, options) {
+  const taskId = await createTask(fetcher, product, credential, options);
+  const url = toWebSocketUrl(product.apiBase, MONKEYCODE_STREAM_PATH, {
+    id: taskId,
+    mode: "develop"
+  });
+  const client = await openWebSocket(url, {
+    headers: monkeyCodeHeaders(product, credential),
+    ...options.signal === void 0 ? {} : { signal: options.signal }
+  });
+  try {
+    for await (const message2 of client.messages()) {
+      const event = parseTaskStreamEvent(message2.text);
+      if (event.kind === "done") return;
+      if (event.kind === "error") throw new Error(`MonkeyCode \u4E0A\u6E38\u9519\u8BEF\uFF1A${event.message}`);
+      if (event.kind === "text" && event.text !== "") yield { text: event.text };
+    }
+  } finally {
+    client.close();
+  }
 }
 
 // vendor/channel-pack/src/monkeycode-adapter.ts
@@ -44677,27 +45176,49 @@ var MonkeyCodeAdapter = class extends LlmAdapter8 {
     };
   }
   /**
-   * 对话推理 —— **当前明确不支持**。
+   * 流式对话：建任务 → 连 WebSocket → 逐帧映射成 `text-delta`。
    *
-   * 抛 `UNSUPPORTED_CONTENT` 而不是返回空流：空流会被 DSH 当成
-   * 「模型返回了空回答」，用户看到的是空白回复加一个成功标记，
-   * 完全无从排查。这里的错误消息直接说明原因与现状。
+   * 上游一次只收一条正文，历史由 `flattenMessages` 拍平后塞进这条里；
+   * `options.model` 直接就是上游要的模型 UUID（远端目录下发的 id，
+   * 建任务请求体的 `model_id`）。取消信号透传给建任务与 WebSocket 两段。
    */
-  // eslint-disable-next-line require-yield
-  async *stream(_options) {
-    throw new LlmError11(
-      "MonkeyCode\uFF1A\u5BF9\u8BDD\u529F\u80FD\u6682\u672A\u652F\u6301\uFF08\u8BE5\u6E20\u9053\u8D70 WebSocket \u534F\u8BAE\uFF0C\u5F53\u524D\u7248\u672C\u53EA\u63D0\u4F9B\u8D26\u53F7\u3001\u989D\u5EA6\u3001\u6A21\u578B\u76EE\u5F55\u4E0E\u7B7E\u5230\uFF1B\u63A8\u7406\u80FD\u529B\u5F85\u540E\u7EED\u7248\u672C\u5B9E\u73B0\uFF09",
-      "UNSUPPORTED_CONTENT"
-    );
+  async *stream(options) {
+    const credential = await this.options.resolveCredential();
+    if (!isCredentialUsable2(credential)) {
+      throw new LlmError11("MonkeyCode\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u7C98\u8D34 Cookie", "MISSING_CREDENTIAL");
+    }
+    try {
+      const content = flattenMessages(options.messages, options.system);
+      for await (const delta of streamChat(this.fetchImpl, this.product, credential, {
+        content,
+        modelId: options.model,
+        ...options.signal === void 0 ? {} : { signal: options.signal }
+      })) {
+        yield { type: "text-delta", text: delta.text };
+      }
+    } catch (error) {
+      if (options.signal?.aborted === true) throw new LlmError11("MonkeyCode\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
+      const message2 = error instanceof Error ? error.message : String(error);
+      if (/401|403|凭据|Cookie/.test(message2)) {
+        throw new LlmError11(`MonkeyCode\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u7C98\u8D34 Cookie\uFF08${message2}\uFF09`, "AUTH");
+      }
+      throw new LlmError11(message2, "TRANSPORT");
+    }
+    yield { type: "finish", reason: "stop" };
   }
-  /** 只读渠道：无重试意义（对话本来就不支持）。 */
+  /**
+   * 退避策略：对话已可用，传输类错误值得重试。
+   *
+   * ⚠️ 必须是扁平字段 —— 内核调度器读顶层 `initialDelayMs` 等；
+   * 嵌进 `backoff: {}` 会读到 undefined → NaN，持久会话日志会拒绝非有限数值。
+   */
   providerRetryPolicy() {
     return {
-      retryableCodes: [],
-      maxRetries: 0,
-      initialDelayMs: 1e3,
-      maxDelayMs: 1e3,
-      jitterRatio: 0
+      retryableCodes: ["TRANSPORT", "TIMEOUT"],
+      maxRetries: 2,
+      initialDelayMs: 900,
+      maxDelayMs: 4e3,
+      jitterRatio: 0.25
     };
   }
 };
@@ -44731,10 +45252,10 @@ var ORCATERM_CHAT_QUERY = { name: "orcaterm", mode: "0", csrfCode: "", sseresume
 var ORCATERM_CONVERSATION_TAG = "orcaterm";
 
 // vendor/channel-pack/src/orcaterm.ts
-function stringValue2(value) {
+function stringValue4(value) {
   return typeof value === "string" && value !== "" ? value : void 0;
 }
-function isRecord3(value) {
+function isRecord5(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function normalizeCookie2(raw) {
@@ -44769,15 +45290,15 @@ function parseChatFrame(data) {
   } catch {
     return void 0;
   }
-  if (!isRecord3(parsed)) return void 0;
+  if (!isRecord5(parsed)) return void 0;
   const code = parsed.code;
   if (typeof code === "number" && code !== 0) {
-    const message2 = stringValue2(parsed.msg) ?? stringValue2(parsed.message) ?? `\u4E0A\u6E38\u8FD4\u56DE code=${code}`;
+    const message2 = stringValue4(parsed.msg) ?? stringValue4(parsed.message) ?? `\u4E0A\u6E38\u8FD4\u56DE code=${code}`;
     return { kind: "error", message: message2 };
   }
   const isReasoning = parsed.reasoning === true;
-  const content = stringValue2(parsed.content);
-  const reasoningContent = stringValue2(parsed.reasoningContent);
+  const content = stringValue4(parsed.content);
+  const reasoningContent = stringValue4(parsed.reasoningContent);
   if (isReasoning) {
     const text2 = reasoningContent ?? content;
     return text2 === void 0 ? void 0 : { kind: "delta", reasoning: text2 };
@@ -44785,12 +45306,12 @@ function parseChatFrame(data) {
   const text = content ?? reasoningContent;
   return text === void 0 ? void 0 : { kind: "delta", text };
 }
-function flattenMessages(messages, system) {
+function flattenMessages2(messages, system) {
   const parts = [];
   if (system !== void 0 && system.trim() !== "") parts.push(`## system
 ${system.trim()}`);
   for (const message2 of messages) {
-    const text = contentToText8(message2.content);
+    const text = contentToText9(message2.content);
     if (text.trim() === "") continue;
     const role = message2.role === "assistant" ? "assistant" : message2.role === "system" ? "system" : "user";
     parts.push(`## ${role}
@@ -44798,7 +45319,7 @@ ${text.trim()}`);
   }
   return parts.join("\n\n");
 }
-function contentToText8(content) {
+function contentToText9(content) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   const parts = [];
@@ -44807,8 +45328,8 @@ function contentToText8(content) {
       parts.push(block);
       continue;
     }
-    if (!isRecord3(block)) continue;
-    const text = stringValue2(block.text);
+    if (!isRecord5(block)) continue;
+    const text = stringValue4(block.text);
     if (text !== void 0) parts.push(text);
   }
   return parts.join("\n");
@@ -44840,7 +45361,7 @@ async function createConversation(fetcher, product, credential, signal) {
   void response.body?.cancel().catch(() => void 0);
   return `cid-${id}-${ORCATERM_CONVERSATION_TAG}`;
 }
-async function* streamChat(fetcher, product, credential, options) {
+async function* streamChat2(fetcher, product, credential, options) {
   if (!isCredentialUsable3(credential)) {
     throw new Error("OrcaTerm\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u7C98\u8D34 Cookie");
   }
@@ -44858,7 +45379,7 @@ async function* streamChat(fetcher, product, credential, options) {
       user: { model: options.model },
       input: {
         type: "start",
-        input: flattenMessages(options.messages, options.system),
+        input: flattenMessages2(options.messages, options.system),
         id: randomUUID3()
       },
       stream: true
@@ -44953,7 +45474,7 @@ var OrcaTermAdapter = class extends LlmAdapter9 {
       throw new LlmError12("OrcaTerm\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u5728\u6E20\u9053\u9762\u677F\u7C98\u8D34 Cookie", "MISSING_CREDENTIAL");
     }
     try {
-      for await (const delta of streamChat(this.fetchImpl, this.product, credential, {
+      for await (const delta of streamChat2(this.fetchImpl, this.product, credential, {
         model: options.model,
         messages: options.messages,
         ...options.system === void 0 ? {} : { system: options.system },
@@ -45017,10 +45538,10 @@ var KUKU_SSE_PATH = "/wenchain/genflowpro/sse/getchatcontent";
 var KUKU_SESSION_COOKIE = "BDUSS";
 
 // vendor/channel-pack/src/kuku.ts
-function stringValue3(value) {
+function stringValue5(value) {
   return typeof value === "string" && value !== "" ? value : void 0;
 }
-function isRecord4(value) {
+function isRecord6(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function normalizeCookie3(raw) {
@@ -45098,29 +45619,29 @@ function parseSseFrame(data) {
   } catch {
     return void 0;
   }
-  if (!isRecord4(parsed)) return void 0;
+  if (!isRecord6(parsed)) return void 0;
   const code = parsed.errno ?? parsed.code;
   if (typeof code === "number" && code !== 0) {
-    return { kind: "error", message: stringValue3(parsed.errmsg) ?? stringValue3(parsed.msg) ?? `errno=${code}` };
+    return { kind: "error", message: stringValue5(parsed.errmsg) ?? stringValue5(parsed.msg) ?? `errno=${code}` };
   }
-  const dataObj = isRecord4(parsed.data) ? parsed.data : void 0;
-  const text = stringValue3(parsed.content) ?? stringValue3(parsed.text) ?? (dataObj === void 0 ? void 0 : stringValue3(dataObj.content));
-  const reasoning = stringValue3(parsed.reasoning_content) ?? stringValue3(parsed.reasoningContent);
+  const dataObj = isRecord6(parsed.data) ? parsed.data : void 0;
+  const text = stringValue5(parsed.content) ?? stringValue5(parsed.text) ?? (dataObj === void 0 ? void 0 : stringValue5(dataObj.content));
+  const reasoning = stringValue5(parsed.reasoning_content) ?? stringValue5(parsed.reasoningContent);
   if (reasoning !== void 0) return { kind: "delta", reasoning };
   if (text !== void 0) return { kind: "delta", text };
   return void 0;
 }
-function flattenMessages2(messages, system) {
+function flattenMessages3(messages, system) {
   const parts = [];
   if (system !== void 0 && system.trim() !== "") parts.push(system.trim());
   for (const message2 of messages) {
-    const text = contentToText9(message2.content);
+    const text = contentToText10(message2.content);
     if (text.trim() === "") continue;
     parts.push(text.trim());
   }
   return parts.join("\n\n");
 }
-function contentToText9(content) {
+function contentToText10(content) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   const parts = [];
@@ -45129,8 +45650,8 @@ function contentToText9(content) {
       parts.push(block);
       continue;
     }
-    if (!isRecord4(block)) continue;
-    const text = stringValue3(block.text);
+    if (!isRecord6(block)) continue;
+    const text = stringValue5(block.text);
     if (text !== void 0) parts.push(text);
   }
   return parts.join("\n");
@@ -45149,7 +45670,7 @@ function pickId(body, ...keys) {
   if (typeof data === "object" && data !== null) return pickId(data, ...keys);
   return void 0;
 }
-async function* streamChat2(fetcher, product, credential, options) {
+async function* streamChat3(fetcher, product, credential, options) {
   if (!isCredentialUsable4(credential)) {
     throw new Error("KukuAI\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u7C98\u8D34\u542B BDUSS \u7684 Cookie");
   }
@@ -45161,7 +45682,7 @@ async function* streamChat2(fetcher, product, credential, options) {
     method: "POST",
     headers: { ...kukuHeaders(product, credential), "Content-Type": "application/json" },
     body: JSON.stringify(buildSendmsgBody({
-      text: flattenMessages2(options.messages, options.system),
+      text: flattenMessages3(options.messages, options.system),
       model: options.model,
       sessionId,
       replyId,
@@ -45276,7 +45797,7 @@ var KukuAdapter = class extends LlmAdapter10 {
       throw new LlmError13("KukuAI\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u5728\u6E20\u9053\u9762\u677F\u7C98\u8D34\u542B BDUSS \u7684 Cookie", "MISSING_CREDENTIAL");
     }
     try {
-      for await (const delta of streamChat2(this.fetchImpl, this.product, credential, {
+      for await (const delta of streamChat3(this.fetchImpl, this.product, credential, {
         model: options.model,
         messages: options.messages,
         ...options.system === void 0 ? {} : { system: options.system },
@@ -45405,7 +45926,7 @@ var AccioAdapter = class extends LlmAdapter11 {
   async *stream(options) {
     const credential = await this.credentialForUse();
     try {
-      for await (const delta of streamChat3(this.fetchImpl, this.product, credential, {
+      for await (const delta of streamChat4(this.fetchImpl, this.product, credential, {
         model: options.model,
         messages: options.messages,
         ...options.system === void 0 ? {} : { system: options.system },
@@ -45649,10 +46170,10 @@ var AUTOCLAW_INTL = {
 var AUTOCLAW_MODEL_CONFIG_PATH = "/proxy/autoclaw-model-config";
 
 // vendor/channel-pack/src/autoclaw.ts
-function stringValue6(value) {
+function stringValue8(value) {
   return typeof value === "string" && value !== "" ? value : void 0;
 }
-function isRecord7(value) {
+function isRecord9(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function isCredentialUsable7(credential) {
@@ -45673,30 +46194,30 @@ function chatEndpoint(product) {
   return `${product.apiBase}${product.proxyPrefix}/chat/completions`;
 }
 function parseCredential2(value) {
-  if (!isRecord7(value)) return void 0;
-  const token = stringValue6(value.access_token) ?? stringValue6(value.accessToken) ?? stringValue6(value.token);
+  if (!isRecord9(value)) return void 0;
+  const token = stringValue8(value.access_token) ?? stringValue8(value.accessToken) ?? stringValue8(value.token);
   if (token === void 0) return void 0;
   const expiresRaw = value.expire_time ?? value.expiresAt ?? value.expires_at;
   const expireTime = typeof expiresRaw === "number" && Number.isFinite(expiresRaw) ? expiresRaw < 1e12 ? expiresRaw * 1e3 : expiresRaw : void 0;
   return {
     access_token: token,
-    ...stringValue6(value.refresh_token) === void 0 && stringValue6(value.refreshToken) === void 0 ? {} : { refresh_token: stringValue6(value.refresh_token) ?? stringValue6(value.refreshToken) },
+    ...stringValue8(value.refresh_token) === void 0 && stringValue8(value.refreshToken) === void 0 ? {} : { refresh_token: stringValue8(value.refresh_token) ?? stringValue8(value.refreshToken) },
     ...expireTime === void 0 ? {} : { expire_time: expireTime },
-    ...stringValue6(value.account_id) === void 0 ? {} : { account_id: stringValue6(value.account_id) },
-    ...stringValue6(value.nickname) === void 0 ? {} : { nickname: stringValue6(value.nickname) },
+    ...stringValue8(value.account_id) === void 0 ? {} : { account_id: stringValue8(value.account_id) },
+    ...stringValue8(value.nickname) === void 0 ? {} : { nickname: stringValue8(value.nickname) },
     created_at: Date.now()
   };
 }
 function parseModelConfig(value) {
-  const list = Array.isArray(value) ? value : isRecord7(value) && Array.isArray(value.models) ? value.models : isRecord7(value) && Array.isArray(value.data) ? value.data : void 0;
+  const list = Array.isArray(value) ? value : isRecord9(value) && Array.isArray(value.models) ? value.models : isRecord9(value) && Array.isArray(value.data) ? value.data : void 0;
   if (list === void 0) return [];
   const rows = [];
   for (const raw of list) {
     if (typeof raw !== "object" || raw === null) continue;
     const item = raw;
-    const id = stringValue6(item.id) ?? stringValue6(item.model) ?? stringValue6(item.name);
+    const id = stringValue8(item.id) ?? stringValue8(item.model) ?? stringValue8(item.name);
     if (id === void 0) continue;
-    const name2 = stringValue6(item.name) ?? stringValue6(item.displayName) ?? id;
+    const name2 = stringValue8(item.name) ?? stringValue8(item.displayName) ?? id;
     const contextRaw = item.contextWindow ?? item.context_length ?? item.maxInputTokens;
     const contextWindow = typeof contextRaw === "number" && contextRaw > 0 ? contextRaw : 128e3;
     const maxRaw = item.maxTokens ?? item.max_output_tokens;
@@ -45856,183 +46377,8 @@ function registerAutoClawLlm(ctx, options) {
   return adapter;
 }
 
-// vendor/channel-pack/src/catpaw-adapter.ts
-import { LlmAdapter as LlmAdapter14, LlmError as LlmError17 } from "@deepseek-ai/dsh-llm";
-
-// vendor/channel-pack/src/catpaw-product.ts
-var CATPAW_FALLBACK_MODELS = [
-  { id: "catpaw-default", name: "CatPaw", contextWindow: 128e3 }
-];
-var CATPAW = {
-  id: "catpaw",
-  displayName: "CatPaw",
-  gatewayBase: "https://catx.nocode.cn",
-  apiBase: "https://ai.catpaw.meituan.com",
-  defaultCredentialRef: "CATPAW_CREDENTIAL",
-  fallbackModels: CATPAW_FALLBACK_MODELS
-};
-var CATPAW_MODEL_TYPES_PATH = "/api/agent/maas/model-types";
-var CATPAW_TOKEN_HEADER = "X-Passport-Token";
-
-// vendor/channel-pack/src/catpaw.ts
-function stringValue7(value) {
-  return typeof value === "string" && value !== "" ? value : void 0;
-}
-function isRecord8(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function isCredentialUsable8(credential) {
-  if (credential === void 0) return false;
-  const token = credential.access_token;
-  return typeof token === "string" && token !== "" && token === token.trim();
-}
-function catPawHeaders(product, credential) {
-  return {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-    [CATPAW_TOKEN_HEADER]: credential.access_token,
-    ...credential.user_uid === void 0 ? {} : { "X-User-Uid": credential.user_uid },
-    Origin: product.apiBase,
-    Referer: `${product.apiBase}/`
-  };
-}
-function parseCredential3(value) {
-  if (!isRecord8(value)) return void 0;
-  const token = stringValue7(value.access_token) ?? stringValue7(value.accessToken) ?? stringValue7(value.token) ?? stringValue7(value.passportToken);
-  if (token === void 0) return void 0;
-  return {
-    access_token: token,
-    ...stringValue7(value.user_uid) === void 0 && stringValue7(value.userUid) === void 0 ? {} : { user_uid: stringValue7(value.user_uid) ?? stringValue7(value.userUid) },
-    ...stringValue7(value.account_id) === void 0 ? {} : { account_id: stringValue7(value.account_id) },
-    ...stringValue7(value.nickname) === void 0 ? {} : { nickname: stringValue7(value.nickname) },
-    created_at: Date.now()
-  };
-}
-function parseModelTypes(value) {
-  const body = isRecord8(value) && isRecord8(value.data) ? value.data : value;
-  const list = Array.isArray(body) ? body : isRecord8(body) && Array.isArray(body.modelTypes) ? body.modelTypes : isRecord8(body) && Array.isArray(body.models) ? body.models : isRecord8(body) && Array.isArray(body.data) ? body.data : void 0;
-  if (list === void 0) return [];
-  const rows = [];
-  for (const raw of list) {
-    if (typeof raw !== "object" || raw === null) continue;
-    const item = raw;
-    const id = stringValue7(item.modelTypeId) ?? stringValue7(item.id) ?? stringValue7(item.host_model_id);
-    if (id === void 0) continue;
-    const name2 = stringValue7(item.name) ?? stringValue7(item.displayName) ?? id;
-    const contextRaw = item.contextWindow ?? item.context_length ?? item.default_context_window;
-    const contextWindow = typeof contextRaw === "number" && contextRaw > 0 ? contextRaw : 128e3;
-    const maxRaw = item.maxTokens ?? item.max_output_tokens;
-    const maxTokens = typeof maxRaw === "number" && maxRaw > 0 ? Math.min(maxRaw, contextWindow) : void 0;
-    rows.push({ id, name: name2, contextWindow, ...maxTokens === void 0 ? {} : { maxTokens } });
-  }
-  return rows;
-}
-async function fetchModelTypes(fetcher, product, credential, signal) {
-  const response = await fetcher(`${product.apiBase}${CATPAW_MODEL_TYPES_PATH}`, {
-    method: "POST",
-    headers: catPawHeaders(product, credential),
-    body: JSON.stringify({}),
-    ...signal === void 0 ? {} : { signal }
-  });
-  if (!response.ok) throw new Error(`CatPaw\uFF1A\u6A21\u578B\u76EE\u5F55\u8FD4\u56DE HTTP ${response.status}`);
-  const rows = parseModelTypes(await response.json().catch(() => void 0));
-  if (rows.length === 0) throw new Error("CatPaw\uFF1A\u6A21\u578B\u76EE\u5F55\u4E3A\u7A7A\u6216\u5F62\u6001\u672A\u8BC6\u522B");
-  return rows;
-}
-
-// vendor/channel-pack/src/catpaw-adapter.ts
-var CatPawAdapter = class extends LlmAdapter14 {
-  constructor(options) {
-    super();
-    this.options = options;
-    this.product = options.product ?? CATPAW;
-    this.fetchImpl = options.fetchImpl ?? fetch;
-  }
-  product;
-  fetchImpl;
-  remoteModels;
-  loading;
-  providerInfo(provider) {
-    const id = typeof provider === "string" && provider.length > 0 ? provider : this.product.id;
-    return { id, name: this.product.displayName };
-  }
-  async ensureRemoteModels() {
-    if (this.remoteModels !== void 0) return;
-    if (this.loading !== void 0) return this.loading;
-    this.loading = (async () => {
-      try {
-        const credential = await this.options.resolveCredential();
-        if (!isCredentialUsable8(credential)) return;
-        this.remoteModels = await fetchModelTypes(this.fetchImpl, this.product, credential);
-      } catch {
-      } finally {
-        this.loading = void 0;
-      }
-    })();
-    return this.loading;
-  }
-  async listModels(_provider) {
-    if (this.options.accountPool !== void 0 && !await providerCatalogVisible(this.options.accountPool, this.product.id)) {
-      return [];
-    }
-    await this.ensureRemoteModels();
-    const source = this.remoteModels ?? this.product.fallbackModels;
-    const disabled = this.options.accountPool?.disabledModelsFor(this.product.id);
-    const listed = disabled === void 0 || disabled.size === 0 ? source : source.filter((model) => !disabled.has(model.id));
-    return listed.map((model) => ({
-      provider: this.product.id,
-      id: model.id,
-      name: model.name,
-      inputModalities: ["text"]
-    }));
-  }
-  async resolveModel(provider, model, _signal) {
-    await this.ensureRemoteModels();
-    const source = this.remoteModels ?? this.product.fallbackModels;
-    const entry = source.find((candidate) => candidate.id === model);
-    const resolved = {
-      provider,
-      id: model,
-      name: entry?.name ?? model,
-      inputModalities: ["text"]
-    };
-    if (entry?.contextWindow !== void 0) resolved.context = { contextWindow: entry.contextWindow };
-    if (entry?.maxTokens !== void 0 && entry.maxTokens > 0) resolved.defaultMaxTokens = entry.maxTokens;
-    return resolved;
-  }
-  async prepareCall(provider, model, signal) {
-    return {
-      model: await this.resolveModel(provider, model, signal),
-      stream: (options) => this.stream(options)
-    };
-  }
-  /**
-   * 对话推理 —— **当前明确不支持**。
-   *
-   * 抛 `UNSUPPORTED_CONTENT` 并说明原因，而不是返回空流：
-   * 空流会被 DSH 当成「模型返回了空回答」，用户看到空白回复加成功标记。
-   */
-  // eslint-disable-next-line require-yield
-  async *stream(_options) {
-    throw new LlmError17(
-      "CatPaw\uFF1A\u5BF9\u8BDD\u529F\u80FD\u6682\u672A\u652F\u6301\uFF08\u8BE5\u6E20\u9053\u7684\u5BF9\u8BDD\u662F\u6709\u72B6\u6001\u4F1A\u8BDD\u534F\u8BAE\uFF0C\u9700\u8981round/event/turn \u65F6\u5E8F\u4E0E\u6307\u7EB9\u94FE\uFF1B\u5F53\u524D\u7248\u672C\u53EA\u63D0\u4F9B\u51ED\u636E\u4E0E\u6A21\u578B\u76EE\u5F55\uFF0C\u63A8\u7406\u80FD\u529B\u5F85\u540E\u7EED\u7248\u672C\u5B9E\u73B0\uFF09",
-      "UNSUPPORTED_CONTENT"
-    );
-  }
-  /** 只读渠道：无重试意义。 */
-  providerRetryPolicy() {
-    return { retryableCodes: [], maxRetries: 0, initialDelayMs: 1e3, maxDelayMs: 1e3, jitterRatio: 0 };
-  }
-};
-function registerCatPawLlm(ctx, options) {
-  const product = options.product ?? CATPAW;
-  const adapter = new CatPawAdapter(options);
-  registerAdapterIdempotent(ctx.llm, [product.id], adapter);
-  return adapter;
-}
-
 // vendor/channel-pack/src/loomy-adapter.ts
-import { LlmAdapter as LlmAdapter15, LlmError as LlmError18, ReasoningEffortId as ReasoningEffortId8 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter14, LlmError as LlmError17, ReasoningEffortId as ReasoningEffortId8 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/loomy.ts
 var LOOMY_API_BASE = "https://loomyad.xunfei.cn/api/v1";
@@ -46200,7 +46546,7 @@ function fallbackToRemote(model) {
     ...model.defaultEffort !== void 0 ? { defaultEffort: model.defaultEffort } : {}
   };
 }
-var LoomyAdapter = class extends LlmAdapter15 {
+var LoomyAdapter = class extends LlmAdapter14 {
   constructor(options) {
     super();
     this.options = options;
@@ -46342,10 +46688,10 @@ var LoomyAdapter = class extends LlmAdapter15 {
     let imageUrls;
     if (imageRefs.size > 0) {
       if (!this.inputModalitiesFor(entry).includes("image")) {
-        throw new LlmError18(`loomy: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`, "UNSUPPORTED_CONTENT");
+        throw new LlmError17(`loomy: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`, "UNSUPPORTED_CONTENT");
       }
       if (this.options.readImage === void 0) {
-        throw new LlmError18("loomy: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
+        throw new LlmError17("loomy: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
       }
       imageUrls = /* @__PURE__ */ new Map();
       for (const [id, ref] of imageRefs) {
@@ -46360,7 +46706,7 @@ var LoomyAdapter = class extends LlmAdapter15 {
       credential = await this.options.refresh(accountId || void 0) ?? await this.options.resolveCredential(options.model);
     }
     if (credential === void 0 || credential.access_token.length === 0) {
-      throw new LlmError18("loomy: no usable credential; log in first", "MISSING_CREDENTIAL");
+      throw new LlmError17("loomy: no usable credential; log in first", "MISSING_CREDENTIAL");
     }
     const messages = serializeMessages4(options.messages, imageUrls);
     const wireMessages = options.system !== void 0 && options.system.length > 0 ? [{ role: "system", content: options.system }, ...messages] : messages;
@@ -46397,7 +46743,7 @@ var LoomyAdapter = class extends LlmAdapter15 {
       } catch (error) {
         if (options.signal?.aborted) throw error;
         if (isTransportError4(error)) {
-          throw new LlmError18(
+          throw new LlmError17(
             `loomy: transport error: ${error instanceof Error ? error.message : String(error)}`,
             "TRANSPORT",
             { cause: error }
@@ -46416,7 +46762,7 @@ var LoomyAdapter = class extends LlmAdapter15 {
           await response.body?.cancel();
           credential = await this.options.refresh(accountId || void 0) ?? await this.options.resolveCredential(options.model);
           if (credential === void 0 || credential.access_token.length === 0) {
-            throw new LlmError18("loomy: credential expired and refresh failed", "AUTH", { status: response.status });
+            throw new LlmError17("loomy: credential expired and refresh failed", "AUTH", { status: response.status });
           }
           response = await send(credential.access_token);
         }
@@ -46427,7 +46773,7 @@ var LoomyAdapter = class extends LlmAdapter15 {
             quota ||= isLoomyQuotaError(JSON.parse(errorText));
           } catch {
           }
-          throw new LlmError18(
+          throw new LlmError17(
             `loomy: ${errorDetail4(errorText)}`,
             quota ? "QUOTA_EXCEEDED" : httpErrorCode4(response.status),
             { status: response.status }
@@ -46445,7 +46791,7 @@ var LoomyAdapter = class extends LlmAdapter15 {
         }
         return;
       } catch (error) {
-        if (options.signal?.aborted || !(error instanceof LlmError18) || error.code !== "QUOTA_EXCEEDED") throw error;
+        if (options.signal?.aborted || !(error instanceof LlmError17) || error.code !== "QUOTA_EXCEEDED") throw error;
         if (accountId) {
           await this.options.accountPool?.updateModelRateLimit(accountId, options.model, nextUtc8DayStartMs());
         }
@@ -46479,10 +46825,10 @@ function registerLoomyLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/raccoon-adapter.ts
-import { LlmAdapter as LlmAdapter16, LlmError as LlmError19, ReasoningEffortId as ReasoningEffortId9 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter15, LlmError as LlmError18, ReasoningEffortId as ReasoningEffortId9 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/raccoon.ts
-import { createCipheriv, randomBytes as randomBytes3 } from "node:crypto";
+import { createCipheriv, randomBytes as randomBytes4 } from "node:crypto";
 var RACCOON_API_BASE = "https://xiaohuanxiong.com";
 var RACCOON_POINTS_PREFIX = "/api/web/points/v1";
 var RACCOON_DESKTOP_PREFIX = "/api/web/desktop/v1";
@@ -46526,7 +46872,7 @@ function isRaccoonRefreshable(credential) {
 }
 function encryptRaccoonPhone(phone, iv) {
   const key = Buffer.from(RACCOON_PHONE_CIPHER_SECRET, "utf8");
-  const nonce = iv ?? randomBytes3(16);
+  const nonce = iv ?? randomBytes4(16);
   const cipher = createCipheriv("aes-128-cfb", key, nonce);
   cipher.setAutoPadding(false);
   const ciphertext = Buffer.concat([cipher.update(Buffer.from(phone, "utf8")), cipher.final()]);
@@ -46694,7 +47040,7 @@ function fallbackToRemote2(model) {
     supportsImage: model.supportsImage
   };
 }
-var RaccoonAdapter = class extends LlmAdapter16 {
+var RaccoonAdapter = class extends LlmAdapter15 {
   constructor(options) {
     super();
     this.options = options;
@@ -46811,10 +47157,10 @@ var RaccoonAdapter = class extends LlmAdapter16 {
     let imageUrls;
     if (imageRefs.size > 0) {
       if (!this.inputModalitiesFor(entry).includes("image")) {
-        throw new LlmError19(`raccoon: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`, "UNSUPPORTED_CONTENT");
+        throw new LlmError18(`raccoon: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`, "UNSUPPORTED_CONTENT");
       }
       if (this.options.readImage === void 0) {
-        throw new LlmError19("raccoon: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
+        throw new LlmError18("raccoon: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
       }
       imageUrls = /* @__PURE__ */ new Map();
       const readImage = this.options.readImage;
@@ -46835,7 +47181,7 @@ var RaccoonAdapter = class extends LlmAdapter16 {
       credential = await this.options.refresh(accountId || void 0) ?? await this.options.resolveCredential(options.model);
     }
     if (credential === void 0 || credential.access_token.length === 0) {
-      throw new LlmError19("raccoon: no usable credential; log in first", "MISSING_CREDENTIAL");
+      throw new LlmError18("raccoon: no usable credential; log in first", "MISSING_CREDENTIAL");
     }
     const messages = serializeMessages4(options.messages, imageUrls);
     const wireMessages = options.system !== void 0 && options.system.length > 0 ? [{ role: "system", content: options.system }, ...messages] : messages;
@@ -46885,7 +47231,7 @@ var RaccoonAdapter = class extends LlmAdapter16 {
       } catch (error) {
         if (options.signal?.aborted) throw error;
         if (isTransportError4(error)) {
-          throw new LlmError19(
+          throw new LlmError18(
             `raccoon: transport error: ${error instanceof Error ? error.message : String(error)}`,
             "TRANSPORT",
             { cause: error }
@@ -46904,7 +47250,7 @@ var RaccoonAdapter = class extends LlmAdapter16 {
           await response.body?.cancel();
           const refreshed = await this.options.refresh(accountId || void 0) ?? await this.options.resolveCredential(options.model);
           if (refreshed === void 0 || refreshed.access_token.length === 0) {
-            throw new LlmError19("raccoon: credential expired and refresh failed", "AUTH", { status: response.status });
+            throw new LlmError18("raccoon: credential expired and refresh failed", "AUTH", { status: response.status });
           }
           credential = refreshed;
           response = await send();
@@ -46916,7 +47262,7 @@ var RaccoonAdapter = class extends LlmAdapter16 {
             quota ||= isQuotaError(JSON.parse(errorText));
           } catch {
           }
-          throw new LlmError19(
+          throw new LlmError18(
             `raccoon: ${errorDetail4(errorText)}`,
             quota ? "QUOTA_EXCEEDED" : httpErrorCode4(response.status),
             { status: response.status }
@@ -46934,7 +47280,7 @@ var RaccoonAdapter = class extends LlmAdapter16 {
         }
         return;
       } catch (error) {
-        if (options.signal?.aborted || !(error instanceof LlmError19) || error.code !== "QUOTA_EXCEEDED") throw error;
+        if (options.signal?.aborted || !(error instanceof LlmError18) || error.code !== "QUOTA_EXCEEDED") throw error;
         if (accountId) {
           await this.options.accountPool?.updateModelRateLimit(accountId, options.model, nextUtc8DayStartMs());
         }
@@ -47214,7 +47560,7 @@ var CODEARTS_EXPIRY_ACCESSORS = {
   identityOf: (credential) => credential.access_key_id ?? ""
 };
 var CODEARTS_CREDENTIAL_REF = "CODEARTS_ACCESS_TOKEN";
-function parseCredential4(value) {
+function parseCredential3(value) {
   try {
     return JSON.parse(value);
   } catch {
@@ -47268,7 +47614,7 @@ var CodeArtsAuth = class extends Service2 {
   async readCredential(refName) {
     const resolved = await this.ctx.credentials.resolve(credentialRef2(refName));
     if (!resolved) return void 0;
-    return parseCredential4(resolved.value);
+    return parseCredential3(resolved.value);
   }
   /**
    * 判断两份凭据是否「同一份」（用于识别他处是否已经续过）。
@@ -47327,7 +47673,7 @@ var CodeArtsAuth = class extends Service2 {
       void this.refreshModels(options.pool).catch(() => {
       });
     }
-    const credential = parseCredential4(flow.access);
+    const credential = parseCredential3(flow.access);
     if (options.accountId && options.pool) {
       const expiresAt = credential?.expires_at ? Date.parse(credential.expires_at) : void 0;
       await options.pool.addAccount({
@@ -47485,7 +47831,7 @@ var CodeArtsAuth = class extends Service2 {
           if (entry.refreshable) await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        credential = parseCredential4(resolved.value);
+        credential = parseCredential3(resolved.value);
         if (credential === void 0 || !isCodeArtsRefreshable(credential)) {
           if (entry.refreshable) await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -47592,7 +47938,7 @@ var CodeArtsAuth = class extends Service2 {
     for (const entry of pool.listAccountsByProvider("codearts")) {
       const resolved = await this.ctx.credentials.resolve(credentialRef2(entry.credentialRef));
       if (!resolved) continue;
-      const credential = parseCredential4(resolved.value);
+      const credential = parseCredential3(resolved.value);
       if (credential?.access_key_id && credential.secret_access_key) return credential;
     }
     return void 0;
@@ -47931,7 +48277,7 @@ var BUDDY_EXPIRY_ACCESSORS = {
   identityOf: (credential) => credential.access_token ?? ""
 };
 var BUDDY_CREDENTIAL_REF = "BUDDY_ACCESS_TOKEN";
-function parseCredential5(value) {
+function parseCredential4(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -47990,7 +48336,7 @@ var BuddyAuth = class extends Service3 {
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential5(flow.access);
+    const credential = parseCredential4(flow.access);
     if (flowOptions.accountId && flowOptions.pool) {
       await flowOptions.pool.addAccount({
         id: flowOptions.accountId,
@@ -48022,7 +48368,7 @@ var BuddyAuth = class extends Service3 {
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential5(credentialJson);
+    const credential = parseCredential4(credentialJson);
     if (accountId && pool) {
       await pool.updateAccount(accountId, {
         nickname: credential?.nickname ?? accountId,
@@ -48040,7 +48386,7 @@ var BuddyAuth = class extends Service3 {
     let refreshable = false;
     const resolved = await this.ctx.credentials.resolve(ref);
     if (resolved) {
-      const credential = parseCredential5(resolved.value);
+      const credential = parseCredential4(resolved.value);
       if (credential) {
         expiresAt = credentialExpiresAtMs(credential);
         refreshable = isRefreshable(credential) && !this.refreshTokenInvalid;
@@ -48059,7 +48405,7 @@ var BuddyAuth = class extends Service3 {
     const ref = credentialRef3(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
-    const credential = parseCredential5(resolved.value);
+    const credential = parseCredential4(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isRefreshable(credential)) {
       throw new RefreshTokenExpiredError2("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -48113,7 +48459,7 @@ var BuddyAuth = class extends Service3 {
     const ref = credentialRef3(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential5(resolved.value);
+    const credential = parseCredential4(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isRefreshable(credential)) {
       throw new RefreshTokenExpiredError2("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -48160,7 +48506,7 @@ var BuddyAuth = class extends Service3 {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        const credential = parseCredential5(resolved.value);
+        const credential = parseCredential4(resolved.value);
         if (!credential || !isRefreshable(credential)) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -48209,7 +48555,7 @@ var BuddyAuth = class extends Service3 {
   scheduleRefresh() {
     void this.ctx.credentials.resolve(credentialRef3(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
-      const credential = parseCredential5(resolved.value);
+      const credential = parseCredential4(resolved.value);
       if (!credential || !isRefreshable(credential)) return;
       const expiresAt = credentialExpiresAtMs(credential);
       if (expiresAt !== void 0) this.scheduler.arm(expiresAt);
@@ -48219,7 +48565,7 @@ var BuddyAuth = class extends Service3 {
   async checkExpired() {
     const resolved = await this.ctx.credentials.resolve(credentialRef3(this.credentialRefName));
     if (!resolved) return true;
-    const credential = parseCredential5(resolved.value);
+    const credential = parseCredential4(resolved.value);
     return credential === void 0 ? true : isExpired(credential);
   }
   /**
@@ -48240,7 +48586,7 @@ var BuddyAuth = class extends Service3 {
     }
     const resolved = await this.ctx.credentials.resolve(credentialRef3(this.credentialRefName));
     if (!resolved) return [];
-    const credential = parseCredential5(resolved.value);
+    const credential = parseCredential4(resolved.value);
     if (!credential) return [];
     return fetchModels3(credential, this.fetchImpl, void 0, this.product);
   }
@@ -48428,7 +48774,7 @@ var RefreshTokenExpiredError3 = class extends Error {
     this.name = "RefreshTokenExpiredError";
   }
 };
-function parseCredential6(value) {
+function parseCredential5(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -48545,7 +48891,7 @@ var LobsteraiAuth = class extends Service4 {
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential6(flow.access);
+    const credential = parseCredential5(flow.access);
     if (flowOptions.accountId !== void 0 && flowOptions.pool !== void 0) {
       await flowOptions.pool.addAccount({
         id: flowOptions.accountId,
@@ -48620,7 +48966,7 @@ var LobsteraiAuth = class extends Service4 {
     let refreshable = false;
     const resolved = await this.ctx.credentials.resolve(ref);
     if (resolved) {
-      const credential = parseCredential6(resolved.value);
+      const credential = parseCredential5(resolved.value);
       if (credential) {
         expiresAt = lobsteraiCredentialExpiresAtMs(credential);
         refreshable = isLobsteraiRefreshable(credential) && !this.refreshTokenInvalid;
@@ -48646,7 +48992,7 @@ var LobsteraiAuth = class extends Service4 {
     const ref = credentialRef4(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
-    const credential = parseCredential6(resolved.value);
+    const credential = parseCredential5(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isLobsteraiRefreshable(credential)) {
       throw new RefreshTokenExpiredError3("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -48688,7 +49034,7 @@ var LobsteraiAuth = class extends Service4 {
     const ref = credentialRef4(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential6(resolved.value);
+    const credential = parseCredential5(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isLobsteraiRefreshable(credential)) {
       throw new RefreshTokenExpiredError3("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -48741,7 +49087,7 @@ var LobsteraiAuth = class extends Service4 {
       try {
         const resolved = await this.ctx.credentials.resolve(credentialRef4(entry.credentialRef));
         if (!resolved) continue;
-        const credential = parseCredential6(resolved.value);
+        const credential = parseCredential5(resolved.value);
         if (credential === void 0) continue;
         const target = lobsteraiDisplayNickname(credential, entry.id);
         if (target !== entry.nickname) {
@@ -48822,7 +49168,7 @@ var LobsteraiAuth = class extends Service4 {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        const credential = parseCredential6(resolved.value);
+        const credential = parseCredential5(resolved.value);
         if (!credential || !isLobsteraiRefreshable(credential)) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -48871,7 +49217,7 @@ var LobsteraiAuth = class extends Service4 {
   scheduleRefresh() {
     void this.ctx.credentials.resolve(credentialRef4(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
-      const credential = parseCredential6(resolved.value);
+      const credential = parseCredential5(resolved.value);
       if (!credential || !isLobsteraiRefreshable(credential)) return;
       const expiresAt = lobsteraiCredentialExpiresAtMs(credential);
       if (expiresAt !== void 0) this.scheduler.arm(expiresAt);
@@ -48881,7 +49227,7 @@ var LobsteraiAuth = class extends Service4 {
   async checkExpired() {
     const resolved = await this.ctx.credentials.resolve(credentialRef4(this.credentialRefName));
     if (!resolved) return true;
-    const credential = parseCredential6(resolved.value);
+    const credential = parseCredential5(resolved.value);
     return credential === void 0 ? true : isLobsteraiExpired(credential);
   }
   /**
@@ -48893,7 +49239,7 @@ var LobsteraiAuth = class extends Service4 {
   async resolveStoredCredential() {
     const resolved = await this.ctx.credentials.resolve(credentialRef4(this.credentialRefName));
     if (!resolved) return void 0;
-    return parseCredential6(resolved.value);
+    return parseCredential5(resolved.value);
   }
   /**
    * `GET /api/models/available` → 远端模型列表。
@@ -49057,7 +49403,7 @@ var RefreshTokenExpiredError4 = class extends Error {
     this.name = "RefreshTokenExpiredError";
   }
 };
-function parseCredential7(value) {
+function parseCredential6(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -49152,7 +49498,7 @@ var QoderAuth = class extends Service5 {
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential7(flow.access);
+    const credential = parseCredential6(flow.access);
     if (flowOptions.accountId !== void 0 && flowOptions.pool !== void 0) {
       await flowOptions.pool.addAccount({
         id: flowOptions.accountId,
@@ -49182,7 +49528,7 @@ var QoderAuth = class extends Service5 {
     let refreshable = false;
     const resolved = await this.ctx.credentials.resolve(ref);
     if (resolved) {
-      const credential = parseCredential7(resolved.value);
+      const credential = parseCredential6(resolved.value);
       if (credential) {
         expiresAt = qoderCredentialExpiresAtMs(credential);
         refreshable = isQoderRefreshable(credential) && !this.refreshTokenInvalid;
@@ -49208,7 +49554,7 @@ var QoderAuth = class extends Service5 {
     const ref = credentialRef5(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
-    const credential = parseCredential7(resolved.value);
+    const credential = parseCredential6(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isQoderRefreshable(credential)) {
       throw new RefreshTokenExpiredError4("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -49250,7 +49596,7 @@ var QoderAuth = class extends Service5 {
     const ref = credentialRef5(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential7(resolved.value);
+    const credential = parseCredential6(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isQoderRefreshable(credential)) {
       throw new RefreshTokenExpiredError4("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -49333,7 +49679,7 @@ var QoderAuth = class extends Service5 {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        const credential = parseCredential7(resolved.value);
+        const credential = parseCredential6(resolved.value);
         if (!credential || !isQoderRefreshable(credential)) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -49383,7 +49729,7 @@ var QoderAuth = class extends Service5 {
   scheduleRefresh() {
     void this.ctx.credentials.resolve(credentialRef5(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
-      const credential = parseCredential7(resolved.value);
+      const credential = parseCredential6(resolved.value);
       if (!credential || !isQoderRefreshable(credential)) return;
       const expiresAt = qoderCredentialExpiresAtMs(credential);
       if (expiresAt !== void 0) this.scheduler.arm(expiresAt);
@@ -49393,7 +49739,7 @@ var QoderAuth = class extends Service5 {
   async checkExpired() {
     const resolved = await this.ctx.credentials.resolve(credentialRef5(this.credentialRefName));
     if (!resolved) return true;
-    const credential = parseCredential7(resolved.value);
+    const credential = parseCredential6(resolved.value);
     return credential === void 0 ? true : isQoderExpired(credential);
   }
   /**
@@ -49404,7 +49750,7 @@ var QoderAuth = class extends Service5 {
   async resolveStoredCredential() {
     const resolved = await this.ctx.credentials.resolve(credentialRef5(this.credentialRefName));
     if (!resolved) return void 0;
-    return parseCredential7(resolved.value);
+    return parseCredential6(resolved.value);
   }
 };
 
@@ -49801,7 +50147,7 @@ var RefreshTokenExpiredError5 = class extends Error {
     this.name = "RefreshTokenExpiredError";
   }
 };
-function parseCredential8(value) {
+function parseCredential7(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -49900,7 +50246,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
     this.lastRefreshError = void 0;
     this.modelsCache = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential8(flow.access);
+    const credential = parseCredential7(flow.access);
     if (flowOptions.accountId !== void 0 && flowOptions.pool !== void 0) {
       await flowOptions.pool.addAccount({
         id: flowOptions.accountId,
@@ -49933,7 +50279,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
     let refreshable = false;
     const resolved = await this.ctx.credentials.resolve(ref);
     if (resolved) {
-      const credential = parseCredential8(resolved.value);
+      const credential = parseCredential7(resolved.value);
       if (credential) {
         expiresAt = traeCredentialExpiresAtMs(credential);
         refreshable = isTraeRefreshable(credential) && !this.refreshTokenInvalid;
@@ -49958,7 +50304,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
     const ref = credentialRef6(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
-    const credential = parseCredential8(resolved.value);
+    const credential = parseCredential7(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isTraeRefreshable(credential)) {
       throw new RefreshTokenExpiredError5("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -50001,7 +50347,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
     const ref = credentialRef6(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential8(resolved.value);
+    const credential = parseCredential7(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isTraeRefreshable(credential)) {
       throw new RefreshTokenExpiredError5("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -50083,7 +50429,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        const credential = parseCredential8(resolved.value);
+        const credential = parseCredential7(resolved.value);
         if (!credential || !isTraeRefreshable(credential)) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -50153,7 +50499,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
         const ref = credentialRef6(entry.credentialRef);
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) continue;
-        let credential = parseCredential8(resolved.value);
+        let credential = parseCredential7(resolved.value);
         if (credential === void 0) continue;
         if ((credential.phone === void 0 || credential.phone.length === 0) && (credential.email === void 0 || credential.email.length === 0)) {
           const info = await this.fetchUserContact(credential);
@@ -50219,7 +50565,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
   scheduleRefresh() {
     void this.ctx.credentials.resolve(credentialRef6(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
-      const credential = parseCredential8(resolved.value);
+      const credential = parseCredential7(resolved.value);
       if (!credential || !isTraeRefreshable(credential)) return;
       const expiresAt = traeCredentialExpiresAtMs(credential);
       if (expiresAt !== void 0) this.scheduler.arm(expiresAt);
@@ -50229,7 +50575,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
   async checkExpired() {
     const resolved = await this.ctx.credentials.resolve(credentialRef6(this.credentialRefName));
     if (!resolved) return true;
-    const credential = parseCredential8(resolved.value);
+    const credential = parseCredential7(resolved.value);
     return credential === void 0 ? true : isTraeExpired(credential);
   }
   /**
@@ -50266,7 +50612,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
     if (credential === void 0) {
       const resolved = await this.ctx.credentials.resolve(credentialRef6(this.credentialRefName));
       if (!resolved) return [];
-      credential = parseCredential8(resolved.value);
+      credential = parseCredential7(resolved.value);
       if (credential === void 0) return [];
     }
     if (credential.access_token.length === 0) return [];
@@ -50546,7 +50892,7 @@ var RefreshTokenExpiredError6 = class extends Error {
     this.name = "RefreshTokenExpiredError";
   }
 };
-function parseCredential9(value) {
+function parseCredential8(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -50646,7 +50992,7 @@ var ClineAuth = class extends Service7 {
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential9(flow.access);
+    const credential = parseCredential8(flow.access);
     if (flowOptions.accountId !== void 0 && flowOptions.pool !== void 0) {
       await flowOptions.pool.addAccount({
         id: flowOptions.accountId,
@@ -50677,7 +51023,7 @@ var ClineAuth = class extends Service7 {
     let refreshable = false;
     const resolved = await this.ctx.credentials.resolve(ref);
     if (resolved) {
-      const credential = parseCredential9(resolved.value);
+      const credential = parseCredential8(resolved.value);
       if (credential) {
         expiresAt = clineCredentialExpiresAtMs(credential);
         refreshable = isClineRefreshable(credential) && !this.refreshTokenInvalid;
@@ -50703,7 +51049,7 @@ var ClineAuth = class extends Service7 {
     const ref = credentialRef7(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
-    const credential = parseCredential9(resolved.value);
+    const credential = parseCredential8(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isClineRefreshable(credential)) {
       throw new RefreshTokenExpiredError6("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -50745,7 +51091,7 @@ var ClineAuth = class extends Service7 {
     const ref = credentialRef7(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential9(resolved.value);
+    const credential = parseCredential8(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isClineRefreshable(credential)) {
       throw new RefreshTokenExpiredError6("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -50829,7 +51175,7 @@ var ClineAuth = class extends Service7 {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        const credential = parseCredential9(resolved.value);
+        const credential = parseCredential8(resolved.value);
         if (!credential || !isClineRefreshable(credential)) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -50878,7 +51224,7 @@ var ClineAuth = class extends Service7 {
   scheduleRefresh() {
     void this.ctx.credentials.resolve(credentialRef7(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
-      const credential = parseCredential9(resolved.value);
+      const credential = parseCredential8(resolved.value);
       if (!credential || !isClineRefreshable(credential)) return;
       const expiresAt = clineCredentialExpiresAtMs(credential);
       if (expiresAt !== void 0) this.scheduler.arm(expiresAt);
@@ -50888,7 +51234,7 @@ var ClineAuth = class extends Service7 {
   async checkExpired() {
     const resolved = await this.ctx.credentials.resolve(credentialRef7(this.credentialRefName));
     if (!resolved) return true;
-    const credential = parseCredential9(resolved.value);
+    const credential = parseCredential8(resolved.value);
     return credential === void 0 ? true : isClineExpired(credential);
   }
   /**
@@ -50899,7 +51245,7 @@ var ClineAuth = class extends Service7 {
   async resolveStoredCredential() {
     const resolved = await this.ctx.credentials.resolve(credentialRef7(this.credentialRefName));
     if (!resolved) return void 0;
-    return parseCredential9(resolved.value);
+    return parseCredential8(resolved.value);
   }
 };
 
@@ -50911,10 +51257,10 @@ import { credentialRef as credentialRef8 } from "@deepseek-ai/dsh-credentials";
 import { randomUUID as randomUUID9 } from "node:crypto";
 
 // vendor/channel-pack/src/loomy-sign.ts
-import { createHash as createHash6, createHmac, randomUUID as randomUUID8 } from "node:crypto";
+import { createHash as createHash7, createHmac, randomUUID as randomUUID8 } from "node:crypto";
 function loomyContentMd5(body) {
   if (body.length === 0) return "";
-  return createHash6("md5").update(body, "utf8").digest("base64");
+  return createHash7("md5").update(body, "utf8").digest("base64");
 }
 function escapeRfc3986(value) {
   return encodeURIComponent(value).replace(/!/g, "%21").replace(/'/g, "%27").replace(/\(/g, "%28").replace(/\)/g, "%29").replace(/\*/g, "%2A");
@@ -51813,7 +52159,7 @@ var RefreshTokenExpiredError7 = class extends Error {
     this.name = "RefreshTokenExpiredError";
   }
 };
-function parseCredential10(value) {
+function parseCredential9(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -51956,7 +52302,7 @@ var LoomyAuth = class extends Service8 {
   /** 解析当前单凭据（默认 ref）。 */
   async resolveDefaultCredential() {
     const resolved = await this.ctx.credentials.resolve(credentialRef8(this.credentialRefName));
-    return resolved === void 0 ? void 0 : parseCredential10(resolved.value);
+    return resolved === void 0 ? void 0 : parseCredential9(resolved.value);
   }
   /** 只读登录状态。 */
   async status() {
@@ -52005,7 +52351,7 @@ var LoomyAuth = class extends Service8 {
     const ref = credentialRef8(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential10(resolved.value);
+    const credential = parseCredential9(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     await this.probeCredential(credential);
     await syncAccountExpiry({
@@ -52072,7 +52418,7 @@ var LoomyAuth = class extends Service8 {
       try {
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) continue;
-        credential = parseCredential10(resolved.value);
+        credential = parseCredential9(resolved.value);
       } catch {
         continue;
       }
@@ -52287,7 +52633,7 @@ async function fetchRaccoonOnboardingStatus(product, credential, fetcher = fetch
 }
 
 // vendor/channel-pack/src/raccoon-oauth.ts
-import { randomBytes as randomBytes6 } from "node:crypto";
+import { randomBytes as randomBytes7 } from "node:crypto";
 function parseEnvelope2(payload, status) {
   const record = typeof payload === "object" && payload !== null && !Array.isArray(payload) ? payload : {};
   const code = typeof record.code === "number" ? record.code : status >= 400 ? status : 0;
@@ -52324,7 +52670,7 @@ async function postJson(url, body, fetcher, headers = {}) {
   return { envelope: parseEnvelope2(parsed, response.status), status: response.status };
 }
 function generateQrCode() {
-  return randomBytes6(16).toString("hex");
+  return randomBytes7(16).toString("hex");
 }
 function buildQrImageUrl(product, code) {
   const params = new URLSearchParams({ code, appname: "\u5546\u6C64\u5C0F\u6D63\u718A\u5B98\u7F51" });
@@ -55631,7 +55977,7 @@ function buildCarrierPageHtml(config) {
 }
 
 // vendor/channel-pack/src/zcode-login.ts
-import { randomBytes as randomBytes7, randomUUID as randomUUID11 } from "node:crypto";
+import { randomBytes as randomBytes8, randomUUID as randomUUID11 } from "node:crypto";
 var ZCODE_ORIGIN = "https://zcode.z.ai";
 var ZCODE_OAUTH_CLI_INIT_URL = `${ZCODE_ORIGIN}/api/v1/oauth/cli/init`;
 var zcodeOauthCliPollUrl = (flowId) => `${ZCODE_ORIGIN}/api/v1/oauth/cli/poll/${encodeURIComponent(flowId)}`;
@@ -55644,7 +55990,7 @@ var ZcodeLoginError = class extends Error {
   }
 };
 function generateFlowSecret() {
-  return randomBytes7(32).toString("hex");
+  return randomBytes8(32).toString("hex");
 }
 function generateDeviceMid() {
   return randomUUID11();
@@ -57836,7 +58182,7 @@ function emptyCheckinStatus(active, actionRequired = false) {
 }
 
 // vendor/channel-pack/src/zcode-adapter.ts
-import { EMPTY_RESPONSE_CODE as EMPTY_RESPONSE_CODE2, LlmAdapter as LlmAdapter17, LlmError as LlmError21, ReasoningEffortId as ReasoningEffortId10 } from "@deepseek-ai/dsh-llm";
+import { EMPTY_RESPONSE_CODE as EMPTY_RESPONSE_CODE2, LlmAdapter as LlmAdapter16, LlmError as LlmError20, ReasoningEffortId as ReasoningEffortId10 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/zcode-identity.ts
 var OFFICIAL_CLI_PREFIX = "You are ZCode, an interactive coding agent";
@@ -57927,7 +58273,7 @@ function withContextPrefix(messages, now = /* @__PURE__ */ new Date()) {
 }
 
 // vendor/channel-pack/src/zcode-anthropic.ts
-import { LlmError as LlmError20, ToolCallId as ToolCallId6 } from "@deepseek-ai/dsh-llm";
+import { LlmError as LlmError19, ToolCallId as ToolCallId6 } from "@deepseek-ai/dsh-llm";
 function parseToolArguments(raw) {
   if (raw === void 0 || raw === null) return {};
   if (typeof raw === "object") return raw;
@@ -58068,11 +58414,11 @@ async function* iterateSseFrames(body, options = {}) {
         if (boundary === void 0) break;
         const rawFrame = buffer.slice(0, boundary.start);
         buffer = buffer.slice(boundary.end);
-        const frame = parseFrame(rawFrame);
+        const frame = parseFrame2(rawFrame);
         if (frame !== void 0) yield frame;
       }
     }
-    const tail = parseFrame(buffer);
+    const tail = parseFrame2(buffer);
     if (tail !== void 0) yield tail;
   } finally {
     signal?.removeEventListener("abort", onAbort);
@@ -58091,7 +58437,7 @@ function findFrameBoundary(buffer) {
   if (lf === -1) return { start: crlf, end: crlf + 4 };
   return crlf < lf ? { start: crlf, end: crlf + 4 } : { start: lf, end: lf + 2 };
 }
-function parseFrame(raw) {
+function parseFrame2(raw) {
   const lines = raw.split(/\r?\n/);
   let event;
   const dataLines = [];
@@ -58155,7 +58501,7 @@ async function* consumeAnthropicSse(body, options) {
       const error = payload.error;
       const message2 = typeof error === "object" && error !== null ? error.message : void 0;
       const type2 = typeof error === "object" && error !== null ? error.type : void 0;
-      throw new LlmError20(
+      throw new LlmError19(
         `${options.label}: ${typeof message2 === "string" ? message2 : JSON.stringify(payload).slice(0, 300)}`,
         // overloaded 是暂时性的，值得重试；其余按服务端错误处理。
         type2 === "overloaded_error" ? "RATE_LIMIT" : "SERVER"
@@ -58250,7 +58596,7 @@ async function* consumeAnthropicSse(body, options) {
     }
   }
   if (!sawAny) {
-    throw new LlmError20(
+    throw new LlmError19(
       `${options.label}: \u6A21\u578B\u8FD4\u56DE\u4E86\u7A7A\u54CD\u5E94\uFF08\u65E0\u4EFB\u4F55 text / thinking / tool \u5185\u5BB9\uFF09`,
       "EMPTY_RESPONSE"
     );
@@ -58450,7 +58796,7 @@ function resolveRequestTimeoutMs(product) {
   const raw = Number(process.env.DSH_ZCODE_REQUEST_TIMEOUT_MS);
   return Number.isFinite(raw) ? raw : product.requestTimeoutMs;
 }
-var ZcodeAdapter = class extends LlmAdapter17 {
+var ZcodeAdapter = class extends LlmAdapter16 {
   constructor(options) {
     super();
     this.options = options;
@@ -58712,13 +59058,13 @@ var ZcodeAdapter = class extends LlmAdapter17 {
       const all = await this.loadModels();
       const entry = all.find((item) => item.id === options.model);
       if (!this.inputModalitiesFor(entry).includes("image")) {
-        throw new LlmError21(
+        throw new LlmError20(
           `zcode: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`,
           "UNSUPPORTED_CONTENT"
         );
       }
       if (this.options.readImage === void 0) {
-        throw new LlmError21(
+        throw new LlmError20(
           "zcode: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1\uFF08\u5BBF\u4E3B\u672A\u63D0\u4F9B attachments.readImage\uFF09",
           "UNSUPPORTED_CONTENT"
         );
@@ -58776,7 +59122,7 @@ var ZcodeAdapter = class extends LlmAdapter17 {
       }
     }
     const timedOut = () => controller.signal.aborted && options.signal?.aborted !== true;
-    const timeoutError = (cause) => new LlmError21(
+    const timeoutError = (cause) => new LlmError20(
       `zcode: \u8BF7\u6C42\u8D85\u65F6\uFF08${timeoutMs}ms \u5185\u672A\u5B8C\u6210\uFF09\u2014\u2014 \u4E0A\u6E38\u53EF\u80FD\u957F\u65F6\u95F4\u4E0D\u8FD4\u56DE\u6570\u636E`,
       "TIMEOUT",
       cause === void 0 ? void 0 : { cause }
@@ -58857,7 +59203,7 @@ var ZcodeAdapter = class extends LlmAdapter17 {
               break;
             }
           }
-          throw new LlmError21(
+          throw new LlmError20(
             `zcode: ${describeUpstreamError(response.status, text)}`,
             "QUOTA_EXCEEDED",
             { status: response.status }
@@ -58915,7 +59261,7 @@ var ZcodeAdapter = class extends LlmAdapter17 {
           shape: describeZcodeRequestShape(body.system, body.messages),
           now: Date.now()
         }) : void 0;
-        throw new LlmError21(
+        throw new LlmError20(
           `zcode: ${describeUpstreamError(response.status, text, diagnostic)}`,
           httpErrorCodeForZcode(response.status, text),
           { status: response.status }
@@ -58923,7 +59269,7 @@ var ZcodeAdapter = class extends LlmAdapter17 {
       }
       if (switchedAccount) continue;
       if (response === void 0) {
-        throw new LlmError21("zcode: \u4E0A\u6E38\u8BF7\u6C42\u672A\u53D1\u51FA\uFF08\u5185\u90E8\u72B6\u6001\u5F02\u5E38\uFF09", "SERVER");
+        throw new LlmError20("zcode: \u4E0A\u6E38\u8BF7\u6C42\u672A\u53D1\u51FA\uFF08\u5185\u90E8\u72B6\u6001\u5F02\u5E38\uFF09", "SERVER");
       }
       if (response.body === null) {
         if (quotaRound < this.product.quotaSwitchMax) {
@@ -58934,7 +59280,7 @@ var ZcodeAdapter = class extends LlmAdapter17 {
             continue;
           }
         }
-        throw new LlmError21(
+        throw new LlmError20(
           zcodeEntitlementErrorMessage(options.model, tried.size),
           "QUOTA_EXCEEDED"
         );
@@ -58962,7 +59308,7 @@ var ZcodeAdapter = class extends LlmAdapter17 {
               continue;
             }
           }
-          throw new LlmError21(
+          throw new LlmError20(
             zcodeEntitlementErrorMessage(options.model, tried.size),
             "QUOTA_EXCEEDED",
             { cause: error }
@@ -58987,7 +59333,7 @@ var ZcodeAdapter = class extends LlmAdapter17 {
       credential = await this.options.resolveCredential(options.model);
     }
     if (credential === void 0) {
-      throw new LlmError21(
+      throw new LlmError20(
         "zcode: \u6CA1\u6709\u53EF\u7528\u7684\u51ED\u636E \u2014\u2014 \u8BF7\u5728 Channel Pack \u7684 ZCode \u9762\u677F\u70B9\u300C\u6DFB\u52A0\u8D26\u53F7\u300D\u5B8C\u6210\u767B\u5F55\uFF08\u672C\u63D2\u4EF6\u53EA\u7528\u5B83\u81EA\u5DF1\u7684\u6388\u6743\u6D41\u7A0B\uFF0C\u4E0D\u4F1A\u8BFB\u53D6\u672C\u673A ZCode \u5BA2\u6237\u7AEF\u7684\u767B\u5F55\u6001\uFF09",
         "MISSING_CREDENTIAL"
       );
@@ -59026,13 +59372,13 @@ var ZcodeAdapter = class extends LlmAdapter17 {
       if (error instanceof GateAbortedError) throw error;
       if (userSignal?.aborted === true) throw error;
       if (signal.aborted) {
-        throw new LlmError21(
+        throw new LlmError20(
           `zcode: \u8BF7\u6C42\u8D85\u65F6\uFF08${timeoutMs}ms \u5185\u672A\u5B8C\u6210\uFF09\u2014\u2014 \u4E0A\u6E38\u53EF\u80FD\u957F\u65F6\u95F4\u4E0D\u8FD4\u56DE\u6570\u636E`,
           "TIMEOUT",
           { cause: error }
         );
       }
-      throw new LlmError21(
+      throw new LlmError20(
         `zcode: \u8BF7\u6C42\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`,
         "TRANSPORT",
         { cause: error }
@@ -59107,7 +59453,7 @@ var ZcodeAdapter = class extends LlmAdapter17 {
   }
 };
 function isFastEntitlementMiss(error, elapsedMs) {
-  if (!(error instanceof LlmError21)) return false;
+  if (!(error instanceof LlmError20)) return false;
   if (error.code !== EMPTY_RESPONSE_CODE2) return false;
   return elapsedMs < ZCODE_FAST_EMPTY_MS;
 }
@@ -59120,7 +59466,7 @@ async function defaultAdapterSleep(ms, signal) {
   await new Promise((resolve2, reject) => {
     const onAbort = () => {
       clearTimeout(timer);
-      reject(new LlmError21("zcode: \u9000\u907F\u7B49\u5F85\u671F\u95F4\u8BF7\u6C42\u5DF2\u53D6\u6D88", "TRANSPORT"));
+      reject(new LlmError20("zcode: \u9000\u907F\u7B49\u5F85\u671F\u95F4\u8BF7\u6C42\u5DF2\u53D6\u6D88", "TRANSPORT"));
     };
     const timer = setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
@@ -60096,8 +60442,8 @@ async function fetchMinimaxCreditBalance(credential, fetcher = fetch, product = 
 }
 
 // vendor/channel-pack/src/gemini.ts
-import { randomBytes as randomBytes8 } from "node:crypto";
-import { LlmError as LlmError22, ReasoningEffortId as ReasoningEffortId11 } from "@deepseek-ai/dsh-llm";
+import { randomBytes as randomBytes9 } from "node:crypto";
+import { LlmError as LlmError21, ReasoningEffortId as ReasoningEffortId11 } from "@deepseek-ai/dsh-llm";
 var GEMINI_ENDPOINT_DAILY = "https://daily-cloudcode-pa.googleapis.com";
 var GEMINI_ENDPOINT_SANDBOX = "https://daily-cloudcode-pa.sandbox.googleapis.com";
 var GEMINI_ENDPOINTS = [GEMINI_ENDPOINT_DAILY, GEMINI_ENDPOINT_SANDBOX];
@@ -60207,7 +60553,7 @@ function marshalAlphabetical(value) {
   return sortedStringify(value);
 }
 function newGeminiRequestId(nowMs = Date.now()) {
-  return `agent/${nowMs}/${randomBytes8(4).toString("hex")}`;
+  return `agent/${nowMs}/${randomBytes9(4).toString("hex")}`;
 }
 var GEMINI_UPSTREAM_FLASH = "gemini-3.8-flash";
 var GEMINI_BUDGET_LOW = 1e3;
@@ -60258,7 +60604,7 @@ function geminiCanonicalModelId(modelId) {
 }
 function geminiModelSpec(modelId, effort) {
   if (geminiCanonicalModelId(modelId) !== GEMINI_UPSTREAM_FLASH) {
-    throw new LlmError22(
+    throw new LlmError21(
       `gemini: \u6A21\u578B "${modelId}" \u4E0D\u5728\u672C provider \u76EE\u5F55\u4E2D\uFF08\u4EC5\u652F\u6301 ${GEMINI_UPSTREAM_FLASH}\uFF09`,
       "INVALID_REQUEST",
       // ⚠️ `status` 只落在 `LlmError.failure`（不是顶层属性），且网关的
@@ -61830,14 +62176,14 @@ async function fetchTraeCreditBalance(credential, _product, fetcher = fetch) {
 
 // vendor/channel-pack/src/account-probe.ts
 import { credentialRef as credentialRef10 } from "@deepseek-ai/dsh-credentials";
-import { createUserMessage, LlmError as LlmError24 } from "@deepseek-ai/dsh-llm";
+import { createUserMessage, LlmError as LlmError23 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/gemini-adapter.ts
 import {
   CONTEXT_WINDOW_EXCEEDED_CODE as CONTEXT_WINDOW_EXCEEDED_CODE3,
   isContextWindowExceededError as isContextWindowExceededError3,
-  LlmAdapter as LlmAdapter18,
-  LlmError as LlmError23,
+  LlmAdapter as LlmAdapter17,
+  LlmError as LlmError22,
   ReasoningEffortId as ReasoningEffortId12
 } from "@deepseek-ai/dsh-llm";
 
@@ -62314,7 +62660,7 @@ var GEMINI_TOKEN_COUNT_OVERFLOW = /\btoken\s+count\b[\s\S]{0,60}?\bexceeds?\s+th
 function isGeminiContextOverflow(text) {
   return isContextWindowExceededError3(text) || GEMINI_TOKEN_COUNT_OVERFLOW.test(text);
 }
-var GeminiAdapter = class extends LlmAdapter18 {
+var GeminiAdapter = class extends LlmAdapter17 {
   constructor(options) {
     super();
     this.options = options;
@@ -62407,7 +62753,7 @@ var GeminiAdapter = class extends LlmAdapter18 {
     }
     if (imageRefs.size === 0) return void 0;
     if (entry?.supportsImage !== true) {
-      throw new LlmError23(
+      throw new LlmError22(
         `gemini: \u6A21\u578B "${model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`,
         "UNSUPPORTED_CONTENT"
       );
@@ -62419,7 +62765,7 @@ var GeminiAdapter = class extends LlmAdapter18 {
       if (inline === void 0) {
         const readImage = this.options.readImage;
         if (readImage === void 0) {
-          throw new LlmError23(
+          throw new LlmError22(
             "gemini: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1\uFF08readImage / readImageRequest \u5747\u672A\u63D0\u4F9B\uFF09",
             "UNSUPPORTED_CONTENT"
           );
@@ -62427,7 +62773,7 @@ var GeminiAdapter = class extends LlmAdapter18 {
         try {
           inline = await readImage(ref);
         } catch (error) {
-          throw new LlmError23(
+          throw new LlmError22(
             "gemini: \u56FE\u7247\u9644\u4EF6\u8BFB\u53D6\u5931\u8D25\uFF1B\u9644\u4EF6\u670D\u52A1\u53EF\u80FD\u672A\u5C31\u7EEA\uFF0C\u6216\u8BE5\u5BF9\u8C61\u5DF2\u4E0D\u5B58\u5728\u3002",
             "UNSUPPORTED_CONTENT",
             { cause: error }
@@ -62435,20 +62781,20 @@ var GeminiAdapter = class extends LlmAdapter18 {
         }
       }
       if (inline === void 0) {
-        throw new LlmError23(
+        throw new LlmError22(
           "gemini: \u56FE\u7247\u9644\u4EF6\u8BFB\u53D6\u4E0D\u5230\u5185\u5BB9\uFF1B\u9644\u4EF6\u670D\u52A1\u53EF\u80FD\u672A\u5C31\u7EEA\uFF0C\u6216\u8BE5\u5BF9\u8C61\u5DF2\u4E0D\u5B58\u5728\u3002",
           "UNSUPPORTED_CONTENT"
         );
       }
       if (inline.data.byteLength > GEMINI_MAX_IMAGE_BYTES_INLINE) {
-        throw new LlmError23(
+        throw new LlmError22(
           `gemini: \u56FE\u7247\u4F53\u79EF ${inline.data.byteLength} \u5B57\u8282\u8D85\u8FC7\u4E0A\u6E38\u5185\u8054\u4E0A\u9650 ${GEMINI_MAX_IMAGE_BYTES_INLINE} \u5B57\u8282`,
           "UNSUPPORTED_CONTENT"
         );
       }
       const data = normalizeBase64(Buffer.from(inline.data).toString("base64"));
       if (data === void 0) {
-        throw new LlmError23("gemini: \u56FE\u7247\u7F16\u7801\u4E0D\u662F\u5408\u6CD5 base64", "UNSUPPORTED_CONTENT");
+        throw new LlmError22("gemini: \u56FE\u7247\u7F16\u7801\u4E0D\u662F\u5408\u6CD5 base64", "UNSUPPORTED_CONTENT");
       }
       images.set(id, { mediaType: inline.mediaType === "" ? "image/png" : inline.mediaType, data });
     }
@@ -62468,7 +62814,7 @@ var GeminiAdapter = class extends LlmAdapter18 {
   async *stream(options) {
     const entry = this.loadModels().find((item) => item.id === geminiCanonicalModelId(options.model));
     if (entry === void 0) {
-      throw new LlmError23(
+      throw new LlmError22(
         `gemini: \u6A21\u578B "${options.model}" \u4E0D\u5728\u672C provider \u76EE\u5F55\u4E2D\uFF08\u4EC5\u652F\u6301 ${GEMINI_UPSTREAM_FLASH}\uFF09`,
         "INVALID_REQUEST",
         // 模型名写错是确定性失败：带上 404，网关才不会把它当 502 让客户端白重试。
@@ -62481,7 +62827,7 @@ var GeminiAdapter = class extends LlmAdapter18 {
       credential = await this.options.resolveCredential(options.model);
     }
     if (credential === void 0 || credential.access_token === "") {
-      throw new LlmError23("gemini: no usable credential; log in first", "MISSING_CREDENTIAL");
+      throw new LlmError22("gemini: no usable credential; log in first", "MISSING_CREDENTIAL");
     }
     const requested = options.reasoningEffort === void 0 ? void 0 : String(options.reasoningEffort);
     const declared = entry === void 0 ? void 0 : geminiReasoningInfo(entry);
@@ -62523,7 +62869,7 @@ var GeminiAdapter = class extends LlmAdapter18 {
             ...options.signal === void 0 ? {} : { signal: options.signal }
           });
           if (probe.error !== void 0) {
-            throw new LlmError23(
+            throw new LlmError22(
               `gemini: \u9879\u76EE\u53F7\u63A2\u6D4B\u5931\u8D25\uFF0C\u672A\u53D1\u63A8\u7406\uFF08\u4E0E\u539F\u7248\u4E00\u81F4\uFF09\u2014 ${probe.error}`,
               "SERVER"
             );
@@ -62562,7 +62908,7 @@ var GeminiAdapter = class extends LlmAdapter18 {
         const wire = marshalAlphabetical(envelope);
         const wireBytes = Buffer.byteLength(wire, "utf8");
         if (wireBytes > GEMINI_MAX_REQUEST_BODY_BYTES) {
-          throw new LlmError23(
+          throw new LlmError22(
             `gemini: \u8BF7\u6C42\u4F53 ${wireBytes} \u5B57\u8282\u8D85\u8FC7\u4E0A\u9650 ${GEMINI_MAX_REQUEST_BODY_BYTES} \u5B57\u8282`,
             CONTEXT_WINDOW_EXCEEDED_CODE3
           );
@@ -62577,8 +62923,8 @@ var GeminiAdapter = class extends LlmAdapter18 {
             signal: options.signal
           });
         } catch (error) {
-          if (error instanceof LlmError23) throw error;
-          throw new LlmError23(
+          if (error instanceof LlmError22) throw error;
+          throw new LlmError22(
             `gemini: \u8BF7\u6C42\u53D1\u9001\u5931\u8D25 \u2014 ${error instanceof Error ? error.message : String(error)}`,
             "TRANSPORT",
             { cause: error }
@@ -62586,7 +62932,7 @@ var GeminiAdapter = class extends LlmAdapter18 {
         }
         if (response.ok) {
           if (response.body === null) {
-            throw new LlmError23("gemini: \u54CD\u5E94\u7F3A\u5C11 body", "EMPTY_RESPONSE");
+            throw new LlmError22("gemini: \u54CD\u5E94\u7F3A\u5C11 body", "EMPTY_RESPONSE");
           }
           const body = response.body;
           try {
@@ -62657,7 +63003,7 @@ var GeminiAdapter = class extends LlmAdapter18 {
               continue;
             }
           }
-          throw new LlmError23(
+          throw new LlmError22(
             `gemini: \u6A21\u578B ${options.model} \u7684\u6240\u6709\u8D26\u53F7\u5747\u4E0D\u53EF\u7528\uFF08\u9650\u6D41\u6216\u989D\u5EA6\u8017\u5C3D\uFF09\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5`,
             "QUOTA_EXCEEDED",
             { status }
@@ -62682,15 +63028,15 @@ var GeminiAdapter = class extends LlmAdapter18 {
     const detail = text === "" ? "" : ` \u2014 ${text.slice(0, 500)}`;
     const message2 = `gemini: HTTP ${status}${detail}`;
     if (status === 400 && isGeminiContextOverflow(text)) {
-      return new LlmError23(message2, CONTEXT_WINDOW_EXCEEDED_CODE3, { status });
+      return new LlmError22(message2, CONTEXT_WINDOW_EXCEEDED_CODE3, { status });
     }
     if (status === 400 && isGeminiQuotaText(text)) {
-      return new LlmError23(message2, "QUOTA_EXCEEDED", { status });
+      return new LlmError22(message2, "QUOTA_EXCEEDED", { status });
     }
-    if (status === 429) return new LlmError23(message2, "RATE_LIMIT", { status });
-    if (status === 403 || status === 404) return new LlmError23(message2, "SERVER", { status });
-    if (status === 401) return new LlmError23(message2, "AUTH", { status });
-    return new LlmError23(message2, httpErrorCode4(status), { status });
+    if (status === 429) return new LlmError22(message2, "RATE_LIMIT", { status });
+    if (status === 403 || status === 404) return new LlmError22(message2, "SERVER", { status });
+    if (status === 401) return new LlmError22(message2, "AUTH", { status });
+    return new LlmError22(message2, httpErrorCode4(status), { status });
   }
 };
 function registerGeminiLlm(ctx, options) {
@@ -62706,7 +63052,7 @@ var PROBE_PROMPT = "\u53EA\u56DE\u7B54\u4E24\u4E2A\u5B57\uFF1A\u6536\u5230";
 var PROBE_SYSTEM = "You are a helpful assistant.";
 var PROBE_TIMEOUT_MS = 12e4;
 function isRateLimitFailure(error) {
-  if (error instanceof LlmError24) {
+  if (error instanceof LlmError23) {
     if (error.code === "RATE_LIMIT" || error.code === "QUOTA_EXCEEDED" || error.code === "QUOTA") return true;
   }
   const message2 = error instanceof Error ? error.message : String(error);
@@ -63029,10 +63375,10 @@ async function importBackup(credentials, pool, raw) {
 
 // vendor/channel-pack/src/opencode-rpc.ts
 import { credentialRef as credentialRef12 } from "@deepseek-ai/dsh-credentials";
-import { randomBytes as randomBytes10 } from "node:crypto";
+import { randomBytes as randomBytes11 } from "node:crypto";
 
 // vendor/channel-pack/src/opencode-auth.ts
-import { randomBytes as randomBytes9 } from "node:crypto";
+import { randomBytes as randomBytes10 } from "node:crypto";
 function newAccountFingerprint(apiKey) {
   return { projectId: deriveProjectId(apiKey, 0), generation: 0 };
 }
@@ -63064,8 +63410,8 @@ function isAnonymousCredential(apiKey) {
 async function ensureDefaultAnonymousSlot(addEntry, writeCredential, listEntries, alreadyHasAnonymous) {
   try {
     if (alreadyHasAnonymous()) return "";
-    const id = `${OPENCODE.id}-anon-${randomBytes9(3).toString("hex")}`;
-    const refName = `OPENCODE_ANON_${randomBytes9(4).toString("hex").toUpperCase()}`;
+    const id = `${OPENCODE.id}-anon-${randomBytes10(3).toString("hex")}`;
+    const refName = `OPENCODE_ANON_${randomBytes10(4).toString("hex").toUpperCase()}`;
     await writeCredential(refName, JSON.stringify({
       api_key: OPENCODE.anonymousKey,
       nickname: "\u533F\u540D\u901A\u9053"
@@ -63132,8 +63478,8 @@ async function handleOpencodeRpc(ctx, pool, method, payload) {
       }
       case "opencode.addAnonymous": {
         const req = call2.payload;
-        const id = `${OPENCODE.id}-anon-${randomBytes10(3).toString("hex")}`;
-        const refName = `OPENCODE_ANON_${randomBytes10(4).toString("hex").toUpperCase()}`;
+        const id = `${OPENCODE.id}-anon-${randomBytes11(3).toString("hex")}`;
+        const refName = `OPENCODE_ANON_${randomBytes11(4).toString("hex").toUpperCase()}`;
         const count2 = pool.listAccountsByProvider(OPENCODE.id).filter((a) => a.id.startsWith(`${OPENCODE.id}-anon-`)).length;
         const nickname = typeof req?.nickname === "string" && req.nickname.trim().length > 0 ? req.nickname.trim() : `\u533F\u540D\u901A\u9053 ${count2 + 1}`;
         await ctx.credentials.set(credentialRef12(refName), JSON.stringify({
@@ -64245,7 +64591,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
       /**
        * 用手动粘贴的凭据添加账号。
        *
-       * 这是**粘贴型渠道**（MonkeyCode / OrcaTerm / KukuAI / CatPaw /
+       * 这是**粘贴型渠道**（MonkeyCode / OrcaTerm / KukuAI /
        * AutoClaw / Accio / OfficeAce / Command Code）唯一的「添加账号」入口 ——
        * 它们的上游没有可脚本化的 OAuth，用户只能在官方页面登录后复制
        * Cookie 或令牌。
@@ -64284,7 +64630,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
           credentialRef: refName,
           createdAt: Date.now(),
           // 有 refresh_token 的渠道（Accio）才可静默续期；
-          // Cookie 型渠道（MonkeyCode/OrcaTerm/KukuAI/CatPaw）只能重新粘贴。
+          // Cookie 型渠道（MonkeyCode/OrcaTerm/KukuAI）只能重新粘贴。
           refreshable: typeof parsed.refresh_token === "string" && parsed.refresh_token !== ""
         });
         return { ok: true, value: { accountId: id } };
@@ -66580,13 +66926,6 @@ var ADOPTABLE_CHANNELS = {
       return cookie === void 0 ? void 0 : { access_token: cookie, created_at: Date.now() };
     }
   },
-  catpaw: {
-    hint: "\u901A\u884C\u8BC1\u4EE4\u724C\uFF08X-Passport-Token \u7684\u503C\uFF09",
-    parse: (text) => {
-      const parsed = parseCredential3({ token: text });
-      return parsed === void 0 ? void 0 : { ...parsed };
-    }
-  },
   autoclaw: {
     hint: "\u8BBF\u95EE\u4EE4\u724C\uFF08Bearer token\uFF09",
     parse: (text) => {
@@ -66611,7 +66950,7 @@ import { join as join9 } from "node:path";
 
 // vendor/channel-pack/src/openai-gateway/auth.ts
 import { mkdirSync as mkdirSync7, readFileSync as readFileSync9, renameSync as renameSync7, writeFileSync as writeFileSync8, existsSync as existsSync9 } from "node:fs";
-import { randomBytes as randomBytes11 } from "node:crypto";
+import { randomBytes as randomBytes12 } from "node:crypto";
 import { join as join8 } from "node:path";
 var KEY_FILE = "api-key";
 var KEY_PATTERN2 = /^[A-Za-z0-9_-]{43}$/;
@@ -66631,7 +66970,7 @@ function loadOrCreateApiKey(home, env = process.env) {
       `\u7F51\u5173\u5BC6\u94A5\u6587\u4EF6\u5185\u5BB9\u5F02\u5E38\uFF08\u4E0D\u662F\u672C\u63D2\u4EF6\u751F\u6210\u7684\u5F62\u6001\uFF09\uFF1A${path2}\u3002\u53EF\u80FD\u662F\u88AB\u624B\u5DE5\u7F16\u8F91\u6216\u88AB\u5176\u5B83\u7A0B\u5E8F\u6539\u5199\uFF1B\u672C\u63D2\u4EF6\u4E0D\u4F1A\u9759\u9ED8\u66F4\u6362\u5B83\uFF0C\u5426\u5219\u5DF2\u914D\u7F6E\u7684\u5BA2\u6237\u7AEF\u4F1A\u5168\u90E8\u5931\u6548\u3002\u5982\u9700\u66F4\u6362\uFF1A\u5220\u9664\u8BE5\u6587\u4EF6\u540E\u91CD\u542F DSH\uFF08\u4F1A\u91CD\u65B0\u751F\u6210\uFF09\uFF0C\u6216\u6539\u7528 DSH_OPENAI_GATEWAY_API_KEY \u73AF\u5883\u53D8\u91CF\u3002`
     );
   }
-  const key = randomBytes11(32).toString("base64url");
+  const key = randomBytes12(32).toString("base64url");
   mkdirSync7(directory, { recursive: true });
   const temporary = `${path2}.${process.pid}.${Date.now()}.tmp`;
   writeFileSync8(temporary, key, { encoding: "utf8", mode: 384 });
@@ -67003,7 +67342,7 @@ function findCaseInsensitiveSuggestion(requested, catalog) {
 }
 
 // vendor/channel-pack/src/openai-gateway/responses.ts
-import { createHash as createHash7, randomUUID as randomUUID15 } from "node:crypto";
+import { createHash as createHash8, randomUUID as randomUUID15 } from "node:crypto";
 import { ReasoningEffortId as ReasoningEffortId14 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/openai-gateway/stream.ts
@@ -67320,7 +67659,7 @@ function chatPartsFromResponses(content) {
 function flatNamespaceToolName(namespace, name2) {
   const flat = `${namespace}__${name2}`;
   if (flat.length <= 64) return flat;
-  const digest = createHash7("sha256").update(flat).digest("hex").slice(0, 8);
+  const digest = createHash8("sha256").update(flat).digest("hex").slice(0, 8);
   return `${flat.slice(0, 55)}_${digest}`;
 }
 function responsesNamespaceToolMap(body) {
@@ -68343,7 +68682,7 @@ function mountOpenAiGateway(ctx, pool) {
 }
 
 // vendor/channel-pack/src/loop-recovery.ts
-import { createUserMessage as createUserMessage2, LlmError as LlmError25 } from "@deepseek-ai/dsh-llm";
+import { createUserMessage as createUserMessage2, LlmError as LlmError24 } from "@deepseek-ai/dsh-llm";
 var LOOP_RESUME_PROMPT = "\u7EE7\u7EED\u672A\u5B8C\u6210\u7684\u4EFB\u52A1\u3002\u4E0A\u4E00\u8F6E\u4F60\u7684\u601D\u8003\u9677\u5165\u4E86\u91CD\u590D\uFF08\u540C\u4E00\u6BB5\u63A8\u7406\u53CD\u590D\u51FA\u73B0\uFF09\u800C\u88AB\u4E2D\u6B62 \u2014\u2014 \u8BF7\u6362\u4E00\u79CD\u601D\u8DEF\uFF0C\u4E0D\u8981\u91CD\u590D\u521A\u624D\u90A3\u6BB5\u63A8\u7406\uFF0C\u76F4\u63A5\u63A8\u8FDB\u4EFB\u52A1\u3002";
 var LOOP_RESUME_DEFAULT_MAX = 2;
 var LOOP_RESUME_MAX_LIMIT = 10;
@@ -68364,7 +68703,7 @@ function resolveLoopResumePolicy(env = process.env) {
   };
 }
 function isReasoningLoopFailure(error) {
-  if (error instanceof LlmError25) return error.code === REASONING_LOOP_CODE;
+  if (error instanceof LlmError24) return error.code === REASONING_LOOP_CODE;
   if (typeof error !== "object" || error === null) return false;
   return error.code === REASONING_LOOP_CODE;
 }
@@ -68939,7 +69278,7 @@ import { Service as Service11 } from "@deepseek-ai/cordis";
 import { credentialRef as credentialRef14 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/minimax-oauth.ts
-import { createHash as createHash8, randomBytes as randomBytes12 } from "node:crypto";
+import { createHash as createHash9, randomBytes as randomBytes13 } from "node:crypto";
 var MinimaxLoginCancelledError = class extends Error {
   constructor(message2 = "\u7528\u6237\u53D6\u6D88\u4E86 MiniMax \u6388\u6743") {
     super(message2);
@@ -69038,8 +69377,8 @@ function parseMinimaxTokenGrant(payload, previousRefreshToken, product = MINIMAX
   };
 }
 function createMinimaxPkce() {
-  const codeVerifier = randomBytes12(32).toString("base64url");
-  const codeChallenge = createHash8("sha256").update(codeVerifier, "ascii").digest("base64url");
+  const codeVerifier = randomBytes13(32).toString("base64url");
+  const codeChallenge = createHash9("sha256").update(codeVerifier, "ascii").digest("base64url");
   return { codeVerifier, codeChallenge };
 }
 async function startMinimaxDeviceAuthorization(fetcher = fetch, product = MINIMAX) {
@@ -69465,7 +69804,7 @@ function parseMinimaxModelsPayload(payload) {
 }
 
 // vendor/channel-pack/src/minimax-adapter.ts
-import { LlmAdapter as LlmAdapter19, LlmError as LlmError26, ReasoningEffortId as ReasoningEffortId15 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter18, LlmError as LlmError25, ReasoningEffortId as ReasoningEffortId15 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/minimax-messages.ts
 import { ToolCallId as ToolCallId8 } from "@deepseek-ai/dsh-llm";
@@ -69817,7 +70156,7 @@ function minimaxReasoningInfo(entry) {
   const defaultEffort = entry.defaultEffort !== void 0 && ids.includes(entry.defaultEffort) ? ReasoningEffortId15(entry.defaultEffort) : void 0;
   return { efforts, ...defaultEffort === void 0 ? {} : { defaultEffort } };
 }
-var MinimaxAdapter = class extends LlmAdapter19 {
+var MinimaxAdapter = class extends LlmAdapter18 {
   constructor(options) {
     super();
     this.options = options;
@@ -69941,7 +70280,7 @@ var MinimaxAdapter = class extends LlmAdapter19 {
       credential = await this.options.resolveCredential(options.model);
     }
     if (credential === void 0 || credential.access_token === "") {
-      throw new LlmError26("minimax: no usable credential; log in first", "MISSING_CREDENTIAL");
+      throw new LlmError25("minimax: no usable credential; log in first", "MISSING_CREDENTIAL");
     }
     const entry = (await this.loadModels()).find((item) => item.id === options.model);
     const imageRefs = /* @__PURE__ */ new Map();
@@ -69951,13 +70290,13 @@ var MinimaxAdapter = class extends LlmAdapter19 {
     let images;
     if (imageRefs.size > 0) {
       if (entry?.supportsImage !== true) {
-        throw new LlmError26(
+        throw new LlmError25(
           `minimax: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`,
           "UNSUPPORTED_CONTENT"
         );
       }
       if (this.options.readImage === void 0) {
-        throw new LlmError26(
+        throw new LlmError25(
           "minimax: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1\uFF08readImage \u672A\u63D0\u4F9B\uFF09",
           "UNSUPPORTED_CONTENT"
         );
@@ -69998,14 +70337,14 @@ var MinimaxAdapter = class extends LlmAdapter19 {
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       const code = response.status === 402 ? "QUOTA_EXCEEDED" : httpErrorCode4(response.status);
-      throw new LlmError26(
+      throw new LlmError25(
         `minimax: HTTP ${response.status}${text === "" ? "" : ` \u2014 ${text.slice(0, 500)}`}`,
         code,
         { status: response.status }
       );
     }
     if (response.body === null) {
-      throw new LlmError26("minimax: \u54CD\u5E94\u7F3A\u5C11 body", "EMPTY_RESPONSE");
+      throw new LlmError25("minimax: \u54CD\u5E94\u7F3A\u5C11 body", "EMPTY_RESPONSE");
     }
     yield* consumeMinimaxSse({ body: response.body, signal: options.signal });
   }
@@ -70023,7 +70362,7 @@ import { credentialRef as credentialRef15 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/gemini-oauth.ts
 import { createServer as createServer10 } from "node:http";
-import { randomBytes as randomBytes13 } from "node:crypto";
+import { randomBytes as randomBytes14 } from "node:crypto";
 var GEMINI_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 var GEMINI_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 var GEMINI_USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v2/userinfo";
@@ -70263,7 +70602,7 @@ async function listenCallback(handler, preferredPort) {
   return attempt(preferredPort);
 }
 async function startGeminiOAuthFlow(options = {}) {
-  const state = randomBytes13(16).toString("hex");
+  const state = randomBytes14(16).toString("hex");
   let resolveCode = () => {
   };
   let rejectCode = () => {
@@ -70666,7 +71005,7 @@ var GeminiAuth = class extends Service12 {
 };
 
 // vendor/channel-pack/src/gemini-sigstore.ts
-import { createHash as createHash9 } from "node:crypto";
+import { createHash as createHash10 } from "node:crypto";
 import { existsSync as existsSync11, mkdirSync as mkdirSync9, readFileSync as readFileSync11, renameSync as renameSync9, writeFileSync as writeFileSync10 } from "node:fs";
 import { dirname as dirname2, join as join11 } from "node:path";
 var GEMINI_SIG_FILE = "gemini-sigs.json";
@@ -70674,7 +71013,7 @@ var GEMINI_SIG_MAX_ENTRIES = 2e3;
 var SIG_KEY_BODY_LIMIT = 512;
 function geminiSigKey(role, text) {
   const body = text.length > SIG_KEY_BODY_LIMIT ? text.slice(0, SIG_KEY_BODY_LIMIT) : text;
-  return createHash9("sha256").update(`${role}\0${body}`, "utf8").digest("hex").slice(0, 16);
+  return createHash10("sha256").update(`${role}\0${body}`, "utf8").digest("hex").slice(0, 16);
 }
 function geminiToolSigKey(name2, argsJson) {
   return geminiSigKey(`tool:${name2}`, argsJson);
@@ -70819,7 +71158,7 @@ function createGeminiSigStore(ctx) {
 }
 
 // vendor/channel-pack/src/opencode-adapter.ts
-import { LlmAdapter as LlmAdapter20, LlmError as LlmError27, ReasoningEffortId as ReasoningEffortId16 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter19, LlmError as LlmError26, ReasoningEffortId as ReasoningEffortId16 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/opencode-messages.ts
 var FREE_LANE_GATE_TOOLS = ["read", "shell"];
@@ -71269,7 +71608,7 @@ function resolveOpencodeEffort(model, requested, capabilities) {
   if (translated.kind === "mapped") return { effort: translated.effort, outcome: "mapped" };
   return { outcome: "dropped" };
 }
-var OpencodeAdapter = class extends LlmAdapter20 {
+var OpencodeAdapter = class extends LlmAdapter19 {
   constructor(options) {
     super();
     this.options = options;
@@ -71363,10 +71702,10 @@ var OpencodeAdapter = class extends LlmAdapter20 {
   async *stream(options) {
     const slots = await this.options.identitySlots();
     if (slots.length === 0) {
-      throw new LlmError27("opencode: \u6CA1\u6709\u53EF\u7528\u901A\u9053", "MISSING_CREDENTIAL");
+      throw new LlmError26("opencode: \u6CA1\u6709\u53EF\u7528\u901A\u9053", "MISSING_CREDENTIAL");
     }
     if (pickSlot(slots, options.model, /* @__PURE__ */ new Set()) === void 0) {
-      throw new LlmError27(
+      throw new LlmError26(
         `opencode: \u6A21\u578B "${options.model}" \u9700\u8981 API key \u8D26\u53F7\u901A\u9053\uFF08\u533F\u540D\u901A\u9053\u53EA\u652F\u6301\u514D\u8D39\u6A21\u578B\uFF09\uFF0C\u8BF7\u5148\u5728 Channel Pack \u7684 OpenCode \u9762\u677F\u6DFB\u52A0\u4E00\u4E2A\u8D26\u53F7`,
         "MISSING_CREDENTIAL"
       );
@@ -71376,7 +71715,7 @@ var OpencodeAdapter = class extends LlmAdapter20 {
     for (; ; ) {
       const slot2 = pickSlot(slots, options.model, tried);
       if (slot2 === void 0) {
-        throw new LlmError27(
+        throw new LlmError26(
           `opencode: \u6240\u6709\u901A\u9053\u5BF9\u8BE5\u6A21\u578B\u5747\u53D7\u9650${limited.length > 0 ? `\uFF08${limited.join("\u3001")}\uFF09` : ""}`,
           "QUOTA_EXCEEDED"
         );
@@ -71392,13 +71731,13 @@ var OpencodeAdapter = class extends LlmAdapter20 {
         return;
       } catch (error) {
         if (delivered) throw error;
-        if (error instanceof LlmError27 && error.code === "QUOTA_EXCEEDED") throw error;
+        if (error instanceof LlmError26 && error.code === "QUOTA_EXCEEDED") throw error;
         const info = classifyOpencodeFailure(error);
         if (info.kind === "free_tier") {
           this.options.warn?.(
             `opencode: \u514D\u8D39\u901A\u9053\u88AB FreeTierError \u62D2\u7EDD \u2014\u2014 \u68C0\u67E5 session id \u5F62\u72B6\uFF08\u5E94\u4E3A ses_ + 12hex + 14base62\uFF09\uFF1A${info.detail}`
           );
-          throw new LlmError27(
+          throw new LlmError26(
             `opencode: \u514D\u8D39\u901A\u9053\u88AB\u4E0A\u6E38\u62D2\u7EDD\uFF08FreeTierError\uFF09\u3002\u8BE5\u9519\u8BEF\u7531\u8BF7\u6C42\u5F62\u72B6\u89E6\u53D1\uFF08session id \u5F62\u72B6\u4E0D\u5BF9\u65F6\u51FA\u73B0\uFF09\uFF0C\u6362 API key \u6216\u6362\u51FA\u53E3\u90FD\u65E0\u6548\u3002`,
             "AUTH",
             { status: 403 }
@@ -71442,13 +71781,13 @@ var OpencodeAdapter = class extends LlmAdapter20 {
     if (refs.size === 0) return void 0;
     const capabilities = getOpencodeCapabilitiesSync();
     if (!supportsOpencodeImage(capabilities.find((c) => c.id === model))) {
-      throw new LlmError27(
+      throw new LlmError26(
         `opencode: \u6A21\u578B "${model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165\uFF08\u80FD\u529B\u4EE5\u8FDC\u7AEF models.dev \u4E3A\u51C6\uFF09`,
         "UNSUPPORTED_CONTENT"
       );
     }
     if (this.options.readImage === void 0) {
-      throw new LlmError27("opencode: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
+      throw new LlmError26("opencode: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
     }
     const readImage = this.options.readImage;
     const out = /* @__PURE__ */ new Map();
@@ -71501,7 +71840,7 @@ var OpencodeAdapter = class extends LlmAdapter20 {
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       const retryAfterMs = retryAfterMsFromResponse(response.headers);
-      throw new LlmError27(
+      throw new LlmError26(
         `opencode: HTTP ${response.status} \u2014 ${text.slice(0, 300)}`,
         httpErrorCode4(response.status),
         {
@@ -71753,7 +72092,7 @@ function apply(ctx, config = {}) {
       modelId ?? ""
     );
     if (limited === void 0) return;
-    throw new LlmError28(
+    throw new LlmError27(
       `${product.displayName}\uFF1A\u6A21\u578B ${modelId} \u7684\u53EF\u7528\u8D26\u53F7\u5747\u5728\u9650\u6D41\u4E2D\uFF0C\u6700\u8FD1\u4E00\u4E2A\u5C06\u4E8E ${new Date(limited.resetAtMs).toLocaleString("zh-CN")} \u89E3\u7981\u3002\u53EF\u6539\u7528\u5176\u5B83 provider / \u6A21\u578B\uFF0C\u6216\u7B49\u5F85\u89E3\u7981\u540E\u518D\u8BD5\uFF08\u65E0\u9700\u91CD\u65B0\u767B\u5F55\uFF09\u3002`,
       "QUOTA_EXCEEDED"
     );
@@ -72150,25 +72489,6 @@ function apply(ctx, config = {}) {
     resolveCredential: makeAutoClawResolver(AUTOCLAW_INTL),
     accountPool: pool,
     product: AUTOCLAW_INTL
-  });
-  let activeCatPawAccountId = "";
-  const catPawAdapter = registerCatPawLlm(ctx, {
-    fetchImpl: network.fetch,
-    resolveCredential: async () => {
-      const available2 = await pool.getAvailableAccount(CATPAW.id, "");
-      activeCatPawAccountId = available2?.entry.id ?? "";
-      if (activeCatPawAccountId.length > 0) reportLedgerAccount(CATPAW.id, activeCatPawAccountId);
-      if (available2) return available2.credential;
-      const resolved = await ctx.credentials.resolve(credentialRef16(CATPAW.defaultCredentialRef));
-      if (!resolved) return void 0;
-      try {
-        return JSON.parse(resolved.value);
-      } catch {
-        return void 0;
-      }
-    },
-    accountPool: pool,
-    product: CATPAW
   });
   const loomy = new LoomyAuth(ctx);
   const resolveLoomyCredentialByRef = async (refName) => {

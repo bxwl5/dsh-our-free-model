@@ -58,7 +58,7 @@ https://github.com/bxwl5/dsh-our-free-model
 
 **免密车道（2 个）**：匿名免费车道（OpenCode）、Kilo 免费池。都不需要账号。
 
-**账号渠道（23 个）**，在「渠道接入」页添加：
+**账号渠道（22 个）**，在「渠道接入」页添加：
 
 | 渠道 | 登录方式 | 对话 |
 |---|---|---|
@@ -71,7 +71,6 @@ https://github.com/bxwl5/dsh-our-free-model
 | OrcaTerm | 粘贴 Cookie（`ot_session`） | ✅ |
 | KukuAI | 粘贴 Cookie（`BDUSS`） | ✅ |
 | MonkeyCode | 粘贴 Cookie（`nebula_session`） | ✅ |
-| CatPaw | 粘贴令牌（`X-Passport-Token`） | 仅凭据/模型目录 |
 | AutoClaw / AutoClaw 国际版 | 粘贴令牌 | ✅ |
 
 **关于粘贴型渠道**：这些上游没有可脚本化的授权流程，需要先在官方站点登录，再从开发者工具复制 Cookie 或令牌粘贴进来。
