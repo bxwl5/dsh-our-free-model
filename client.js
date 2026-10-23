@@ -2719,6 +2719,7 @@ window.__ModuleLoader__.load({
       { id: 'kuku', name: 'KukuAI', org: '百度文库', accent: '#2932E1', note: '粘贴 BDUSS Cookie', login: 'cookie' },
       { id: 'accio', name: 'Accio', org: '阿里系', accent: '#FF6A00', note: 'OAuth 登录，国际站', login: 'browser' },
       { id: 'accio-cn', name: 'Accio 国内版', org: '阿里系', accent: '#FF8C42', note: 'OAuth 登录，国内站', login: 'browser' },
+      { id: 'officeace', name: 'OfficeAce 果办', org: '华为云', accent: '#C7000B', note: '浏览器授权，每日签到', login: 'browser' },
     ]
 
     /** 与现有 RPC 的能力对应：余额、每日领取及独立签到状态分别判断。 */

@@ -14,6 +14,7 @@ import { registerMonkeyCodeLlm } from './monkeycode-adapter.js'
 import { registerOrcaTermLlm } from './orcaterm-adapter.js'
 import { registerKukuLlm } from './kuku-adapter.js'
 import { registerAccioLlm } from './accio-adapter.js'
+import { registerOfficeAceLlm } from './officeace-adapter.js'
 import { registerLoomyLlm, parseLoomyRemoteModels } from './loomy-adapter.js'
 import { registerRaccoonLlm } from './raccoon-adapter.js'
 import { CODEARTS_CREDENTIAL_REF, CodeArtsAuth } from './service.js'
@@ -56,6 +57,7 @@ import { MONKEYCODE } from './monkeycode-product.js'
 import { ORCATERM } from './orcaterm-product.js'
 import { KUKU } from './kuku-product.js'
 import { ACCIO, ACCIO_CN } from './accio-product.js'
+import { OFFICEACE } from './officeace-product.js'
 import { configureDeadModelStore, withDeadModelPruning } from './dead-model-store.js'
 import type { CodeArtsCredential, BuddyCredential } from './types.js'
 import type { LobsteraiCredential } from './lobsterai.js'
@@ -67,6 +69,7 @@ import type { MonkeyCodeCredential } from './monkeycode.js'
 import type { OrcaTermCredential } from './orcaterm.js'
 import type { KukuCredential } from './kuku.js'
 import type { AccioCredential } from './accio.js'
+import type { OfficeAceCredential } from './officeace.js'
 import type { LoomyCredential } from './loomy.js'
 import type { RaccoonCredential } from './raccoon.js'
 import { MinimaxAuth } from './minimax-auth.js'
@@ -1100,6 +1103,29 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
     resolveCredential: makeAccioResolver(ACCIO_CN),
     accountPool: pool,
     product: ACCIO_CN,
+  })
+
+  // ===== OfficeAce（华为云果办）=====
+  // 推理是 OpenAI 兼容 + **Basic** 鉴权（与 CodeArts 的 SDK-HMAC 不同）；
+  // 登录是自助 OAuth + 轮询授权码（回调不落本机）。
+  let activeOfficeAceAccountId = ''
+  const officeAceAdapter = registerOfficeAceLlm(ctx, {
+    fetchImpl: network.fetch,
+    resolveCredential: async () => {
+      const available = await pool.getAvailableAccount(OFFICEACE.id, '')
+      activeOfficeAceAccountId = available?.entry.id ?? ''
+      if (activeOfficeAceAccountId.length > 0) reportLedgerAccount(OFFICEACE.id, activeOfficeAceAccountId)
+      if (available) return available.credential as OfficeAceCredential
+      const resolved = await ctx.credentials.resolve(credentialRef(OFFICEACE.defaultCredentialRef))
+      if (!resolved) return undefined
+      try {
+        return JSON.parse(resolved.value) as OfficeAceCredential
+      } catch {
+        return undefined
+      }
+    },
+    accountPool: pool,
+    product: OFFICEACE,
   })
 
   // ===== Loomy（讯飞办公助手）服务 =====
