@@ -239,7 +239,7 @@ try {
   console.log('ok  actual channel page: 12 account cards, OpenCode removed')
   await verifyChannelModelActions()
   await verifyChannelCreditsUi()
-  console.log('ok  共享渠道余额：十二渠道能力、失败原因、重试、签到反馈和请求交错')
+  console.log('ok  共享渠道余额：十三渠道能力、失败原因、重试、签到反馈和请求交错')
   console.log('ok  共享渠道卡片：批量开关、单次请求、重复点击保护和失败恢复')
 
   // The retained OFM anonymous lane still enumerates and streams without any
