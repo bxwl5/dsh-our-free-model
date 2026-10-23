@@ -87,4 +87,11 @@ The settings page has seven parts: free models, channels, token savers, routing,
 
 **On AutoClaw** — its OAuth flow hard-requires the Aliyun CAPTCHA SDK (`AliyunCaptcha.js`, scenario `sq51tr`), which the plugin cannot complete on its own, hence the pasted-token route.
 
+**Can't see a channel's models?** The picker only lists models of channels you are signed in to;
+a channel with no usable account is hidden as a whole, so the list does not fill up with rows that
+cannot work. Add an account to see them; or, to browse without signing in, set the
+`DSH_HIDE_MODELS_WITHOUT_ACCOUNT` environment variable to `0` and signed-out channels list their
+static catalog (using them still requires a sign-in). Per-channel sign-in methods:
+[docs/channel-login-methods.md](docs/channel-login-methods.md).
+
 MIT, see [LICENSE](LICENSE). This project has no affiliation with, and no endorsement from, any model provider.

@@ -77,4 +77,10 @@ https://github.com/bxwl5/dsh-our-free-model
 
 **关于 AutoClaw**：它的 OAuth 强制要求阿里云验证码 SDK（`AliyunCaptcha.js`，场景 `sq51tr`），插件内无法自动完成，故用粘贴令牌。
 
+**看不到某个渠道的模型？** 模型选择器只列**已登录渠道**的模型：没有可用账号的渠道会整组隐藏，
+免得列出一堆点了不能用的条目。想先看看某渠道有哪些模型，给它加一个账号即可；只想看不想登录时，
+把环境变量 `DSH_HIDE_MODELS_WITHOUT_ACCOUNT` 设为 `0`，未登录渠道也会列出其静态模型表
+（点进去仍需登录才能用）。各渠道支持哪种登录方式见
+[docs/channel-login-methods.md](docs/channel-login-methods.md)。
+
 MIT，见 [LICENSE](LICENSE)。本项目与任何模型提供方无隶属或背书关系。
