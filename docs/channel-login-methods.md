@@ -1,7 +1,7 @@
 # 渠道登录方式矩阵
 
 > 一句话：22 个账号渠道里，**16 个的登录在浏览器/本地页内完成**（不需要手抄凭据），
-> **1 个（`loomy`）界面会额外要短信验证码**，**5 个只能粘贴凭据**。本文的「一键」指：点「添加账号」后只需在浏览器内完成授权，
+> **1 个（`loomy`）在微信未绑手机号时会在弹窗内补要短信码**，**5 个只能粘贴凭据**。本文的「一键」指：点「添加账号」后只需在浏览器内完成授权，
 > 插件自己把 token 收回来，**不需要手动复制任何东西**。
 
 ## 1. 总表
@@ -12,18 +12,18 @@
 | 2 | `buddy` | 浏览器授权 → 轮询 token（`auth/state` 换登录页） | ✅ | 浏览器登录 | 否 | `channel-pack-rpc.ts:1481-1506`、`buddy-oauth.ts:137,178` |
 | 3 | `workbuddy` | 同 `buddy`（同一实现，不同产品配置） | ✅ | 浏览器登录 | 否 | 同上 + `product.ts` 的 `WORKBUDDY` |
 | 4 | `lobsterai` | 浏览器授权 → 本地回调（与 codearts 同款） | ✅ | 浏览器登录 | 是 | `channel-pack-rpc.ts:1651` 起 |
-| 5 | `qoder` | 设备码轮询（不起本地端口） | ✅ | 浏览器输码 | 否 | `qoder-oauth.ts:119,205` |
-| 6 | `qodercn` | 同 `qoder`（同族不同端点） | ✅ | 浏览器输码 | 否 | 同上 |
+| 5 | `qoder` | 设备码轮询（不起本地端口） | ✅ | 浏览器点授权/选账号 | 否 | `qoder-oauth.ts:119,205` |
+| 6 | `qodercn` | 同 `qoder`（同族不同端点） | ✅ | 浏览器点授权/选账号 | 否 | 同上 |
 | 7 | `trae` | 浏览器授权 → 本地回调 | ✅ | 浏览器登录 | 是 | `trae-oauth.ts:99,263` |
-| 8 | `cline` | WorkOS 设备码轮询 | ✅ | 浏览器输码 | 否 | `cline-oauth.ts:178,230` |
+| 8 | `cline` | WorkOS 设备码轮询 | ✅ | 浏览器点授权 | 否 | `cline-oauth.ts:178,230` |
 | 9 | `gemini` | Google OAuth → 本地回调 | ✅ | Google 登录 | 是 | `gemini-auth.ts:4`、`gemini-oauth.ts:103` |
-| 10 | `minimax` | OAuth 设备码 + PKCE | ✅ | 浏览器输码 | 否 | `minimax-oauth.ts:72,113` |
+| 10 | `minimax` | OAuth 设备码 + PKCE | ✅ | 浏览器点授权 | 否 | `minimax-oauth.ts:72,113` |
 | 11 | `zcode` | 服务端中介的设备授权 + 轮询 | ✅ | 浏览器登录 | 否 | `zcode-login.ts:1-40` |
 | 12 | `commandcode` | 浏览器 OAuth → 本地回调（5959 起，最多 10 个） | ✅ | 浏览器登录 | 是 | `commandcode-auth.ts:12`、`commandcode-product.ts:139` |
 | 13 | `officeace` | 自助 OAuth + 轮询授权码（回调不落本机） | ✅ | 浏览器登录 | 否 | `channel-pack-rpc.ts:1552` 起 |
-| 14 | `accio` | PKCE + 轮询 | ✅ | 浏览器登录 | 是 | `accio-auth.ts:321,353` |
+| 14 | `accio` | PKCE + 本地回调（5960–5969） | ✅ | 浏览器登录 | 是 | `accio-auth.ts:321,353` |
 | 15 | `accio-cn` | 同 `accio`（国内端点） | ✅ | 浏览器登录 | 是 | 同上 |
-| 16 | `loomy` | 微信扫码（短信备用），本地页承载 | ⚠️ | 微信扫码 | 是 | `channel-pack-rpc.ts:1793` 起 |
+| 16 | `loomy` | 微信扫码，本地页承载 | ⚠️ | 微信扫码（未绑手机号时补短信码） | 是 | `channel-pack-rpc.ts:1793` 起 |
 | 17 | `raccoon` | 微信扫码 / 短信，本地页承载 | ✅ | 微信扫码或短信 | 是 | `channel-pack-rpc.ts:1848` 起、`raccoon-oauth.ts:116,140` |
 | 18 | `monkeycode` | 粘贴 Cookie（`nebula_session`） | ❌ | 手动复制 Cookie | 否 | `channel-pack-rpc.ts:4448` |
 | 19 | `orcaterm` | 粘贴 Cookie（`ot_session`） | ❌ | 手动复制 Cookie | 否 | `channel-pack-rpc.ts:4455` |
@@ -39,12 +39,15 @@
   与 `user_code`，不监听任何端口，因此不受本机端口冲突影响。
 - **本地回调**（`codearts`、`lobsterai`、`trae`、`gemini`、`commandcode`、`accio`）：在
   `127.0.0.1` 上起一次性 HTTP 服务接授权码。`commandcode` 从 5959 起逐个试 10 个端口
-  （与官方 CLI 一致，`commandcode-product.ts:139`），其余用候选端口探测。
+  （与官方 CLI 一致，`commandcode-product.ts:139`），`accio` 用 5960–5969（两段有重叠），
+  其余用候选端口探测。`codearts` 在 portal 回退路径上还有 ticket 轮询兜底（`login.ts:320-334`），
+  `gemini` 的端口是动态 0（不是固定 8845）。
 - **轮询 token**（`buddy`/`workbuddy`、`officeace`）：浏览器授权在**上游服务端**完成，
   插件只用 `state` 或授权码轮询结果，所以不起本地端口。
 - **本地页承载扫码**（`loomy`、`raccoon`）：起本地页显示二维码/短信表单，用户在页面里
   完成，插件轮询登录态。两者都不需要手抄凭据，故计入「一键」；`loomy` 的界面声明是
-  `browser+sms`，会额外要求短信验证码，单独标成「半自动」。
+  `browser+sms`，**仅当该微信账号未绑手机号时**弹窗内会补要手机号 + 短信码（面板本身不渲染
+  短信表单，`login.sendSms` 是未被前端调用的备用 RPC），因此单独标成「半自动」。
 - **粘贴**（5 个）：上游没有可脚本化的授权流，只能手工复制。
 
 ## 3. 与界面的口径一致性
@@ -53,23 +56,58 @@
 交互形态：`browser` × 16、`browser+sms` × 1（`loomy`）、`cookie` × 3、`token` × 2。
 与本表一一对应 —— 界面上的「扫码/短信」入口就是 `browser+sms`，粘贴框就是 `cookie`/`token`。
 
-## 4. 未登录时看不看得到模型（相关开关）
+## 4. 未登录时看不看得到模型（实测）
 
-- DSH 会把 `listModels` 返回空的 provider **整组隐藏**
-  （`dsh-api-session-controller/lib/index.js:604` 的 `.filter(group => group.models.length > 0)`）。
-- 本插件用 `providerCatalogVisible()` 做门控，见 `vendor/channel-pack/src/account-pool.ts:1306-1330`，
-  开关是环境变量 **`DSH_HIDE_MODELS_WITHOUT_ACCOUNT`**：默认开启（=隐藏未登录渠道的模型），
-  显式设为 `0` / `false` / `no` / `off` 时**显示**。
-- 只影响「目录展示」，不影响路由：被隐藏的模型仍能 `resolveModel` 与正常收发。
-- 各渠道在无凭据时能否给出模型，取决于适配器有没有静态兜底表 —— 实测清单见
-  `项目文件/research/prelogin-catalog.md`。
+**结论：可以，但有一个例外，且默认是关的。**
 
-## 5. 已知待办
+机制：DSH 会把 `listModels` 返回空的 provider **整组隐藏**
+（`dsh-api-session-controller/lib/index.js:604` 的 `.filter(group => group.models.length > 0)`）。
+本插件用 `providerCatalogVisible()` 门控，见 `vendor/channel-pack/src/account-pool.ts:1306-1330`，
+开关是环境变量 **`DSH_HIDE_MODELS_WITHOUT_ACCOUNT`**：默认开启（=隐藏），
+显式设 `0` / `false` / `no` / `off` 时**显示**。
+
+实测（2026-10-24，离线挂载发布态 `pack.js`，无凭据、fetch 全失败）：
+
+| 开关 | 结果 |
+| --- | --- |
+| 默认 / `=1` | 22 个账号渠道的 `listModels` **全部 0 条**；未登录唯一可见的是插件自带免密车道兜底 **8 条**（`src/core/runtime.js:15-19`） |
+| `=0` | **21/22** 渠道可见，合计 **163 条**（离线兜底下限）；`zcode` 仍 0 条 |
+
+两个必须知道的边界：
+
+1. **`zcode` 是例外**：它的 `listModels` 先过 `ready()` 凭据判定（`zcode-adapter.ts:441`），
+   环境变量救不了 —— 文档里不能说「设 0 就全显示」。
+2. **未登录时只有 `cline` 会真发 HTTP**（`models.dev` + recommended-models，各 20 s 超时），
+   其余渠道无凭据即短路返回静态表。若默认改成「显示」，首屏会多两条超时告警。
+
+其它实测事实：
+
+- 无凭据仍有模型的渠道共 **21 个**：12 个根本没装远端目录、9 个 fetcher 无凭据即短路。
+- **设置页与对话框口径已经分裂**：13 个渠道（有 `listAllModels`、不过门控）未登录在设置页
+  就能看到模型（合计 150 条），另 9 个看不到。
+- 无凭据对话会抛 `MISSING_CREDENTIAL`，但不会被误标失效（`dead-model-store.ts:243-252` 忽略该码）。
+- DSH 的目录条目只投影 `id/name/description/reasoning`（`index.js:578-583`），
+  想在名字上加「未登录」标记只能污染 `name`，不建议。
+
+**落地选项**（风险由低到高）：
+
+| 方案 | 改动 | 风险 |
+| --- | --- | --- |
+| A 仅文档（当前） | 0 代码，只写清开关与例外 | 无 |
+| B 设置页加「未登录也显示（预览）」开关，默认关 | 手写约 250–300 行；关键是预览态把 `fetchRemoteModels` 包成 `[]` 以避开 `cline` 的 20 s×2；需重建产物 | 中（发布内容） |
+| C 默认显示 + 名字标记 | 同 B + 默认值翻转 | 高（与「未登录隐藏」原需求冲突，且污染模型名） |
+
+## 5. 已知待办（2026-10-24 研究结论）
 
 | 事项 | 状态 | 说明 |
 | --- | --- | --- |
-| 5 个粘贴型渠道能否自动化登录 | 研究中 | 见 `项目文件/research/paste-login-feasibility.md`（GitHub 仓库 / 官方 API / 内嵌浏览器三条路） |
-| 未登录展示模型列表 | 研究中 | 已有环境变量开关；是否做成设置页开关待评估，见 `项目文件/research/prelogin-catalog.md` |
+| `autoclaw`（国内）短信登录 | **协议已验证，待接线** | 手机号 + 短信码：`POST /userapi/v1/agent-send-code` → `/userapi/v1/agent-login`，`X-Auth-Sign=md5(appId&ts&appKey)`；零新依赖。协议与坑见 `项目文件/research/autoclaw-sms-implementation.md`，自测工具 `scripts/autoclaw-sms-probe.mjs --selftest`（默认不发短信）。**接线前需真机验证一次。** |
+| `kuku` 扫码登录 | 可行（B 档，接近一键） | 百度 passport `getqrcode` → `logincheck` 轮询，确认后直接下发 `BDUSS`/`STOKEN`；仓库已有本地弹窗页（`loomy-wechat-login.ts`）+ 零依赖二维码（`raccoon-qr.ts`）+ `login.poll` 三件套可复用。 |
+| `autoclaw-intl` OAuth | 可行但工作量大 | Z.ai OAuth loopback（端口白名单 18432/19654/19723/53699）+ 阿里滑块；国际账号无手机号，短信路不通。 |
+| `orcaterm` 书签收号 | 半自动，待实测 | `ot_session` 非 HttpOnly，用户在已登录页点一次书签回传；未知项是 https 页 → `http://127.0.0.1` 的 PNA/混合内容限制。 |
+| `monkeycode` | 维持粘贴 | 设备码 client_id 写死 `monkeyai-runtime`、scope 仅 `device:*`；会话 Cookie HttpOnly ⇒ 内嵌浏览器也取不到。 |
+| 未登录展示模型列表 | 已有环境变量开关 | 见 §4；是否做成设置页开关待定（方案 B）。 |
+| 登录失败无反馈 | **已修** | 12 个渠道原先失败只写日志；现统一 `recordLoginFailure`，`login.poll` 能拿到原因（`scripts/login-failure-reporting-test.mjs` 守卫）。 |
 
 ## 6. 维护约定
 
