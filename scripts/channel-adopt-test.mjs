@@ -8,8 +8,9 @@
  * 3. RPC 端到端（仅在有 mount 环境时，由 channel-pack-test.mjs 传入
  *    { call, creds }）：非法凭据必须 bad-request 拒收且不落盘、不进账号池；
  *    噪声凭据清洗后收下，落盘值即清洗值，账号池有条目。
- *    同时锁死 adopt 写入走 host 契约的 credentials.set（原实现误写成
- *    ctx.credentials.write —— 真实 host 没有该方法，adopt 落不了盘）。
+ *    同时锁死 adopt 写入走声明契约的 credentials.set（原实现写的是未声明的
+ *    ctx.credentials.write —— 本机实时实现恰好实现了它，所以当时能跑通；更正见
+ *    docs/channel-capability-matrix.md 第 4.1 节）。
  *    第 3 层与加载方式无关，按上一条：源码与打包产物**两种模式都跑**。
  */
 import assert from 'node:assert/strict'

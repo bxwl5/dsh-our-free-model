@@ -303,9 +303,19 @@
 
 `vendor/channel-pack/pack.js` 与 `packages/standalone/channels/business.mjs` 是**发布产物**：
 `package.json` 的 `files` 只发 `pack.js`、不发 `src/`。改完 `vendor/channel-pack/src/**` 必须重建，
-否则装机版停留在旧逻辑 —— 2026-10-23 发生过一次：形状校验加固与 `credentials.set` 只进了 src，
-`pack.js` 里仍是 `credentials.write`（真实 host 无此方法），装机版 `account.adopt` 直接失败，
-而当时打包模式回归全绿（adopt 用例被 `sourceMode` 门控）。
+否则装机版停留在旧逻辑 —— 2026-10-23 的实例：`81fc8e7` 的凭据形状加固只进了 src 没重建产物，
+于是装机副本实测**仍注册着已移除的粘贴型渠道**，并接受 `nebula_session=abc` 这种形状非法的凭据
+（`account.adopt` 返回 `ok:true`）；而当时打包模式回归全绿，因为 adopt 用例被 `sourceMode` 门控、
+打包模式根本不跑它。
+
+> **更正（2026-10-24）**：本节此前写「`pack.js` 里仍是 `credentials.write`（真实 host 无此方法），
+> 装机版 `account.adopt` 直接失败」——**这个因果是错的**。`write` 确实不在抽象契约里
+> （`@deepseek-ai/dsh-credentials` 只声明 `resolve` / `describe` / `set` / `unset`），
+> 但本机实时实现 `@deepseek-ai/dsh-credentials-local` 0.2.1-rc.2 实现了这个未声明方法
+> （`lib/index.js:608`，且 `write(ref, undefined)` 即 unset）。实测旧产物 adopt 返回 `ok:true`，
+> 故改用 `credentials.set` 是**对齐声明契约的加固，不是**修复一个必然失败。
+> 真正被方法名坑到的是 `CommandCodeAuth.logout()`：它调 `credentials.delete?.()`，
+> 而 `delete` 在抽象契约与实时实现里都不存在，于是静默不生效（已改为 `unset`）。
 
 ```bash
 # 必须在仓库根执行：esbuild 的模块注释按 cwd 取相对路径，换目录会让整份产物多出路径差异

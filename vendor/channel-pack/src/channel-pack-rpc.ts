@@ -1427,10 +1427,11 @@ function registerChannelPackEndpoints(
         const id = `${provider}-${shortId()}`
         const refName = `${provider.toUpperCase().replace(/-/g, '_')}_ACCOUNT_${shortId().toUpperCase()}`
         try {
-          // ⚠️ host 的 credentials 契约只有 `set` / `unset` / `resolve` / `describe`
-          // （见 @deepseek-ai/dsh-credentials）。这里原先误写成 `write`（全仓仅此
-          // 一处），真实环境下 TypeError 会被下方 catch 吞成「凭据写入失败」，
-          // 导致 adopt 永远落不了盘 —— 与本文件其余 5 处 `credentials.set` 对齐。
+          // 用声明契约里的 `credentials.set`（@deepseek-ai/dsh-credentials 声明
+          // resolve / describe / set / unset）。这里原先写的是 `credentials.write`：
+          // 抽象契约中**没有**该方法，但本机实时实现 @deepseek-ai/dsh-credentials-local
+          // 0.2.1-rc.2 恰好实现了这个未声明的 `write`（lib/index.js:608），故当时在
+          // 真实 host 上能跑通 —— 改用 `set` 是为对齐声明契约、不再依赖未声明方法。
           await ctx.credentials.set(credentialRef(refName), JSON.stringify(parsed))
         } catch (error) {
           return { ok: false, error: { code: 'internal', message: `凭据写入失败：${error instanceof Error ? error.message : String(error)}` } }
