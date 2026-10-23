@@ -1303,8 +1303,10 @@ export class AccountPool {
  *
  * ## 判定语义
  *
- * - **默认开启**（`DSH_HIDE_MODELS_WITHOUT_ACCOUNT=0` 可关）：与
- *   `DSH_TRAE_MAX_MODE` 同为「默认开、显式假值才关」的语义，故单列解析函数。
+ * - **默认不隐藏**（2026-10-24 起）：未登录也展示渠道的静态模型表，登录后下一次
+ *   `listModels` 会带凭据重新拉远端目录（缓存只在远端成功时写入，不会被兜底表污染）。
+ *   想恢复「未登录就隐藏」的旧行为，设 `DSH_HIDE_MODELS_WITHOUT_ACCOUNT=1`。
+ *   变量名读起来就是「隐藏」，默认值与名字对齐；解析见 {@link resolveHideWithoutAccountFlag}。
  * - `accountPool` 缺失（headless / CLI / 单测）或替身未实现
  *   `hasLoggedInAccount` 时**视为可见** —— 门控是**展示优化而非安全边界**，
  *   判定不可用时宁多勿少（否则会让整个 provider 的模型凭空消失）。
@@ -1333,13 +1335,36 @@ export async function providerCatalogVisible(
 }
 
 /**
- * 解析 `DSH_HIDE_MODELS_WITHOUT_ACCOUNT`；**默认开启**。
+ * 解析 `DSH_HIDE_MODELS_WITHOUT_ACCOUNT`；**默认不隐藏**。
  *
- * 只有显式假值（`0` / `false` / `no` / `off`）才关闭。与 `isTruthyFlag`
- * 的「默认关」语义相反，故单列一个函数，**不要混用**。
+ * 只有显式真值（`1` / `true` / `yes` / `on`）才隐藏。2026-10-24 起默认翻转：
+ * 用户要求「未登录也能看到渠道有哪些模型，登录后再刷新成完整列表」。
  */
 function resolveHideWithoutAccountFlag(raw: string | undefined): boolean {
-  if (raw === undefined) return true
+  if (raw === undefined) return false
   const value = raw.trim().toLowerCase()
-  return !(value === '0' || value === 'false' || value === 'no' || value === 'off')
+  return value === '1' || value === 'true' || value === 'yes' || value === 'on'
+}
+
+/**
+ * 该 provider 是否有**可用**（凭据可解析）的账号。
+ *
+ * 与 {@link providerCatalogVisible} 的区别：那个回答「要不要在目录里展示」，
+ * 这个回答「能不能去拉远端目录」。两者在「未登录也展示」的默认下会分叉：
+ * 展示静态兜底表，但**不能**拿没有凭据的身份去打远端目录端点（cline 会白等 20s×2）。
+ *
+ * 判定不可用（无账号池 / 替身没实现）时返回 `true`，让调用方按「已登录」处理 ——
+ * 宁可多试一次，也不要让本该有的目录凭空消失。
+ */
+export async function providerHasLoggedInAccount(
+  accountPool: AccountPool | undefined,
+  provider: string,
+): Promise<boolean> {
+  if (accountPool === undefined) return true
+  if (typeof accountPool.hasLoggedInAccount !== 'function') return true
+  try {
+    return await accountPool.hasLoggedInAccount(provider)
+  } catch {
+    return true
+  }
 }

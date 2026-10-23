@@ -27953,8 +27953,11 @@ var init_commandcode = __esm({
 var commandcode_auth_exports = {};
 __export(commandcode_auth_exports, {
   COMMANDCODE_CALLBACK_PATH: () => COMMANDCODE_CALLBACK_PATH,
+  bindLoopbackPort: () => bindLoopbackPort,
   fetchCredits: () => fetchCredits,
   fetchModelCatalog: () => fetchModelCatalog,
+  listenForCallbackPort: () => listenForCallbackPort,
+  listenOnPortRange: () => listenOnPortRange,
   resolveCredential: () => resolveCredential,
   runCommandCodeLogin: () => runCommandCodeLogin,
   startCommandCodeLogin: () => startCommandCodeLogin,
@@ -27991,28 +27994,40 @@ async function resolveCredential(fetcher, product, apiKey, signal) {
   if (!isCredentialUsable(credential)) throw new Error("Command Code\uFF1A\u767B\u5F55\u8FD4\u56DE\u7684 Key \u4E3A\u7A7A\u6216\u542B\u9996\u5C3E\u7A7A\u767D");
   return credential;
 }
-async function listenOnRange(server) {
-  const errors = [];
-  for (let offset = 0; offset < COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS; offset++) {
-    const port = COMMANDCODE_LOGIN_START_PORT + offset;
-    const bound = await new Promise((resolve2) => {
-      const onError = (error) => {
-        server.removeListener("listening", onListening);
-        errors.push(`${port}: ${error.message}`);
-        resolve2(false);
-      };
-      const onListening = () => {
-        server.removeListener("error", onError);
-        resolve2(true);
-      };
-      server.once("error", onError);
-      server.once("listening", onListening);
-      server.listen(port, "127.0.0.1");
-    });
-    if (bound) return port;
+async function bindLoopbackPort(server, port) {
+  return new Promise((resolve2) => {
+    const onError = (error) => {
+      server.removeListener("listening", onListening);
+      resolve2({ ok: false, error });
+    };
+    const onListening = () => {
+      server.removeListener("error", onError);
+      const address = server.address();
+      const actual = typeof address === "object" && address !== null ? address.port : port;
+      resolve2({ ok: true, port: actual });
+    };
+    server.once("error", onError);
+    server.once("listening", onListening);
+    server.listen(port, "127.0.0.1");
+  });
+}
+async function listenOnPortRange(server, startPort = COMMANDCODE_LOGIN_START_PORT, attempts = COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS, errors = []) {
+  for (let offset = 0; offset < attempts; offset++) {
+    const candidate = startPort + offset;
+    const attempt = await bindLoopbackPort(server, candidate);
+    if (attempt.ok) return attempt.port;
+    errors.push(`${candidate}: ${attempt.error.message}`);
   }
+  return void 0;
+}
+async function listenForCallbackPort(server, startPort = COMMANDCODE_LOGIN_START_PORT, attempts = COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS) {
+  const errors = [];
+  const ranged = await listenOnPortRange(server, startPort, attempts, errors);
+  if (ranged !== void 0) return { port: ranged, fallback: false };
+  const random = await bindLoopbackPort(server, 0);
+  if (random.ok) return { port: random.port, fallback: true };
   throw new Error(
-    `Command Code\uFF1A\u56DE\u8C03\u7AEF\u53E3 ${COMMANDCODE_LOGIN_START_PORT}\u2013${COMMANDCODE_LOGIN_START_PORT + COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS - 1} \u5168\u90E8\u88AB\u5360\u7528\uFF08\u901A\u5E38\u610F\u5473\u7740\u672C\u673A\u6709\u5176\u5B83 CLI \u6B63\u5728\u767B\u5F55\uFF09\u3002\u660E\u7EC6\uFF1A${errors.join("; ")}`
+    `Command Code\uFF1A\u56DE\u8C03\u7AEF\u53E3 ${startPort}\u2013${startPort + attempts - 1} \u5168\u90E8\u88AB\u5360\u7528\uFF08\u901A\u5E38\u610F\u5473\u7740\u672C\u673A\u6709\u5176\u5B83 CLI \u6B63\u5728\u767B\u5F55\uFF09\uFF0C\u56DE\u9000\u968F\u673A\u56DE\u73AF\u7AEF\u53E3\u4E5F\u5931\u8D25\uFF1A${random.error.message}\u3002\u6BB5\u5185\u660E\u7EC6\uFF1A${errors.join("; ")}`
   );
 }
 async function startCommandCodeLogin(options) {
@@ -28089,7 +28104,12 @@ async function startCommandCodeLogin(options) {
       })();
     });
   });
-  port = await listenOnRange(server);
+  const binding = await listenForCallbackPort(
+    server,
+    options.portRange?.startPort,
+    options.portRange?.attempts
+  );
+  port = binding.port;
   const loginUrl = buildCommandCodeAuthUrl(product, port, state);
   let closed = false;
   const close = async () => {
@@ -28113,7 +28133,7 @@ async function startCommandCodeLogin(options) {
   }).finally(() => {
     void close();
   });
-  return { loginUrl, port, result: resultWithTimeout, close };
+  return { loginUrl, port, portFallback: binding.fallback, result: resultWithTimeout, close };
 }
 async function runCommandCodeLogin(options) {
   const started = await startCommandCodeLogin(options);
@@ -28354,9 +28374,9 @@ function contentToText11(content) {
   return parts.join("\n");
 }
 async function createPkcePair() {
-  const { randomBytes: randomBytes15, createHash: createHash11 } = await import("node:crypto");
+  const { randomBytes: randomBytes15, createHash: createHash12 } = await import("node:crypto");
   const verifier = randomBytes15(32).toString("base64url");
-  const challenge = createHash11("sha256").update(verifier).digest("base64url");
+  const challenge = createHash12("sha256").update(verifier).digest("base64url");
   return { verifier, challenge };
 }
 function buildAccioAuthUrl(product, redirectUri, state, challenge) {
@@ -28510,9 +28530,9 @@ async function* streamChat4(fetcher, product, credential, options) {
   if (!isCredentialUsable5(credential)) {
     throw new Error("Accio\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
   }
-  const { createHash: createHash11, randomUUID: randomUUID17 } = await import("node:crypto");
-  const requestId = randomUUID17();
-  const sgK = createHash11("md5").update(requestId).digest("hex");
+  const { createHash: createHash12, randomUUID: randomUUID18 } = await import("node:crypto");
+  const requestId = randomUUID18();
+  const sgK = createHash12("md5").update(requestId).digest("hex");
   const response = await fetcher(`${product.llmBase}${ACCIO_GENERATE_PATH}?sg_k=${sgK}`, {
     method: "POST",
     headers: { ...accioHeaders(product), Accept: "text/event-stream" },
@@ -32346,9 +32366,18 @@ async function providerCatalogVisible(accountPool, provider) {
   }
 }
 function resolveHideWithoutAccountFlag(raw) {
-  if (raw === void 0) return true;
+  if (raw === void 0) return false;
   const value = raw.trim().toLowerCase();
-  return !(value === "0" || value === "false" || value === "no" || value === "off");
+  return value === "1" || value === "true" || value === "yes" || value === "on";
+}
+async function providerHasLoggedInAccount(accountPool, provider) {
+  if (accountPool === void 0) return true;
+  if (typeof accountPool.hasLoggedInAccount !== "function") return true;
+  try {
+    return await accountPool.hasLoggedInAccount(provider);
+  } catch {
+    return true;
+  }
 }
 
 // vendor/channel-pack/src/remote-catalog-gate.ts
@@ -43820,8 +43849,11 @@ var ClineAdapter = class extends LlmAdapter6 {
   }
   async listModels(_provider) {
     if (!await providerCatalogVisible(this.options.accountPool, this.product.id)) return [];
-    await this.ensureRemoteModels();
-    const source = this.remoteModels ?? this.fallbackCatalog();
+    const loggedIn = await providerHasLoggedInAccount(this.options.accountPool, this.product.id);
+    if (loggedIn) {
+      await this.ensureRemoteModels();
+    }
+    const source = loggedIn ? this.remoteModels ?? this.fallbackCatalog() : this.fallbackCatalog();
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id);
     const listed = disabled === void 0 || disabled.size === 0 ? source : source.filter((model) => !disabled.has(model.id));
     return listed.map((model) => ({
@@ -58316,8 +58348,8 @@ function buildEnvironmentSection(options) {
 function isGitRepo(cwd) {
   try {
     const { existsSync: existsSync12 } = __require("node:fs");
-    const { join: join13 } = __require("node:path");
-    return existsSync12(join13(cwd, ".git"));
+    const { join: join14 } = __require("node:path");
+    return existsSync12(join14(cwd, ".git"));
   } catch {
     return false;
   }
@@ -59899,6 +59931,368 @@ function rankBuddyAccountsByBalance(accounts, options = {}) {
   return accounts.map((account, index) => ({ account, index, tier: buddyBalanceTier(account, options) })).sort((a, b) => a.tier - b.tier || a.index - b.index).map((entry) => entry.account);
 }
 
+// vendor/channel-pack/src/autoclaw-sms.ts
+import { createHash as createHash8, randomUUID as randomUUID12 } from "node:crypto";
+import { mkdirSync as mkdirSync5, readFileSync as readFileSync6, writeFileSync as writeFileSync6 } from "node:fs";
+import { join as join5 } from "node:path";
+var AUTOCLAW_SMS_APP_ID = "100003";
+var AUTOCLAW_SMS_APP_KEY = "38d2391985e2369a5fb8227d8e6cd5e5";
+var AUTOCLAW_SEND_CODE_PATH = "/userapi/v1/agent-send-code";
+var AUTOCLAW_LOGIN_PATH = "/userapi/v1/agent-login";
+var AUTOCLAW_SOURCE_ID = "autoclaw";
+var REQUEST_TIMEOUT_MS2 = 2e4;
+var PHONE_RE2 = /^1[3-9]\d{9}$/;
+function autoclawSign(appId, timestamp, appKey) {
+  return createHash8("md5").update(`${appId}&${timestamp}&${appKey}`).digest("hex");
+}
+function autoclawAuthHeaders(timestamp = Math.floor(Date.now() / 1e3), appId = AUTOCLAW_SMS_APP_ID, appKey = AUTOCLAW_SMS_APP_KEY) {
+  return {
+    "Content-Type": "application/json",
+    "X-Auth-Appid": appId,
+    "X-Auth-TimeStamp": String(timestamp),
+    "X-Auth-Sign": autoclawSign(appId, timestamp, appKey),
+    "X-Lang": "zh-CN",
+    "X-Channel": "official"
+  };
+}
+function normalizeAutoclawPhone(raw) {
+  const digits = String(raw ?? "").replace(/[\s-]/g, "");
+  const local = digits.startsWith("+86") ? digits.slice(3) : digits.startsWith("86") && digits.length === 13 ? digits.slice(2) : digits;
+  return PHONE_RE2.test(local) ? local : "";
+}
+function autoclawDeviceIdPath(home) {
+  return join5(home, "channel-pack", "autoclaw-device.json");
+}
+function resolveAutoclawDeviceId(home) {
+  const file = autoclawDeviceIdPath(home);
+  try {
+    const parsed = JSON.parse(readFileSync6(file, "utf8"));
+    const value = parsed?.deviceId;
+    if (typeof value === "string" && value.length >= 8) return value;
+  } catch {
+  }
+  const deviceId = randomUUID12();
+  try {
+    mkdirSync5(join5(home, "channel-pack"), { recursive: true });
+    writeFileSync6(file, `${JSON.stringify({ deviceId, createdAt: Date.now() }, null, 2)}
+`, "utf8");
+  } catch {
+  }
+  return deviceId;
+}
+async function postEnvelope(product, fetcher, path2, body) {
+  let response;
+  try {
+    response = await fetcher(`${product.apiBase}${path2}`, {
+      method: "POST",
+      headers: autoclawAuthHeaders(),
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS2)
+    });
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+  const text = await response.text().catch(() => "");
+  if (!response.ok) return { ok: false, error: `HTTP ${response.status}\uFF1A${text.slice(0, 200)}` };
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return { ok: false, error: `\u4E0A\u6E38\u8FD4\u56DE\u975E JSON\uFF1A${text.slice(0, 200)}` };
+  }
+  if (json.code !== 0) return { ok: false, error: json.msg ?? `\u4E0A\u6E38\u9519\u8BEF\u7801 ${json.code}` };
+  return { ok: true, json };
+}
+async function sendAutoclawCode(options) {
+  const phone = normalizeAutoclawPhone(options.phone);
+  if (phone === "") return { ok: false, error: "\u624B\u673A\u53F7\u683C\u5F0F\u4E0D\u6B63\u786E" };
+  const result = await postEnvelope(options.product, options.fetcher, AUTOCLAW_SEND_CODE_PATH, {
+    phone,
+    source_id: AUTOCLAW_SOURCE_ID,
+    device_id: options.deviceId
+  });
+  return result.ok ? { ok: true } : { ok: false, error: result.error };
+}
+function jwtClaims(token) {
+  const parts = token.split(".");
+  if (parts.length < 2) return {};
+  try {
+    return JSON.parse(Buffer.from(parts[1].replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"));
+  } catch {
+    return {};
+  }
+}
+var stripBearer = (value) => typeof value === "string" ? value.replace(/^Bearer\s+/i, "").trim() : "";
+function toAutoclawCredential(data, deviceId, phone) {
+  const accessToken = stripBearer(data?.access_token);
+  if (accessToken === "") return { ok: false, error: "\u4E0A\u6E38\u54CD\u5E94\u7F3A\u5C11 access_token" };
+  const claims = jwtClaims(accessToken);
+  const declared = typeof data?.expires_at === "number" ? data.expires_at * (data.expires_at < 1e12 ? 1e3 : 1) : typeof data?.expires_in === "number" ? Date.now() + data.expires_in * 1e3 : void 0;
+  const jwtExpires = typeof claims.exp === "number" ? claims.exp * 1e3 : void 0;
+  const userId = data?.user_id ?? claims.user_id;
+  const userName = typeof data?.user_name === "string" ? data.user_name : void 0;
+  const userPhone = typeof data?.user_phone === "string" ? data.user_phone : phone;
+  const credential = {
+    access_token: accessToken,
+    refresh_token: stripBearer(data?.refresh_token) || void 0,
+    expire_time: jwtExpires ?? declared,
+    account_id: userId === void 0 ? void 0 : String(userId),
+    nickname: userName ?? `AutoClaw ${userPhone.slice(-4)}`,
+    created_at: Date.now(),
+    device_id: deviceId
+  };
+  return { ok: true, credential };
+}
+async function loginAutoclawWithCode(options) {
+  const phone = normalizeAutoclawPhone(options.phone);
+  if (phone === "") return { ok: false, error: "\u624B\u673A\u53F7\u683C\u5F0F\u4E0D\u6B63\u786E" };
+  const code = options.code.trim();
+  if (!/^\d{4,8}$/.test(code)) return { ok: false, error: "\u9A8C\u8BC1\u7801\u5FC5\u987B\u662F 4\u20138 \u4F4D\u6570\u5B57" };
+  const result = await postEnvelope(options.product, options.fetcher, AUTOCLAW_LOGIN_PATH, {
+    phone,
+    code: Number(code),
+    source_id: AUTOCLAW_SOURCE_ID,
+    device_id: options.deviceId
+  });
+  if (!result.ok) return { ok: false, error: result.error };
+  return toAutoclawCredential(result.json.data, options.deviceId, phone);
+}
+
+// vendor/channel-pack/src/autoclaw-login-page.ts
+import { createServer as createServer9 } from "node:http";
+var AUTOCLAW_LOGIN_PAGE_PATHS = {
+  login: "/autoclaw/login",
+  smsSend: "/autoclaw/sms/send",
+  smsVerify: "/autoclaw/sms/verify"
+};
+var AUTOCLAW_LOGIN_TIMEOUT_MS = 10 * 6e4;
+async function startAutoclawLoginFlow(options) {
+  const { product, fetcher, deviceId } = options;
+  const state = { phone: "" };
+  let resolveResult;
+  let rejectResult;
+  const result = new Promise((resolve2, reject) => {
+    resolveResult = resolve2;
+    rejectResult = reject;
+  });
+  result.catch(() => {
+  });
+  let settled = false;
+  const settleOk = (value) => {
+    if (settled) return;
+    settled = true;
+    resolveResult(value);
+  };
+  const settleErr = (error) => {
+    if (settled) return;
+    settled = true;
+    rejectResult(error);
+  };
+  const server = createServer9((request2, response) => {
+    void handleRequest3(request2, response, { state, product, fetcher, deviceId, settleOk }).catch(
+      (error) => {
+        try {
+          response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" }).end(`\u5185\u90E8\u9519\u8BEF\uFF1A${error instanceof Error ? error.message : String(error)}`);
+        } catch {
+        }
+      }
+    );
+  });
+  const port = await listenOnRandomPort4(server);
+  const loginUrl = `http://127.0.0.1:${port}${AUTOCLAW_LOGIN_PAGE_PATHS.login}`;
+  let closed = false;
+  const close = async () => {
+    if (closed) return;
+    closed = true;
+    settleErr(new Error("autoclaw: \u767B\u5F55\u6D41\u7A0B\u5DF2\u5173\u95ED"));
+    await new Promise((resolve2) => {
+      server.close(() => resolve2());
+    });
+  };
+  const timeoutMs = options.timeoutMs ?? AUTOCLAW_LOGIN_TIMEOUT_MS;
+  const timer = setTimeout(() => {
+    settleErr(new Error(`autoclaw: \u767B\u5F55\u8D85\u65F6\uFF08${Math.round(timeoutMs / 1e3)} \u79D2\u5185\u672A\u5B8C\u6210\uFF09`));
+  }, timeoutMs);
+  timer.unref?.();
+  void result.catch(() => {
+  }).finally(() => {
+    clearTimeout(timer);
+    if (!closed) {
+      closed = true;
+      void new Promise((resolve2) => {
+        server.close(() => resolve2());
+      });
+    }
+  });
+  return { loginUrl, result, close };
+}
+async function handleRequest3(request2, response, deps) {
+  const url = new URL(request2.url ?? "/", `http://127.0.0.1:${request2.socket.localPort ?? 0}`);
+  if (url.pathname === AUTOCLAW_LOGIN_PAGE_PATHS.login) {
+    response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    response.end(renderAutoclawLoginPage(deps.product));
+    return;
+  }
+  if (url.pathname === AUTOCLAW_LOGIN_PAGE_PATHS.smsSend && request2.method === "POST") {
+    const body = await readJsonBody3(request2);
+    const phone = normalizeAutoclawPhone(typeof body.phone === "string" ? body.phone : "");
+    if (phone === "") {
+      writeJson3(response, { ok: false, message: "\u8BF7\u8F93\u5165\u6709\u6548\u7684 11 \u4F4D\u624B\u673A\u53F7\uFF08\u53EF\u5E26 +86\uFF09" });
+      return;
+    }
+    const sent = await sendAutoclawCode({ product: deps.product, fetcher: deps.fetcher, phone, deviceId: deps.deviceId });
+    if (!sent.ok) {
+      writeJson3(response, { ok: false, message: sent.error });
+      return;
+    }
+    deps.state.phone = phone;
+    writeJson3(response, { ok: true });
+    return;
+  }
+  if (url.pathname === AUTOCLAW_LOGIN_PAGE_PATHS.smsVerify && request2.method === "POST") {
+    const body = await readJsonBody3(request2);
+    const code = typeof body.code === "string" ? body.code.trim() : "";
+    if (deps.state.phone === "") {
+      writeJson3(response, { ok: false, message: "\u8BF7\u5148\u83B7\u53D6\u624B\u673A\u9A8C\u8BC1\u7801" });
+      return;
+    }
+    if (code === "") {
+      writeJson3(response, { ok: false, message: "\u8BF7\u8F93\u5165\u9A8C\u8BC1\u7801" });
+      return;
+    }
+    const login = await loginAutoclawWithCode({
+      product: deps.product,
+      fetcher: deps.fetcher,
+      phone: deps.state.phone,
+      code,
+      deviceId: deps.deviceId
+    });
+    if (!login.ok) {
+      writeJson3(response, { ok: false, message: login.error });
+      return;
+    }
+    deps.settleOk(login.credential);
+    writeJson3(response, { ok: true });
+    return;
+  }
+  response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }).end("Not found");
+}
+function writeJson3(response, payload) {
+  response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+  response.end(JSON.stringify(payload));
+}
+async function readJsonBody3(request2) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request2) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length;
+    if (size > 64 * 1024) throw new Error("\u8BF7\u6C42\u4F53\u8FC7\u5927");
+    chunks.push(buffer);
+  }
+  if (chunks.length === 0) return {};
+  try {
+    const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    return typeof parsed === "object" && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+function listenOnRandomPort4(server) {
+  return new Promise((resolve2, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (typeof address === "object" && address !== null) resolve2(address.port);
+      else reject(new Error("\u65E0\u6CD5\u83B7\u53D6\u672C\u5730\u7AEF\u53E3"));
+    });
+  });
+}
+function renderAutoclawLoginPage(product) {
+  const title = product.displayName ?? "AutoClaw";
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${title} \u767B\u5F55</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 14px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; background: #0f1115; color: #e6e8ee; }
+  .card { width: min(360px, 92vw); padding: 24px; border-radius: 14px; background: #171a21; box-shadow: 0 12px 40px rgba(0,0,0,.45); }
+  h1 { font-size: 17px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 18px; color: #9aa3b2; font-size: 12px; }
+  label { display: block; font-size: 12px; color: #9aa3b2; margin: 12px 0 6px; }
+  input { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 9px; border: 1px solid #2b3040; background: #0f1319; color: inherit; font-size: 14px; }
+  .row { display: flex; gap: 8px; margin-top: 16px; }
+  button { flex: 1; padding: 10px 12px; border-radius: 9px; border: 0; font-size: 14px; cursor: pointer; background: #3d5afe; color: #fff; }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  button.ghost { background: #232838; color: #cfd6e4; flex: 0 0 auto; }
+  .status { min-height: 20px; margin-top: 14px; font-size: 12px; color: #9aa3b2; }
+  .status.ok { color: #4ade80; }
+  .status.err { color: #f87171; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>${title} \u767B\u5F55</h1>
+  <p class="sub">\u7528\u624B\u673A\u53F7\u63A5\u6536\u77ED\u4FE1\u9A8C\u8BC1\u7801\uFF0C\u5168\u7A0B\u5728\u672C\u673A\u5B8C\u6210\uFF0C\u4E0D\u4F1A\u4E0A\u4F20\u4EFB\u4F55\u51ED\u636E\u3002</p>
+  <label for="phone">\u624B\u673A\u53F7</label>
+  <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="13800000000">
+  <div class="row">
+    <button id="send" type="button">\u53D1\u9001\u9A8C\u8BC1\u7801</button>
+  </div>
+  <label for="code">\u77ED\u4FE1\u9A8C\u8BC1\u7801</label>
+  <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="6 \u4F4D\u6570\u5B57">
+  <div class="row">
+    <button id="verify" type="button">\u767B\u5F55</button>
+    <button id="cancel" class="ghost" type="button">\u5173\u95ED</button>
+  </div>
+  <div id="status" class="status" role="status"></div>
+</div>
+<script>
+const paths = ${JSON.stringify(AUTOCLAW_LOGIN_PAGE_PATHS)}
+const status = document.getElementById('status')
+const send = document.getElementById('send')
+const verify = document.getElementById('verify')
+const phone = document.getElementById('phone')
+const code = document.getElementById('code')
+function say(text, kind) { status.textContent = text; status.className = 'status' + (kind ? ' ' + kind : '') }
+let cooldown = 0
+let timer = null
+function startCooldown() {
+  cooldown = 60
+  send.disabled = true
+  send.textContent = cooldown + ' \u79D2\u540E\u91CD\u53D1'
+  timer = setInterval(() => {
+    cooldown -= 1
+    if (cooldown <= 0) { clearInterval(timer); send.disabled = false; send.textContent = '\u53D1\u9001\u9A8C\u8BC1\u7801'; return }
+    send.textContent = cooldown + ' \u79D2\u540E\u91CD\u53D1'
+  }, 1000)
+}
+send.addEventListener('click', async () => {
+  if (cooldown > 0) return
+  say('\u6B63\u5728\u53D1\u9001\u2026')
+  try {
+    const response = await fetch(paths.smsSend, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ phone: phone.value }) })
+    const data = await response.json()
+    if (data.ok) { say('\u9A8C\u8BC1\u7801\u5DF2\u53D1\u9001\uFF0C\u8BF7\u67E5\u6536\u77ED\u4FE1', 'ok'); startCooldown() } else { say(data.message || '\u53D1\u9001\u5931\u8D25', 'err') }
+  } catch (error) { say('\u53D1\u9001\u5931\u8D25\uFF1A' + error, 'err') }
+})
+verify.addEventListener('click', async () => {
+  say('\u6B63\u5728\u767B\u5F55\u2026')
+  try {
+    const response = await fetch(paths.smsVerify, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: code.value }) })
+    const data = await response.json()
+    if (data.ok) { say('\u767B\u5F55\u6210\u529F\uFF0C\u672C\u9875\u5373\u5C06\u5173\u95ED', 'ok'); setTimeout(() => window.close(), 800) } else { say(data.message || '\u767B\u5F55\u5931\u8D25', 'err') }
+  } catch (error) { say('\u767B\u5F55\u5931\u8D25\uFF1A' + error, 'err') }
+})
+document.getElementById('cancel').addEventListener('click', () => window.close())
+</script>
+</body>
+</html>`;
+}
+
 // vendor/channel-pack/src/minimax-product.ts
 var MINIMAX_FALLBACK_MODELS = [
   {
@@ -60089,7 +60483,7 @@ function minimaxFallbackEntries(product = MINIMAX) {
 var CHECKIN_ACTIVITY_STATUS_PATH = "/v2/billing/meter/checkin-activity-status";
 var DAILY_CHECKIN_PATH = "/v2/billing/meter/daily-checkin";
 var USER_RESOURCE_PATH = "/v2/billing/meter/get-user-resource";
-var REQUEST_TIMEOUT_MS2 = 3e4;
+var REQUEST_TIMEOUT_MS3 = 3e4;
 var CODE_ALREADY_CLAIMED = 10001;
 var CODE_ALREADY_CLAIMED_ALT = 1001;
 var CODE_NO_QUALIFICATION = 1002;
@@ -60134,7 +60528,7 @@ async function postJson2(path2, credential, product, fetcher) {
       method: "POST",
       headers: checkinHeaders(credential, product),
       body: "{}",
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS2)
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS3)
     });
     const text = await response.text();
     let parsed;
@@ -60993,9 +61387,9 @@ function quotaRejectionHint(text) {
 
 // vendor/channel-pack/src/qoder-machine.ts
 import { execFileSync, spawn as spawn3 } from "node:child_process";
-import { existsSync as existsSync6, readFileSync as readFileSync6, readdirSync } from "node:fs";
+import { existsSync as existsSync6, readFileSync as readFileSync7, readdirSync } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { join as join5 } from "node:path";
+import { join as join6 } from "node:path";
 var RUNTIME_INFO_TIMEOUT_MS = 2e4;
 var cached;
 function candidatePaths() {
@@ -61005,20 +61399,20 @@ function candidatePaths() {
   const appData = process.env.APPDATA;
   if (appData !== void 0 && appData.length > 0) {
     for (const dir of ["Qoder", "Qoder CN"]) {
-      paths.push(join5(appData, dir, "SharedClientCache", "cache", "machine_token.json"));
+      paths.push(join6(appData, dir, "SharedClientCache", "cache", "machine_token.json"));
     }
   }
   const home = homedir3();
   for (const dir of ["Qoder", "Qoder CN"]) {
-    paths.push(join5(home, "Library", "Application Support", dir, "SharedClientCache", "cache", "machine_token.json"));
-    paths.push(join5(home, ".config", dir, "SharedClientCache", "cache", "machine_token.json"));
+    paths.push(join6(home, "Library", "Application Support", dir, "SharedClientCache", "cache", "machine_token.json"));
+    paths.push(join6(home, ".config", dir, "SharedClientCache", "cache", "machine_token.json"));
   }
   return paths;
 }
 function parseFile(path2) {
   let raw;
   try {
-    raw = readFileSync6(path2, "utf8");
+    raw = readFileSync7(path2, "utf8");
   } catch {
     return void 0;
   }
@@ -61057,7 +61451,7 @@ var QODER_DATA_DIR_NAMES = [".qoder", ".qoder-cn"];
 function findRuntimeInfoExecutable(home, dataDirNames = QODER_DATA_DIR_NAMES) {
   const exeName = process.platform === "win32" ? "runtime-info.exe" : "runtime-info";
   for (const dirName of dataDirNames) {
-    const binDir = join5(home, dirName, ".bin");
+    const binDir = join6(home, dirName, ".bin");
     let entries;
     try {
       entries = readdirSync(binDir);
@@ -61066,7 +61460,7 @@ function findRuntimeInfoExecutable(home, dataDirNames = QODER_DATA_DIR_NAMES) {
     }
     const dir = entries.find((name2) => name2.startsWith("umid-"));
     if (dir === void 0) continue;
-    const exe = join5(binDir, dir, exeName);
+    const exe = join6(binDir, dir, exeName);
     if (existsSync6(exe)) return exe;
   }
   return void 0;
@@ -61606,7 +62000,7 @@ async function fetchClineUsageLimits(credential, product, fetcher = fetch, optio
 }
 
 // vendor/channel-pack/src/lobsterai-credits.ts
-import { randomUUID as randomUUID12 } from "node:crypto";
+import { randomUUID as randomUUID13 } from "node:crypto";
 var LOBSTERAI_ACTIVITY_SLOT_PATH = "/api/client-activities/slot";
 var LOBSTERAI_ACTIVITY_CONTEXT_PATH = "/api/client-activities";
 var LOBSTERAI_PROFILE_SUMMARY_PATH = "/api/user/profile-summary";
@@ -61719,7 +62113,7 @@ async function claimLobsteraiDailyCheckin(credential, product, clientVersion, fe
     body: JSON.stringify({
       configRevision: slot2.configRevision,
       // 客户端幂等键（对齐 sigin.py:63 的 uuid4）：服务端据此去重。
-      idempotencyKey: randomUUID12(),
+      idempotencyKey: randomUUID13(),
       payload: {}
     })
   });
@@ -61818,7 +62212,7 @@ var CODEARTS_OPS_CONFIRM_PATH = "/v1/ops/confirm";
 var CODEARTS_OPS_CHANNEL = "IDE";
 var CODEARTS_DAILY_LOGIN_TYPE = "USER_LOGIN";
 var CLAIMED_STATUSES = ["CLAIMED", "CONFIRMED", "CONSUMED"];
-var REQUEST_TIMEOUT_MS3 = 3e4;
+var REQUEST_TIMEOUT_MS4 = 3e4;
 var SNAP_EXTRA_HEADERS = {
   "Agent-Type": "PromptCenter",
   "X-Language": "zh-cn"
@@ -61905,7 +62299,7 @@ async function signedSnapRequest(method, url, credential, body, fetcher) {
       method,
       headers,
       ...body === void 0 ? {} : { body },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS3)
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS4)
     });
     const text = await response.text();
     if (!response.ok) {
@@ -63651,8 +64045,8 @@ async function handleOpencodeRpc(ctx, pool, method, payload) {
 }
 
 // vendor/channel-pack/src/badge-preferences.ts
-import { existsSync as existsSync7, mkdirSync as mkdirSync5, readFileSync as readFileSync7, renameSync as renameSync5, writeFileSync as writeFileSync6 } from "node:fs";
-import { join as join6 } from "node:path";
+import { existsSync as existsSync7, mkdirSync as mkdirSync6, readFileSync as readFileSync8, renameSync as renameSync5, writeFileSync as writeFileSync7 } from "node:fs";
+import { join as join7 } from "node:path";
 var BADGE_PREFERENCES_FILE = "ui-preferences.json";
 var BADGE_PREFERENCES = ["auto", "subscription", "credits"];
 var DEFAULT_BADGE_PREFERENCE = "auto";
@@ -63678,7 +64072,7 @@ var FilePreferenceStore = class {
   load() {
     try {
       if (!existsSync7(this.path)) return DEFAULT_BADGE_PREFERENCE;
-      const parsed = JSON.parse(readFileSync7(this.path, "utf-8"));
+      const parsed = JSON.parse(readFileSync8(this.path, "utf-8"));
       return sanitizeBadgePreference(preferenceFieldOf(parsed));
     } catch (error) {
       this.logger?.warn(`[channel-pack] \u8BFB\u53D6 ${this.path} \u5931\u8D25\uFF0C\u7528\u91CF\u5FBD\u6807\u504F\u597D\u6309\u9ED8\u8BA4\u503C\u5904\u7406: ${String(error)}`);
@@ -63686,9 +64080,9 @@ var FilePreferenceStore = class {
     }
   }
   async save(preference) {
-    mkdirSync5(join6(this.path, ".."), { recursive: true });
+    mkdirSync6(join7(this.path, ".."), { recursive: true });
     const tmp = `${this.path}.tmp`;
-    writeFileSync6(tmp, JSON.stringify({ schema: SCHEMA3, badgePreference: preference }, null, 2), "utf-8");
+    writeFileSync7(tmp, JSON.stringify({ schema: SCHEMA3, badgePreference: preference }, null, 2), "utf-8");
     renameSync5(tmp, this.path);
   }
 };
@@ -63704,7 +64098,7 @@ function createBadgePreferenceStore(ctx) {
     ctx.logger?.warn?.("[channel-pack] \u65E0\u6CD5\u5B9A\u4F4D DSH home\uFF0C\u7528\u91CF\u5FBD\u6807\u504F\u597D\u4EC5\u5B58\u5728\u4E8E\u5185\u5B58\u4E2D");
     return new MemoryPreferenceStore();
   }
-  return new FilePreferenceStore(join6(home, "channel-pack", BADGE_PREFERENCES_FILE), ctx.logger);
+  return new FilePreferenceStore(join7(home, "channel-pack", BADGE_PREFERENCES_FILE), ctx.logger);
 }
 
 // vendor/channel-pack/src/badge-subscription.ts
@@ -63885,8 +64279,8 @@ function isAllFailed(snapshot) {
 }
 
 // vendor/channel-pack/src/auto-checkin.ts
-import { existsSync as existsSync8, mkdirSync as mkdirSync6, readFileSync as readFileSync8, renameSync as renameSync6, writeFileSync as writeFileSync7 } from "node:fs";
-import { join as join7 } from "node:path";
+import { existsSync as existsSync8, mkdirSync as mkdirSync7, readFileSync as readFileSync9, renameSync as renameSync6, writeFileSync as writeFileSync8 } from "node:fs";
+import { join as join8 } from "node:path";
 var AUTO_CHECKIN_FILE = "auto-checkin.json";
 var SCHEMA4 = "dsh-codearts-auth/auto-checkin/v1";
 var DEFAULT_AUTO_CHECKIN = {
@@ -63959,16 +64353,16 @@ var FileAutoCheckinStore = class {
   load() {
     try {
       if (!existsSync8(this.path)) return { ...DEFAULT_AUTO_CHECKIN };
-      return sanitizeAutoCheckin(JSON.parse(readFileSync8(this.path, "utf-8")));
+      return sanitizeAutoCheckin(JSON.parse(readFileSync9(this.path, "utf-8")));
     } catch (error) {
       this.logger?.warn(`[channel-pack] \u8BFB\u53D6 ${this.path} \u5931\u8D25\uFF0C\u81EA\u52A8\u7B7E\u5230\u6309\u9ED8\u8BA4\u8BBE\u7F6E\uFF08\u5F00\u542F\uFF09\u5904\u7406: ${String(error)}`);
       return { ...DEFAULT_AUTO_CHECKIN };
     }
   }
   async save(doc) {
-    mkdirSync6(join7(this.path, ".."), { recursive: true });
+    mkdirSync7(join8(this.path, ".."), { recursive: true });
     const tmp = `${this.path}.tmp`;
-    writeFileSync7(tmp, JSON.stringify({
+    writeFileSync8(tmp, JSON.stringify({
       schema: SCHEMA4,
       enabled: doc.enabled,
       lastDate: doc.lastDate,
@@ -63986,7 +64380,7 @@ function createAutoCheckinStore(ctx) {
     ctx.logger?.warn?.("[channel-pack] \u65E0\u6CD5\u5B9A\u4F4D DSH home\uFF0C\u81EA\u52A8\u7B7E\u5230\u5F00\u5173\u4EC5\u5B58\u5728\u4E8E\u5185\u5B58\u4E2D");
     return new MemoryAutoCheckinStore();
   }
-  return new FileAutoCheckinStore(join7(home, "channel-pack", AUTO_CHECKIN_FILE), ctx.logger);
+  return new FileAutoCheckinStore(join8(home, "channel-pack", AUTO_CHECKIN_FILE), ctx.logger);
 }
 function emptyTotals2() {
   return { providers: 0, claimed: 0, totalCredit: 0, totalByUnit: { token: 0, credit: 0 }, alreadyClaimed: 0, inactive: 0, failed: 0, coversToday: 0, skipped: 0, errors: 0 };
@@ -64787,6 +65181,39 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             });
           });
           return { ok: true, value: { accountId: id, loginUrl: authUrl } };
+        } else if (provider === AUTOCLAW.id) {
+          const home = resolveChannelPackHome(ctx);
+          if (home === void 0) {
+            return { ok: false, error: { code: "internal", message: "\u65E0\u6CD5\u5B9A\u4F4D\u63D2\u4EF6\u6570\u636E\u76EE\u5F55\uFF0C\u77ED\u4FE1\u767B\u5F55\u4E0D\u53EF\u7528" } };
+          }
+          const started = await startAutoclawLoginFlow({
+            product: AUTOCLAW,
+            fetcher: codeartsFetcher,
+            deviceId: resolveAutoclawDeviceId(home)
+          });
+          await pool.addAccount({
+            id,
+            provider,
+            nickname: id,
+            enabled: true,
+            credentialRef: refName,
+            refreshable: false,
+            createdAt: Date.now()
+          });
+          started.result.then(async (credential) => {
+            await ctx.credentials.set(credentialRef13(refName), JSON.stringify(credential));
+            await pool.updateAccount(id, {
+              nickname: credential.nickname ?? id,
+              expiresAt: credential.expire_time,
+              refreshable: typeof credential.refresh_token === "string" && credential.refresh_token !== ""
+            });
+          }).catch((error) => {
+            ctx.logger.warn(`[channel-pack] background ${AUTOCLAW.id} login failed for ${id}: ${String(error)}`);
+            recordLoginFailure(id, error);
+            void pool.removeAccount(id).catch(() => {
+            });
+          });
+          return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } };
         } else if (provider === "commandcode") {
           const { startCommandCodeLogin: startCommandCodeLogin2 } = await Promise.resolve().then(() => (init_commandcode_auth(), commandcode_auth_exports));
           const { COMMANDCODE: COMMANDCODE2 } = await Promise.resolve().then(() => (init_commandcode_product(), commandcode_product_exports));
@@ -67033,13 +67460,6 @@ var ADOPTABLE_CHANNELS = {
       return cookie === void 0 ? void 0 : { access_token: cookie, created_at: Date.now() };
     }
   },
-  autoclaw: {
-    hint: "\u8BBF\u95EE\u4EE4\u724C\uFF08Bearer token\uFF09",
-    parse: (text) => {
-      const parsed = parseCredential2({ token: text });
-      return parsed === void 0 ? void 0 : { ...parsed };
-    }
-  },
   "autoclaw-intl": {
     hint: "\u8BBF\u95EE\u4EE4\u724C\uFF08Bearer token\uFF0C\u56FD\u9645\u7AD9\uFF09",
     parse: (text) => {
@@ -67050,25 +67470,25 @@ var ADOPTABLE_CHANNELS = {
 };
 
 // vendor/channel-pack/src/openai-gateway/server.ts
-import { createServer as createServer9 } from "node:http";
-import { randomUUID as randomUUID16 } from "node:crypto";
+import { createServer as createServer10 } from "node:http";
+import { randomUUID as randomUUID17 } from "node:crypto";
 import { homedir as homedir4 } from "node:os";
-import { join as join9 } from "node:path";
+import { join as join10 } from "node:path";
 
 // vendor/channel-pack/src/openai-gateway/auth.ts
-import { mkdirSync as mkdirSync7, readFileSync as readFileSync9, renameSync as renameSync7, writeFileSync as writeFileSync8, existsSync as existsSync9 } from "node:fs";
+import { mkdirSync as mkdirSync8, readFileSync as readFileSync10, renameSync as renameSync7, writeFileSync as writeFileSync9, existsSync as existsSync9 } from "node:fs";
 import { randomBytes as randomBytes12 } from "node:crypto";
-import { join as join8 } from "node:path";
+import { join as join9 } from "node:path";
 var KEY_FILE = "api-key";
 var KEY_PATTERN2 = /^[A-Za-z0-9_-]{43}$/;
 function loadOrCreateApiKey(home, env = process.env) {
   const configured = env.DSH_OPENAI_GATEWAY_API_KEY?.trim();
   if (configured) return { value: configured, fromEnv: true, path: null };
-  const directory = join8(home, "openai-gateway");
-  const path2 = join8(directory, KEY_FILE);
+  const directory = join9(home, "openai-gateway");
+  const path2 = join9(directory, KEY_FILE);
   let stored;
   try {
-    stored = readFileSync9(path2, "utf8").trim();
+    stored = readFileSync10(path2, "utf8").trim();
   } catch {
   }
   if (stored) {
@@ -67078,14 +67498,14 @@ function loadOrCreateApiKey(home, env = process.env) {
     );
   }
   const key = randomBytes12(32).toString("base64url");
-  mkdirSync7(directory, { recursive: true });
+  mkdirSync8(directory, { recursive: true });
   const temporary = `${path2}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync8(temporary, key, { encoding: "utf8", mode: 384 });
+  writeFileSync9(temporary, key, { encoding: "utf8", mode: 384 });
   try {
     renameSync7(temporary, path2);
   } catch (error) {
     if (existsSync9(path2)) {
-      const existing = readFileSync9(path2, "utf8").trim();
+      const existing = readFileSync10(path2, "utf8").trim();
       if (KEY_PATTERN2.test(existing)) return { value: existing, fromEnv: false, path: path2 };
     }
     throw error;
@@ -67094,7 +67514,7 @@ function loadOrCreateApiKey(home, env = process.env) {
 }
 
 // vendor/channel-pack/src/openai-gateway/messages.ts
-import { randomUUID as randomUUID13 } from "node:crypto";
+import { randomUUID as randomUUID14 } from "node:crypto";
 import { ReasoningEffortId as ReasoningEffortId13 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/openai-gateway/images.ts
@@ -67289,7 +67709,7 @@ function gatewaySource() {
   return { kind: "plugin:dsh-openai-gateway" };
 }
 function createGatewayMessage(role, content, source) {
-  return { id: randomUUID13(), role, content, source };
+  return { id: randomUUID14(), role, content, source };
 }
 function convertToolCalls(raw) {
   if (!Array.isArray(raw)) throw new OpenAiGatewayError("assistant.tool_calls must be an array");
@@ -67449,11 +67869,11 @@ function findCaseInsensitiveSuggestion(requested, catalog) {
 }
 
 // vendor/channel-pack/src/openai-gateway/responses.ts
-import { createHash as createHash8, randomUUID as randomUUID15 } from "node:crypto";
+import { createHash as createHash9, randomUUID as randomUUID16 } from "node:crypto";
 import { ReasoningEffortId as ReasoningEffortId14 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/openai-gateway/stream.ts
-import { randomUUID as randomUUID14 } from "node:crypto";
+import { randomUUID as randomUUID15 } from "node:crypto";
 
 // vendor/channel-pack/src/openai-gateway/usage.ts
 function count(value) {
@@ -67588,7 +68008,7 @@ function consumeChunk(state, chunk) {
       return void 0;
   }
 }
-async function* toOpenAiSse(chunks, requestId = `chatcmpl-${randomUUID14()}`, model, suggest) {
+async function* toOpenAiSse(chunks, requestId = `chatcmpl-${randomUUID15()}`, model, suggest) {
   const state = { content: "", reasoning: "", tools: /* @__PURE__ */ new Map() };
   try {
     for await (const chunk of chunks) {
@@ -67643,7 +68063,7 @@ async function* toOpenAiSse(chunks, requestId = `chatcmpl-${randomUUID14()}`, mo
     yield "data: [DONE]\n\n";
   }
 }
-async function collectOpenAiCompletion(chunks, requestId = `chatcmpl-${randomUUID14()}`, model, suggest) {
+async function collectOpenAiCompletion(chunks, requestId = `chatcmpl-${randomUUID15()}`, model, suggest) {
   const state = { content: "", reasoning: "", tools: /* @__PURE__ */ new Map() };
   try {
     for await (const chunk of chunks) {
@@ -67766,7 +68186,7 @@ function chatPartsFromResponses(content) {
 function flatNamespaceToolName(namespace, name2) {
   const flat = `${namespace}__${name2}`;
   if (flat.length <= 64) return flat;
-  const digest = createHash8("sha256").update(flat).digest("hex").slice(0, 8);
+  const digest = createHash9("sha256").update(flat).digest("hex").slice(0, 8);
   return `${flat.slice(0, 55)}_${digest}`;
 }
 function responsesNamespaceToolMap(body) {
@@ -67980,7 +68400,7 @@ async function toResponsesGenerateOptions(body, signal, reasoningEffortOverride,
   };
 }
 function hexId() {
-  return randomUUID15().replaceAll("-", "");
+  return randomUUID16().replaceAll("-", "");
 }
 function itemId(kind) {
   if (kind === "reasoning") return `rs_${hexId()}`;
@@ -68473,7 +68893,7 @@ function authorized(request2, key) {
   return typeof value === "string" && value === `Bearer ${key}`;
 }
 function getHome(options) {
-  return options.home ?? options.env?.DSH_HOME ?? process.env.DSH_HOME ?? join9(homedir4(), ".dsh");
+  return options.home ?? options.env?.DSH_HOME ?? process.env.DSH_HOME ?? join10(homedir4(), ".dsh");
 }
 function createOpenAiGateway(options) {
   const env = options.env ?? process.env;
@@ -68651,7 +69071,7 @@ function createOpenAiGateway(options) {
       });
       const stream = options.llm.stream(markGatewayChannel(generate));
       const fullId = `${route.provider}/${route.model}`;
-      const responseId = `resp_${randomUUID16().replaceAll("-", "")}`;
+      const responseId = `resp_${randomUUID17().replaceAll("-", "")}`;
       if (body.stream === true) {
         writeSseHead(response);
         for await (const event of toResponsesSse(stream, responseId, fullId, body, makeSuggestion(fullId))) {
@@ -68701,7 +69121,7 @@ function createOpenAiGateway(options) {
   return {
     async start() {
       if (server !== void 0) return;
-      const current = createServer9(requestHandler);
+      const current = createServer10(requestHandler);
       server = current;
       await new Promise((resolve2, reject) => {
         const onError = (error) => {
@@ -68979,8 +69399,8 @@ function installLoopResume(ctx) {
 }
 
 // vendor/channel-pack/src/token-ledger-store.ts
-import { existsSync as existsSync10, mkdirSync as mkdirSync8, readFileSync as readFileSync10, renameSync as renameSync8, writeFileSync as writeFileSync9 } from "node:fs";
-import { join as join10 } from "node:path";
+import { existsSync as existsSync10, mkdirSync as mkdirSync9, readFileSync as readFileSync11, renameSync as renameSync8, writeFileSync as writeFileSync10 } from "node:fs";
+import { join as join11 } from "node:path";
 var TOKEN_LEDGER_FILE = "token-ledger.json";
 var TOKEN_LEDGER_DAYS = 90;
 var TOKEN_LEDGER_FLUSH_MS = 2e3;
@@ -69030,7 +69450,7 @@ var FileLedgerStore = class {
     const out = /* @__PURE__ */ new Map();
     try {
       if (!existsSync10(this.path)) return out;
-      const parsed = JSON.parse(readFileSync10(this.path, "utf-8"));
+      const parsed = JSON.parse(readFileSync11(this.path, "utf-8"));
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return out;
       const record = parsed;
       if (typeof record.days !== "object" || record.days === null || Array.isArray(record.days)) return out;
@@ -69121,7 +69541,7 @@ var FileLedgerStore = class {
    */
   flush() {
     try {
-      mkdirSync8(join10(this.path, ".."), { recursive: true });
+      mkdirSync9(join11(this.path, ".."), { recursive: true });
       const merged = this.readFile();
       let hasDelta = false;
       for (const [day2, buckets] of this.days) {
@@ -69149,7 +69569,7 @@ var FileLedgerStore = class {
         days[day2] = Object.fromEntries(buckets);
       }
       const tmp = `${this.path}.tmp`;
-      writeFileSync9(tmp, JSON.stringify({ schema: SCHEMA5, days }, null, 2), "utf-8");
+      writeFileSync10(tmp, JSON.stringify({ schema: SCHEMA5, days }, null, 2), "utf-8");
       renameSync8(tmp, this.path);
       this.written = cloneDays(this.days);
     } catch (error) {
@@ -69210,7 +69630,7 @@ function createTokenLedgerStore(ctx) {
     ctx.logger?.warn?.("[channel-pack] \u65E0\u6CD5\u5B9A\u4F4D DSH home\uFF0CToken \u7528\u91CF\u5386\u53F2\u4EC5\u5B58\u5728\u4E8E\u5185\u5B58\u4E2D");
     return new MemoryLedgerStore();
   }
-  return new FileLedgerStore(join10(home, "channel-pack", TOKEN_LEDGER_FILE), ctx.logger);
+  return new FileLedgerStore(join11(home, "channel-pack", TOKEN_LEDGER_FILE), ctx.logger);
 }
 
 // vendor/channel-pack/src/buddy-balance-selector.ts
@@ -69385,7 +69805,7 @@ import { Service as Service11 } from "@deepseek-ai/cordis";
 import { credentialRef as credentialRef14 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/minimax-oauth.ts
-import { createHash as createHash9, randomBytes as randomBytes13 } from "node:crypto";
+import { createHash as createHash10, randomBytes as randomBytes13 } from "node:crypto";
 var MinimaxLoginCancelledError = class extends Error {
   constructor(message2 = "\u7528\u6237\u53D6\u6D88\u4E86 MiniMax \u6388\u6743") {
     super(message2);
@@ -69485,7 +69905,7 @@ function parseMinimaxTokenGrant(payload, previousRefreshToken, product = MINIMAX
 }
 function createMinimaxPkce() {
   const codeVerifier = randomBytes13(32).toString("base64url");
-  const codeChallenge = createHash9("sha256").update(codeVerifier, "ascii").digest("base64url");
+  const codeChallenge = createHash10("sha256").update(codeVerifier, "ascii").digest("base64url");
   return { codeVerifier, codeChallenge };
 }
 async function startMinimaxDeviceAuthorization(fetcher = fetch, product = MINIMAX) {
@@ -70468,7 +70888,7 @@ import { Service as Service12 } from "@deepseek-ai/cordis";
 import { credentialRef as credentialRef15 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/gemini-oauth.ts
-import { createServer as createServer10 } from "node:http";
+import { createServer as createServer11 } from "node:http";
 import { randomBytes as randomBytes14 } from "node:crypto";
 var GEMINI_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 var GEMINI_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
@@ -70670,7 +71090,7 @@ async function fetchGeminiUserInfo(accessToken, options = {}) {
 var GEMINI_CALLBACK_HTML = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>\u6388\u6743\u5B8C\u6210</title><style>body{font:15px/1.7 -apple-system,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f1115;color:#e6e8eb}.b{text-align:center}.k{font-size:34px;margin-bottom:8px}</style></head><body><div class="b"><div class="k">\u2713</div><div>\u6388\u6743\u5DF2\u5B8C\u6210\uFF0C\u53EF\u4EE5\u5173\u95ED\u6B64\u9875\u56DE\u5230\u9762\u677F\u3002</div></div></body></html>`;
 function pickFreePort2() {
   return new Promise((resolve2, reject) => {
-    const probe = createServer10();
+    const probe = createServer11();
     probe.once("error", reject);
     probe.listen(0, "127.0.0.1", () => {
       const address = probe.address();
@@ -70684,7 +71104,7 @@ function pickFreePort2() {
 }
 async function listenCallback(handler, preferredPort) {
   const attempt = (port) => {
-    const primary = createServer10(handler);
+    const primary = createServer11(handler);
     return new Promise((resolve2, reject) => {
       primary.once("error", (error) => {
         if (error.code === "EADDRINUSE" && port !== 0) {
@@ -70696,7 +71116,7 @@ async function listenCallback(handler, preferredPort) {
       primary.listen(port, "127.0.0.1", () => {
         const address = primary.address();
         const assigned = typeof address === "object" && address !== null ? address.port : 0;
-        const secondary = createServer10(handler);
+        const secondary = createServer11(handler);
         secondary.once("error", () => {
           resolve2({ port: assigned, servers: [primary] });
         });
@@ -71112,15 +71532,15 @@ var GeminiAuth = class extends Service12 {
 };
 
 // vendor/channel-pack/src/gemini-sigstore.ts
-import { createHash as createHash10 } from "node:crypto";
-import { existsSync as existsSync11, mkdirSync as mkdirSync9, readFileSync as readFileSync11, renameSync as renameSync9, writeFileSync as writeFileSync10 } from "node:fs";
-import { dirname as dirname2, join as join11 } from "node:path";
+import { createHash as createHash11 } from "node:crypto";
+import { existsSync as existsSync11, mkdirSync as mkdirSync10, readFileSync as readFileSync12, renameSync as renameSync9, writeFileSync as writeFileSync11 } from "node:fs";
+import { dirname as dirname2, join as join12 } from "node:path";
 var GEMINI_SIG_FILE = "gemini-sigs.json";
 var GEMINI_SIG_MAX_ENTRIES = 2e3;
 var SIG_KEY_BODY_LIMIT = 512;
 function geminiSigKey(role, text) {
   const body = text.length > SIG_KEY_BODY_LIMIT ? text.slice(0, SIG_KEY_BODY_LIMIT) : text;
-  return createHash10("sha256").update(`${role}\0${body}`, "utf8").digest("hex").slice(0, 16);
+  return createHash11("sha256").update(`${role}\0${body}`, "utf8").digest("hex").slice(0, 16);
 }
 function geminiToolSigKey(name2, argsJson) {
   return geminiSigKey(`tool:${name2}`, argsJson);
@@ -71223,9 +71643,9 @@ var GeminiSigStore = class {
       2
     );
     try {
-      mkdirSync9(dirname2(this.path), { recursive: true });
+      mkdirSync10(dirname2(this.path), { recursive: true });
       const tmp = `${this.path}.tmp`;
-      writeFileSync10(tmp, payload, "utf-8");
+      writeFileSync11(tmp, payload, "utf-8");
       renameSync9(tmp, this.path);
     } catch (error) {
       this.logger?.warn(`[gemini] \u7B7E\u540D\u7F13\u5B58\u5199\u5165\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u63A8\u7406\uFF09: ${String(error)}`);
@@ -71237,7 +71657,7 @@ var GeminiSigStore = class {
     if (this.path === void 0) return out;
     try {
       if (!existsSync11(this.path)) return out;
-      const parsed = JSON.parse(readFileSync11(this.path, "utf-8"));
+      const parsed = JSON.parse(readFileSync12(this.path, "utf-8"));
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return out;
       for (const [key, value] of Object.entries(parsed)) {
         if (typeof value !== "object" || value === null) continue;
@@ -71261,7 +71681,7 @@ function createGeminiSigStore(ctx) {
     ctx.logger?.warn?.("[gemini] \u65E0\u6CD5\u5B9A\u4F4D DSH home\uFF0C\u7B7E\u540D\u7F13\u5B58\u4EC5\u5B58\u5728\u4E8E\u5185\u5B58\u4E2D\uFF08\u547D\u4E2D\u7387\u4F1A\u5728\u91CD\u542F\u540E\u5F52\u96F6\uFF09");
     return new GeminiSigStore(void 0, ctx.logger);
   }
-  return new GeminiSigStore(join11(home, "channel-pack", GEMINI_SIG_FILE), ctx.logger);
+  return new GeminiSigStore(join12(home, "channel-pack", GEMINI_SIG_FILE), ctx.logger);
 }
 
 // vendor/channel-pack/src/opencode-adapter.ts
@@ -71489,9 +71909,9 @@ function buildOpencodePayloadWithToolMap(input) {
 
 // vendor/channel-pack/src/opencode-capability.ts
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { readFileSync as readFileSync12 } from "node:fs";
+import { readFileSync as readFileSync13 } from "node:fs";
 import { homedir as homedir5 } from "node:os";
-import { join as join12 } from "node:path";
+import { join as join13 } from "node:path";
 var MEASURED_IMAGE_OVERRIDES = {
   // 实测 2026-10-02：models.dev 标 `modalities.input: ["text"]`，
   // 但 1×1 PNG 的多模态请求真实返回 200（big-pickle 是最常用的免费模型）。
@@ -71551,8 +71971,8 @@ function normalizeEntry(id, raw) {
   };
 }
 function cacheFilePath() {
-  const home = process.env.DSH_HOME?.trim() || join12(homedir5(), ".dsh");
-  return join12(home, "cache", "opencode-capabilities.json");
+  const home = process.env.DSH_HOME?.trim() || join13(homedir5(), ".dsh");
+  return join13(home, "cache", "opencode-capabilities.json");
 }
 var memory = [];
 var cacheFileAt = 0;
@@ -71575,7 +71995,7 @@ function loadDiskCacheSync() {
   if (diskLoaded) return;
   diskLoaded = true;
   try {
-    const raw = readFileSync12(cacheFilePath(), "utf8");
+    const raw = readFileSync13(cacheFilePath(), "utf8");
     const parsed = JSON.parse(raw);
     if (parsed?.version === 3 && Array.isArray(parsed.entries) && parsed.entries.length > 0) {
       memory = parsed.entries;
@@ -71587,7 +72007,7 @@ function loadDiskCacheSync() {
 async function writeDiskCache(entries) {
   try {
     const path2 = cacheFilePath();
-    await mkdir(join12(path2, ".."), { recursive: true });
+    await mkdir(join13(path2, ".."), { recursive: true });
     const payload = { version: 3, at: Date.now(), entries };
     await writeFile(path2, JSON.stringify(payload), "utf8");
   } catch {

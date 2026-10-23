@@ -9,9 +9,18 @@
  *
  * ## 端口选择
  *
- * 官方 CLI 从 5959 起逐个试，最多 10 个。这里照做而不是用随机端口，
- * 因为 Studio 的授权页可能对回调地址做校验（白名单或形态匹配）；
- * 固定范围比随机端口更不容易撞上「未知回调」的拒绝。
+ * 分两步，顺序不能反（见 {@link listenForCallbackPort}）：
+ *
+ * 1. **先试官方段**：官方 CLI 从 5959 起逐个试，最多 10 个。这里照做而不是
+ *    直接用随机端口，因为 Studio 的授权页可能对回调地址做校验（白名单或形态
+ *    匹配）；固定范围比随机端口更不容易撞上「未知回调」的拒绝。
+ * 2. **段内全占再退随机回环端口**：用户同时开着官方 CLI、或 accio（5960–5969）
+ *    先抢到端口时，10 个端口可能全被占。此时直接报错等于「添加账号」功能在那
+ *    台机器上完全不可用，而回退端口是能工作的 —— 回调地址由本插件构造并作为
+ *    `callback` 查询参数交给 Studio，端口不固定不影响回调（`trae-oauth.ts` 的
+ *    `listenWithFallback` 用同一套理由）。
+ *
+ * 保留官方段优先是为了不放弃第 1 步的「形态匹配」红利；回退只是兜底。
  *
  * ## 不落状态文件
  *
@@ -75,6 +84,15 @@ export interface CommandCodeLoginOptions {
   timeoutMs?: number
   /** 取消信号。 */
   signal?: AbortSignal
+  /**
+   * 回调端口候选段（缺省 `COMMANDCODE_LOGIN_START_PORT` 起
+   * `COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS` 个，即官方段 5959–5968）。
+   *
+   * 仅供测试/嵌入方注入：测试要验证「段内全占时退随机端口」，又不能真的去占
+   * 5959–5968（那会与用户正在运行的官方 CLI 抢端口，且结果取决于机器现状）。
+   * 生产路径不传，永远走官方段优先 + 随机回退。
+   */
+  portRange?: { startPort?: number; attempts?: number }
 }
 
 /** 已启动的登录流程。 */
@@ -83,6 +101,13 @@ export interface StartedCommandCodeLogin {
   loginUrl: string
   /** 实际绑定的回调端口（便于排障与测试）。 */
   port: number
+  /**
+   * 是否走了随机回环端口回退（官方段 5959–5968 全被占用）。
+   *
+   * 只用于排障与测试断言：`loginUrl` 里的 `callback=` 已经用实际端口拼好，
+   * 调用方**不需要**为回退做任何额外处理。
+   */
+  portFallback: boolean
   /** 用户完成授权（或超时/失败）后落定的结果。 */
   result: Promise<CommandCodeLoginResult>
   /** 关闭回调服务器；**幂等**。 */
@@ -146,35 +171,103 @@ export async function resolveCredential(
   return credential
 }
 
+/** 一次 `listen` 尝试的结果。 */
+export type PortBindAttempt =
+  | { ok: true; port: number }
+  | { ok: false; error: Error }
+
 /**
- * 在固定端口范围内监听。
+ * 在 `127.0.0.1` 上尝试监听**一个**端口，失败不抛。
  *
- * 从 `COMMANDCODE_LOGIN_START_PORT` 起逐个试，占用则顺延；
- * 全部失败抛错并说明「这通常意味着本机有其它 CLI 正在登录」。
+ * `port = 0` 表示交给系统分配（回环随机端口）。成功时返回**实际**端口：
+ * 端口 0 的请求端口不是绑定端口，必须从 `server.address()` 取。
+ *
+ * 必须**先**注册 `'error'` 再 `listen`：listen 失败是异步事件，没有监听者会
+ * 变成进程级 unhandled error（`trae-oauth.ts` 的 `listenOrReject` 记过同一个坑）。
  */
-async function listenOnRange(server: Server): Promise<number> {
-  const errors: string[] = []
-  for (let offset = 0; offset < COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS; offset++) {
-    const port = COMMANDCODE_LOGIN_START_PORT + offset
-    const bound = await new Promise<boolean>((resolve) => {
-      const onError = (error: Error): void => {
-        server.removeListener('listening', onListening)
-        errors.push(`${port}: ${error.message}`)
-        resolve(false)
-      }
-      const onListening = (): void => {
-        server.removeListener('error', onError)
-        resolve(true)
-      }
-      server.once('error', onError)
-      server.once('listening', onListening)
-      server.listen(port, '127.0.0.1')
-    })
-    if (bound) return port
+export async function bindLoopbackPort(server: Server, port: number): Promise<PortBindAttempt> {
+  return new Promise<PortBindAttempt>((resolve) => {
+    const onError = (error: Error): void => {
+      server.removeListener('listening', onListening)
+      resolve({ ok: false, error })
+    }
+    const onListening = (): void => {
+      server.removeListener('error', onError)
+      const address = server.address()
+      // `address()` 在绑定 TCP 端口时是对象；管道/异常形态退回请求端口。
+      const actual = typeof address === 'object' && address !== null ? address.port : port
+      resolve({ ok: true, port: actual })
+    }
+    server.once('error', onError)
+    server.once('listening', onListening)
+    server.listen(port, '127.0.0.1')
+  })
+}
+
+/**
+ * 在 `[startPort, startPort + attempts)` 这个**固定段**内找第一个可用端口。
+ *
+ * 段内全被占用时返回 `undefined`（不抛）：调用方还要决定是否回退，
+ * 把「段内失败」和「彻底失败」拆开才能分别表述。
+ */
+export async function listenOnPortRange(
+  server: Server,
+  startPort: number = COMMANDCODE_LOGIN_START_PORT,
+  attempts: number = COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS,
+  errors: string[] = [],
+): Promise<number | undefined> {
+  for (let offset = 0; offset < attempts; offset++) {
+    const candidate = startPort + offset
+    const attempt = await bindLoopbackPort(server, candidate)
+    if (attempt.ok) return attempt.port
+    errors.push(`${candidate}: ${attempt.error.message}`)
   }
+  return undefined
+}
+
+/** 回调端口绑定结果：实际端口 + 是否走了随机回退。 */
+export interface CallbackPortBinding {
+  /** 实际绑定的端口。 */
+  port: number
+  /** `true` 表示官方段全占，走的是系统分配的随机回环端口。 */
+  fallback: boolean
+}
+
+/**
+ * 启动回调服务器的端口选择：**官方段优先，段内全占再退随机回环端口**。
+ *
+ * ## 为什么不是「全失败就报错」（原行为）
+ *
+ * 5959 起 10 个端口与两拨进程抢：官方 `command-code` CLI 用同一段，accio 用
+ * 5960–5969（`accio-auth.ts:346-359`，与官方段重叠 9 个）。用户同时开着官方
+ * CLI 时，这 10 个端口全被占是常态，而原来的实现此时直接抛「端口全部被占用」，
+ * 「添加账号」在那台机器上完全不可用。
+ *
+ * 回退是安全的：回调地址由本插件构造（`buildCommandCodeAuthUrl` 用**实际**
+ * 端口拼 `callback=` 查询参数），Studio 原样回跳，端口不固定不影响回调。
+ * `trae-oauth.ts:520-570` 的 `listenWithFallback` 是同一套判断：能拿到首选端口
+ * 就用它（行为可预期），拿不到就退随机端口保证功能可用。
+ *
+ * 顺序不能反：先用随机端口会放弃「官方段可能被授权页白名单接受」的红利。
+ *
+ * @throws 连随机回环端口都绑不上（例如回环网络栈不可用）时抛错，并带上段内明细。
+ */
+export async function listenForCallbackPort(
+  server: Server,
+  startPort: number = COMMANDCODE_LOGIN_START_PORT,
+  attempts: number = COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS,
+): Promise<CallbackPortBinding> {
+  const errors: string[] = []
+  const ranged = await listenOnPortRange(server, startPort, attempts, errors)
+  if (ranged !== undefined) return { port: ranged, fallback: false }
+
+  const random = await bindLoopbackPort(server, 0)
+  if (random.ok) return { port: random.port, fallback: true }
+
   throw new Error(
-    `Command Code：回调端口 ${COMMANDCODE_LOGIN_START_PORT}–${COMMANDCODE_LOGIN_START_PORT + COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS - 1} 全部被占用`
-    + `（通常意味着本机有其它 CLI 正在登录）。明细：${errors.join('; ')}`,
+    `Command Code：回调端口 ${startPort}–${startPort + attempts - 1} 全部被占用`
+    + `（通常意味着本机有其它 CLI 正在登录），回退随机回环端口也失败：${random.error.message}`
+    + `。段内明细：${errors.join('; ')}`,
   )
 }
 
@@ -271,7 +364,12 @@ export async function startCommandCodeLogin(options: CommandCodeLoginOptions): P
     })
   })
 
-  port = await listenOnRange(server)
+  const binding = await listenForCallbackPort(
+    server,
+    options.portRange?.startPort,
+    options.portRange?.attempts,
+  )
+  port = binding.port
   const loginUrl = buildCommandCodeAuthUrl(product, port, state)
 
   let closed = false
@@ -297,7 +395,7 @@ export async function startCommandCodeLogin(options: CommandCodeLoginOptions): P
   ])
   resultWithTimeout.catch(() => {}).finally(() => { void close() })
 
-  return { loginUrl, port, result: resultWithTimeout, close }
+  return { loginUrl, port, portFallback: binding.fallback, result: resultWithTimeout, close }
 }
 
 /**

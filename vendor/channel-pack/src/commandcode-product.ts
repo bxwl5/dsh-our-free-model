@@ -134,7 +134,14 @@ export const COMMANDCODE_CHAT_PATH = '/provider/v1/chat/completions'
 /**
  * 登录本地回调端口范围。
  *
- * 从 5959 起逐个试，最多试 10 个（与官方 CLI 行为一致）。
+ * 从 5959 起逐个试，最多试 10 个（与官方 CLI 行为一致）。这是**首选段**而不是
+ * 硬约束：段内全被占用时 `listenForCallbackPort` 会退到系统分配的随机回环端口
+ * （与 `trae-oauth.ts` 的 `listenWithFallback` 同思路）。保留官方段优先是因为
+ * Studio 授权页可能对回调地址做形态匹配。
+ *
+ * ⚠️ 这段与 accio 的 5960–5969（`accio-product.ts:122` 的
+ * `ACCIO_LOGIN_START_PORT`，试 10 个）重叠 9 个端口；两个渠道同时登录时谁先
+ * 拿到算谁的，靠上述回退保证不互相拖死。
  */
 export const COMMANDCODE_LOGIN_START_PORT = 5959
 export const COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS = 10

@@ -666,8 +666,8 @@ export function reasoningLoopFailure(
  * 解析 `DSH_REASONING_LOOP_GUARD`；**默认开启**。
  *
  * 只有显式假值（`0` / `false` / `no` / `off`）才关闭。与 `isTruthyFlag`
- * 的「默认关」语义相反（对齐 `DSH_HIDE_MODELS_WITHOUT_ACCOUNT` /
- * `DSH_TRAE_MAX_MODE`），故单列一个函数，**不要混用**。
+ * 的「默认关」语义相反（对齐 `DSH_TRAE_MAX_MODE`），故单列一个函数，**不要混用**。
+ * （`DSH_HIDE_MODELS_WITHOUT_ACCOUNT` 已于 2026-10-24 翻转为「默认不隐藏」，不再属于这一族。）
  */
 export function resolveReasoningLoopGuardFlag(raw: string | undefined): boolean {
   if (raw === undefined) return true
@@ -968,8 +968,8 @@ export function stripCourseLeak(text: string): string {
  * 解析 `DSH_COURSE_LEAK_STRIP`；**默认开启**。
  *
  * 只有显式假值（`0` / `false` / `no` / `off`）才关闭。与 `isTruthyFlag`
- * 的「默认关」语义相反（对齐 `DSH_HIDE_MODELS_WITHOUT_ACCOUNT` /
- * `DSH_REASONING_LOOP_GUARD`），故单列一个函数，**不要混用**。
+ * 的「默认关」语义相反（对齐 `DSH_REASONING_LOOP_GUARD`），故单列一个函数，**不要混用**。
+ * （`DSH_HIDE_MODELS_WITHOUT_ACCOUNT` 已于 2026-10-24 翻转为「默认不隐藏」。）
  *
  * ⚠️ 提供开关是因为判据有**已知边界**：若模型真的以「课程设计…」开头，
  * 「课」会被误删。实测 0/2346，但原理上非零。

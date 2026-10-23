@@ -21,6 +21,8 @@ export interface AutoClawCredential {
   nickname?: string
   /** 创建时间。 */
   created_at?: number
+  /** 短信登录用的稳定设备号（登录 / 签到 / 续期三处请求体共用）。 */
+  device_id?: string
 }
 
 /** 从任意 JSON 安全取字符串。 */

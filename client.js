@@ -2730,7 +2730,7 @@ window.__ModuleLoader__.load({
       { id: 'accio', name: 'Accio', org: '阿里系', accent: '#FF6A00', note: '浏览器授权，国际站', login: 'browser' },
       { id: 'accio-cn', name: 'Accio 国内版', org: '阿里系', accent: '#FF8C42', note: '浏览器授权，国内站', login: 'browser' },
       { id: 'officeace', name: 'OfficeAce 果办', org: '华为云', accent: '#C7000B', note: '浏览器授权，扫码登录', login: 'browser' },
-      { id: 'autoclaw', name: 'AutoClaw', org: '智谱', accent: '#3D5AFE', note: '粘贴令牌，国内站', login: 'token' },
+      { id: 'autoclaw', name: 'AutoClaw', org: '智谱', accent: '#3D5AFE', note: '手机号 + 短信验证码登录，国内站', login: 'browser' },
       { id: 'autoclaw-intl', name: 'AutoClaw 国际版', org: '智谱', accent: '#7986CB', note: '粘贴令牌，国际站', login: 'token' },
     ]
 

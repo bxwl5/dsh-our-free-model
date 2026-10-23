@@ -42,6 +42,10 @@ import { normalizeCookie as normalizeMonkeyCodeCookie } from './monkeycode.js'
 import { normalizeCookie as normalizeOrcaTermCookie } from './orcaterm.js'
 import { normalizeCookie as normalizeKukuCookie } from './kuku.js'
 import { parseCredential as parseAutoClawCredential } from './autoclaw.js'
+import { AUTOCLAW } from './autoclaw-product.js'
+import { resolveAutoclawDeviceId } from './autoclaw-sms.js'
+import { startAutoclawLoginFlow } from './autoclaw-login-page.js'
+import { resolveChannelPackHome } from './channel-pack-store.js'
 import { parseCredential as parseOfficeAceCredential } from './officeace.js'
 import type { LoomyAuth } from './loomy-auth.js'
 import type { LoomyCredential } from './loomy.js'
@@ -1537,6 +1541,42 @@ function registerChannelPackEndpoints(
             void pool.removeAccount(id).catch(() => {})
           })
           return { ok: true, value: { accountId: id, loginUrl: authUrl } }
+        } else if (provider === AUTOCLAW.id) {
+          // AutoClaw（国内站）：手机号 + 短信验证码。范式照 raccoon ——
+          // 起一个本地弹窗页承载表单，对外仍返回 `loginUrl`，前端走两步式 + `login.poll`，
+          // **客户端无需任何改动**。短信是真实副作用：只有用户在页面上点
+          // 「发送验证码」才会发（页面侧 60 秒冷却）。
+          const home = resolveChannelPackHome(ctx)
+          if (home === undefined) {
+            return { ok: false, error: { code: 'internal', message: '无法定位插件数据目录，短信登录不可用' } }
+          }
+          const started = await startAutoclawLoginFlow({
+            product: AUTOCLAW,
+            fetcher: codeartsFetcher,
+            deviceId: resolveAutoclawDeviceId(home),
+          })
+          await pool.addAccount({
+            id,
+            provider,
+            nickname: id,
+            enabled: true,
+            credentialRef: refName,
+            refreshable: false,
+            createdAt: Date.now(),
+          })
+          started.result.then(async (credential) => {
+            await ctx.credentials.set(credentialRef(refName), JSON.stringify(credential))
+            await pool.updateAccount(id, {
+              nickname: credential.nickname ?? id,
+              expiresAt: credential.expire_time,
+              refreshable: typeof credential.refresh_token === 'string' && credential.refresh_token !== '',
+            })
+          }).catch((error: unknown) => {
+            ctx.logger.warn(`[channel-pack] background ${AUTOCLAW.id} login failed for ${id}: ${String(error)}`)
+            recordLoginFailure(id, error)
+            void pool.removeAccount(id).catch(() => {})
+          })
+          return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } }
         } else if (provider === 'commandcode') {
           // Command Code：浏览器 OAuth + 本地回调（端口 5959 起）。
           // 与 codearts 同款两步式：先返回 loginUrl 让前端立刻 window.open，
@@ -4489,13 +4529,6 @@ const ADOPTABLE_CHANNELS: Readonly<Record<string, AdoptableChannel>> = {
     parse: (text) => {
       const cookie = normalizeKukuCookie(text)
       return cookie === undefined ? undefined : { access_token: cookie, created_at: Date.now() }
-    },
-  },
-  autoclaw: {
-    hint: '访问令牌（Bearer token）',
-    parse: (text) => {
-      const parsed = parseAutoClawCredential({ token: text })
-      return parsed === undefined ? undefined : { ...parsed }
     },
   },
   'autoclaw-intl': {

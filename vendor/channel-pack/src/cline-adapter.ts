@@ -31,7 +31,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
-import { AccountPool, providerCatalogVisible } from './account-pool.js'
+import { AccountPool, providerCatalogVisible, providerHasLoggedInAccount } from './account-pool.js'
 import {
   clineExhaustedAdvice,
   clineRateLimitResetAt,
@@ -435,12 +435,19 @@ export class ClineAdapter extends LlmAdapter {
     // ⚠️ 门控放在 `ensureRemoteModels()` **之前**：没有已登录账号时连远端目录都
     // 不必拉。
     if (!await providerCatalogVisible(this.options.accountPool, this.product.id)) return []
-    // 必须 await：冷缓存时目录尚未落地就返回，模型选择器会短暂显示错误的
-    // 模型集合（Channel Pack 的模型开关也据此渲染）。
-    // ⚠️ 目录里**已经**并入 models.dev（补缺的模型 / 可读名 / 图片能力），
-    // 故这里不需要再单独 await 一次模态表。
-    await this.ensureRemoteModels()
-    const source = this.remoteModels ?? this.fallbackCatalog()
+    // 未登录：只播报静态兜底表，**不去拉远端**。cline 的目录端点在没有凭据时也会
+    // 真发请求（models.dev + recommended-models，各 20s 超时），首屏会白等；
+    // 而且 `remoteModels` 只在远端成功时写入，所以这里跳过不会污染缓存 ——
+    // 登录后下一次 listModels 会带凭据重新拉一次，列表自然变全。
+    const loggedIn = await providerHasLoggedInAccount(this.options.accountPool, this.product.id)
+    if (loggedIn) {
+      // 必须 await：冷缓存时目录尚未落地就返回，模型选择器会短暂显示错误的
+      // 模型集合（Channel Pack 的模型开关也据此渲染）。
+      // ⚠️ 目录里**已经**并入 models.dev（补缺的模型 / 可读名 / 图片能力），
+      // 故这里不需要再单独 await 一次模态表。
+      await this.ensureRemoteModels()
+    }
+    const source = loggedIn ? (this.remoteModels ?? this.fallbackCatalog()) : this.fallbackCatalog()
     // 用户在 Channel Pack 关闭的模型（黑名单制：不在表里即默认打开）。
     // 只影响此处对外播报的模型目录，不改变 resolveModel/stream 的路由能力
     // ——与 DSH 对 listModels 的约定一致（目录是建议性的，缺省不构成拒绝）。
