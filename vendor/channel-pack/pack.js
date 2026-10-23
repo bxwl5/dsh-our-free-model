@@ -28596,7 +28596,7 @@ async function startAccioLogin(options) {
   result.catch(() => {
   });
   let port = 0;
-  const server = createServer2((request2, response) => {
+  const handler = (request2, response) => {
     const url = new URL(request2.url ?? "/", `http://127.0.0.1:${port}`);
     if (!url.pathname.startsWith(ACCIO_CALLBACK_PATH2)) {
       response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }).end("Not found");
@@ -28616,7 +28616,8 @@ async function startAccioLogin(options) {
       response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" }).end("\u767B\u5F55\u6362\u53D6\u51ED\u636E\u5931\u8D25");
       rejectResult(error);
     });
-  });
+  };
+  const server = createServer2(handler);
   for (let offset = 0; offset < PORT_ATTEMPTS; offset++) {
     const candidate = ACCIO_LOGIN_START_PORT + offset;
     const bound = await new Promise((resolve2) => {
@@ -28640,14 +28641,20 @@ async function startAccioLogin(options) {
   if (port === 0) {
     throw new Error(`Accio\uFF1A\u56DE\u8C03\u7AEF\u53E3 ${ACCIO_LOGIN_START_PORT} \u8D77 ${PORT_ATTEMPTS} \u4E2A\u5168\u90E8\u88AB\u5360\u7528`);
   }
+  const secondary = createServer2(handler);
+  await new Promise((resolve2) => {
+    secondary.once("error", () => resolve2());
+    secondary.listen(port, "::1", () => resolve2());
+  });
+  const servers = secondary.listening ? [server, secondary] : [server];
   const redirectUri = `http://localhost:${port}${ACCIO_CALLBACK_PATH2}`;
   const loginUrl = buildAccioAuthUrl(product, redirectUri, state, pkce.challenge);
   let closed = false;
   const close = async () => {
     if (closed) return;
     closed = true;
-    server.closeAllConnections?.();
-    await new Promise((resolve2) => server.close(() => resolve2()));
+    for (const listener of servers) listener.closeAllConnections?.();
+    await Promise.all(servers.map((listener) => new Promise((resolve2) => listener.close(() => resolve2()))));
   };
   const timeoutMs = options.timeoutMs ?? LOGIN_TIMEOUT_MS2;
   const withTimeout2 = Promise.race([

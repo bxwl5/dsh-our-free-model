@@ -318,7 +318,8 @@ export async function startAccioLogin(options: {
   result.catch(() => {})
 
   let port = 0
-  const server = createServer((request, response) => {
+  // 处理函数抽出来：v4 与 v6 两个监听器要共用同一份逻辑。
+  const handler: import('node:http').RequestListener = (request, response) => {
     const url = new URL(request.url ?? '/', `http://127.0.0.1:${port}`)
     if (!url.pathname.startsWith(ACCIO_CALLBACK_PATH)) {
       response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Not found')
@@ -341,7 +342,8 @@ export async function startAccioLogin(options: {
         response.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' }).end('登录换取凭据失败')
         rejectResult(error)
       })
-  })
+  }
+  const server = createServer(handler)
 
   for (let offset = 0; offset < PORT_ATTEMPTS; offset++) {
     const candidate = ACCIO_LOGIN_START_PORT + offset
@@ -358,6 +360,17 @@ export async function startAccioLogin(options: {
     throw new Error(`Accio：回调端口 ${ACCIO_LOGIN_START_PORT} 起 ${PORT_ATTEMPTS} 个全部被占用`)
   }
 
+  // ⚠️ 浏览器可能把 `localhost` 解析成 `::1`：只绑 v4 会「授权完页面打不开 / 没反应」。
+  // 因此同一端口再听一个 `[::1]`（失败可容忍 —— 机器没开 IPv6 时 `localhost` 走 v4）。
+  // `redirect_uri` 必须继续用 `localhost`：Accio 的 OAuth 客户端按它登记白名单，
+  // 改成 `127.0.0.1` 会被拒。
+  const secondary = createServer(handler)
+  await new Promise<void>((resolve) => {
+    secondary.once('error', () => resolve())
+    secondary.listen(port, '::1', () => resolve())
+  })
+  const servers = secondary.listening ? [server, secondary] : [server]
+
   const redirectUri = `http://localhost:${port}${ACCIO_CALLBACK_PATH}`
   const loginUrl = buildAccioAuthUrl(product, redirectUri, state, pkce.challenge)
 
@@ -365,8 +378,8 @@ export async function startAccioLogin(options: {
   const close = async (): Promise<void> => {
     if (closed) return
     closed = true
-    server.closeAllConnections?.()
-    await new Promise<void>((resolve) => server.close(() => resolve()))
+    for (const listener of servers) listener.closeAllConnections?.()
+    await Promise.all(servers.map((listener) => new Promise<void>((resolve) => listener.close(() => resolve()))))
   }
 
   const timeoutMs = options.timeoutMs ?? LOGIN_TIMEOUT_MS

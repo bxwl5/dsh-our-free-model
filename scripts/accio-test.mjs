@@ -10,7 +10,7 @@ async function main() {
     buildGenerateBody, parseAdkFrame, createPkcePair, buildAccioAuthUrl,
   } = await import('../vendor/channel-pack/src/accio.ts')
   const { ACCIO, ACCIO_CN, ACCIO_REGION_HEADER } = await import('../vendor/channel-pack/src/accio-product.ts')
-  const { streamChat, fetchModels, fetchQuota, exchangeCode } = await import('../vendor/channel-pack/src/accio-auth.ts')
+  const { streamChat, fetchModels, fetchQuota, exchangeCode, startAccioLogin, ACCIO_CALLBACK_PATH } = await import('../vendor/channel-pack/src/accio-auth.ts')
   const { AccioAdapter } = await import('../vendor/channel-pack/src/accio-adapter.ts')
   const { fetch: realFetch } = await import('undici')
 
@@ -177,7 +177,31 @@ async function main() {
       e => e.code === 'MISSING_CREDENTIAL',
     )
 
-    console.log('ok  accio: PKCE/Gemini 信封/ADK 帧（含 200 内业务错误）/token 不走 Authorization/两地区/适配器端到端')
+    // ── 回调服务器双栈：浏览器把 localhost 解析成 ::1 时也必须能连上 ──
+    // 只绑 127.0.0.1 的历史实现会表现为「授权完页面打不开 / 没反应」。
+    const probe = (url) => new Promise((resolve) => {
+      const request = http.request(url, { method: 'GET', timeout: 2000 }, (response) => {
+        response.resume()
+        resolve(response.statusCode)
+      })
+      request.on('error', () => resolve(undefined))
+      request.on('timeout', () => { request.destroy(); resolve(undefined) })
+      request.end()
+    })
+    const started = await startAccioLogin({ product: ACCIO, timeoutMs: 4000 })
+    try {
+      const redirect = new URL(started.loginUrl).searchParams.get('redirect_uri')
+      assert.ok(redirect !== null && redirect !== '', 'loginUrl 必须带 redirect_uri')
+      const callbackPort = new URL(redirect).port
+      // 错误 state 必须被 400 拒掉 —— 能拿到 400 就证明该地址确实有监听。
+      assert.equal(await probe(`http://127.0.0.1:${callbackPort}${ACCIO_CALLBACK_PATH}?code=x&state=wrong`), 400, 'v4 回调必须可达')
+      const v6 = await probe(`http://[::1]:${callbackPort}${ACCIO_CALLBACK_PATH}?code=x&state=wrong`)
+      if (v6 !== undefined) assert.equal(v6, 400, 'v6 可用时回调必须同样可达')
+    } finally {
+      await started.close()
+    }
+
+    console.log('ok  accio: PKCE/Gemini 信封/ADK 帧（含 200 内业务错误）/token 不走 Authorization/两地区/适配器端到端/回调双栈')
   } finally {
     upstream.closeAllConnections?.()
     await new Promise(r => upstream.close(r))
@@ -185,3 +209,10 @@ async function main() {
 }
 
 export async function verifyAccio() { await main() }
+
+// 单独执行时本文件需要 channel-pack-test 的 TypeScript 加载钩子；直接跑会
+// import .ts 失败或静默零断言，故显式提示（不制造「假绿」）。
+if (process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`) {
+  console.error('accio-test 需要 TypeScript 加载钩子：请运行 node scripts/channel-pack-test.mjs --source')
+  process.exitCode = 1
+}
