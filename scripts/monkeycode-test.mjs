@@ -106,19 +106,24 @@ async function main() {
     assert.equal(listed[0].id, 'm1')
     assert.deepEqual(listed[0].inputModalities, ['text'])
 
-    // 对话必须明确拒绝（不能返回空流）
+    // 对话已实现（走 WebSocket）：本假上游没有 /users/tasks 端点，
+    // 因此这里证明的是「适配器确实发出了建任务请求」而不是干脆拒绝。
+    // 完整的对话链路（建任务 → WS → 逐帧产出）由 monkeycode-ws-test.mjs 覆盖。
     await assert.rejects(
       () => collect(adapter.stream({ model: 'm1', messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }] })),
-      (e) => e.code === 'UNSUPPORTED_CONTENT' && /暂未支持/.test(e.message),
+      (e) => e.code !== 'UNSUPPORTED_CONTENT' && /建任务/.test(e.message),
+      '对话不再抛「暂未支持」，而是真的去建任务',
     )
 
-    // 重试策略：只读渠道不重试
+    // 重试策略：对话可用后，传输类错误值得重试。
     const policy = adapter.providerRetryPolicy()
-    assert.equal(policy.maxRetries, 0)
-    assert.equal(policy.retryableCodes.length, 0)
+    assert.equal(policy.maxRetries, 2)
+    assert.ok(policy.retryableCodes.includes('TRANSPORT'))
+    assert.equal(policy.retryableCodes.includes('AUTH'), false, 'AUTH 不该重试')
     assert.equal(typeof policy.initialDelayMs, 'number', '扁平字段')
+    assert.equal('backoff' in policy, false, '不能嵌套 backoff')
 
-    console.log('ok  monkeycode: Cookie 归一/信封剥离/解析/登录/钱包/模型/签到/探活三态，对话明确拒绝且重试策略为空')
+    console.log('ok  monkeycode: Cookie 归一/信封剥离/解析/登录/钱包/模型/签到/探活三态，对话真发建任务请求且传输类错误可重试')
   } finally {
     upstream.closeAllConnections?.()
     await new Promise(r => upstream.close(r))

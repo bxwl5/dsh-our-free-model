@@ -306,6 +306,10 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   await verifyAutoClaw()
   const { verifyCatPaw } = await import('./catpaw-test.mjs')
   await verifyCatPaw()
+  // MonkeyCode：零依赖 RFC6455 客户端的握手/帧编解码/事件容错解析，
+  // 以及「建任务 → 连 WS → 逐帧产出」的适配器端到端（本地假上游，不出网）。
+  const { verifyMonkeyCodeWs } = await import('./monkeycode-ws-test.mjs')
+  await verifyMonkeyCodeWs()
   const { verifyChannelAdopt } = await import('./channel-adopt-test.mjs')
   await verifyChannelAdopt()
   // OAuth 渠道后台登录失败必须让 login.poll 拿到可读原因（本用例只用

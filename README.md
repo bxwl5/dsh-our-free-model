@@ -70,7 +70,7 @@ https://github.com/bxwl5/dsh-our-free-model
 | Accio / Accio 国内版 | 浏览器授权 | ✅ |
 | OrcaTerm | 粘贴 Cookie（`ot_session`） | ✅ |
 | KukuAI | 粘贴 Cookie（`BDUSS`） | ✅ |
-| MonkeyCode | 粘贴 Cookie（`nebula_session`） | 仅账号/额度/模型/签到 |
+| MonkeyCode | 粘贴 Cookie（`nebula_session`） | ✅ |
 | CatPaw | 粘贴令牌（`X-Passport-Token`） | 仅凭据/模型目录 |
 | AutoClaw / AutoClaw 国际版 | 粘贴令牌 | ✅ |
 

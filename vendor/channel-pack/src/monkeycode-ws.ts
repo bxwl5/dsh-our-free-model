@@ -275,7 +275,12 @@ export class MonkeyCodeWsClient {
     }
   }
 
-  /** 逐帧读取；ping 自动回 pong，close 自动回 close 并结束迭代。 */
+  /**
+   * 逐帧读取**原始帧**（含 ping / pong / close 控制帧），不做任何自动应答。
+   *
+   * ⚠️ 需要自动回 pong、按 close 优雅收尾时用 {@link messages}；
+   * 直接消费本方法必须自己处理控制帧，否则对端会因收不到 pong 而断开。
+   */
   async *frames(): AsyncGenerator<WsFrame> {
     let buffer = Buffer.alloc(0)
     try {
@@ -307,8 +312,12 @@ export class MonkeyCodeWsClient {
       }
       if (frame.opcode === WS_OPCODE.pong) continue
       if (frame.opcode === WS_OPCODE.close) {
-        this.sendClose(1000)
-        this.destroy()
+        // ⚠️ 必须用 close() 而不是 sendClose() + destroy()：
+        // socket.write() 只是把数据排进缓冲，而 socket.destroy() 会**丢弃**
+        // 尚未刷出的缓冲 —— 于是 close 回复发不到对端，对端只能看到连接被
+        // 粗暴断开（本缺陷由 monkeycode-ws-test 的「收到 close 要回 close」用例捕获）。
+        // close() 走 socket.end()，会先刷出再优雅关闭。
+        this.close()
         return
       }
       if (frame.opcode === WS_OPCODE.text || frame.opcode === WS_OPCODE.binary) {

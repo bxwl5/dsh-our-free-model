@@ -196,3 +196,37 @@ export function monkeyCodeHeaders(product: MonkeyCodeProduct, credential: Monkey
     Cookie: credential.access_token,
   }
 }
+
+/**
+ * 把 harness 消息拍平成单条输入。
+ *
+ * 与 OrcaTerm / KukuAI 同口径：上游一次只收一条 `content`（拍平后的正文），
+ * 历史必须自己拼进这一条里。
+ */
+export function flattenMessages(
+  messages: readonly { role: string; content: unknown }[],
+  system?: string,
+): string {
+  const parts: string[] = []
+  if (system !== undefined && system.trim() !== '') parts.push(system.trim())
+  for (const message of messages) {
+    const text = contentToText(message.content)
+    if (text.trim() === '') continue
+    parts.push(text.trim())
+  }
+  return parts.join('\n\n')
+}
+
+/** 从 harness 内容块抽纯文本。 */
+export function contentToText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  const parts: string[] = []
+  for (const block of content) {
+    if (typeof block === 'string') { parts.push(block); continue }
+    if (!isRecord(block)) continue
+    const text = stringValue(block.text)
+    if (text !== undefined) parts.push(text)
+  }
+  return parts.join('\n')
+}

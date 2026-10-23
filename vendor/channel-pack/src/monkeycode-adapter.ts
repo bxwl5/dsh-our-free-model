@@ -1,7 +1,7 @@
 /**
  * MonkeyCode LlmAdapter。
  *
- * ## 当前能力边界（**故意如此**）
+ * ## 能力
  *
  * | 能力 | 状态 |
  * |---|---|
@@ -9,17 +9,33 @@
  * | 额度查询 | ✅ |
  * | 模型目录 | ✅ |
  * | 每日签到 | ✅ |
- * | **对话推理** | ❌ **暂不支持** |
+ * | 对话推理 | ✅（走 WebSocket，见下） |
  *
- * 对话走 WebSocket（`/api/v1/users/tasks/stream`），而本插件零依赖、
- * 参考实现自己承认「WS 事件语法无法在无实机下 100% 敲定」。因此这里
- * **不提供一个静默失败的假实现**，而是在 `stream()` 里抛出明确的错误，
- * 让用户在界面上一眼看到原因，而不是等一个永远不来的回复。
+ * ## 对话为什么走 WebSocket
+ *
+ * 上游不是「一次 HTTP 请求 = 一次对话」，而是两步：
+ * 1. `POST /api/v1/users/tasks` 建任务（提交拍平后的需求正文）→ 拿 task id；
+ * 2. 连 WebSocket `/api/v1/users/tasks/stream?id=<taskId>&mode=develop` 逐帧读正文。
+ *
+ * 本插件零依赖（运行时无依赖，devDeps 只有 jose / undici / typescript），
+ * 因此 RFC6455 客户端是**手写**的，见 `monkeycode-ws.ts`（握手、帧编解码、
+ * 掩码、ping/pong）。
+ *
+ * ## ⚠️ 未实机验证的部分
+ *
+ * 上游 WebSocket 的**事件 type 取值未经真实账号确认** —— 参考实现
+ * `monkeycode2api` 自己写明「事件语法无法在无实机下 100% 敲定」。
+ * 因此 `parseTaskStreamEvent` 采用**容错解析**：同时接受多种终止/正文
+ * type，认不出的帧**忽略而不是报错**。这样即使上游换了事件名，
+ * 最坏情况是少显示一点正文，而不是把整轮对话打死在一个未知事件上。
+ *
+ * 建任务用的 `model_id` 是上游的模型 UUID（远端目录下发），
+ * 若上游更换 UUID 而本地目录未刷新，对话会失败 —— 这是需要真实账号才能发现的问题。
  *
  * ## 模型仍会出现在选择器里
  *
- * `listModels` 照常返回目录 —— 这样用户能看到「这个渠道有什么模型」，
- * 选中后才得到「对话暂不支持」的提示。隐藏模型反而让人以为渠道没配好。
+ * `listModels` 照常返回目录；没有已登录账号时返回空数组（不抛错），
+ * 避免界面上多出一条 provider 报错。
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -37,10 +53,11 @@ import {
   type MonkeyCodeProduct,
 } from './monkeycode-product.js'
 import {
+  flattenMessages,
   isCredentialUsable,
   type MonkeyCodeCredential,
 } from './monkeycode.js'
-import { fetchModels } from './monkeycode-auth.js'
+import { fetchModels, streamChat } from './monkeycode-auth.js'
 import { providerCatalogVisible } from './account-pool.js'
 import { registerAdapterIdempotent } from './llm-register-compat.js'
 
@@ -61,7 +78,7 @@ export interface MonkeyCodeAdapterOptions {
 /**
  * MonkeyCode 适配器。
  *
- * 只实现目录与能力播报；推理路径明确拒绝（见模块头注释）。
+ * 目录、能力播报，以及走 WebSocket 拉流的对话推理（见模块头注释）。
  */
 export class MonkeyCodeAdapter extends LlmAdapter {
   private readonly product: MonkeyCodeProduct
@@ -150,22 +167,44 @@ export class MonkeyCodeAdapter extends LlmAdapter {
   }
 
   /**
-   * 对话推理 —— **当前明确不支持**。
+   * 流式对话：建任务 → 连 WebSocket → 逐帧映射成 `text-delta`。
    *
-   * 抛 `UNSUPPORTED_CONTENT` 而不是返回空流：空流会被 DSH 当成
-   * 「模型返回了空回答」，用户看到的是空白回复加一个成功标记，
-   * 完全无从排查。这里的错误消息直接说明原因与现状。
+   * 上游一次只收一条正文，历史由 `flattenMessages` 拍平后塞进这条里；
+   * `options.model` 直接就是上游要的模型 UUID（远端目录下发的 id，
+   * 建任务请求体的 `model_id`）。取消信号透传给建任务与 WebSocket 两段。
    */
-  // eslint-disable-next-line require-yield
-  async *stream(_options: GenerateOptions): AsyncIterable<StreamChunk> {
-    throw new LlmError(
-      'MonkeyCode：对话功能暂未支持（该渠道走 WebSocket 协议，当前版本只提供'
-      + '账号、额度、模型目录与签到；推理能力待后续版本实现）',
-      'UNSUPPORTED_CONTENT',
-    )
+  async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    const credential = await this.options.resolveCredential()
+    if (!isCredentialUsable(credential)) {
+      throw new LlmError('MonkeyCode：没有可用凭据，请先粘贴 Cookie', 'MISSING_CREDENTIAL')
+    }
+    try {
+      const content = flattenMessages(options.messages, options.system)
+      for await (const delta of streamChat(this.fetchImpl, this.product, credential, {
+        content,
+        modelId: options.model,
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+      })) {
+        yield { type: 'text-delta', text: delta.text }
+      }
+    } catch (error) {
+      if (options.signal?.aborted === true) throw new LlmError('MonkeyCode：请求已取消', 'ABORTED')
+      const message = error instanceof Error ? error.message : String(error)
+      // 凭据失效与上游错误要分开：前者用户能自己修（重新粘贴 Cookie）。
+      if (/401|403|凭据|Cookie/.test(message)) {
+        throw new LlmError(`MonkeyCode：凭据无效或已过期，请重新粘贴 Cookie（${message}）`, 'AUTH')
+      }
+      throw new LlmError(message, 'TRANSPORT')
+    }
+    yield { type: 'finish', reason: 'stop' }
   }
 
-  /** 只读渠道：无重试意义（对话本来就不支持）。 */
+  /**
+   * 退避策略：对话已可用，传输类错误值得重试。
+   *
+   * ⚠️ 必须是扁平字段 —— 内核调度器读顶层 `initialDelayMs` 等；
+   * 嵌进 `backoff: {}` 会读到 undefined → NaN，持久会话日志会拒绝非有限数值。
+   */
   providerRetryPolicy(): {
     retryableCodes: readonly string[]
     maxRetries: number
@@ -174,11 +213,11 @@ export class MonkeyCodeAdapter extends LlmAdapter {
     jitterRatio: number
   } {
     return {
-      retryableCodes: [],
-      maxRetries: 0,
-      initialDelayMs: 1_000,
-      maxDelayMs: 1_000,
-      jitterRatio: 0,
+      retryableCodes: ['TRANSPORT', 'TIMEOUT'],
+      maxRetries: 2,
+      initialDelayMs: 900,
+      maxDelayMs: 4_000,
+      jitterRatio: 0.25,
     }
   }
 }

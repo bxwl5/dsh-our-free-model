@@ -80,7 +80,7 @@ The settings page has seven parts: free models, channels, token savers, routing,
 | Accio / Accio CN | browser | ✅ |
 | OrcaTerm | paste cookie (`ot_session`) | ✅ |
 | KukuAI | paste cookie (`BDUSS`) | ✅ |
-| MonkeyCode | paste cookie (`nebula_session`) | accounts/credits/models/check-in only |
+| MonkeyCode | paste cookie (`nebula_session`) | ✅ |
 | CatPaw | paste token (`X-Passport-Token`) | credentials/model catalog only |
 | AutoClaw / AutoClaw Intl | paste token | ✅ |
 

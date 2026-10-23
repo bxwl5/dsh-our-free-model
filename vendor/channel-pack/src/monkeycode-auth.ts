@@ -307,10 +307,10 @@ export async function* streamChat(
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   })
   try {
-    for await (const frame of client.frames()) {
-      // 只处理文本帧：二进制帧在上游无既定语义，忽略。
-      if (frame.opcode !== 1) continue
-      const event = parseTaskStreamEvent(frame.payload)
+    // ⚠️ 用 messages() 而不是 frames()：前者自动回 pong（不回会被对端断开）
+    // 并按 close 优雅收尾；后者只给原始帧，控制帧要自己处理。
+    for await (const message of client.messages()) {
+      const event = parseTaskStreamEvent(message.text)
       if (event.kind === 'done') return
       if (event.kind === 'error') throw new Error(`MonkeyCode 上游错误：${event.message}`)
       if (event.kind === 'text' && event.text !== '') yield { text: event.text }
