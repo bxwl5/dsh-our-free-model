@@ -15,6 +15,7 @@ import { registerOrcaTermLlm } from './orcaterm-adapter.js'
 import { registerKukuLlm } from './kuku-adapter.js'
 import { registerAccioLlm } from './accio-adapter.js'
 import { registerOfficeAceLlm } from './officeace-adapter.js'
+import { registerAutoClawLlm } from './autoclaw-adapter.js'
 import { registerLoomyLlm, parseLoomyRemoteModels } from './loomy-adapter.js'
 import { registerRaccoonLlm } from './raccoon-adapter.js'
 import { CODEARTS_CREDENTIAL_REF, CodeArtsAuth } from './service.js'
@@ -58,6 +59,7 @@ import { ORCATERM } from './orcaterm-product.js'
 import { KUKU } from './kuku-product.js'
 import { ACCIO, ACCIO_CN } from './accio-product.js'
 import { OFFICEACE } from './officeace-product.js'
+import { AUTOCLAW, AUTOCLAW_INTL } from './autoclaw-product.js'
 import { configureDeadModelStore, withDeadModelPruning } from './dead-model-store.js'
 import type { CodeArtsCredential, BuddyCredential } from './types.js'
 import type { LobsteraiCredential } from './lobsterai.js'
@@ -70,6 +72,7 @@ import type { OrcaTermCredential } from './orcaterm.js'
 import type { KukuCredential } from './kuku.js'
 import type { AccioCredential } from './accio.js'
 import type { OfficeAceCredential } from './officeace.js'
+import type { AutoClawCredential } from './autoclaw.js'
 import type { LoomyCredential } from './loomy.js'
 import type { RaccoonCredential } from './raccoon.js'
 import { MinimaxAuth } from './minimax-auth.js'
@@ -1126,6 +1129,36 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
     },
     accountPool: pool,
     product: OFFICEACE,
+  })
+
+  // ===== AutoClaw（智谱，国内 / 国际）=====
+  // 对话是 OpenAI 兼容；⚠️ 认证头是 **X-Authorization**（不是 Authorization）。
+  // 模型目录在 /proxy/autoclaw-model-config（不在 /autoclaw 那级）。
+  let activeAutoClawAccountId = ''
+  const makeAutoClawResolver = (product: typeof AUTOCLAW | typeof AUTOCLAW_INTL) => async () => {
+    const available = await pool.getAvailableAccount(product.id, '')
+    activeAutoClawAccountId = available?.entry.id ?? ''
+    if (activeAutoClawAccountId.length > 0) reportLedgerAccount(product.id, activeAutoClawAccountId)
+    if (available) return available.credential as AutoClawCredential
+    const resolved = await ctx.credentials.resolve(credentialRef(product.defaultCredentialRef))
+    if (!resolved) return undefined
+    try {
+      return JSON.parse(resolved.value) as AutoClawCredential
+    } catch {
+      return undefined
+    }
+  }
+  const autoClawAdapter = registerAutoClawLlm(ctx, {
+    fetchImpl: network.fetch,
+    resolveCredential: makeAutoClawResolver(AUTOCLAW),
+    accountPool: pool,
+    product: AUTOCLAW,
+  })
+  const autoClawIntlAdapter = registerAutoClawLlm(ctx, {
+    fetchImpl: network.fetch,
+    resolveCredential: makeAutoClawResolver(AUTOCLAW_INTL),
+    accountPool: pool,
+    product: AUTOCLAW_INTL,
   })
 
   // ===== Loomy（讯飞办公助手）服务 =====
