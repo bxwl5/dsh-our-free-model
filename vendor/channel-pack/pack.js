@@ -27796,6 +27796,1247 @@ ${captureLines}` : capture.stack;
   }
 });
 
+// vendor/channel-pack/src/commandcode-product.ts
+var commandcode_product_exports = {};
+__export(commandcode_product_exports, {
+  ALL_COMMANDCODE_PRODUCTS: () => ALL_COMMANDCODE_PRODUCTS,
+  COMMANDCODE: () => COMMANDCODE,
+  COMMANDCODE_CHAT_PATH: () => COMMANDCODE_CHAT_PATH,
+  COMMANDCODE_CREDITS_PATH: () => COMMANDCODE_CREDITS_PATH,
+  COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS: () => COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS,
+  COMMANDCODE_LOGIN_START_PORT: () => COMMANDCODE_LOGIN_START_PORT,
+  COMMANDCODE_LOGIN_TIMEOUT_MS: () => COMMANDCODE_LOGIN_TIMEOUT_MS,
+  COMMANDCODE_MODELS_PATH: () => COMMANDCODE_MODELS_PATH,
+  COMMANDCODE_STUDIO_AUTH_PATH: () => COMMANDCODE_STUDIO_AUTH_PATH,
+  COMMANDCODE_WHOAMI_PATH: () => COMMANDCODE_WHOAMI_PATH,
+  commandCodeProductById: () => commandCodeProductById
+});
+function commandCodeProductById(id) {
+  return ALL_COMMANDCODE_PRODUCTS.find((product) => product.id === id);
+}
+var COMMANDCODE_FALLBACK_MODELS, COMMANDCODE, ALL_COMMANDCODE_PRODUCTS, COMMANDCODE_STUDIO_AUTH_PATH, COMMANDCODE_WHOAMI_PATH, COMMANDCODE_CREDITS_PATH, COMMANDCODE_MODELS_PATH, COMMANDCODE_CHAT_PATH, COMMANDCODE_LOGIN_START_PORT, COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS, COMMANDCODE_LOGIN_TIMEOUT_MS;
+var init_commandcode_product = __esm({
+  "vendor/channel-pack/src/commandcode-product.ts"() {
+    "use strict";
+    COMMANDCODE_FALLBACK_MODELS = [
+      {
+        id: "claude-sonnet-4-5",
+        name: "Claude Sonnet 4.5",
+        contextWindow: 2e5,
+        maxTokens: 64e3,
+        supportsImage: true,
+        description: "Anthropic Claude Sonnet 4.5"
+      },
+      {
+        id: "gpt-5",
+        name: "GPT-5",
+        contextWindow: 4e5,
+        maxTokens: 128e3,
+        supportsImage: true,
+        description: "OpenAI GPT-5"
+      }
+    ];
+    COMMANDCODE = {
+      id: "commandcode",
+      displayName: "Command Code",
+      apiBase: "https://api.commandcode.ai",
+      studioBase: "https://commandcode.ai",
+      clientHeaders: {
+        "HTTP-Referer": "https://commandcode.ai",
+        "X-Title": "Command Code"
+      },
+      defaultCredentialRef: "COMMANDCODE_API_KEY",
+      fallbackModels: COMMANDCODE_FALLBACK_MODELS
+    };
+    ALL_COMMANDCODE_PRODUCTS = [COMMANDCODE];
+    COMMANDCODE_STUDIO_AUTH_PATH = "/cli/authorize";
+    COMMANDCODE_WHOAMI_PATH = "/alpha/whoami";
+    COMMANDCODE_CREDITS_PATH = "/alpha/billing/credits";
+    COMMANDCODE_MODELS_PATH = "/provider/v1/models";
+    COMMANDCODE_CHAT_PATH = "/provider/v1/chat/completions";
+    COMMANDCODE_LOGIN_START_PORT = 5959;
+    COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS = 10;
+    COMMANDCODE_LOGIN_TIMEOUT_MS = 12e4;
+  }
+});
+
+// vendor/channel-pack/src/commandcode.ts
+function stringValue(value) {
+  return typeof value === "string" && value !== "" ? value : void 0;
+}
+function numberValue(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return void 0;
+}
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function parseWhoami(value) {
+  if (!isRecord(value)) return void 0;
+  const userId = stringValue(value.userId) ?? stringValue(value.user_id) ?? stringValue(value.id);
+  if (userId === void 0) return void 0;
+  return {
+    userId,
+    userName: stringValue(value.userName) ?? stringValue(value.user_name) ?? stringValue(value.name),
+    email: stringValue(value.email),
+    keyName: stringValue(value.keyName) ?? stringValue(value.key_name),
+    plan: stringValue(value.plan) ?? stringValue(value.tier)
+  };
+}
+function credentialFromWhoami(apiKey, whoami) {
+  return {
+    access_token: apiKey,
+    account_id: whoami.userId,
+    nickname: whoami.userName ?? whoami.email ?? whoami.keyName,
+    email: whoami.email,
+    key_name: whoami.keyName,
+    created_at: Date.now()
+  };
+}
+function parseCredits(value) {
+  if (!isRecord(value)) return void 0;
+  const body = isRecord(value.data) ? value.data : value;
+  const balance = numberValue(body.balance) ?? numberValue(body.credits) ?? numberValue(body.remaining) ?? numberValue(body.available);
+  const limit = numberValue(body.limit) ?? numberValue(body.total) ?? numberValue(body.quota);
+  const used = numberValue(body.used) ?? numberValue(body.consumed);
+  const resetRaw = numberValue(body.resetAt) ?? numberValue(body.reset_at) ?? numberValue(body.resetAtMs);
+  if (balance === void 0 && limit === void 0 && used === void 0) return void 0;
+  return {
+    balance,
+    limit,
+    used,
+    currency: stringValue(body.currency) ?? stringValue(body.unit),
+    // 秒级时间戳统一抬到毫秒；已经足够大的值原样保留。
+    resetAtMs: resetRaw === void 0 ? void 0 : resetRaw < 1e12 ? resetRaw * 1e3 : resetRaw
+  };
+}
+function commandCodeBearerValue(credential) {
+  return `Bearer ${credential.access_token}`;
+}
+function isCredentialUsable(credential) {
+  if (credential === void 0) return false;
+  const key = credential.access_token;
+  return typeof key === "string" && key !== "" && key === key.trim();
+}
+function buildCommandCodeAuthUrl(product, port, state) {
+  const callback = `http://localhost:${port}/callback`;
+  const query = new URLSearchParams({ callback, state });
+  return `${product.studioBase}/cli/authorize?${query.toString()}`;
+}
+function parseCallbackCredentials(value) {
+  if (!isRecord(value)) return void 0;
+  const apiKey = stringValue(value.apiKey);
+  const state = stringValue(value.state);
+  const userId = stringValue(value.userId);
+  if (apiKey === void 0 || state === void 0 || userId === void 0) return void 0;
+  return {
+    access_token: apiKey,
+    account_id: userId,
+    nickname: stringValue(value.userName) ?? stringValue(value.email),
+    email: stringValue(value.email),
+    key_name: stringValue(value.keyName),
+    created_at: Date.now()
+  };
+}
+var init_commandcode = __esm({
+  "vendor/channel-pack/src/commandcode.ts"() {
+    "use strict";
+  }
+});
+
+// vendor/channel-pack/src/commandcode-auth.ts
+var commandcode_auth_exports = {};
+__export(commandcode_auth_exports, {
+  COMMANDCODE_CALLBACK_PATH: () => COMMANDCODE_CALLBACK_PATH,
+  fetchCredits: () => fetchCredits,
+  fetchModelCatalog: () => fetchModelCatalog,
+  resolveCredential: () => resolveCredential,
+  runCommandCodeLogin: () => runCommandCodeLogin,
+  startCommandCodeLogin: () => startCommandCodeLogin,
+  validateApiKey: () => validateApiKey
+});
+import { createServer } from "node:http";
+import { randomUUID as randomUUID2 } from "node:crypto";
+async function validateApiKey(fetcher, product, apiKey, signal) {
+  try {
+    const response = await fetcher(`${product.apiBase}${COMMANDCODE_WHOAMI_PATH}`, {
+      method: "GET",
+      headers: { Accept: "application/json", ...product.clientHeaders, Authorization: `Bearer ${apiKey}` },
+      ...signal === void 0 ? {} : { signal }
+    });
+    void response.body?.cancel().catch(() => void 0);
+    if (response.status === 401) return { ok: false, reason: "invalid_key", status: 401 };
+    if (!response.ok) return { ok: false, reason: "server_error", status: response.status };
+    return { ok: true, credential: { access_token: apiKey, created_at: Date.now() } };
+  } catch {
+    return { ok: false, reason: "network_error" };
+  }
+}
+async function resolveCredential(fetcher, product, apiKey, signal) {
+  const response = await fetcher(`${product.apiBase}${COMMANDCODE_WHOAMI_PATH}`, {
+    method: "GET",
+    headers: { Accept: "application/json", ...product.clientHeaders, Authorization: `Bearer ${apiKey}` },
+    ...signal === void 0 ? {} : { signal }
+  });
+  if (response.status === 401) throw new Error("Command Code\uFF1AAPI Key \u65E0\u6548\uFF08whoami \u8FD4\u56DE 401\uFF09\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+  if (!response.ok) throw new Error(`Command Code\uFF1Awhoami \u8FD4\u56DE HTTP ${response.status}`);
+  const whoami = parseWhoami(await response.json().catch(() => void 0));
+  if (whoami === void 0) throw new Error("Command Code\uFF1Awhoami \u54CD\u5E94\u7F3A\u5C11 userId\uFF0C\u65E0\u6CD5\u786E\u8BA4\u8D26\u53F7");
+  const credential = credentialFromWhoami(apiKey, whoami);
+  if (!isCredentialUsable(credential)) throw new Error("Command Code\uFF1A\u767B\u5F55\u8FD4\u56DE\u7684 Key \u4E3A\u7A7A\u6216\u542B\u9996\u5C3E\u7A7A\u767D");
+  return credential;
+}
+async function listenOnRange(server) {
+  const errors = [];
+  for (let offset = 0; offset < COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS; offset++) {
+    const port = COMMANDCODE_LOGIN_START_PORT + offset;
+    const bound = await new Promise((resolve2) => {
+      const onError = (error) => {
+        server.removeListener("listening", onListening);
+        errors.push(`${port}: ${error.message}`);
+        resolve2(false);
+      };
+      const onListening = () => {
+        server.removeListener("error", onError);
+        resolve2(true);
+      };
+      server.once("error", onError);
+      server.once("listening", onListening);
+      server.listen(port, "127.0.0.1");
+    });
+    if (bound) return port;
+  }
+  throw new Error(
+    `Command Code\uFF1A\u56DE\u8C03\u7AEF\u53E3 ${COMMANDCODE_LOGIN_START_PORT}\u2013${COMMANDCODE_LOGIN_START_PORT + COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS - 1} \u5168\u90E8\u88AB\u5360\u7528\uFF08\u901A\u5E38\u610F\u5473\u7740\u672C\u673A\u6709\u5176\u5B83 CLI \u6B63\u5728\u767B\u5F55\uFF09\u3002\u660E\u7EC6\uFF1A${errors.join("; ")}`
+  );
+}
+async function startCommandCodeLogin(options) {
+  const fetcher = options.fetcher ?? fetch;
+  const { product } = options;
+  const state = randomUUID2();
+  let resolveResult;
+  let rejectResult;
+  const result = new Promise((resolve2, reject) => {
+    resolveResult = resolve2;
+    rejectResult = reject;
+  });
+  result.catch(() => {
+  });
+  let port = 0;
+  const server = createServer((request2, response) => {
+    const url = new URL(request2.url ?? "/", `http://127.0.0.1:${port}`);
+    if (!url.pathname.startsWith(COMMANDCODE_CALLBACK_PATH)) {
+      response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }).end("Not found");
+      return;
+    }
+    if (request2.method !== "POST") {
+      response.writeHead(405, { "Content-Type": "text/plain; charset=utf-8" }).end("Method not allowed");
+      return;
+    }
+    const chunks = [];
+    let size = 0;
+    let aborted = false;
+    request2.on("data", (chunk) => {
+      if (aborted) return;
+      size += chunk.length;
+      if (size > 64 * 1024) {
+        aborted = true;
+        response.writeHead(413, { "Content-Type": "text/plain; charset=utf-8" }).end("Payload too large");
+        request2.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request2.on("end", () => {
+      if (aborted) return;
+      void (async () => {
+        let payload;
+        try {
+          payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        } catch {
+          response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" }).end("\u767B\u5F55\u56DE\u8C03\u4E0D\u662F\u5408\u6CD5 JSON");
+          return;
+        }
+        const gotState = payload?.state;
+        if (gotState !== state) {
+          response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" }).end("\u767B\u5F55\u56DE\u8C03 state \u4E0D\u5339\u914D");
+          return;
+        }
+        const credential = parseCallbackCredentials(payload);
+        if (credential === void 0) {
+          response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" }).end("\u767B\u5F55\u56DE\u8C03\u7F3A\u5C11\u5FC5\u586B\u5B57\u6BB5");
+          return;
+        }
+        try {
+          const verified = await resolveCredential(fetcher, product, credential.access_token, options.signal);
+          response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end("<html><body><h2>\u767B\u5F55\u6210\u529F\uFF0C\u53EF\u4EE5\u5173\u95ED\u6B64\u7A97\u53E3\u4E86</h2></body></html>");
+          resolveResult({ credential: verified, port });
+        } catch (error) {
+          response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" }).end("\u767B\u5F55\u6362\u53D6\u51ED\u636E\u5931\u8D25");
+          rejectResult(error);
+        }
+      })();
+    });
+  });
+  port = await listenOnRange(server);
+  const loginUrl = buildCommandCodeAuthUrl(product, port, state);
+  let closed = false;
+  const close = async () => {
+    if (closed) return;
+    closed = true;
+    server.closeAllConnections?.();
+    await new Promise((resolve2) => server.close(() => resolve2()));
+  };
+  const timeoutMs = options.timeoutMs ?? COMMANDCODE_LOGIN_TIMEOUT_MS;
+  const resultWithTimeout = Promise.race([
+    result,
+    new Promise((_, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`Command Code \u767B\u5F55\u8D85\u65F6\uFF08${Math.round(timeoutMs / 1e3)} \u79D2\u5185\u672A\u5B8C\u6210\uFF09`)),
+        timeoutMs
+      );
+      timer.unref?.();
+    })
+  ]);
+  resultWithTimeout.catch(() => {
+  }).finally(() => {
+    void close();
+  });
+  return { loginUrl, port, result: resultWithTimeout, close };
+}
+async function runCommandCodeLogin(options) {
+  const started = await startCommandCodeLogin(options);
+  try {
+    if (options.openBrowser !== void 0) await options.openBrowser(started.loginUrl);
+    const { credential } = await started.result;
+    return credential;
+  } finally {
+    await started.close();
+  }
+}
+async function fetchCredits(fetcher, product, credential, signal) {
+  try {
+    const response = await fetcher(`${product.apiBase}${COMMANDCODE_CREDITS_PATH}`, {
+      method: "GET",
+      headers: { Accept: "application/json", ...product.clientHeaders, Authorization: `Bearer ${credential.access_token}` },
+      ...signal === void 0 ? {} : { signal }
+    });
+    if (!response.ok) return void 0;
+    return parseCredits(await response.json().catch(() => void 0));
+  } catch {
+    return void 0;
+  }
+}
+async function fetchModelCatalog(fetcher, product, credential, signal) {
+  const response = await fetcher(`${product.apiBase}${COMMANDCODE_MODELS_PATH}`, {
+    method: "GET",
+    headers: { Accept: "application/json", ...product.clientHeaders, Authorization: `Bearer ${credential.access_token}` },
+    ...signal === void 0 ? {} : { signal }
+  });
+  if (!response.ok) throw new Error(`Command Code\uFF1A\u6A21\u578B\u76EE\u5F55\u8FD4\u56DE HTTP ${response.status}`);
+  const body = await response.json().catch(() => void 0);
+  if (typeof body !== "object" || body === null) throw new Error("Command Code\uFF1A\u6A21\u578B\u76EE\u5F55\u54CD\u5E94\u4E0D\u662F\u5BF9\u8C61");
+  const record = body;
+  if (!Array.isArray(record.data)) throw new Error("Command Code\uFF1A\u6A21\u578B\u76EE\u5F55\u7F3A\u5C11 data \u6570\u7EC4");
+  const rows = [];
+  for (const raw of record.data) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const item = raw;
+    const id = typeof item.id === "string" && item.id !== "" ? item.id : void 0;
+    const name2 = typeof item.name === "string" && item.name !== "" ? item.name : void 0;
+    const contextRaw = item.context_length ?? item.contextWindow;
+    const contextWindow = typeof contextRaw === "number" && Number.isFinite(contextRaw) && contextRaw > 0 ? contextRaw : void 0;
+    if (id === void 0 || name2 === void 0 || contextWindow === void 0) continue;
+    const maxRaw = item.max_output_tokens ?? item.maxTokens;
+    const maxTokens = typeof maxRaw === "number" && Number.isFinite(maxRaw) && maxRaw > 0 ? Math.min(maxRaw, contextWindow) : void 0;
+    const endpoints = item.supported_endpoints ?? item.supportedEndpoints;
+    const supportsImage = Array.isArray(endpoints) ? endpoints.includes("image") : void 0;
+    rows.push({ id, name: name2, contextWindow, maxTokens, supportsImage });
+  }
+  if (rows.length === 0) throw new Error("Command Code\uFF1A\u6A21\u578B\u76EE\u5F55\u4E3A\u7A7A");
+  return rows;
+}
+var COMMANDCODE_CALLBACK_PATH;
+var init_commandcode_auth = __esm({
+  "vendor/channel-pack/src/commandcode-auth.ts"() {
+    "use strict";
+    init_commandcode_product();
+    init_commandcode();
+    COMMANDCODE_CALLBACK_PATH = "/callback";
+  }
+});
+
+// vendor/channel-pack/src/accio-product.ts
+var accio_product_exports = {};
+__export(accio_product_exports, {
+  ACCIO: () => ACCIO,
+  ACCIO_CALLBACK_PATH: () => ACCIO_CALLBACK_PATH,
+  ACCIO_CN: () => ACCIO_CN,
+  ACCIO_GENERATE_PATH: () => ACCIO_GENERATE_PATH,
+  ACCIO_LLM_CONFIG_PATH: () => ACCIO_LLM_CONFIG_PATH,
+  ACCIO_LOGIN_START_PORT: () => ACCIO_LOGIN_START_PORT,
+  ACCIO_QUOTA_PATH: () => ACCIO_QUOTA_PATH,
+  ACCIO_REFRESH_PATH: () => ACCIO_REFRESH_PATH,
+  ACCIO_REGION_HEADER: () => ACCIO_REGION_HEADER,
+  ACCIO_TOKEN_PATH: () => ACCIO_TOKEN_PATH,
+  ACCIO_USERINFO_PATH: () => ACCIO_USERINFO_PATH,
+  ALL_ACCIO_PRODUCTS: () => ALL_ACCIO_PRODUCTS,
+  accioProductById: () => accioProductById
+});
+function accioProductById(id) {
+  return ALL_ACCIO_PRODUCTS.find((product) => product.id === id);
+}
+var ACCIO_FALLBACK_MODELS, ACCIO, ACCIO_CN, ALL_ACCIO_PRODUCTS, ACCIO_TOKEN_PATH, ACCIO_REFRESH_PATH, ACCIO_USERINFO_PATH, ACCIO_QUOTA_PATH, ACCIO_LLM_CONFIG_PATH, ACCIO_GENERATE_PATH, ACCIO_REGION_HEADER, ACCIO_CALLBACK_PATH, ACCIO_LOGIN_START_PORT;
+var init_accio_product = __esm({
+  "vendor/channel-pack/src/accio-product.ts"() {
+    "use strict";
+    ACCIO_FALLBACK_MODELS = [
+      { id: "qwen3-max", name: "Qwen3 Max", contextWindow: 128e3 },
+      { id: "qwen3-coder-plus", name: "Qwen3 Coder Plus", contextWindow: 256e3 }
+    ];
+    ACCIO = {
+      id: "accio",
+      displayName: "Accio",
+      region: "GLOBAL",
+      loginBase: "https://www.accio.com",
+      gatewayBase: "https://phoenix-gw.alibaba.com",
+      llmBase: "https://phoenix-gw.alibaba.com/api/adk/llm",
+      clientId: "accio-work",
+      defaultCredentialRef: "ACCIO_ACCESS_TOKEN",
+      fallbackModels: ACCIO_FALLBACK_MODELS
+    };
+    ACCIO_CN = {
+      ...ACCIO,
+      id: "accio-cn",
+      displayName: "Accio \u56FD\u5185\u7248",
+      region: "CN",
+      loginBase: "https://www.accio-ai.com",
+      defaultCredentialRef: "ACCIO_CN_ACCESS_TOKEN"
+    };
+    ALL_ACCIO_PRODUCTS = [ACCIO, ACCIO_CN];
+    ACCIO_TOKEN_PATH = "/api/oauth/token";
+    ACCIO_REFRESH_PATH = "/api/auth/refresh_token";
+    ACCIO_USERINFO_PATH = "/api/auth/userinfo";
+    ACCIO_QUOTA_PATH = "/api/entitlement/quota";
+    ACCIO_LLM_CONFIG_PATH = "/api/llm/config";
+    ACCIO_GENERATE_PATH = "/generateContent";
+    ACCIO_REGION_HEADER = "x-package-region";
+    ACCIO_CALLBACK_PATH = "/callback";
+    ACCIO_LOGIN_START_PORT = 5960;
+  }
+});
+
+// vendor/channel-pack/src/accio.ts
+function stringValue4(value) {
+  return typeof value === "string" && value !== "" ? value : void 0;
+}
+function numberValue2(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return void 0;
+}
+function isRecord5(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isCredentialUsable5(credential) {
+  if (credential === void 0) return false;
+  const token = credential.access_token;
+  return typeof token === "string" && token !== "" && token === token.trim();
+}
+function isCredentialExpired2(credential, nowMs = Date.now()) {
+  if (credential.expire_time === void 0) return false;
+  return credential.expire_time - 6e4 <= nowMs;
+}
+function accioHeaders(product) {
+  return {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    [ACCIO_REGION_HEADER]: product.region,
+    Origin: product.loginBase,
+    Referer: `${product.loginBase}/`
+  };
+}
+function parseTokenResponse(value) {
+  if (!isRecord5(value)) return void 0;
+  const body = isRecord5(value.data) ? value.data : value;
+  const accessToken = stringValue4(body.accessToken) ?? stringValue4(body.access_token);
+  if (accessToken === void 0) return void 0;
+  const refreshToken2 = stringValue4(body.refreshToken) ?? stringValue4(body.refresh_token);
+  const expiresRaw = numberValue2(body.expiresAt) ?? numberValue2(body.expires_at);
+  const expireTime = expiresRaw === void 0 ? void 0 : expiresRaw < 1e12 ? expiresRaw * 1e3 : expiresRaw;
+  return {
+    access_token: accessToken,
+    ...refreshToken2 === void 0 ? {} : { refresh_token: refreshToken2 },
+    ...expireTime === void 0 ? {} : { expire_time: expireTime },
+    created_at: Date.now()
+  };
+}
+function buildGenerateBody(options) {
+  const contents = [];
+  if (options.system !== void 0 && options.system.trim() !== "") {
+    contents.push({ role: "user", parts: [{ text: options.system.trim() }] });
+  }
+  for (const message2 of options.messages) {
+    const text = contentToText10(message2.content);
+    if (text.trim() === "") continue;
+    contents.push({
+      // harness 的 assistant → Gemini 的 model。
+      role: message2.role === "assistant" ? "model" : "user",
+      parts: [{ text: text.trim() }]
+    });
+  }
+  const body = { contents, token: options.token };
+  if (options.tools !== void 0 && options.tools.length > 0) {
+    body.tools = [{
+      functionDeclarations: options.tools.map((tool) => ({
+        name: tool.name,
+        ...tool.description === void 0 ? {} : { description: tool.description },
+        ...tool.parameters === void 0 ? {} : { parameters: tool.parameters }
+      }))
+    }];
+  }
+  return body;
+}
+function parseAdkFrame(value) {
+  if (!isRecord5(value)) return void 0;
+  const errorCode = value.error_code ?? value.errorCode;
+  if (errorCode !== void 0 && errorCode !== 0 && errorCode !== "0") {
+    return {
+      kind: "error",
+      message: stringValue4(value.error_message) ?? stringValue4(value.errorMessage) ?? `error_code=${String(errorCode)}`
+    };
+  }
+  if (value.turn_complete === true) {
+    return { kind: "done", ...stringValue4(value.finish_reason) === void 0 ? {} : { finishReason: stringValue4(value.finish_reason) } };
+  }
+  const content = value.content;
+  if (!isRecord5(content) || !Array.isArray(content.parts)) return void 0;
+  const texts = [];
+  const reasonings = [];
+  for (const part of content.parts) {
+    if (!isRecord5(part)) continue;
+    const text = stringValue4(part.text);
+    if (text === void 0) continue;
+    if (part.thought === true) reasonings.push(text);
+    else texts.push(text);
+  }
+  if (reasonings.length > 0) return { kind: "delta", reasoning: reasonings.join("") };
+  if (texts.length > 0) return { kind: "delta", text: texts.join("") };
+  return void 0;
+}
+function contentToText10(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  const parts = [];
+  for (const block of content) {
+    if (typeof block === "string") {
+      parts.push(block);
+      continue;
+    }
+    if (!isRecord5(block)) continue;
+    const text = stringValue4(block.text);
+    if (text !== void 0) parts.push(text);
+  }
+  return parts.join("\n");
+}
+async function createPkcePair() {
+  const { randomBytes: randomBytes14, createHash: createHash10 } = await import("node:crypto");
+  const verifier = randomBytes14(32).toString("base64url");
+  const challenge = createHash10("sha256").update(verifier).digest("base64url");
+  return { verifier, challenge };
+}
+function buildAccioAuthUrl(product, redirectUri, state, challenge) {
+  const query = new URLSearchParams({
+    response_type: "code",
+    client_id: product.clientId,
+    redirect_uri: redirectUri,
+    state,
+    code_challenge: challenge,
+    code_challenge_method: "S256"
+  });
+  return `${product.loginBase}/oauth/authorize?${query.toString()}`;
+}
+var init_accio = __esm({
+  "vendor/channel-pack/src/accio.ts"() {
+    "use strict";
+    init_accio_product();
+  }
+});
+
+// vendor/channel-pack/src/accio-auth.ts
+var accio_auth_exports = {};
+__export(accio_auth_exports, {
+  ACCIO_CALLBACK_PATH: () => ACCIO_CALLBACK_PATH2,
+  exchangeCode: () => exchangeCode,
+  fetchModels: () => fetchModels2,
+  fetchQuota: () => fetchQuota,
+  fetchUserInfo: () => fetchUserInfo,
+  refreshCredential: () => refreshCredential,
+  startAccioLogin: () => startAccioLogin,
+  streamChat: () => streamChat3
+});
+import { createServer as createServer2 } from "node:http";
+import { randomUUID as randomUUID5 } from "node:crypto";
+async function exchangeCode(fetcher, product, code, verifier, redirectUri, signal) {
+  const response = await fetcher(`${product.gatewayBase}${ACCIO_TOKEN_PATH}`, {
+    method: "POST",
+    headers: accioHeaders(product),
+    body: JSON.stringify({
+      code,
+      codeVerifier: verifier,
+      clientId: product.clientId,
+      redirectUri
+    }),
+    ...signal === void 0 ? {} : { signal }
+  });
+  if (!response.ok) throw new Error(`Accio\uFF1A\u6362 token \u8FD4\u56DE HTTP ${response.status}`);
+  const credential = parseTokenResponse(await response.json().catch(() => void 0));
+  if (credential === void 0) throw new Error("Accio\uFF1A\u6362 token \u54CD\u5E94\u7F3A\u5C11 accessToken");
+  return credential;
+}
+async function refreshCredential(fetcher, product, credential, signal) {
+  if (credential.refresh_token === void 0) return void 0;
+  try {
+    const response = await fetcher(`${product.gatewayBase}${ACCIO_REFRESH_PATH}`, {
+      method: "POST",
+      headers: accioHeaders(product),
+      body: JSON.stringify({
+        accessToken: credential.access_token,
+        refreshToken: credential.refresh_token
+      }),
+      ...signal === void 0 ? {} : { signal }
+    });
+    if (!response.ok) return void 0;
+    const refreshed = parseTokenResponse(await response.json().catch(() => void 0));
+    if (refreshed === void 0) return void 0;
+    return {
+      ...refreshed,
+      refresh_token: refreshed.refresh_token ?? credential.refresh_token,
+      ...credential.account_id === void 0 ? {} : { account_id: credential.account_id },
+      ...credential.nickname === void 0 ? {} : { nickname: credential.nickname }
+    };
+  } catch {
+    return void 0;
+  }
+}
+async function fetchUserInfo(fetcher, product, credential, signal) {
+  try {
+    const query = new URLSearchParams({ accessToken: credential.access_token }).toString();
+    const response = await fetcher(`${product.gatewayBase}${ACCIO_USERINFO_PATH}?${query}`, {
+      method: "GET",
+      headers: accioHeaders(product),
+      ...signal === void 0 ? {} : { signal }
+    });
+    if (!response.ok) return void 0;
+    const body = await response.json().catch(() => void 0);
+    if (typeof body !== "object" || body === null) return void 0;
+    const record = body;
+    const data = typeof record.data === "object" && record.data !== null ? record.data : record;
+    return {
+      ...typeof data.userId === "string" ? { accountId: data.userId } : {},
+      ...typeof data.nickname === "string" ? { nickname: data.nickname } : {}
+    };
+  } catch {
+    return void 0;
+  }
+}
+async function fetchQuota(fetcher, product, credential, signal) {
+  try {
+    const query = new URLSearchParams({ accessToken: credential.access_token }).toString();
+    const response = await fetcher(`${product.gatewayBase}${ACCIO_QUOTA_PATH}?${query}`, {
+      method: "GET",
+      headers: accioHeaders(product),
+      ...signal === void 0 ? {} : { signal }
+    });
+    if (!response.ok) return void 0;
+    const body = await response.json().catch(() => void 0);
+    if (typeof body !== "object" || body === null) return void 0;
+    const record = body;
+    const data = typeof record.data === "object" && record.data !== null ? record.data : record;
+    const used = typeof data.usedPercent === "number" ? data.usedPercent : typeof data.used_percent === "number" ? data.used_percent : void 0;
+    const resetRaw = typeof data.resetAt === "number" ? data.resetAt : void 0;
+    return {
+      ...used === void 0 ? {} : { usedPercent: used },
+      ...resetRaw === void 0 ? {} : { resetAtMs: resetRaw < 1e12 ? resetRaw * 1e3 : resetRaw }
+    };
+  } catch {
+    return void 0;
+  }
+}
+async function fetchModels2(fetcher, product, credential, signal) {
+  const response = await fetcher(`${product.gatewayBase}${ACCIO_LLM_CONFIG_PATH}`, {
+    method: "POST",
+    headers: accioHeaders(product),
+    body: JSON.stringify({ token: credential.access_token }),
+    ...signal === void 0 ? {} : { signal }
+  });
+  if (!response.ok) throw new Error(`Accio\uFF1A\u6A21\u578B\u76EE\u5F55\u8FD4\u56DE HTTP ${response.status}`);
+  const body = await response.json().catch(() => void 0);
+  if (typeof body !== "object" || body === null) throw new Error("Accio\uFF1A\u6A21\u578B\u76EE\u5F55\u54CD\u5E94\u4E0D\u662F\u5BF9\u8C61");
+  const record = body;
+  const list = Array.isArray(record.models) ? record.models : Array.isArray(record.data) ? record.data : void 0;
+  if (list === void 0) throw new Error("Accio\uFF1A\u6A21\u578B\u76EE\u5F55\u7F3A\u5C11 models \u6570\u7EC4");
+  const rows = [];
+  for (const raw of list) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const item = raw;
+    const id = typeof item.id === "string" ? item.id : typeof item.model === "string" ? item.model : void 0;
+    if (id === void 0) continue;
+    const name2 = typeof item.name === "string" ? item.name : typeof item.displayName === "string" ? item.displayName : id;
+    const contextRaw = item.contextWindow ?? item.context_window ?? item.maxInputTokens;
+    const contextWindow = typeof contextRaw === "number" && contextRaw > 0 ? contextRaw : 128e3;
+    const maxRaw = item.maxTokens ?? item.max_output_tokens;
+    const maxTokens = typeof maxRaw === "number" && maxRaw > 0 ? Math.min(maxRaw, contextWindow) : void 0;
+    rows.push({ id, name: name2, contextWindow, ...maxTokens === void 0 ? {} : { maxTokens } });
+  }
+  if (rows.length === 0) throw new Error("Accio\uFF1A\u6A21\u578B\u76EE\u5F55\u4E3A\u7A7A");
+  return rows;
+}
+async function* streamChat3(fetcher, product, credential, options) {
+  if (!isCredentialUsable5(credential)) {
+    throw new Error("Accio\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
+  }
+  const { createHash: createHash10, randomUUID: randomUUID17 } = await import("node:crypto");
+  const requestId = randomUUID17();
+  const sgK = createHash10("md5").update(requestId).digest("hex");
+  const response = await fetcher(`${product.llmBase}${ACCIO_GENERATE_PATH}?sg_k=${sgK}`, {
+    method: "POST",
+    headers: { ...accioHeaders(product), Accept: "text/event-stream" },
+    body: JSON.stringify(buildGenerateBody({
+      token: credential.access_token,
+      messages: options.messages,
+      ...options.system === void 0 ? {} : { system: options.system },
+      ...options.tools === void 0 ? {} : { tools: options.tools }
+    })),
+    ...options.signal === void 0 ? {} : { signal: options.signal }
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Accio\uFF1A\u63A8\u7406\u8FD4\u56DE HTTP ${response.status}${text === "" ? "" : `\uFF1A${text.slice(0, 200)}`}`);
+  }
+  if (response.body === null) throw new Error("Accio\uFF1A\u63A8\u7406\u54CD\u5E94\u6CA1\u6709\u6B63\u6587");
+  const reader = response.body.getReader();
+  const decoder2 = new TextDecoder();
+  let buffer = "";
+  try {
+    for (; ; ) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder2.decode(value, { stream: true });
+      let newline = buffer.indexOf("\n");
+      while (newline !== -1) {
+        const line2 = buffer.slice(0, newline).replace(/\r$/, "");
+        buffer = buffer.slice(newline + 1);
+        newline = buffer.indexOf("\n");
+        if (!line2.startsWith("data:")) continue;
+        const raw = line2.slice(5).trim();
+        if (raw === "" || raw === "[DONE]") continue;
+        let parsed;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          continue;
+        }
+        const frame = parseAdkFrame(parsed);
+        if (frame === void 0) continue;
+        if (frame.kind === "done") return;
+        if (frame.kind === "error") throw new Error(`Accio \u4E0A\u6E38\u9519\u8BEF\uFF1A${frame.message}`);
+        yield frame;
+      }
+    }
+  } finally {
+    void reader.cancel().catch(() => void 0);
+  }
+}
+async function startAccioLogin(options) {
+  const fetcher = options.fetcher ?? fetch;
+  const { product } = options;
+  const state = randomUUID5();
+  const pkce = await createPkcePair();
+  let resolveResult;
+  let rejectResult;
+  const result = new Promise((resolve2, reject) => {
+    resolveResult = resolve2;
+    rejectResult = reject;
+  });
+  result.catch(() => {
+  });
+  let port = 0;
+  const server = createServer2((request2, response) => {
+    const url = new URL(request2.url ?? "/", `http://127.0.0.1:${port}`);
+    if (!url.pathname.startsWith(ACCIO_CALLBACK_PATH2)) {
+      response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }).end("Not found");
+      return;
+    }
+    const code = url.searchParams.get("code");
+    const gotState = url.searchParams.get("state");
+    if (code === null || code === "" || gotState !== state) {
+      response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" }).end("\u767B\u5F55\u56DE\u8C03\u53C2\u6570\u65E0\u6548");
+      return;
+    }
+    const redirectUri2 = `http://localhost:${port}${ACCIO_CALLBACK_PATH2}`;
+    void exchangeCode(fetcher, product, code, pkce.verifier, redirectUri2).then((credential) => {
+      response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end("<html><body><h2>\u767B\u5F55\u6210\u529F\uFF0C\u53EF\u4EE5\u5173\u95ED\u6B64\u7A97\u53E3\u4E86</h2></body></html>");
+      resolveResult(credential);
+    }).catch((error) => {
+      response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" }).end("\u767B\u5F55\u6362\u53D6\u51ED\u636E\u5931\u8D25");
+      rejectResult(error);
+    });
+  });
+  for (let offset = 0; offset < PORT_ATTEMPTS; offset++) {
+    const candidate = ACCIO_LOGIN_START_PORT + offset;
+    const bound = await new Promise((resolve2) => {
+      const onError = () => {
+        server.removeListener("listening", onListening);
+        resolve2(false);
+      };
+      const onListening = () => {
+        server.removeListener("error", onError);
+        resolve2(true);
+      };
+      server.once("error", onError);
+      server.once("listening", onListening);
+      server.listen(candidate, "127.0.0.1");
+    });
+    if (bound) {
+      port = candidate;
+      break;
+    }
+  }
+  if (port === 0) {
+    throw new Error(`Accio\uFF1A\u56DE\u8C03\u7AEF\u53E3 ${ACCIO_LOGIN_START_PORT} \u8D77 ${PORT_ATTEMPTS} \u4E2A\u5168\u90E8\u88AB\u5360\u7528`);
+  }
+  const redirectUri = `http://localhost:${port}${ACCIO_CALLBACK_PATH2}`;
+  const loginUrl = buildAccioAuthUrl(product, redirectUri, state, pkce.challenge);
+  let closed = false;
+  const close = async () => {
+    if (closed) return;
+    closed = true;
+    server.closeAllConnections?.();
+    await new Promise((resolve2) => server.close(() => resolve2()));
+  };
+  const timeoutMs = options.timeoutMs ?? LOGIN_TIMEOUT_MS2;
+  const withTimeout2 = Promise.race([
+    result,
+    new Promise((_, reject) => {
+      const timer = setTimeout(() => reject(new Error(`Accio \u767B\u5F55\u8D85\u65F6\uFF08${Math.round(timeoutMs / 1e3)} \u79D2\u5185\u672A\u5B8C\u6210\uFF09`)), timeoutMs);
+      timer.unref?.();
+    })
+  ]);
+  withTimeout2.catch(() => {
+  }).finally(() => {
+    void close();
+  });
+  return { loginUrl, port, result: withTimeout2, close };
+}
+var ACCIO_CALLBACK_PATH2, PORT_ATTEMPTS, LOGIN_TIMEOUT_MS2;
+var init_accio_auth = __esm({
+  "vendor/channel-pack/src/accio-auth.ts"() {
+    "use strict";
+    init_accio_product();
+    init_accio();
+    init_accio_product();
+    init_accio();
+    ACCIO_CALLBACK_PATH2 = "/callback";
+    PORT_ATTEMPTS = 10;
+    LOGIN_TIMEOUT_MS2 = 3e5;
+  }
+});
+
+// vendor/channel-pack/src/officeace-product.ts
+var officeace_product_exports = {};
+__export(officeace_product_exports, {
+  OFFICEACE: () => OFFICEACE,
+  OFFICEACE_AUTHORIZE_PATH: () => OFFICEACE_AUTHORIZE_PATH,
+  OFFICEACE_CODE_PATH: () => OFFICEACE_CODE_PATH,
+  OFFICEACE_IAM_PROJECTS_PATH: () => OFFICEACE_IAM_PROJECTS_PATH,
+  OFFICEACE_LOGIN_TIMEOUT_MS: () => OFFICEACE_LOGIN_TIMEOUT_MS,
+  OFFICEACE_PERMISSION_PATH: () => OFFICEACE_PERMISSION_PATH,
+  OFFICEACE_POLL_INTERVAL_MS: () => OFFICEACE_POLL_INTERVAL_MS,
+  OFFICEACE_STATE_PATH: () => OFFICEACE_STATE_PATH,
+  OFFICEACE_STS_TOKENS_PATH: () => OFFICEACE_STS_TOKENS_PATH,
+  OFFICEACE_SUBSCRIPTION_PATH: () => OFFICEACE_SUBSCRIPTION_PATH,
+  officeAceProductById: () => officeAceProductById
+});
+function officeAceProductById(id) {
+  return id === OFFICEACE.id ? OFFICEACE : void 0;
+}
+var OFFICEACE_FALLBACK_MODELS, OFFICEACE, OFFICEACE_STATE_PATH, OFFICEACE_CODE_PATH, OFFICEACE_PERMISSION_PATH, OFFICEACE_SUBSCRIPTION_PATH, OFFICEACE_STS_TOKENS_PATH, OFFICEACE_IAM_PROJECTS_PATH, OFFICEACE_AUTHORIZE_PATH, OFFICEACE_POLL_INTERVAL_MS, OFFICEACE_LOGIN_TIMEOUT_MS;
+var init_officeace_product = __esm({
+  "vendor/channel-pack/src/officeace-product.ts"() {
+    "use strict";
+    OFFICEACE_FALLBACK_MODELS = [
+      { id: "officeace-default", name: "OfficeAce", contextWindow: 128e3 }
+    ];
+    OFFICEACE = {
+      id: "officeace",
+      displayName: "OfficeAce \u679C\u529E",
+      cloudBase: "https://agentarts.cn-southwest-2.myhuaweicloud.com",
+      iamBase: "https://iam.myhuaweicloud.com",
+      loginBase: "https://auth.huaweicloud.com",
+      stsBase: "https://sts.cn-southwest-2.myhuaweicloud.com",
+      clientId: "pdp5_for_agentarts",
+      redirectUri: "https://agentarts.cn-southwest-2.myhuaweicloud.com/v1/claw/auth/callback",
+      defaultCredentialRef: "OFFICEACE_CREDENTIAL",
+      fallbackModels: OFFICEACE_FALLBACK_MODELS
+    };
+    OFFICEACE_STATE_PATH = "/v1/claw/auth/state";
+    OFFICEACE_CODE_PATH = "/v1/claw/auth/code";
+    OFFICEACE_PERMISSION_PATH = "/v1/claw/client-permission-validate";
+    OFFICEACE_SUBSCRIPTION_PATH = "/v1/claw/client-subscription";
+    OFFICEACE_STS_TOKENS_PATH = "/v1/oauth2/tokens";
+    OFFICEACE_IAM_PROJECTS_PATH = "/v3/projects";
+    OFFICEACE_AUTHORIZE_PATH = "/authui/login.html";
+    OFFICEACE_POLL_INTERVAL_MS = 2e3;
+    OFFICEACE_LOGIN_TIMEOUT_MS = 6e5;
+  }
+});
+
+// vendor/channel-pack/src/officeace-dpop.ts
+var officeace_dpop_exports = {};
+__export(officeace_dpop_exports, {
+  base64UrlEncode: () => base64UrlEncode,
+  buildCanonicalRequest: () => buildCanonicalRequest2,
+  createDpopKeyPair: () => createDpopKeyPair,
+  createDpopProof: () => createDpopProof,
+  formatSdkDate: () => formatSdkDate,
+  hmacSha256: () => hmacSha256,
+  sha256Hex: () => sha256Hex2,
+  signSdkHmac: () => signSdkHmac,
+  signV11: () => signV11,
+  toHex: () => toHex
+});
+function base64UrlEncode(input) {
+  const bytes = typeof input === "string" ? new TextEncoder().encode(input) : input;
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+async function createDpopKeyPair() {
+  const pair = await crypto.subtle.generateKey(
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,
+    ["sign", "verify"]
+  );
+  const exported = await crypto.subtle.exportKey("jwk", pair.publicKey);
+  return {
+    privateKey: pair.privateKey,
+    publicJwk: {
+      kty: "EC",
+      crv: "P-256",
+      x: String(exported.x ?? ""),
+      y: String(exported.y ?? "")
+    }
+  };
+}
+async function createDpopProof(key, method, url) {
+  const header = {
+    alg: "ES256",
+    typ: "dpop+jwt",
+    jwk: key.publicJwk
+  };
+  const jtiBytes = crypto.getRandomValues(new Uint8Array(32));
+  const payload = {
+    htm: method.toUpperCase(),
+    htu: url,
+    iat: Math.floor(Date.now() / 1e3),
+    jti: Array.from(jtiBytes).map((byte) => byte.toString(16).padStart(2, "0")).join("")
+  };
+  const signingInput = `${base64UrlEncode(JSON.stringify(header))}.${base64UrlEncode(JSON.stringify(payload))}`;
+  const signature = await crypto.subtle.sign(
+    { name: "ECDSA", hash: "SHA-256" },
+    key.privateKey,
+    new TextEncoder().encode(signingInput)
+  );
+  return `${signingInput}.${base64UrlEncode(new Uint8Array(signature))}`;
+}
+function toHex(bytes) {
+  return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+async function hmacSha256(key, data) {
+  const keyBytes = typeof key === "string" ? new TextEncoder().encode(key) : key;
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    keyBytes.slice().buffer,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(data));
+  return new Uint8Array(signature);
+}
+function formatSdkDate(timestampMs) {
+  const d = new Date(timestampMs);
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
+}
+async function sha256Hex2(data) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(data));
+  return toHex(new Uint8Array(digest));
+}
+function buildCanonicalRequest2(options) {
+  const uri = options.path.endsWith("/") ? options.path : `${options.path}/`;
+  const sorted = [...options.headers].map(([k, v]) => [k.toLowerCase(), v]).sort((a, b) => a[0] < b[0] ? -1 : 1);
+  const canonicalHeaders = sorted.map(([k, v]) => `${k}:${v}
+`).join("");
+  const signedHeaders = sorted.map(([k]) => k).join(";");
+  const canonicalRequest = [
+    options.method.toUpperCase(),
+    uri,
+    options.query,
+    canonicalHeaders,
+    signedHeaders,
+    options.payloadHash
+  ].join("\n");
+  return { canonicalRequest, signedHeaders };
+}
+async function signSdkHmac(options) {
+  const sdkDate = formatSdkDate(options.timestampMs);
+  const canonicalHash = await sha256Hex2(options.canonicalRequest);
+  const stringToSign = ["SDK-HMAC-SHA256", sdkDate, canonicalHash].join("\n");
+  const signature = toHex(await hmacSha256(options.secretKey, stringToSign));
+  return {
+    sdkDate,
+    authorization: `SDK-HMAC-SHA256 Access=${options.accessKey}, SignedHeaders=${options.signedHeaders}, Signature=${signature}`
+  };
+}
+async function signV11(options) {
+  const sdkDate = formatSdkDate(options.timestampMs);
+  const scope = `${sdkDate.slice(0, 8)}/${options.region}/${options.service}`;
+  const canonicalHash = await sha256Hex2(options.canonicalRequest);
+  const stringToSign = ["V11-HMAC-SHA256", sdkDate, scope, canonicalHash].join("\n");
+  const step1 = await hmacSha256(options.accessKey, options.secretKey);
+  const seed = new Uint8Array([...new TextEncoder().encode(scope), 1]);
+  const derived = (await hmacSha256(step1, new TextDecoder().decode(seed))).slice(0, 32);
+  const signingKeyHex = toHex(derived);
+  const signature = toHex(await hmacSha256(signingKeyHex, stringToSign));
+  return {
+    sdkDate,
+    authorization: `V11-HMAC-SHA256 Credential=${options.accessKey}/${scope}, SignedHeaders=${options.signedHeaders}, Signature=${signature}`
+  };
+}
+var init_officeace_dpop = __esm({
+  "vendor/channel-pack/src/officeace-dpop.ts"() {
+    "use strict";
+  }
+});
+
+// vendor/channel-pack/src/officeace.ts
+var officeace_exports = {};
+__export(officeace_exports, {
+  basicAuthHeader: () => basicAuthHeader,
+  buildAuthorizeUrl: () => buildAuthorizeUrl,
+  createPkcePair: () => createPkcePair2,
+  exchangeCodeForSts: () => exchangeCodeForSts,
+  fetchState: () => fetchState,
+  isCredentialUsable: () => isCredentialUsable6,
+  normalizeBaseUrl: () => normalizeBaseUrl,
+  parseCredential: () => parseCredential,
+  pollAuthCode: () => pollAuthCode,
+  validatePermission: () => validatePermission
+});
+function normalizeBaseUrl(baseUrl) {
+  const trimmed = baseUrl.trim().replace(/\/+$/, "");
+  if (trimmed === "") return "";
+  return trimmed.endsWith("/v2") ? trimmed : `${trimmed}/v2`;
+}
+function basicAuthHeader(credential) {
+  const raw = `${credential.app_key}:${credential.app_secret}`;
+  const bytes = new TextEncoder().encode(raw);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return `Basic ${btoa(binary)}`;
+}
+function parseCredential(value) {
+  if (!isRecord6(value)) return void 0;
+  const baseUrl = stringValue5(value.baseUrl) ?? stringValue5(value.base_url) ?? stringValue5(value.api_base) ?? stringValue5(value.apiBase);
+  const appKey = stringValue5(value.appKey) ?? stringValue5(value.app_key);
+  const appSecret = stringValue5(value.appSecret) ?? stringValue5(value.app_secret);
+  if (baseUrl === void 0 || appKey === void 0 || appSecret === void 0) return void 0;
+  return {
+    base_url: baseUrl,
+    app_key: appKey,
+    app_secret: appSecret,
+    ...stringValue5(value.access_key) === void 0 ? {} : { access_key: stringValue5(value.access_key) },
+    ...stringValue5(value.accessKey) === void 0 ? {} : { access_key: stringValue5(value.accessKey) },
+    ...stringValue5(value.secret_key) === void 0 ? {} : { secret_key: stringValue5(value.secret_key) },
+    ...stringValue5(value.secretKey) === void 0 ? {} : { secret_key: stringValue5(value.secretKey) },
+    ...stringValue5(value.security_token) === void 0 ? {} : { security_token: stringValue5(value.security_token) },
+    ...stringValue5(value.project_id) === void 0 ? {} : { project_id: stringValue5(value.project_id) },
+    ...stringValue5(value.account_id) === void 0 ? {} : { account_id: stringValue5(value.account_id) },
+    ...stringValue5(value.nickname) === void 0 ? {} : { nickname: stringValue5(value.nickname) },
+    ...Array.isArray(value.model_info) ? { model_info: value.model_info } : {},
+    created_at: Date.now()
+  };
+}
+function stringValue5(value) {
+  return typeof value === "string" && value !== "" ? value : void 0;
+}
+function isRecord6(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isCredentialUsable6(credential) {
+  if (credential === void 0) return false;
+  return typeof credential.base_url === "string" && credential.base_url !== "" && typeof credential.app_key === "string" && credential.app_key !== "" && typeof credential.app_secret === "string" && credential.app_secret !== "";
+}
+async function createPkcePair2() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const verifier = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+  const challenge = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return { verifier, challenge };
+}
+async function fetchState(fetcher, product, signal) {
+  const response = await fetcher(`${product.cloudBase}${OFFICEACE_STATE_PATH}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+    ...signal === void 0 ? {} : { signal }
+  });
+  if (!response.ok) throw new Error(`OfficeAce\uFF1A\u53D6 state \u8FD4\u56DE HTTP ${response.status}`);
+  const body = await response.json().catch(() => void 0);
+  const record = isRecord6(body) ? isRecord6(body.data) ? body.data : body : void 0;
+  const state = record === void 0 ? void 0 : stringValue5(record.state);
+  if (state === void 0) throw new Error("OfficeAce\uFF1A\u53D6 state \u54CD\u5E94\u7F3A\u5C11 state");
+  return state;
+}
+function buildAuthorizeUrl(product, state, challenge) {
+  const query = new URLSearchParams({
+    response_type: "code",
+    client_id: product.clientId,
+    redirect_uri: product.redirectUri,
+    state,
+    code_challenge: challenge,
+    code_challenge_method: "S256"
+  });
+  return `${product.loginBase}${"/authui/login.html"}?${query.toString()}`;
+}
+async function pollAuthCode(fetcher, product, state, options = {}) {
+  const intervalMs = options.intervalMs ?? 2e3;
+  const timeoutMs = options.timeoutMs ?? 6e5;
+  const deadline = Date.now() + timeoutMs;
+  for (; ; ) {
+    if (options.signal?.aborted === true) throw new Error("OfficeAce\uFF1A\u767B\u5F55\u5DF2\u53D6\u6D88");
+    if (Date.now() > deadline) throw new Error("OfficeAce\uFF1A\u767B\u5F55\u8D85\u65F6\uFF0C\u8BF7\u91CD\u8BD5");
+    const response = await fetcher(
+      `${product.cloudBase}${OFFICEACE_CODE_PATH}?state=${encodeURIComponent(state)}`,
+      { method: "GET", headers: { Accept: "application/json" }, ...options.signal === void 0 ? {} : { signal: options.signal } }
+    );
+    if (response.status === 404) throw new Error("OfficeAce\uFF1Astate \u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u53D1\u8D77\u767B\u5F55");
+    if (response.status === 202) {
+      void response.body?.cancel().catch(() => void 0);
+      await new Promise((resolve2) => setTimeout(resolve2, intervalMs));
+      continue;
+    }
+    if (!response.ok) throw new Error(`OfficeAce\uFF1A\u53D6\u6388\u6743\u7801\u8FD4\u56DE HTTP ${response.status}`);
+    const body = await response.json().catch(() => void 0);
+    const record = isRecord6(body) ? isRecord6(body.data) ? body.data : body : void 0;
+    const code = record === void 0 ? void 0 : stringValue5(record.code);
+    if (code === void 0) throw new Error("OfficeAce\uFF1A\u53D6\u6388\u6743\u7801\u54CD\u5E94\u7F3A\u5C11 code");
+    return code;
+  }
+}
+async function exchangeCodeForSts(fetcher, product, code, verifier, dpopKey, signal) {
+  const url = `${product.stsBase}${OFFICEACE_STS_TOKENS_PATH}`;
+  const dpopProof = await createDpopProof(dpopKey, "POST", url);
+  const form = new URLSearchParams({
+    grant_type: "authorization_code",
+    code,
+    client_id: product.clientId,
+    redirect_uri: product.redirectUri,
+    code_verifier: verifier
+  }).toString();
+  const response = await fetcher(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      DPoP: dpopProof
+    },
+    body: form,
+    ...signal === void 0 ? {} : { signal }
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`OfficeAce\uFF1A\u6362\u4E34\u65F6\u51ED\u636E\u8FD4\u56DE HTTP ${response.status}${text === "" ? "" : `\uFF1A${text.slice(0, 200)}`}`);
+  }
+  const body = await response.json().catch(() => void 0);
+  if (!isRecord6(body)) throw new Error("OfficeAce\uFF1A\u6362\u4E34\u65F6\u51ED\u636E\u54CD\u5E94\u4E0D\u662F\u5BF9\u8C61");
+  const credential = parseCredential(body);
+  if (credential !== void 0) return credential;
+  const accessKey = stringValue5(body.access_key) ?? stringValue5(body.accessKey);
+  const secretKey = stringValue5(body.secret_key) ?? stringValue5(body.secretKey);
+  const baseUrl = stringValue5(body.baseUrl) ?? stringValue5(body.base_url);
+  if (accessKey === void 0 || secretKey === void 0 || baseUrl === void 0) {
+    throw new Error("OfficeAce\uFF1A\u6362\u4E34\u65F6\u51ED\u636E\u54CD\u5E94\u7F3A\u5C11\u5FC5\u9700\u5B57\u6BB5");
+  }
+  return {
+    base_url: baseUrl,
+    app_key: stringValue5(body.appKey) ?? stringValue5(body.app_key) ?? "",
+    app_secret: stringValue5(body.appSecret) ?? stringValue5(body.app_secret) ?? "",
+    access_key: accessKey,
+    secret_key: secretKey,
+    ...stringValue5(body.security_token) === void 0 ? {} : { security_token: stringValue5(body.security_token) },
+    created_at: Date.now()
+  };
+}
+async function validatePermission(fetcher, product, credential, signal) {
+  const path2 = OFFICEACE_PERMISSION_PATH;
+  const host = new URL(product.cloudBase).host;
+  const payloadHash = await sha256Hex2("");
+  const timestampMs = Date.now();
+  const sdkDate = formatSdkDate(timestampMs);
+  const { canonicalRequest, signedHeaders } = buildCanonicalRequest2({
+    method: "GET",
+    path: path2,
+    query: "",
+    host,
+    headers: [["host", host], ["x-sdk-date", sdkDate]],
+    payloadHash
+  });
+  const { authorization } = await signSdkHmac({
+    accessKey: credential.access_key,
+    secretKey: credential.secret_key,
+    canonicalRequest,
+    signedHeaders,
+    timestampMs
+  });
+  const response = await fetcher(`${product.cloudBase}${path2}`, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      Authorization: authorization,
+      "X-Sdk-Date": sdkDate,
+      ...credential.security_token === void 0 ? {} : { "X-Security-Token": credential.security_token }
+    },
+    ...signal === void 0 ? {} : { signal }
+  });
+  if (!response.ok) throw new Error(`OfficeAce\uFF1A\u8EAB\u4EFD\u6821\u9A8C\u8FD4\u56DE HTTP ${response.status}`);
+  const body = await response.json().catch(() => void 0);
+  if (!isRecord6(body)) return {};
+  const subscription = isRecord6(body.subscription) ? body.subscription : void 0;
+  const modelInfo = subscription !== void 0 && Array.isArray(subscription.model_info) ? subscription.model_info : void 0;
+  return {
+    ...stringValue5(body.account_id) === void 0 ? {} : { accountId: stringValue5(body.account_id) },
+    ...stringValue5(body.nickname) === void 0 ? {} : { nickname: stringValue5(body.nickname) },
+    ...stringValue5(body.project_id) === void 0 ? {} : { projectId: stringValue5(body.project_id) },
+    ...modelInfo === void 0 ? {} : { modelInfo }
+  };
+}
+var init_officeace = __esm({
+  "vendor/channel-pack/src/officeace.ts"() {
+    "use strict";
+    init_officeace_product();
+    init_officeace_dpop();
+  }
+});
+
 // node_modules/jose/dist/webapi/lib/buffer_utils.js
 function concat(...buffers) {
   const size = buffers.reduce((acc, { length }) => acc + length, 0);
@@ -29313,9 +30554,9 @@ __export(login_exports, {
   startOAuthCallbackServer: () => startOAuthCallbackServer,
   startOAuthFlow: () => startOAuthFlow
 });
-import { createServer as createServer2 } from "node:http";
+import { createServer as createServer3 } from "node:http";
 import { spawn } from "node:child_process";
-import { getRandomValues, randomUUID as randomUUID5, randomBytes as randomBytes5 } from "node:crypto";
+import { getRandomValues, randomUUID as randomUUID6, randomBytes as randomBytes5 } from "node:crypto";
 function generateRandomSecret() {
   const bytes = getRandomValues(new Uint8Array(32));
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -29432,7 +30673,7 @@ function startCallbackServer(ticketId, secret, options) {
     resolveResult = resolve2;
     rejectResult = reject;
   });
-  const server = createServer2((request2, response) => {
+  const server = createServer3((request2, response) => {
     const url = new URL(request2.url ?? "/", `http://127.0.0.1:${request2.socket.localPort}`);
     if (url.pathname !== "/authentication" && !url.pathname.startsWith("/authentication")) {
       response.writeHead(404).end("Not found");
@@ -29487,7 +30728,7 @@ function startCallbackServer(ticketId, secret, options) {
   });
 }
 async function runLoginFlow(options = {}) {
-  const ticketId = randomUUID5();
+  const ticketId = randomUUID6();
   const secret = generateRandomSecret();
   const { port, server, result } = await startCallbackServer(ticketId, secret, options);
   const { loginUrl } = buildLoginUrl(port, ticketId);
@@ -29513,7 +30754,7 @@ function startOAuthCallbackServer(ticketId, pkce, keyPair, options) {
     resolveResult = resolve2;
     rejectResult = reject;
   });
-  const server = createServer2((request2, response) => {
+  const server = createServer3((request2, response) => {
     const url = new URL(request2.url ?? "/", `http://127.0.0.1:${request2.socket.localPort}`);
     if (url.pathname !== REDIRECT_PATH && !url.pathname.startsWith(REDIRECT_PATH)) {
       response.writeHead(404).end("Not found");
@@ -42940,335 +44181,10 @@ function registerClineLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/commandcode-adapter.ts
+init_commandcode_product();
+init_commandcode();
+init_commandcode_auth();
 import { LlmAdapter as LlmAdapter7, LlmError as LlmError10 } from "@deepseek-ai/dsh-llm";
-
-// vendor/channel-pack/src/commandcode-product.ts
-var COMMANDCODE_FALLBACK_MODELS = [
-  {
-    id: "claude-sonnet-4-5",
-    name: "Claude Sonnet 4.5",
-    contextWindow: 2e5,
-    maxTokens: 64e3,
-    supportsImage: true,
-    description: "Anthropic Claude Sonnet 4.5"
-  },
-  {
-    id: "gpt-5",
-    name: "GPT-5",
-    contextWindow: 4e5,
-    maxTokens: 128e3,
-    supportsImage: true,
-    description: "OpenAI GPT-5"
-  }
-];
-var COMMANDCODE = {
-  id: "commandcode",
-  displayName: "Command Code",
-  apiBase: "https://api.commandcode.ai",
-  studioBase: "https://commandcode.ai",
-  clientHeaders: {
-    "HTTP-Referer": "https://commandcode.ai",
-    "X-Title": "Command Code"
-  },
-  defaultCredentialRef: "COMMANDCODE_API_KEY",
-  fallbackModels: COMMANDCODE_FALLBACK_MODELS
-};
-var COMMANDCODE_WHOAMI_PATH = "/alpha/whoami";
-var COMMANDCODE_CREDITS_PATH = "/alpha/billing/credits";
-var COMMANDCODE_MODELS_PATH = "/provider/v1/models";
-var COMMANDCODE_CHAT_PATH = "/provider/v1/chat/completions";
-var COMMANDCODE_LOGIN_START_PORT = 5959;
-var COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS = 10;
-var COMMANDCODE_LOGIN_TIMEOUT_MS = 12e4;
-
-// vendor/channel-pack/src/commandcode.ts
-function stringValue(value) {
-  return typeof value === "string" && value !== "" ? value : void 0;
-}
-function numberValue(value) {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return void 0;
-}
-function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function parseWhoami(value) {
-  if (!isRecord(value)) return void 0;
-  const userId = stringValue(value.userId) ?? stringValue(value.user_id) ?? stringValue(value.id);
-  if (userId === void 0) return void 0;
-  return {
-    userId,
-    userName: stringValue(value.userName) ?? stringValue(value.user_name) ?? stringValue(value.name),
-    email: stringValue(value.email),
-    keyName: stringValue(value.keyName) ?? stringValue(value.key_name),
-    plan: stringValue(value.plan) ?? stringValue(value.tier)
-  };
-}
-function credentialFromWhoami(apiKey, whoami) {
-  return {
-    access_token: apiKey,
-    account_id: whoami.userId,
-    nickname: whoami.userName ?? whoami.email ?? whoami.keyName,
-    email: whoami.email,
-    key_name: whoami.keyName,
-    created_at: Date.now()
-  };
-}
-function parseCredits(value) {
-  if (!isRecord(value)) return void 0;
-  const body = isRecord(value.data) ? value.data : value;
-  const balance = numberValue(body.balance) ?? numberValue(body.credits) ?? numberValue(body.remaining) ?? numberValue(body.available);
-  const limit = numberValue(body.limit) ?? numberValue(body.total) ?? numberValue(body.quota);
-  const used = numberValue(body.used) ?? numberValue(body.consumed);
-  const resetRaw = numberValue(body.resetAt) ?? numberValue(body.reset_at) ?? numberValue(body.resetAtMs);
-  if (balance === void 0 && limit === void 0 && used === void 0) return void 0;
-  return {
-    balance,
-    limit,
-    used,
-    currency: stringValue(body.currency) ?? stringValue(body.unit),
-    // 秒级时间戳统一抬到毫秒；已经足够大的值原样保留。
-    resetAtMs: resetRaw === void 0 ? void 0 : resetRaw < 1e12 ? resetRaw * 1e3 : resetRaw
-  };
-}
-function commandCodeBearerValue(credential) {
-  return `Bearer ${credential.access_token}`;
-}
-function isCredentialUsable(credential) {
-  if (credential === void 0) return false;
-  const key = credential.access_token;
-  return typeof key === "string" && key !== "" && key === key.trim();
-}
-function buildCommandCodeAuthUrl(product, port, state) {
-  const callback = `http://localhost:${port}/callback`;
-  const query = new URLSearchParams({ callback, state });
-  return `${product.studioBase}/cli/authorize?${query.toString()}`;
-}
-function parseCallbackCredentials(value) {
-  if (!isRecord(value)) return void 0;
-  const apiKey = stringValue(value.apiKey);
-  const state = stringValue(value.state);
-  const userId = stringValue(value.userId);
-  if (apiKey === void 0 || state === void 0 || userId === void 0) return void 0;
-  return {
-    access_token: apiKey,
-    account_id: userId,
-    nickname: stringValue(value.userName) ?? stringValue(value.email),
-    email: stringValue(value.email),
-    key_name: stringValue(value.keyName),
-    created_at: Date.now()
-  };
-}
-
-// vendor/channel-pack/src/commandcode-auth.ts
-import { createServer } from "node:http";
-import { randomUUID as randomUUID2 } from "node:crypto";
-var COMMANDCODE_CALLBACK_PATH = "/callback";
-async function validateApiKey(fetcher, product, apiKey, signal) {
-  try {
-    const response = await fetcher(`${product.apiBase}${COMMANDCODE_WHOAMI_PATH}`, {
-      method: "GET",
-      headers: { Accept: "application/json", ...product.clientHeaders, Authorization: `Bearer ${apiKey}` },
-      ...signal === void 0 ? {} : { signal }
-    });
-    void response.body?.cancel().catch(() => void 0);
-    if (response.status === 401) return { ok: false, reason: "invalid_key", status: 401 };
-    if (!response.ok) return { ok: false, reason: "server_error", status: response.status };
-    return { ok: true, credential: { access_token: apiKey, created_at: Date.now() } };
-  } catch {
-    return { ok: false, reason: "network_error" };
-  }
-}
-async function resolveCredential(fetcher, product, apiKey, signal) {
-  const response = await fetcher(`${product.apiBase}${COMMANDCODE_WHOAMI_PATH}`, {
-    method: "GET",
-    headers: { Accept: "application/json", ...product.clientHeaders, Authorization: `Bearer ${apiKey}` },
-    ...signal === void 0 ? {} : { signal }
-  });
-  if (response.status === 401) throw new Error("Command Code\uFF1AAPI Key \u65E0\u6548\uFF08whoami \u8FD4\u56DE 401\uFF09\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
-  if (!response.ok) throw new Error(`Command Code\uFF1Awhoami \u8FD4\u56DE HTTP ${response.status}`);
-  const whoami = parseWhoami(await response.json().catch(() => void 0));
-  if (whoami === void 0) throw new Error("Command Code\uFF1Awhoami \u54CD\u5E94\u7F3A\u5C11 userId\uFF0C\u65E0\u6CD5\u786E\u8BA4\u8D26\u53F7");
-  const credential = credentialFromWhoami(apiKey, whoami);
-  if (!isCredentialUsable(credential)) throw new Error("Command Code\uFF1A\u767B\u5F55\u8FD4\u56DE\u7684 Key \u4E3A\u7A7A\u6216\u542B\u9996\u5C3E\u7A7A\u767D");
-  return credential;
-}
-async function listenOnRange(server) {
-  const errors = [];
-  for (let offset = 0; offset < COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS; offset++) {
-    const port = COMMANDCODE_LOGIN_START_PORT + offset;
-    const bound = await new Promise((resolve2) => {
-      const onError = (error) => {
-        server.removeListener("listening", onListening);
-        errors.push(`${port}: ${error.message}`);
-        resolve2(false);
-      };
-      const onListening = () => {
-        server.removeListener("error", onError);
-        resolve2(true);
-      };
-      server.once("error", onError);
-      server.once("listening", onListening);
-      server.listen(port, "127.0.0.1");
-    });
-    if (bound) return port;
-  }
-  throw new Error(
-    `Command Code\uFF1A\u56DE\u8C03\u7AEF\u53E3 ${COMMANDCODE_LOGIN_START_PORT}\u2013${COMMANDCODE_LOGIN_START_PORT + COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS - 1} \u5168\u90E8\u88AB\u5360\u7528\uFF08\u901A\u5E38\u610F\u5473\u7740\u672C\u673A\u6709\u5176\u5B83 CLI \u6B63\u5728\u767B\u5F55\uFF09\u3002\u660E\u7EC6\uFF1A${errors.join("; ")}`
-  );
-}
-async function startCommandCodeLogin(options) {
-  const fetcher = options.fetcher ?? fetch;
-  const { product } = options;
-  const state = randomUUID2();
-  let resolveResult;
-  let rejectResult;
-  const result = new Promise((resolve2, reject) => {
-    resolveResult = resolve2;
-    rejectResult = reject;
-  });
-  result.catch(() => {
-  });
-  let port = 0;
-  const server = createServer((request2, response) => {
-    const url = new URL(request2.url ?? "/", `http://127.0.0.1:${port}`);
-    if (!url.pathname.startsWith(COMMANDCODE_CALLBACK_PATH)) {
-      response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }).end("Not found");
-      return;
-    }
-    if (request2.method !== "POST") {
-      response.writeHead(405, { "Content-Type": "text/plain; charset=utf-8" }).end("Method not allowed");
-      return;
-    }
-    const chunks = [];
-    let size = 0;
-    let aborted = false;
-    request2.on("data", (chunk) => {
-      if (aborted) return;
-      size += chunk.length;
-      if (size > 64 * 1024) {
-        aborted = true;
-        response.writeHead(413, { "Content-Type": "text/plain; charset=utf-8" }).end("Payload too large");
-        request2.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    request2.on("end", () => {
-      if (aborted) return;
-      void (async () => {
-        let payload;
-        try {
-          payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-        } catch {
-          response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" }).end("\u767B\u5F55\u56DE\u8C03\u4E0D\u662F\u5408\u6CD5 JSON");
-          return;
-        }
-        const gotState = payload?.state;
-        if (gotState !== state) {
-          response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" }).end("\u767B\u5F55\u56DE\u8C03 state \u4E0D\u5339\u914D");
-          return;
-        }
-        const credential = parseCallbackCredentials(payload);
-        if (credential === void 0) {
-          response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" }).end("\u767B\u5F55\u56DE\u8C03\u7F3A\u5C11\u5FC5\u586B\u5B57\u6BB5");
-          return;
-        }
-        try {
-          const verified = await resolveCredential(fetcher, product, credential.access_token, options.signal);
-          response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end("<html><body><h2>\u767B\u5F55\u6210\u529F\uFF0C\u53EF\u4EE5\u5173\u95ED\u6B64\u7A97\u53E3\u4E86</h2></body></html>");
-          resolveResult({ credential: verified, port });
-        } catch (error) {
-          response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" }).end("\u767B\u5F55\u6362\u53D6\u51ED\u636E\u5931\u8D25");
-          rejectResult(error);
-        }
-      })();
-    });
-  });
-  port = await listenOnRange(server);
-  const loginUrl = buildCommandCodeAuthUrl(product, port, state);
-  let closed = false;
-  const close = async () => {
-    if (closed) return;
-    closed = true;
-    server.closeAllConnections?.();
-    await new Promise((resolve2) => server.close(() => resolve2()));
-  };
-  const timeoutMs = options.timeoutMs ?? COMMANDCODE_LOGIN_TIMEOUT_MS;
-  const resultWithTimeout = Promise.race([
-    result,
-    new Promise((_, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error(`Command Code \u767B\u5F55\u8D85\u65F6\uFF08${Math.round(timeoutMs / 1e3)} \u79D2\u5185\u672A\u5B8C\u6210\uFF09`)),
-        timeoutMs
-      );
-      timer.unref?.();
-    })
-  ]);
-  resultWithTimeout.catch(() => {
-  }).finally(() => {
-    void close();
-  });
-  return { loginUrl, port, result: resultWithTimeout, close };
-}
-async function runCommandCodeLogin(options) {
-  const started = await startCommandCodeLogin(options);
-  try {
-    if (options.openBrowser !== void 0) await options.openBrowser(started.loginUrl);
-    const { credential } = await started.result;
-    return credential;
-  } finally {
-    await started.close();
-  }
-}
-async function fetchCredits(fetcher, product, credential, signal) {
-  try {
-    const response = await fetcher(`${product.apiBase}${COMMANDCODE_CREDITS_PATH}`, {
-      method: "GET",
-      headers: { Accept: "application/json", ...product.clientHeaders, Authorization: `Bearer ${credential.access_token}` },
-      ...signal === void 0 ? {} : { signal }
-    });
-    if (!response.ok) return void 0;
-    return parseCredits(await response.json().catch(() => void 0));
-  } catch {
-    return void 0;
-  }
-}
-async function fetchModelCatalog(fetcher, product, credential, signal) {
-  const response = await fetcher(`${product.apiBase}${COMMANDCODE_MODELS_PATH}`, {
-    method: "GET",
-    headers: { Accept: "application/json", ...product.clientHeaders, Authorization: `Bearer ${credential.access_token}` },
-    ...signal === void 0 ? {} : { signal }
-  });
-  if (!response.ok) throw new Error(`Command Code\uFF1A\u6A21\u578B\u76EE\u5F55\u8FD4\u56DE HTTP ${response.status}`);
-  const body = await response.json().catch(() => void 0);
-  if (typeof body !== "object" || body === null) throw new Error("Command Code\uFF1A\u6A21\u578B\u76EE\u5F55\u54CD\u5E94\u4E0D\u662F\u5BF9\u8C61");
-  const record = body;
-  if (!Array.isArray(record.data)) throw new Error("Command Code\uFF1A\u6A21\u578B\u76EE\u5F55\u7F3A\u5C11 data \u6570\u7EC4");
-  const rows = [];
-  for (const raw of record.data) {
-    if (typeof raw !== "object" || raw === null) continue;
-    const item = raw;
-    const id = typeof item.id === "string" && item.id !== "" ? item.id : void 0;
-    const name2 = typeof item.name === "string" && item.name !== "" ? item.name : void 0;
-    const contextRaw = item.context_length ?? item.contextWindow;
-    const contextWindow = typeof contextRaw === "number" && Number.isFinite(contextRaw) && contextRaw > 0 ? contextRaw : void 0;
-    if (id === void 0 || name2 === void 0 || contextWindow === void 0) continue;
-    const maxRaw = item.max_output_tokens ?? item.maxTokens;
-    const maxTokens = typeof maxRaw === "number" && Number.isFinite(maxRaw) && maxRaw > 0 ? Math.min(maxRaw, contextWindow) : void 0;
-    const endpoints = item.supported_endpoints ?? item.supportedEndpoints;
-    const supportsImage = Array.isArray(endpoints) ? endpoints.includes("image") : void 0;
-    rows.push({ id, name: name2, contextWindow, maxTokens, supportsImage });
-  }
-  if (rows.length === 0) throw new Error("Command Code\uFF1A\u6A21\u578B\u76EE\u5F55\u4E3A\u7A7A");
-  return rows;
-}
-
-// vendor/channel-pack/src/commandcode-adapter.ts
 var FIRST_TOKEN_TIMEOUT_MS = 3e5;
 var CHUNK_TIMEOUT_MS = 3e5;
 function fallbackRows(product) {
@@ -43455,9 +44371,12 @@ function registerCommandCodeLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/commandcode-service.ts
+init_commandcode_product();
+init_commandcode();
 import { Service } from "@deepseek-ai/cordis";
 
 // vendor/channel-pack/src/commandcode-credits.ts
+init_commandcode_auth();
 async function readCredits(fetcher, product, credential, signal) {
   const raw = await fetchCredits(fetcher, product, credential, signal);
   if (raw === void 0) return void 0;
@@ -43476,6 +44395,7 @@ async function readCredits(fetcher, product, credential, signal) {
 }
 
 // vendor/channel-pack/src/commandcode-service.ts
+init_commandcode_auth();
 var CommandCodeAuth = class extends Service {
   constructor(ctx, options = {}) {
     const product = options.product ?? COMMANDCODE;
@@ -44394,267 +45314,10 @@ function registerKukuLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/accio-adapter.ts
+init_accio_product();
+init_accio();
+init_accio_auth();
 import { LlmAdapter as LlmAdapter11, LlmError as LlmError14 } from "@deepseek-ai/dsh-llm";
-
-// vendor/channel-pack/src/accio-product.ts
-var ACCIO_FALLBACK_MODELS = [
-  { id: "qwen3-max", name: "Qwen3 Max", contextWindow: 128e3 },
-  { id: "qwen3-coder-plus", name: "Qwen3 Coder Plus", contextWindow: 256e3 }
-];
-var ACCIO = {
-  id: "accio",
-  displayName: "Accio",
-  region: "GLOBAL",
-  loginBase: "https://www.accio.com",
-  gatewayBase: "https://phoenix-gw.alibaba.com",
-  llmBase: "https://phoenix-gw.alibaba.com/api/adk/llm",
-  clientId: "accio-work",
-  defaultCredentialRef: "ACCIO_ACCESS_TOKEN",
-  fallbackModels: ACCIO_FALLBACK_MODELS
-};
-var ACCIO_CN = {
-  ...ACCIO,
-  id: "accio-cn",
-  displayName: "Accio \u56FD\u5185\u7248",
-  region: "CN",
-  loginBase: "https://www.accio-ai.com",
-  defaultCredentialRef: "ACCIO_CN_ACCESS_TOKEN"
-};
-var ACCIO_REFRESH_PATH = "/api/auth/refresh_token";
-var ACCIO_LLM_CONFIG_PATH = "/api/llm/config";
-var ACCIO_GENERATE_PATH = "/generateContent";
-var ACCIO_REGION_HEADER = "x-package-region";
-
-// vendor/channel-pack/src/accio.ts
-function stringValue4(value) {
-  return typeof value === "string" && value !== "" ? value : void 0;
-}
-function numberValue2(value) {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return void 0;
-}
-function isRecord5(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function isCredentialUsable5(credential) {
-  if (credential === void 0) return false;
-  const token = credential.access_token;
-  return typeof token === "string" && token !== "" && token === token.trim();
-}
-function isCredentialExpired2(credential, nowMs = Date.now()) {
-  if (credential.expire_time === void 0) return false;
-  return credential.expire_time - 6e4 <= nowMs;
-}
-function accioHeaders(product) {
-  return {
-    Accept: "application/json",
-    "Content-Type": "application/json",
-    [ACCIO_REGION_HEADER]: product.region,
-    Origin: product.loginBase,
-    Referer: `${product.loginBase}/`
-  };
-}
-function parseTokenResponse(value) {
-  if (!isRecord5(value)) return void 0;
-  const body = isRecord5(value.data) ? value.data : value;
-  const accessToken = stringValue4(body.accessToken) ?? stringValue4(body.access_token);
-  if (accessToken === void 0) return void 0;
-  const refreshToken2 = stringValue4(body.refreshToken) ?? stringValue4(body.refresh_token);
-  const expiresRaw = numberValue2(body.expiresAt) ?? numberValue2(body.expires_at);
-  const expireTime = expiresRaw === void 0 ? void 0 : expiresRaw < 1e12 ? expiresRaw * 1e3 : expiresRaw;
-  return {
-    access_token: accessToken,
-    ...refreshToken2 === void 0 ? {} : { refresh_token: refreshToken2 },
-    ...expireTime === void 0 ? {} : { expire_time: expireTime },
-    created_at: Date.now()
-  };
-}
-function buildGenerateBody(options) {
-  const contents = [];
-  if (options.system !== void 0 && options.system.trim() !== "") {
-    contents.push({ role: "user", parts: [{ text: options.system.trim() }] });
-  }
-  for (const message2 of options.messages) {
-    const text = contentToText10(message2.content);
-    if (text.trim() === "") continue;
-    contents.push({
-      // harness 的 assistant → Gemini 的 model。
-      role: message2.role === "assistant" ? "model" : "user",
-      parts: [{ text: text.trim() }]
-    });
-  }
-  const body = { contents, token: options.token };
-  if (options.tools !== void 0 && options.tools.length > 0) {
-    body.tools = [{
-      functionDeclarations: options.tools.map((tool) => ({
-        name: tool.name,
-        ...tool.description === void 0 ? {} : { description: tool.description },
-        ...tool.parameters === void 0 ? {} : { parameters: tool.parameters }
-      }))
-    }];
-  }
-  return body;
-}
-function parseAdkFrame(value) {
-  if (!isRecord5(value)) return void 0;
-  const errorCode = value.error_code ?? value.errorCode;
-  if (errorCode !== void 0 && errorCode !== 0 && errorCode !== "0") {
-    return {
-      kind: "error",
-      message: stringValue4(value.error_message) ?? stringValue4(value.errorMessage) ?? `error_code=${String(errorCode)}`
-    };
-  }
-  if (value.turn_complete === true) {
-    return { kind: "done", ...stringValue4(value.finish_reason) === void 0 ? {} : { finishReason: stringValue4(value.finish_reason) } };
-  }
-  const content = value.content;
-  if (!isRecord5(content) || !Array.isArray(content.parts)) return void 0;
-  const texts = [];
-  const reasonings = [];
-  for (const part of content.parts) {
-    if (!isRecord5(part)) continue;
-    const text = stringValue4(part.text);
-    if (text === void 0) continue;
-    if (part.thought === true) reasonings.push(text);
-    else texts.push(text);
-  }
-  if (reasonings.length > 0) return { kind: "delta", reasoning: reasonings.join("") };
-  if (texts.length > 0) return { kind: "delta", text: texts.join("") };
-  return void 0;
-}
-function contentToText10(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  const parts = [];
-  for (const block of content) {
-    if (typeof block === "string") {
-      parts.push(block);
-      continue;
-    }
-    if (!isRecord5(block)) continue;
-    const text = stringValue4(block.text);
-    if (text !== void 0) parts.push(text);
-  }
-  return parts.join("\n");
-}
-
-// vendor/channel-pack/src/accio-auth.ts
-async function refreshCredential(fetcher, product, credential, signal) {
-  if (credential.refresh_token === void 0) return void 0;
-  try {
-    const response = await fetcher(`${product.gatewayBase}${ACCIO_REFRESH_PATH}`, {
-      method: "POST",
-      headers: accioHeaders(product),
-      body: JSON.stringify({
-        accessToken: credential.access_token,
-        refreshToken: credential.refresh_token
-      }),
-      ...signal === void 0 ? {} : { signal }
-    });
-    if (!response.ok) return void 0;
-    const refreshed = parseTokenResponse(await response.json().catch(() => void 0));
-    if (refreshed === void 0) return void 0;
-    return {
-      ...refreshed,
-      refresh_token: refreshed.refresh_token ?? credential.refresh_token,
-      ...credential.account_id === void 0 ? {} : { account_id: credential.account_id },
-      ...credential.nickname === void 0 ? {} : { nickname: credential.nickname }
-    };
-  } catch {
-    return void 0;
-  }
-}
-async function fetchModels2(fetcher, product, credential, signal) {
-  const response = await fetcher(`${product.gatewayBase}${ACCIO_LLM_CONFIG_PATH}`, {
-    method: "POST",
-    headers: accioHeaders(product),
-    body: JSON.stringify({ token: credential.access_token }),
-    ...signal === void 0 ? {} : { signal }
-  });
-  if (!response.ok) throw new Error(`Accio\uFF1A\u6A21\u578B\u76EE\u5F55\u8FD4\u56DE HTTP ${response.status}`);
-  const body = await response.json().catch(() => void 0);
-  if (typeof body !== "object" || body === null) throw new Error("Accio\uFF1A\u6A21\u578B\u76EE\u5F55\u54CD\u5E94\u4E0D\u662F\u5BF9\u8C61");
-  const record = body;
-  const list = Array.isArray(record.models) ? record.models : Array.isArray(record.data) ? record.data : void 0;
-  if (list === void 0) throw new Error("Accio\uFF1A\u6A21\u578B\u76EE\u5F55\u7F3A\u5C11 models \u6570\u7EC4");
-  const rows = [];
-  for (const raw of list) {
-    if (typeof raw !== "object" || raw === null) continue;
-    const item = raw;
-    const id = typeof item.id === "string" ? item.id : typeof item.model === "string" ? item.model : void 0;
-    if (id === void 0) continue;
-    const name2 = typeof item.name === "string" ? item.name : typeof item.displayName === "string" ? item.displayName : id;
-    const contextRaw = item.contextWindow ?? item.context_window ?? item.maxInputTokens;
-    const contextWindow = typeof contextRaw === "number" && contextRaw > 0 ? contextRaw : 128e3;
-    const maxRaw = item.maxTokens ?? item.max_output_tokens;
-    const maxTokens = typeof maxRaw === "number" && maxRaw > 0 ? Math.min(maxRaw, contextWindow) : void 0;
-    rows.push({ id, name: name2, contextWindow, ...maxTokens === void 0 ? {} : { maxTokens } });
-  }
-  if (rows.length === 0) throw new Error("Accio\uFF1A\u6A21\u578B\u76EE\u5F55\u4E3A\u7A7A");
-  return rows;
-}
-async function* streamChat3(fetcher, product, credential, options) {
-  if (!isCredentialUsable5(credential)) {
-    throw new Error("Accio\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
-  }
-  const { createHash: createHash10, randomUUID: randomUUID16 } = await import("node:crypto");
-  const requestId = randomUUID16();
-  const sgK = createHash10("md5").update(requestId).digest("hex");
-  const response = await fetcher(`${product.llmBase}${ACCIO_GENERATE_PATH}?sg_k=${sgK}`, {
-    method: "POST",
-    headers: { ...accioHeaders(product), Accept: "text/event-stream" },
-    body: JSON.stringify(buildGenerateBody({
-      token: credential.access_token,
-      messages: options.messages,
-      ...options.system === void 0 ? {} : { system: options.system },
-      ...options.tools === void 0 ? {} : { tools: options.tools }
-    })),
-    ...options.signal === void 0 ? {} : { signal: options.signal }
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`Accio\uFF1A\u63A8\u7406\u8FD4\u56DE HTTP ${response.status}${text === "" ? "" : `\uFF1A${text.slice(0, 200)}`}`);
-  }
-  if (response.body === null) throw new Error("Accio\uFF1A\u63A8\u7406\u54CD\u5E94\u6CA1\u6709\u6B63\u6587");
-  const reader = response.body.getReader();
-  const decoder2 = new TextDecoder();
-  let buffer = "";
-  try {
-    for (; ; ) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder2.decode(value, { stream: true });
-      let newline = buffer.indexOf("\n");
-      while (newline !== -1) {
-        const line2 = buffer.slice(0, newline).replace(/\r$/, "");
-        buffer = buffer.slice(newline + 1);
-        newline = buffer.indexOf("\n");
-        if (!line2.startsWith("data:")) continue;
-        const raw = line2.slice(5).trim();
-        if (raw === "" || raw === "[DONE]") continue;
-        let parsed;
-        try {
-          parsed = JSON.parse(raw);
-        } catch {
-          continue;
-        }
-        const frame = parseAdkFrame(parsed);
-        if (frame === void 0) continue;
-        if (frame.kind === "done") return;
-        if (frame.kind === "error") throw new Error(`Accio \u4E0A\u6E38\u9519\u8BEF\uFF1A${frame.message}`);
-        yield frame;
-      }
-    }
-  } finally {
-    void reader.cancel().catch(() => void 0);
-  }
-}
-
-// vendor/channel-pack/src/accio-adapter.ts
 var AccioAdapter = class extends LlmAdapter11 {
   constructor(options) {
     super();
@@ -44787,72 +45450,9 @@ function registerAccioLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/officeace-adapter.ts
+init_officeace_product();
+init_officeace();
 import { LlmAdapter as LlmAdapter12, LlmError as LlmError15 } from "@deepseek-ai/dsh-llm";
-
-// vendor/channel-pack/src/officeace-product.ts
-var OFFICEACE_FALLBACK_MODELS = [
-  { id: "officeace-default", name: "OfficeAce", contextWindow: 128e3 }
-];
-var OFFICEACE = {
-  id: "officeace",
-  displayName: "OfficeAce \u679C\u529E",
-  cloudBase: "https://agentarts.cn-southwest-2.myhuaweicloud.com",
-  iamBase: "https://iam.myhuaweicloud.com",
-  loginBase: "https://auth.huaweicloud.com",
-  stsBase: "https://sts.cn-southwest-2.myhuaweicloud.com",
-  clientId: "pdp5_for_agentarts",
-  redirectUri: "https://agentarts.cn-southwest-2.myhuaweicloud.com/v1/claw/auth/callback",
-  defaultCredentialRef: "OFFICEACE_CREDENTIAL",
-  fallbackModels: OFFICEACE_FALLBACK_MODELS
-};
-
-// vendor/channel-pack/src/officeace.ts
-function normalizeBaseUrl(baseUrl) {
-  const trimmed = baseUrl.trim().replace(/\/+$/, "");
-  if (trimmed === "") return "";
-  return trimmed.endsWith("/v2") ? trimmed : `${trimmed}/v2`;
-}
-function basicAuthHeader(credential) {
-  const raw = `${credential.app_key}:${credential.app_secret}`;
-  const bytes = new TextEncoder().encode(raw);
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return `Basic ${btoa(binary)}`;
-}
-function parseCredential(value) {
-  if (!isRecord6(value)) return void 0;
-  const baseUrl = stringValue5(value.baseUrl) ?? stringValue5(value.base_url) ?? stringValue5(value.api_base) ?? stringValue5(value.apiBase);
-  const appKey = stringValue5(value.appKey) ?? stringValue5(value.app_key);
-  const appSecret = stringValue5(value.appSecret) ?? stringValue5(value.app_secret);
-  if (baseUrl === void 0 || appKey === void 0 || appSecret === void 0) return void 0;
-  return {
-    base_url: baseUrl,
-    app_key: appKey,
-    app_secret: appSecret,
-    ...stringValue5(value.access_key) === void 0 ? {} : { access_key: stringValue5(value.access_key) },
-    ...stringValue5(value.accessKey) === void 0 ? {} : { access_key: stringValue5(value.accessKey) },
-    ...stringValue5(value.secret_key) === void 0 ? {} : { secret_key: stringValue5(value.secret_key) },
-    ...stringValue5(value.secretKey) === void 0 ? {} : { secret_key: stringValue5(value.secretKey) },
-    ...stringValue5(value.security_token) === void 0 ? {} : { security_token: stringValue5(value.security_token) },
-    ...stringValue5(value.project_id) === void 0 ? {} : { project_id: stringValue5(value.project_id) },
-    ...stringValue5(value.account_id) === void 0 ? {} : { account_id: stringValue5(value.account_id) },
-    ...stringValue5(value.nickname) === void 0 ? {} : { nickname: stringValue5(value.nickname) },
-    ...Array.isArray(value.model_info) ? { model_info: value.model_info } : {},
-    created_at: Date.now()
-  };
-}
-function stringValue5(value) {
-  return typeof value === "string" && value !== "" ? value : void 0;
-}
-function isRecord6(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function isCredentialUsable6(credential) {
-  if (credential === void 0) return false;
-  return typeof credential.base_url === "string" && credential.base_url !== "" && typeof credential.app_key === "string" && credential.app_key !== "" && typeof credential.app_secret === "string" && credential.app_secret !== "";
-}
-
-// vendor/channel-pack/src/officeace-adapter.ts
 var FIRST_TOKEN_TIMEOUT_MS2 = 3e5;
 var CHUNK_TIMEOUT_MS2 = 3e5;
 var OfficeAceAdapter = class extends LlmAdapter12 {
@@ -47665,10 +48265,10 @@ import { Service as Service4 } from "@deepseek-ai/cordis";
 import { credentialRef as credentialRef4 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/lobsterai-oauth.ts
-import { createServer as createServer3 } from "node:http";
-import { randomUUID as randomUUID6 } from "node:crypto";
+import { createServer as createServer4 } from "node:http";
+import { randomUUID as randomUUID7 } from "node:crypto";
 function createLobsteraiLoginSession(nowMs = Date.now()) {
-  return { uuid: randomUUID6(), firstKeyfrom: String(nowMs) };
+  return { uuid: randomUUID7(), firstKeyfrom: String(nowMs) };
 }
 function buildLobsteraiLoginUrl(port, state, product) {
   const redirectUri = `http://127.0.0.1:${port}${LOBSTERAI_CALLBACK_PATH}`;
@@ -47737,7 +48337,7 @@ async function startLobsteraiLoginFlow(options) {
   const fetcher = options.fetcher ?? fetch;
   const { product, clientVersion } = options;
   const session = createLobsteraiLoginSession();
-  const state = randomUUID6();
+  const state = randomUUID7();
   let resolveResult;
   let rejectResult;
   const result = new Promise((resolve2, reject) => {
@@ -47746,7 +48346,7 @@ async function startLobsteraiLoginFlow(options) {
   });
   result.catch(() => {
   });
-  const server = createServer3((request2, response) => {
+  const server = createServer4((request2, response) => {
     const url = new URL(request2.url ?? "/", `http://127.0.0.1:${request2.socket.localPort}`);
     if (!url.pathname.startsWith(LOBSTERAI_CALLBACK_PATH)) {
       response.writeHead(404).end("Not found");
@@ -48813,7 +49413,7 @@ import { Service as Service6 } from "@deepseek-ai/cordis";
 import { credentialRef as credentialRef6 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/trae-oauth.ts
-import { createServer as createServer4 } from "node:http";
+import { createServer as createServer5 } from "node:http";
 var TRAE_CALLBACK_PORT = 18080;
 function machineTraceId(machineId, deviceId) {
   const joined = machineId + deviceId;
@@ -49065,7 +49665,7 @@ async function startTraeLoginFlow(options) {
   const machineId = generateMachineId();
   const deviceId = generateDeviceId();
   const preferredPort = options.callbackPort ?? TRAE_CALLBACK_PORT;
-  const server = createServer4();
+  const server = createServer5();
   let resultTimer;
   let rejectResult;
   let loginUrl = "";
@@ -49141,7 +49741,7 @@ async function startTraeLoginFlow(options) {
   };
 }
 async function startCallbackServer2(port = TRAE_CALLBACK_PORT, _consoleHost, timeoutMs = TRAE_LOGIN_TIMEOUT_MS) {
-  const server = createServer4();
+  const server = createServer5();
   let timer;
   let actualPort = port;
   const result = new Promise((resolve2, reject) => {
@@ -50308,10 +50908,10 @@ import { Service as Service8 } from "@deepseek-ai/cordis";
 import { credentialRef as credentialRef8 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/loomy-oauth.ts
-import { randomUUID as randomUUID8 } from "node:crypto";
+import { randomUUID as randomUUID9 } from "node:crypto";
 
 // vendor/channel-pack/src/loomy-sign.ts
-import { createHash as createHash6, createHmac, randomUUID as randomUUID7 } from "node:crypto";
+import { createHash as createHash6, createHmac, randomUUID as randomUUID8 } from "node:crypto";
 function loomyContentMd5(body) {
   if (body.length === 0) return "";
   return createHash6("md5").update(body, "utf8").digest("base64");
@@ -50353,7 +50953,7 @@ function buildLoomySigningString(options) {
 }
 function loomyAuthHeaders(options) {
   const date = (/* @__PURE__ */ new Date()).toUTCString();
-  const nonce = randomUUID7();
+  const nonce = randomUUID8();
   const contentType = options.contentType ?? "application/json";
   const body = options.body ?? "";
   const stringToSign = buildLoomySigningString({ ...options, contentType, body, date, nonce });
@@ -50381,7 +50981,7 @@ function buildLoomyAccountBody(product, param) {
       devid: "web",
       // ⚠️ 硬编码 macOS：客户端在 Windows 上发的也是这个值，照抄不要改。
       ua: "Loomy|Desktop|Electron|macOS",
-      traceid: randomUUID8().replace(/-/g, "")
+      traceid: randomUUID9().replace(/-/g, "")
     },
     param
   };
@@ -50513,8 +51113,8 @@ async function bindLoomySkip(rcode, product, fetcher = fetch) {
 }
 
 // vendor/channel-pack/src/loomy-wechat-login.ts
-import { createServer as createServer5 } from "node:http";
-import { randomUUID as randomUUID9 } from "node:crypto";
+import { createServer as createServer6 } from "node:http";
+import { randomUUID as randomUUID10 } from "node:crypto";
 
 // vendor/channel-pack/src/loomy-wechat.ts
 var LOOMY_WECHAT_APP_ID = "wx18d60be432287cf8";
@@ -50668,8 +51268,8 @@ async function startLoomyWechatLoginFlow(options) {
     settled = true;
     rejectResult(error);
   };
-  state.uuid = await fetchLoomyWechatUuid(randomUUID9(), fetcher);
-  const server = createServer5((request2, response) => {
+  state.uuid = await fetchLoomyWechatUuid(randomUUID10(), fetcher);
+  const server = createServer6((request2, response) => {
     void handleRequest(request2, response, {
       state,
       product,
@@ -51860,7 +52460,7 @@ async function fetchRaccoonUserInfo(product, credential, fetcher = fetch) {
 }
 
 // vendor/channel-pack/src/raccoon-login-page.ts
-import { createServer as createServer6 } from "node:http";
+import { createServer as createServer7 } from "node:http";
 
 // vendor/channel-pack/src/raccoon-qr.ts
 var DATA_CODEWORDS = [0, 16, 28, 44, 64, 86, 108, 124, 154, 182, 216];
@@ -52275,7 +52875,7 @@ async function startRaccoonLoginFlow(options = {}) {
     settled = true;
     rejectResult(error);
   };
-  const server = createServer6((request2, response) => {
+  const server = createServer7((request2, response) => {
     void handleRequest2(request2, response, { state, product, fetcher, settleOk }).catch(
       (error) => {
         try {
@@ -53327,7 +53927,7 @@ function zcodeProductById(id) {
 // vendor/channel-pack/src/zcode-captcha.ts
 import { spawn as spawn2, spawnSync } from "node:child_process";
 import { existsSync as existsSync5, mkdtempSync, rmSync, writeFileSync as writeFileSync5 } from "node:fs";
-import { createServer as createServer7 } from "node:net";
+import { createServer as createServer8 } from "node:net";
 import { homedir as homedir2, tmpdir } from "node:os";
 import { basename, isAbsolute, join as join4, posix } from "node:path";
 var ZCODE_CAPTCHA_FALLBACK = {
@@ -53674,7 +54274,7 @@ async function pickFreePort() {
 }
 function isPortFree(port) {
   return new Promise((resolve2) => {
-    const server = createServer7();
+    const server = createServer8();
     server.once("error", () => resolve2(false));
     server.once("listening", () => {
       server.close(() => resolve2(true));
@@ -55031,7 +55631,7 @@ function buildCarrierPageHtml(config) {
 }
 
 // vendor/channel-pack/src/zcode-login.ts
-import { randomBytes as randomBytes7, randomUUID as randomUUID10 } from "node:crypto";
+import { randomBytes as randomBytes7, randomUUID as randomUUID11 } from "node:crypto";
 var ZCODE_ORIGIN = "https://zcode.z.ai";
 var ZCODE_OAUTH_CLI_INIT_URL = `${ZCODE_ORIGIN}/api/v1/oauth/cli/init`;
 var zcodeOauthCliPollUrl = (flowId) => `${ZCODE_ORIGIN}/api/v1/oauth/cli/poll/${encodeURIComponent(flowId)}`;
@@ -55047,7 +55647,7 @@ function generateFlowSecret() {
   return randomBytes7(32).toString("hex");
 }
 function generateDeviceMid() {
-  return randomUUID10();
+  return randomUUID11();
 }
 async function startZcodeLogin(fetchImpl = fetch, options = {}) {
   const flowSecret = generateFlowSecret();
@@ -60569,7 +61169,7 @@ async function fetchClineUsageLimits(credential, product, fetcher = fetch, optio
 }
 
 // vendor/channel-pack/src/lobsterai-credits.ts
-import { randomUUID as randomUUID11 } from "node:crypto";
+import { randomUUID as randomUUID12 } from "node:crypto";
 var LOBSTERAI_ACTIVITY_SLOT_PATH = "/api/client-activities/slot";
 var LOBSTERAI_ACTIVITY_CONTEXT_PATH = "/api/client-activities";
 var LOBSTERAI_PROFILE_SUMMARY_PATH = "/api/user/profile-summary";
@@ -60682,7 +61282,7 @@ async function claimLobsteraiDailyCheckin(credential, product, clientVersion, fe
     body: JSON.stringify({
       configRevision: slot2.configRevision,
       // 客户端幂等键（对齐 sigin.py:63 的 uuid4）：服务端据此去重。
-      idempotencyKey: randomUUID11(),
+      idempotencyKey: randomUUID12(),
       payload: {}
     })
   });
@@ -63740,6 +64340,92 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             });
           });
           return { ok: true, value: { accountId: id, loginUrl: authUrl } };
+        } else if (provider === "commandcode") {
+          const { startCommandCodeLogin: startCommandCodeLogin2 } = await Promise.resolve().then(() => (init_commandcode_auth(), commandcode_auth_exports));
+          const { COMMANDCODE: COMMANDCODE2 } = await Promise.resolve().then(() => (init_commandcode_product(), commandcode_product_exports));
+          const started = await startCommandCodeLogin2({ product: COMMANDCODE2, fetcher: codeartsFetcher });
+          await pool.addAccount({
+            id,
+            provider,
+            nickname: id,
+            enabled: true,
+            credentialRef: refName,
+            refreshable: false,
+            createdAt: Date.now()
+          });
+          started.result.then(async ({ credential }) => {
+            await ctx.credentials.set(credentialRef13(refName), JSON.stringify(credential));
+            await pool.updateAccount(id, {
+              nickname: credential.nickname ?? credential.key_name ?? id
+            });
+          }).catch((err) => {
+            ctx.logger.warn(`[channel-pack] background ${provider} login failed for ${id}: ${err}`);
+            void pool.removeAccount(id).catch(() => {
+            });
+          });
+          return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } };
+        } else if (provider === "officeace") {
+          const oa = await Promise.resolve().then(() => (init_officeace(), officeace_exports));
+          const { OFFICEACE: OFFICEACE2 } = await Promise.resolve().then(() => (init_officeace_product(), officeace_product_exports));
+          const pkce = await oa.createPkcePair();
+          const state = await oa.fetchState(codeartsFetcher, OFFICEACE2);
+          const loginUrl = oa.buildAuthorizeUrl(OFFICEACE2, state, pkce.challenge);
+          await pool.addAccount({
+            id,
+            provider,
+            nickname: id,
+            enabled: true,
+            credentialRef: refName,
+            refreshable: false,
+            createdAt: Date.now()
+          });
+          void (async () => {
+            const code = await oa.pollAuthCode(codeartsFetcher, OFFICEACE2, state);
+            const dpopKey = await (await Promise.resolve().then(() => (init_officeace_dpop(), officeace_dpop_exports))).createDpopKeyPair();
+            const sts = await oa.exchangeCodeForSts(codeartsFetcher, OFFICEACE2, code, pkce.verifier, dpopKey);
+            const permission = await oa.validatePermission(codeartsFetcher, OFFICEACE2, sts);
+            const credential = {
+              ...sts,
+              ...permission.accountId === void 0 ? {} : { account_id: permission.accountId },
+              ...permission.nickname === void 0 ? {} : { nickname: permission.nickname },
+              ...permission.projectId === void 0 ? {} : { project_id: permission.projectId },
+              ...permission.modelInfo === void 0 ? {} : { model_info: permission.modelInfo }
+            };
+            await ctx.credentials.set(credentialRef13(refName), JSON.stringify(credential));
+            await pool.updateAccount(id, { nickname: credential.nickname ?? id });
+          })().catch((err) => {
+            ctx.logger.warn(`[channel-pack] background ${provider} login failed for ${id}: ${err}`);
+            void pool.removeAccount(id).catch(() => {
+            });
+          });
+          return { ok: true, value: { accountId: id, loginUrl } };
+        } else if (provider === "accio" || provider === "accio-cn") {
+          const accioLogin = await Promise.resolve().then(() => (init_accio_auth(), accio_auth_exports));
+          const { ACCIO: ACCIO2, ACCIO_CN: ACCIO_CN2 } = await Promise.resolve().then(() => (init_accio_product(), accio_product_exports));
+          const product2 = provider === "accio-cn" ? ACCIO_CN2 : ACCIO2;
+          const started = await accioLogin.startAccioLogin({ product: product2, fetcher: codeartsFetcher });
+          await pool.addAccount({
+            id,
+            provider,
+            nickname: id,
+            enabled: true,
+            credentialRef: refName,
+            refreshable: false,
+            createdAt: Date.now()
+          });
+          started.result.then(async (credential) => {
+            await ctx.credentials.set(credentialRef13(refName), JSON.stringify(credential));
+            await pool.updateAccount(id, {
+              nickname: credential.nickname ?? credential.account_id ?? id,
+              ...credential.expire_time === void 0 ? {} : { expiresAt: credential.expire_time },
+              refreshable: credential.refresh_token !== void 0
+            });
+          }).catch((err) => {
+            ctx.logger.warn(`[channel-pack] background ${provider} login failed for ${id}: ${err}`);
+            void pool.removeAccount(id).catch(() => {
+            });
+          });
+          return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } };
         } else if (provider === "codearts") {
           const started = await codearts.startLogin({ refName });
           await pool.addAccount({
@@ -65867,13 +66553,6 @@ function reply(rpcId, result) {
   return Response.json({ type: "server-response", rpcId, result: value });
 }
 var ADOPTABLE_CHANNELS = {
-  commandcode: {
-    hint: "API Key\uFF08\u5F62\u5982 cmd-\u2026\uFF09",
-    parse: (text) => {
-      const key = text.trim();
-      return key === "" ? void 0 : { access_token: key, created_at: Date.now() };
-    }
-  },
   monkeycode: {
     hint: "\u6D4F\u89C8\u5668 Cookie\uFF08\u5FC5\u987B\u542B nebula_session=\u2026\uFF09",
     parse: (text) => {
@@ -65915,39 +66594,12 @@ var ADOPTABLE_CHANNELS = {
       const parsed = parseCredential2({ token: text });
       return parsed === void 0 ? void 0 : { ...parsed };
     }
-  },
-  accio: {
-    hint: "\u8BBF\u95EE\u4EE4\u724C\uFF08accessToken\uFF09",
-    parse: (text) => {
-      const token = text.trim();
-      return token === "" ? void 0 : { access_token: token, created_at: Date.now() };
-    }
-  },
-  "accio-cn": {
-    hint: "\u8BBF\u95EE\u4EE4\u724C\uFF08accessToken\uFF0C\u56FD\u5185\u7AD9\uFF09",
-    parse: (text) => {
-      const token = text.trim();
-      return token === "" ? void 0 : { access_token: token, created_at: Date.now() };
-    }
-  },
-  officeace: {
-    hint: "\u51ED\u636E JSON\uFF08\u542B baseUrl / appKey / appSecret\uFF09",
-    parse: (text) => {
-      let raw;
-      try {
-        raw = JSON.parse(text);
-      } catch {
-        return void 0;
-      }
-      const parsed = parseCredential(raw);
-      return parsed === void 0 ? void 0 : { ...parsed };
-    }
   }
 };
 
 // vendor/channel-pack/src/openai-gateway/server.ts
-import { createServer as createServer8 } from "node:http";
-import { randomUUID as randomUUID15 } from "node:crypto";
+import { createServer as createServer9 } from "node:http";
+import { randomUUID as randomUUID16 } from "node:crypto";
 import { homedir as homedir4 } from "node:os";
 import { join as join9 } from "node:path";
 
@@ -65990,7 +66642,7 @@ function loadOrCreateApiKey(home, env = process.env) {
 }
 
 // vendor/channel-pack/src/openai-gateway/messages.ts
-import { randomUUID as randomUUID12 } from "node:crypto";
+import { randomUUID as randomUUID13 } from "node:crypto";
 import { ReasoningEffortId as ReasoningEffortId13 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/openai-gateway/images.ts
@@ -66185,7 +66837,7 @@ function gatewaySource() {
   return { kind: "plugin:dsh-openai-gateway" };
 }
 function createGatewayMessage(role, content, source) {
-  return { id: randomUUID12(), role, content, source };
+  return { id: randomUUID13(), role, content, source };
 }
 function convertToolCalls(raw) {
   if (!Array.isArray(raw)) throw new OpenAiGatewayError("assistant.tool_calls must be an array");
@@ -66345,11 +66997,11 @@ function findCaseInsensitiveSuggestion(requested, catalog) {
 }
 
 // vendor/channel-pack/src/openai-gateway/responses.ts
-import { createHash as createHash7, randomUUID as randomUUID14 } from "node:crypto";
+import { createHash as createHash7, randomUUID as randomUUID15 } from "node:crypto";
 import { ReasoningEffortId as ReasoningEffortId14 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/openai-gateway/stream.ts
-import { randomUUID as randomUUID13 } from "node:crypto";
+import { randomUUID as randomUUID14 } from "node:crypto";
 
 // vendor/channel-pack/src/openai-gateway/usage.ts
 function count(value) {
@@ -66484,7 +67136,7 @@ function consumeChunk(state, chunk) {
       return void 0;
   }
 }
-async function* toOpenAiSse(chunks, requestId = `chatcmpl-${randomUUID13()}`, model, suggest) {
+async function* toOpenAiSse(chunks, requestId = `chatcmpl-${randomUUID14()}`, model, suggest) {
   const state = { content: "", reasoning: "", tools: /* @__PURE__ */ new Map() };
   try {
     for await (const chunk of chunks) {
@@ -66539,7 +67191,7 @@ async function* toOpenAiSse(chunks, requestId = `chatcmpl-${randomUUID13()}`, mo
     yield "data: [DONE]\n\n";
   }
 }
-async function collectOpenAiCompletion(chunks, requestId = `chatcmpl-${randomUUID13()}`, model, suggest) {
+async function collectOpenAiCompletion(chunks, requestId = `chatcmpl-${randomUUID14()}`, model, suggest) {
   const state = { content: "", reasoning: "", tools: /* @__PURE__ */ new Map() };
   try {
     for await (const chunk of chunks) {
@@ -66876,7 +67528,7 @@ async function toResponsesGenerateOptions(body, signal, reasoningEffortOverride,
   };
 }
 function hexId() {
-  return randomUUID14().replaceAll("-", "");
+  return randomUUID15().replaceAll("-", "");
 }
 function itemId(kind) {
   if (kind === "reasoning") return `rs_${hexId()}`;
@@ -67547,7 +68199,7 @@ function createOpenAiGateway(options) {
       });
       const stream = options.llm.stream(markGatewayChannel(generate));
       const fullId = `${route.provider}/${route.model}`;
-      const responseId = `resp_${randomUUID15().replaceAll("-", "")}`;
+      const responseId = `resp_${randomUUID16().replaceAll("-", "")}`;
       if (body.stream === true) {
         writeSseHead(response);
         for await (const event of toResponsesSse(stream, responseId, fullId, body, makeSuggestion(fullId))) {
@@ -67597,7 +68249,7 @@ function createOpenAiGateway(options) {
   return {
     async start() {
       if (server !== void 0) return;
-      const current = createServer8(requestHandler);
+      const current = createServer9(requestHandler);
       server = current;
       await new Promise((resolve2, reject) => {
         const onError = (error) => {
@@ -68270,6 +68922,11 @@ async function pickBuddyAccount(selector, candidates, options) {
   }
   return { kind: allowPermanent ? "exhausted" : "locked", tried, ...reason ? { reason } : {} };
 }
+
+// vendor/channel-pack/src/index.ts
+init_commandcode_product();
+init_accio_product();
+init_officeace_product();
 
 // vendor/channel-pack/src/minimax-auth.ts
 import { Service as Service11 } from "@deepseek-ai/cordis";
@@ -69359,7 +70016,7 @@ import { Service as Service12 } from "@deepseek-ai/cordis";
 import { credentialRef as credentialRef15 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/gemini-oauth.ts
-import { createServer as createServer9 } from "node:http";
+import { createServer as createServer10 } from "node:http";
 import { randomBytes as randomBytes13 } from "node:crypto";
 var GEMINI_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 var GEMINI_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
@@ -69561,7 +70218,7 @@ async function fetchGeminiUserInfo(accessToken, options = {}) {
 var GEMINI_CALLBACK_HTML = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>\u6388\u6743\u5B8C\u6210</title><style>body{font:15px/1.7 -apple-system,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f1115;color:#e6e8eb}.b{text-align:center}.k{font-size:34px;margin-bottom:8px}</style></head><body><div class="b"><div class="k">\u2713</div><div>\u6388\u6743\u5DF2\u5B8C\u6210\uFF0C\u53EF\u4EE5\u5173\u95ED\u6B64\u9875\u56DE\u5230\u9762\u677F\u3002</div></div></body></html>`;
 function pickFreePort2() {
   return new Promise((resolve2, reject) => {
-    const probe = createServer9();
+    const probe = createServer10();
     probe.once("error", reject);
     probe.listen(0, "127.0.0.1", () => {
       const address = probe.address();
@@ -69575,7 +70232,7 @@ function pickFreePort2() {
 }
 async function listenCallback(handler, preferredPort) {
   const attempt = (port) => {
-    const primary = createServer9(handler);
+    const primary = createServer10(handler);
     return new Promise((resolve2, reject) => {
       primary.once("error", (error) => {
         if (error.code === "EADDRINUSE" && port !== 0) {
@@ -69587,7 +70244,7 @@ async function listenCallback(handler, preferredPort) {
       primary.listen(port, "127.0.0.1", () => {
         const address = primary.address();
         const assigned = typeof address === "object" && address !== null ? address.port : 0;
-        const secondary = createServer9(handler);
+        const secondary = createServer10(handler);
         secondary.once("error", () => {
           resolve2({ port: assigned, servers: [primary] });
         });

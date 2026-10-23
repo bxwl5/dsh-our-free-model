@@ -1507,6 +1507,83 @@ function registerChannelPackEndpoints(
             void pool.removeAccount(id).catch(() => {})
           })
           return { ok: true, value: { accountId: id, loginUrl: authUrl } }
+        } else if (provider === 'commandcode') {
+          // Command Code：浏览器 OAuth + 本地回调（端口 5959 起）。
+          // 与 codearts 同款两步式：先返回 loginUrl 让前端立刻 window.open，
+          // 后台再等回调 —— 阻塞等待会让弹窗被浏览器拦截。
+          //
+          // ⚠️ 用**动态 import** 而不是给 registerChannelPackRpc 加位置形参：
+          // 该函数的形参是位置传参，历史上已因插队错位复发 6 次（见其注释）。
+          const { startCommandCodeLogin } = await import('./commandcode-auth.js')
+          const { COMMANDCODE } = await import('./commandcode-product.js')
+          const started = await startCommandCodeLogin({ product: COMMANDCODE, fetcher: codeartsFetcher })
+          await pool.addAccount({
+            id, provider, nickname: id, enabled: true,
+            credentialRef: refName, refreshable: false, createdAt: Date.now(),
+          })
+          started.result.then(async ({ credential }) => {
+            await ctx.credentials.set(credentialRef(refName), JSON.stringify(credential))
+            await pool.updateAccount(id, {
+              nickname: credential.nickname ?? credential.key_name ?? id,
+            })
+          }).catch((err) => {
+            ctx.logger.warn(`[channel-pack] background ${provider} login failed for ${id}: ${err}`)
+            void pool.removeAccount(id).catch(() => {})
+          })
+          return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } }
+        } else if (provider === 'officeace') {
+          // OfficeAce：自助 OAuth + **轮询授权码**（回调不落本机）。
+          // 三步：取 state → 拼授权页 URL → 后台轮询 code → 换 STS → 验权限。
+          const oa = await import('./officeace.js')
+          const { OFFICEACE } = await import('./officeace-product.js')
+          const pkce = await oa.createPkcePair()
+          const state = await oa.fetchState(codeartsFetcher, OFFICEACE)
+          const loginUrl = oa.buildAuthorizeUrl(OFFICEACE, state, pkce.challenge)
+          await pool.addAccount({
+            id, provider, nickname: id, enabled: true,
+            credentialRef: refName, refreshable: false, createdAt: Date.now(),
+          })
+          void (async () => {
+            const code = await oa.pollAuthCode(codeartsFetcher, OFFICEACE, state)
+            const dpopKey = await (await import('./officeace-dpop.js')).createDpopKeyPair()
+            const sts = await oa.exchangeCodeForSts(codeartsFetcher, OFFICEACE, code, pkce.verifier, dpopKey)
+            const permission = await oa.validatePermission(codeartsFetcher, OFFICEACE, sts)
+            const credential = {
+              ...sts,
+              ...(permission.accountId === undefined ? {} : { account_id: permission.accountId }),
+              ...(permission.nickname === undefined ? {} : { nickname: permission.nickname }),
+              ...(permission.projectId === undefined ? {} : { project_id: permission.projectId }),
+              ...(permission.modelInfo === undefined ? {} : { model_info: permission.modelInfo }),
+            }
+            await ctx.credentials.set(credentialRef(refName), JSON.stringify(credential))
+            await pool.updateAccount(id, { nickname: credential.nickname ?? id })
+          })().catch((err) => {
+            ctx.logger.warn(`[channel-pack] background ${provider} login failed for ${id}: ${err}`)
+            void pool.removeAccount(id).catch(() => {})
+          })
+          return { ok: true, value: { accountId: id, loginUrl } }
+        } else if (provider === 'accio' || provider === 'accio-cn') {
+          // Accio：本地回调 OAuth + PKCE（两地共用实现，只有登录站点不同）。
+          const accioLogin = await import('./accio-auth.js')
+          const { ACCIO, ACCIO_CN } = await import('./accio-product.js')
+          const product = provider === 'accio-cn' ? ACCIO_CN : ACCIO
+          const started = await accioLogin.startAccioLogin({ product, fetcher: codeartsFetcher })
+          await pool.addAccount({
+            id, provider, nickname: id, enabled: true,
+            credentialRef: refName, refreshable: false, createdAt: Date.now(),
+          })
+          started.result.then(async (credential) => {
+            await ctx.credentials.set(credentialRef(refName), JSON.stringify(credential))
+            await pool.updateAccount(id, {
+              nickname: credential.nickname ?? credential.account_id ?? id,
+              ...(credential.expire_time === undefined ? {} : { expiresAt: credential.expire_time }),
+              refreshable: credential.refresh_token !== undefined,
+            })
+          }).catch((err) => {
+            ctx.logger.warn(`[channel-pack] background ${provider} login failed for ${id}: ${err}`)
+            void pool.removeAccount(id).catch(() => {})
+          })
+          return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } }
         } else if (provider === 'codearts') {
           // CodeArts 也是**回调式**登录（本地回调服务器收授权码），但同样必须
           // 走两步式：先返回 loginUrl 让前端立刻 window.open，后台再等回调。
@@ -4342,13 +4419,6 @@ interface AdoptableChannel {
 
 /** 粘贴型渠道表。键是 provider id。 */
 const ADOPTABLE_CHANNELS: Readonly<Record<string, AdoptableChannel>> = {
-  commandcode: {
-    hint: 'API Key（形如 cmd-…）',
-    parse: (text) => {
-      const key = text.trim()
-      return key === '' ? undefined : { access_token: key, created_at: Date.now() }
-    },
-  },
   monkeycode: {
     hint: '浏览器 Cookie（必须含 nebula_session=…）',
     parse: (text) => {
@@ -4388,33 +4458,6 @@ const ADOPTABLE_CHANNELS: Readonly<Record<string, AdoptableChannel>> = {
     hint: '访问令牌（Bearer token，国际站）',
     parse: (text) => {
       const parsed = parseAutoClawCredential({ token: text })
-      return parsed === undefined ? undefined : { ...parsed }
-    },
-  },
-  accio: {
-    hint: '访问令牌（accessToken）',
-    parse: (text) => {
-      const token = text.trim()
-      return token === '' ? undefined : { access_token: token, created_at: Date.now() }
-    },
-  },
-  'accio-cn': {
-    hint: '访问令牌（accessToken，国内站）',
-    parse: (text) => {
-      const token = text.trim()
-      return token === '' ? undefined : { access_token: token, created_at: Date.now() }
-    },
-  },
-  officeace: {
-    hint: '凭据 JSON（含 baseUrl / appKey / appSecret）',
-    parse: (text) => {
-      let raw: unknown
-      try {
-        raw = JSON.parse(text)
-      } catch {
-        return undefined
-      }
-      const parsed = parseOfficeAceCredential(raw)
       return parsed === undefined ? undefined : { ...parsed }
     },
   },

@@ -258,3 +258,126 @@ export async function* streamChat(
     void reader.cancel().catch(() => undefined)
   }
 }
+
+/**
+ * Accio 登录：本地回调 OAuth + PKCE。
+ *
+ * 与 Command Code 同型（本地 HTTP 服务收 `code`），差别在：
+ * - Accio 用 **PKCE S256**（`code_verifier` / `code_challenge`）；
+ * - 授权站点按地区不同（国际 `www.accio.com` / 国内 `www.accio-ai.com`）。
+ *
+ * ⚠️ 回调地址 `http://localhost:<port>/callback` 需要在 Accio 的 OAuth 客户端
+ * 白名单里。若上游对 `accio-work` 这个 client 限制了 redirect_uri，
+ * 授权页会直接拒绝 —— 此时用户仍可用「粘贴访问令牌」的路径（已在
+ * `ADOPTABLE_CHANNELS` 里保留）。
+ */
+
+import { createServer } from 'node:http'
+import { randomUUID } from 'node:crypto'
+
+import { ACCIO_LOGIN_START_PORT, type AccioProduct } from './accio-product.js'
+import { buildAccioAuthUrl, createPkcePair, type AccioCredential } from './accio.js'
+
+/** 回调路径。 */
+export const ACCIO_CALLBACK_PATH = '/callback'
+/** 端口尝试次数。 */
+const PORT_ATTEMPTS = 10
+/** 登录总时限。 */
+const LOGIN_TIMEOUT_MS = 300_000
+
+/** 已启动的 Accio 登录。 */
+export interface StartedAccioLogin {
+  loginUrl: string
+  port: number
+  result: Promise<AccioCredential>
+  close: () => Promise<void>
+}
+
+/**
+ * 启动 Accio 登录并立即返回授权 URL。
+ *
+ * 与 Command Code 的 `startCommandCodeLogin` 同一形态：不等用户，
+ * 由调用方展示 URL 并 await `result`。
+ */
+export async function startAccioLogin(options: {
+  product: AccioProduct
+  fetcher?: typeof fetch
+  timeoutMs?: number
+}): Promise<StartedAccioLogin> {
+  const fetcher = options.fetcher ?? fetch
+  const { product } = options
+  const state = randomUUID()
+  const pkce = await createPkcePair()
+
+  let resolveResult!: (value: AccioCredential) => void
+  let rejectResult!: (reason: unknown) => void
+  const result = new Promise<AccioCredential>((resolve, reject) => {
+    resolveResult = resolve
+    rejectResult = reject
+  })
+  result.catch(() => {})
+
+  let port = 0
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? '/', `http://127.0.0.1:${port}`)
+    if (!url.pathname.startsWith(ACCIO_CALLBACK_PATH)) {
+      response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Not found')
+      return
+    }
+    const code = url.searchParams.get('code')
+    const gotState = url.searchParams.get('state')
+    if (code === null || code === '' || gotState !== state) {
+      response.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }).end('登录回调参数无效')
+      return
+    }
+    const redirectUri = `http://localhost:${port}${ACCIO_CALLBACK_PATH}`
+    void exchangeCode(fetcher, product, code, pkce.verifier, redirectUri)
+      .then((credential) => {
+        response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+          .end('<html><body><h2>登录成功，可以关闭此窗口了</h2></body></html>')
+        resolveResult(credential)
+      })
+      .catch((error: unknown) => {
+        response.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' }).end('登录换取凭据失败')
+        rejectResult(error)
+      })
+  })
+
+  for (let offset = 0; offset < PORT_ATTEMPTS; offset++) {
+    const candidate = ACCIO_LOGIN_START_PORT + offset
+    const bound = await new Promise<boolean>((resolve) => {
+      const onError = (): void => { server.removeListener('listening', onListening); resolve(false) }
+      const onListening = (): void => { server.removeListener('error', onError); resolve(true) }
+      server.once('error', onError)
+      server.once('listening', onListening)
+      server.listen(candidate, '127.0.0.1')
+    })
+    if (bound) { port = candidate; break }
+  }
+  if (port === 0) {
+    throw new Error(`Accio：回调端口 ${ACCIO_LOGIN_START_PORT} 起 ${PORT_ATTEMPTS} 个全部被占用`)
+  }
+
+  const redirectUri = `http://localhost:${port}${ACCIO_CALLBACK_PATH}`
+  const loginUrl = buildAccioAuthUrl(product, redirectUri, state, pkce.challenge)
+
+  let closed = false
+  const close = async (): Promise<void> => {
+    if (closed) return
+    closed = true
+    server.closeAllConnections?.()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+
+  const timeoutMs = options.timeoutMs ?? LOGIN_TIMEOUT_MS
+  const withTimeout = Promise.race([
+    result,
+    new Promise<never>((_, reject) => {
+      const timer = setTimeout(() => reject(new Error(`Accio 登录超时（${Math.round(timeoutMs / 1000)} 秒内未完成）`)), timeoutMs)
+      timer.unref?.()
+    }),
+  ])
+  withTimeout.catch(() => {}).finally(() => { void close() })
+
+  return { loginUrl, port, result: withTimeout, close }
+}
