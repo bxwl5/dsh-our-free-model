@@ -59073,9 +59073,8 @@ var ZcodeAdapter = class extends LlmAdapter16 {
     }
   }
   async listModels(_provider) {
-    if (!await this.ready()) return [];
     if (!await providerCatalogVisible(this.options.accountPool, this.product.id)) return [];
-    const all = await this.loadModels();
+    const all = await this.ready() ? await this.loadModels() : this.product.fallbackModels;
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id);
     const listed = disabled === void 0 || disabled.size === 0 ? all : all.filter((model) => !disabled.has(model.id));
     return listed.map((model) => ({

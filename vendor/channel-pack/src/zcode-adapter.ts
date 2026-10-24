@@ -414,7 +414,7 @@ export class ZcodeAdapter extends LlmAdapter {
     return this.product.fallbackModels.map(fallbackToRemote)
   }
 
-  private inputModalitiesFor(model: ZcodeRemoteModel | undefined): readonly ('text' | 'image')[] {
+  private inputModalitiesFor(model: { supportsImage?: boolean } | undefined): readonly ('text' | 'image')[] {
     return model?.supportsImage === true ? ['text', 'image'] : ['text']
   }
 
@@ -435,13 +435,15 @@ export class ZcodeAdapter extends LlmAdapter {
   }
 
   async listModels(_provider: string): Promise<readonly LlmModelInfo[]> {
-    // ⚠ 未就绪时返回 `[]` → DSH 的 buildModelCatalog 把整个 provider 分组隐藏。
-    // **必须返回空数组而不能抛错**（抛错会被归入 catalog 的 failures，
-    // 界面上反而多一条 provider 报错）。
-    if (!await this.ready()) return []
+    // **必须返回数组而不能抛错**（抛错会被归入 catalog 的 failures，界面上反而多一条
+    // provider 报错）。
     if (!await providerCatalogVisible(this.options.accountPool, this.product.id)) return []
 
-    const all = await this.loadModels()
+    // 2026-10-24 起「未登录也展示渠道的静态模型表」是默认行为（与其余 21 个渠道一致）：
+    // 未就绪（没有可用凭据）时播报 `fallbackModels`，不再返回空数组把整组隐藏。
+    // 只有凭据就绪时才去读远端目录（`loadModels`），失败仍回退静态表。
+    const all: Array<{ id: string; name: string; supportsImage?: boolean }> =
+      await this.ready() ? await this.loadModels() : this.product.fallbackModels
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id)
     const listed = disabled === undefined || disabled.size === 0
       ? all
