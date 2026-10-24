@@ -94,4 +94,17 @@ assert.ok(
   `文档缺少与当前一致的统计行：${stats}`,
 )
 
+// 纯粘贴渠道必须给出「去官网登录 + 抄哪一段」的引导，否则用户不知道去哪拿 Cookie。
+{
+  const lines = read('client.js').split('\n')
+  for (const provider of ['monkeycode', 'orcaterm', 'autoclaw-intl']) {
+    const line = lines.find((item) => item.includes(`id: '${provider}'`))
+    assert.ok(line !== undefined, `${provider} 卡片必须存在`)
+    assert.ok(line.includes('loginPage:'), `${provider} 必须带官网登录页链接`)
+    if (provider !== 'autoclaw-intl') {
+      assert.ok(/cookieName: '[a-z_]+'/.test(line), `${provider} 必须写明要复制的 Cookie 名`)
+    }
+  }
+}
+
 console.log(`ok  channel-login-methods: ${client.size} 渠道，${stats}；文档/界面/粘贴表三方一致`)
