@@ -1,17 +1,30 @@
-/** OfficeAce：DPoP/两套签名/Basic 推理/轮询取码（读状态码）/凭据解析。 */
+/** OfficeAce：DPoP/两套签名/Basic 推理/轮询取码（读状态码）/凭据解析/PKCE 口径。 */
 import assert from 'node:assert/strict'
 import http from 'node:http'
+import crypto from 'node:crypto'
 
 const collect = async (it) => { const out = []; for await (const c of it) out.push(c); return out }
+
+/** 独立的 base64url(SHA-256(input)) 复算（与被测代码完全解耦）。 */
+function sha256Base64Url(text) {
+  return crypto.createHash('sha256').update(text).digest('base64url')
+}
+
+/** 造一枚形态对齐上游的 JWT（payload 可控；签名段随便填，业务不验签）。 */
+function fakeJwt(claims) {
+  const b64u = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url')
+  return `${b64u({ alg: 'none' })}.${b64u(claims)}.sig`
+}
 
 async function main() {
   const {
     base64UrlEncode, createDpopKeyPair, createDpopProof, toHex, hmacSha256, sha256Hex,
-    buildCanonicalRequest, signSdkHmac, signV11, formatSdkDate,
+    buildCanonicalRequest, signSdkHmac, signV11, formatSdkDate, exportDpopJwkPair,
   } = await import('../vendor/channel-pack/src/officeace-dpop.ts')
   const {
     normalizeBaseUrl, basicAuthHeader, parseCredential, isCredentialUsable,
     createPkcePair, buildAuthorizeUrl, fetchState, pollAuthCode, validatePermission,
+    exchangeCodeForSts,
   } = await import('../vendor/channel-pack/src/officeace.ts')
   const { OFFICEACE } = await import('../vendor/channel-pack/src/officeace-product.ts')
   const { OfficeAceAdapter } = await import('../vendor/channel-pack/src/officeace-adapter.ts')
@@ -86,11 +99,20 @@ async function main() {
   // Basic 头
   assert.equal(basicAuthHeader(cred), `Basic ${btoa('k:s')}`)
 
-  // ── PKCE ──
+  // ── PKCE：base64url 口径（STS5.1805 回归锁）──
+  // 真机缺陷：早期实现用十六进制编码 verifier/challenge，华为云 STS 按
+  // base64url(sha256(verifier)) 重算比对，hex 永远对不上 → 换码报
+  // {"error_code":"STS5.1805","error_msg":"invalid authorization code"}。
+  // 权威口径：Q-shuang-dot/officeace2api generatePkce() 与
+  // aimod-cc/Agent2API providers/officeace/oauth.rs（均逆向官方客户端）。
   const pkce = await createPkcePair()
-  assert.equal(pkce.verifier.length, 64)
-  assert.equal(pkce.challenge.length, 64)
-  assert.notEqual(pkce.verifier, pkce.challenge)
+  assert.match(pkce.verifier, /^[A-Za-z0-9_-]{43}$/, 'verifier 必须是 43 字符 base64url（RFC 7636）')
+  assert.ok(!/[+/=]/.test(pkce.verifier), 'verifier 必须是 URL 安全字母表（不得含 + / =）')
+  assert.match(pkce.challenge, /^[A-Za-z0-9_-]{43}$/, 'challenge 必须是 43 字符 base64url')
+  assert.ok(!/[+/=]/.test(pkce.challenge), 'challenge 必须是 URL 安全字母表（不得含 + / =）')
+  // 独立复算：challenge = base64url(sha256(verifier)) —— 换码时 STS 就是这么校验的。
+  assert.equal(pkce.challenge, sha256Base64Url(pkce.verifier), 'challenge 必须等于 base64url(sha256(verifier))')
+  assert.notEqual(pkce.challenge, crypto.createHash('sha256').update(pkce.verifier).digest('hex'), 'challenge 不得是 hex（STS5.1805 根因）')
   // 授权 URL 的 redirect_uri 指向云端（不是本机）
   const authUrl = buildAuthorizeUrl(OFFICEACE, 'st', pkce.challenge)
   assert.ok(authUrl.includes(encodeURIComponent(OFFICEACE.redirectUri)) || authUrl.includes('agentarts'), '回调指向云端')
@@ -112,11 +134,19 @@ async function main() {
   let pollCount = 0
   let pollMode = 'pending_then_ok'
   const seen = []
+  // 换码端点按官方客户端口径校验 PKCE（STS5.1805 的本地复现）：
+  // authorize 时绑定的 challenge 与 code_verifier 必须成对。
+  let flowChallenge = ''
+  const stsSeen = []
   const upstream = http.createServer((req, res) => {
     const chunks = []
     req.on('data', c => chunks.push(c))
     req.on('end', () => {
-      seen.push({ url: req.url, method: req.method, auth: req.headers.authorization })
+      seen.push({
+        url: req.url, method: req.method, auth: req.headers.authorization,
+        'x-security-token': req.headers['x-security-token'],
+        'x-project-id': req.headers['x-project-id'],
+      })
       const json = (s, b) => res.writeHead(s, { 'Content-Type': 'application/json', Connection: 'close' }).end(JSON.stringify(b))
       if (req.url === '/v1/claw/auth/state') return json(200, { state: 'st-1' })
       if (req.url.startsWith('/v1/claw/auth/code')) {
@@ -126,8 +156,46 @@ async function main() {
         if (pollCount < 3) return res.writeHead(202, { Connection: 'close' }).end('')
         return json(200, { code: 'auth-code-1' })
       }
+      if (req.url === '/v1/oauth2/tokens') {
+        const form = new URLSearchParams(Buffer.concat(chunks).toString('utf8'))
+        stsSeen.push({
+          grantType: form.get('grant_type'),
+          clientId: form.get('client_id'),
+          code: form.get('code'),
+          redirectUri: form.get('redirect_uri'),
+          verifier: form.get('code_verifier'),
+          dpop: req.headers.dpop,
+          contentType: req.headers['content-type'],
+        })
+        // PKCE 校验：challenge 必须等于 base64url(sha256(code_verifier))。
+        // 早期 hex 实现在这里被拒（STS5.1805）—— 这条断言把根因锁死。
+        if (sha256Base64Url(form.get('code_verifier') ?? '') !== flowChallenge) {
+          return json(400, { error_code: 'STS5.1805', error_msg: 'invalid authorization code' })
+        }
+        // 真实响应形态（officeace2api _exchangeCode / Agent2API exchange_code）：
+        // 推理网关三件套不在这发里；昵称藏在 id_token 的 user_profile（base64 JSON）。
+        return json(200, {
+          credentials: {
+            access_key_id: 'AKIA-1',
+            secret_access_key: 'SK-1',
+            security_token: 'sec-token-1',
+            project_id: 'proj-1',
+            expiration: '2026-01-02T03:04:05Z',
+          },
+          refresh_token: 'rt-1',
+          id_token: fakeJwt({ user_profile: Buffer.from(JSON.stringify({ account_name: 'alice', principal_id: 'prin-1' })).toString('base64url') }),
+        })
+      }
       if (req.url.startsWith('/v1/claw/client-permission-validate')) {
-        return json(200, { account_id: 'acc-1', nickname: 'alice', project_id: 'proj-1', subscription: { model_info: [{ id: 'm1' }] } })
+        return json(200, {
+          account_id: 'acc-1', principal_id: 'prin-1', project_id: 'proj-1',
+          subscription: {
+            model_info: {
+              model_api_url_base: `https://gw.example.com`,
+              model_auth_info: { model_app_key: 'k', model_app_secret: 's' },
+            },
+          },
+        })
       }
       if (req.url === '/v2/models') return json(200, { data: [{ id: 'm1', name: 'Model One', context_length: 128000 }] })
       if (req.url === '/v2/chat/completions') {
@@ -148,7 +216,7 @@ async function main() {
   })
   await new Promise(r => upstream.listen(0, '127.0.0.1', r))
   const base = `http://127.0.0.1:${upstream.address().port}`
-  const product = { ...OFFICEACE, cloudBase: base, loginBase: base }
+  const product = { ...OFFICEACE, cloudBase: base, loginBase: base, stsBase: base }
 
   try {
     // ── ① 取 state ──
@@ -167,14 +235,71 @@ async function main() {
     assert.ok(Date.now() - started < 2000, '404 立即失败，不等到超时')
     pollMode = 'pending_then_ok'
 
-    // ── ⑥ 身份校验 ──
-    const perm = await validatePermission(realFetch, product, { base_url: `${base}/v2`, app_key: 'k', app_secret: 's', access_key: 'AK', secret_key: 'SK' })
-    assert.equal(perm.accountId, 'acc-1')
-    assert.equal(perm.projectId, 'proj-1')
-    assert.equal(perm.modelInfo.length, 1)
-    // 校验请求带 SDK-HMAC
-    const permReq = seen.find(x => x.url.startsWith('/v1/claw/client-permission-validate'))
-    assert.ok(permReq.auth.startsWith('SDK-HMAC-SHA256 Access=AK,'), '用 SDK-HMAC 签名')
+    // ── ⑤ 换码端到端：PKCE 成对 + 真实响应形态（STS5.1805 回归锁）──
+    // 用同一对 verifier/challenge 走完「授权 URL → 轮询 → 换码」：
+    // challenge 从授权 URL 里原样取出，假 STS 按 base64url(sha256(code_verifier))
+    // 重算比对 —— 早期 hex 实现在这里拿到 400 STS5.1805，修后必须 200。
+    {
+      pollCount = 0
+      const pkce2 = await createPkcePair()
+      const authUrl2 = buildAuthorizeUrl(product, 'st-1', pkce2.challenge)
+      const inner2 = new URL(decodeURIComponent(new URL(authUrl2).searchParams.get('service') ?? ''))
+      flowChallenge = inner2.searchParams.get('code_challenge') ?? ''
+      assert.notEqual(flowChallenge, '', '授权 URL 必须带 code_challenge')
+      const code = await pollAuthCode(realFetch, product, 'st-1', { intervalMs: 10, timeoutMs: 5000 })
+      const dpopKey = await createDpopKeyPair()
+      const sts = await exchangeCodeForSts(realFetch, product, code, pkce2.verifier, dpopKey)
+      // 换码请求形状（对照 officeace2api _exchangeCode / Agent2API exchange_code）
+      assert.equal(stsSeen.length, 1)
+      const req = stsSeen[0]
+      assert.equal(req.grantType, 'authorization_code')
+      assert.equal(req.clientId, OFFICEACE.clientId, 'client_id 必须是官方值 pdp5_for_agentarts')
+      assert.equal(req.code, 'auth-code-1')
+      assert.equal(req.redirectUri, OFFICEACE.redirectUri, 'redirect_uri 与授权时逐字相同（云端回调）')
+      assert.equal(req.verifier, pkce2.verifier, 'code_verifier 必须是授权时 challenge 的原 verifier')
+      assert.ok((req.contentType ?? '').startsWith('application/x-www-form-urlencoded'), '表单编码')
+      assert.equal((req.dpop ?? '').split('.').length, 3, 'DPoP 头是三段 JWS')
+      // 响应解析：credentials.* + refresh_token + id_token 里的昵称
+      assert.equal(sts.access_key, 'AKIA-1')
+      assert.equal(sts.secret_key, 'SK-1')
+      assert.equal(sts.security_token, 'sec-token-1')
+      assert.equal(sts.project_id, 'proj-1')
+      assert.equal(sts.refresh_token, 'rt-1', '一次性 refresh_token 必须落库（续期链钥匙）')
+      assert.equal(sts.expire_time, Date.parse('2026-01-02T03:04:05Z'))
+      assert.equal(sts.nickname, 'alice', '昵称从 id_token.user_profile（base64 JSON）解出')
+      // DPoP 密钥对可导出落库（续期签 proof 必须同一把私钥）
+      const exported = await exportDpopJwkPair(dpopKey)
+      assert.equal(exported.privateJwk.kty, 'EC')
+      assert.equal(exported.privateJwk.d.length > 20, true, '私钥 JWK 含 d')
+      assert.equal(exported.publicJwk.crv, 'P-256')
+
+      // ── ⑥ 身份校验：model_info 是对象；网关三件套从这里下发 ──
+      const perm = await validatePermission(realFetch, product, sts)
+      assert.equal(perm.accountId, 'acc-1')
+      assert.equal(perm.principalId, 'prin-1')
+      assert.equal(perm.projectId, 'proj-1')
+      assert.equal(perm.baseUrl, 'https://gw.example.com/v2', '基址规范化到 /v2')
+      assert.equal(perm.appKey, 'k')
+      assert.equal(perm.appSecret, 's')
+      assert.equal(perm.modelInfo?.model_auth_info?.model_app_key, 'k', 'model_info 是对象（不是数组）')
+      // 校验请求带 SDK-HMAC（AK 来自 STS）+ STS 头（签名头集合含 x-security-token / x-project-id）
+      const permReq = [...seen].reverse().find(x => x.url.startsWith('/v1/claw/client-permission-validate'))
+      assert.ok(permReq.auth.startsWith('SDK-HMAC-SHA256 Access=AKIA-1,'), '用 SDK-HMAC 签名（AK 来自 STS）')
+      assert.equal(permReq['x-security-token'], 'sec-token-1', '必须带 X-Security-Token（且纳入签名）')
+      assert.equal(permReq['x-project-id'], 'proj-1', '必须带 X-Project-ID（且纳入签名）')
+    }
+
+    // ── ⑥ 无 STS token 的最小凭据：签名头集合退化为 host+x-sdk-date ──
+    {
+      const perm = await validatePermission(realFetch, product, { base_url: `${base}/v2`, app_key: 'k', app_secret: 's', access_key: 'AK', secret_key: 'SK' })
+      assert.equal(perm.accountId, 'acc-1')
+      assert.equal(perm.projectId, 'proj-1')
+      assert.equal(perm.modelInfo?.model_auth_info?.model_app_key, 'k')
+      assert.ok(perm.appKey === 'k' && perm.appSecret === 's' && perm.baseUrl === 'https://gw.example.com/v2')
+      const permReq = [...seen].reverse().find(x => x.url.startsWith('/v1/claw/client-permission-validate'))
+      assert.ok(permReq.auth.startsWith('SDK-HMAC-SHA256 Access=AK,'), '用 SDK-HMAC 签名')
+      assert.equal(permReq['x-security-token'], undefined, '无 STS token 时不带 X-Security-Token')
+    }
 
     // ── 适配器端到端（OpenAI 兼容 + Basic）──
     const adapter = new OfficeAceAdapter({
@@ -197,7 +322,7 @@ async function main() {
       e => e.code === 'MISSING_CREDENTIAL',
     )
 
-    console.log('ok  officeace: DPoP(ES256)/SDK-HMAC/V11(AK-SK 顺序+hex 密钥)/Basic 推理/轮询读状态码/凭据解析')
+    console.log('ok  officeace: DPoP(ES256)/SDK-HMAC(含 STS 头)/V11(AK-SK 顺序+hex 密钥)/PKCE(base64url)/换码(STS5.1805 回归)/Basic 推理/轮询读状态码/凭据解析')
   } finally {
     upstream.closeAllConnections?.()
     await new Promise(r => upstream.close(r))

@@ -28768,6 +28768,7 @@ __export(officeace_dpop_exports, {
   buildCanonicalRequest: () => buildCanonicalRequest2,
   createDpopKeyPair: () => createDpopKeyPair,
   createDpopProof: () => createDpopProof,
+  exportDpopJwkPair: () => exportDpopJwkPair,
   formatSdkDate: () => formatSdkDate,
   hmacSha256: () => hmacSha256,
   sha256Hex: () => sha256Hex2,
@@ -28796,6 +28797,19 @@ async function createDpopKeyPair() {
       x: String(exported.x ?? ""),
       y: String(exported.y ?? "")
     }
+  };
+}
+async function exportDpopJwkPair(key) {
+  const privateJwk = await crypto.subtle.exportKey("jwk", key.privateKey);
+  return {
+    privateJwk: {
+      kty: "EC",
+      crv: "P-256",
+      x: String(privateJwk.x ?? ""),
+      y: String(privateJwk.y ?? ""),
+      d: String(privateJwk.d ?? "")
+    },
+    publicJwk: { ...key.publicJwk }
   };
 }
 async function createDpopProof(key, method, url) {
@@ -28934,7 +28948,10 @@ function parseCredential(value) {
     ...stringValue7(value.project_id) === void 0 ? {} : { project_id: stringValue7(value.project_id) },
     ...stringValue7(value.account_id) === void 0 ? {} : { account_id: stringValue7(value.account_id) },
     ...stringValue7(value.nickname) === void 0 ? {} : { nickname: stringValue7(value.nickname) },
-    ...Array.isArray(value.model_info) ? { model_info: value.model_info } : {},
+    ...stringValue7(value.refresh_token) === void 0 ? {} : { refresh_token: stringValue7(value.refresh_token) },
+    ...typeof value.expire_time === "number" && Number.isFinite(value.expire_time) ? { expire_time: value.expire_time } : {},
+    ...isRecord8(value.dpop) ? { dpop: value.dpop } : {},
+    ...value.model_info === void 0 ? {} : { model_info: value.model_info },
     created_at: Date.now()
   };
 }
@@ -28944,15 +28961,57 @@ function stringValue7(value) {
 function isRecord8(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+function jwtClaims(token) {
+  if (token === void 0) return void 0;
+  const segments = token.split(".");
+  if (segments.length < 2) return void 0;
+  const normalized = segments[1].replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(normalized.length + (4 - normalized.length % 4) % 4, "=");
+  try {
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
+    const parsed = JSON.parse(new TextDecoder().decode(bytes));
+    return isRecord8(parsed) ? parsed : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function decodeUserProfile(value) {
+  if (typeof value !== "string") return void 0;
+  const body = value.trim().replace(/=+$/, "");
+  if (body === "") return void 0;
+  for (const candidate of [body.replace(/\+/g, "-").replace(/\//g, "_"), body]) {
+    try {
+      const normalized = candidate.replace(/-/g, "+").replace(/_/g, "/");
+      const padded = normalized.padEnd(normalized.length + (4 - normalized.length % 4) % 4, "=");
+      const binary = atob(padded);
+      const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
+      const parsed = JSON.parse(new TextDecoder().decode(bytes));
+      if (isRecord8(parsed)) return parsed;
+    } catch {
+    }
+  }
+  return void 0;
+}
+function tokenDisplayName(token) {
+  const claims = jwtClaims(token);
+  if (claims === void 0) return void 0;
+  for (const field of ["preferred_username", "name"]) {
+    const value = stringValue7(claims[field]);
+    if (value !== void 0) return value;
+  }
+  const profile = decodeUserProfile(claims.user_profile);
+  return profile === void 0 ? void 0 : stringValue7(profile.account_name);
+}
 function isCredentialUsable6(credential) {
   if (credential === void 0) return false;
   return typeof credential.base_url === "string" && credential.base_url !== "" && typeof credential.app_key === "string" && credential.app_key !== "" && typeof credential.app_secret === "string" && credential.app_secret !== "";
 }
 async function createPkcePair2() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
-  const verifier = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+  const verifier = base64UrlEncode(bytes);
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
-  const challenge = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  const challenge = base64UrlEncode(new Uint8Array(digest));
   return { verifier, challenge };
 }
 async function fetchState(fetcher, product, signal) {
@@ -29032,21 +29091,27 @@ async function exchangeCodeForSts(fetcher, product, code, verifier, dpopKey, sig
   }
   const body = await response.json().catch(() => void 0);
   if (!isRecord8(body)) throw new Error("OfficeAce\uFF1A\u6362\u4E34\u65F6\u51ED\u636E\u54CD\u5E94\u4E0D\u662F\u5BF9\u8C61");
-  const credential = parseCredential(body);
-  if (credential !== void 0) return credential;
-  const accessKey = stringValue7(body.access_key) ?? stringValue7(body.accessKey);
-  const secretKey = stringValue7(body.secret_key) ?? stringValue7(body.secretKey);
-  const baseUrl = stringValue7(body.baseUrl) ?? stringValue7(body.base_url);
-  if (accessKey === void 0 || secretKey === void 0 || baseUrl === void 0) {
-    throw new Error("OfficeAce\uFF1A\u6362\u4E34\u65F6\u51ED\u636E\u54CD\u5E94\u7F3A\u5C11\u5FC5\u9700\u5B57\u6BB5");
+  const credentials = isRecord8(body.credentials) ? body.credentials : body;
+  const accessKey = stringValue7(credentials.access_key_id) ?? stringValue7(credentials.accessKeyId) ?? stringValue7(credentials.access_key) ?? stringValue7(credentials.accessKey);
+  const secretKey = stringValue7(credentials.secret_access_key) ?? stringValue7(credentials.secretAccessKey) ?? stringValue7(credentials.secret_key) ?? stringValue7(credentials.secretKey);
+  if (accessKey === void 0 || secretKey === void 0) {
+    throw new Error("OfficeAce\uFF1A\u6362\u4E34\u65F6\u51ED\u636E\u54CD\u5E94\u7F3A\u5C11 AK/SK");
   }
+  const refreshToken2 = stringValue7(body.refresh_token);
+  const nickname = tokenDisplayName(stringValue7(body.id_token)) ?? (refreshToken2 === void 0 ? void 0 : tokenDisplayName(refreshToken2));
+  const expiration = stringValue7(credentials.expiration);
+  const expireTime = expiration === void 0 || Number.isNaN(Date.parse(expiration)) ? void 0 : Date.parse(expiration);
   return {
-    base_url: baseUrl,
-    app_key: stringValue7(body.appKey) ?? stringValue7(body.app_key) ?? "",
-    app_secret: stringValue7(body.appSecret) ?? stringValue7(body.app_secret) ?? "",
+    base_url: "",
+    app_key: "",
+    app_secret: "",
     access_key: accessKey,
     secret_key: secretKey,
-    ...stringValue7(body.security_token) === void 0 ? {} : { security_token: stringValue7(body.security_token) },
+    ...stringValue7(credentials.security_token) === void 0 ? {} : { security_token: stringValue7(credentials.security_token) },
+    ...stringValue7(credentials.project_id) === void 0 ? {} : { project_id: stringValue7(credentials.project_id) },
+    ...refreshToken2 === void 0 ? {} : { refresh_token: refreshToken2 },
+    ...expireTime === void 0 ? {} : { expire_time: expireTime },
+    ...nickname === void 0 ? {} : { nickname },
     created_at: Date.now()
   };
 }
@@ -29056,12 +29121,20 @@ async function validatePermission(fetcher, product, credential, signal) {
   const payloadHash = await sha256Hex2("");
   const timestampMs = Date.now();
   const sdkDate = formatSdkDate(timestampMs);
+  const projectId = stringValue7(credential.project_id);
+  const signHeaders = [["host", host], ["x-sdk-date", sdkDate]];
+  if (credential.security_token !== void 0 && credential.security_token !== "") {
+    signHeaders.push(["x-security-token", credential.security_token]);
+  }
+  if (projectId !== void 0 && projectId !== "") {
+    signHeaders.push(["x-project-id", projectId]);
+  }
   const { canonicalRequest, signedHeaders } = buildCanonicalRequest2({
     method: "GET",
     path: path2,
     query: "",
     host,
-    headers: [["host", host], ["x-sdk-date", sdkDate]],
+    headers: signHeaders,
     payloadHash
   });
   const { authorization } = await signSdkHmac({
@@ -29077,20 +29150,43 @@ async function validatePermission(fetcher, product, credential, signal) {
       Accept: "application/json",
       Authorization: authorization,
       "X-Sdk-Date": sdkDate,
-      ...credential.security_token === void 0 ? {} : { "X-Security-Token": credential.security_token }
+      ...credential.security_token === void 0 ? {} : { "X-Security-Token": credential.security_token },
+      ...projectId === void 0 ? {} : { "X-Project-ID": projectId }
     },
     ...signal === void 0 ? {} : { signal }
   });
   if (!response.ok) throw new Error(`OfficeAce\uFF1A\u8EAB\u4EFD\u6821\u9A8C\u8FD4\u56DE HTTP ${response.status}`);
   const body = await response.json().catch(() => void 0);
   if (!isRecord8(body)) return {};
-  const subscription = isRecord8(body.subscription) ? body.subscription : void 0;
-  const modelInfo = subscription !== void 0 && Array.isArray(subscription.model_info) ? subscription.model_info : void 0;
+  const modelInfoRaw = [
+    isRecord8(body.model_info) ? body.model_info : void 0,
+    isRecord8(body.subscription) && isRecord8(body.subscription.model_info) ? body.subscription.model_info : void 0,
+    isRecord8(body.modelInfo) ? body.modelInfo : void 0
+  ].find((value) => value !== void 0);
+  let baseUrl;
+  let appKey;
+  let appSecret;
+  if (modelInfoRaw !== void 0) {
+    const authInfo = isRecord8(modelInfoRaw.model_auth_info) ? modelInfoRaw.model_auth_info : void 0;
+    const rawKey = authInfo === void 0 ? void 0 : stringValue7(authInfo.model_app_key);
+    const rawSecret = authInfo === void 0 ? void 0 : stringValue7(authInfo.model_app_secret);
+    const rawBase = stringValue7(modelInfoRaw.model_api_url_base);
+    if (rawKey !== void 0 && rawKey !== "") appKey = rawKey;
+    if (rawSecret !== void 0 && rawSecret !== "") appSecret = rawSecret;
+    if (rawBase !== void 0 && rawBase !== "") {
+      const stripped = rawBase.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+      baseUrl = stripped === "" ? void 0 : stripped.endsWith("/v2") ? `https://${stripped}` : `https://${stripped}/v2`;
+    }
+  }
   return {
     ...stringValue7(body.account_id) === void 0 ? {} : { accountId: stringValue7(body.account_id) },
+    ...stringValue7(body.principal_id) === void 0 ? {} : { principalId: stringValue7(body.principal_id) },
     ...stringValue7(body.nickname) === void 0 ? {} : { nickname: stringValue7(body.nickname) },
     ...stringValue7(body.project_id) === void 0 ? {} : { projectId: stringValue7(body.project_id) },
-    ...modelInfo === void 0 ? {} : { modelInfo }
+    ...modelInfoRaw === void 0 ? {} : { modelInfo: modelInfoRaw },
+    ...baseUrl === void 0 ? {} : { baseUrl },
+    ...appKey === void 0 ? {} : { appKey },
+    ...appSecret === void 0 ? {} : { appSecret }
   };
 }
 var init_officeace = __esm({
@@ -60775,7 +60871,7 @@ async function sendAutoclawCode(options) {
   });
   return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
-function jwtClaims(token) {
+function jwtClaims2(token) {
   const parts = token.split(".");
   if (parts.length < 2) return {};
   try {
@@ -60788,7 +60884,7 @@ var stripBearer = (value) => typeof value === "string" ? value.replace(/^Bearer\
 function toAutoclawCredential(data, deviceId, phone) {
   const accessToken = stripBearer(data?.access_token);
   if (accessToken === "") return { ok: false, error: "\u4E0A\u6E38\u54CD\u5E94\u7F3A\u5C11 access_token" };
-  const claims = jwtClaims(accessToken);
+  const claims = jwtClaims2(accessToken);
   const declared = typeof data?.expires_at === "number" ? data.expires_at * (data.expires_at < 1e12 ? 1e3 : 1) : typeof data?.expires_in === "number" ? Date.now() + data.expires_in * 1e3 : void 0;
   const jwtExpires = typeof claims.exp === "number" ? claims.exp * 1e3 : void 0;
   const userId = data?.user_id ?? claims.user_id ?? claims.uid ?? claims.sub;
@@ -66113,18 +66209,33 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
           });
           void (async () => {
             const code = await oa.pollAuthCode(codeartsFetcher, OFFICEACE2, state);
-            const dpopKey = await (await Promise.resolve().then(() => (init_officeace_dpop(), officeace_dpop_exports))).createDpopKeyPair();
+            const dpop = await Promise.resolve().then(() => (init_officeace_dpop(), officeace_dpop_exports));
+            const dpopKey = await dpop.createDpopKeyPair();
             const sts = await oa.exchangeCodeForSts(codeartsFetcher, OFFICEACE2, code, pkce.verifier, dpopKey);
             const permission = await oa.validatePermission(codeartsFetcher, OFFICEACE2, sts);
+            if (permission.baseUrl === void 0 || permission.appKey === void 0 || permission.appSecret === void 0) {
+              throw new Error("OfficeAce\uFF1A\u4E91\u7AEF\u672A\u8FD4\u56DE\u6A21\u578B\u7F51\u5173\u4FE1\u606F\uFF08\u8D26\u53F7\u53EF\u80FD\u672A\u5F00\u901A\u670D\u52A1\uFF0C\u9700\u5148\u5728\u5B98\u65B9\u5BA2\u6237\u7AEF\u5151\u6362\u9080\u8BF7\u7801/\u5F00\u901A\u540E\u518D\u8BD5\uFF09");
+            }
             const credential = {
               ...sts,
+              base_url: permission.baseUrl,
+              app_key: permission.appKey,
+              app_secret: permission.appSecret,
               ...permission.accountId === void 0 ? {} : { account_id: permission.accountId },
+              ...permission.principalId === void 0 ? {} : { principal_id: permission.principalId },
               ...permission.nickname === void 0 ? {} : { nickname: permission.nickname },
               ...permission.projectId === void 0 ? {} : { project_id: permission.projectId },
-              ...permission.modelInfo === void 0 ? {} : { model_info: permission.modelInfo }
+              ...permission.modelInfo === void 0 ? {} : { model_info: permission.modelInfo },
+              // 续期链的钥匙：一次性 refresh_token + 本次 DPoP 密钥对（JWK 落库，
+              // 续期签 proof 必须用同一把私钥 —— 参考实现同款约束）。
+              dpop: await dpop.exportDpopJwkPair(dpopKey)
             };
             await ctx.credentials.set(credentialRef13(refName), JSON.stringify(credential));
-            await pool.updateAccount(id, { nickname: credential.nickname ?? id });
+            await pool.updateAccount(id, {
+              nickname: credential.nickname ?? id,
+              expiresAt: credential.expire_time,
+              refreshable: typeof credential.refresh_token === "string" && credential.refresh_token !== ""
+            });
           })().catch((err) => {
             ctx.logger.warn(`[channel-pack] background ${provider} login failed for ${id}: ${err}`);
             pendingLoginFailures.set(id, (err instanceof Error ? err.message : String(err)).slice(0, 500));

@@ -1663,18 +1663,35 @@ function registerChannelPackEndpoints(
           })
           void (async () => {
             const code = await oa.pollAuthCode(codeartsFetcher, OFFICEACE, state)
-            const dpopKey = await (await import('./officeace-dpop.js')).createDpopKeyPair()
+            const dpop = await import('./officeace-dpop.js')
+            const dpopKey = await dpop.createDpopKeyPair()
             const sts = await oa.exchangeCodeForSts(codeartsFetcher, OFFICEACE, code, pkce.verifier, dpopKey)
             const permission = await oa.validatePermission(codeartsFetcher, OFFICEACE, sts)
+            // 网关三件套在 validate 的 model_info 里（STS 响应没有）；缺了说明
+            // 账号未开通 —— 给出可读原因而不是落一个不可用的空凭据。
+            if (permission.baseUrl === undefined || permission.appKey === undefined || permission.appSecret === undefined) {
+              throw new Error('OfficeAce：云端未返回模型网关信息（账号可能未开通服务，需先在官方客户端兑换邀请码/开通后再试）')
+            }
             const credential = {
               ...sts,
+              base_url: permission.baseUrl,
+              app_key: permission.appKey,
+              app_secret: permission.appSecret,
               ...(permission.accountId === undefined ? {} : { account_id: permission.accountId }),
+              ...(permission.principalId === undefined ? {} : { principal_id: permission.principalId }),
               ...(permission.nickname === undefined ? {} : { nickname: permission.nickname }),
               ...(permission.projectId === undefined ? {} : { project_id: permission.projectId }),
               ...(permission.modelInfo === undefined ? {} : { model_info: permission.modelInfo }),
+              // 续期链的钥匙：一次性 refresh_token + 本次 DPoP 密钥对（JWK 落库，
+              // 续期签 proof 必须用同一把私钥 —— 参考实现同款约束）。
+              dpop: await dpop.exportDpopJwkPair(dpopKey),
             }
             await ctx.credentials.set(credentialRef(refName), JSON.stringify(credential))
-            await pool.updateAccount(id, { nickname: credential.nickname ?? id })
+            await pool.updateAccount(id, {
+              nickname: credential.nickname ?? id,
+              expiresAt: credential.expire_time,
+              refreshable: typeof credential.refresh_token === 'string' && credential.refresh_token !== '',
+            })
           })().catch((err) => {
             ctx.logger.warn(`[channel-pack] background ${provider} login failed for ${id}: ${err}`)
             // ⚠️ 只写日志不够：占位条目随即被删除，前端 `login.poll` 就再也拿不到

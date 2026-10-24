@@ -58,6 +58,31 @@ export async function createDpopKeyPair(): Promise<DpopKeyPair> {
 }
 
 /**
+ * 把密钥对导出成可落库的 JWK 形态（JSON 序列化友好）。
+ *
+ * 为什么需要：续期（`grant_type=refresh_token`）签 DPoP proof 必须用**同一把**
+ * 私钥（officeace2api `refresh.mjs` 用档案里的 `dpopPrivateJwk`；Agent2API
+ * 同款约束「丢了只能重登」）。登录时导出落库，续期链才有钥匙。
+ * 形态与 `officeace.ts` 的 `OfficeAceDpopJwkPair` 结构一致。
+ */
+export async function exportDpopJwkPair(key: DpopKeyPair): Promise<{
+  privateJwk: { kty: 'EC'; crv: 'P-256'; x: string; y: string; d: string }
+  publicJwk: { kty: 'EC'; crv: 'P-256'; x: string; y: string }
+}> {
+  const privateJwk = await crypto.subtle.exportKey('jwk', key.privateKey) as JsonWebKey
+  return {
+    privateJwk: {
+      kty: 'EC',
+      crv: 'P-256',
+      x: String(privateJwk.x ?? ''),
+      y: String(privateJwk.y ?? ''),
+      d: String(privateJwk.d ?? ''),
+    },
+    publicJwk: { ...key.publicJwk },
+  }
+}
+
+/**
  * 构造一份 DPoP proof。
  *
  * @param key 密钥对

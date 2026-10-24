@@ -5,16 +5,18 @@
  *
  * ```
  * ① POST {cloud}/v1/claw/auth/state                    → state
- * ② 本地生成 PKCE(S256) 与 P-256 DPoP 密钥对
+ * ② 本地生成 PKCE(SHA-256 challenge, base64url) 与 P-256 DPoP 密钥对
  * ③ 拼 authorizeUrl，浏览器登华为云
  * ④ GET  {cloud}/v1/claw/auth/code?state=<state>       → 轮询取授权码
  *      202 继续等 / 404 作废 / 200 拿到 code
  * ⑤ POST {sts}/v1/oauth2/tokens（表单 + DPoP 头）      → 临时 AK/SK/STS
+ *      （+ refresh_token + id_token；推理网关三件套不在这发里）
  * ⑥ GET  {cloud}/v1/claw/client-permission-validate（SDK-HMAC）
- *      → 身份三件套 + subscription.model_info（可能为空 = 未开通）
+ *      → 身份三件套 + subscription.model_info（网关 base_url/app_key/app_secret；
+ *      为空 = 未开通，需走 ⑥b）
  * ⑥a GET {iam}/v3/projects（仅 project_id 空时）→ 按 region 补 project_id
  * ⑥b POST {cloud}/v1/claw/client-subscription（仅 model_info 空时）→ 开通
- * ⑦ 入库
+ * ⑦ 入库（凭据 + refresh_token + DPoP 私钥，续期链靠它们）
  * ```
  */
 
@@ -28,6 +30,7 @@ import {
   type OfficeAceProduct,
 } from './officeace-product.js'
 import {
+  base64UrlEncode,
   buildCanonicalRequest,
   createDpopProof,
   formatSdkDate,
@@ -73,10 +76,42 @@ export interface OfficeAceCredential {
   account_id?: string
   /** 昵称。 */
   nickname?: string
-  /** 模型信息（开通后下发）。 */
-  model_info?: unknown[]
+  /**
+   * 模型信息（开通后下发）。
+   *
+   * ⚠️ 真实形态是**对象**（`model_api_url_base` + `model_auth_info.
+   * {model_app_key, model_app_secret}`），不是数组。两份参考实现一致：
+   * officeace2api `_fetchModelInfo`、Agent2API `fetch_permission`（实测
+   * 2026-10：validate 嵌在 `subscription.model_info`，开通响应在顶层）。
+   */
+  model_info?: unknown
+  /**
+   * 一次性 refresh token（STS 换码响应下发）。
+   *
+   * 续期（`grant_type=refresh_token` 换新 AK/SK）的唯一钥匙，每次轮换作废
+   * 上一份（重放报 STS5.1806）。参考实现都强调必须在登录时落库 —— 丢了
+   * 只能重新登录。
+   */
+  refresh_token?: string
+  /** 临时凭据到期时刻（毫秒；STS `credentials.expiration`）。 */
+  expire_time?: number
+  /**
+   * 本次登录的 DPoP 密钥对（JWK 形态）。
+   *
+   * 续期签 proof 必须用**同一把**私钥（officeace2api `refresh.mjs` 与
+   * Agent2API 同款约束：「丢了只能重登」），所以登录时一并落库。
+   */
+  dpop?: OfficeAceDpopJwkPair
   /** 创建时间。 */
   created_at?: number
+}
+
+/** 落库用的 DPoP 密钥对（JWK）。 */
+export interface OfficeAceDpopJwkPair {
+  /** 私钥 JWK（含 `d`，敏感）。 */
+  privateJwk: { kty: 'EC'; crv: 'P-256'; x: string; y: string; d: string }
+  /** 公钥 JWK（嵌 proof 头用）。 */
+  publicJwk: { kty: 'EC'; crv: 'P-256'; x: string; y: string }
 }
 
 /** 归一推理基址：确保以 `/v2` 结尾。 */
@@ -115,7 +150,10 @@ export function parseCredential(value: unknown): OfficeAceCredential | undefined
     ...(stringValue(value.project_id) === undefined ? {} : { project_id: stringValue(value.project_id) }),
     ...(stringValue(value.account_id) === undefined ? {} : { account_id: stringValue(value.account_id) }),
     ...(stringValue(value.nickname) === undefined ? {} : { nickname: stringValue(value.nickname) }),
-    ...(Array.isArray(value.model_info) ? { model_info: value.model_info } : {}),
+    ...(stringValue(value.refresh_token) === undefined ? {} : { refresh_token: stringValue(value.refresh_token) }),
+    ...(typeof value.expire_time === 'number' && Number.isFinite(value.expire_time) ? { expire_time: value.expire_time } : {}),
+    ...(isRecord(value.dpop) ? { dpop: value.dpop as OfficeAceDpopJwkPair } : {}),
+    ...(value.model_info === undefined ? {} : { model_info: value.model_info }),
     created_at: Date.now(),
   }
 }
@@ -130,6 +168,64 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/**
+ * 解一枚 JWT（`id_token` / `refresh_token`）的 payload。
+ *
+ * **不验签**：只取显示名，不用于任何鉴权判断（与参考实现同口径）。
+ * 不是三段 / 解不出 base64 / 不是 JSON 都返回 undefined（fail-open）。
+ */
+function jwtClaims(token: string | undefined): Record<string, unknown> | undefined {
+  if (token === undefined) return undefined
+  const segments = token.split('.')
+  if (segments.length < 2) return undefined
+  const normalized = segments[1].replace(/-/g, '+').replace(/_/g, '/')
+  const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=')
+  try {
+    const binary = atob(padded)
+    const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0))
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes))
+    return isRecord(parsed) ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** 解 `user_profile`：一段无填充 base64 的 JSON（两种字母表都试，与 Agent2API 一致）。 */
+function decodeUserProfile(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== 'string') return undefined
+  const body = value.trim().replace(/=+$/, '')
+  if (body === '') return undefined
+  for (const candidate of [body.replace(/\+/g, '-').replace(/\//g, '_'), body]) {
+    try {
+      const normalized = candidate.replace(/-/g, '+').replace(/_/g, '/')
+      const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=')
+      const binary = atob(padded)
+      const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0))
+      const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes))
+      if (isRecord(parsed)) return parsed
+    } catch {
+      // 试另一种字母表。
+    }
+  }
+  return undefined
+}
+
+/**
+ * 从令牌里取显示名：顶层 `preferred_username`/`name` 优先，
+ * 没有再解 `user_profile.account_name`（实测该租户的名字常只在这里 ——
+ * Agent2API `jwt_identity` 的记录；officeace2api 只读顶层，是它的已知盲区）。
+ */
+function tokenDisplayName(token: string | undefined): string | undefined {
+  const claims = jwtClaims(token)
+  if (claims === undefined) return undefined
+  for (const field of ['preferred_username', 'name']) {
+    const value = stringValue(claims[field])
+    if (value !== undefined) return value
+  }
+  const profile = decodeUserProfile(claims.user_profile)
+  return profile === undefined ? undefined : stringValue(profile.account_name)
+}
+
 /** 判断凭据形状是否可用（推理凭据齐备即可）。 */
 export function isCredentialUsable(credential: OfficeAceCredential | undefined): credential is OfficeAceCredential {
   if (credential === undefined) return false
@@ -138,12 +234,30 @@ export function isCredentialUsable(credential: OfficeAceCredential | undefined):
     && typeof credential.app_secret === 'string' && credential.app_secret !== ''
 }
 
-/** 生成 PKCE 对。 */
+/**
+ * 生成 PKCE 对。
+ *
+ * ⚠️ **verifier 与 challenge 都必须是 base64url（RFC 7636 §4.1/§4.2），
+ * 不是十六进制**。真机缺陷：早期版本用 hex 编码，华为云 STS 换码时报
+ * `STS5.1805 invalid authorization code` —— STS 按官方客户端的口径
+ * （`base64url(sha256(code_verifier))`）重算 challenge 并与 authorize 时
+ * 绑定的值比对，hex 的 challenge 永远对不上，于是整枚授权码被判无效。
+ *
+ * 权威依据（两份能过真机的公开实现完全一致，均逆向自 OfficeAce 官方
+ * 客户端 `huawei-oauth.js`）：
+ * - `Q-shuang-dot/officeace2api` `src/oauth.mjs` 的 `generatePkce()`：
+ *   `verifier = base64url(randomBytes(32))`，
+ *   `challenge = base64url(sha256(verifier))`；
+ * - `aimod-cc/Agent2API` `providers/officeace/oauth.rs` 的 `LoginFlow::start()`：
+ *   `code_verifier = base64url(random_bytes(32))`，
+ *   `challenge = base64url(Sha256::digest(code_verifier))`。
+ * 本仓库 Accio 渠道（`accio.ts`）同款 base64url —— OfficeAce 此前是唯一的例外。
+ */
 export async function createPkcePair(): Promise<{ verifier: string; challenge: string }> {
   const bytes = crypto.getRandomValues(new Uint8Array(32))
-  const verifier = Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('')
+  const verifier = base64UrlEncode(bytes)
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))
-  const challenge = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('')
+  const challenge = base64UrlEncode(new Uint8Array(digest))
   return { verifier, challenge }
 }
 
@@ -271,43 +385,86 @@ export async function exchangeCodeForSts(
   }
   const body: unknown = await response.json().catch(() => undefined)
   if (!isRecord(body)) throw new Error('OfficeAce：换临时凭据响应不是对象')
-  // 响应可能直接带推理凭据（baseUrl/appKey/appSecret），也可能只带 AK/SK。
-  const credential = parseCredential(body)
-  if (credential !== undefined) return credential
-  const accessKey = stringValue(body.access_key) ?? stringValue(body.accessKey)
-  const secretKey = stringValue(body.secret_key) ?? stringValue(body.secretKey)
-  const baseUrl = stringValue(body.baseUrl) ?? stringValue(body.base_url)
-  if (accessKey === undefined || secretKey === undefined || baseUrl === undefined) {
-    throw new Error('OfficeAce：换临时凭据响应缺少必需字段')
+  // ⚠️ 真实响应形态（两份参考实现一致，均逆向自 OfficeAce 官方客户端
+  // `huawei-oauth.js` 的 `exchangeCode`）：
+  //   { credentials: { access_key_id, secret_access_key, security_token,
+  //                    project_id, expiration },
+  //     refresh_token, id_token }
+  // 推理网关三件套（base_url / app_key / app_secret）**不在这发里**：由随后
+  // `client-permission-validate` 的 `subscription.model_info` 下发，见
+  // validatePermission —— 这里先留空，由调用方合并。
+  const credentials = isRecord(body.credentials) ? body.credentials : body
+  const accessKey = stringValue(credentials.access_key_id) ?? stringValue(credentials.accessKeyId)
+    ?? stringValue(credentials.access_key) ?? stringValue(credentials.accessKey)
+  const secretKey = stringValue(credentials.secret_access_key) ?? stringValue(credentials.secretAccessKey)
+    ?? stringValue(credentials.secret_key) ?? stringValue(credentials.secretKey)
+  if (accessKey === undefined || secretKey === undefined) {
+    throw new Error('OfficeAce：换临时凭据响应缺少 AK/SK')
   }
+  const refreshToken = stringValue(body.refresh_token)
+  const nickname = tokenDisplayName(stringValue(body.id_token))
+    ?? (refreshToken === undefined ? undefined : tokenDisplayName(refreshToken))
+  const expiration = stringValue(credentials.expiration)
+  const expireTime = expiration === undefined || Number.isNaN(Date.parse(expiration))
+    ? undefined
+    : Date.parse(expiration)
   return {
-    base_url: baseUrl,
-    app_key: stringValue(body.appKey) ?? stringValue(body.app_key) ?? '',
-    app_secret: stringValue(body.appSecret) ?? stringValue(body.app_secret) ?? '',
+    base_url: '',
+    app_key: '',
+    app_secret: '',
     access_key: accessKey,
     secret_key: secretKey,
-    ...(stringValue(body.security_token) === undefined ? {} : { security_token: stringValue(body.security_token) }),
+    ...(stringValue(credentials.security_token) === undefined ? {} : { security_token: stringValue(credentials.security_token) }),
+    ...(stringValue(credentials.project_id) === undefined ? {} : { project_id: stringValue(credentials.project_id) }),
+    ...(refreshToken === undefined ? {} : { refresh_token: refreshToken }),
+    ...(expireTime === undefined ? {} : { expire_time: expireTime }),
+    ...(nickname === undefined ? {} : { nickname }),
     created_at: Date.now(),
   }
 }
 
 /**
  * ⑥ 身份校验 + 模型信息（SDK-HMAC 签名）。
+ *
+ * 返回里多了网关三件套（`baseUrl`/`appKey`/`appSecret`）：真实响应把推理
+ * 网关凭据藏在 `subscription.model_info` 的 `model_auth_info` 里（两份参考
+ * 实现一致），本插件的 `exchangeCodeForSts` 又拿不到它们，必须在这里补齐。
  */
 export async function validatePermission(
   fetcher: typeof fetch,
   product: OfficeAceProduct,
   credential: OfficeAceCredential,
   signal?: AbortSignal,
-): Promise<{ accountId?: string; nickname?: string; projectId?: string; modelInfo?: unknown[] }> {
+): Promise<{
+  accountId?: string
+  principalId?: string
+  nickname?: string
+  projectId?: string
+  modelInfo?: unknown
+  baseUrl?: string
+  appKey?: string
+  appSecret?: string
+}> {
   const path = OFFICEACE_PERMISSION_PATH
   const host = new URL(product.cloudBase).host
   const payloadHash = await sha256Hex('')
   const timestampMs = Date.now()
   const sdkDate = formatSdkDate(timestampMs)
+  const projectId = stringValue(credential.project_id)
+  // ⚠️ 签名头集合必须与发送的头一致：两份参考实现（officeace2api `signV4`
+  // 的 putCommonHeaders、Agent2API signer）都把 `x-security-token` 与
+  // `x-project-id` 一并纳入 SignedHeaders。只签 host+x-sdk-date 会被上游
+  // 判签名不匹配（401），形态与「凭据失效」相同，极易误判。
+  const signHeaders: Array<[string, string]> = [['host', host], ['x-sdk-date', sdkDate]]
+  if (credential.security_token !== undefined && credential.security_token !== '') {
+    signHeaders.push(['x-security-token', credential.security_token])
+  }
+  if (projectId !== undefined && projectId !== '') {
+    signHeaders.push(['x-project-id', projectId])
+  }
   const { canonicalRequest, signedHeaders } = buildCanonicalRequest({
     method: 'GET', path, query: '', host,
-    headers: [['host', host], ['x-sdk-date', sdkDate]],
+    headers: signHeaders,
     payloadHash,
   })
   const { authorization } = await signSdkHmac({
@@ -322,20 +479,46 @@ export async function validatePermission(
       Authorization: authorization,
       'X-Sdk-Date': sdkDate,
       ...(credential.security_token === undefined ? {} : { 'X-Security-Token': credential.security_token }),
+      ...(projectId === undefined ? {} : { 'X-Project-ID': projectId }),
     },
     ...(signal === undefined ? {} : { signal }),
   })
   if (!response.ok) throw new Error(`OfficeAce：身份校验返回 HTTP ${response.status}`)
   const body: unknown = await response.json().catch(() => undefined)
   if (!isRecord(body)) return {}
-  const subscription = isRecord(body.subscription) ? body.subscription : undefined
-  const modelInfo = subscription !== undefined && Array.isArray(subscription.model_info)
-    ? subscription.model_info
-    : undefined
+  // model_info 的两种位置（Agent2API 实测）：validate 嵌在 subscription.model_info，
+  // 开通（client-subscription）响应在顶层；字段名一致。非对象一律当「没有」
+  //（= 账号未开通，不是错误 —— 是否走开通由调用方决定）。
+  const modelInfoRaw = [
+    isRecord(body.model_info) ? body.model_info : undefined,
+    isRecord(body.subscription) && isRecord(body.subscription.model_info) ? body.subscription.model_info : undefined,
+    isRecord(body.modelInfo) ? body.modelInfo : undefined,
+  ].find((value) => value !== undefined)
+  // 网关三件套（Agent2API gateway_of 逐字）：基址规范化到 /v2，
+  // app key/secret 在 model_auth_info 里。
+  let baseUrl: string | undefined
+  let appKey: string | undefined
+  let appSecret: string | undefined
+  if (modelInfoRaw !== undefined) {
+    const authInfo = isRecord(modelInfoRaw.model_auth_info) ? modelInfoRaw.model_auth_info : undefined
+    const rawKey = authInfo === undefined ? undefined : stringValue(authInfo.model_app_key)
+    const rawSecret = authInfo === undefined ? undefined : stringValue(authInfo.model_app_secret)
+    const rawBase = stringValue(modelInfoRaw.model_api_url_base)
+    if (rawKey !== undefined && rawKey !== '') appKey = rawKey
+    if (rawSecret !== undefined && rawSecret !== '') appSecret = rawSecret
+    if (rawBase !== undefined && rawBase !== '') {
+      const stripped = rawBase.replace(/^https?:\/\//, '').replace(/\/+$/, '')
+      baseUrl = stripped === '' ? undefined : (stripped.endsWith('/v2') ? `https://${stripped}` : `https://${stripped}/v2`)
+    }
+  }
   return {
     ...(stringValue(body.account_id) === undefined ? {} : { accountId: stringValue(body.account_id) }),
+    ...(stringValue(body.principal_id) === undefined ? {} : { principalId: stringValue(body.principal_id) }),
     ...(stringValue(body.nickname) === undefined ? {} : { nickname: stringValue(body.nickname) }),
     ...(stringValue(body.project_id) === undefined ? {} : { projectId: stringValue(body.project_id) }),
-    ...(modelInfo === undefined ? {} : { modelInfo }),
+    ...(modelInfoRaw === undefined ? {} : { modelInfo: modelInfoRaw }),
+    ...(baseUrl === undefined ? {} : { baseUrl }),
+    ...(appKey === undefined ? {} : { appKey }),
+    ...(appSecret === undefined ? {} : { appSecret }),
   }
 }
