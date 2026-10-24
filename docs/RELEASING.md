@@ -4,7 +4,9 @@
 不会被安装到用户机器上，也不出现在 [`README.md`](../README.md) 里——README 只讲使用者
 需要知道的事。
 
-一切通过插件仓库根目录下的 `feed/` 目录完成，**推送即发布**。
+> ⚠️ 曾经的「`feed/` 目录 + 推送即发布」链路已在 `95657a7` 整体删除，见
+> [`release-pipeline-gap.md`](release-pipeline-gap.md)。当前仓库里与发布记录相关的
+> 可执行动作只有两个：`node scripts/refresh-integrity.mjs` 与 catalog revision 的两步提交。
 
 普通贡献者与维护者的检查分工、受保护的签名补丁准备流程见
 [`contributor-ci-signing.md`](contributor-ci-signing.md)。贡献者运行
@@ -35,41 +37,32 @@
 
 ## 发布新版本
 
-改完代码后——
+> ⚠️ **当前仓库没有发布工具链。** `feed/`、`scripts/build-manifest.mjs`、`scripts/live-audit.mjs`、
+> `scripts/release-e2e.mjs`、`scripts/prepare-release.mjs`、`src/feed.js`、`src/updater.js` 与
+> `.github/workflows/prepare-release.yml` 均已在 `95657a7` **整体删除**。完整缺口、影响与 A/B/C
+> 三档恢复方案见 [`release-pipeline-gap.md`](release-pipeline-gap.md)。
+>
+> 下文原先的第 2/3/5/6 步（重签清单、清单校验、CDN purge、live-audit 复核）**都不可执行**；
+> 保留历史描述只为解释「为什么曾经要求两步提交」，不要照着跑。
+
+改完发布内容后，**现在能做的只有两步**：
 
 ```bash
-# 1. 修改 package.json 的 version、两份 README 的本地 tarball 安装版本号
-#    （catalog 套件校验文件名版本）与 feed/announcements.json（版本说明）
-# 2. 重新生成清单（把每个发布文件的字节数与 SHA-256 写进 feed/manifest.json；
-#    同一份文件清单也会写进 catalog/integrity.json，供生态目录审计用）
-node scripts/build-manifest.mjs --key /安全目录/既有发布私钥.pem
-# 3. 确认清单与实物一致（不一致就非零退出；已接进 npm test）
-node scripts/build-manifest.mjs --check
-# 4. 提交并推送（目录记录 revision 的两步提交见下一节），再打 tag 并创建 Release
-git tag -a v1.2.3 -m "…" && git push origin v1.2.3
-gh release create v1.2.3 --title "…" --notes-file …
-# 5. purge CDN 缓存——整棵 @main，不只是 feed 那两个文件（原因见下一节）
-curl "https://purge.jsdelivr.net/gh/Ebony-Vinyl/dsh-our-free-model@main"
-# 6. 以「已安装用户」的身份复核发布产物：下载清单、逐文件校验字节数与 SHA-256、再回读
-node scripts/live-audit.mjs          # 打印 OK 才算发出去；FAIL 就按它给的提示处置
+# 1. 刷新发布字节记录（catalog/integrity.json：每个发布文件的字节数 + SHA-256）
+#    口径 = git blob 经 publishedBytes() 做 LF 归一化；文件集合 = package.json + files 清单
+node scripts/refresh-integrity.mjs
+node scripts/refresh-integrity.mjs --check   # 复验（catalog 套件已内置同一条校验）
+
+# 2. 提交：内容 commit → 只碰 catalog/ 的 revision 刷新 commit（见下一节）
 ```
 
-第 2 步不是可选项：清单是发布者对每个文件的**字节数与 SHA-256 的承诺**，改了发布文
-件却没重跑，客户端就会下到新文件、拿旧哈希去校验，校验机制会（正确地）拒绝安装——于
-是这一版的一键升级对所有旧版本用户都失败。`--check` 就是让这种事在提交前失败。
+`refresh-integrity` 与 `catalog-test` 的 `integrity records match the published bytes` 是
+**同一条口径**：改了任何发布文件却没刷新记录，`node scripts/test-all.mjs` 会直接变红。
+这替代了原先「重签 feed/manifest.json」的作用 —— 但**只覆盖字节记录，不覆盖签名**：
+没有 `feed/manifest.json` 与公钥，旧客户端的一键升级链路在当前仓库里不存在。
 
-`--key` 与 `OFM_MANIFEST_KEY` 都接收私钥**文件路径**；没有既有私钥时拒绝写入，
-不得提交占位签名或替换公钥。受保护工作流的 `RELEASE_MANIFEST_PRIVATE_KEY`
-则是 PEM **内容**，由可信 main 的 `prepare-release.mjs` 使用，两者不要混用。
-
-摘要按 **LF 归一化后的字节**计算，不是工作区字节：`.gitattributes` 是
-`* text=auto eol=lf`，用户下载到的是 blob，而编辑器可以把工作区改成 CRLF 且
-`git status` 依然干净。`scripts/release-e2e.mjs` 会把全部发布文件改写成 CRLF 再跑一次
-`--check`，旧算法在这一步直接失败。
-
-已安装的插件会按 `updateCheckHours`（默认 6 小时）自动发现新版本并推送通知；
-用户确认后下载、校验、备份、替换、热重载全部在应用内完成。清单会校验每个文件的
-SHA-256，并在安装前重新拉取一次，避免用陈旧清单校验新文件。
+签名相关说明（私钥/公钥/受保护工作流）同样只存在于历史：`PINNED_MANIFEST_PUBLIC_KEY`
+随 `src/updater.js` 一起消失，恢复前要先解决信任根。
 
 ## main 上的发布一致性是强制的（ruleset）
 
@@ -80,9 +73,10 @@ SHA-256，并在安装前重新拉取一次，避免用陈旧清单校验新文�
 
 这带来两条纪律：
 
-- 改了 `package.json` 的 `files` 清单里的任何文件，同一 PR 里必须带上重签后的
-  `feed/manifest.json` 与 `catalog/integrity.json`（`node scripts/build-manifest.mjs`
-  用发布私钥跑一遍即可），否则 `release-readiness` 会红、merge 被拒。
+- 改了 `package.json` 的 `files` 清单里的任何文件，同一 PR 里必须带上刷新后的
+  `catalog/integrity.json`（`node scripts/refresh-integrity.mjs`），否则 `catalog` 套件的
+  `integrity records match the published bytes` 会红。
+  （`feed/manifest.json` 与签名链路当前不存在，见文首提示。）
 - ruleset 本身在仓库 Settings → Rules → Rulesets 调整。紧急情况可以临时改成
   inactive，但事后必须恢复；绕过它的每一次 merge 都要让全量校验立刻补跑。
 
@@ -228,46 +222,31 @@ become code execution.
 
 ## Release a new version
 
+> ⚠️ **There is no release toolchain in this repository right now.** `feed/`,
+> `scripts/build-manifest.mjs`, `scripts/live-audit.mjs`, `scripts/release-e2e.mjs`,
+> `scripts/prepare-release.mjs`, `src/feed.js`, `src/updater.js` and
+> `.github/workflows/prepare-release.yml` were all deleted in `95657a7`. See
+> [`release-pipeline-gap.md`](release-pipeline-gap.md) for the full gap and the
+> A/B/C recovery options. Steps 2/3/5/6 of the old block below cannot run.
+
+After changing published content, only two actions exist:
+
 ```bash
-# 1. bump `version` in package.json, and the release note in feed/announcements.json
-# 2. regenerate the manifest (size + SHA-256 of every published file; the same
-#    list is written to catalog/integrity.json for ecosystem catalog audits)
-node scripts/build-manifest.mjs --key /secure/path/to/existing-release-key.pem
-# 3. confirm the manifest matches the tree (non-zero exit otherwise; part of npm test)
-node scripts/build-manifest.mjs --check
-# 4. commit and push (see the two-step catalog revision convention below), then
-#    tag and create the release
-git tag -a v1.2.3 -m "…" && git push origin v1.2.3
-gh release create v1.2.3 --title "…" --notes-file …
-# 5. purge the CDN — the whole @main tree, not only the two feed files (see below)
-curl "https://purge.jsdelivr.net/gh/Ebony-Vinyl/dsh-our-free-model@main"
-# 6. re-verify as an installed user would: download the manifest, check every file's
-#    byte count and SHA-256, then read the staged copy back
-node scripts/live-audit.mjs          # publishing is done when this prints OK
+# 1. refresh the published-bytes record (catalog/integrity.json): size + SHA-256 per file.
+#    Bytes = git blob passed through publishedBytes() (LF normalisation);
+#    file set = package.json + the `files` list.
+node scripts/refresh-integrity.mjs
+node scripts/refresh-integrity.mjs --check   # the catalog suite enforces the same check
+
+# 2. commit: content commit, then a catalog-only revision refresh (see below)
 ```
 
-Step 2 is not optional. The manifest is the publisher's promise about every file's
-byte count and SHA-256: edit a published file and skip the rebuild, and a client
-downloads the *new* file while verifying it against the *old* hash — verification
-then correctly refuses to install, and the one-click upgrade is broken for every
-user on an older version. `--check` is what makes that fail before a commit
-instead of in the field.
-
-`--key` and `OFM_MANIFEST_KEY` accept a private-key **file path**. No key means
-no manifest write; do not add a placeholder signature or replace the public
-key. The protected workflow's `RELEASE_MANIFEST_PRIVATE_KEY` instead contains
-the existing key's **PEM text**, used only by the trusted main signer.
-
-Digests are computed over **LF-normalised** bytes, not working-tree bytes:
-`.gitattributes` says `* text=auto eol=lf`, so users download the blob while an
-editor can leave the tree CRLF with `git status` clean. `scripts/release-e2e.mjs`
-rewrites every published file to CRLF and re-runs `--check`; the old builder fails
-there.
-
-Installed plugins discover the new release automatically (every
-`updateCheckHours`, 6 by default) and notify the user; the upgrade itself runs
-in-app, and the manifest is re-fetched right before installing so a document
-fetched hours earlier cannot be used to vouch for bytes that changed since.
+`refresh-integrity` and `catalog-test`'s
+`integrity records match the published bytes` share one definition: change any
+published file without refreshing the record and `node scripts/test-all.mjs`
+turns red. That replaces the old "re-sign feed/manifest.json" role — for
+**bytes only, not signatures**: without `feed/manifest.json` and the pinned
+public key there is no upgrade path for older clients in this repository.
 
 ## Release consistency on main is enforced (ruleset)
 

@@ -29,6 +29,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { publishedBytes } from './lib/published-bytes.mjs'
+import { computePublishedIntegrity, diffIntegrity } from './refresh-integrity.mjs'
 
 const repo = fileURLToPath(new URL('..', import.meta.url))
 const read = rel => fs.readFileSync(path.join(repo, rel), 'utf8')
@@ -168,6 +169,18 @@ function spawnLastContentRevision() {
     return execFileSync('git', ['log', '-1', '--format=%H', '--', 'package.json', ...(pkg.files ?? [])], { cwd: repo, encoding: 'utf8' }).trim() || null
   } catch {
     return null
+  }
+}
+
+// ── integrity：发布字节必须与记录一致 ─────────────────────────────────────────
+// 这条此前**完全缺失**（integrity.json 读进来从未比较），导致记录漂移 13 处无人发现。
+// contributor 模式跳过：PR 的内容与当前 HEAD 本来就不同，且贡献者环境可能没有 git。
+if (!contributor) {
+  const computed = computePublishedIntegrity()
+  if (computed === null) {
+    console.log('ok   (integrity 校验跳过：git 不可用)')
+  } else {
+    check('integrity records match the published bytes', diffIntegrity(integrity, computed), [])
   }
 }
 
