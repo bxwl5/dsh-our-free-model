@@ -94,7 +94,19 @@ async function main() {
   // 授权 URL 的 redirect_uri 指向云端（不是本机）
   const authUrl = buildAuthorizeUrl(OFFICEACE, 'st', pkce.challenge)
   assert.ok(authUrl.includes(encodeURIComponent(OFFICEACE.redirectUri)) || authUrl.includes('agentarts'), '回调指向云端')
-  assert.ok(authUrl.includes('code_challenge_method=S256'))
+  // 授权地址必须**两层嵌套**：外层 login.html 承载登录，内层才是 OAuth authorize。
+  // 只拼一层时华为云会安静地渲染通用登录页，登录完没有回调（用户报障的形态）。
+  assert.ok(authUrl.startsWith('https://auth.huaweicloud.com/authui/login.html?service='), '外层必须是 login.html?service=')
+  const inner = decodeURIComponent(new URL(authUrl).searchParams.get('service') ?? '')
+  assert.ok(inner.startsWith('https://auth.huaweicloud.com/authui/v1/oauth2/authorize?'), '内层必须是 oauth2/authorize')
+  const innerParams = new URL(inner).searchParams
+  // 华为云要 SHA-256（不是 PKCE 规范里的 S256 字面量）。
+  assert.equal(innerParams.get('code_challenge_method'), 'SHA-256')
+  assert.equal(innerParams.get('scope'), 'openid')
+  assert.equal(innerParams.get('response_type'), 'code')
+  assert.equal(innerParams.get('client_id'), OFFICEACE.clientId)
+  assert.equal(innerParams.get('state'), 'st')
+  assert.equal(innerParams.get('code_challenge'), pkce.challenge)
 
   // ── 假上游 ──
   let pollCount = 0

@@ -127,7 +127,8 @@ export async function verifyChannelOauthFailure({ call, lane } = {}) {
       assert.ok(started?.accountId && started?.loginUrl, 'Accio 必须返回 accountId 与 loginUrl')
 
       const authUrl = new URL(started.loginUrl)
-      const redirect = new URL(authUrl.searchParams.get('redirect_uri'))
+      // Accio 的回调参数名是 `return_url`（授权入口是 /login，不是 /oauth/authorize）。
+      const redirect = new URL(authUrl.searchParams.get('return_url'))
       assert.equal(redirect.pathname, '/callback')
       assert.equal(authUrl.searchParams.get('code_challenge_method'), 'S256', 'Accio 必须用 PKCE')
 

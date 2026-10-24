@@ -107,14 +107,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 export function parseWhoami(value: unknown): CommandCodeWhoami | undefined {
   if (!isRecord(value)) return undefined
-  const userId = stringValue(value.userId) ?? stringValue(value.user_id) ?? stringValue(value.id)
+  // 与 {@link parseCredits} 同因：有些实现套一层 `{ data: {...} }` 信封。
+  // 用户报障「whoami 响应缺少 userId」正是踩在这里 —— 真实响应把身份放在 `data`
+  // 里，而早期只读顶层，于是拿到了 `undefined`。
+  const outer = isRecord(value.data) ? value.data : value
+  // 再套一层 `{ user: {...} }` 的实现也见过，一并兼容。
+  const body = isRecord(outer.user) ? outer.user : outer
+  const userId = stringValue(body.userId) ?? stringValue(body.user_id)
+    ?? stringValue(body.id) ?? stringValue(body.uid) ?? stringValue(body.account_id)
   if (userId === undefined) return undefined
   return {
     userId,
-    userName: stringValue(value.userName) ?? stringValue(value.user_name) ?? stringValue(value.name),
-    email: stringValue(value.email),
-    keyName: stringValue(value.keyName) ?? stringValue(value.key_name),
-    plan: stringValue(value.plan) ?? stringValue(value.tier),
+    userName: stringValue(body.userName) ?? stringValue(body.user_name)
+      ?? stringValue(body.name) ?? stringValue(body.nickname) ?? stringValue(body.display_name),
+    email: stringValue(body.email),
+    keyName: stringValue(body.keyName) ?? stringValue(body.key_name),
+    plan: stringValue(body.plan) ?? stringValue(body.tier),
   }
 }
 

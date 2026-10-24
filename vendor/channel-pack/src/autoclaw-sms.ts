@@ -193,14 +193,21 @@ export function toAutoclawCredential(
       ? Date.now() + (data.expires_in as number) * 1000
       : undefined
   const jwtExpires = typeof claims.exp === 'number' ? claims.exp * 1000 : undefined
+  // 用户报障「短信登录后没有返回账号信息」：上游的登录响应**不保证**带 `user_id`
+  //（实测 data 里常只有 token 三件套），JWT payload 也可能没有 —— 此时若把
+  // `account_id` 留空，账号池建出来的条目没有身份，界面上就是「没有账号信息」。
+  // 因此按 `data.user_id` → JWT `user_id` → `data.user_name` → 手机号 逐级兜底，
+  // 保证每条凭据都有一个可展示、可去重的稳定标识。
   const userId = data?.user_id ?? claims.user_id
+    ?? claims.uid ?? claims.sub
   const userName = typeof data?.user_name === 'string' ? data.user_name : undefined
   const userPhone = typeof data?.user_phone === 'string' ? data.user_phone : phone
+  const fallbackId = userPhone !== '' ? `phone:${userPhone}` : undefined
   const credential: AutoClawCredential = {
     access_token: accessToken,
     refresh_token: stripBearer(data?.refresh_token) || undefined,
     expire_time: jwtExpires ?? declared,
-    account_id: userId === undefined ? undefined : String(userId),
+    account_id: userId === undefined ? fallbackId : String(userId),
     nickname: userName ?? `AutoClaw ${userPhone.slice(-4)}`,
     created_at: Date.now(),
     device_id: deviceId,

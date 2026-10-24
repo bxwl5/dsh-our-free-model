@@ -173,15 +173,25 @@ export function buildAuthorizeUrl(
   state: string,
   challenge: string,
 ): string {
+  // ⚠️ 必须**两层**：内层是真正的 OAuth authorize，外层是华为云的登录承载页。
+  // 直接把 OAuth 参数拼到 `login.html?` 上不会报错 —— 它会安静地渲染成通用登录页
+  //（用户看到的就是「直接到华为云了，没有任何回调」）。对照公开实现
+  // `Q-shuang-dot/officeace2api` 的 `buildAuthorizeUrl`：
+  //   inner = {authBase}/authui/v1/oauth2/authorize?<oauth params>
+  //   outer = {authBase}/authui/login.html?service=<urlencode(inner)>
+  // 另有两个易错点：`code_challenge_method` 是 `SHA-256`（不是 `S256`），
+  // 且必须带 `scope=openid` —— 缺任一都会在登录后被判参数非法。
   const query = new URLSearchParams({
-    response_type: 'code',
     client_id: product.clientId,
-    redirect_uri: product.redirectUri,
-    state,
     code_challenge: challenge,
-    code_challenge_method: 'S256',
+    code_challenge_method: 'SHA-256',
+    state,
+    scope: 'openid',
+    redirect_uri: product.redirectUri,
+    response_type: 'code',
   })
-  return `${product.loginBase}${'/authui/login.html'}?${query.toString()}`
+  const inner = `${product.loginBase}/authui/v1/oauth2/authorize?${query.toString()}`
+  return `${product.loginBase}/authui/login.html?service=${encodeURIComponent(inner)}`
 }
 
 /**

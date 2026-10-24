@@ -27877,14 +27877,16 @@ function isRecord2(value) {
 }
 function parseWhoami(value) {
   if (!isRecord2(value)) return void 0;
-  const userId = stringValue(value.userId) ?? stringValue(value.user_id) ?? stringValue(value.id);
+  const outer = isRecord2(value.data) ? value.data : value;
+  const body = isRecord2(outer.user) ? outer.user : outer;
+  const userId = stringValue(body.userId) ?? stringValue(body.user_id) ?? stringValue(body.id) ?? stringValue(body.uid) ?? stringValue(body.account_id);
   if (userId === void 0) return void 0;
   return {
     userId,
-    userName: stringValue(value.userName) ?? stringValue(value.user_name) ?? stringValue(value.name),
-    email: stringValue(value.email),
-    keyName: stringValue(value.keyName) ?? stringValue(value.key_name),
-    plan: stringValue(value.plan) ?? stringValue(value.tier)
+    userName: stringValue(body.userName) ?? stringValue(body.user_name) ?? stringValue(body.name) ?? stringValue(body.nickname) ?? stringValue(body.display_name),
+    email: stringValue(body.email),
+    keyName: stringValue(body.keyName) ?? stringValue(body.key_name),
+    plan: stringValue(body.plan) ?? stringValue(body.tier)
   };
 }
 function credentialFromWhoami(apiKey, whoami) {
@@ -28389,14 +28391,13 @@ async function createPkcePair() {
 }
 function buildAccioAuthUrl(product, redirectUri, state, challenge) {
   const query = new URLSearchParams({
-    response_type: "code",
-    client_id: product.clientId,
-    redirect_uri: redirectUri,
+    return_url: redirectUri,
     state,
     code_challenge: challenge,
-    code_challenge_method: "S256"
+    code_challenge_method: "S256",
+    client_id: product.clientId
   });
-  return `${product.loginBase}/oauth/authorize?${query.toString()}`;
+  return `${product.loginBase}/login?${query.toString()}`;
 }
 var init_accio = __esm({
   "vendor/channel-pack/src/accio.ts"() {
@@ -28951,14 +28952,16 @@ async function fetchState(fetcher, product, signal) {
 }
 function buildAuthorizeUrl(product, state, challenge) {
   const query = new URLSearchParams({
-    response_type: "code",
     client_id: product.clientId,
-    redirect_uri: product.redirectUri,
-    state,
     code_challenge: challenge,
-    code_challenge_method: "S256"
+    code_challenge_method: "SHA-256",
+    state,
+    scope: "openid",
+    redirect_uri: product.redirectUri,
+    response_type: "code"
   });
-  return `${product.loginBase}${"/authui/login.html"}?${query.toString()}`;
+  const inner = `${product.loginBase}/authui/v1/oauth2/authorize?${query.toString()}`;
+  return `${product.loginBase}/authui/login.html?service=${encodeURIComponent(inner)}`;
 }
 async function pollAuthCode(fetcher, product, state, options = {}) {
   const intervalMs = options.intervalMs ?? 2e3;
@@ -60751,14 +60754,15 @@ function toAutoclawCredential(data, deviceId, phone) {
   const claims = jwtClaims(accessToken);
   const declared = typeof data?.expires_at === "number" ? data.expires_at * (data.expires_at < 1e12 ? 1e3 : 1) : typeof data?.expires_in === "number" ? Date.now() + data.expires_in * 1e3 : void 0;
   const jwtExpires = typeof claims.exp === "number" ? claims.exp * 1e3 : void 0;
-  const userId = data?.user_id ?? claims.user_id;
+  const userId = data?.user_id ?? claims.user_id ?? claims.uid ?? claims.sub;
   const userName = typeof data?.user_name === "string" ? data.user_name : void 0;
   const userPhone = typeof data?.user_phone === "string" ? data.user_phone : phone;
+  const fallbackId = userPhone !== "" ? `phone:${userPhone}` : void 0;
   const credential = {
     access_token: accessToken,
     refresh_token: stripBearer(data?.refresh_token) || void 0,
     expire_time: jwtExpires ?? declared,
-    account_id: userId === void 0 ? void 0 : String(userId),
+    account_id: userId === void 0 ? fallbackId : String(userId),
     nickname: userName ?? `AutoClaw ${userPhone.slice(-4)}`,
     created_at: Date.now(),
     device_id: deviceId

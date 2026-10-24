@@ -111,6 +111,18 @@ export async function verifyAutoclawSms() {
   assert.equal(credential.refresh_token, 'refresh-xyz')
   assert.equal(credential.expire_time, exp * 1000, '过期时间必须用 JWT exp，不是上游声明值')
   assert.equal(credential.account_id, 'db83134a66ecc2a95cb5f8ea485a7df8', 'account_id 用服务端 UUID')
+
+  // 上游不返回 user_id 时不能留空（用户报障「登录后没有账号信息」）：
+  // 逐级兜底 data.user_id → JWT user_id → 手机号。
+  {
+    const tokenOnly = sms.toAutoclawCredential({ access_token: jwt({ exp }) }, 'dev-1', '13800138000')
+    assert.equal(tokenOnly.ok, true)
+    assert.equal(tokenOnly.credential.account_id, 'phone:13800138000', '缺 user_id 时用手机号兜底')
+    const withSub = sms.toAutoclawCredential({ access_token: jwt({ exp, sub: 'sub-9' }) }, 'dev-1', '13800138000')
+    assert.equal(withSub.credential.account_id, 'sub-9', 'JWT sub 也可作为标识')
+    const withUid = sms.toAutoclawCredential({ access_token: jwt({ exp, uid: 'uid-7' }) }, 'dev-1', '13800138000')
+    assert.equal(withUid.credential.account_id, 'uid-7', 'JWT uid 也可作为标识')
+  }
   assert.equal(credential.device_id, deviceId, 'device_id 必须随凭据保存')
   assert.equal(credential.nickname, 'AutoClaw 9846')
   const loginSeen = seen[1]

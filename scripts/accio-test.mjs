@@ -76,9 +76,19 @@ async function main() {
 
   // ── 授权 URL ──
   const authUrl = buildAccioAuthUrl(ACCIO, 'http://localhost:5960/callback', 'st', pkce.challenge)
-  assert.ok(authUrl.startsWith('https://www.accio.com/oauth/authorize?'))
-  assert.ok(authUrl.includes('code_challenge_method=S256'))
-  assert.ok(authUrl.includes('client_id=accio-work'))
+  // ⚠️ 授权入口是**登录页**，不是 `/oauth/authorize`：后者会被前端路由兜底成官网首页，
+  // 用户看到的就是「点了没反应、一直空白页」。
+  assert.ok(authUrl.startsWith('https://www.accio.com/login?'), '授权入口必须是 /login')
+  assert.ok(!authUrl.includes('/oauth/authorize'), '不得再用不存在的 /oauth/authorize')
+  const authParams = new URL(authUrl).searchParams
+  assert.equal(authParams.get('code_challenge_method'), 'S256')
+  assert.equal(authParams.get('client_id'), 'accio-work')
+  // 参数名是 return_url，不是 redirect_uri；也没有 response_type。
+  assert.equal(authParams.get('return_url'), 'http://localhost:5960/callback')
+  assert.equal(authParams.get('redirect_uri'), null)
+  assert.equal(authParams.get('response_type'), null)
+  assert.equal(authParams.get('state'), 'st')
+  assert.equal(authParams.get('code_challenge'), pkce.challenge)
   // 国内版站点不同
   assert.ok(buildAccioAuthUrl(ACCIO_CN, 'http://localhost:5960/callback', 's', 'c').startsWith('https://www.accio-ai.com/'))
 
@@ -190,8 +200,8 @@ async function main() {
     })
     const started = await startAccioLogin({ product: ACCIO, timeoutMs: 4000 })
     try {
-      const redirect = new URL(started.loginUrl).searchParams.get('redirect_uri')
-      assert.ok(redirect !== null && redirect !== '', 'loginUrl 必须带 redirect_uri')
+      const redirect = new URL(started.loginUrl).searchParams.get('return_url')
+      assert.ok(redirect !== null && redirect !== '', 'loginUrl 必须带 return_url（Accio 的回调参数名）')
       const callbackPort = new URL(redirect).port
       // 错误 state 必须被 400 拒掉 —— 能拿到 400 就证明该地址确实有监听。
       assert.equal(await probe(`http://127.0.0.1:${callbackPort}${ACCIO_CALLBACK_PATH}?code=x&state=wrong`), 400, 'v4 回调必须可达')

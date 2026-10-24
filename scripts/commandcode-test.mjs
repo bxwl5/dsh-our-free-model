@@ -16,6 +16,16 @@ async function main() {
   assert.deepEqual(parseWhoami({ user_id: 'u2', user_name: 'bob' }), {
     userId: 'u2', userName: 'bob', email: undefined, keyName: undefined, plan: undefined,
   })
+  // 信封形状：`{ data: {...} }` / `{ data: { user: {...} } }` 都必须能认出来。
+  // 用户报障「whoami 响应缺少 userId」就是早期只读顶层导致的。
+  assert.equal(parseWhoami({ data: { userId: 'u3', userName: 'carol' } })?.userId, 'u3')
+  assert.equal(parseWhoami({ data: { user: { id: 'u4', nickname: 'dave' } } })?.userName, 'dave')
+  assert.equal(parseWhoami({ user: { user_id: 'u5' } })?.userId, 'u5')
+  assert.equal(parseWhoami({ data: { uid: 'u6', display_name: 'erin' } })?.userId, 'u6')
+  assert.equal(parseWhoami({ data: { account_id: 'u7' } })?.userId, 'u7')
+  // 信封里也确实没有身份时仍返回 undefined。
+  assert.equal(parseWhoami({ data: { ok: true } }), undefined)
+
   // 缺 userId = 无效凭据（不能当网络错误重试）。
   assert.equal(parseWhoami({ userName: 'no-id' }), undefined)
   assert.equal(parseWhoami(null), undefined)

@@ -221,7 +221,20 @@ export async function createPkcePair(): Promise<{ verifier: string; challenge: s
   return { verifier, challenge }
 }
 
-/** 构造授权 URL。 */
+/**
+ * 构造授权 URL。
+ *
+ * ⚠️ Accio **没有**标准的 `/oauth/authorize` 端点：那个路径会被前端路由兜底成官网首页
+ *（用户看到的就是「点了没反应，一直空白页」）。真实授权入口是登录页本身：
+ *
+ *   {loginBase}/login?return_url=<本机回调>&state=…&code_challenge=…
+ *                 &code_challenge_method=S256&client_id=accio-work
+ *
+ * 参数名是 **`return_url`** 而不是 `redirect_uri`，也没有 `response_type`。
+ * 依据：桌面端 `aimod-cc/Agent2API` 的 `providers/accio/oauth.rs::build_authorize_url`，
+ * 实测 `GET /login?...` 返回的是真正的登录页（`<title>Login to Accio</title>`），
+ * 而 `/oauth/authorize?...` 与任意不存在的路径返回同一个首页。
+ */
 export function buildAccioAuthUrl(
   product: AccioProduct,
   redirectUri: string,
@@ -229,12 +242,11 @@ export function buildAccioAuthUrl(
   challenge: string,
 ): string {
   const query = new URLSearchParams({
-    response_type: 'code',
-    client_id: product.clientId,
-    redirect_uri: redirectUri,
+    return_url: redirectUri,
     state,
     code_challenge: challenge,
     code_challenge_method: 'S256',
+    client_id: product.clientId,
   })
-  return `${product.loginBase}/oauth/authorize?${query.toString()}`
+  return `${product.loginBase}/login?${query.toString()}`
 }
