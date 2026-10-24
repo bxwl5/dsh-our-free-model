@@ -22,6 +22,16 @@ import {
   type AccioCredential,
 } from './accio.js'
 
+/**
+ * 取一个数字字段；**`0` 是合法值**，所以只在「不是有限数字」时返回 undefined。
+ *
+ * 不能写成 `value ? value : undefined` —— 那会把 `usagePercent: 0`（额度完全未用）
+ * 当成缺失，面板就会报「余额查询失败」而不是「剩余 100%」。
+ */
+function numberOrUndefined(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
 /** 用授权码换 token。 */
 export async function exchangeCode(
   fetcher: typeof fetch,
@@ -128,13 +138,29 @@ export async function fetchQuota(
     if (typeof body !== 'object' || body === null) return undefined
     const record = body as Record<string, unknown>
     const data = typeof record.data === 'object' && record.data !== null ? record.data as Record<string, unknown> : record
-    const used = typeof data.usedPercent === 'number' ? data.usedPercent
-      : typeof data.used_percent === 'number' ? data.used_percent
-      : undefined
-    const resetRaw = typeof data.resetAt === 'number' ? data.resetAt : undefined
+    // ⚠️ 上游字段是 **`usagePercent`**（usage），不是 `usedPercent`（used）——
+    // 少一个字母就永远取不到值，`fetchQuota` 返回空对象，面板显示「余额查询失败」。
+    // 2026-10-24 实测响应：
+    //   {"success":true,"code":"200","message":"0",
+    //    "data":{"usagePercent":0.00,"refreshCountdownSeconds":86400}}
+    // 三个变体都收（上游不同版本/网关可能换写法），并注意 **0 是合法值**，
+    // 不能用 `if (!used)` 之类的 falsy 判断把它当缺失。
+    const used = numberOrUndefined(data.usagePercent)
+      ?? numberOrUndefined(data.usedPercent)
+      ?? numberOrUndefined(data.usage_percent)
+      ?? numberOrUndefined(data.used_percent)
+    // 重置时刻有两种表达：绝对时间戳（resetAt）与**剩余秒数**（refreshCountdownSeconds）。
+    const resetRaw = numberOrUndefined(data.resetAt)
+    const countdown = numberOrUndefined(data.refreshCountdownSeconds)
+      ?? numberOrUndefined(data.refresh_countdown_seconds)
+    const resetAtMs = resetRaw !== undefined
+      ? (resetRaw < 1e12 ? resetRaw * 1000 : resetRaw)
+      : countdown !== undefined && countdown > 0
+        ? Date.now() + countdown * 1000
+        : undefined
     return {
       ...(used === undefined ? {} : { usedPercent: used }),
-      ...(resetRaw === undefined ? {} : { resetAtMs: resetRaw < 1e12 ? resetRaw * 1000 : resetRaw }),
+      ...(resetAtMs === undefined ? {} : { resetAtMs }),
     }
   } catch {
     return undefined

@@ -92,6 +92,20 @@ async function main() {
   // 国内版站点不同
   assert.ok(buildAccioAuthUrl(ACCIO_CN, 'http://localhost:5960/callback', 's', 'c').startsWith('https://www.accio-ai.com/'))
 
+  // ── 配额查询：真实响应形状（2026-10-24 实测）──
+  // 上游返回 { success:true, code:"200", data:{ usagePercent, refreshCountdownSeconds } }
+  {
+    const realBody = { success: true, code: '200', message: '0', data: { usagePercent: 0.0, refreshCountdownSeconds: 86400 } }
+    const fakeFetch = async () => Response.json(realBody)
+    const q = await fetchQuota(fakeFetch, ACCIO, { access_token: 'tok', created_at: Date.now() })
+    assert.ok(q !== undefined, '真实响应必须能解析出配额')
+    assert.equal(q.usedPercent, 0, 'usagePercent=0 必须被识别为「已用 0%」，不能当成缺失')
+    // refreshCountdownSeconds 是「还有多少秒重置」，换算成毫秒时间戳。
+    assert.ok(typeof q.resetAtMs === 'number' && q.resetAtMs > Date.now(), '应据 refreshCountdownSeconds 推出重置时刻')
+    // 0 不能被 falsy 判断吞掉（历史坑：`if (!used)` 会把 0 当缺失）
+    assert.notEqual(q.usedPercent, undefined)
+  }
+
   // ── 假上游 ──
   let mode = 'ok'
   const seen = []

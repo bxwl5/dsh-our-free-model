@@ -28437,6 +28437,9 @@ __export(accio_auth_exports, {
 });
 import { createServer as createServer2 } from "node:http";
 import { randomUUID as randomUUID5 } from "node:crypto";
+function numberOrUndefined(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : void 0;
+}
 async function exchangeCode(fetcher, product, code, verifier, redirectUri, signal) {
   const response = await fetcher(`${product.gatewayBase}${ACCIO_TOKEN_PATH}`, {
     method: "POST",
@@ -28513,11 +28516,13 @@ async function fetchQuota(fetcher, product, credential, signal) {
     if (typeof body !== "object" || body === null) return void 0;
     const record = body;
     const data = typeof record.data === "object" && record.data !== null ? record.data : record;
-    const used = typeof data.usedPercent === "number" ? data.usedPercent : typeof data.used_percent === "number" ? data.used_percent : void 0;
-    const resetRaw = typeof data.resetAt === "number" ? data.resetAt : void 0;
+    const used = numberOrUndefined(data.usagePercent) ?? numberOrUndefined(data.usedPercent) ?? numberOrUndefined(data.usage_percent) ?? numberOrUndefined(data.used_percent);
+    const resetRaw = numberOrUndefined(data.resetAt);
+    const countdown = numberOrUndefined(data.refreshCountdownSeconds) ?? numberOrUndefined(data.refresh_countdown_seconds);
+    const resetAtMs = resetRaw !== void 0 ? resetRaw < 1e12 ? resetRaw * 1e3 : resetRaw : countdown !== void 0 && countdown > 0 ? Date.now() + countdown * 1e3 : void 0;
     return {
       ...used === void 0 ? {} : { usedPercent: used },
-      ...resetRaw === void 0 ? {} : { resetAtMs: resetRaw < 1e12 ? resetRaw * 1e3 : resetRaw }
+      ...resetAtMs === void 0 ? {} : { resetAtMs }
     };
   } catch {
     return void 0;
