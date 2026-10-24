@@ -24,7 +24,7 @@
 | 14 | `accio` | PKCE + 本地回调（5960–5969）；**可改用粘贴令牌** | ✅ | 浏览器登录 | 是 | `accio-auth.ts:321,353` |
 | 15 | `accio-cn` | 同 `accio`（国内端点）；**可改用粘贴令牌** | ✅ | 浏览器登录 | 是 | 同上 |
 | 16 | `loomy` | 微信扫码，本地页承载 | ⚠️ | 微信扫码（未绑手机号时补短信码） | 是 | `channel-pack-rpc.ts:1793` 起 |
-| 17 | `raccoon` | 微信扫码 / 短信，本地页承载 | ✅ | 微信扫码或短信 | 是 | `channel-pack-rpc.ts:1848` 起、`raccoon-oauth.ts:116,140` |
+| 17 | `raccoon` | 微信扫码（服务端下发 code）/ 短信，本地页承载 | ✅ | 微信扫码或短信 | 是 | `raccoon-login-page.ts`、`raccoon-oauth.ts` 的 `/api/iam/v1` 函数 |
 | 18 | `monkeycode` | 粘贴 Cookie（`nebula_session`） | ❌ | 手动复制 Cookie | 否 | `channel-pack-rpc.ts:4448` |
 | 19 | `orcaterm` | 粘贴 Cookie（`ot_session`） | ❌ | 手动复制 Cookie | 否 | `channel-pack-rpc.ts:4455` |
 | 20 | `kuku` | 百度 App 扫码，**本地弹窗页**承载 | ✅ | 手机扫码 + 确认 | 是（本地页） | `kuku-qr-login.ts`、`kuku-qr-login-page.ts` |

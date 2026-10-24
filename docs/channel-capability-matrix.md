@@ -172,8 +172,13 @@ UI 上以「改用粘贴令牌」呈现）。`ADOPTABLE_CHANNELS` 因此有 5 �
 
 ### 3.8 Raccoon Work（`raccoon`）
 
-- 登录：本地页承载的微信扫码 + 短信双路径；**不依赖官方桌面端**（`office-raccoon://` 回调收不到，
-  改为宿主本地生成 code + 自行轮询）。
+- 登录：本地页承载的微信扫码 + 短信双路径；**不依赖官方桌面端**（`office-raccoon://` 回调收不到）。
+- 扫码协议（2026-10-24 修正）：官方已把扫码迁到 `POST /api/iam/v1/auth/mp/qrcode` —— 由**服务端下发**
+  `qrcode_code` + `scan_path`，二维码内容 = `scan_path?code&appname&source=platform`，轮询走
+  `/api/iam/v1/auth/mp/qrcode/login`。旧的「本地随机 code + 固定 `/login/mp`」链路已失效
+  （该页对任何 code 都 404，带 Cookie / 微信 UA / Referer 均如此）。
+- ⚠️ 上游扫码落地页当前仍 404：插件会探测并在面板上提示「扫码暂不可用」、默认切到短信登录；
+  短信链路正常。页面恢复后无需发版（探测为 200 即自动启用）。
 - 模型目录：远端，`visible` 过滤 + 带倍率的展示名。
 - 额度：账单；**无签到端点**（每日 300 积分由服务端按日自动发放，账单里是 `daily_grant`），
   另有「新手任务 / 桌面端登录奖励」走 `onboarding.claim`（一次性，幂等）。

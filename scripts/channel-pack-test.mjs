@@ -365,6 +365,8 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   await verifyAutoclawSms()
   const { verifyKukuQrPage } = await import('./kuku-qr-page-test.mjs')
   await verifyKukuQrPage()
+  const { verifyRaccoonQr } = await import('./raccoon-qr-test.mjs')
+  await verifyRaccoonQr()
   // OAuth 渠道后台登录失败必须让 login.poll 拿到可读原因（本用例只用
   // directLane 注入的本地替身上游，不出网）。
   const { verifyChannelOauthFailure } = await import('./channel-oauth-failure-test.mjs')
