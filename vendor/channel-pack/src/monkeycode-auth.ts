@@ -31,18 +31,17 @@ import {
 } from './monkeycode-product.js'
 import {
   MONKEYCODE_CHECKIN_PATH,
-  MONKEYCODE_ME_PATH,
   MONKEYCODE_MODELS_PATH,
+  MONKEYCODE_PROBE_PATH,
   MONKEYCODE_WALLET_PATH,
   type MonkeyCodeProduct,
 } from './monkeycode-product.js'
 import {
-  credentialFromUser,
+  credentialFromSession,
   isCredentialUsable,
   monkeyCodeHeaders,
   normalizeCookie,
   parseCheckin,
-  parseUser,
   parseWallet,
   unwrapData,
   type MonkeyCodeCheckinStatus,
@@ -97,8 +96,11 @@ async function call(
 /**
  * 用 Cookie 登录（校验并落成凭据）。
  *
- * 先调 `/users/me` 确认 Cookie 有效，再拉一次钱包补充额度信息。
+ * 打存活探测端点（`/api/v1/users/wallet`）确认 Cookie 有效。
  * 无效 Cookie 抛错 —— 不要把一份无效凭据写进去让用户以后才发现。
+ *
+ * ⚠️ 探测端点曾是 `/users/me`，已被上游下线（404）——
+ * 见 {@link MONKEYCODE_PROBE_PATH} 的说明。
  */
 export async function loginWithCookie(
   fetcher: typeof fetch,
@@ -111,26 +113,32 @@ export async function loginWithCookie(
     throw new Error('MonkeyCode：Cookie 无效（必须包含 monkeycode_ai_session=… 或旧名 nebula_session=…，且不能为空）')
   }
   const probe: MonkeyCodeCredential = { access_token: cookie }
-  const result = await call(fetcher, product, probe, MONKEYCODE_ME_PATH, { signal })
+  // ⚠️ 探测打 `/users/wallet`：`/users/me` 已被上游下线（404），拿它探测会让**任何**
+  // 合法 Cookie 都被判无效（用户根本登不进去）。
+  const result = await call(fetcher, product, probe, MONKEYCODE_PROBE_PATH, { signal })
   if (result.status === 0) throw new Error('MonkeyCode：无法连接上游（网络不可达）')
   if (result.status === 401 || result.status === 403) {
     throw new Error('MonkeyCode：Cookie 无效或已过期，请重新从浏览器复制')
   }
-  if (!result.ok) throw new Error(`MonkeyCode：/users/me 返回 HTTP ${result.status}`)
-  const user = parseUser(result.body)
-  if (user === undefined) throw new Error('MonkeyCode：/users/me 响应缺少 id，无法确认账号')
-  return credentialFromUser(cookie, user)
+  if (!result.ok) throw new Error(`MonkeyCode：存活探测返回 HTTP ${result.status}`)
+  // 钱包能读到即视为凭据有效；身份用**会话 Cookie 的值**派生 —— 钱包里的 `id`
+  // 是全零占位，用它会让所有账号撞成同一个 account_id。
+  const wallet = parseWallet(result.body)
+  if (wallet === undefined) throw new Error('MonkeyCode：钱包响应无法解析，无法确认账号')
+  return credentialFromSession(cookie)
 }
 
 /** 读取当前用户信息。 */
 export async function fetchUser(
-  fetcher: typeof fetch,
-  product: MonkeyCodeProduct,
-  credential: MonkeyCodeCredential,
-  signal?: AbortSignal,
+  _fetcher: typeof fetch,
+  _product: MonkeyCodeProduct,
+  _credential: MonkeyCodeCredential,
+  _signal?: AbortSignal,
 ): Promise<MonkeyCodeUser | undefined> {
-  const result = await call(fetcher, product, credential, MONKEYCODE_ME_PATH, { signal })
-  return result.ok ? parseUser(result.body) : undefined
+  // ⚠️ 上游没有可用的用户信息端点（`/users/me` 等全 404），钱包里也没有真正的
+  // 用户 id（是全零占位）。这里如实返回 `undefined`（「不知道」），
+  // 而不是编一个假身份。调用方应容忍 undefined。
+  return undefined
 }
 
 /**
@@ -247,7 +255,7 @@ export async function fetchModels(
 /**
  * 判断凭据是否仍有效（轻量探活）。
  *
- * 只调 `/users/me` 看状态码。
+ * 打存活探测端点（`/api/v1/users/wallet`）看状态码。
  */
 export async function probeCredential(
   fetcher: typeof fetch,
@@ -256,7 +264,8 @@ export async function probeCredential(
   signal?: AbortSignal,
 ): Promise<'valid' | 'expired' | 'network_error'> {
   if (!isCredentialUsable(credential)) return 'expired'
-  const result = await call(fetcher, product, credential, MONKEYCODE_ME_PATH, { signal })
+  // 同 loginWithCookie：`/users/me` 已 404，探活必须用钱包端点。
+  const result = await call(fetcher, product, credential, MONKEYCODE_PROBE_PATH, { signal })
   if (result.status === 0) return 'network_error'
   if (result.status === 401 || result.status === 403) return 'expired'
   return result.ok ? 'valid' : 'network_error'

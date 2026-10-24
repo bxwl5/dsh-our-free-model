@@ -115,6 +115,33 @@ export async function createDpopProof(
   return `${signingInput}.${base64UrlEncode(new Uint8Array(signature))}`
 }
 
+/**
+ * 用**落库的 JWK 密钥对**构造 DPoP proof（续期用）。
+ *
+ * 与 `createDpopProof` 的区别：吃 `OfficeAceDpopJwkPair`（JSON 形态，登录时
+ * `exportDpopJwkPair` 落库的那份）而不是运行时 CryptoKey —— 续期发生在新的
+ * 调用里，密钥只能从凭据存储读回。结构与 officeace2api `refresh.mjs` 的
+ * `generateDpopProof(privateJwk, publicJwk, …)` 一致（实测 2026-10-24：连续
+ * 两次续期均 200）。
+ */
+export async function createDpopProofFromJwk(
+  pair: {
+    privateJwk: { kty: 'EC'; crv: 'P-256'; x: string; y: string; d: string }
+    publicJwk: { kty: 'EC'; crv: 'P-256'; x: string; y: string }
+  },
+  method: string,
+  url: string,
+): Promise<string> {
+  const privateKey = await crypto.subtle.importKey(
+    'jwk',
+    { kty: pair.privateJwk.kty, crv: pair.privateJwk.crv, x: pair.privateJwk.x, y: pair.privateJwk.y, d: pair.privateJwk.d },
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    false,
+    ['sign'],
+  )
+  return createDpopProof({ privateKey, publicJwk: pair.publicJwk }, method, url)
+}
+
 /** 十六进制编码。 */
 export function toHex(bytes: Uint8Array): string {
   return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, '0')).join('')

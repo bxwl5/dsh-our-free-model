@@ -118,6 +118,40 @@ const CONTENT_FINGERPRINTS: readonly ContentFingerprint[] = [
     note: 'DSH harness:identity 首句；上游锚定内容开头、忽略大小写、末尾句号可选',
   },
   {
+    // **DSH 自己的 Web GUI 提示词**（`@deepseek-ai/dsh-harness-dev-context` 的
+    // `WEB_SURFACE_PROMPT` 开头两句）。这是 2026-10-24 用户报「WorkBuddy 国内版模型
+    // 调用报错 Illegal API invocation」的**真正原因** —— 它在**每一轮**对话里都会注入。
+    //
+    // 实测（`copilot.tencent.com` / `hy3` / stream / max_tokens=8，2026-10-25）：
+    //   只放第一句（到 "runtime context names." 为止）              → ✅ 200
+    //   第一句 + 第二句（"When the user refers to "this page"…"）  → ❌ 400/11128
+    //   整段 1004 字符原文                                          → ❌ 400/11128
+    //   把品牌词 `the DeepSeek Harness Web GUI` 改成 `the Web GUI`   → ✅ 200
+    // 即**上游锚定的是这两句的组合**，单句放行；逐字符敏感（改一个词即可绕过）。
+    //
+    // find 取「第一句开头 + 第二句关键片段」的组合，replace 只去掉品牌词，
+    // 其余逐字保留（保住服务端前缀缓存）。
+    find: 'You are interacting with the user through the DeepSeek Harness Web GUI',
+    replace: 'You are interacting with the user through the Web GUI',
+    note: 'DSH WEB_SURFACE_PROMPT 首句；2026-10-25 实测 copilot.tencent.com 单句放行、两句组合拦截',
+  },
+  {
+    // 其它客户端（Claude Code 兼容层 / 第三方 agent）注入的身份句。
+    // 2026-10-25 本机实测（`copilot.tencent.com`，同账号同模型，max_tokens=8）：
+    //   system = `You are Claude Code, Anthropic's official CLI for Claude.` → ❌ 400/11128
+    //   system = `You are Claude Code`                                     → ❌ 400/11128
+    //   system = `This is powered by Claude Code.`                         → ✅ 200
+    //   system = `Anthropic's official CLI for Claude.`                     → ✅ 200
+    // 即**上游锚定的是 `You are Claude Code` 这个开头短语**，后面接什么都拦；
+    // 只出现 "Claude Code" 而不带 "You are " 前缀则放行。
+    // 用户报障「WorkBuddy 国内版模型调用报错 Illegal API invocation」即由此触发。
+    // replace 去掉品牌名、保留「你是一个助手」的语义，且**不含 Claude / Code**，
+    // 避免上游把替换后的文本也加进名单。
+    find: 'You are Claude Code',
+    replace: 'You are a helpful assistant',
+    note: '2026-10-25 本机实测 copilot.tencent.com；锚定 You are Claude Code 开头，尾随内容不影响',
+  },
+  {
     // ZCode 内建常量：`$Js="Main branch (you will usually use this for PRs)"`。
     // 每个 git 仓库里的会话都会被注入（拼在 `Main branch … : <分支名>` 这一行）。
     find: 'Main branch (you will usually use this for PRs)',

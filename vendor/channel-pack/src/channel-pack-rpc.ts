@@ -45,7 +45,7 @@ import { startKukuLoginFlow } from './kuku-qr-login-page.js'
 import { parseCredential as parseAutoClawCredential, type AutoClawCredential } from './autoclaw.js'
 import type { AccioCredential } from './accio.js'
 import { ACCIO, ACCIO_CN } from './accio-product.js'
-import { fetchQuota as fetchAccioQuota } from './accio-auth.js'
+import { fetchQuota as fetchAccioQuota, refreshCredential as refreshAccioCredential } from './accio-auth.js'
 import { readCredits } from './commandcode-credits.js'
 import type { CommandCodeCredential } from './commandcode.js'
 import { COMMANDCODE } from './commandcode-product.js'
@@ -57,11 +57,11 @@ import {
 } from './monkeycode-auth.js'
 import type { MonkeyCodeCredential } from './monkeycode.js'
 import { MONKEYCODE } from './monkeycode-product.js'
-import { AUTOCLAW } from './autoclaw-product.js'
+import { AUTOCLAW, AUTOCLAW_INTL } from './autoclaw-product.js'
 import { refreshAutoclawCredential, resolveAutoclawDeviceId } from './autoclaw-sms.js'
 import { startAutoclawLoginFlow } from './autoclaw-login-page.js'
 import { resolveChannelPackHome } from './channel-pack-store.js'
-import { parseCredential as parseOfficeAceCredential } from './officeace.js'
+import { parseCredential as parseOfficeAceCredential, type OfficeAceCredential } from './officeace.js'
 import type { LoomyAuth } from './loomy-auth.js'
 import type { LoomyCredential } from './loomy.js'
 import { RACCOON } from './raccoon-product.js'
@@ -2452,6 +2452,61 @@ function registerChannelPackEndpoints(
               })
               break
             }
+            case COMMANDCODE.id: {
+              // Command Code 是长期 API Key 型渠道（**没有 refresh_token**，key 不轮换），
+              // 与 kuku / monkeycode 同为「刷新即复核」：重读凭据、确认 key 形状可用，
+              // 如实保持 `refreshable: false`；不可用就报错引导重新粘贴。
+              // 缺了本分支时点刷新会抛 `Unknown provider: commandcode`（用户报障形态）。
+              const resolved = await ctx.credentials.resolve(credentialRef(entry.credentialRef))
+              if (resolved === undefined) throw new Error('凭据未配置')
+              let key = ''
+              try {
+                const parsed = JSON.parse(resolved.value) as { access_token?: unknown }
+                key = typeof parsed.access_token === 'string' ? parsed.access_token : ''
+              } catch { key = '' }
+              if (key === '') throw new Error('凭据不可用，请重新粘贴 API Key')
+              await pool.updateAccount(entry.id, { refreshable: false })
+              break
+            }
+            case ACCIO.id:
+            case ACCIO_CN.id: {
+              // Accio 家族**有真续期端点**（`POST {gatewayBase}/api/auth/refresh_token`，
+              // 审计实测 200 且幂等：token 不轮换、expiresAt 顺延 30 天）。
+              // `refreshCredential` 返回 undefined 表示「没有 refresh_token 或续期失败」——
+              // 失败要如实报错（不能装成复核成功），成功则回写凭据与账号池。
+              const product = entry.provider === ACCIO_CN.id ? ACCIO_CN : ACCIO
+              const resolved = await ctx.credentials.resolve(credentialRef(entry.credentialRef))
+              if (resolved === undefined) throw new Error('凭据未配置')
+              const current = JSON.parse(resolved.value) as AccioCredential
+              if (current.refresh_token === undefined || current.refresh_token === '') {
+                throw new Error('该账号没有 refresh_token，无法续期（重新登录可重建）')
+              }
+              const refreshed = await refreshAccioCredential(codeartsFetcher, product, current)
+              if (refreshed === undefined) throw new Error('Accio：续期请求失败（上游拒绝或响应缺少 accessToken）')
+              await ctx.credentials.set(credentialRef(entry.credentialRef), JSON.stringify(refreshed))
+              await pool.updateAccount(entry.id, {
+                expiresAt: refreshed.expire_time,
+                refreshable: typeof refreshed.refresh_token === 'string' && refreshed.refresh_token !== '',
+              })
+              break
+            }
+            case 'officeace': {
+              // OfficeAce **有真续期**（`grant_type=refresh_token` 换新 AK/SK，实测
+              // 2026-10-24 连续两次 200；refresh_token 一次性轮换，新值必须落库）。
+              // 凭据里的 `refresh_token` + `dpop` 私钥就是续期链钥匙（登录时落库的）。
+              const { refreshOfficeAceCredential } = await import('./officeace.js')
+              const { OFFICEACE } = await import('./officeace-product.js')
+              const resolved = await ctx.credentials.resolve(credentialRef(entry.credentialRef))
+              if (resolved === undefined) throw new Error('凭据未配置')
+              const current = JSON.parse(resolved.value) as OfficeAceCredential
+              const refreshed = await refreshOfficeAceCredential(codeartsFetcher, OFFICEACE, current)
+              await ctx.credentials.set(credentialRef(entry.credentialRef), JSON.stringify(refreshed))
+              await pool.updateAccount(entry.id, {
+                expiresAt: refreshed.expire_time,
+                refreshable: typeof refreshed.refresh_token === 'string' && refreshed.refresh_token !== '',
+              })
+              break
+            }
             default:
               throw new Error(`Unknown provider: ${entry.provider}`)
           }
@@ -3578,6 +3633,42 @@ function registerChannelPackEndpoints(
                   cycleEndTime: quota.resetAtMs === undefined ? '' : new Date(quota.resetAtMs).toISOString(),
                   expiredTime: '',
                 }],
+                expiredTotal: 0,
+              }
+            },
+            warn: (msg) => ctx.logger?.warn?.(msg),
+          })
+          return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
+        }
+        if (req.provider === 'officeace') {
+          // OfficeAce 果办是**积分制**：`GET {gateway}/v1/subscription`
+          // （V11-HMAC-SHA256 签名 + `x-subscription-type: v2`，网关取凭据的
+          // `model_info.model_api_url_base`）。实测（2026-10-24，真实账号 HTTP 200）：
+          // `skus[].quotas[]` 里 `officeace_points`（500 总额 / 已用 current_value）
+          // 与 `online_search_count`；`bonus_skus[]` 是奖励积分（新用户 4000 /
+          // 每日签到 100，带过期时间）。剩余 = sku_value - current_value
+          //（officeace2api `quota.mjs` 的 summarizeSubscription 同款口径）。
+          const { fetchSubscriptionSnapshot } = await import('./officeace.js')
+          const { OFFICEACE } = await import('./officeace-product.js')
+          const values = await collectCreditBalances<OfficeAceCredential, typeof OFFICEACE>(accounts, OFFICEACE, {
+            fetcher: codeartsFetcher,
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalance: async (credential) => {
+              const snapshot = await fetchSubscriptionSnapshot(codeartsFetcher, OFFICEACE, credential)
+              return {
+                // total 口径与面板其它渠道一致：可用剩余（套餐 + 未过期奖励）。
+                total: snapshot.remaining,
+                packages: snapshot.packages.map((pkg) => ({
+                  name: pkg.name,
+                  unit: 'credits',
+                  remaining: pkg.remaining,
+                  total: pkg.total,
+                  used: pkg.used,
+                  active: true,
+                  cycleStartTime: '',
+                  cycleEndTime: pkg.expiresAt === 0 ? '' : new Date(pkg.expiresAt).toISOString(),
+                  expiredTime: '',
+                })),
                 expiredTotal: 0,
               }
             },

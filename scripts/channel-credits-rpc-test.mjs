@@ -67,7 +67,7 @@ export async function verifyChannelCreditsRpc({ ctx, call, creds }) {
     const freshQuota = await call('credits.balances', { provider: 'gemini', force: true })
     assert.equal(quotaRequests, 2, '手动重试必须真正查询上游替身')
     assert.equal(freshQuota.value.accounts[0].balance.total, 60)
-    await verifyRefreshDispatch({ ctx, call })
+    await verifyRefreshDispatch({ ctx, call, creds })
   } finally {
     ctx.credentials.resolve = originalResolve
     globalThis.fetch = originalFetch
@@ -78,7 +78,7 @@ export async function verifyChannelCreditsRpc({ ctx, call, creds }) {
   }
 }
 
-async function verifyRefreshDispatch({ ctx, call }) {
+async function verifyRefreshDispatch({ ctx, call, creds }) {
   const providers = [
     'codearts', 'buddy', 'workbuddy', 'lobsterai', 'qoder', 'qodercn', 'trae',
     'cline', 'loomy', 'raccoon', 'minimax', 'zcode', 'gemini',
@@ -109,4 +109,197 @@ async function verifyRefreshDispatch({ ctx, call }) {
     }
   }
   console.log('ok  refresh RPC: all 13 providers pass exact ref/pool/id; disabled accounts refresh; failures return ok:false')
+  await verifyNewProviderRefreshDispatch({ ctx, call, creds })
+}
+
+/**
+ * t4 新增的四个续期分支（commandcode / accio / accio-cn / officeace）。
+ *
+ * 缺陷（用户实测报「续期提示失败」）：这四个 provider 落 `default` 抛
+ * `Unknown provider: <id>`。本用例逐个锁死新行为：
+ * - accio / accio-cn：**真续期** —— 替身上游 `POST /api/auth/refresh_token`
+ *   回 200 + 新 expiresAt（audit 实测幂等、顺延 30 天），断言请求形状
+ *   （body 带 accessToken/refreshToken）与新 expiresAt/refreshable 写回账号池；
+ * - officeace：**真续期** —— 替身 STS `POST /v1/oauth2/tokens` 回 200 +
+ *   `credentials.{access_key_id,…}` + 轮换的 refresh_token（实测口径），
+ *   断言表单字段（grant_type=refresh_token）与凭据回写；
+ * - commandcode：**复核** —— 无网络调用，凭据可用即 success 且
+ *   `refreshable` 归 false；凭据缺失时 ok:false。
+ */
+async function verifyNewProviderRefreshDispatch({ ctx, call, creds }) {
+  const originalFetch = globalThis.fetch
+  const seen = []
+  const expires = Date.now() + 30 * 86400_000
+  // 真实的 P-256 JWK（DPoP proof 要真的签名，占位字符会让 importKey 抛
+  // Invalid keyData —— 用 node:crypto 生成一对与登录链同形态的密钥）。
+  const { generateKeyPairSync } = await import('node:crypto')
+  const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+  const jwk = privateKey.export({ format: 'jwk' })
+  const dpopPair = {
+    privateJwk: { kty: 'EC', crv: 'P-256', x: String(jwk.x), y: String(jwk.y), d: String(jwk.d) },
+    publicJwk: { kty: 'EC', crv: 'P-256', x: String(jwk.x), y: String(jwk.y) },
+  }
+  // 形态对齐真实上游（audit / t4 实测）：
+  // - accio 刷新回 accessToken/refreshToken/expiresAt（token 不轮换、顺延 30 天）
+  // - STS 续期回 credentials.{access_key_id,secret_access_key,security_token,
+  //   expiration} + 轮换后的 refresh_token（无 project_id、无 id_token —— 实测缺席）
+  const standIn = async (input, init = {}) => {
+    const url = new URL(String(input instanceof Request ? input.url : input))
+    seen.push({ method: init.method ?? 'GET', url: url.href, body: String(init.body ?? '') })
+    if (url.pathname === '/api/auth/refresh_token') {
+      return Response.json({ accessToken: 'accio-new-at', refreshToken: 'accio-rt', expiresAt: expires })
+    }
+    if (url.pathname === '/v1/oauth2/tokens') {
+      return Response.json({
+        credentials: {
+          access_key_id: 'AKIA-NEW', secret_access_key: 'SK-NEW',
+          security_token: 'sec-new', expiration: new Date(expires).toISOString(),
+        },
+        refresh_token: 'rt-rotated',
+      })
+    }
+    throw new Error(`未预期的续期替身端点：${url.href}`)
+  }
+  // RPC 走 `codeartsFetcher` → directFetch（包内 undici，**不读 globalThis.fetch**）。
+  // source 模式下测试与 RPC 共享同一份 direct-fetch 模块实例，注入 directLane 即生效；
+  // 打包态下 pack.js 自带另一份 —— 这里从 pack.js 再取一次（ESM 缓存返回同一实例，
+  // channel-pack-test 已 import 过它），其 directLane 由测试挂载时绑到 offlineFetch，
+  // 换成我们的替身即可。与 channel-oauth-failure-test 的注入思路同源。
+  const directLane =
+    await import('../vendor/channel-pack/src/direct-fetch.ts').then(m => m.directLane).catch(() => null)
+    ?? await import('../vendor/channel-pack/pack.js').then(m => m.directLane ?? null).catch(() => null)
+  const savedLane = directLane ? directLane.fetch : null
+  if (directLane) directLane.fetch = standIn
+  globalThis.fetch = standIn
+  const setCredential = async (ref, value) => { creds.set(ref, { value: JSON.stringify(value) }) }
+  const dropCredential = (ref) => { creds.delete(ref) }
+  try {
+    // ── accio / accio-cn：真续期 ──
+    for (const provider of ['accio', 'accio-cn']) {
+      const accountId = `fixture-refresh-${provider}`, ref = `FIXTURE_REFRESH_${provider.toUpperCase()}`
+      try {
+        await ctx.accountPool.addAccount({
+          id: accountId, provider, nickname: 't4-refresh', credentialRef: ref,
+          enabled: true, refreshable: true, createdAt: 1,
+        })
+        await setCredential(ref, {
+          access_token: 'accio-old-at', refresh_token: 'accio-rt',
+          expire_time: Date.now() - 1000,
+        })
+        seen.length = 0
+        const result = await call('account.refresh', { accountId })
+        assert.equal(result.ok, true, `${provider}: 不再抛 Unknown provider，续期成功`)
+        // 请求形状：POST {gatewayBase}/api/auth/refresh_token，body 带 accessToken/refreshToken
+        const req = seen.find(s => s.url.includes('/api/auth/refresh_token'))
+        assert.ok(req, `${provider}: 必须打真实续期端点`)
+        assert.equal(req.method, 'POST')
+        const form = JSON.parse(req.body)
+        assert.equal(form.accessToken, 'accio-old-at')
+        assert.equal(form.refreshToken, 'accio-rt')
+        // 账号池写回：expiresAt 顺延 + refreshable 保持 true
+        const entry = (await ctx.accountPool.listAllAccounts()).find(a => a.id === accountId)
+        assert.equal(entry.expiresAt, expires, `${provider}: 新 expiresAt 必须写回账号池`)
+        assert.equal(entry.refreshable, true, `${provider}: 有 refresh_token 必须保持 refreshable`)
+        // 凭据已回写（读出的就是新 token）
+        const stored = JSON.parse((await ctx.credentials.resolve(ref)).value)
+        assert.equal(stored.access_token, 'accio-new-at', `${provider}: 新凭据必须回写`)
+        assert.equal(stored.refresh_token, 'accio-rt')
+      } finally {
+        await ctx.accountPool.removeAccount(accountId)
+        dropCredential(ref)
+      }
+    }
+    // ── officeace：真续期（STS refresh_token grant + DPoP）──
+    {
+      const accountId = 'fixture-refresh-officeace', ref = 'FIXTURE_REFRESH_OFFICEACE'
+      try {
+        await ctx.accountPool.addAccount({
+          id: accountId, provider: 'officeace', nickname: 't4-refresh', credentialRef: ref,
+          enabled: true, refreshable: true, createdAt: 1,
+        })
+        // 凭据带 refresh_token + dpop（t1 登录链落库的形态；JWK 必须是真的，
+        // DPoP proof 用它签名）
+        await setCredential(ref, {
+          base_url: 'https://gw.example.com/v2', app_key: 'k', app_secret: 's',
+          access_key: 'AK-OLD', secret_key: 'SK-OLD', security_token: 'sec-old',
+          refresh_token: 'rt-old', expire_time: Date.now() - 1000,
+          dpop: dpopPair,
+        })
+        seen.length = 0
+        const result = await call('account.refresh', { accountId })
+        assert.equal(result.ok, true, 'officeace: 不再抛 Unknown provider，续期成功')
+        // 请求形状：POST sts /v1/oauth2/tokens，表单 grant_type=refresh_token
+        const req = seen.find(s => s.url.includes('/v1/oauth2/tokens'))
+        assert.ok(req, 'officeace: 必须打 STS 续期端点')
+        assert.equal(req.method, 'POST')
+        const form = new URLSearchParams(req.body)
+        assert.equal(form.get('grant_type'), 'refresh_token')
+        assert.equal(form.get('refresh_token'), 'rt-old')
+        assert.equal(form.get('client_id'), 'pdp5_for_agentarts')
+        // 凭据回写：新 AK/SK + 轮换的 refresh_token；dpop/推理凭据保留
+        const stored = JSON.parse((await ctx.credentials.resolve(ref)).value)
+        assert.equal(stored.access_key, 'AKIA-NEW')
+        assert.equal(stored.secret_key, 'SK-NEW')
+        assert.equal(stored.security_token, 'sec-new')
+        assert.equal(stored.refresh_token, 'rt-rotated', '轮换出的新 refresh_token 必须落库')
+        assert.equal(stored.refresh_token !== 'rt-old', true, '旧 token 不得残留为新值')
+        assert.equal(stored.base_url, 'https://gw.example.com/v2', '推理网关三件套不得被续期覆盖丢失')
+        assert.equal(stored.app_key, 'k')
+        assert.ok(stored.dpop, 'DPoP 私钥必须随凭据保留（续期链钥匙）')
+        // 账号池写回
+        const entry = (await ctx.accountPool.listAllAccounts()).find(a => a.id === accountId)
+        assert.equal(entry.expiresAt, expires, 'officeace: 新 expiresAt 必须写回账号池')
+        assert.equal(entry.refreshable, true)
+      } finally {
+        await ctx.accountPool.removeAccount(accountId)
+        dropCredential(ref)
+      }
+    }
+    // ── commandcode：复核（无网络调用）──
+    {
+      const accountId = 'fixture-refresh-commandcode', ref = 'FIXTURE_REFRESH_COMMANDCODE'
+      try {
+        await ctx.accountPool.addAccount({
+          id: accountId, provider: 'commandcode', nickname: 't4-recheck', credentialRef: ref,
+          enabled: true, refreshable: false, createdAt: 1,
+        })
+        await setCredential(ref, { access_token: 'cc-key-123' })
+        seen.length = 0
+        const result = await call('account.refresh', { accountId })
+        assert.equal(result.ok, true, 'commandcode: 不再抛 Unknown provider，复核成功')
+        assert.equal(seen.length, 0, 'commandcode: 复核不发任何网络请求')
+        const entry = (await ctx.accountPool.listAllAccounts()).find(a => a.id === accountId)
+        assert.equal(entry.refreshable, false, 'commandcode: 长期 key 如实保持 refreshable:false')
+        // 凭据不可用 → ok:false（如实报错）
+        await setCredential(ref, { access_token: '' })
+        const rejected = await call('account.refresh', { accountId })
+        assert.equal(rejected.ok, false, 'commandcode: 凭据不可用时必须失败')
+        assert.match(rejected.error.message, /凭据不可用/)
+      } finally {
+        await ctx.accountPool.removeAccount(accountId)
+        dropCredential(ref)
+      }
+    }
+    // ── officeace 无 refresh_token：如实报错（不能装成功）──
+    {
+      const accountId = 'fixture-refresh-officeace-norefresh', ref = 'FIXTURE_REFRESH_OA_NOREFRESH'
+      try {
+        await ctx.accountPool.addAccount({
+          id: accountId, provider: 'officeace', nickname: 't4-norefresh', credentialRef: ref,
+          enabled: true, refreshable: false, createdAt: 1,
+        })
+        await setCredential(ref, { base_url: 'https://gw/v2', app_key: 'k', app_secret: 's', access_key: 'AK', secret_key: 'SK' })
+        const rejected = await call('account.refresh', { accountId })
+        assert.equal(rejected.ok, false, 'officeace: 无 refresh_token 必须失败')
+        assert.match(rejected.error.message, /没有 refresh_token|重新登录/)
+      } finally {
+        await ctx.accountPool.removeAccount(accountId)
+        dropCredential(ref)
+      }
+    }
+  } finally {
+    globalThis.fetch = originalFetch
+    if (directLane) directLane.fetch = savedLane
+  }
+  console.log('ok  refresh RPC (t4): commandcode/accio/accio-cn/officeace 四分支 — accio 家族与 officeace 走真续期并回写池，commandcode 走复核')
 }

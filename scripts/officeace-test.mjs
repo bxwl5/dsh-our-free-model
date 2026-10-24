@@ -20,11 +20,13 @@ async function main() {
   const {
     base64UrlEncode, createDpopKeyPair, createDpopProof, toHex, hmacSha256, sha256Hex,
     buildCanonicalRequest, signSdkHmac, signV11, formatSdkDate, exportDpopJwkPair,
+    createDpopProofFromJwk,
   } = await import('../vendor/channel-pack/src/officeace-dpop.ts')
   const {
     normalizeBaseUrl, basicAuthHeader, parseCredential, isCredentialUsable,
     createPkcePair, buildAuthorizeUrl, fetchState, pollAuthCode, validatePermission,
-    exchangeCodeForSts,
+    exchangeCodeForSts, refreshOfficeAceCredential, parseSubscriptionSnapshot,
+    fetchSubscriptionSnapshot,
   } = await import('../vendor/channel-pack/src/officeace.ts')
   const { OFFICEACE } = await import('../vendor/channel-pack/src/officeace-product.ts')
   const { OfficeAceAdapter } = await import('../vendor/channel-pack/src/officeace-adapter.ts')
@@ -137,7 +139,10 @@ async function main() {
   // 换码端点按官方客户端口径校验 PKCE（STS5.1805 的本地复现）：
   // authorize 时绑定的 challenge 与 code_verifier 必须成对。
   let flowChallenge = ''
+  // 续期链的「当前有效 refresh_token」（一次性轮换：换出 rt-2 后 rt-1 即作废）。
+  let currentRefreshToken = 'rt-1'
   const stsSeen = []
+  const subSeen = []
   const upstream = http.createServer((req, res) => {
     const chunks = []
     req.on('data', c => chunks.push(c))
@@ -164,13 +169,34 @@ async function main() {
           code: form.get('code'),
           redirectUri: form.get('redirect_uri'),
           verifier: form.get('code_verifier'),
+          refreshToken: form.get('refresh_token'),
           dpop: req.headers.dpop,
           contentType: req.headers['content-type'],
         })
         // PKCE 校验：challenge 必须等于 base64url(sha256(code_verifier))。
         // 早期 hex 实现在这里被拒（STS5.1805）—— 这条断言把根因锁死。
-        if (sha256Base64Url(form.get('code_verifier') ?? '') !== flowChallenge) {
+        if (form.get('grant_type') === 'authorization_code'
+          && sha256Base64Url(form.get('code_verifier') ?? '') !== flowChallenge) {
           return json(400, { error_code: 'STS5.1805', error_msg: 'invalid authorization code' })
+        }
+        // 续期请求（grant_type=refresh_token）：实测口径（2026-10-24）——
+        // 回 credentials.{access_key_id,secret_access_key,security_token,expiration}
+        //（project_id 与 id_token 均缺席），refresh_token 轮换。
+        if (form.get('grant_type') === 'refresh_token') {
+          // 一次性轮换锁：只有「当前有效那份」能换新；旧值重放报 1806。
+          if (form.get('refresh_token') !== currentRefreshToken) {
+            return json(400, { error_code: 'STS5.1806', error_msg: 'the refresh token has been used' })
+          }
+          currentRefreshToken = 'rt-2'
+          return json(200, {
+            credentials: {
+              access_key_id: 'AKIA-2',
+              secret_access_key: 'SK-2',
+              security_token: 'sec-token-2',
+              expiration: '2026-01-03T03:04:05Z',
+            },
+            refresh_token: 'rt-2',
+          })
         }
         // 真实响应形态（officeace2api _exchangeCode / Agent2API exchange_code）：
         // 推理网关三件套不在这发里；昵称藏在 id_token 的 user_profile（base64 JSON）。
@@ -184,6 +210,36 @@ async function main() {
           },
           refresh_token: 'rt-1',
           id_token: fakeJwt({ user_profile: Buffer.from(JSON.stringify({ account_name: 'alice', principal_id: 'prin-1' })).toString('base64url') }),
+        })
+      }
+      if (req.url === '/v1/subscription') {
+        // 订阅/积分端点（t4 实测形态，V11 签名 + x-subscription-type: v2）：
+        // skus[].quotas[] 的 officeace_points / online_search_count + bonus_skus[]。
+        subSeen.push({
+          auth: req.headers.authorization,
+          subscriptionType: req.headers['x-subscription-type'],
+          securityToken: req.headers['x-security-token'],
+        })
+        return json(200, {
+          subscribe_status: 'SUBSCRIBED',
+          skus: [{
+            sku_code: 'officeace.personal.package.trial',
+            sku_name: '个人体验版',
+            expired_time: '2026-11-24T22:47:17.496Z',
+            quotas: [
+              { sku_attr_code: 'officeace_points', sku_value: '500', current_value: '100', expired_time: '2026-11-24T22:47:17.496Z' },
+              { sku_attr_code: 'online_search_count', sku_value: '200', current_value: '20', expired_time: '2026-11-24T22:47:17.496Z' },
+              // 过期的配额不进剩余（officeace2api summarizeSubscription 同口径）
+              { sku_attr_code: 'officeace_points', sku_value: '300', current_value: '0', expired_time: '2020-01-01T00:00:00Z' },
+            ],
+          }],
+          bonus_skus: [
+            { activity_id: 'bonus-new-user-2026', activity_name: '新用户专属福利', points: '4000', current_value: '0', expired_time: '2027-01-22T14:47:20.530Z' },
+            // 过期的奖励不进剩余
+            { activity_id: 'bonus-old', activity_name: '已过期奖励', points: '999', current_value: '0', expired_time: '2020-01-01T00:00:00Z' },
+            // 当日签到奖励（过期时间设为当天结束时是活的）
+            { activity_id: 'bonus-daily-checkin-2026', activity_name: '每日签到有礼', points: '100', current_value: '0', expired_time: '2099-01-01T00:00:00Z' },
+          ],
         })
       }
       if (req.url.startsWith('/v1/claw/client-permission-validate')) {
@@ -322,7 +378,120 @@ async function main() {
       e => e.code === 'MISSING_CREDENTIAL',
     )
 
-    console.log('ok  officeace: DPoP(ES256)/SDK-HMAC(含 STS 头)/V11(AK-SK 顺序+hex 密钥)/PKCE(base64url)/换码(STS5.1805 回归)/Basic 推理/轮询读状态码/凭据解析')
+    // ── ⑧ 续期（t4）：refresh_token grant + DPoP（JWK 形态）──
+    // 实测口径（2026-10-24，真实账号连续两次 200）：STS 续期回新 AK/SK，
+    // refresh_token 轮换（旧值即刻作废）；重放旧值 = STS5.1806。
+    {
+      const dpopKey = await createDpopKeyPair()
+      const exported = await exportDpopJwkPair(dpopKey)
+      const loginCred = {
+        base_url: 'https://gw.example.com/v2', app_key: 'k', app_secret: 's',
+        access_key: 'AKIA-1', secret_key: 'SK-1', security_token: 'sec-token-1',
+        refresh_token: 'rt-1', expire_time: Date.parse('2026-01-02T03:04:05Z'),
+        dpop: exported,
+      }
+      const refreshed = await refreshOfficeAceCredential(realFetch, product, loginCred)
+      // 请求形状：grant_type=refresh_token，无 code/code_verifier/redirect_uri
+      const refreshReq = [...stsSeen].reverse().find(r => r.grantType === 'refresh_token')
+      assert.ok(refreshReq, '必须打 STS 续期端点')
+      assert.equal(refreshReq.clientId, OFFICEACE.clientId)
+      assert.equal(refreshReq.refreshToken, 'rt-1')
+      assert.equal(refreshReq.code, null, '续期不带 code')
+      assert.equal(refreshReq.verifier, null, '续期不带 code_verifier')
+      assert.equal((refreshReq.dpop ?? '').split('.').length, 3, 'DPoP 头（JWK 密钥签的）')
+      // 响应解析：新 AK/SK + 轮换 token；推理凭据与 dpop 保留
+      assert.equal(refreshed.access_key, 'AKIA-2')
+      assert.equal(refreshed.secret_key, 'SK-2')
+      assert.equal(refreshed.security_token, 'sec-token-2')
+      assert.equal(refreshed.refresh_token, 'rt-2', '轮换出的新 refresh_token 必须带着')
+      assert.equal(refreshed.expire_time, Date.parse('2026-01-03T03:04:05Z'))
+      assert.equal(refreshed.base_url, 'https://gw.example.com/v2', '续期不得覆盖推理网关三件套')
+      assert.equal(refreshed.app_key, 'k')
+      assert.deepEqual(refreshed.dpop, exported, 'DPoP 私钥必须原样保留')
+      // 重放旧 token = STS5.1806（一次性轮换）
+      await assert.rejects(
+        () => refreshOfficeAceCredential(realFetch, product, loginCred),
+        /STS5\.1806|refresh token has been used/,
+        '旧 refresh_token 重放必须报 1806（一次性轮换锁死）',
+      )
+      // 无 refresh_token / 无 dpop：明确报错（不装成功）
+      await assert.rejects(
+        () => refreshOfficeAceCredential(realFetch, product, { ...loginCred, refresh_token: undefined }),
+        /没有 refresh_token/,
+      )
+      await assert.rejects(
+        () => refreshOfficeAceCredential(realFetch, product, { ...loginCred, dpop: undefined }),
+        /没有 DPoP 私钥/,
+      )
+      // createDpopProofFromJwk 与 createDpopProof 用同一把钥匙产出可验证结构
+      const jwkProof = await createDpopProofFromJwk(exported, 'POST', 'https://sts.example.com/v1/oauth2/tokens')
+      assert.equal(jwkProof.split('.').length, 3)
+      const jwkHeader = JSON.parse(atob(jwkProof.split('.')[0].replace(/-/g, '+').replace(/_/g, '/')))
+      assert.equal(jwkHeader.jwk.x, exported.publicJwk.x, 'JWK proof 头部嵌同一公钥')
+    }
+
+    // ── ⑨ 订阅/积分（t4）：parseSubscriptionSnapshot + fetchSubscriptionSnapshot ──
+    // 实测形态（2026-10-24，真实账号 HTTP 200）：officeace_points 500 总额 /
+    // 100 已用 + bonus（新用户 4000 / 每日签到 100）；剩余 = 500-100 + 4000 + 100。
+    {
+      const snapshot = parseSubscriptionSnapshot({
+        subscribe_status: 'SUBSCRIBED',
+        skus: [{
+          sku_code: 'officeace.personal.package.trial', sku_name: '个人体验版',
+          expired_time: '2026-11-24T22:47:17.496Z',
+          quotas: [
+            { sku_attr_code: 'officeace_points', sku_value: '500', current_value: '100', expired_time: '2026-11-24T22:47:17.496Z' },
+            { sku_attr_code: 'officeace_points', sku_value: '300', current_value: '0', expired_time: '2020-01-01T00:00:00Z' },
+            { sku_attr_code: 'online_search_count', sku_value: '200', current_value: '20', expired_time: '2026-11-24T22:47:17.496Z' },
+          ],
+        }],
+        bonus_skus: [
+          { activity_id: 'bonus-new-user-2026', activity_name: '新用户专属福利', points: '4000', current_value: '0', expired_time: '2027-01-22T14:47:20.530Z' },
+          { activity_id: 'bonus-old', activity_name: '已过期奖励', points: '999', current_value: '0', expired_time: '2020-01-01T00:00:00Z' },
+          { activity_id: 'bonus-daily-checkin-2026', activity_name: '每日签到有礼', points: '100', current_value: '0', expired_time: '2099-01-01T00:00:00Z' },
+        ],
+      })
+      // 字符串数字（上游实测全发字符串）+ 过期配额剔除
+      assert.equal(snapshot.total, 500 + 4000 + 100, '总额 = 套餐(500) + 有效奖励(4000+100)')
+      assert.equal(snapshot.used, 100)
+      assert.equal(snapshot.remaining, 4500, '剩余 = (500-100) + 4000 + 100')
+      assert.equal(snapshot.planName, '个人体验版')
+      assert.equal(snapshot.planExpiresAt, Date.parse('2026-11-24T22:47:17.496Z'))
+      assert.equal(snapshot.searchRemaining, 180, '联网搜索次数剩余 = 200-20')
+      assert.equal(snapshot.packages.length, 3, '套餐 + 新用户 + 每日签到（过期奖励剔除）')
+      assert.ok(snapshot.packages.some(p => p.name === '每日签到有礼' && p.remaining === 100))
+      // 空响应不炸
+      const empty = parseSubscriptionSnapshot({})
+      assert.equal(empty.total, 0)
+      assert.equal(empty.remaining, 0)
+      assert.deepEqual(empty.packages, [])
+
+      // 端到端：凭据（带 model_info.model_api_url_base）→ 假网关 → 快照。
+      // 上游发的是裸 host（代码统一补 https）；测试替身显式带 http:// 打本机假上游。
+      const credWithGateway = {
+        base_url: `${base}/v2`, app_key: 'k', app_secret: 's',
+        access_key: 'AKIA-2', secret_key: 'SK-2', security_token: 'sec-token-2',
+        model_info: { model_api_url_base: base },
+      }
+      const liveSnapshot = await fetchSubscriptionSnapshot(realFetch, product, credWithGateway)
+      assert.equal(liveSnapshot.total, 4600)
+      assert.equal(liveSnapshot.remaining, 4500)
+      assert.equal(liveSnapshot.searchRemaining, 180)
+      assert.equal(liveSnapshot.planName, '个人体验版')
+      // 请求头：V11 签名 + x-subscription-type: v2 + STS token
+      const subReq = [...subSeen].pop()
+      assert.ok(subReq.auth.startsWith('V11-HMAC-SHA256 Credential=AKIA-2/'), '订阅查询用 V11 签名')
+      assert.ok(subReq.auth.includes('/cn-southwest-2/apic'), 'scope 是 <date>/cn-southwest-2/apic')
+      assert.equal(subReq.subscriptionType, 'v2', '必须带 x-subscription-type: v2')
+      assert.equal(subReq.securityToken, 'sec-token-2', '必须带 X-Security-Token')
+      // 缺 model_info 的凭据：明确报错（引导重登）
+      await assert.rejects(
+        () => fetchSubscriptionSnapshot(realFetch, product, { base_url: `${base}/v2`, app_key: 'k', app_secret: 's', access_key: 'AK', secret_key: 'SK' }),
+        /model_api_url_base/,
+      )
+    }
+
+    console.log('ok  officeace: DPoP(ES256)/SDK-HMAC(含 STS 头)/V11(AK-SK 顺序+hex 密钥)/PKCE(base64url)/换码(STS5.1805 回归)/续期(refresh_token 轮换 + 1806 重放锁)/订阅积分(skus+bonus+过期剔除+V11 签名)/Basic 推理/轮询读状态码/凭据解析')
   } finally {
     upstream.closeAllConnections?.()
     await new Promise(r => upstream.close(r))

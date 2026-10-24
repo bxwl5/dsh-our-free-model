@@ -88,8 +88,25 @@ export function monkeyCodeProductById(id: string): MonkeyCodeProduct | undefined
 
 // ── 端点路径 ──
 
-/** 当前用户（验证 Cookie）。 */
+/**
+ * @deprecated 上游已下线该端点（实测 404）。存活探测改用
+ * {@link MONKEYCODE_PROBE_PATH}；当前已无任何引用，仅为历史兼容保留
+ * （导出名出现在旧文档/脚本里，删掉会破坏外部 import）。
+ */
 export const MONKEYCODE_ME_PATH = '/api/v1/users/me'
+
+/**
+ * 存活探测端点。
+ *
+ * ⚠️ 2026-10-24 实测：`/api/v1/users/me`、`/users/info`、`/user/profile`、`/users/profile`
+ * **全部 404**，唯一可用的是 `/api/v1/users/wallet`（200）。登录校验与凭据探活原本都打
+ * `/users/me`，于是**任何合法 Cookie 都会被判「Cookie 无效」** —— 这是个会让整个渠道
+ * 登不进去的缺陷。
+ *
+ * 注意：钱包响应里的 `id` 是全零占位（`00000000-0000-0000-0000-000000000000`），
+ * **不能用来标识账号**；身份改由会话 Cookie 的值派生（见 `loginWithCookie`）。
+ */
+export const MONKEYCODE_PROBE_PATH = '/api/v1/users/wallet'
 /** 钱包与每日额度。 */
 export const MONKEYCODE_WALLET_PATH = '/api/v1/users/wallet'
 /** 签到状态（GET）/ 执行签到（POST）。 */

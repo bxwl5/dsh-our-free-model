@@ -33,10 +33,12 @@ import {
   base64UrlEncode,
   buildCanonicalRequest,
   createDpopProof,
+  createDpopProofFromJwk,
   formatSdkDate,
   createDpopKeyPair,
   sha256Hex,
   signSdkHmac,
+  signV11,
   type DpopKeyPair,
 } from './officeace-dpop.js'
 
@@ -161,6 +163,27 @@ export function parseCredential(value: unknown): OfficeAceCredential | undefined
 /** 从任意 JSON 安全取字符串。 */
 function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined
+}
+
+/**
+ * 取数字字段；**`0` 是合法值**（`current_value: "0"` 表示一分未用），
+ * 只在「不是有限数字」时返回 undefined。字符串数字（上游配额全发字符串）也接受。
+ */
+function numberValue(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value !== '') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+  return undefined
+}
+
+/** 解析上游时间字段（ISO 字符串 → 毫秒；无效/缺失返回 undefined）。 */
+function parseTimeValue(value: unknown): number | undefined {
+  const text = stringValue(value)
+  if (text === undefined) return undefined
+  const ms = Date.parse(text)
+  return Number.isNaN(ms) ? undefined : ms
 }
 
 /** 是否非 null 对象。 */
@@ -421,6 +444,240 @@ export async function exchangeCodeForSts(
     ...(nickname === undefined ? {} : { nickname }),
     created_at: Date.now(),
   }
+}
+
+/**
+ * ⑧ 用 refresh_token 续期临时凭据（真续期）。
+ *
+ * 实测（2026-10-24，真实账号连续两次）：
+ * `POST {sts}/v1/oauth2/tokens`（`grant_type=refresh_token` + DPoP 头）→ 200，
+ * 返回 `credentials.{access_key_id, secret_access_key, security_token, expiration}`
+ * （**project_id 与 id_token 均缺席**，续期响应比登录响应瘦），
+ * `refresh_token` 每次都轮换（旧值即刻作废，重放报 STS5.1806）。
+ *
+ * ⚠️ **必须用登录时那把 DPoP 私钥签 proof**（参考实现 refresh.mjs 同款约束）；
+ * ⚠️ **轮换出的新 refresh_token 必须落库**，丢了只能重新登录。
+ * 权威口径：officeace2api `refresh.mjs` 的 `CredentialRefresher.refresh()`
+ * （DEFAULT_TOKEN_URL = sts.cn-north-4 / DEFAULT_CLIENT_ID = pdp5_for_agentarts）。
+ */
+export async function refreshOfficeAceCredential(
+  fetcher: typeof fetch,
+  product: OfficeAceProduct,
+  credential: OfficeAceCredential,
+  options: { signal?: AbortSignal } = {},
+): Promise<OfficeAceCredential> {
+  const refreshToken = credential.refresh_token
+  const dpop = credential.dpop
+  if (refreshToken === undefined || refreshToken === '') {
+    throw new Error('OfficeAce：该账号没有 refresh_token，只能重新登录')
+  }
+  if (dpop === undefined || dpop.privateJwk.d === '') {
+    throw new Error('OfficeAce：凭据里没有 DPoP 私钥，无法续期（重新登录可重建）')
+  }
+  const url = `${product.stsBase}${OFFICEACE_STS_TOKENS_PATH}`
+  const dpopProof = await createDpopProofFromJwk(dpop, 'POST', url)
+  const form = new URLSearchParams({
+    client_id: product.clientId,
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+  }).toString()
+  const response = await fetcher(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', DPoP: dpopProof },
+    body: form,
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  })
+  const text = await response.text().catch(() => '')
+  if (!response.ok) {
+    // STS5.1806 = refresh token 已被使用（一次性轮换，重放即作废）。
+    throw new Error(`OfficeAce：续期返回 HTTP ${response.status}${text === '' ? '' : `：${text.slice(0, 200)}`}（refresh_token 单次有效，被拒后需重新登录）`)
+  }
+  let body: unknown
+  try {
+    body = JSON.parse(text)
+  } catch {
+    body = undefined
+  }
+  if (!isRecord(body)) throw new Error('OfficeAce：续期响应不是对象')
+  const credentials = isRecord(body.credentials) ? body.credentials : body
+  const accessKey = stringValue(credentials.access_key_id) ?? stringValue(credentials.accessKey)
+  const secretKey = stringValue(credentials.secret_access_key) ?? stringValue(credentials.secretAccessKey)
+  if (accessKey === undefined || secretKey === undefined) {
+    throw new Error('OfficeAce：续期响应缺少 AK/SK')
+  }
+  const rotated = stringValue(body.refresh_token)
+  const expiration = stringValue(credentials.expiration)
+  const expireTime = expiration === undefined || Number.isNaN(Date.parse(expiration))
+    ? undefined
+    : Date.parse(expiration)
+  return {
+    ...credential,
+    access_key: accessKey,
+    secret_key: secretKey,
+    ...(stringValue(credentials.security_token) === undefined ? {} : { security_token: stringValue(credentials.security_token) }),
+    ...(stringValue(credentials.project_id) === undefined ? {} : { project_id: stringValue(credentials.project_id) }),
+    // 轮换出的新 token 必须带着（丢了链子就断）；上游没给就沿用旧的。
+    refresh_token: rotated ?? refreshToken,
+    ...(expireTime === undefined ? {} : { expire_time: expireTime }),
+  }
+}
+
+/**
+ * 订阅/积分快照（`GET {gateway}/v1/subscription`，V11-HMAC-SHA256 签名）。
+ *
+ * 实测（2026-10-24，真实账号，HTTP 200）：
+ * - `skus[].quotas[]`：`sku_attr_code` 为 `officeace_points`（积分总额
+ *   `sku_value` / 已用 `current_value`）与 `online_search_count`（联网搜索次数），
+ *   剩余 = sku_value - current_value（officeace2api 的 AK() 同款算法）；
+ * - `bonus_skus[]`：奖励积分（新用户 4000 / 每日签到 100，带过期时间）；
+ * - 签名口径：`x-subscription-type: v2` 头 + V11（scope 服务名固定 `apic`）。
+ *
+ * 权威口径：officeace2api `quota.mjs` 的 `signV11`/`summarizeSubscription`，
+ * 网关地址取凭据 `model_info.model_api_url_base`（登录时 validate 下发）。
+ */
+export interface OfficeAceSubscriptionSnapshot {
+  /** 积分总额（套餐 + 有效奖励，未过期口径）。 */
+  total: number
+  /** 积分已用。 */
+  used: number
+  /** 积分剩余。 */
+  remaining: number
+  /** 套餐名（首个 sku）。 */
+  planName: string
+  /** 套餐到期时刻（毫秒；0 = 未知）。 */
+  planExpiresAt: number
+  /** 联网搜索次数剩余（未配额则 undefined）。 */
+  searchRemaining?: number
+  /** 各包明细（面板 packages 用）。 */
+  packages: Array<{ name: string; total: number; used: number; remaining: number; expiresAt: number }>
+}
+
+/** 解析 `/v1/subscription` 响应为积分快照（officeace2api summarizeSubscription 口径）。 */
+export function parseSubscriptionSnapshot(body: unknown, nowMs = Date.now()): OfficeAceSubscriptionSnapshot {
+  if (!isRecord(body)) throw new Error('OfficeAce：订阅响应不是对象')
+  const skus = Array.isArray(body.skus) ? body.skus.filter(isRecord) : []
+  const bonusSkus = Array.isArray(body.bonus_skus) ? body.bonus_skus.filter(isRecord) : []
+  const packages: OfficeAceSubscriptionSnapshot['packages'] = []
+  let pointsTotal = 0
+  let pointsUsed = 0
+  let searchRemaining: number | undefined
+  let planName = ''
+  let planExpiresAt = 0
+
+  for (const sku of skus) {
+    const name = stringValue(sku.sku_name) ?? stringValue(sku.sku_code) ?? ''
+    const skuExp = parseTimeValue(sku.expired_time)
+    if (planName === '') planName = name
+    if (planExpiresAt === 0 && skuExp !== undefined) planExpiresAt = skuExp
+    const quotas = Array.isArray(sku.quotas) ? sku.quotas.filter(isRecord) : []
+    let ptsTotal = 0
+    let ptsUsed = 0
+    for (const quota of quotas) {
+      const quotaExp = parseTimeValue(quota.expired_time)
+      if (quotaExp !== undefined && quotaExp <= nowMs) continue
+      const code = stringValue(quota.sku_attr_code)
+      const total = numberValue(quota.sku_value) ?? 0
+      const used = numberValue(quota.current_value) ?? 0
+      if (code === 'officeace_points') {
+        ptsTotal += total
+        ptsUsed += used
+      } else if (code === 'online_search_count') {
+        searchRemaining = (searchRemaining ?? 0) + Math.max(0, total - used)
+      }
+    }
+    if (ptsTotal > 0 || ptsTotal === -1) {
+      packages.push({ name, total: ptsTotal, used: ptsUsed, remaining: Math.max(0, ptsTotal - ptsUsed), expiresAt: skuExp ?? 0 })
+    }
+    pointsTotal += ptsTotal
+    pointsUsed += ptsUsed
+  }
+
+  for (const bonus of bonusSkus) {
+    const exp = parseTimeValue(bonus.expired_time)
+    if (exp !== undefined && exp <= nowMs) continue
+    const name = stringValue(bonus.activity_name) ?? stringValue(bonus.activity_id) ?? '奖励积分'
+    const total = numberValue(bonus.points) ?? 0
+    const used = numberValue(bonus.current_value) ?? 0
+    packages.push({ name, total, used, remaining: Math.max(0, total - used), expiresAt: exp ?? 0 })
+    pointsTotal += total
+    pointsUsed += used
+  }
+
+  return {
+    total: pointsTotal,
+    used: pointsUsed,
+    remaining: Math.max(0, pointsTotal - pointsUsed),
+    planName,
+    planExpiresAt,
+    ...(searchRemaining === undefined ? {} : { searchRemaining }),
+    packages,
+  }
+}
+
+/** 拉取订阅/积分快照（V11 签名 + `x-subscription-type: v2`）。 */
+export async function fetchSubscriptionSnapshot(
+  fetcher: typeof fetch,
+  product: OfficeAceProduct,
+  credential: OfficeAceCredential,
+  options: { signal?: AbortSignal } = {},
+): Promise<OfficeAceSubscriptionSnapshot> {
+  // 网关 = model_info.model_api_url_base（登录时 validate 下发；quota.mjs 同源）。
+  // 上游发的是裸 host（无 scheme），统一补 https；测试替身可显式带 http://。
+  const rawBase = credential.model_info !== undefined && isRecord(credential.model_info)
+    ? stringValue(credential.model_info.model_api_url_base)
+    : undefined
+  if (rawBase === undefined || rawBase === '') {
+    throw new Error('OfficeAce：凭据缺少 model_info.model_api_url_base（重新登录可重建）')
+  }
+  const stripped = rawBase.replace(/^https?:\/\//, '').replace(/\/+$/, '')
+  if (stripped === '') {
+    throw new Error('OfficeAce：凭据缺少 model_info.model_api_url_base（重新登录可重建）')
+  }
+  const gateway = /^https?:\/\//.test(rawBase) ? rawBase.replace(/\/+$/, '') : `https://${stripped}`
+  const url = `${gateway}/v1/subscription`
+  const host = new URL(url).host
+  const timestampMs = Date.now()
+  const sdkDate = formatSdkDate(timestampMs)
+  const projectId = stringValue(credential.project_id)
+  const signHeaders: Array<[string, string]> = [
+    ['host', host], ['x-sdk-date', sdkDate], ['x-subscription-type', 'v2'],
+  ]
+  if (credential.security_token !== undefined && credential.security_token !== '') {
+    signHeaders.push(['x-security-token', credential.security_token])
+  }
+  if (projectId !== undefined && projectId !== '') {
+    signHeaders.push(['x-project-id', projectId])
+  }
+  const payloadHash = await sha256Hex('')
+  const { canonicalRequest, signedHeaders } = buildCanonicalRequest({
+    method: 'GET', path: '/v1/subscription', query: '', host, headers: signHeaders, payloadHash,
+  })
+  const { authorization } = await signV11({
+    accessKey: credential.access_key,
+    secretKey: credential.secret_key,
+    // ⚠️ V11 的 region 作用域：quota.mjs 固定 cn-southwest-2（网关所在 region）。
+    region: 'cn-southwest-2',
+    service: 'apic',
+    canonicalRequest, signedHeaders, timestampMs,
+  })
+  const response = await fetcher(url, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+      Authorization: authorization,
+      'X-Sdk-Date': sdkDate,
+      'X-Subscription-Type': 'v2',
+      ...(credential.security_token === undefined ? {} : { 'X-Security-Token': credential.security_token }),
+      ...(projectId === undefined ? {} : { 'X-Project-ID': projectId }),
+    },
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  })
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    throw new Error(`OfficeAce：订阅查询返回 HTTP ${response.status}${text === '' ? '' : `：${text.slice(0, 200)}`}`)
+  }
+  const body: unknown = await response.json().catch(() => undefined)
+  return parseSubscriptionSnapshot(body)
 }
 
 /**

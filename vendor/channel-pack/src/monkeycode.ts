@@ -194,6 +194,29 @@ export function credentialFromUser(cookie: string, user: MonkeyCodeUser): Monkey
 }
 
 /**
+ * 用**会话 Cookie 的值**派生凭据。
+ *
+ * 为什么不用钱包里的 `id`：上游 `/api/v1/users/wallet` 的 `id` 是全零占位
+ * （`00000000-...`），拿它当 account_id 会让所有账号撞成同一个。
+ * 而 `/users/me` 已被上游下线（404），拿不到真实用户 id。
+ *
+ * 会话值本身是服务端签发的唯一串（`monkeycode_ai_session=<uuid>`），
+ * 作为账号标识稳定且唯一；昵称取它的尾 8 位，便于用户区分多账号。
+ */
+export function credentialFromSession(cookie: string): MonkeyCodeCredential {
+  const match = /(?:^|;\s*)monkeycode_ai_session=([^;]+)/.exec(cookie)
+    ?? /(?:^|;\s*)nebula_session=([^;]+)/.exec(cookie)
+  const session = match?.[1]?.trim() ?? ''
+  const tail = session.replace(/-/g, '').slice(-8) || 'unknown'
+  return {
+    access_token: cookie,
+    account_id: session === '' ? undefined : session,
+    nickname: `MonkeyCode ${tail}`,
+    created_at: Date.now(),
+  }
+}
+
+/**
  * 解析钱包。
  *
  * 三个数值都可能缺失 —— 返回 `undefined` 表示「无法得知」，

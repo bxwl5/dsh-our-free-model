@@ -38,6 +38,41 @@ async function verifyRewriteFunction() {
     'Main branch (PRs usually go here): master',
   )
 
+  // ── DSH Web GUI 提示词指纹（2026-10-25 实测 copilot.tencent.com）──
+  // 这是「WorkBuddy 国内版模型调用报错 Illegal API invocation」的真正原因：
+  // 该提示词**每轮对话都会注入**。实测：单句放行，两句组合才拦。
+  const WEBGUI = 'You are interacting with the user through the DeepSeek Harness Web GUI'
+  const webGuiFull = `${WEBGUI} whose URL the runtime context names. When the user refers to "this page", "this GUI", or "this app" without naming another target, they mean this GUI.`
+  const webGuiFixed = rewriteTencentContentFingerprints(webGuiFull, 'buddy')
+  assert.equal(
+    webGuiFixed,
+    webGuiFull.replace(WEBGUI, 'You are interacting with the user through the Web GUI'),
+    'Web GUI 提示词必须去掉品牌词',
+  )
+  assert.ok(!webGuiFixed.includes('DeepSeek Harness Web GUI'), '改写后不得残留品牌词')
+  // 非腾讯系原样
+  assert.equal(rewriteTencentContentFingerprints(webGuiFull, 'codearts'), webGuiFull)
+
+  // ── `You are Claude Code` 指纹（2026-10-25 实测 copilot.tencent.com）──
+  // 上游锚定该**开头短语**，尾随内容不影响；只出现 "Claude Code" 则放行。
+  const CLAUDE = 'You are Claude Code'
+  assert.equal(
+    rewriteTencentContentFingerprints(`${CLAUDE}, Anthropic's official CLI for Claude.`, 'buddy'),
+    "You are a helpful assistant, Anthropic's official CLI for Claude.",
+    '带尾随内容也要改写',
+  )
+  assert.equal(rewriteTencentContentFingerprints(CLAUDE, 'buddy'), 'You are a helpful assistant')
+  assert.equal(
+    rewriteTencentContentFingerprints(`${CLAUDE.toUpperCase()}!`, 'workbuddy'),
+    'You are a helpful assistant!',
+    '大小写不敏感，且保留原文标点',
+  )
+  // 反例：不带 "You are " 前缀的 "Claude Code" **不该**被改（实测放行，改了反而白破坏文本）
+  const harmless = 'This is powered by Claude Code.'
+  assert.equal(rewriteTencentContentFingerprints(harmless, 'buddy'), harmless, '无前缀不触发')
+  // 非腾讯系一律原样
+  assert.equal(rewriteTencentContentFingerprints(`${CLAUDE}.`, 'zcode'), `${CLAUDE}.`)
+
   for (const clean of [
     'You are an AI assistant.',
     'You are a helpful assistant.',

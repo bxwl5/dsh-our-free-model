@@ -7,7 +7,7 @@ const collect = async (it) => { const out = []; for await (const c of it) out.pu
 async function main() {
   const {
     normalizeCookie, isCredentialUsable, parseUser, parseWallet, parseCheckin,
-    credentialFromUser, unwrapData, monkeyCodeHeaders,
+    credentialFromUser, credentialFromSession, unwrapData, monkeyCodeHeaders,
   } = await import('../vendor/channel-pack/src/monkeycode.ts')
   const { MONKEYCODE, MONKEYCODE_SESSION_COOKIE } = await import('../vendor/channel-pack/src/monkeycode-product.ts')
   const { loginWithCookie, fetchWallet, fetchModels, runCheckin, probeCredential } = await import('../vendor/channel-pack/src/monkeycode-auth.ts')
@@ -56,14 +56,25 @@ async function main() {
   assert.ok(h.Referer.startsWith(MONKEYCODE.apiBase))
 
   // ── 假上游 ──
+  // `mode` 控制错误形态；`meGone` 模拟「/users/me 已被上游下线」——
+  // 上游真实状态（2026-10-24 实测 404），登录与探活都必须不依赖它。
   let mode = 'ok'
+  let meGone = false
   const upstream = http.createServer((req, res) => {
     const json = (s, b) => res.writeHead(s, { 'Content-Type': 'application/json', Connection: 'close' }).end(JSON.stringify(b))
     const cookie = req.headers.cookie ?? ''
     if (!cookie.includes('nebula_session=')) return json(401, { error: 'no session' })
     if (mode === 'expired') return json(401, { error: 'expired' })
-    if (req.url === '/api/v1/users/me') return json(200, { id: 'u-1', name: 'alice', plan: 'free' })
-    if (req.url === '/api/v1/users/wallet') return json(200, { balance: 100, daily_token_balance: 9_000_000, daily_token_limit: 10_000_000 })
+    if (req.url === '/api/v1/users/me') {
+      // 真实上游已下线该端点；meGone=false 时保留 200 响应，用于证明
+      // 登录**不再读它**（即使它还能答，身份也不再来自这里）。
+      if (meGone) return json(404, {})
+      return json(200, { id: 'u-1', name: 'alice', plan: 'free' })
+    }
+    if (req.url === '/api/v1/users/wallet') {
+      // `id` 是全零占位（真实响应形状）：绝不能拿它当账号标识。
+      return json(200, { id: '00000000-0000-0000-0000-000000000000', balance: 100, daily_token_balance: 9_000_000, daily_token_limit: 10_000_000 })
+    }
     if (req.url === '/api/v1/users/models/available') {
       return json(200, [
         { id: 'm1', name: 'Kimi K2.5', context_length: 256000 },
@@ -81,14 +92,42 @@ async function main() {
 
   try {
     // ── 登录 ──
-    const cred = await loginWithCookie(realFetch, product, 'nebula_session=good-token-0123456789abcdef')
-    assert.equal(cred.account_id, 'u-1')
-    assert.equal(cred.nickname, 'alice')
+    // 身份由会话 Cookie 的值派生：钱包响应里的 id 是全零占位，
+    // /users/me 即使返回 200（meGone=false 时假上游仍会答）也不参与登录。
+    const sessionValue = 'good-token-0123456789abcdef'
+    const cred = await loginWithCookie(realFetch, product, `nebula_session=${sessionValue}`)
+    assert.equal(cred.account_id, sessionValue, 'account_id 来自会话 Cookie 的值')
+    assert.equal(cred.nickname, `MonkeyCode ${sessionValue.slice(-8)}`, '昵称是 MonkeyCode + 尾8位')
+    assert.notEqual(cred.account_id, 'u-1', '身份不再来自 /users/me')
+    assert.notEqual(cred.account_id, '00000000-0000-0000-0000-000000000000', '钱包全零占位 id 不可用作账号标识')
+    // credentialFromSession 单元语义：现名 monkeycode_ai_session 与旧名 nebula_session 都能派生。
+    {
+      const fromNew = credentialFromSession('monkeycode_ai_session=2dda31ef-abdc-40e8-b31c-0a4f081646c5;_ga=GA1.1.1')
+      assert.equal(fromNew.account_id, '2dda31ef-abdc-40e8-b31c-0a4f081646c5')
+      assert.equal(fromNew.nickname, 'MonkeyCode 081646c5', '昵称取去横线后的尾8位')
+      const fromOld = credentialFromSession('nebula_session=0123456789abcdef0123456789abcdef')
+      assert.equal(fromOld.account_id, '0123456789abcdef0123456789abcdef')
+      assert.equal(fromOld.nickname, 'MonkeyCode 89abcdef')
+      // 两个不同会话值必须派生出不同身份（否则多账号会撞成同一个）。
+      assert.notEqual(fromNew.account_id, fromOld.account_id, '不同会话值 → 不同 account_id')
+    }
     // 无效 Cookie 抛错
     await assert.rejects(() => loginWithCookie(realFetch, product, 'foo=bar'), /nebula_session/)
     mode = 'expired'
     await assert.rejects(() => loginWithCookie(realFetch, product, 'nebula_session=bad-token-0123456789abcdef'), /无效或已过期/)
     mode = 'ok'
+
+    // ── 回归锁：/users/me 已 404（上游真实状态）时登录仍成功 ──
+    // 早期实现打 /users/me 探活，端点下线后任何合法 Cookie 都被判「无效」，
+    // 整个渠道登不进去。这条用例锁死「探测必须打 /users/wallet」。
+    meGone = true
+    try {
+      const cred2 = await loginWithCookie(realFetch, product, 'nebula_session=another-good-token-0123456789')
+      assert.equal(cred2.account_id, 'another-good-token-0123456789', 'me 404 时身份仍由会话值派生')
+      assert.equal(await probeCredential(realFetch, product, cred2), 'valid', 'me 404 时探活走钱包端点')
+    } finally {
+      meGone = false
+    }
 
     // ── 钱包 / 模型 / 签到 ──
     assert.equal((await fetchWallet(realFetch, product, cred)).balance, 100)
@@ -136,7 +175,7 @@ async function main() {
     assert.equal(typeof policy.initialDelayMs, 'number', '扁平字段')
     assert.equal('backoff' in policy, false, '不能嵌套 backoff')
 
-    console.log('ok  monkeycode: Cookie 归一/信封剥离/解析/登录/钱包/模型/签到/探活三态，对话真发建任务请求且传输类错误可重试')
+    console.log('ok  monkeycode: Cookie 归一/信封剥离/解析/登录(会话派生身份,me-404 回归锁)/钱包/模型/签到/探活三态，对话真发建任务请求且传输类错误可重试')
   } finally {
     upstream.closeAllConnections?.()
     await new Promise(r => upstream.close(r))

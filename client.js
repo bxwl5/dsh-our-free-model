@@ -230,6 +230,7 @@ window.__ModuleLoader__.load({
         'chan.zcode.bigmodel': 'bigmodel.cn',
         'chan.zcode.zai': 'z.ai 国际版',
         'chan.act.refresh': '续期',
+        'chan.act.recheck': '校验凭据',
         'chan.act.test': '测试',
         'chan.act.delete': '移除',
         'chan.act.claim': '一键领取',
@@ -248,7 +249,7 @@ window.__ModuleLoader__.load({
         'chan.login.cancel': '取消',
         'chan.login.waiting': '已打开登录页，等待授权…（最长等待 10 分钟）',
         'chan.login.expired': '等待超时，请重新发起登录。',
-        'chan.login.done': '已接入：{login}',
+        'chan.login.done': '账号已添加：{login}',
         'chan.login.failed': '登录未完成：{reason}',
         'chan.test.ok': '连接正常（{ms} ms）',
         'chan.test.failed': '测试失败：{reason}',
@@ -673,6 +674,7 @@ window.__ModuleLoader__.load({
         'chan.zcode.bigmodel': 'bigmodel.cn',
         'chan.zcode.zai': 'z.ai international',
         'chan.act.refresh': 'Refresh',
+        'chan.act.recheck': 'Recheck credential',
         'chan.act.test': 'Test',
         'chan.act.delete': 'Remove',
         'chan.act.claim': 'Claim daily',
@@ -691,7 +693,7 @@ window.__ModuleLoader__.load({
         'chan.login.cancel': 'Cancel',
         'chan.login.waiting': 'Sign-in page opened; waiting for authorization… (up to 10 minutes)',
         'chan.login.expired': 'Timed out — please start the sign-in again.',
-        'chan.login.done': 'Connected: {login}',
+        'chan.login.done': 'Account added: {login}',
         'chan.login.failed': 'Sign-in did not complete: {reason}',
         'chan.test.ok': 'Connection healthy ({ms} ms)',
         'chan.test.failed': 'Test failed: {reason}',
@@ -2760,6 +2762,10 @@ window.__ModuleLoader__.load({
       monkeycode: { claim: true, status: true },
       accio: { unit: 'quota', quota: true },
       'accio-cn': { unit: 'quota', quota: true },
+      // OfficeAce 是**积分制**（上游 `GET /v1/subscription` 的 skus[].quotas
+      // 含 officeace_points，另有 bonus_skus：新用户 4000 + 每日签到 100）。
+      // 有积分查询能力（status: true），但**领取端点尚未接入**，故无 claim。
+      officeace: { status: true },
     }
 
     /**
@@ -2847,11 +2853,25 @@ window.__ModuleLoader__.load({
       const [balances, setBalances] = useState(undefined)
       const [busy, setBusy] = useState('')
       const [notice, setNotice] = useState('')
+      // 成功类提示必须**自动消失**：旧实现只 setNotice 不清除，于是登录成功后
+      // 卡片底部永远挂着一行「已接入：xxx」，与头部状态行重复；用户点「续期」
+      // 走 accountAction（内部 setNotice('')）才顺带清掉 —— 表现为「点续期后消失」。
+      const noticeTimer = useRef(null)
+      useEffect(() => () => { if (noticeTimer.current) clearTimeout(noticeTimer.current) }, [])
+      const flashNotice = useCallback((text) => {
+        setNotice(text)
+        if (noticeTimer.current) clearTimeout(noticeTimer.current)
+        noticeTimer.current = setTimeout(() => setNotice(''), 4000)
+      }, [])
       const [login, setLogin] = useState(null)
       // 粘贴型渠道（无自动化 OAuth）：展开一个输入框接收 Cookie / 令牌。
       // 判据用渠道列表上的 `login` 字段（'cookie' / 'token'），与后端
       // `account.adopt` 支持的渠道一一对应。
       const pasteMode = channel.login === 'cookie' || channel.login === 'token'
+      // 「续期」这个措辞只对**有续期端点**的渠道成立。Cookie / 长期 Key 型渠道
+      // （monkeycode / orcaterm / kuku / commandcode / autoclaw-intl）点下去只是
+      // 重新校验凭据形状，说「续期」会让用户以为能延长登录态（审计发现）。
+      const recheckOnly = channel.login === 'cookie' || channel.login === 'token'
       const [pasteOpen, setPasteOpen] = useState(false)
       const [pasteText, setPasteText] = useState('')
       const modelBatchPending = useRef(false)
@@ -3004,7 +3024,7 @@ window.__ModuleLoader__.load({
           const accountId = value?.accountId
           if (typeof accountId !== 'string' || accountId === '') throw new Error('bad-answer')
           setPasteText(''); setPasteOpen(false)
-          setNotice(t('chan.login.done').replace('{login}', channel.name))
+          flashNotice(t('chan.login.done').replace('{login}', channel.name))
           onChanged(); void loadAccounts(); void loadCredits(); void loadBalances(true)
         } catch (error) {
           onError(channel, error)
@@ -3082,7 +3102,7 @@ window.__ModuleLoader__.load({
               if (value.success === false) {
                 setNotice(t('chan.login.failed').replace('{reason}', value.error ?? '未知原因'))
               } else {
-                setNotice(t('chan.login.done').replace('{login}', value.login ?? ''))
+                flashNotice(t('chan.login.done').replace('{login}', value.login ?? ''))
                 onChanged()
                 void loadAccounts()
                 void loadCredits()
@@ -3231,7 +3251,7 @@ window.__ModuleLoader__.load({
               }
               onChanged(); await loadAccounts(); void loadBalances(true)
             }),
-          }, busy === 'refreshAll' ? '…' : t('chan.act.refresh')) : null,
+          }, busy === 'refreshAll' ? '…' : recheckOnly ? t('chan.act.recheck') : t('chan.act.refresh')) : null,
           creditCapability ? h('button', {
             type: 'button', className: 'ofm_btn ghost', disabled: balanceLoading || busy !== '' || !rpc,
             'aria-busy': balanceLoading ? 'true' : undefined, onClick: () => void loadBalances(true),
@@ -3292,7 +3312,7 @@ window.__ModuleLoader__.load({
                         await rpc('account.refresh', { accountId: row.id }, 90_000)
                         onChanged(); await loadAccounts(); void loadBalances(true)
                       }),
-                    }, t('chan.act.refresh')),
+                    }, recheckOnly ? t('chan.act.recheck') : t('chan.act.refresh')),
                     h('button', {
                       type: 'button', className: 'ofm_minibtn', disabled: busy !== '' || !rpc,
                       onClick: () => accountAction('toggle:' + row.id, row.id, async () => {
