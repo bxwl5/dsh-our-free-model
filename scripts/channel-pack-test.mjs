@@ -128,30 +128,29 @@ try {
   assert.equal(adapters.has('autoclaw-intl'), true, 'AutoClaw Intl is registered')
   verifyChannelImagePricing(adapters)
   console.log('ok  22 个账号渠道同步图片计价：缺失及默认方法兜底，厂商计价优先，重复图片与已卸载图片正确计数')
-  // 未登录也展示渠道模型（2026-10-24 起默认）：kuku 没有任何账号，静态兜底表仍应可见；
-  // 显式 DSH_HIDE_MODELS_WITHOUT_ACCOUNT=1 才恢复「未登录就隐藏」。
-  // 这条锁死「默认值」与「登录后能刷新」的前提：未登录时不拉远端、不污染远端缓存。
+  // 原始行为（两层区分）：未登录的渠道**不进系统模型候选**（listModels 返回 []），
+  // 但**设置页照常显示**它的模型（model.list / provider.status 走 listAllModels，不套门控）。
+  // 想预览候选时显式 DSH_HIDE_MODELS_WITHOUT_ACCOUNT=0。
   const kukuAdapter = adapters.get('kuku')
   assert.ok(kukuAdapter !== undefined, 'kuku 适配器已注册')
-  const preloginModels = await kukuAdapter.listModels('kuku')
-  assert.ok(preloginModels.length > 0, '默认应展示未登录渠道的静态模型表')
-  process.env.DSH_HIDE_MODELS_WITHOUT_ACCOUNT = '1'
+  assert.deepEqual(await kukuAdapter.listModels('kuku'), [], '未登录渠道默认不得进入模型候选')
+  assert.ok(kukuAdapter.listAllModels().length > 0, '设置页仍要能看到该渠道的模型（listAllModels 不门控）')
+  process.env.DSH_HIDE_MODELS_WITHOUT_ACCOUNT = '0'
   try {
-    assert.deepEqual(await kukuAdapter.listModels('kuku'), [], '显式隐藏时应返回空数组')
+    assert.ok((await kukuAdapter.listModels('kuku')).length > 0, '显式 =0 时允许在候选里预览')
   } finally {
     delete process.env.DSH_HIDE_MODELS_WITHOUT_ACCOUNT
   }
-  console.log('ok  未登录渠道默认展示静态模型（kuku 兜底表）；DSH_HIDE_MODELS_WITHOUT_ACCOUNT=1 时隐藏')
+  console.log('ok  未登录渠道不进模型候选（listModels=[]），但设置页仍显示（listAllModels）；=0 时允许预览')
 
-  // zcode 曾因 `ready()` 门控在未登录时恒 0 条；现在也播报静态兜底表（22/22 一致）。
+  // zcode 同样遵守这层区分：未登录不进候选；显式 =0 预览时才用静态兜底表。
   {
     const zcodeAdapter = adapters.get('zcode')
     assert.ok(zcodeAdapter !== undefined, 'zcode 适配器已注册')
-    const zcodeModels = await zcodeAdapter.listModels('zcode')
-    assert.ok(zcodeModels.length > 0, 'zcode 未登录也应展示静态模型表')
-    process.env.DSH_HIDE_MODELS_WITHOUT_ACCOUNT = '1'
+    assert.deepEqual(await zcodeAdapter.listModels('zcode'), [], 'zcode 未登录默认不进模型候选')
+    process.env.DSH_HIDE_MODELS_WITHOUT_ACCOUNT = '0'
     try {
-      assert.deepEqual(await zcodeAdapter.listModels('zcode'), [], '显式隐藏时 zcode 也必须返回空数组')
+      assert.ok((await zcodeAdapter.listModels('zcode')).length > 0, '=0 预览时 zcode 应给出静态表')
     } finally {
       delete process.env.DSH_HIDE_MODELS_WITHOUT_ACCOUNT
     }

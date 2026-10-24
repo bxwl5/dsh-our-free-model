@@ -88,11 +88,10 @@ The settings page has seven parts: free models, channels, token savers, routing,
 
 **On AutoClaw** — the mainland site signs in with a **phone number plus SMS code** (no browser; "paste a token instead" still works). The international site's OAuth hard-requires the Aliyun CAPTCHA SDK (`AliyunCaptcha.js`, scenario `sq51tr`), which the plugin cannot complete on its own, hence the pasted-token route there.
 
-**Can't see a channel's models?** Every account channel is listed by default: a signed-out channel
-shows its static catalog, and the next time you open the picker after signing in it refreshes to the
-full remote catalog (remote results are only cached on a successful fetch, never replaced by the
-fallback). All 22 channels work this way (a static catalog before sign-in, the full catalog after). To restore
-the old "hide signed-out channels" behaviour, set `DSH_HIDE_MODELS_WITHOUT_ACCOUNT=1`. Per-channel
-sign-in methods: [docs/channel-login-methods.md](docs/channel-login-methods.md).
+**Can't see a channel's models?** The picker only lists models of channels you are signed in to;
+a channel with no usable account is not offered (its rows could not work). Its model list and the
+per-model switches still show up in the settings page, and signing in refreshes the picker on the
+next open. To preview signed-out channels' static catalogs in the picker, set
+`DSH_HIDE_MODELS_WITHOUT_ACCOUNT=0`. Per-channel sign-in methods: [docs/channel-login-methods.md](docs/channel-login-methods.md).
 
 MIT, see [LICENSE](LICENSE). This project has no affiliation with, and no endorsement from, any model provider.
