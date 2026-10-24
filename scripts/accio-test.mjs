@@ -106,6 +106,36 @@ async function main() {
     assert.notEqual(q.usedPercent, undefined)
   }
 
+  // ── 模型目录：真实形状是按 provider 分组的数组（2026-10-24 实测 9 组 / 79 个）──
+  {
+    const grouped = {
+      data: [
+        { provider: 'openai', providerDisplayName: 'OpenAI', modelList: [
+          { modelCode: 'gpt-a', modelDisplayName: 'GPT A', contextWindow: 128000, visible: true },
+          { modelCode: 'gpt-b', modelDisplayName: 'GPT B', contextWindow: 200000, visible: true },
+        ] },
+        { provider: 'claude', providerDisplayName: 'Claude', modelList: [
+          { modelCode: 'claude-a', modelDisplayName: 'Claude A', contextWindow: 200000, visible: true },
+        ] },
+        { provider: 'hidden-group', providerDisplayName: 'Hidden', visible: false, modelList: [
+          { modelCode: 'never', modelDisplayName: 'Never', contextWindow: 8000 },
+        ] },
+      ],
+    }
+    const models = await fetchModels(async () => Response.json(grouped), ACCIO, { access_token: 'tok', created_at: Date.now() })
+    assert.equal(models.length, 3, '必须把 provider 组拍平（隐藏组不计）')
+    assert.deepEqual(models.map(m => m.id), ['gpt-a', 'gpt-b', 'claude-a'], 'id 取 modelCode')
+    assert.equal(models[0].name, 'GPT A', 'name 取 modelDisplayName')
+    assert.equal(models[1].contextWindow, 200000)
+    // 组内 visible:false 的条目也要剔除
+    const withHidden = { data: [{ provider: 'p', modelList: [
+      { modelCode: 'ok', modelDisplayName: 'OK', contextWindow: 1000, visible: true },
+      { modelCode: 'hid', modelDisplayName: 'HID', contextWindow: 1000, visible: false },
+    ] }] }
+    const filtered = await fetchModels(async () => Response.json(withHidden), ACCIO, { access_token: 't', created_at: Date.now() })
+    assert.deepEqual(filtered.map(m => m.id), ['ok'], '组内 visible:false 的模型必须剔除')
+  }
+
   // ── 假上游 ──
   let mode = 'ok'
   const seen = []

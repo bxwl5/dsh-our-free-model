@@ -63,6 +63,26 @@ export function autoClawHeaders(product: AutoClawProduct, credential: AutoClawCr
   }
 }
 
+/**
+ * **模型目录**专用请求头。
+ *
+ * ⚠️ 与对话头不同：目录端点（`AUTOCLAW_MODEL_CONFIG_PATH`）认的是标准
+ * **`Authorization: Bearer`**，用 `X-Authorization` 会 401 `{"error":"Invalid token"}`
+ * —— 那个报错和「token 真失效」一模一样，2026-10-24 排查时差点误判。
+ * 实测：`GET /autoclaw-proxy/proxy/autoclaw-model-config` + Authorization → 200 三个模型。
+ */
+export function autoClawCatalogHeaders(
+  product: AutoClawProduct,
+  credential: AutoClawCredential,
+): Record<string, string> {
+  return {
+    Accept: 'application/json',
+    Authorization: `Bearer ${credential.access_token}`,
+    Origin: product.apiBase,
+    Referer: `${product.apiBase}/`,
+  }
+}
+
 /** 对话端点。 */
 export function chatEndpoint(product: AutoClawProduct): string {
   return `${product.apiBase}${product.proxyPrefix}/chat/completions`

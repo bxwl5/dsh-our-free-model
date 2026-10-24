@@ -52,9 +52,24 @@ export interface MonkeyCodeFallbackModel {
  * 这里列的是参考实现记录的基础档 UUID，真实目录由远端下发。
  */
 const MONKEYCODE_FALLBACK_MODELS: readonly MonkeyCodeFallbackModel[] = [
-  { id: '03dc8f96-8d9a-4094-a2b3-c4128b3a78a4', name: 'Kimi K2.5', contextWindow: 256_000 },
-  { id: '8e22c508-97ad-490b-b38e-113faeeca275', name: 'MiniMax M2.5', contextWindow: 200_000 },
-  { id: 'd937e77c-6941-48cf-913c-ec51cce138bb', name: 'Qwen 3.5 Plus', contextWindow: 128_000 },
+  // 2026-10-24 按上游 `GET /api/v1/users/models/available` 实拉结果同步
+  //（26 条中剔除 is_hidden / visible:false 后共 14 条可见）。
+  // 原表只有 3 条实验记录且 Qwen UUID 是编的（`...-6941-48cf-...`，真值 `...-410c-...`），
+  // 拿它发请求必然 404；现已全量覆盖。
+  { id: '7f292d79-1f0b-40de-9b98-46b1ba66f7a2', name: 'qwen3.6-plus', contextWindow: 128000 },
+  { id: '46f84b51-566d-439c-98d2-2db8b8d04689', name: 'monkeycode-basic/qwen3.5-plus', contextWindow: 128000 },
+  { id: 'c79063e2-a4d4-4f15-8f8c-a604f959c377', name: 'monkeycode-basic/glm-5.3-flash', contextWindow: 128000 },
+  { id: '08d76917-9d00-4b30-8496-64e29252d2cd', name: 'qwen3.7-max', contextWindow: 128000 },
+  { id: '8e22c508-97ad-490b-b38e-113faeeca275', name: 'minimax-m2.5', contextWindow: 128000 },
+  { id: 'a734a35c-6cf2-4b9b-ae39-29f3e18ee1cf', name: 'minimax-m3', contextWindow: 128000 },
+  { id: 'c5a183f1-2876-45cf-905d-c1b9a85fc819', name: 'monkeycode-basic/deepseek-flash', contextWindow: 128000 },
+  { id: '5e69521a-cc93-4ea8-9ffb-98650a879e74', name: 'deepseek-flash', contextWindow: 128000 },
+  { id: 'e07243b6-4dc4-40c4-a486-a9ffa8d46c4a', name: 'glm-5', contextWindow: 128000 },
+  { id: 'a290bb6b-843b-427c-b6cc-0e34dd82385d', name: 'monkeycode-basic/minimax-m2.5', contextWindow: 128000 },
+  { id: '7e4b3ade-20b1-4b26-9a36-dc2043623a78', name: 'glm-5.1', contextWindow: 128000 },
+  { id: '7331f932-5025-458c-9eaa-cb6f455dfc38', name: 'kimi-k2.6', contextWindow: 128000 },
+  { id: 'c82ac16d-aaf5-4197-9040-4227ec2299a5', name: 'monkeycode-basic/kimi-k2.5', contextWindow: 128000 },
+  { id: 'd4fd356d-56d3-48b1-8096-560699a3aa04', name: 'monkeycode-basic/qwen3.8-flash', contextWindow: 128000 },
 ]
 
 /** MonkeyCode provider 配置。 */

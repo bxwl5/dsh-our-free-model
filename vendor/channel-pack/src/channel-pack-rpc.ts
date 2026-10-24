@@ -52,6 +52,7 @@ import { COMMANDCODE } from './commandcode-product.js'
 import {
   fetchCheckinStatus as fetchMonkeyCodeCheckinStatus,
   fetchWallet as fetchMonkeyCodeWallet,
+  fetchCheckinStatus as fetchMonkeyCodeCheckinStatus,
   runCheckin as runMonkeyCodeCheckin,
 } from './monkeycode-auth.js'
 import type { MonkeyCodeCredential } from './monkeycode.js'
@@ -2420,6 +2421,37 @@ function registerChannelPackEndpoints(
               if (token === '') throw new Error('凭据不可用，请重新扫码登录')
               break
             }
+            case MONKEYCODE.id: {
+              // MonkeyCode 是 Cookie 型渠道（`monkeycode_ai_session`），**没有续期端点**：
+              // 与 kuku 同为「刷新即复核」—— 重读凭据并确认形状可用，不可用就如实报错
+              // 引导重新登录。缺了本分支时点刷新会抛 `Unknown provider: monkeycode`
+              //（用户报障：按钮点了报未知 provider）。
+              const resolved = await ctx.credentials.resolve(credentialRef(entry.credentialRef))
+              if (resolved === undefined) throw new Error('凭据未配置')
+              let cookie = ''
+              try {
+                const parsed = JSON.parse(resolved.value) as { access_token?: unknown }
+                cookie = typeof parsed.access_token === 'string' ? parsed.access_token : ''
+              } catch { cookie = '' }
+              if (cookie === '') throw new Error('凭据不可用，请重新登录')
+              break
+            }
+            case AUTOCLAW_INTL.id: {
+              // AutoClaw 国际版：**没有 refresh_token**（OAuth 受阿里滑块限制，登录拿不到），
+              // 因此这里只能做凭据复核；真续期只有国内站短信登录那条链路才有。
+              // 缺了本分支时点刷新会抛 `Unknown provider: autoclaw-intl`。
+              const resolved = await ctx.credentials.resolve(credentialRef(entry.credentialRef))
+              if (resolved === undefined) throw new Error('凭据未配置')
+              const current = JSON.parse(resolved.value) as AutoClawCredential
+              if (typeof current.access_token !== 'string' || current.access_token === '') {
+                throw new Error('凭据不可用，请重新粘贴令牌')
+              }
+              // 没有 refresh_token 的凭据，落库的 `refreshable` 必须保持 false。
+              await pool.updateAccount(entry.id, {
+                refreshable: typeof current.refresh_token === 'string' && current.refresh_token !== '',
+              })
+              break
+            }
             default:
               throw new Error(`Unknown provider: ${entry.provider}`)
           }
@@ -3259,8 +3291,23 @@ function registerChannelPackEndpoints(
             fetcher: codeartsFetcher,
             resolve: (ref) => ctx.credentials.resolve(ref),
             claim: async (credential) => {
+              // ⚠️ 必须先查状态再决定要不要 POST：
+              // 上游对「今天已签到」的重复 POST 回 HTTP 200 + `code:10701`
+              // （`{"code":10701,"message":"兑换验证码失败"}`）。直接 POST 再按业务码判定
+              // 会把「已经领过了」误报成「领取失败」，用户会以为出错。
+              const before = await fetchMonkeyCodeCheckinStatus(codeartsFetcher, MONKEYCODE, credential)
+              if (before.checkedIn) {
+                return {
+                  kind: 'already-claimed',
+                  message: before.reward === undefined
+                    ? '今天已经签到过了'
+                    : `今天已经签到过了（+${before.reward} 积分）`,
+                }
+              }
               const result = await runMonkeyCodeCheckin(codeartsFetcher, MONKEYCODE, credential)
               if (!result.ok) return { kind: 'failed', code: 0, message: result.reason ?? '签到失败' }
+              // `reward` 缺失时如实报 0 并在 summary 里体现为「已领取但积分为 0」，
+              // 不编造「每次 100 积分」（该数字未获实测支持）。
               return {
                 kind: 'claimed',
                 credit: result.status?.reward ?? 0,
@@ -4165,7 +4212,15 @@ function registerChannelPackEndpoints(
           // 空 id 不进结果：它不可能对应任何 provider，留着只会让前端多一个
           // 无意义的键（前端按 PROVIDERS 取，多出来的键会被忽略，但脏数据不该产生）。
           if (provider.length === 0) continue
-          const catalog = modelAdapters?.[provider]?.listAllModels()
+          // ⚠️ 先给「有远端目录」的适配器一次预热机会，否则设置页显示的是兜底表条数，
+          // 与对话框（走 listModels → 远端）对不上（用户报障：设置页 1 条、对话框 3 条）。
+          const adapter = modelAdapters?.[provider] as
+            | { listAllModels(): readonly { id: string; name: string; isFree?: boolean }[]; warmCatalog?: () => Promise<void> }
+            | undefined
+          if (typeof adapter?.warmCatalog === 'function') {
+            await adapter.warmCatalog().catch(() => {})
+          }
+          const catalog = adapter?.listAllModels()
           const total = catalog?.length ?? 0
           // ⚠️ `listAllModels()` **不带 disabled 字段**，故必须另取黑名单再按 id 计数。
           const disabledMap = pool.listDisabledModels(provider)

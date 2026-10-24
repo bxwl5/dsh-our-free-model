@@ -6,7 +6,7 @@ const collect = async (it) => { const out = []; for await (const c of it) out.pu
 
 async function main() {
   const {
-    isCredentialUsable, isCredentialExpired, autoClawHeaders, chatEndpoint,
+    isCredentialUsable, isCredentialExpired, autoClawHeaders, autoClawCatalogHeaders, chatEndpoint,
     parseCredential, parseModelConfig,
   } = await import('../vendor/channel-pack/src/autoclaw.ts')
   const { AUTOCLAW, AUTOCLAW_INTL, AUTOCLAW_MODEL_CONFIG_PATH, AUTOCLAW_CALLBACK_PORTS } = await import('../vendor/channel-pack/src/autoclaw-product.ts')
@@ -40,9 +40,14 @@ async function main() {
   // ── 端点 ──
   assert.equal(chatEndpoint(AUTOCLAW), 'https://autoglm-acceleration-api.zhipuai.cn/autoclaw-proxy/proxy/autoclaw/chat/completions')
   assert.equal(chatEndpoint(AUTOCLAW_INTL), 'https://autoglm-api.autoglm.ai/autoclaw-proxy/proxy/autoclaw/chat/completions')
-  // ⚠️ 模型目录不在 proxyPrefix 下
-  assert.equal(AUTOCLAW_MODEL_CONFIG_PATH, '/proxy/autoclaw-model-config')
-  assert.equal(AUTOCLAW_MODEL_CONFIG_PATH.startsWith('/autoclaw'), false, '目录路径不在 /autoclaw 下')
+  // ⚠️ 模型目录路径与聊天端点不同：实测 `GET /proxy/autoclaw-model-config` 是 404，
+  // 真实路径带 `autoclaw-proxy` 前缀（2026-10-24 由团队审计发现并修）。
+  assert.equal(AUTOCLAW_MODEL_CONFIG_PATH, '/autoclaw-proxy/proxy/autoclaw-model-config')
+  // 目录端点认标准 Authorization；聊天才用 X-Authorization（搞反会 401 Invalid token）。
+  const catalogHeaders = autoClawCatalogHeaders(AUTOCLAW, { access_token: 'tok-1234567890abcdef' })
+  assert.equal(catalogHeaders.Authorization, 'Bearer tok-1234567890abcdef', '目录用标准 Authorization')
+  assert.equal(catalogHeaders['X-Authorization'], undefined, '目录不能用 X-Authorization')
+  assert.equal(h['X-Authorization'], 'Bearer tok', '聊天仍用 X-Authorization')
   // 回调端口白名单
   assert.deepEqual([...AUTOCLAW_CALLBACK_PORTS], [18432, 19654, 19723, 53699])
 
@@ -62,8 +67,10 @@ async function main() {
     req.on('end', () => {
       seen.push({ url: req.url, headers: req.headers })
       const json = (s, b) => res.writeHead(s, { 'Content-Type': 'application/json', Connection: 'close' }).end(JSON.stringify(b))
-      if (req.url === '/proxy/autoclaw-model-config') {
-        if (req.headers['x-authorization'] !== 'Bearer tok') return json(401, {})
+      if (req.url === '/autoclaw-proxy/proxy/autoclaw-model-config') {
+        // 目录端点认标准 Authorization（用 X-Authorization 会 401 Invalid token）。
+        if (req.headers.authorization !== 'Bearer tok') return json(401, { error: 'Invalid token' })
+        if (req.headers['x-authorization'] !== undefined) return json(401, { error: 'Invalid token' })
         return json(200, { models: [{ id: 'autoglm-air', name: 'AutoGLM Air', contextWindow: 128000 }] })
       }
       if (req.url === '/autoclaw-proxy/proxy/autoclaw/chat/completions') {
@@ -91,8 +98,11 @@ async function main() {
     const models = await adapter.listModels('autoclaw')
     assert.equal(models.length, 1)
     assert.equal(models[0].name, 'AutoGLM Air')
-    // 走的是 /proxy/autoclaw-model-config
-    assert.ok(seen.some(x => x.url === '/proxy/autoclaw-model-config'))
+    // 走的是 /autoclaw-proxy/proxy/autoclaw-model-config，且带标准 Authorization
+    const catalogReq = seen.find(x => x.url === '/autoclaw-proxy/proxy/autoclaw-model-config')
+    assert.ok(catalogReq !== undefined, '目录请求路径必须是 /autoclaw-proxy/proxy/autoclaw-model-config')
+    assert.equal(catalogReq.headers.authorization, 'Bearer tok', '目录请求用标准 Authorization')
+    assert.equal(catalogReq.headers['x-authorization'], undefined, '目录请求不得用 X-Authorization')
 
     // 对话
     const chunks = await collect(adapter.stream({

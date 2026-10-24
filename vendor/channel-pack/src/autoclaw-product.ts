@@ -50,9 +50,18 @@ export interface AutoClawFallbackModel {
   maxTokens?: number
 }
 
-/** 兜底模型目录（真实目录由 `/proxy/autoclaw-model-config` 下发）。 */
+/**
+ * 兜底模型目录（真实目录由 {@link AUTOCLAW_MODEL_CONFIG_PATH} 下发）。
+ *
+ * ⚠️ 该端点鉴权头是 **`Authorization`**（标准 Bearer），不是对话用的 `X-Authorization` ——
+ * 用 `X-Authorization` 打它会 401 `{"error":"Invalid token"}`，极容易被误判成 token 失效。
+ */
 const AUTOCLAW_FALLBACK_MODELS: readonly AutoClawFallbackModel[] = [
-  { id: 'autoglm-air', name: 'AutoGLM Air', contextWindow: 128_000 },
+  // 2026-10-24 按上游 `GET /autoclaw-proxy/proxy/autoclaw-model-config` 实拉结果同步
+  //（原来只有 1 条 `autoglm-air` 实验模型，用来验证「能否显示」；现已全量覆盖）。
+  { id: 'zai_auto', name: 'Auto', contextWindow: 1048576 },
+  { id: 'zai_auto-fast', name: 'Auto-Fast', contextWindow: 1048576 },
+  { id: 'zaicoding_glm-5.3', name: 'GLM-5.3', contextWindow: 1048576 },
 ]
 
 /** 国内版。 */
@@ -85,7 +94,7 @@ export function autoClawProductById(id: string): AutoClawProduct | undefined {
 }
 
 /** 模型目录路径（**不在** proxyPrefix 下）。 */
-export const AUTOCLAW_MODEL_CONFIG_PATH = '/proxy/autoclaw-model-config'
+export const AUTOCLAW_MODEL_CONFIG_PATH = '/autoclaw-proxy/proxy/autoclaw-model-config'
 
 /** 官方 OAuth 回调端口白名单（仅这四个能收回调）。 */
 export const AUTOCLAW_CALLBACK_PORTS: readonly number[] = [18432, 19654, 19723, 53699]

@@ -23,6 +23,7 @@ import {
   type AutoClawProduct,
 } from './autoclaw-product.js'
 import {
+  autoClawCatalogHeaders,
   autoClawHeaders,
   chatEndpoint,
   isCredentialUsable,
@@ -81,7 +82,8 @@ export class AutoClawAdapter extends LlmAdapter {
         if (!isCredentialUsable(credential)) return
         const response = await this.fetchImpl(`${this.product.apiBase}${AUTOCLAW_MODEL_CONFIG_PATH}`, {
           method: 'GET',
-          headers: autoClawHeaders(this.product, credential),
+          // ⚠️ 目录端点用标准 Authorization（不是对话的 X-Authorization），见 autoClawCatalogHeaders。
+          headers: autoClawCatalogHeaders(this.product, credential),
         })
         if (!response.ok) return
         const rows = parseModelConfig(await response.json().catch(() => undefined))
@@ -120,6 +122,20 @@ export class AutoClawAdapter extends LlmAdapter {
    * `status` RPC 的模型数量统计走这个方法（`index.ts` 的 modelAdapters），
    * 缺了它卡片就显示「—」—— 与其它渠道不一致。
    */
+  /**
+   * 预热远端目录（供 `provider.status` 这类**异步**入口调用）。
+   *
+   * 为什么需要：`listAllModels()` 是同步契约（多处依赖它不触发网络），
+   * 所以设置页的模型数只能读 `remoteModels ?? fallbackModels`。首次打开设置页时
+   * 远端还没拉过，就会显示兜底表的条数（用户报障：设置页 1 条、对话框 3 条）。
+   * 这里让异步调用方先等一次远端，再把同一份数据交给同步读取。
+   *
+   * 失败静默（兜底表接管），与 `ensureRemoteModels` 同语义。
+   */
+  async warmCatalog(): Promise<void> {
+    await this.ensureRemoteModels()
+  }
+
   listAllModels(): readonly { id: string; name: string }[] {
     const source = this.remoteModels ?? this.product.fallbackModels
     return source.map((model) => ({ id: model.id, name: model.name }))

@@ -188,17 +188,51 @@ export async function fetchModels(
   const body: unknown = await response.json().catch(() => undefined)
   if (typeof body !== 'object' || body === null) throw new Error('Accio：模型目录响应不是对象')
   const record = body as Record<string, unknown>
-  const list = Array.isArray(record.models) ? record.models
+  // ⚠️ 真实形状是**按 provider 分组的数组**（2026-10-24 实测 9 组 / 79 个模型）：
+  //   { data: [ { provider, providerDisplayName, modelList: [ {modelCode, modelDisplayName,
+  //                contextWindow, visible, multimodal, ...} ] } ] }
+  // 早期只认「models / data 直接是模型条目数组」，遇到组数组时每条都没有 id →
+  // 解析 0 条 → 抛「模型目录为空」→ 永远落到 2 条静态兜底表（用户报障：只有 2 个模型）。
+  // 因此先把组结构拍平；单条形状（老网关/别的实现）继续兼容。
+  const rawList = Array.isArray(record.models) ? record.models
     : Array.isArray(record.data) ? record.data
     : undefined
-  if (list === undefined) throw new Error('Accio：模型目录缺少 models 数组')
+  if (rawList === undefined) throw new Error('Accio：模型目录缺少 models 数组')
+  const list: unknown[] = []
+  for (const raw of rawList) {
+    if (typeof raw !== 'object' || raw === null) continue
+    const group = raw as Record<string, unknown>
+    const nested = group.modelList ?? group.models
+    if (Array.isArray(nested)) {
+      // 组级 `visible: false` 表示整组不对外，跳过（实测存在该字段）。
+      if (group.visible === false) continue
+      for (const item of nested) list.push(item)
+    } else {
+      list.push(raw)
+    }
+  }
+  if (list.length === 0) throw new Error('Accio：模型目录为空')
   const rows: Array<{ id: string; name: string; contextWindow: number; maxTokens?: number }> = []
+  const seenIds = new Set<string>()
   for (const raw of list) {
     if (typeof raw !== 'object' || raw === null) continue
     const item = raw as Record<string, unknown>
-    const id = typeof item.id === 'string' ? item.id : typeof item.model === 'string' ? item.model : undefined
+    // 组内字段名：modelCode / modelName；兼容旧的 id / model。
+    const id = typeof item.modelCode === 'string' && item.modelCode !== '' ? item.modelCode
+      : typeof item.id === 'string' ? item.id
+      : typeof item.model === 'string' ? item.model
+      : undefined
     if (id === undefined) continue
-    const name = typeof item.name === 'string' ? item.name : typeof item.displayName === 'string' ? item.displayName : id
+    // 上游标记隐藏的模型不进候选。
+    if (item.visible === false) continue
+    // ⚠️ 同一个 modelCode 可能出现在多个 provider 组里（实测 77 个唯一 code / 79 条），
+    // 重复项会让选择器出现同名模型两次，必须按 id 去重。
+    if (seenIds.has(id)) continue
+    seenIds.add(id)
+    const name = typeof item.modelDisplayName === 'string' && item.modelDisplayName !== '' ? item.modelDisplayName
+      : typeof item.name === 'string' ? item.name
+      : typeof item.displayName === 'string' ? item.displayName
+      : id
     const contextRaw = item.contextWindow ?? item.context_window ?? item.maxInputTokens
     const contextWindow = typeof contextRaw === 'number' && contextRaw > 0 ? contextRaw : 128_000
     const maxRaw = item.maxTokens ?? item.max_output_tokens

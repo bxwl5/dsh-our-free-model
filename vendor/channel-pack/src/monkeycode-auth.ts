@@ -186,6 +186,22 @@ export async function runCheckin(
       : `HTTP ${result.status}`
     return { ok: false, reason: message }
   }
+  // ⚠️ 必须校验**业务码**：上游签到失败时照样回 HTTP 200，把错误塞进 `code`。
+  // 2026-10-24 实测已签到的账号再 POST 得到
+  //   HTTP 200 {"code":10701,"message":"兑换验证码失败"}
+  // 早期只看 `response.ok`，于是业务失败被判成功、`credit` 取不到就填 0，
+  // 面板显示「已领取 0 积分」——用户以为领到了，其实什么都没发生。
+  const envelope: unknown = result.body
+  const envelopeRecord = typeof envelope === 'object' && envelope !== null && !Array.isArray(envelope)
+    ? envelope as Record<string, unknown>
+    : undefined
+  const businessCode = typeof envelopeRecord?.code === 'number' ? envelopeRecord.code : undefined
+  if (businessCode !== undefined && businessCode !== 0) {
+    const message = typeof envelopeRecord?.message === 'string'
+      ? envelopeRecord.message
+      : `上游返回业务错误（code=${businessCode}）`
+    return { ok: false, reason: message }
+  }
   return { ok: true, status: parseCheckin(result.body) }
 }
 

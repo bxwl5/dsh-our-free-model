@@ -28241,8 +28241,52 @@ var init_accio_product = __esm({
   "vendor/channel-pack/src/accio-product.ts"() {
     "use strict";
     ACCIO_FALLBACK_MODELS = [
-      { id: "qwen3-max", name: "Qwen3 Max", contextWindow: 128e3 },
-      { id: "qwen3-coder-plus", name: "Qwen3 Coder Plus", contextWindow: 256e3 }
+      // 2026-10-24 按上游 `POST /api/llm/config` 实拉结果同步（9 个 provider 组拍平、
+      // 去重、剔除 visible:false 后共 43 条）。原来只有 2 条实验模型，
+      // 用来验证「能否显示」；现在全量覆盖，两个地区共用同一份（上游两地目录一致）。
+      { id: "auto", name: "Auto", contextWindow: 105e4 },
+      { id: "1Helix-G6aS8tR2qN7m", name: "GPT 6 Astra", contextWindow: 105e4 },
+      { id: "1Helix-3EjR3WN1dY6s", name: "GPT 5.6 Luna", contextWindow: 105e4 },
+      { id: "1Helix-B33T3WN1dY6s", name: "GPT 5.6 Terra", contextWindow: 105e4 },
+      { id: "1Helix-B3jR3WN1dY6s", name: "GPT 5.6 Sol", contextWindow: 105e4 },
+      { id: "1Helix-G6Lu8nK4qR2m", name: "GPT 6 Luna", contextWindow: 105e4 },
+      { id: "1Helix-G6So7pW3xN9q", name: "GPT 6 Sol", contextWindow: 105e4 },
+      { id: "1Helix-B3jR8wN1dY6s", name: "GPT 5.5", contextWindow: 105e4 },
+      { id: "1Helix-G46W8nP2qR6m", name: "Grok 4.6", contextWindow: 5e5 },
+      { id: "1Orbit-I9eY7YK8bW1f", name: "Claude Sonnet 4.6", contextWindow: 1e6 },
+      { id: "1Orbit-I93V4tK8bW1f", name: "Claude Haiku 4.5", contextWindow: 2e5 },
+      { id: "1Orbit-H55aN8xR6cP2m", name: "Claude Haiku 5.5", contextWindow: 1e6 },
+      { id: "1Orbit-I93F4tK8bW1f", name: "Claude Sonnet 5", contextWindow: 1e6 },
+      { id: "1Orbit-Q7hN2R6cP2m", name: "Claude Opus 4.7", contextWindow: 1e6 },
+      { id: "1Orbit-Q5pN8xR6cP2m", name: "Claude Opus 5", contextWindow: 1e6 },
+      { id: "1Orbit-Q55pN8xR6cP2m", name: "Claude Opus 5.5", contextWindow: 1e6 },
+      { id: "1Orbit-Q2XN3xR6cP2m", name: "Claude Opus 4.8", contextWindow: 1e6 },
+      { id: "1Orbit-Q2XN3dX6cP2m", name: "Claude Fable 5", contextWindow: 1e6 },
+      { id: "1Orbit-F51W8nP2qR6m", name: "Claude Fable 5.1", contextWindow: 1e6 },
+      { id: "1Orbit-Q7hN3xR6cP2m", name: "\u6781\u81F4", contextWindow: 1e6 },
+      { id: "1Orbit-Q2dN3xR6cP2m", name: "Claude Opus 4.6", contextWindow: 1e6 },
+      { id: "1Nexus-R3wF8qJ5vB6h", name: "Standard", contextWindow: 1e6 },
+      { id: "1Nexus-R36W8qJ5vB6h", name: "Gemini 3 Flash", contextWindow: 1e6 },
+      { id: "1Nexus-R3wF8qJ5vc7o", name: "Gemini 3.5 Flash", contextWindow: 1e6 },
+      { id: "1Nexus-R7GF8qJ6vd8p", name: "Gemini 3.7 Flash", contextWindow: 1e6 },
+      { id: "1Nexus-R8HF9qK7we1s", name: "Gemini 3.8 Flash", contextWindow: 1e6 },
+      { id: "1Orbit-I9eY4tK8bW1f", name: "\u4E13\u4E1A", contextWindow: 1e6 },
+      { id: "1Nexus-utXDaAethymI", name: "Gemini 4 Argon", contextWindow: 1048576 },
+      { id: "1Drift-T3TB6WS9a23w", name: "Qwen 3.8 Max", contextWindow: 1e6 },
+      { id: "1Drift-T3T9WWS9a23w", name: "Qwen 3.8 Max", contextWindow: 1e6 },
+      { id: "1Drift-N8kP2Q7wR5mX", name: "Qwen 3.8 27B", contextWindow: 512e3 },
+      { id: "1Drift-F8hS3mK7pL6I", name: "Qwen 3.8 Flash", contextWindow: 1e6 },
+      { id: "1Drift-A3bM5nK8pQ2w", name: "Qwen 3.5 A3B", contextWindow: 256e3 },
+      { id: "1Nova-Q3xM8vJ1rH6z", name: "DeepSeek V4 Flash", contextWindow: 1e6 },
+      { id: "1Nova-bW7yT4kL9pN2", name: "DeepSeek V4 Pro", contextWindow: 1e6 },
+      { id: "1Synapse-G5aJ8wL1dV4s", name: "Kimi K2.6", contextWindow: 256e3 },
+      { id: "1Chronos-dX3cV9sA2mK7", name: "GLM 5.1", contextWindow: 2e5 },
+      { id: "1Chronos-E2yU6nF9kH3r", name: "GLM-5", contextWindow: 2e5 },
+      { id: "1Chronos-G5p2V9sA2mK7", name: "GLM-5.2", contextWindow: 1e6 },
+      { id: "1Chronos-L53W8nP2qR6m", name: "GLM-5.3", contextWindow: 1e6 },
+      { id: "1Chronos-F53X9nQ3rT8w", name: "GLM 5.3 Flash", contextWindow: 1e6 },
+      { id: "1Zenith-M27hS2SR5xQ2p", name: "MiniMax M3", contextWindow: 1e6 },
+      { id: "rlab-1.0-storyboard", name: "Multi-shot Video", contextWindow: 128e3 }
     ];
     ACCIO = {
       id: "accio",
@@ -28531,15 +28575,32 @@ async function fetchModels2(fetcher, product, credential, signal) {
   const body = await response.json().catch(() => void 0);
   if (typeof body !== "object" || body === null) throw new Error("Accio\uFF1A\u6A21\u578B\u76EE\u5F55\u54CD\u5E94\u4E0D\u662F\u5BF9\u8C61");
   const record = body;
-  const list = Array.isArray(record.models) ? record.models : Array.isArray(record.data) ? record.data : void 0;
-  if (list === void 0) throw new Error("Accio\uFF1A\u6A21\u578B\u76EE\u5F55\u7F3A\u5C11 models \u6570\u7EC4");
+  const rawList = Array.isArray(record.models) ? record.models : Array.isArray(record.data) ? record.data : void 0;
+  if (rawList === void 0) throw new Error("Accio\uFF1A\u6A21\u578B\u76EE\u5F55\u7F3A\u5C11 models \u6570\u7EC4");
+  const list = [];
+  for (const raw of rawList) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const group = raw;
+    const nested = group.modelList ?? group.models;
+    if (Array.isArray(nested)) {
+      if (group.visible === false) continue;
+      for (const item of nested) list.push(item);
+    } else {
+      list.push(raw);
+    }
+  }
+  if (list.length === 0) throw new Error("Accio\uFF1A\u6A21\u578B\u76EE\u5F55\u4E3A\u7A7A");
   const rows = [];
+  const seenIds = /* @__PURE__ */ new Set();
   for (const raw of list) {
     if (typeof raw !== "object" || raw === null) continue;
     const item = raw;
-    const id = typeof item.id === "string" ? item.id : typeof item.model === "string" ? item.model : void 0;
+    const id = typeof item.modelCode === "string" && item.modelCode !== "" ? item.modelCode : typeof item.id === "string" ? item.id : typeof item.model === "string" ? item.model : void 0;
     if (id === void 0) continue;
-    const name2 = typeof item.name === "string" ? item.name : typeof item.displayName === "string" ? item.displayName : id;
+    if (item.visible === false) continue;
+    if (seenIds.has(id)) continue;
+    seenIds.add(id);
+    const name2 = typeof item.modelDisplayName === "string" && item.modelDisplayName !== "" ? item.modelDisplayName : typeof item.name === "string" ? item.name : typeof item.displayName === "string" ? item.displayName : id;
     const contextRaw = item.contextWindow ?? item.context_window ?? item.maxInputTokens;
     const contextWindow = typeof contextRaw === "number" && contextRaw > 0 ? contextRaw : 128e3;
     const maxRaw = item.maxTokens ?? item.max_output_tokens;
@@ -44689,9 +44750,24 @@ import { LlmAdapter as LlmAdapter8, LlmError as LlmError11 } from "@deepseek-ai/
 
 // vendor/channel-pack/src/monkeycode-product.ts
 var MONKEYCODE_FALLBACK_MODELS = [
-  { id: "03dc8f96-8d9a-4094-a2b3-c4128b3a78a4", name: "Kimi K2.5", contextWindow: 256e3 },
-  { id: "8e22c508-97ad-490b-b38e-113faeeca275", name: "MiniMax M2.5", contextWindow: 2e5 },
-  { id: "d937e77c-6941-48cf-913c-ec51cce138bb", name: "Qwen 3.5 Plus", contextWindow: 128e3 }
+  // 2026-10-24 按上游 `GET /api/v1/users/models/available` 实拉结果同步
+  //（26 条中剔除 is_hidden / visible:false 后共 14 条可见）。
+  // 原表只有 3 条实验记录且 Qwen UUID 是编的（`...-6941-48cf-...`，真值 `...-410c-...`），
+  // 拿它发请求必然 404；现已全量覆盖。
+  { id: "7f292d79-1f0b-40de-9b98-46b1ba66f7a2", name: "qwen3.6-plus", contextWindow: 128e3 },
+  { id: "46f84b51-566d-439c-98d2-2db8b8d04689", name: "monkeycode-basic/qwen3.5-plus", contextWindow: 128e3 },
+  { id: "c79063e2-a4d4-4f15-8f8c-a604f959c377", name: "monkeycode-basic/glm-5.3-flash", contextWindow: 128e3 },
+  { id: "08d76917-9d00-4b30-8496-64e29252d2cd", name: "qwen3.7-max", contextWindow: 128e3 },
+  { id: "8e22c508-97ad-490b-b38e-113faeeca275", name: "minimax-m2.5", contextWindow: 128e3 },
+  { id: "a734a35c-6cf2-4b9b-ae39-29f3e18ee1cf", name: "minimax-m3", contextWindow: 128e3 },
+  { id: "c5a183f1-2876-45cf-905d-c1b9a85fc819", name: "monkeycode-basic/deepseek-flash", contextWindow: 128e3 },
+  { id: "5e69521a-cc93-4ea8-9ffb-98650a879e74", name: "deepseek-flash", contextWindow: 128e3 },
+  { id: "e07243b6-4dc4-40c4-a486-a9ffa8d46c4a", name: "glm-5", contextWindow: 128e3 },
+  { id: "a290bb6b-843b-427c-b6cc-0e34dd82385d", name: "monkeycode-basic/minimax-m2.5", contextWindow: 128e3 },
+  { id: "7e4b3ade-20b1-4b26-9a36-dc2043623a78", name: "glm-5.1", contextWindow: 128e3 },
+  { id: "7331f932-5025-458c-9eaa-cb6f455dfc38", name: "kimi-k2.6", contextWindow: 128e3 },
+  { id: "c82ac16d-aaf5-4197-9040-4227ec2299a5", name: "monkeycode-basic/kimi-k2.5", contextWindow: 128e3 },
+  { id: "d4fd356d-56d3-48b1-8096-560699a3aa04", name: "monkeycode-basic/qwen3.8-flash", contextWindow: 128e3 }
 ];
 var MONKEYCODE = {
   id: "monkeycode",
@@ -45300,6 +45376,13 @@ async function runCheckin(fetcher, product, credential, signal) {
   if (!result.ok) {
     const body = unwrapData(result.body);
     const message2 = typeof body === "object" && body !== null && "msg" in body ? String(body.msg) : `HTTP ${result.status}`;
+    return { ok: false, reason: message2 };
+  }
+  const envelope = result.body;
+  const envelopeRecord = typeof envelope === "object" && envelope !== null && !Array.isArray(envelope) ? envelope : void 0;
+  const businessCode = typeof envelopeRecord?.code === "number" ? envelopeRecord.code : void 0;
+  if (businessCode !== void 0 && businessCode !== 0) {
+    const message2 = typeof envelopeRecord?.message === "string" ? envelopeRecord.message : `\u4E0A\u6E38\u8FD4\u56DE\u4E1A\u52A1\u9519\u8BEF\uFF08code=${businessCode}\uFF09`;
     return { ok: false, reason: message2 };
   }
   return { ok: true, status: parseCheckin(result.body) };
@@ -46498,7 +46581,11 @@ import { LlmAdapter as LlmAdapter13, LlmError as LlmError16 } from "@deepseek-ai
 
 // vendor/channel-pack/src/autoclaw-product.ts
 var AUTOCLAW_FALLBACK_MODELS = [
-  { id: "autoglm-air", name: "AutoGLM Air", contextWindow: 128e3 }
+  // 2026-10-24 按上游 `GET /autoclaw-proxy/proxy/autoclaw-model-config` 实拉结果同步
+  //（原来只有 1 条 `autoglm-air` 实验模型，用来验证「能否显示」；现已全量覆盖）。
+  { id: "zai_auto", name: "Auto", contextWindow: 1048576 },
+  { id: "zai_auto-fast", name: "Auto-Fast", contextWindow: 1048576 },
+  { id: "zaicoding_glm-5.3", name: "GLM-5.3", contextWindow: 1048576 }
 ];
 var AUTOCLAW = {
   id: "autoclaw",
@@ -46509,7 +46596,7 @@ var AUTOCLAW = {
   defaultCredentialRef: "AUTOCLAW_TOKEN",
   fallbackModels: AUTOCLAW_FALLBACK_MODELS
 };
-var AUTOCLAW_INTL = {
+var AUTOCLAW_INTL2 = {
   ...AUTOCLAW,
   id: "autoclaw-intl",
   displayName: "AutoClaw \u56FD\u9645\u7248",
@@ -46517,7 +46604,7 @@ var AUTOCLAW_INTL = {
   apiBase: "https://autoglm-api.autoglm.ai",
   defaultCredentialRef: "AUTOCLAW_INTL_TOKEN"
 };
-var AUTOCLAW_MODEL_CONFIG_PATH = "/proxy/autoclaw-model-config";
+var AUTOCLAW_MODEL_CONFIG_PATH = "/autoclaw-proxy/proxy/autoclaw-model-config";
 
 // vendor/channel-pack/src/autoclaw.ts
 function stringValue8(value) {
@@ -46536,6 +46623,14 @@ function autoClawHeaders(product, credential) {
     "Content-Type": "application/json",
     Accept: "application/json",
     "X-Authorization": `Bearer ${credential.access_token}`,
+    Origin: product.apiBase,
+    Referer: `${product.apiBase}/`
+  };
+}
+function autoClawCatalogHeaders(product, credential) {
+  return {
+    Accept: "application/json",
+    Authorization: `Bearer ${credential.access_token}`,
     Origin: product.apiBase,
     Referer: `${product.apiBase}/`
   };
@@ -46617,7 +46712,8 @@ var AutoClawAdapter = class extends LlmAdapter13 {
         if (!isCredentialUsable7(credential)) return;
         const response = await this.fetchImpl(`${this.product.apiBase}${AUTOCLAW_MODEL_CONFIG_PATH}`, {
           method: "GET",
-          headers: autoClawHeaders(this.product, credential)
+          // ⚠️ 目录端点用标准 Authorization（不是对话的 X-Authorization），见 autoClawCatalogHeaders。
+          headers: autoClawCatalogHeaders(this.product, credential)
         });
         if (!response.ok) return;
         const rows = parseModelConfig(await response.json().catch(() => void 0));
@@ -46650,6 +46746,19 @@ var AutoClawAdapter = class extends LlmAdapter13 {
    * `status` RPC 的模型数量统计走这个方法（`index.ts` 的 modelAdapters），
    * 缺了它卡片就显示「—」—— 与其它渠道不一致。
    */
+  /**
+   * 预热远端目录（供 `provider.status` 这类**异步**入口调用）。
+   *
+   * 为什么需要：`listAllModels()` 是同步契约（多处依赖它不触发网络），
+   * 所以设置页的模型数只能读 `remoteModels ?? fallbackModels`。首次打开设置页时
+   * 远端还没拉过，就会显示兜底表的条数（用户报障：设置页 1 条、对话框 3 条）。
+   * 这里让异步调用方先等一次远端，再把同一份数据交给同步读取。
+   *
+   * 失败静默（兜底表接管），与 `ensureRemoteModels` 同语义。
+   */
+  async warmCatalog() {
+    await this.ensureRemoteModels();
+  }
   listAllModels() {
     const source = this.remoteModels ?? this.product.fallbackModels;
     return source.map((model) => ({ id: model.id, name: model.name }));
@@ -66740,6 +66849,31 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
               if (token === "") throw new Error("\u51ED\u636E\u4E0D\u53EF\u7528\uFF0C\u8BF7\u91CD\u65B0\u626B\u7801\u767B\u5F55");
               break;
             }
+            case MONKEYCODE.id: {
+              const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
+              if (resolved === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
+              let cookie = "";
+              try {
+                const parsed = JSON.parse(resolved.value);
+                cookie = typeof parsed.access_token === "string" ? parsed.access_token : "";
+              } catch {
+                cookie = "";
+              }
+              if (cookie === "") throw new Error("\u51ED\u636E\u4E0D\u53EF\u7528\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+              break;
+            }
+            case AUTOCLAW_INTL.id: {
+              const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
+              if (resolved === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
+              const current = JSON.parse(resolved.value);
+              if (typeof current.access_token !== "string" || current.access_token === "") {
+                throw new Error("\u51ED\u636E\u4E0D\u53EF\u7528\uFF0C\u8BF7\u91CD\u65B0\u7C98\u8D34\u4EE4\u724C");
+              }
+              await pool.updateAccount(entry.id, {
+                refreshable: typeof current.refresh_token === "string" && current.refresh_token !== ""
+              });
+              break;
+            }
             default:
               throw new Error(`Unknown provider: ${entry.provider}`);
           }
@@ -67357,6 +67491,13 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             fetcher: codeartsFetcher,
             resolve: (ref) => ctx.credentials.resolve(ref),
             claim: async (credential) => {
+              const before = await fetchCheckinStatus(codeartsFetcher, MONKEYCODE, credential);
+              if (before.checkedIn) {
+                return {
+                  kind: "already-claimed",
+                  message: before.reward === void 0 ? "\u4ECA\u5929\u5DF2\u7ECF\u7B7E\u5230\u8FC7\u4E86" : `\u4ECA\u5929\u5DF2\u7ECF\u7B7E\u5230\u8FC7\u4E86\uFF08+${before.reward} \u79EF\u5206\uFF09`
+                };
+              }
               const result = await runCheckin(codeartsFetcher, MONKEYCODE, credential);
               if (!result.ok) return { kind: "failed", code: 0, message: result.reason ?? "\u7B7E\u5230\u5931\u8D25" };
               return {
@@ -68105,7 +68246,12 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
         const statuses = {};
         for (const provider of req.providers) {
           if (provider.length === 0) continue;
-          const catalog = modelAdapters?.[provider]?.listAllModels();
+          const adapter = modelAdapters?.[provider];
+          if (typeof adapter?.warmCatalog === "function") {
+            await adapter.warmCatalog().catch(() => {
+            });
+          }
+          const catalog = adapter?.listAllModels();
           const total = catalog?.length ?? 0;
           const disabledMap = pool.listDisabledModels(provider);
           let disabled = 0;
@@ -74112,9 +74258,9 @@ function apply(ctx, config = {}) {
   });
   const autoClawIntlAdapter = registerAutoClawLlm(ctx, {
     fetchImpl: network.fetch,
-    resolveCredential: makeAutoClawResolver(AUTOCLAW_INTL),
+    resolveCredential: makeAutoClawResolver(AUTOCLAW_INTL2),
     accountPool: pool,
-    product: AUTOCLAW_INTL
+    product: AUTOCLAW_INTL2
   });
   const loomy = new LoomyAuth(ctx);
   const resolveLoomyCredentialByRef = async (refName) => {
@@ -74711,7 +74857,7 @@ function apply(ctx, config = {}) {
     // 后加的两个渠道也要有「显示列表」的完整目录，否则卡片模型数恒为「—」。
     kuku: pruned(KUKU.id, kukuAdapter),
     autoclaw: pruned(AUTOCLAW.id, autoClawAdapter),
-    "autoclaw-intl": pruned(AUTOCLAW_INTL.id, autoClawIntlAdapter),
+    "autoclaw-intl": pruned(AUTOCLAW_INTL2.id, autoClawIntlAdapter),
     // 首屏「模型数量」同样走这里；这几个适配器此前缺 listAllModels，
     // 卡片一直显示「—」（与其它渠道不一致）。
     commandcode: pruned(COMMANDCODE.id, commandCodeAdapter),
