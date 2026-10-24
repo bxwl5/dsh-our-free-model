@@ -19,8 +19,8 @@
     },
     {
       "path": "client.js",
-      "size": 374479,
-      "sha256": "a91180d0976367c15cf1c20d9db1aa73dbabbc709b703b3b257d9ddffef8ec28"
+      "size": 374428,
+      "sha256": "deaefc74f100055fa70ff90b7413b4f9e4966a516f05cd924b39b6cdb8a29e4c"
     },
     {
       "path": "cordis.patch.yml",
@@ -34,8 +34,8 @@
     },
     {
       "path": "index.js",
-      "size": 79390,
-      "sha256": "25ef94836593eca31d2c7b857c2e3a0e3f6988694a47bf1a40b1a489208a631f"
+      "size": 79386,
+      "sha256": "08f32dcbd2515da183f2228adb1452e7c60642af9862ddadafe3ceb06fdaadf0"
     },
     {
       "path": "locale/en.json",
@@ -70,7 +70,7 @@
     {
       "path": "src/chan-relay.js",
       "size": 8014,
-      "sha256": "5700e08189dafdb6631ec9378b59b051cca3aed8f997c2e36af1ae6699ca1128"
+      "sha256": "7f9cb51dc05ad69f3e84164d1c2f1292e10f4869ff6e2b74c1e902f944cd9245"
     },
     {
       "path": "src/channel.js",
