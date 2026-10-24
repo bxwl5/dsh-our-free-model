@@ -65740,10 +65740,11 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
       /**
        * 用手动粘贴的凭据添加账号。
        *
-       * 这是**粘贴型渠道**（MonkeyCode / OrcaTerm / KukuAI /
-       * AutoClaw / Accio / OfficeAce / Command Code）唯一的「添加账号」入口 ——
-       * 它们的上游没有可脚本化的 OAuth，用户只能在官方页面登录后复制
-       * Cookie 或令牌。
+       * 当前**纯粘贴**渠道只有 3 个：MonkeyCode（Cookie）、OrcaTerm（Cookie）、
+       * AutoClaw 国际版（令牌）；另有 2 个**授权为主、粘贴兜底**：Accio / Accio 国内版
+       * （上游回调白名单尚未真机验证，UI 上以「改用粘贴令牌」呈现）。
+       * KukuAI 已改为百度扫码、AutoClaw 国内站已改为短信验证码，都不再走这里 ——
+       * 改渠道登录方式时务必同步本注释与 `ADOPTABLE_CHANNELS`，否则会误导后来的人。
        *
        * ⚠️ 形状校验**复用各渠道自己的解析函数**（见 `ADOPTABLE_CHANNELS`）：
        * 另写一套判据会出现「UI 收下了、适配器用不了」的半残凭据。
