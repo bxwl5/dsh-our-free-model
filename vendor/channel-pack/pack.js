@@ -28261,7 +28261,7 @@ var init_accio_product = __esm({
 function stringValue6(value) {
   return typeof value === "string" && value !== "" ? value : void 0;
 }
-function numberValue2(value) {
+function numberValue3(value) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {
     const parsed = Number(value);
@@ -28304,7 +28304,7 @@ function parseTokenResponse(value) {
   const accessToken = stringValue6(body.accessToken) ?? stringValue6(body.access_token);
   if (accessToken === void 0) return void 0;
   const refreshToken2 = stringValue6(body.refreshToken) ?? stringValue6(body.refresh_token);
-  const expiresRaw = numberValue2(body.expiresAt) ?? numberValue2(body.expires_at);
+  const expiresRaw = numberValue3(body.expiresAt) ?? numberValue3(body.expires_at);
   const expireTime = expiresRaw === void 0 ? void 0 : expiresRaw < 1e12 ? expiresRaw * 1e3 : expiresRaw;
   return {
     access_token: accessToken,
@@ -44581,6 +44581,8 @@ var MONKEYCODE = {
   defaultCredentialRef: "MONKEYCODE_SESSION_COOKIE",
   fallbackModels: MONKEYCODE_FALLBACK_MODELS
 };
+var MONKEYCODE_WALLET_PATH = "/api/v1/users/wallet";
+var MONKEYCODE_CHECKIN_PATH = "/api/v1/users/wallet/checkin";
 var MONKEYCODE_MODELS_PATH = "/api/v1/users/models/available";
 var MONKEYCODE_TASKS_PATH = "/api/v1/users/tasks";
 var MONKEYCODE_STREAM_PATH = "/api/v1/users/tasks/stream";
@@ -44591,6 +44593,14 @@ var MONKEYCODE_SESSION_COOKIE = "nebula_session";
 // vendor/channel-pack/src/monkeycode.ts
 function stringValue2(value) {
   return typeof value === "string" && value !== "" ? value : void 0;
+}
+function numberValue2(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return void 0;
 }
 function isRecord3(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -44634,6 +44644,32 @@ function isCredentialUsable2(credential) {
   if (credential === void 0) return false;
   const cookie = credential.access_token;
   return typeof cookie === "string" && cookie !== "" && cookie.includes(`${MONKEYCODE_SESSION_COOKIE}=`);
+}
+function parseWallet(value) {
+  const body = unwrapData(value);
+  if (!isRecord3(body)) return void 0;
+  const balance = numberValue2(body.balance);
+  const dailyBalance = numberValue2(body.daily_token_balance);
+  const dailyLimit = numberValue2(body.daily_token_limit);
+  if (balance === void 0 && dailyBalance === void 0 && dailyLimit === void 0) return void 0;
+  return {
+    ...balance === void 0 ? {} : { balance },
+    ...dailyBalance === void 0 ? {} : { daily_token_balance: dailyBalance },
+    ...dailyLimit === void 0 ? {} : { daily_token_limit: dailyLimit },
+    ...stringValue2(body.currency) === void 0 ? {} : { currency: stringValue2(body.currency) }
+  };
+}
+function parseCheckin(value) {
+  const body = unwrapData(value);
+  if (!isRecord3(body)) return { checkedIn: false };
+  const checkedIn = body.checked_in === true || body.checkedIn === true;
+  const streak = numberValue2(body.streak_days) ?? numberValue2(body.streak);
+  const reward = numberValue2(body.reward);
+  return {
+    checkedIn,
+    ...streak === void 0 ? {} : { streak },
+    ...reward === void 0 ? {} : { reward }
+  };
 }
 function monkeyCodeHeaders(product, credential) {
   return {
@@ -45116,6 +45152,29 @@ async function call(fetcher, product, credential, path2, init = {}) {
   } catch {
     return { ok: false, status: 0, body: void 0 };
   }
+}
+async function fetchWallet(fetcher, product, credential, signal) {
+  const result = await call(fetcher, product, credential, MONKEYCODE_WALLET_PATH, { signal });
+  return result.ok ? parseWallet(result.body) : void 0;
+}
+async function fetchCheckinStatus(fetcher, product, credential, signal) {
+  const result = await call(fetcher, product, credential, MONKEYCODE_CHECKIN_PATH, { signal });
+  return result.ok ? parseCheckin(result.body) : { checkedIn: false };
+}
+async function runCheckin(fetcher, product, credential, signal) {
+  const result = await call(fetcher, product, credential, MONKEYCODE_CHECKIN_PATH, {
+    method: "POST",
+    body: {},
+    signal
+  });
+  if (result.status === 0) return { ok: false, reason: "\u7F51\u7EDC\u4E0D\u53EF\u8FBE" };
+  if (result.status === 401 || result.status === 403) return { ok: false, reason: "Cookie \u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55" };
+  if (!result.ok) {
+    const body = unwrapData(result.body);
+    const message2 = typeof body === "object" && body !== null && "msg" in body ? String(body.msg) : `HTTP ${result.status}`;
+    return { ok: false, reason: message2 };
+  }
+  return { ok: true, status: parseCheckin(result.body) };
 }
 async function fetchModels(fetcher, product, credential, signal) {
   const result = await call(fetcher, product, credential, MONKEYCODE_MODELS_PATH, { signal });
@@ -60524,6 +60583,9 @@ function listenOnRandomPort4(server) {
 
 // vendor/channel-pack/src/channel-pack-rpc.ts
 init_accio();
+init_accio_product();
+init_accio_auth();
+init_commandcode_product();
 
 // vendor/channel-pack/src/autoclaw-sms.ts
 import { createHash as createHash9, randomUUID as randomUUID12 } from "node:crypto";
@@ -61209,7 +61271,7 @@ function describeNonJsonResponse(status, text) {
   const snippet = text.trim().slice(0, 80).replace(/\s+/g, " ");
   return `\u670D\u52A1\u7AEF\u8FD4\u56DE\u4E86\u975E JSON \u54CD\u5E94\uFF08HTTP ${status}\uFF09\uFF1A${snippet}`;
 }
-async function fetchCheckinStatus(credential, product, fetcher = fetch) {
+async function fetchCheckinStatus2(credential, product, fetcher = fetch) {
   const result = await postJson2(CHECKIN_ACTIVITY_STATUS_PATH, credential, product, fetcher);
   if (!result.ok) return null;
   const body = result.body;
@@ -65358,7 +65420,7 @@ function computeClaimSummary(outcomes) {
 }
 async function collectCreditsStatus(accounts, product, deps) {
   const fetcher = deps.fetcher ?? fetch;
-  const fetchStatus = deps.fetchStatus ?? (async (credential, product2) => fetchCheckinStatus(
+  const fetchStatus = deps.fetchStatus ?? (async (credential, product2) => fetchCheckinStatus2(
     credential,
     product2,
     fetcher
@@ -65382,7 +65444,7 @@ async function collectCreditsStatus(accounts, product, deps) {
 }
 async function collectClaimResults(accounts, product, deps) {
   const fetcher = deps.fetcher ?? fetch;
-  const fetchStatus = deps.fetchStatus ?? (async (credential, product2) => fetchCheckinStatus(
+  const fetchStatus = deps.fetchStatus ?? (async (credential, product2) => fetchCheckinStatus2(
     credential,
     product2,
     fetcher
@@ -66806,6 +66868,38 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
       // 只对**未知** provider 生效。
       case "credits.status": {
         const req = payload;
+        if (req.provider === MONKEYCODE.id) {
+          const accounts2 = await pool.listAccounts(req.provider);
+          const rows = [];
+          for (const entry of accounts2) {
+            const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
+            let status = null;
+            if (resolved !== void 0) {
+              try {
+                const credential = JSON.parse(resolved.value);
+                const raw = await fetchCheckinStatus(codeartsFetcher, MONKEYCODE, credential);
+                status = {
+                  active: true,
+                  todayCheckedIn: raw.checkedIn,
+                  streakDays: raw.streak ?? 0,
+                  dailyCredit: raw.reward ?? 0,
+                  todayCredit: raw.checkedIn ? raw.reward ?? 0 : 0,
+                  // 以下四项上游没有对应字段，如实留空。
+                  isStreakDay: false,
+                  totalCredits: 0,
+                  checkinDates: [],
+                  activityName: "",
+                  themeName: "",
+                  endTime: ""
+                };
+              } catch {
+                status = null;
+              }
+            }
+            rows.push({ accountId: entry.id, nickname: entry.nickname, status });
+          }
+          return { ok: true, value: { accounts: rows } };
+        }
         if (req.provider === "codearts") {
           const accounts2 = await pool.listAccounts(req.provider);
           return {
@@ -67035,6 +67129,26 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             value: { results, summary: computeClaimSummary(outcomes) }
           };
         }
+        if (req.provider === MONKEYCODE.id) {
+          const value2 = await collectClaimResults(accounts, void 0, {
+            fetcher: codeartsFetcher,
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            claim: async (credential) => {
+              const result = await runCheckin(codeartsFetcher, MONKEYCODE, credential);
+              if (!result.ok) return { kind: "failed", code: 0, message: result.reason ?? "\u7B7E\u5230\u5931\u8D25" };
+              return {
+                kind: "claimed",
+                credit: result.status?.reward ?? 0,
+                streakDays: result.status?.streak ?? 0,
+                // 上游不区分「连续奖励日」，如实置 false（不编造加成）。
+                isStreakDay: false
+              };
+            },
+            precheckStatus: false,
+            warn: (msg) => ctx.logger?.warn?.(msg)
+          });
+          return { ok: true, value: value2 };
+        }
         const product = productById(req.provider);
         if (product === void 0) {
           return { ok: false, error: { code: "bad-request", message: `unsupported provider: ${req.provider}` } };
@@ -67173,6 +67287,62 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
           const values2 = await collectCreditBalances(accounts, void 0, {
             resolve: (ref) => ctx.credentials.resolve(ref),
             fetchBalance: (credential) => fetchMinimaxCreditBalance(credential),
+            warn: (msg) => ctx.logger?.warn?.(msg)
+          });
+          return { ok: true, value: { accounts: values2 } };
+        }
+        if (req.provider === COMMANDCODE.id) {
+          const values2 = await collectCreditBalances(accounts, COMMANDCODE, {
+            fetcher: codeartsFetcher,
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalance: async (credential) => {
+              const snapshot = await readCredits(codeartsFetcher, COMMANDCODE, credential);
+              if (snapshot === void 0 || snapshot.balance === void 0) return null;
+              return { total: snapshot.balance, packages: [], expiredTotal: 0 };
+            },
+            warn: (msg) => ctx.logger?.warn?.(msg)
+          });
+          return { ok: true, value: { accounts: values2 } };
+        }
+        if (req.provider === MONKEYCODE.id) {
+          const values2 = await collectCreditBalances(accounts, MONKEYCODE, {
+            fetcher: codeartsFetcher,
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalance: async (credential) => {
+              const wallet = await fetchWallet(codeartsFetcher, MONKEYCODE, credential);
+              if (wallet?.balance === void 0) return null;
+              return { total: wallet.balance, packages: [], expiredTotal: 0 };
+            },
+            warn: (msg) => ctx.logger?.warn?.(msg)
+          });
+          return { ok: true, value: { accounts: values2 } };
+        }
+        if (req.provider === ACCIO.id || req.provider === ACCIO_CN.id) {
+          const product2 = req.provider === ACCIO_CN.id ? ACCIO_CN : ACCIO;
+          const values2 = await collectCreditBalances(accounts, product2, {
+            fetcher: codeartsFetcher,
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalance: async (credential) => {
+              const quota = await fetchQuota(codeartsFetcher, product2, credential);
+              if (quota?.usedPercent === void 0) return null;
+              const used = Math.max(0, Math.min(100, quota.usedPercent));
+              const remaining = 100 - used;
+              return {
+                total: remaining,
+                packages: [{
+                  name: "\u914D\u989D",
+                  unit: "percent",
+                  remaining,
+                  total: 100,
+                  used,
+                  active: true,
+                  cycleStartTime: "",
+                  cycleEndTime: quota.resetAtMs === void 0 ? "" : new Date(quota.resetAtMs).toISOString(),
+                  expiredTime: ""
+                }],
+                expiredTotal: 0
+              };
+            },
             warn: (msg) => ctx.logger?.warn?.(msg)
           });
           return { ok: true, value: { accounts: values2 } };

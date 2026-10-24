@@ -2751,6 +2751,11 @@ window.__ModuleLoader__.load({
       minimax: { claim: true, status: true },
       zcode: { claim: true, unit: 'tokens' },
       gemini: { unit: 'quota', quota: true },
+      // 2026-10-24 补齐：这三家有真实的额度/签到接口，只是此前没接进面板。
+      commandcode: {},
+      monkeycode: { claim: true, status: true },
+      accio: { unit: 'quota', quota: true },
+      'accio-cn': { unit: 'quota', quota: true },
     }
 
     /**

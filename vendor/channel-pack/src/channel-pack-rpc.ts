@@ -44,6 +44,19 @@ import { KUKU } from './kuku-product.js'
 import { startKukuLoginFlow } from './kuku-qr-login-page.js'
 import { parseCredential as parseAutoClawCredential, type AutoClawCredential } from './autoclaw.js'
 import { normalizeAccessToken as normalizeAccioToken } from './accio.js'
+import type { AccioCredential } from './accio.js'
+import { ACCIO, ACCIO_CN } from './accio-product.js'
+import { fetchQuota as fetchAccioQuota } from './accio-auth.js'
+import { readCredits } from './commandcode-credits.js'
+import type { CommandCodeCredential } from './commandcode.js'
+import { COMMANDCODE } from './commandcode-product.js'
+import {
+  fetchCheckinStatus as fetchMonkeyCodeCheckinStatus,
+  fetchWallet as fetchMonkeyCodeWallet,
+  runCheckin as runMonkeyCodeCheckin,
+} from './monkeycode-auth.js'
+import type { MonkeyCodeCredential } from './monkeycode.js'
+import { MONKEYCODE } from './monkeycode-product.js'
 import { AUTOCLAW } from './autoclaw-product.js'
 import { refreshAutoclawCredential, resolveAutoclawDeviceId } from './autoclaw-sms.js'
 import { startAutoclawLoginFlow } from './autoclaw-login-page.js'
@@ -2855,6 +2868,41 @@ function registerChannelPackEndpoints(
       // 只对**未知** provider 生效。
       case 'credits.status': {
         const req = payload as RpcCreditsStatusRequest
+        if (req.provider === MONKEYCODE.id) {
+          // MonkeyCode 有独立的签到状态端点（`fetchCheckinStatus`）。上游只给
+          // `{checkedIn, streak?, reward?}`，其余 CheckinStatus 字段没有对应数据 ——
+          // 一律留空/0 而不是编数字（面板只读 `todayCheckedIn` 与 `todayCredit`）。
+          const accounts = await pool.listAccounts(req.provider)
+          const rows: RpcCreditsStatusResponse['accounts'] = []
+          for (const entry of accounts) {
+            const resolved = await ctx.credentials.resolve(credentialRef(entry.credentialRef))
+            let status: RpcCreditsStatusResponse['accounts'][number]['status'] = null
+            if (resolved !== undefined) {
+              try {
+                const credential = JSON.parse(resolved.value) as MonkeyCodeCredential
+                const raw = await fetchMonkeyCodeCheckinStatus(codeartsFetcher, MONKEYCODE, credential)
+                status = {
+                  active: true,
+                  todayCheckedIn: raw.checkedIn,
+                  streakDays: raw.streak ?? 0,
+                  dailyCredit: raw.reward ?? 0,
+                  todayCredit: raw.checkedIn ? (raw.reward ?? 0) : 0,
+                  // 以下四项上游没有对应字段，如实留空。
+                  isStreakDay: false,
+                  totalCredits: 0,
+                  checkinDates: [],
+                  activityName: '',
+                  themeName: '',
+                  endTime: '',
+                }
+              } catch {
+                status = null
+              }
+            }
+            rows.push({ accountId: entry.id, nickname: entry.nickname, status })
+          }
+          return { ok: true, value: { accounts: rows } satisfies RpcCreditsStatusResponse }
+        }
         if (req.provider === 'codearts') {
           // CodeArts 没有独立的「签到状态」端点：可领状态要经
           // `statistics/plugin`（账户类型）+ `/v1/ops/delivery`（活动列表）
@@ -3185,6 +3233,28 @@ function registerChannelPackEndpoints(
             value: { results, summary: computeClaimSummary(outcomes) } satisfies RpcCreditsClaimAllResponse,
           }
         }
+        if (req.provider === MONKEYCODE.id) {
+          // MonkeyCode 的签到是 `POST {checkin}`；重复签到返回正常状态（幂等），
+          // 故直接以 `runCheckin` 的结果判定，不需要额外状态预检。
+          const value = await collectClaimResults<MonkeyCodeCredential, undefined>(accounts, undefined, {
+            fetcher: codeartsFetcher,
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            claim: async (credential) => {
+              const result = await runMonkeyCodeCheckin(codeartsFetcher, MONKEYCODE, credential)
+              if (!result.ok) return { kind: 'failed', code: 0, message: result.reason ?? '签到失败' }
+              return {
+                kind: 'claimed',
+                credit: result.status?.reward ?? 0,
+                streakDays: result.status?.streak ?? 0,
+                // 上游不区分「连续奖励日」，如实置 false（不编造加成）。
+                isStreakDay: false,
+              }
+            },
+            precheckStatus: false,
+            warn: (msg) => ctx.logger?.warn?.(msg),
+          })
+          return { ok: true, value: value satisfies RpcCreditsClaimAllResponse }
+        }
         const product = productById(req.provider)
         if (product === undefined) {
           return { ok: false, error: { code: 'bad-request', message: `unsupported provider: ${req.provider}` } }
@@ -3384,6 +3454,67 @@ function registerChannelPackEndpoints(
           const values = await collectCreditBalances<MinimaxCredential, undefined>(accounts, undefined, {
             resolve: (ref) => ctx.credentials.resolve(ref),
             fetchBalance: (credential) => fetchMinimaxCreditBalance(credential),
+            warn: (msg) => ctx.logger?.warn?.(msg),
+          })
+          return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
+        }
+        if (req.provider === COMMANDCODE.id) {
+          // Command Code：额度由 `readCredits` 读取（与 commandcode-service 共用实现，
+          // 含「耗尽」判定；读不到数值时返回 null，不编 0）。
+          const values = await collectCreditBalances<CommandCodeCredential, typeof COMMANDCODE>(accounts, COMMANDCODE, {
+            fetcher: codeartsFetcher,
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalance: async (credential) => {
+              const snapshot = await readCredits(codeartsFetcher, COMMANDCODE, credential)
+              if (snapshot === undefined || snapshot.balance === undefined) return null
+              return { total: snapshot.balance, packages: [], expiredTotal: 0 }
+            },
+            warn: (msg) => ctx.logger?.warn?.(msg),
+          })
+          return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
+        }
+        if (req.provider === MONKEYCODE.id) {
+          // MonkeyCode：钱包余额（积分）。每日签到奖励也进这个钱包。
+          const values = await collectCreditBalances<MonkeyCodeCredential, typeof MONKEYCODE>(accounts, MONKEYCODE, {
+            fetcher: codeartsFetcher,
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalance: async (credential) => {
+              const wallet = await fetchMonkeyCodeWallet(codeartsFetcher, MONKEYCODE, credential)
+              if (wallet?.balance === undefined) return null
+              return { total: wallet.balance, packages: [], expiredTotal: 0 }
+            },
+            warn: (msg) => ctx.logger?.warn?.(msg),
+          })
+          return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
+        }
+        if (req.provider === ACCIO.id || req.provider === ACCIO_CN.id) {
+          // Accio 家族：只有**配额百分比**（`fetchQuota` → usedPercent/resetAtMs），
+          // 与 gemini 同型 —— 换成「剩余百分比」，单位 percent。
+          const product = req.provider === ACCIO_CN.id ? ACCIO_CN : ACCIO
+          const values = await collectCreditBalances<AccioCredential, typeof product>(accounts, product, {
+            fetcher: codeartsFetcher,
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalance: async (credential) => {
+              const quota = await fetchAccioQuota(codeartsFetcher, product, credential)
+              if (quota?.usedPercent === undefined) return null
+              const used = Math.max(0, Math.min(100, quota.usedPercent))
+              const remaining = 100 - used
+              return {
+                total: remaining,
+                packages: [{
+                  name: '配额',
+                  unit: 'percent',
+                  remaining,
+                  total: 100,
+                  used,
+                  active: true,
+                  cycleStartTime: '',
+                  cycleEndTime: quota.resetAtMs === undefined ? '' : new Date(quota.resetAtMs).toISOString(),
+                  expiredTime: '',
+                }],
+                expiredTotal: 0,
+              }
+            },
             warn: (msg) => ctx.logger?.warn?.(msg),
           })
           return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
