@@ -166,6 +166,16 @@ try {
     assert.equal(result.error.code, 'provider-disabled')
   }
   assert.equal((await call('account.list', { provider: 'opencode' })).value.accounts.length, 1)
+
+  // 卡片上的「模型数量」读 provider.status 的 models.total；kuku / autoclaw 必须能给出
+  // 目录，否则卡片显示「—」——与其它渠道不一致（本次回归）。
+  {
+    const status = await call('provider.status', { providers: ['codearts', 'autoclaw', 'kuku'] })
+    for (const provider of ['codearts', 'autoclaw', 'kuku']) {
+      const total = status?.value?.statuses?.[provider]?.models?.total ?? 0
+      assert.ok(total > 0, `${provider} 的 provider.status.models.total 必须 > 0（否则卡片模型数显示「—」）`)
+    }
+  }
   assert.equal(writes.length, 0, 'rejected RPCs leave credentials untouched')
   console.log(`ok  ${sourceMode ? 'source modules' : 'generated pack'}: 22 providers, no OpenCode registration/warmup, historical data retained, account RPCs refused`)
   // account.adopt 端到端必须在**两种模式**都跑：pack.js / business.mjs 才是发布形态，

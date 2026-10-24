@@ -245,10 +245,12 @@
 
 ### 3.16 KukuAI（`kuku`）
 
-- 登录：**粘贴 Cookie** `BDUSS`（也可短信验证码登录百度 passport，但插件侧只收 Cookie）。
+- 登录：**百度 App 扫码**（本地弹窗页 `kuku-qr-login-page.ts`，协议 `kuku-qr-login.ts`）。
 - 对话：`POST /wenchain/genflowpro/sendmsg` → SSE `/wenchain/genflowpro/sse/getchatcontent`；
   `clienttype` / `version` / `channel` / `v` 照官方 PC 客户端原样下发。
-- 模型目录：**静态兜底表**（模型名由客户端自报）。额度 / 签到 / 图片：未接入。
+- 模型目录：**静态兜底表**（模型名由客户端自报）。额度 / 签到 / 图片：未接入 ——
+  因此渠道卡片**不显示余额/签到区**（那两块由 `CHANNEL_CREDITS` 的 13 渠道契约驱动）；
+  模型数量与「刷新」按钮正常（没有续期端点，刷新只做凭据复核）。
 
 ### 3.17 MonkeyCode（`monkeycode`）
 
@@ -265,13 +267,16 @@
 
 ### 3.18 AutoClaw（国内 / 国际）（`autoclaw` / `autoclaw-intl`）
 
-- 登录：**粘贴令牌**。上游是 OAuth（Zai / Google）且回调端口有白名单
+- 登录：**国内站 = 手机号 + 短信验证码**（本地弹窗页 `autoclaw-login-page.ts`，协议 `autoclaw-sms.ts`，
+  真机已验证 24h token）；**国际站仍粘贴令牌** —— 其 OAuth 回调端口有白名单
   （`[18432, 19654, 19723, 53699]`），国内站另需阿里云验证码 SDK（`AliyunCaptcha.js`，场景 `sq51tr`），
   插件内无法自动完成，故用粘贴令牌。
 - 认证头是 **`X-Authorization`**，不是 `Authorization`（照规格文档写会 401，且报错形态与 token 失效相同）。
 - 模型目录：远端 `GET {base}/proxy/autoclaw-model-config`（**不在** `/autoclaw` 那一级；
   无真实令牌时回 404，不能据此判死链）。
-- 额度 / 签到 / 图片：未接入。
+- 续期：国内站**有** refresh 端点（`/userapi/v1/refresh`，失败退 `/userapi/v1/agent-refresh`），
+  短信登录的 refresh_token 会自动续期；国际站没有 refresh_token，刷新只做凭据复核。
+- 额度 / 签到 / 图片：未接入 —— 卡片因此不显示余额/签到区（同 kuku 的理由）。
 
 ### 3.19 免密车道（2 条，无需账号）
 

@@ -168,5 +168,43 @@ export async function verifyAutoclawSms() {
   assert.equal(settled.device_id, deviceId)
   await started.close()
 
-  console.log('ok  autoclaw-sms: 签名/手机号归一/发码与登录请求形状/JWT exp 优先/UUID user_id/Bearer 剥离/错误透传/本地页端到端')
+
+  // 8) 续期：优先 /userapi/v1/refresh，失败退 /userapi/v1/agent-refresh；JWT exp 优先，
+  //    响应没给新 refresh_token 时沿用旧的，账号身份不漂移。
+  const refreshedExp = Math.floor(Date.now() / 1000) + 86_400
+  const refreshPaths = []
+  const refreshSuccess = await sms.refreshAutoclawCredential({
+    product: AUTOCLAW,
+    fetcher: async (input) => {
+      refreshPaths.push(new URL(String(input)).pathname)
+      return Response.json({
+        code: 0,
+        data: { access_token: jwt({ exp: refreshedExp, user_id: 9 }), expires_at: 1 },
+      })
+    },
+    credential: { access_token: 'old-access', refresh_token: 'old-refresh', account_id: 'keep-me', nickname: 'AutoClaw 9846' },
+  })
+  assert.equal(refreshSuccess.ok, true)
+  assert.deepEqual(refreshPaths, ['/userapi/v1/refresh'], '应优先用 /userapi/v1/refresh')
+  assert.equal(refreshSuccess.credential.expire_time, refreshedExp * 1000, '续期同样以 JWT exp 为准')
+  assert.equal(refreshSuccess.credential.refresh_token, 'old-refresh', '响应没给新 refresh_token 时沿用旧的')
+  assert.equal(refreshSuccess.credential.account_id, 'keep-me', '续期不得让账号身份漂移')
+
+  const fallbackPaths = []
+  const refreshFallback = await sms.refreshAutoclawCredential({
+    product: AUTOCLAW,
+    fetcher: async (input) => {
+      const path = new URL(String(input)).pathname
+      fallbackPaths.push(path)
+      if (path === '/userapi/v1/refresh') return new Response('boom', { status: 500 })
+      return Response.json({ code: 0, data: { access_token: jwt({ exp: refreshedExp }) } })
+    },
+    credential: { access_token: 'old', refresh_token: 'r-1' },
+  })
+  assert.equal(refreshFallback.ok, true, '第一条端点失败应退第二条')
+  assert.deepEqual(fallbackPaths, ['/userapi/v1/refresh', '/userapi/v1/agent-refresh'])
+
+  assert.equal((await sms.refreshAutoclawCredential({ product: AUTOCLAW, fetcher: noNetwork, credential: { access_token: 'x' } })).ok, false, '没有 refresh_token 必须拒绝且不发请求')
+
+  console.log('ok  autoclaw-sms: 签名/手机号归一/发码与登录请求形状/JWT exp 优先/UUID user_id/Bearer 剥离/错误透传/本地页端到端/续期与端点回退')
 }
