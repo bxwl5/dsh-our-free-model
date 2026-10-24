@@ -15,6 +15,8 @@
 </div>
 
 > 装上就能用：无需登录、注册、填 API Key。纯插件挂载，不改内核、无构建步骤、零依赖。
+>
+> 原项目地址：https://github.com/Ebony-Vinyl/dsh-our-free-model
 
 ---
 

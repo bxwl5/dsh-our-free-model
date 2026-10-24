@@ -14,6 +14,8 @@
 
 > Install it and it works: no login, no sign-up, no API key.
 > A pure plugin mount — no core changes, no build step, zero dependencies.
+>
+> Original project: https://github.com/Ebony-Vinyl/dsh-our-free-model
 
 ---
 
