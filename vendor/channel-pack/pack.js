@@ -32381,9 +32381,9 @@ async function providerCatalogVisible(accountPool, provider) {
   }
 }
 function resolveHideWithoutAccountFlag(raw) {
-  if (raw === void 0) return false;
+  if (raw === void 0) return true;
   const value = raw.trim().toLowerCase();
-  return value === "1" || value === "true" || value === "yes" || value === "on";
+  return !(value === "0" || value === "false" || value === "no" || value === "off");
 }
 async function providerHasLoggedInAccount(accountPool, provider) {
   if (accountPool === void 0) return true;
