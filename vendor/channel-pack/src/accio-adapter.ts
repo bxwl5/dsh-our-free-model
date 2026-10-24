@@ -91,6 +91,12 @@ export class AccioAdapter extends LlmAdapter {
     }))
   }
 
+  /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数显示「—」。 */
+  listAllModels(): readonly { id: string; name: string }[] {
+    const source = this.remoteModels ?? this.product.fallbackModels
+    return source.map((model) => ({ id: model.id, name: model.name }))
+  }
+
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
     await this.ensureRemoteModels()
     const source = this.remoteModels ?? this.product.fallbackModels

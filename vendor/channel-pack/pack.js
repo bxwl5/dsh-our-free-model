@@ -44294,6 +44294,11 @@ var CommandCodeAdapter = class extends LlmAdapter7 {
       inputModalities: this.inputModalitiesFor(model.id)
     }));
   }
+  /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数显示「—」。 */
+  listAllModels() {
+    const source = this.remoteModels ?? fallbackRows(this.product);
+    return source.map((model) => ({ id: model.id, name: model.name }));
+  }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
     const source = this.remoteModels ?? fallbackRows(this.product);
@@ -45225,6 +45230,11 @@ var MonkeyCodeAdapter = class extends LlmAdapter8 {
       inputModalities: ["text"]
     }));
   }
+  /** 「显示列表」用的完整目录（不套用户黑名单；上游标 is_hidden 的仍排除）。 */
+  listAllModels() {
+    const all = this.remoteModels ?? this.product.fallbackModels.map((model) => ({ ...model }));
+    return all.filter((model) => model.isHidden !== true).map((model) => ({ id: model.id, name: model.name }));
+  }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
     const source = this.remoteModels ?? [...this.product.fallbackModels];
@@ -45537,6 +45547,10 @@ var OrcaTermAdapter = class extends LlmAdapter9 {
       name: model.name,
       inputModalities: ["text"]
     }));
+  }
+  /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数显示「—」。 */
+  listAllModels() {
+    return this.product.fallbackModels.map((model) => ({ id: model.id, name: model.name }));
   }
   async resolveModel(provider, model, _signal) {
     const entry = this.product.fallbackModels.find((candidate) => candidate.id === model);
@@ -46006,6 +46020,11 @@ var AccioAdapter = class extends LlmAdapter11 {
       inputModalities: ["text"]
     }));
   }
+  /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数显示「—」。 */
+  listAllModels() {
+    const source = this.remoteModels ?? this.product.fallbackModels;
+    return source.map((model) => ({ id: model.id, name: model.name }));
+  }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
     const source = this.remoteModels ?? this.product.fallbackModels;
@@ -46163,6 +46182,11 @@ var OfficeAceAdapter = class extends LlmAdapter12 {
       name: model.name,
       inputModalities: ["text"]
     }));
+  }
+  /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数显示「—」。 */
+  listAllModels() {
+    const source = this.remoteModels ?? this.product.fallbackModels;
+    return source.map((model) => ({ id: model.id, name: model.name }));
   }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
@@ -74284,6 +74308,14 @@ function apply(ctx, config = {}) {
     kuku: pruned(KUKU.id, kukuAdapter),
     autoclaw: pruned(AUTOCLAW.id, autoClawAdapter),
     "autoclaw-intl": pruned(AUTOCLAW_INTL.id, autoClawIntlAdapter),
+    // 首屏「模型数量」同样走这里；这几个适配器此前缺 listAllModels，
+    // 卡片一直显示「—」（与其它渠道不一致）。
+    commandcode: pruned(COMMANDCODE.id, commandCodeAdapter),
+    officeace: pruned(OFFICEACE.id, officeAceAdapter),
+    accio: pruned(ACCIO.id, accioAdapter),
+    "accio-cn": pruned(ACCIO_CN.id, accioCnAdapter),
+    orcaterm: pruned(ORCATERM.id, orcaTermAdapter),
+    monkeycode: pruned(MONKEYCODE.id, monkeyCodeAdapter),
     ...opencodeAdapter === void 0 ? {} : { opencode: pruned(OPENCODE.id, opencodeAdapter) }
   };
   ctx.effect(() => () => {

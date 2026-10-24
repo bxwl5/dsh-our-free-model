@@ -2178,6 +2178,14 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
     kuku: pruned(KUKU.id, kukuAdapter),
     autoclaw: pruned(AUTOCLAW.id, autoClawAdapter),
     'autoclaw-intl': pruned(AUTOCLAW_INTL.id, autoClawIntlAdapter),
+    // 首屏「模型数量」同样走这里；这几个适配器此前缺 listAllModels，
+    // 卡片一直显示「—」（与其它渠道不一致）。
+    commandcode: pruned(COMMANDCODE.id, commandCodeAdapter),
+    officeace: pruned(OFFICEACE.id, officeAceAdapter),
+    accio: pruned(ACCIO.id, accioAdapter),
+    'accio-cn': pruned(ACCIO_CN.id, accioCnAdapter),
+    orcaterm: pruned(ORCATERM.id, orcaTermAdapter),
+    monkeycode: pruned(MONKEYCODE.id, monkeyCodeAdapter),
     ...(opencodeAdapter === undefined ? {} : { opencode: pruned(OPENCODE.id, opencodeAdapter) }),
   }
 

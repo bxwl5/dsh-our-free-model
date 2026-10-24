@@ -140,6 +140,13 @@ export class MonkeyCodeAdapter extends LlmAdapter {
     }))
   }
 
+  /** 「显示列表」用的完整目录（不套用户黑名单；上游标 is_hidden 的仍排除）。 */
+  listAllModels(): readonly { id: string; name: string }[] {
+    const all: Array<{ id: string; name: string; isHidden?: boolean }> =
+      this.remoteModels ?? this.product.fallbackModels.map((model) => ({ ...model }))
+    return all.filter((model) => model.isHidden !== true).map((model) => ({ id: model.id, name: model.name }))
+  }
+
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
     await this.ensureRemoteModels()
     const source = this.remoteModels ?? [...this.product.fallbackModels]
