@@ -48,6 +48,8 @@ const suites = [
   ['channel-login-methods', 'channel-login-methods-test.mjs', []],
   // 后台登录失败必须上报给 login.poll（静态守卫，防新增分支只写日志）。
   ['login-failure-reporting', 'login-failure-reporting-test.mjs', []],
+  // 元测试：只导出 verify* 的测试模块必须有「直接运行即失败」的守卫（防假绿复发）。
+  ['test-entrypoint-guard', 'test-entrypoint-guard-test.mjs', []],
   ['open-external', 'open-external-test.mjs', []],
   ['channel-image-pricing', 'channel-image-pricing-test.mjs', []],
   ['forward-boot', 'forward-boot-test.mjs', []],

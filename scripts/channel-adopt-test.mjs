@@ -24,7 +24,8 @@ const TOKEN = 'autoclaw-token-1234567890'
 async function main() {
   const { adoptableChannelHint } = await import('../vendor/channel-pack/src/channel-pack-rpc.ts')
 
-  // 5 个粘贴型渠道都必须有提示文案（UI 据此决定「添加账号」的交互形态）。
+  // 5 条粘贴入口都必须有提示文案（3 个纯粘贴 + Accio 家族的 2 条兜底）；
+  // UI 据此决定「添加账号」的交互形态。
   // 真·粘贴型：上游没有可脚本化的 OAuth，只能由用户复制 Cookie / 令牌。
   // AutoClaw 国内站已改为「本地页 + 短信验证码」登录（autoclaw-login-page.ts），
   // 只有国际站仍只能粘贴令牌。
@@ -151,3 +152,7 @@ export async function verifyChannelAdopt({ call, creds } = {}) {
   await verifyChannelAdoptParsers()
   if (call) await verifyChannelAdoptRpc({ call, creds })
 }
+
+// 单独运行时必须失败（不能静默 exit 0）：见 scripts/lib/direct-run.mjs。
+import { exitIfDirectRun } from './lib/direct-run.mjs'
+exitIfDirectRun(import.meta.url, 'channel-adopt-test')

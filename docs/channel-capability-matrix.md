@@ -24,11 +24,13 @@
 - `scripts/channel-pack-test.mjs`：`assert.equal(adapters.size, 22)` 与 `assert.equal(cards.length, 22)`；
 - `vendor/channel-pack/src/index.ts` 的注册段：22 个账号 provider（OFM 挂载时关闭上游 OpenCode 账号接入，故不计入）。
 
-**粘贴型渠道共 5 个**（上游没有可脚本化的授权流程，只能用 `account.adopt` 粘贴 Cookie / 令牌）：
-`monkeycode`、`orcaterm`、`kuku`、`autoclaw`、`autoclaw-intl`。
-来源：`vendor/channel-pack/src/channel-pack-rpc.ts` 的 `ADOPTABLE_CHANNELS`（5 条）
-与 `scripts/channel-adopt-test.mjs` 的 `pasteOnly` 清单。其余 17 个在插件内即可完成授权
-（浏览器授权 / 设备码 / 本地页扫码或短信）。
+**纯粘贴渠道 3 个**（上游没有可脚本化的授权流程，只能用 `account.adopt` 粘贴 Cookie / 令牌）：
+`monkeycode`、`orcaterm`、`autoclaw-intl`。
+另有 **2 个授权为主、粘贴兜底**：`accio` / `accio-cn`（上游回调白名单尚未真机验证，
+UI 上以「改用粘贴令牌」呈现）。`ADOPTABLE_CHANNELS` 因此有 5 条，其中 2 条是兜底路径。
+
+> 口径变更（2026-10-24）：`kuku` 已改为百度 App 扫码、`autoclaw` 国内站已改为手机号 +
+> 短信验证码，都不再是粘贴渠道；旧的「粘贴型渠道共 5 个」描述已过期。
 
 ### 1.2 计数口径核对（结论：22 与 13，已无 12）
 

@@ -133,3 +133,7 @@ export async function verifyTencentFingerprint() {
   await verifyRewriteFunction()
   await verifyAdapterWire()
 }
+
+// 单独运行时必须失败（不能静默 exit 0）：见 scripts/lib/direct-run.mjs。
+import { exitIfDirectRun } from './lib/direct-run.mjs'
+exitIfDirectRun(import.meta.url, 'tencent-fingerprint-test')

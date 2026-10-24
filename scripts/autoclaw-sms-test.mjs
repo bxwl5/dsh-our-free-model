@@ -208,3 +208,7 @@ export async function verifyAutoclawSms() {
 
   console.log('ok  autoclaw-sms: 签名/手机号归一/发码与登录请求形状/JWT exp 优先/UUID user_id/Bearer 剥离/错误透传/本地页端到端/续期与端点回退')
 }
+
+// 单独运行时必须失败（不能静默 exit 0）：见 scripts/lib/direct-run.mjs。
+import { exitIfDirectRun } from './lib/direct-run.mjs'
+exitIfDirectRun(import.meta.url, 'autoclaw-sms-test')
