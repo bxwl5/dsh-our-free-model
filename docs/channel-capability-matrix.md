@@ -26,8 +26,8 @@
 
 **纯粘贴渠道 3 个**（上游没有可脚本化的授权流程，只能用 `account.adopt` 粘贴 Cookie / 令牌）：
 `monkeycode`、`orcaterm`、`autoclaw-intl`。
-另有 **2 个授权为主、粘贴兜底**：`accio` / `accio-cn`（上游回调白名单尚未真机验证，
-UI 上以「改用粘贴令牌」呈现）。`ADOPTABLE_CHANNELS` 因此有 5 条，其中 2 条是兜底路径。
+`ADOPTABLE_CHANNELS` 因此有 3 条。**Accio 家族的粘贴兜底已移除**（2026-10-24，真机确认
+浏览器授权可用后按用户要求撤掉）——它们现在只有浏览器授权一条路径。
 
 > 口径变更（2026-10-24）：`kuku` 已改为百度 App 扫码、`autoclaw` 国内站已改为手机号 +
 > 短信验证码，都不再是粘贴渠道；旧的「粘贴型渠道共 5 个」描述已过期。
@@ -94,8 +94,8 @@ UI 上以「改用粘贴令牌」呈现）。`ADOPTABLE_CHANNELS` 因此有 5 �
 | 13 | `gemini` · Gemini | 浏览器授权（Google OAuth，本地回调；只做 OAuth） | ✅ | ❌ 静态（Cloud Code 无目录端点） | ✅（配额窗口） | ❌（无每日签到） | ✅ 双桥 |
 | 14 | `commandcode` · Command Code | 浏览器授权（自动回调；授权页 `/studio/auth/cli`） | ✅ | ✅ 远端 | ✅（`/alpha/billing/credits`，`readCredits`） | ❌ | ❌ |
 | 15 | `officeace` · OfficeAce 果办 | 浏览器授权（自助 OAuth + 轮询授权码，回调不落本机） | ✅ | ✅ 远端 | ❌ | ❌ | ❌ |
-| 16 | `accio` · Accio | 浏览器授权（国际站；可改用粘贴令牌） | ✅ | ✅ 远端 | ✅（配额百分比，`fetchQuota`） | ❌ | ❌ |
-| 17 | `accio-cn` · Accio 国内版 | 浏览器授权（国内站；可改用粘贴令牌） | ✅ | ✅ 远端 | ✅（配额百分比，`fetchQuota`） | ❌ | ❌ |
+| 16 | `accio` · Accio | 浏览器授权（国际站） | ✅ | ✅ 远端 | ✅（配额百分比，`fetchQuota`） | ❌ | ❌ |
+| 17 | `accio-cn` · Accio 国内版 | 浏览器授权（国内站） | ✅ | ✅ 远端 | ✅（配额百分比，`fetchQuota`） | ❌ | ❌ |
 | 18 | `orcaterm` · OrcaTerm | 粘贴 Cookie（`ot_session`） | ✅ | ❌ 静态（上游无公开目录端点） | ❌ | ❌ | ❌ |
 | 19 | `kuku` · KukuAI | 粘贴 Cookie（`BDUSS`） | ✅ | ❌ 静态（上游无公开目录端点） | ❌ | ❌ | ❌ |
 | 20 | `monkeycode` · MonkeyCode | 粘贴 Cookie（`nebula_session`） | ✅（建任务 + WebSocket 两步） | ✅ 远端 | ✅（`/api/v1/users/wallet`） | ✅（`wallet/checkin`，每次奖励 100 积分） | ❌ |
@@ -111,7 +111,7 @@ UI 上以「改用粘贴令牌」呈现）。`ADOPTABLE_CHANNELS` 因此有 5 �
 | 额度查询 | **17 条**（原 13 条 + `commandcode` `monkeycode` `accio` `accio-cn`） | 5 条：`officeace` `orcaterm` `kuku` `autoclaw` `autoclaw-intl`（上游无额度端点） |
 | 签到 | **10 条**（原 9 条 + `monkeycode`） | 服务端显式守卫「无签到端点」3 条（`workbuddy` `cline` `raccoon`）+ `gemini`/`commandcode`/`accio`/`accio-cn`（无 claim 能力）+ 上游无签到 5 条 |
 | 图片（双桥） | 9 条：`buddy` `workbuddy` `lobsterai` `qoder` `qodercn` `cline` `raccoon` `gemini` `zcode` | 单桥 3 条：`trae` `loomy` `minimax`；未接 10 条 |
-| 粘贴型登录 | 纯粘贴 3 条 + 粘贴兜底 2 条（`accio`/`accio-cn`） | — |
+| 粘贴型登录 | 纯粘贴 3 条（`monkeycode` `orcaterm` `autoclaw-intl`） | — |
 
 ---
 

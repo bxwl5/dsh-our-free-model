@@ -16,16 +16,8 @@ const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'
 /** 界面声明：id → login（'browser' | 'browser+sms' | 'cookie' | 'token'）。 */
 function parseClientLogins() {
   const source = read('client.js')
-  // 卡片可能带 `pasteFallback: true`（浏览器授权为主、粘贴为退路），故不要求 `}` 紧跟在 login 后。
   const entries = [...source.matchAll(/\{ id: '([a-z0-9-]+)',[^\n]*?login: '([a-z+]+)'[^\n]*\}/g)]
   return new Map(entries.map(([, id, login]) => [id, login]))
-}
-
-/** 声明了「粘贴兜底」的渠道（`pasteFallback: true`）。 */
-function parsePasteFallbacks() {
-  const source = read('client.js')
-  const lines = source.split('\n').filter((line) => /pasteFallback: true/.test(line))
-  return new Set(lines.map((line) => /\{ id: '([a-z0-9-]+)'/.exec(line)?.[1]).filter(Boolean))
 }
 
 /** 真正的粘贴表：只接受 account.adopt 的渠道。 */
@@ -54,7 +46,6 @@ function parseDocTiers() {
 const CLIENT_TO_TIER = { browser: '✅', 'browser+sms': '⚠️', cookie: '❌', token: '❌', sms: '✅' }
 
 const client = parseClientLogins()
-const pasteFallback = parsePasteFallbacks()
 const adoptable = parseAdoptableChannels()
 const doc = parseDocTiers()
 
@@ -74,8 +65,8 @@ for (const id of pasteChannels) {
 for (const id of adoptable) {
   const kind = client.get(id)
   assert.ok(
-    kind === 'cookie' || kind === 'token' || kind === 'sms' || pasteFallback.has(id),
-    `${id} 的 login='${kind}' 不应出现在粘贴表（只允许 cookie/token/sms，或声明了 pasteFallback 的渠道）`,
+    kind === 'cookie' || kind === 'token' || kind === 'sms',
+    `${id} 的 login='${kind}' 不应出现在粘贴表（只允许 cookie/token/sms）`,
   )
 }
 

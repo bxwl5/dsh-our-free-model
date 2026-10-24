@@ -43,7 +43,6 @@ import { normalizeCookie as normalizeOrcaTermCookie } from './orcaterm.js'
 import { KUKU } from './kuku-product.js'
 import { startKukuLoginFlow } from './kuku-qr-login-page.js'
 import { parseCredential as parseAutoClawCredential, type AutoClawCredential } from './autoclaw.js'
-import { normalizeAccessToken as normalizeAccioToken } from './accio.js'
 import type { AccioCredential } from './accio.js'
 import { ACCIO, ACCIO_CN } from './accio-product.js'
 import { fetchQuota as fetchAccioQuota } from './accio-auth.js'
@@ -1436,9 +1435,8 @@ function registerChannelPackEndpoints(
        * 用手动粘贴的凭据添加账号。
        *
        * 当前**纯粘贴**渠道只有 3 个：MonkeyCode（Cookie）、OrcaTerm（Cookie）、
-       * AutoClaw 国际版（令牌）；另有 2 个**授权为主、粘贴兜底**：Accio / Accio 国内版
-       * （上游回调白名单尚未真机验证，UI 上以「改用粘贴令牌」呈现）。
-       * KukuAI 已改为百度扫码、AutoClaw 国内站已改为短信验证码，都不再走这里 ——
+       * AutoClaw 国际版（令牌）。其余渠道都能在插件内完成授权，不再保留粘贴入口：
+       * KukuAI 是百度扫码、AutoClaw 国内站是短信、Accio 家族是浏览器授权。
        * 改渠道登录方式时务必同步本注释与 `ADOPTABLE_CHANNELS`，否则会误导后来的人。
        *
        * ⚠️ 形状校验**复用各渠道自己的解析函数**（见 `ADOPTABLE_CHANNELS`）：
@@ -4721,22 +4719,6 @@ const ADOPTABLE_CHANNELS: Readonly<Record<string, AdoptableChannel>> = {
     parse: (text) => {
       const cookie = normalizeOrcaTermCookie(text)
       return cookie === undefined ? undefined : { access_token: cookie, created_at: Date.now() }
-    },
-  },
-  // Accio 家族：浏览器授权是主路径，但上游回调白名单未真机验证，故保留**粘贴兜底**
-  //（UI 上以「改用粘贴令牌」入口呈现，不占默认路径）。
-  accio: {
-    hint: '访问令牌（Bearer token / JWT；先试浏览器授权，失败再走这里）',
-    parse: (text) => {
-      const token = normalizeAccioToken(text)
-      return token === undefined ? undefined : { access_token: token, created_at: Date.now() }
-    },
-  },
-  'accio-cn': {
-    hint: '访问令牌（Bearer token / JWT，国内站）',
-    parse: (text) => {
-      const token = normalizeAccioToken(text)
-      return token === undefined ? undefined : { access_token: token, created_at: Date.now() }
     },
   },
   'autoclaw-intl': {

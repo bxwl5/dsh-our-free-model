@@ -21,8 +21,8 @@
 | 11 | `zcode` | 服务端中介的设备授权 + 轮询 | ✅ | 浏览器登录 | 否 | `zcode-login.ts:1-40` |
 | 12 | `commandcode` | 浏览器 OAuth → 本地回调（5959 起，最多 10 个） | ✅ | 浏览器登录 | 是 | `commandcode-auth.ts:12`、`commandcode-product.ts:139` |
 | 13 | `officeace` | 自助 OAuth + 轮询授权码（回调不落本机） | ✅ | 浏览器登录 | 否 | `channel-pack-rpc.ts:1552` 起 |
-| 14 | `accio` | PKCE + 本地回调（5960–5969）；**可改用粘贴令牌** | ✅ | 浏览器登录 | 是 | `accio-auth.ts:321,353` |
-| 15 | `accio-cn` | 同 `accio`（国内端点）；**可改用粘贴令牌** | ✅ | 浏览器登录 | 是 | 同上 |
+| 14 | `accio` | PKCE + 本地回调（5960–5969） | ✅ | 浏览器登录 | 是 | `accio-auth.ts:321,353` |
+| 15 | `accio-cn` | 同 `accio`（国内端点） | ✅ | 浏览器登录 | 是 | 同上 |
 | 16 | `loomy` | 微信扫码，本地页承载 | ⚠️ | 微信扫码（未绑手机号时补短信码） | 是 | `channel-pack-rpc.ts:1793` 起 |
 | 17 | `raccoon` | 微信扫码（服务端下发 code）/ 短信，本地页承载 | ✅ | 微信扫码或短信 | 是 | `raccoon-login-page.ts`、`raccoon-oauth.ts` 的 `/api/iam/v1` 函数 |
 | 18 | `monkeycode` | 粘贴 Cookie（`nebula_session`） | ❌ | 手动复制 Cookie | 否 | `channel-pack-rpc.ts:4448` |
@@ -44,8 +44,8 @@
   `gemini` 的端口是动态 0（不是固定 8845）。
 - **轮询 token**（`buddy`/`workbuddy`、`officeace`）：浏览器授权在**上游服务端**完成，
   插件只用 `state` 或授权码轮询结果，所以不起本地端口。
-- **授权为主 + 粘贴兜底**（`accio`、`accio-cn`）：浏览器授权是默认路径；上游回调白名单尚未真机验证，
-  卡片上额外给一个「改用粘贴令牌」入口（`account.adopt` 走 accio 自己的形状校验）。
+- **Accio 家族只走浏览器授权**：2026-10-24 真机确认可用后，按用户要求移除了「改用粘贴令牌」兜底
+  （`account.adopt` 不再接受 `accio` / `accio-cn`）。
 - **本地页承载扫码/短信**（`loomy`、`raccoon`、`autoclaw`）：起本地页显示二维码或短信表单，
   用户在页面里完成，插件轮询登录态；对外统一返回 `loginUrl`，前端无需改动。都不需要手抄
   凭据，故计入「一键」；`loomy` 的界面声明是 `browser+sms`，**仅当该微信账号未绑手机号时**

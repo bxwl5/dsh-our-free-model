@@ -28296,14 +28296,6 @@ function isCredentialUsable5(credential) {
   const token = credential.access_token;
   return typeof token === "string" && token !== "" && token === token.trim();
 }
-function normalizeAccessToken(raw) {
-  let text = String(raw ?? "").replace(/[\r\n]+/g, " ").trim();
-  text = text.replace(/^bearer\s+/i, "").replace(/^"([^"]*)"$/, "$1").trim();
-  if (text === "") return void 0;
-  if (text.length < 24 || text.length > 4096) return void 0;
-  if (!/^[\x21-\x7E]+$/.test(text)) return void 0;
-  return text;
-}
 function isCredentialExpired2(credential, nowMs = Date.now()) {
   if (credential.expire_time === void 0) return false;
   return credential.expire_time - 6e4 <= nowMs;
@@ -46457,7 +46449,7 @@ function chatEndpoint(product) {
 }
 var TOKEN_MIN = 16;
 var TOKEN_MAX = 4096;
-function normalizeAccessToken2(raw) {
+function normalizeAccessToken(raw) {
   let token = raw.trim();
   token = token.replace(/^bearer\s+/i, "");
   token = token.replace(/^"([^"]*)"$/, "$1").trim();
@@ -46469,7 +46461,7 @@ function parseCredential2(value) {
   if (!isRecord9(value)) return void 0;
   const tokenRaw = stringValue8(value.access_token) ?? stringValue8(value.accessToken) ?? stringValue8(value.token);
   if (tokenRaw === void 0) return void 0;
-  const token = normalizeAccessToken2(tokenRaw);
+  const token = normalizeAccessToken(tokenRaw);
   if (token === void 0) return void 0;
   const expiresRaw = value.expire_time ?? value.expiresAt ?? value.expires_at;
   const expireTime = typeof expiresRaw === "number" && Number.isFinite(expiresRaw) ? expiresRaw < 1e12 ? expiresRaw * 1e3 : expiresRaw : void 0;
@@ -60697,7 +60689,6 @@ function listenOnRandomPort4(server) {
 }
 
 // vendor/channel-pack/src/channel-pack-rpc.ts
-init_accio();
 init_accio_product();
 init_accio_auth();
 init_commandcode_product();
@@ -65924,9 +65915,8 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
        * 用手动粘贴的凭据添加账号。
        *
        * 当前**纯粘贴**渠道只有 3 个：MonkeyCode（Cookie）、OrcaTerm（Cookie）、
-       * AutoClaw 国际版（令牌）；另有 2 个**授权为主、粘贴兜底**：Accio / Accio 国内版
-       * （上游回调白名单尚未真机验证，UI 上以「改用粘贴令牌」呈现）。
-       * KukuAI 已改为百度扫码、AutoClaw 国内站已改为短信验证码，都不再走这里 ——
+       * AutoClaw 国际版（令牌）。其余渠道都能在插件内完成授权，不再保留粘贴入口：
+       * KukuAI 是百度扫码、AutoClaw 国内站是短信、Accio 家族是浏览器授权。
        * 改渠道登录方式时务必同步本注释与 `ADOPTABLE_CHANNELS`，否则会误导后来的人。
        *
        * ⚠️ 形状校验**复用各渠道自己的解析函数**（见 `ADOPTABLE_CHANNELS`）：
@@ -68456,22 +68446,6 @@ var ADOPTABLE_CHANNELS = {
     parse: (text) => {
       const cookie = normalizeCookie2(text);
       return cookie === void 0 ? void 0 : { access_token: cookie, created_at: Date.now() };
-    }
-  },
-  // Accio 家族：浏览器授权是主路径，但上游回调白名单未真机验证，故保留**粘贴兜底**
-  //（UI 上以「改用粘贴令牌」入口呈现，不占默认路径）。
-  accio: {
-    hint: "\u8BBF\u95EE\u4EE4\u724C\uFF08Bearer token / JWT\uFF1B\u5148\u8BD5\u6D4F\u89C8\u5668\u6388\u6743\uFF0C\u5931\u8D25\u518D\u8D70\u8FD9\u91CC\uFF09",
-    parse: (text) => {
-      const token = normalizeAccessToken(text);
-      return token === void 0 ? void 0 : { access_token: token, created_at: Date.now() };
-    }
-  },
-  "accio-cn": {
-    hint: "\u8BBF\u95EE\u4EE4\u724C\uFF08Bearer token / JWT\uFF0C\u56FD\u5185\u7AD9\uFF09",
-    parse: (text) => {
-      const token = normalizeAccessToken(text);
-      return token === void 0 ? void 0 : { access_token: token, created_at: Date.now() };
     }
   },
   "autoclaw-intl": {

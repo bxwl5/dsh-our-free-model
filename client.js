@@ -223,7 +223,6 @@ window.__ModuleLoader__.load({
         'chan.paste.token': '粘贴访问令牌（API Key / Token）',
         'chan.paste.submit': '保存凭据',
         'chan.paste.cancel': '取消',
-        'chan.paste.fallback': '改用粘贴令牌',
         'chan.paste.hint.open': '先打开官网登录：',
         'chan.paste.hint.cookie': '；登录后按 F12 → Application → Cookies，复制 {name} 的值粘贴到下面。',
         'chan.paste.hint.token': '；登录后按 F12 → Network，从任一请求头里复制令牌（Bearer/JWT）粘贴到下面。',
@@ -667,7 +666,6 @@ window.__ModuleLoader__.load({
         'chan.paste.token': 'Paste an access token (API key / token)',
         'chan.paste.submit': 'Save credential',
         'chan.paste.cancel': 'Cancel',
-        'chan.paste.fallback': 'Paste a token instead',
         'chan.paste.hint.open': 'Sign in at ',
         'chan.paste.hint.cookie': ' first, then open DevTools → Application → Cookies and paste the value of {name} below.',
         'chan.paste.hint.token': ' first, then open DevTools → Network and copy the token (Bearer/JWT) from any request header below.',
@@ -2735,8 +2733,8 @@ window.__ModuleLoader__.load({
       { id: 'monkeycode', name: 'MonkeyCode', org: '长亭科技', accent: '#F97316', note: '粘贴 Cookie；每日签到 100 积分', login: 'cookie', loginPage: 'https://monkeycode-ai.com', cookieName: 'monkeycode_ai_session（旧版叫 nebula_session，两个都收）' },
       { id: 'orcaterm', name: 'OrcaTerm', org: '腾讯云', accent: '#00A4FF', note: '粘贴 Cookie，支持完整对话', login: 'cookie', loginPage: 'https://orcaterm.cloud.tencent.com', cookieName: 'ot_sid（旧版叫 ot_session，两个都收）' },
       { id: 'kuku', name: 'KukuAI', org: '百度文库', accent: '#2932E1', note: '百度 App 扫码登录', login: 'browser' },
-      { id: 'accio', name: 'Accio', org: '阿里系', accent: '#FF6A00', note: '浏览器授权，国际站（可改用粘贴令牌）', login: 'browser', pasteFallback: true, loginPage: 'https://www.accio.com' },
-      { id: 'accio-cn', name: 'Accio 国内版', org: '阿里系', accent: '#FF8C42', note: '浏览器授权，国内站（可改用粘贴令牌）', login: 'browser', pasteFallback: true, loginPage: 'https://www.accio.com' },
+      { id: 'accio', name: 'Accio', org: '阿里系', accent: '#FF6A00', note: '浏览器授权，国际站', login: 'browser' },
+      { id: 'accio-cn', name: 'Accio 国内版', org: '阿里系', accent: '#FF8C42', note: '浏览器授权，国内站', login: 'browser' },
       { id: 'officeace', name: 'OfficeAce 果办', org: '华为云', accent: '#C7000B', note: '浏览器授权，扫码登录', login: 'browser' },
       { id: 'autoclaw', name: 'AutoClaw', org: '智谱', accent: '#3D5AFE', note: '手机号 + 短信验证码登录，国内站', login: 'browser' },
       { id: 'autoclaw-intl', name: 'AutoClaw 国际版', org: '智谱', accent: '#7986CB', note: '粘贴令牌，国际站', login: 'token', loginPage: 'https://autoglm.ai' },
@@ -2854,9 +2852,6 @@ window.__ModuleLoader__.load({
       // 判据用渠道列表上的 `login` 字段（'cookie' / 'token'），与后端
       // `account.adopt` 支持的渠道一一对应。
       const pasteMode = channel.login === 'cookie' || channel.login === 'token'
-      // 主路径是浏览器授权、但上游白名单未验证的渠道（Accio 家族）：留一条粘贴退路。
-      const pasteFallback = channel.pasteFallback === true
-      const [fallbackPaste, setFallbackPaste] = useState(false)
       const [pasteOpen, setPasteOpen] = useState(false)
       const [pasteText, setPasteText] = useState('')
       const modelBatchPending = useRef(false)
@@ -3193,13 +3188,8 @@ window.__ModuleLoader__.load({
             'aria-expanded': pasteMode ? pasteOpen : undefined,
             onClick: pasteMode ? () => setPasteOpen(value => !value) : startLogin,
           }, busy === 'add' ? '…' : t('chan.act.add')),
-          pasteFallback ? h('button', {
-            type: 'button', className: 'ofm_btn ghost', disabled: busy !== '' || !rpc,
-            'aria-expanded': fallbackPaste,
-            onClick: () => setFallbackPaste(value => !value),
-          }, t('chan.paste.fallback')) : null,
           // 粘贴型渠道的输入区：展开后接收 Cookie / 令牌，提交走 account.adopt。
-          (pasteMode && pasteOpen) || (pasteFallback && fallbackPaste) ? h('div', { className: 'chan-paste' },
+          pasteMode && pasteOpen ? h('div', { className: 'chan-paste' },
             channel.loginPage ? h('div', {
               className: 'chan-paste-hint',
               style: { fontSize: '12px', lineHeight: '1.6', color: '#8a9099', margin: '0 0 6px' },

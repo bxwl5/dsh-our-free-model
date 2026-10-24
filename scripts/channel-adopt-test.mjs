@@ -37,14 +37,7 @@ async function main() {
   }
   // OAuth 渠道**必须**走单点登录（不能误设成粘贴框）：
   // 这些渠道的上游有浏览器授权流程，做成粘贴框是体验倒退。
-  const oauth = ['commandcode', 'officeace', 'autoclaw', 'kuku']
-  // 授权为主、但保留粘贴退路的渠道：必须有 hint（UI 用它渲染「改用粘贴令牌」）。
-  const fallback = ['accio', 'accio-cn']
-  for (const provider of fallback) {
-    const hint = adoptableChannelHint(provider)
-    assert.equal(typeof hint, 'string', `${provider} 必须有粘贴兜底提示`)
-    assert.ok(hint.length > 0, `${provider} 提示不能为空`)
-  }
+  const oauth = ['commandcode', 'officeace', 'autoclaw', 'kuku', 'accio', 'accio-cn']
   for (const provider of oauth) {
     assert.equal(adoptableChannelHint(provider), undefined, `${provider} 应走 OAuth，不应在粘贴表里`)
   }
@@ -100,7 +93,6 @@ async function rpcProbes({ call, creds }) {
     ['monkeycode', 'nebula_session=abc'],
     ['orcaterm', 'foo=bar'],
     ['autoclaw-intl', 'Bearer "x'],
-    ['accio', 'abc'],
   ]) {
     const result = await call('account.adopt', { provider, credential: bad })
     assert.equal(result.ok, false, `${provider} 非法凭据必须拒收`)
@@ -113,7 +105,6 @@ async function rpcProbes({ call, creds }) {
     ['monkeycode', `  Cookie: "nebula_session=${SESSION}; Path=/; HttpOnly"`, `nebula_session=${SESSION}`],
     ['orcaterm', `Bearer ot_session=${SESSION}\r\n`, `ot_session=${SESSION}`],
     ['autoclaw-intl', `  "${TOKEN}"  `, TOKEN],
-    ['accio', `Bearer ${'a'.repeat(40)}`, 'a'.repeat(40)],
   ]) {
     const result = await call('account.adopt', { provider, credential: noisy })
     assert.equal(result.ok, true, `${provider} 噪声凭据清洗后应收下：${JSON.stringify(result)}`)
