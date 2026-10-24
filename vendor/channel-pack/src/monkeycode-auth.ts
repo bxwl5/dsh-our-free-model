@@ -108,7 +108,7 @@ export async function loginWithCookie(
 ): Promise<MonkeyCodeCredential> {
   const cookie = normalizeCookie(rawCookie)
   if (cookie === undefined) {
-    throw new Error('MonkeyCode：Cookie 无效（必须包含 nebula_session=…，且不能为空）')
+    throw new Error('MonkeyCode：Cookie 无效（必须包含 monkeycode_ai_session=… 或旧名 nebula_session=…，且不能为空）')
   }
   const probe: MonkeyCodeCredential = { access_token: cookie }
   const result = await call(fetcher, product, probe, MONKEYCODE_ME_PATH, { signal })

@@ -28724,7 +28724,12 @@ var init_officeace_product = __esm({
       cloudBase: "https://agentarts.cn-southwest-2.myhuaweicloud.com",
       iamBase: "https://iam.myhuaweicloud.com",
       loginBase: "https://auth.huaweicloud.com",
-      stsBase: "https://sts.cn-southwest-2.myhuaweicloud.com",
+      // ⚠️ STS 的 OAuth2 token 端点**只在 `cn-north-4` 提供**，不是业务面所在的
+      // `cn-southwest-2`。用错 region 会在换码时报：
+      //   HTTP 404 {"error_code":"STS5.1007","error_msg":"this API is not supported in this region"}
+      // 依据：参考实现 `Q-shuang-dot/officeace2api` 的 `DEFAULT_TOKEN_URL`
+      // （`https://sts.cn-north-4.myhuaweicloud.com/v1/oauth2/tokens`）。
+      stsBase: "https://sts.cn-north-4.myhuaweicloud.com",
       clientId: "pdp5_for_agentarts",
       redirectUri: "https://agentarts.cn-southwest-2.myhuaweicloud.com/v1/claw/auth/callback",
       defaultCredentialRef: "OFFICEACE_CREDENTIAL",
@@ -44591,7 +44596,7 @@ var MONKEYCODE_TASKS_PATH = "/api/v1/users/tasks";
 var MONKEYCODE_STREAM_PATH = "/api/v1/users/tasks/stream";
 var MONKEYCODE_PUBLIC_IMAGE_ID = "2e214f06-79ba-4535-9ac1-89adc2d9c6cc";
 var MONKEYCODE_PUBLIC_HOST = "public_host";
-var MONKEYCODE_SESSION_COOKIE = "nebula_session";
+var MONKEYCODE_SESSION_COOKIES = ["monkeycode_ai_session", "nebula_session"];
 
 // vendor/channel-pack/src/monkeycode.ts
 function stringValue2(value) {
@@ -44635,10 +44640,18 @@ function normalizeCookie(raw) {
   if (text === "") return void 0;
   if (text.length > COOKIE_MAX) return void 0;
   if (!/^[\x20-\x7E]+$/.test(text)) return void 0;
-  const prefix = `${MONKEYCODE_SESSION_COOKIE}=`;
-  const hit = text.split(";").find((part) => part.trim().startsWith(prefix));
-  if (hit === void 0) return void 0;
-  const value = hit.trim().slice(prefix.length).trim();
+  let value;
+  for (const name2 of MONKEYCODE_SESSION_COOKIES) {
+    const prefix = `${name2}=`;
+    const hit = text.split(";").find((part) => part.trim().startsWith(prefix));
+    if (hit === void 0) continue;
+    const candidate = hit.trim().slice(prefix.length).trim();
+    if (candidate !== "") {
+      value = candidate;
+      break;
+    }
+  }
+  if (value === void 0) return void 0;
   if (value.length < SESSION_VALUE_MIN || value.length > SESSION_VALUE_MAX) return void 0;
   if (!/^[\x21-\x7E]+$/.test(value)) return void 0;
   return text;
@@ -44646,7 +44659,8 @@ function normalizeCookie(raw) {
 function isCredentialUsable2(credential) {
   if (credential === void 0) return false;
   const cookie = credential.access_token;
-  return typeof cookie === "string" && cookie !== "" && cookie.includes(`${MONKEYCODE_SESSION_COOKIE}=`);
+  if (typeof cookie !== "string" || cookie === "") return false;
+  return MONKEYCODE_SESSION_COOKIES.some((name2) => cookie.includes(`${name2}=`));
 }
 function parseWallet(value) {
   const body = unwrapData(value);
@@ -45397,7 +45411,7 @@ var ORCATERM = {
 };
 var ORCATERM_CONVERSATION_PATH = "/assistant/conversation";
 var ORCATERM_CHAT_PATH = "/assistant/chat";
-var ORCATERM_SESSION_COOKIE = "ot_session";
+var ORCATERM_SESSION_COOKIES = ["ot_session", "ot_sid"];
 var ORCATERM_CHAT_QUERY = { name: "orcaterm", mode: "0", csrfCode: "", sseresume: "true" };
 var ORCATERM_CONVERSATION_TAG = "orcaterm";
 
@@ -45430,10 +45444,18 @@ function normalizeCookie2(raw) {
   if (text === "") return void 0;
   if (text.length > COOKIE_MAX2) return void 0;
   if (!/^[\x20-\x7E]+$/.test(text)) return void 0;
-  const prefix = `${ORCATERM_SESSION_COOKIE}=`;
-  const hit = text.split(";").find((part) => part.trim().startsWith(prefix));
-  if (hit === void 0) return void 0;
-  const value = hit.trim().slice(prefix.length).trim();
+  let value;
+  for (const name2 of ORCATERM_SESSION_COOKIES) {
+    const prefix = `${name2}=`;
+    const hit = text.split(";").find((part) => part.trim().startsWith(prefix));
+    if (hit === void 0) continue;
+    const candidate = hit.trim().slice(prefix.length).trim();
+    if (candidate !== "") {
+      value = candidate;
+      break;
+    }
+  }
+  if (value === void 0) return void 0;
   if (value.length < SESSION_VALUE_MIN2 || value.length > SESSION_VALUE_MAX2) return void 0;
   if (!/^[\x21-\x7E]+$/.test(value)) return void 0;
   return text;
@@ -45441,7 +45463,8 @@ function normalizeCookie2(raw) {
 function isCredentialUsable3(credential) {
   if (credential === void 0) return false;
   const cookie = credential.access_token;
-  return typeof cookie === "string" && cookie !== "" && cookie.includes(`${ORCATERM_SESSION_COOKIE}=`);
+  if (typeof cookie !== "string" || cookie === "") return false;
+  return ORCATERM_SESSION_COOKIES.some((name2) => cookie.includes(`${name2}=`));
 }
 function orcaTermHeaders(product, credential) {
   return {
@@ -64398,13 +64421,19 @@ async function probeWithAdapter(entry, credential, modelId, timeoutMs) {
       project: GEMINI_DEFAULT_PROJECT,
       product: GEMINI
     });
-  } else {
+  } else if (entry.provider === "codearts") {
     adapter = new CodeArtsAdapter({
       credentialRef: ref,
       resolveCredential: async () => credential,
       refresh: async () => {
       }
     });
+  } else {
+    return {
+      modelId,
+      ok: false,
+      message: `\u8BE5\u6E20\u9053\uFF08${entry.provider}\uFF09\u6CA1\u6709\u8D26\u53F7\u7EA7\u91CD\u6D4B\uFF1A\u5B83\u4E0D\u4F1A\u6309\u6A21\u578B\u5199\u5165\u9650\u6D41\u6807\u8BB0\uFF0C\u8BF7\u5728\u6E20\u9053\u5361\u7247\u91CC\u7528\u300C\u5237\u65B0\u4F59\u989D / \u6D4B\u8BD5\u300D\u786E\u8BA4\u51ED\u636E\u662F\u5426\u53EF\u7528`
+    };
   }
   try {
     for await (const _chunk of adapter.stream({
@@ -65929,7 +65958,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
         }
         const id = `${provider}-${shortId()}`;
         const suffix = shortId().toUpperCase();
-        const refName = `${provider.toUpperCase()}_ACCOUNT_${suffix}`;
+        const refName = `${provider.toUpperCase().replace(/-/g, "_")}_ACCOUNT_${suffix}`;
         const product = productById(provider);
         if (product !== void 0) {
           let state;

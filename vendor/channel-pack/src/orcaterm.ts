@@ -14,6 +14,7 @@
 
 import {
   ORCATERM_SESSION_COOKIE,
+  ORCATERM_SESSION_COOKIES,
   type OrcaTermProduct,
 } from './orcaterm-product.js'
 
@@ -81,10 +82,17 @@ export function normalizeCookie(raw: string): string | undefined {
   if (text === '') return undefined
   if (text.length > COOKIE_MAX) return undefined
   if (!/^[\x20-\x7E]+$/.test(text)) return undefined
-  const prefix = `${ORCATERM_SESSION_COOKIE}=`
-  const hit = text.split(';').find(part => part.trim().startsWith(prefix))
-  if (hit === undefined) return undefined
-  const value = hit.trim().slice(prefix.length).trim()
+  // 会话字段按候选名逐个试（`ot_session` 旧名 / `ot_sid` 现名）。
+  // 精确到 `name=` 前缀，避免 `xot_session=` 这类粘连串被误认。
+  let value: string | undefined
+  for (const name of ORCATERM_SESSION_COOKIES) {
+    const prefix = `${name}=`
+    const hit = text.split(';').find(part => part.trim().startsWith(prefix))
+    if (hit === undefined) continue
+    const candidate = hit.trim().slice(prefix.length).trim()
+    if (candidate !== '') { value = candidate; break }
+  }
+  if (value === undefined) return undefined
   if (value.length < SESSION_VALUE_MIN || value.length > SESSION_VALUE_MAX) return undefined
   if (!/^[\x21-\x7E]+$/.test(value)) return undefined
   return text
@@ -94,7 +102,8 @@ export function normalizeCookie(raw: string): string | undefined {
 export function isCredentialUsable(credential: OrcaTermCredential | undefined): credential is OrcaTermCredential {
   if (credential === undefined) return false
   const cookie = credential.access_token
-  return typeof cookie === 'string' && cookie !== '' && cookie.includes(`${ORCATERM_SESSION_COOKIE}=`)
+  if (typeof cookie !== 'string' || cookie === '') return false
+  return ORCATERM_SESSION_COOKIES.some(name => cookie.includes(`${name}=`))
 }
 
 /** 构造请求头。 */

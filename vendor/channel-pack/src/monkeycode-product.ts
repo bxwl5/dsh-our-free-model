@@ -94,6 +94,15 @@ export const MONKEYCODE_PUBLIC_HOST = 'public_host'
 /** Cookie 名（登录后浏览器种下）。 */
 export const MONKEYCODE_SESSION_COOKIE = 'nebula_session'
 
+/**
+ * 会话字段的**候选名**。
+ *
+ * 2026-10-24 用户实测：登录后浏览器里实际写的是 **`monkeycode_ai_session`**
+ *（`nebula_session` 已不再出现），只认旧名会让「完整 Cookie 也登不进去」。
+ * 两个名字都收，精确到 `name=` 前缀匹配。
+ */
+export const MONKEYCODE_SESSION_COOKIES = ['monkeycode_ai_session', 'nebula_session'] as const
+
 /** 免费用户每日基础模型 token 上限（1000 万）。 */
 export const MONKEYCODE_FREE_DAILY_TOKENS = 10_000_000
 /** 每日签到积分。 */

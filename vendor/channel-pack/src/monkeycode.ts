@@ -10,6 +10,7 @@
 
 import {
   MONKEYCODE_SESSION_COOKIE,
+  MONKEYCODE_SESSION_COOKIES,
   type MonkeyCodeProduct,
 } from './monkeycode-product.js'
 
@@ -138,10 +139,16 @@ export function normalizeCookie(raw: string): string | undefined {
   if (text === '') return undefined
   if (text.length > COOKIE_MAX) return undefined
   if (!/^[\x20-\x7E]+$/.test(text)) return undefined
-  const prefix = `${MONKEYCODE_SESSION_COOKIE}=`
-  const hit = text.split(';').find(part => part.trim().startsWith(prefix))
-  if (hit === undefined) return undefined
-  const value = hit.trim().slice(prefix.length).trim()
+  // 会话字段按候选名逐个试（`monkeycode_ai_session` 现名 / `nebula_session` 旧名）。
+  let value: string | undefined
+  for (const name of MONKEYCODE_SESSION_COOKIES) {
+    const prefix = `${name}=`
+    const hit = text.split(';').find(part => part.trim().startsWith(prefix))
+    if (hit === undefined) continue
+    const candidate = hit.trim().slice(prefix.length).trim()
+    if (candidate !== '') { value = candidate; break }
+  }
+  if (value === undefined) return undefined
   if (value.length < SESSION_VALUE_MIN || value.length > SESSION_VALUE_MAX) return undefined
   if (!/^[\x21-\x7E]+$/.test(value)) return undefined
   return text
@@ -155,7 +162,8 @@ export function normalizeCookie(raw: string): string | undefined {
 export function isCredentialUsable(credential: MonkeyCodeCredential | undefined): credential is MonkeyCodeCredential {
   if (credential === undefined) return false
   const cookie = credential.access_token
-  return typeof cookie === 'string' && cookie !== '' && cookie.includes(`${MONKEYCODE_SESSION_COOKIE}=`)
+  if (typeof cookie !== 'string' || cookie === '') return false
+  return MONKEYCODE_SESSION_COOKIES.some(name => cookie.includes(`${name}=`))
 }
 
 /** 解析 `/users/me` 响应。缺 `id` 视为无效。 */

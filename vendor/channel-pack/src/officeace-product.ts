@@ -74,7 +74,12 @@ export const OFFICEACE: OfficeAceProduct = {
   cloudBase: 'https://agentarts.cn-southwest-2.myhuaweicloud.com',
   iamBase: 'https://iam.myhuaweicloud.com',
   loginBase: 'https://auth.huaweicloud.com',
-  stsBase: 'https://sts.cn-southwest-2.myhuaweicloud.com',
+  // ⚠️ STS 的 OAuth2 token 端点**只在 `cn-north-4` 提供**，不是业务面所在的
+  // `cn-southwest-2`。用错 region 会在换码时报：
+  //   HTTP 404 {"error_code":"STS5.1007","error_msg":"this API is not supported in this region"}
+  // 依据：参考实现 `Q-shuang-dot/officeace2api` 的 `DEFAULT_TOKEN_URL`
+  // （`https://sts.cn-north-4.myhuaweicloud.com/v1/oauth2/tokens`）。
+  stsBase: 'https://sts.cn-north-4.myhuaweicloud.com',
   clientId: 'pdp5_for_agentarts',
   redirectUri: 'https://agentarts.cn-southwest-2.myhuaweicloud.com/v1/claw/auth/callback',
   defaultCredentialRef: 'OFFICEACE_CREDENTIAL',

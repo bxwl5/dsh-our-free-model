@@ -86,6 +86,16 @@ export const ORCATERM_CHAT_PATH = '/assistant/chat'
 /** Cookie 名。 */
 export const ORCATERM_SESSION_COOKIE = 'ot_session'
 
+/**
+ * 会话字段的**候选名**。
+ *
+ * 2026-10-24 用户实测：控制台登录后浏览器里实际写的是 **`ot_sid`**
+ * （同时还有 `userId` / `skey` / `ownerUin` / `uin` 等身份 Cookie），
+ * 并没有 `ot_session` —— 上游改过字段名。只认旧名会让「完整 Cookie 也登不进去」，
+ * 所以两个名字都收；`ot_sid` 的值形如 `<base64>.<hmac>`，与旧值同为不透明会话串。
+ */
+export const ORCATERM_SESSION_COOKIES = ['ot_session', 'ot_sid'] as const
+
 /** 对话时固定带的查询参数（实测值）。 */
 export const ORCATERM_CHAT_QUERY = { name: 'orcaterm', mode: '0', csrfCode: '', sseresume: 'true' } as const
 

@@ -102,7 +102,8 @@ assert.ok(
     assert.ok(line !== undefined, `${provider} 卡片必须存在`)
     assert.ok(line.includes('loginPage:'), `${provider} 必须带官网登录页链接`)
     if (provider !== 'autoclaw-intl') {
-      assert.ok(/cookieName: '[a-z_]+'/.test(line), `${provider} 必须写明要复制的 Cookie 名`)
+      // 允许带说明（上游改过字段名时会在括号里注明旧名），只要求写了 cookieName。
+      assert.ok(/cookieName: '[^']+'/.test(line), `${provider} 必须写明要复制的 Cookie 名`)
     }
   }
 }

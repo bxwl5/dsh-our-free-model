@@ -366,6 +366,18 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   await verifyKukuQrPage()
   const { verifyRaccoonQr } = await import('./raccoon-qr-test.mjs')
   await verifyRaccoonQr()
+  // 用户实测的真实 Cookie 形状（字段名随上游改名）：OrcaTerm 用 ot_sid、MonkeyCode 用 monkeycode_ai_session。
+  {
+    const ot = await import('../vendor/channel-pack/src/orcaterm.ts')
+    const mc = await import('../vendor/channel-pack/src/monkeycode.ts')
+    const OT = 'userId=401077947340;ot_sid=eyJiIjoicHNOLVpNeFMyY09wemtvZmFGam93a3BGaktDVnpkTkdwRktXUTVsSkh5NCIsImlhdCI6MTc5MjgzNjAwNn0.Ds3OETCJIAX_iZjBHg5bfVJs0ANNv4l5gy2EZi7U_8U;uin=o2602575766'
+    assert.ok(ot.normalizeCookie(OT) !== undefined, 'OrcaTerm 必须接受 ot_sid（上游现名）')
+    assert.equal(ot.normalizeCookie('ot_session=abc'), undefined, '短值仍拒绝')
+    const MC = 'monkeycode_ai_session=2dda31ef-abdc-40e8-b31c-0a4f081646c5;_ga=GA1.1.1727532325.1792835631'
+    assert.ok(mc.normalizeCookie(MC) !== undefined, 'MonkeyCode 必须接受 monkeycode_ai_session（上游现名）')
+    assert.equal(mc.normalizeCookie('nebula_session=abc'), undefined, '短值仍拒绝')
+    console.log('ok  粘贴 Cookie 的字段名兼容：ot_sid / monkeycode_ai_session 均被接受')
+  }
   // OAuth 渠道后台登录失败必须让 login.poll 拿到可读原因（本用例只用
   // directLane 注入的本地替身上游，不出网）。
   const { verifyChannelOauthFailure } = await import('./channel-oauth-failure-test.mjs')

@@ -341,12 +341,29 @@ async function probeWithAdapter(
       project: GEMINI_DEFAULT_PROJECT,
       product: GEMINI,
     })
-  } else {
+  } else if (entry.provider === 'codearts') {
     adapter = new CodeArtsAdapter({
       credentialRef: ref,
       resolveCredential: async () => credential as CodeArtsCredential,
       refresh: async () => {},
     })
+  } else {
+    // ⚠️ **不再静默回落到 CodeArtsAdapter**。
+    //
+    // 历史写法是 `else { new CodeArtsAdapter(...) }`：任何没登记的 provider 都会被
+    // 拿华为云 HMAC 签名去发请求，必然失败。用户看到的报错是
+    // `codearts: no usable credential; log in first` —— 明明登录的是 autoclaw /
+    // kuku / monkeycode，却被指向 codearts 去重新登录，方向完全错（本次用户报障）。
+    //
+    // 这些渠道（autoclaw / autoclaw-intl / kuku / monkeycode / orcaterm /
+    // raccoon / officeace / accio 家族）**不写 `modelRateLimits`**，本来就没有
+    // 「重测」语义，如实说明比伪造一次失败更有用。
+    return {
+      modelId,
+      ok: false,
+      message: `该渠道（${entry.provider}）没有账号级重测：它不会按模型写入限流标记，`
+        + '请在渠道卡片里用「刷新余额 / 测试」确认凭据是否可用',
+    }
   }
 
   try {

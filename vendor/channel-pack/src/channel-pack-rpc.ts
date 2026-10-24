@@ -1507,7 +1507,11 @@ function registerChannelPackEndpoints(
         }
         const id = `${provider}-${shortId()}`
         const suffix = shortId().toUpperCase()
-        const refName = `${provider.toUpperCase()}_ACCOUNT_${suffix}`
+        // ⚠️ `credentialRef()` 的校验是 `/^[A-Za-z_][A-Za-z0-9_]*$/` —— **不允许连字符**。
+        // `accio-cn` 这类带 `-` 的 provider 直接把原样大写拼进去会被拒绝：
+        //   credential ref "ACCIO-CN_ACCOUNT_5F60164F" must match /^[A-Za-z_][A-Za-z0-9_]*$/
+        // 用户看到的「Accio 国内版登录未完成」就是这个。与 `account.adopt` 处的写法保持一致。
+        const refName = `${provider.toUpperCase().replace(/-/g, '_')}_ACCOUNT_${suffix}`
 
         // CodeBuddy 系（buddy / workbuddy）共用两步登录流程：
         // 只获取 loginUrl 和 state 立即返回，后台用同一个 state 异步执行
