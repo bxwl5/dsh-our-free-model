@@ -108,45 +108,82 @@ async function postJson(
   return { envelope: parseEnvelope(parsed, response.status), status: response.status }
 }
 
-/**
- * 生成一个扫码用的 `qrcode_code`（32 位小写 hex = 16 字节随机）。
- *
- * 依据客户端：`CryptoJS.lib.WordArray.random(16)`（渲染层模块 68284 的 `yl()`）。
- */
-export function generateQrCode(): string {
-  return randomBytes(16).toString('hex')
+/** 新版扫码 API 基址（官方前端 2026-10 起从 `/api/web/auth/v1` 迁到这里）。 */
+export const RACCOON_IAM_BASE = '/api/iam/v1'
+/** 申请扫码会话。 */
+export const RACCOON_IAM_QR_PATH = `${RACCOON_IAM_BASE}/auth/mp/qrcode`
+/** 轮询扫码结果。 */
+export const RACCOON_IAM_QR_LOGIN_PATH = `${RACCOON_IAM_BASE}/auth/mp/qrcode/login`
+/** 扫码页固定带上的品牌名（与官方前端逐字一致）。 */
+export const RACCOON_QR_BRAND = '商汤小浣熊官网'
+
+/** 服务端下发的一次扫码会话。 */
+export interface RaccoonQrSession {
+  /** 服务端生成的 code（`qr-` 前缀），**不再是本地随机的 32 位 hex**。 */
+  qrcodeCode: string
+  /** 二维码落地页路径（实测 `/login/mp`）。 */
+  scanPath: string
+  /** 有效期（秒，实测 300）。 */
+  expiresIn: number
+  /** 建议轮询间隔（秒，实测 2）。 */
+  pollInterval: number
 }
 
 /**
- * 构造二维码承载的微信登录页 URL。
+ * 向服务端申请一个扫码会话（新版 API）。
  *
- * 依据客户端：`` `${base}/login/mp?code=${code}&appname=商汤小浣熊官网` ``。
- * 这是一个**公开页面**，扫码后在微信内完成授权，服务端据此把该 code 置为
- * `success`，我们轮询 `login_with_qrcode_code` 取回 token。
- */
-export function buildQrImageUrl(product: RaccoonProduct, code: string): string {
-  const params = new URLSearchParams({ code, appname: '商汤小浣熊官网' })
-  return `${product.apiBase}/login/mp?${params.toString()}`
-}
-
-/**
- * 轮询一次扫码登录状态。
+ * ⚠️ 2026-10-24 实测：旧前端「本地随机 code + 固定 `/login/mp` 页」的路径已失效 ——
+ * `/login/mp` 对任何 code 都 404（含带 Cookie / 微信 UA / Referer）。官方前端改为
+ * **服务端下发 code + scan_path**，扫码页再按 `code/appname/source` 拼出来。
+ * 旧接口 `/login_with_qrcode_code` 仍在（自造 code 也回 `pending`），故保留为回退。
  *
- * ⚠️ **任何异常都降级为 `pending`**（网络抖动、响应畸形、未知 status）：
- * 轮询是 2 秒一次的循环，偶发失败不应中断整个登录流程；而把未知状态
- * 误判成 `success` 会让流程拿到空 token 后卡死，误判成 `canceled` 则会让
- * 用户正在扫码的二维码被无故刷新。
+ * 失败（网络 / 非 2xx / 形状不符）返回 `undefined`，由调用方回退旧流程。
  */
-export async function pollRaccoonQrLogin(
+export async function createRaccoonQrSession(
   product: RaccoonProduct,
-  code: string,
+  fetcher: typeof fetch = fetch,
+): Promise<RaccoonQrSession | undefined> {
+  try {
+    const { envelope, status } = await postJson(`${product.apiBase}${RACCOON_IAM_QR_PATH}`, {}, fetcher)
+    if (status >= 400 || envelope.code !== 0 || envelope.data === undefined) return undefined
+    const data = envelope.data
+    const qrcodeCode = typeof data.qrcode_code === 'string' ? data.qrcode_code : ''
+    const scanPath = typeof data.scan_path === 'string' ? data.scan_path : ''
+    if (qrcodeCode === '' || scanPath === '') return undefined
+    return {
+      qrcodeCode,
+      scanPath,
+      expiresIn: typeof data.expires_in === 'number' && data.expires_in > 0 ? data.expires_in : 300,
+      pollInterval: typeof data.poll_interval === 'number' && data.poll_interval > 0 ? data.poll_interval : 2,
+    }
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 构造二维码内容（与官方前端逐字一致）：
+ * `new URL(scan_path, origin)` + `code` + `appname` + `source=platform`。
+ */
+export function buildRaccoonScanUrl(product: RaccoonProduct, session: RaccoonQrSession): string {
+  const url = new URL(session.scanPath, product.apiBase)
+  url.searchParams.set('code', session.qrcodeCode)
+  url.searchParams.set('appname', RACCOON_QR_BRAND)
+  url.searchParams.set('source', 'platform')
+  return url.href
+}
+
+/** 新版轮询：同一个映射，只是换 `login_with_qrcode_code` → `/auth/mp/qrcode/login`。 */
+export async function pollRaccoonQrSession(
+  product: RaccoonProduct,
+  qrcodeCode: string,
   fetcher: typeof fetch = fetch,
 ): Promise<RaccoonQrPollResult> {
   let envelope: RaccoonEnvelope
   try {
     const result = await postJson(
-      `${product.apiBase}${product.authApiPrefix}/login_with_qrcode_code`,
-      { qrcode_code: code },
+      `${product.apiBase}${RACCOON_IAM_QR_LOGIN_PATH}`,
+      { qrcode_code: qrcodeCode },
       fetcher,
     )
     envelope = result.envelope
@@ -154,25 +191,22 @@ export async function pollRaccoonQrLogin(
     return { status: 'pending' }
   }
   if (envelope.code !== 0 || envelope.data === undefined) return { status: 'pending' }
-
-  const raw = envelope.data.status
-  const status = typeof raw === 'string' ? raw : ''
-  const expiredAt = typeof envelope.data.expired_at === 'string' ? envelope.data.expired_at : undefined
-
+  const data = envelope.data
+  const status = typeof data.status === 'string' ? data.status : ''
+  const expiredAt = typeof data.expired_at === 'string' ? data.expired_at : undefined
   if (status === RACCOON_QR_STATUS.canceled) return { status: 'canceled' }
   if (status === RACCOON_QR_STATUS.logging) {
     return { status: 'logging', ...expiredAt !== undefined ? { expiredAt } : {} }
   }
   if (status === RACCOON_QR_STATUS.success) {
-    const accessToken = typeof envelope.data.access_token === 'string' ? envelope.data.access_token : ''
-    const refreshToken = typeof envelope.data.refresh_token === 'string' ? envelope.data.refresh_token : ''
-    // ⚠️ 缺 token 的 success 视为未完成：否则会产出空凭据并让流程卡死
+    const accessToken = typeof data.access_token === 'string' ? data.access_token : ''
     if (accessToken.length === 0) return { status: 'pending' }
+    const refreshToken = typeof data.refresh_token === 'string' ? data.refresh_token : ''
     const expMs = decodeJwtExpMs(accessToken)
     return {
       status: 'success',
       accessToken,
-      refreshToken,
+      ...refreshToken.length > 0 ? { refreshToken } : {},
       ...expMs !== undefined ? { expiresAt: String(expMs) } : {},
     }
   }

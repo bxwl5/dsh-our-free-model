@@ -38,10 +38,10 @@ import {
   type RaccoonCredential,
 } from './raccoon.js'
 import {
-  buildQrImageUrl,
-  generateQrCode,
+  buildRaccoonScanUrl,
+  createRaccoonQrSession,
   loginRaccoonWithSmsCode,
-  pollRaccoonQrLogin,
+  pollRaccoonQrSession,
   sendRaccoonSmsCode,
 } from './raccoon-oauth.js'
 import { RACCOON, type RaccoonProduct } from './raccoon-product.js'
@@ -67,12 +67,27 @@ export interface StartedRaccoonLoginFlow {
 
 /** 流程内部状态（**只存在于宿主侧**）。 */
 interface FlowState {
-  /** 扫码用的 code（宿主侧生成，页面不知道）。 */
+  /** 服务端下发的扫码 code（宿主侧持有，页面不知道）。 */
   qrCode: string
+  /** 服务端下发的扫码路径（申请失败时为 undefined）。 */
+  scanPath: string | undefined
+  /** 扫码是否确认不可用（接口失败 / 上游扫码页 404）—— 面板据此提示改用短信登录。 */
+  qrUnavailable: boolean
   /** 当前展示的短信目标手机号（未发过短信时为空）。 */
   phone: string
   /** 最近一次轮询的二维码有效期（供页面展示倒计时）。 */
   lastExpiredAt: string | undefined
+}
+
+/** 二维码内容：服务端 `scan_path` + `code/appname/source`（与官方前端一致）。 */
+function qrContentUrl(product: RaccoonProduct, state: FlowState): string {
+  if (state.scanPath === undefined) return ''
+  return buildRaccoonScanUrl(product, {
+    qrcodeCode: state.qrCode,
+    scanPath: state.scanPath,
+    expiresIn: 300,
+    pollInterval: 2,
+  })
 }
 
 /** `startRaccoonLoginFlow` 的选项。 */
@@ -95,10 +110,25 @@ export async function startRaccoonLoginFlow(
 ): Promise<StartedRaccoonLoginFlow> {
   const product = options.product ?? RACCOON
   const fetcher = options.fetcher ?? fetch
+  // 旧「本地随机 code + /login/mp」链路已随上游迁移失效（2026-10-24 实测该页对任何 code 都 404），
+  // 故扫码只走服务端下发 code 的新接口；申请失败就如实标记「扫码不可用」，短信仍可用。
+  const session = await createRaccoonQrSession(product, fetcher)
   const state: FlowState = {
-    qrCode: generateQrCode(),
+    qrCode: session?.qrcodeCode ?? '',
+    scanPath: session?.scanPath,
+    qrUnavailable: session === undefined,
     phone: '',
     lastExpiredAt: undefined,
+  }
+  // 探测扫码落地页：只有拿到**明确的非 2xx** 才判定不可用（网络异常不误报）。
+  if (state.scanPath !== undefined) {
+    try {
+      const probe = await fetcher(qrContentUrl(product, state), {
+        method: 'GET',
+        signal: AbortSignal.timeout(8000),
+      })
+      state.qrUnavailable = probe.status >= 400
+    } catch { /* 探测失败按「可用」处理，避免误报 */ }
   }
 
   let resolveResult!: (value: RaccoonCredential) => void
@@ -192,12 +222,20 @@ async function handleRequest(
 
   if (url.pathname === RACCOON_LOGIN_PAGE_PATHS.login) {
     response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-    response.end(renderRaccoonLoginPage(product, state.qrCode))
+    response.end(renderRaccoonLoginPage(product, {
+      qrSvg: state.scanPath === undefined ? '' : renderQrSvg(qrContentUrl(product, state), { size: 200 }),
+      unavailable: state.qrUnavailable,
+    }))
     return
   }
 
   if (url.pathname === RACCOON_LOGIN_PAGE_PATHS.poll) {
-    const polled = await pollRaccoonQrLogin(product, state.qrCode, deps.fetcher)
+    if (state.scanPath === undefined) {
+      // 没能申请到扫码会话：明确告诉页面「扫码不可用」，让它停下并引导用户改用短信。
+      writeJson(response, { status: 'unavailable' })
+      return
+    }
+    const polled = await pollRaccoonQrSession(product, state.qrCode, deps.fetcher)
     if (polled.status === 'success' && polled.accessToken !== undefined) {
       const credential: RaccoonCredential = {
         access_token: polled.accessToken,
@@ -209,15 +247,21 @@ async function handleRequest(
       return
     }
     if (polled.expiredAt !== undefined) state.lastExpiredAt = polled.expiredAt
-    // `canceled` 时换一个新 code，让页面上的二维码重新可用（否则用户卡死）。
+    // `canceled` 时换一个新会话，让页面上的二维码重新可用（否则用户卡死）。
     if (polled.status === 'canceled') {
-      state.qrCode = generateQrCode()
+      const next = await createRaccoonQrSession(product, deps.fetcher)
+      if (next !== undefined) {
+        state.qrCode = next.qrcodeCode
+        state.scanPath = next.scanPath
+      } else {
+        state.qrUnavailable = true
+      }
     }
     writeJson(response, {
       status: polled.status,
       ...polled.expiredAt !== undefined ? { expiredAt: polled.expiredAt } : {},
       // code 变化时把新二维码给页面（页面据此换图）
-      ...polled.status === 'canceled' ? { qr: renderQrSvg(buildQrImageUrl(product, state.qrCode)) } : {},
+      ...polled.status === 'canceled' ? { qr: renderQrSvg(qrContentUrl(product, state), { size: 200 }) } : {},
     })
     return
   }
@@ -340,10 +384,17 @@ function listenOnRandomPort(server: Server): Promise<number> {
  *   渲染成二维码 —— 页面拿不到 code 本身（它被编码进二维码图像里）。
  *   这符合职责边界：页面不需要知道 code，只需要展示。
  */
-export function renderRaccoonLoginPage(product: RaccoonProduct, qrCode?: string): string {
-  // 未传 code 时生成一个仅供渲染的占位（单测直接调本函数时用）。
-  const code = qrCode ?? generateQrCode()
-  const qrSvg = renderQrSvg(buildQrImageUrl(product, code), { size: 200 })
+export function renderRaccoonLoginPage(
+  product: RaccoonProduct,
+  options: { qrSvg?: string; unavailable?: boolean } = {},
+): string {
+  const unavailable = options.unavailable === true
+  // 无二维码时给一个静态占位，避免页面上出现空框。
+  const qrSvg = options.qrSvg !== undefined && options.qrSvg !== ''
+    ? options.qrSvg
+    : '<div class="qr placeholder" aria-hidden="true" style="display:flex;align-items:center;justify-content:center;font-size:12px;color:#a6a1af;">扫码暂不可用</div>'
+  const qrActive = unavailable ? '0' : '1'
+  const smsActive = unavailable ? '1' : '0'
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -390,17 +441,19 @@ export function renderRaccoonLoginPage(product: RaccoonProduct, qrCode?: string)
     <h1>登录 Raccoon Work</h1>
 
     <div class="tabs">
-      <button id="tabQr" data-active="1" type="button">微信扫码</button>
-      <button id="tabSms" data-active="0" type="button">短信登录</button>
+      <button id="tabQr" data-active="${qrActive}" type="button">微信扫码</button>
+      <button id="tabSms" data-active="${smsActive}" type="button">短信登录</button>
     </div>
 
-    <div class="pane" id="paneQr" data-show="1">
+    <div class="pane" id="paneQr" data-show="${qrActive}">
       <div class="qr" id="qrBox">${qrSvg}</div>
-      <p class="sub">打开微信扫一扫，扫描上方二维码</p>
-      <div class="status" id="qrStatus">等待扫码…</div>
+      ${unavailable
+        ? '<p class="sub warn" role="alert">扫码登录暂不可用（上游扫码页/接口异常），请改用下方「短信登录」。</p>'
+        : '<p class="sub">打开微信扫一扫，扫描上方二维码</p>'}
+      <div class="status" id="qrStatus">${unavailable ? '扫码暂不可用，请用短信登录' : '等待扫码…'}</div>
     </div>
 
-    <div class="pane" id="paneSms" data-show="0">
+    <div class="pane" id="paneSms" data-show="${smsActive}">
       <label for="phone">手机号</label>
       <div class="row">
         <input id="phone" type="tel" inputmode="numeric" maxlength="11" placeholder="请输入 11 位手机号">
@@ -420,6 +473,7 @@ export function renderRaccoonLoginPage(product: RaccoonProduct, qrCode?: string)
   'use strict';
   var POLL_INTERVAL_MS = 2000;
   var paths = ${JSON.stringify(RACCOON_LOGIN_PAGE_PATHS)};
+  var QR_UNAVAILABLE = ${unavailable ? 'true' : 'false'};
 
   // ── Tab 切换 ──
   var tabQr = document.getElementById('tabQr');
@@ -451,6 +505,11 @@ export function renderRaccoonLoginPage(product: RaccoonProduct, qrCode?: string)
         setTimeout(function () { window.close(); }, 1200);
         return;
       }
+      if (data.status === 'unavailable') {
+        setQrStatus('扫码登录暂不可用，请改用短信登录', 'err');
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        return;
+      }
       if (data.status === 'logging') { setQrStatus('已扫码，请在微信中确认…'); return; }
       if (data.status === 'canceled') {
         if (data.qr) { qrBox.innerHTML = data.qr; }
@@ -462,8 +521,10 @@ export function renderRaccoonLoginPage(product: RaccoonProduct, qrCode?: string)
       // 轮询偶发失败不打断（下一次继续）
     });
   }
-  pollTimer = setInterval(pollOnce, POLL_INTERVAL_MS);
-  pollOnce();
+  if (!QR_UNAVAILABLE) {
+    pollTimer = setInterval(pollOnce, POLL_INTERVAL_MS);
+    pollOnce();
+  }
 
   // ── 短信登录 ──
   var smsStatus = document.getElementById('smsStatus');
