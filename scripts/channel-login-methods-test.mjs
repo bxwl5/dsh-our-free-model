@@ -49,8 +49,8 @@ const client = parseClientLogins()
 const adoptable = parseAdoptableChannels()
 const doc = parseDocTiers()
 
-// ── 1) 界面声明本身：21 张卡片（2026-10-25 移除 autoclaw-intl），取值都在已知集合内 ──
-assert.equal(client.size, 21, `CHANNEL_PROVIDERS 应为 21 条，实际 ${client.size}`)
+// ── 1) 界面声明本身：20 张卡片（2026-10-25 移除 autoclaw-intl 与 lobsterai），取值都在已知集合内 ──
+assert.equal(client.size, 20, `CHANNEL_PROVIDERS 应为 20 条，实际 ${client.size}`)
 for (const [id, login] of client) {
   assert.ok(CLIENT_TO_TIER[login] !== undefined, `${id} 的 login 取值未知：${login}`)
 }

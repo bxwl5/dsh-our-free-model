@@ -43,7 +43,7 @@ const hooks = registerHooks({
     if (sourceMode && url.startsWith(sourceRoot) && url.endsWith('.ts')) {
       let source = fs.readFileSync(fileURLToPath(url), 'utf8')
       const name = url.slice(sourceRoot.length)
-      if (['buddy-adapter.ts', 'lobsterai-adapter.ts'].includes(name)) source += '\nexport { serializeMessages }\n'
+      if (name === 'buddy-adapter.ts') source += '\nexport { serializeMessages }\n'
       if (name === 'trae-adapter.ts') source += '\nexport { serializeTraeMessages as serializeMessages }\n'
       return { format: 'module', source: ts.transpileModule(source, {
         compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
@@ -115,8 +115,8 @@ try {
   apply(ctx, { disableOpencode: true })
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(adapters.has('opencode'), false, 'disabled account provider is not registered')
-  // 22 个账号渠道（OpenCode 由 disableOpencode 关闭不计入；已移除的粘贴型渠道不再注册）。
-  assert.equal(adapters.size, 21, 'all other account providers remain registered')
+  // 20 个账号渠道（OpenCode 由 disableOpencode 关闭不计入；LobsterAI 与 AutoClaw 国际版已于 2026-10-25 移除）。
+  assert.equal(adapters.size, 20, 'all other account providers remain registered')
   assert.equal(adapters.has('commandcode'), true, 'Command Code is registered')
   assert.equal(adapters.has('monkeycode'), true, 'MonkeyCode is registered')
   assert.equal(adapters.has('orcaterm'), true, 'OrcaTerm is registered')
@@ -182,9 +182,9 @@ try {
   // 卡片上的「模型数量」读 provider.status 的 models.total；kuku / autoclaw 必须能给出
   // 目录，否则卡片显示「—」——与其它渠道不一致（本次回归）。
   {
-    // 全部 22 个账号渠道都必须能报出模型目录 —— 缺 listAllModels 的渠道卡片会显示「—」。
+    // 全部 20 个账号渠道都必须能报出模型目录 —— 缺 listAllModels 的渠道卡片会显示「—」。
     const allProviders = [
-      'codearts', 'buddy', 'workbuddy', 'lobsterai', 'qoder', 'qodercn', 'trae', 'cline',
+      'codearts', 'buddy', 'workbuddy', 'qoder', 'qodercn', 'trae', 'cline',
       'gemini', 'loomy', 'raccoon', 'minimax', 'zcode', 'commandcode', 'officeace',
       'accio', 'accio-cn', 'orcaterm', 'kuku', 'monkeycode', 'autoclaw',
     ]
@@ -283,10 +283,10 @@ try {
     visit(node.children)
   }
   visit(tree)
-  assert.equal(cards.length, 21)
+  assert.equal(cards.length, 20)
   assert.equal(cards.includes('opencode'), false)
   assert.deepEqual([...cards].sort(), [...adapters.keys()].sort(), 'UI and mounted account providers agree')
-  console.log('ok  actual channel page: 21 account cards, OpenCode removed')
+  console.log('ok  actual channel page: 20 account cards, OpenCode removed')
   await verifyChannelModelActions()
   await verifyChannelCreditsUi()
   console.log('ok  共享渠道余额（13 条额度契约）：能力、失败原因、重试、签到反馈和请求交错')
@@ -403,7 +403,7 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   const options = { model: 'fixture-model', messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }] }
   const shared = await import('../vendor/channel-pack/src/openai-compat.ts')
   for (const [file, provider] of [
-    ['openai-compat', 'shared'], ['buddy-adapter', 'buddy'], ['lobsterai-adapter', 'lobsterai'],
+    ['openai-compat', 'shared'], ['buddy-adapter', 'buddy'],
     ['trae-adapter', 'trae'], ['llm-adapter', 'codearts'],
   ]) {
     const module = await import(new URL(`../vendor/channel-pack/src/${file}.ts`, import.meta.url))

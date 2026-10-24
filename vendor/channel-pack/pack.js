@@ -11156,8 +11156,8 @@ var require_socks5_client = __commonJS({
           return;
         }
         if (reply2 !== REPLY_CODES.SUCCEEDED) {
-          const errorMessage6 = this.getReplyErrorMessage(reply2);
-          throw new Socks5ProxyError(`SOCKS5 connection failed: ${errorMessage6}`, `UND_ERR_SOCKS5_REPLY_${reply2}`);
+          const errorMessage5 = this.getReplyErrorMessage(reply2);
+          throw new Socks5ProxyError(`SOCKS5 connection failed: ${errorMessage5}`, `UND_ERR_SOCKS5_REPLY_${reply2}`);
         }
         let boundAddress;
         let offset = 4;
@@ -28374,7 +28374,7 @@ function buildGenerateBody(options) {
     contents.push({ role: "user", parts: [{ text: options.system.trim() }] });
   }
   for (const message2 of options.messages) {
-    const text = contentToText11(message2.content);
+    const text = contentToText10(message2.content);
     if (text.trim() === "") continue;
     contents.push({
       // harness 的 assistant → Gemini 的 model。
@@ -28421,7 +28421,7 @@ function parseAdkFrame(value) {
   if (texts.length > 0) return { kind: "delta", text: texts.join("") };
   return void 0;
 }
-function contentToText11(content) {
+function contentToText10(content) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   const parts = [];
@@ -28437,9 +28437,9 @@ function contentToText11(content) {
   return parts.join("\n");
 }
 async function createPkcePair() {
-  const { randomBytes: randomBytes15, createHash: createHash13 } = await import("node:crypto");
+  const { randomBytes: randomBytes15, createHash: createHash12 } = await import("node:crypto");
   const verifier = randomBytes15(32).toString("base64url");
-  const challenge = createHash13("sha256").update(verifier).digest("base64url");
+  const challenge = createHash12("sha256").update(verifier).digest("base64url");
   return { verifier, challenge };
 }
 function buildAccioAuthUrl(product, redirectUri, state, challenge) {
@@ -28614,9 +28614,9 @@ async function* streamChat4(fetcher, product, credential, options) {
   if (!isCredentialUsable5(credential)) {
     throw new Error("Accio\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
   }
-  const { createHash: createHash13, randomUUID: randomUUID18 } = await import("node:crypto");
-  const requestId = randomUUID18();
-  const sgK = createHash13("md5").update(requestId).digest("hex");
+  const { createHash: createHash12, randomUUID: randomUUID16 } = await import("node:crypto");
+  const requestId = randomUUID16();
+  const sgK = createHash12("md5").update(requestId).digest("hex");
   const response = await fetcher(`${product.llmBase}${ACCIO_GENERATE_PATH}?sg_k=${sgK}`, {
     method: "POST",
     headers: { ...accioHeaders(product), Accept: "text/event-stream" },
@@ -30841,10 +30841,10 @@ var init_webapi = __esm({
 });
 
 // vendor/channel-pack/src/oauth.ts
-import { createHash as createHash6, randomBytes as randomBytes5 } from "node:crypto";
+import { createHash as createHash5, randomBytes as randomBytes5 } from "node:crypto";
 function generatePkcePair() {
   const codeVerifier = randomBytes5(48).toString("base64url");
-  const codeChallenge = createHash6("sha256").update(codeVerifier).digest("base64url");
+  const codeChallenge = createHash5("sha256").update(codeVerifier).digest("base64url");
   return { codeVerifier, codeChallenge };
 }
 async function generateDpopKeyPair() {
@@ -31303,8 +31303,8 @@ var init_login = __esm({
 });
 
 // vendor/channel-pack/src/index.ts
-import { credentialRef as credentialRef16 } from "@deepseek-ai/dsh-credentials";
-import { LlmError as LlmError27 } from "@deepseek-ai/dsh-llm";
+import { credentialRef as credentialRef15 } from "@deepseek-ai/dsh-credentials";
+import { LlmError as LlmError26 } from "@deepseek-ai/dsh-llm";
 import Schema2 from "@deepseek-ai/schemastery";
 
 // vendor/channel-pack/src/llm-adapter.ts
@@ -31468,7 +31468,6 @@ var REF_PREFIX_TO_PROVIDER = [
   ["CODEARTS", "codearts"],
   ["BUDDY", "buddy"],
   ["WORKBUDDY", "workbuddy"],
-  ["LOBSTERAI", "lobsterai"],
   ["QODER", "qoder"],
   ["QODERCN", "qodercn"],
   ["TRAE", "trae"],
@@ -38303,1304 +38302,11 @@ function registerBuddyLlm(ctx, options) {
   return adapter;
 }
 
-// vendor/channel-pack/src/lobsterai-adapter.ts
-import {
-  LlmAdapter as LlmAdapter3,
-  LlmError as LlmError4,
-  ReasoningEffortId as ReasoningEffortId3
-} from "@deepseek-ai/dsh-llm";
-import { ToolCallId as ToolCallId3 } from "@deepseek-ai/dsh-llm";
-
-// vendor/channel-pack/src/lobsterai.ts
-import { createHash as createHash2 } from "node:crypto";
-var LOBSTERAI_EXCHANGE_PATH = "/api/auth/exchange";
-var LOBSTERAI_REFRESH_PATH = "/api/auth/refresh";
-var LOBSTERAI_MODELS_PATH = "/api/models/available";
-var LOBSTERAI_CHAT_PATH = "/api/proxy/v1/chat/completions";
-var LOBSTERAI_CALLBACK_PATH = "/auth/callback";
-var LOBSTERAI_REQUEST_TIMEOUT_MS = 3e4;
-var LOBSTERAI_LOGIN_TIMEOUT_MS = 10 * 60 * 1e3;
-var LOBSTERAI_VERSION_CACHE_TTL_MS = 12 * 60 * 60 * 1e3;
-function maskLobsteraiPhoneTail(value, visibleTail = 2) {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return trimmed;
-  const rebuild = (prefix, totalLength, tail) => {
-    const starCount = totalLength - prefix.length - tail.length;
-    return starCount < 0 ? trimmed : `${prefix}${"*".repeat(starCount)}${tail}`;
-  };
-  if (/^1\d{10}$/.test(trimmed)) {
-    return rebuild(trimmed.slice(0, 3), trimmed.length, trimmed.slice(-visibleTail));
-  }
-  const masked = /^(\d{3})(\*+)(\d+)$/.exec(trimmed);
-  if (masked !== null) {
-    const [, prefix, stars, suffix] = masked;
-    const totalLength = prefix.length + stars.length + suffix.length;
-    return rebuild(prefix, totalLength, suffix.slice(-visibleTail));
-  }
-  return trimmed;
-}
-function lobsteraiDisplayNickname(credential, fallbackId) {
-  const nickname = typeof credential?.nickname === "string" ? credential.nickname.trim() : "";
-  if (nickname.length === 0) return fallbackId;
-  return maskLobsteraiPhoneTail(nickname);
-}
-function readStringField2(source, key) {
-  const value = source[key];
-  if (typeof value === "string") return value;
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return "";
-}
-function readNumberField2(source, key) {
-  const value = source[key];
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && /^-?\d+(\.\d+)?$/.test(value.trim())) return Number(value);
-  return void 0;
-}
-function parseLobsteraiEnvelope(body) {
-  if (typeof body !== "object" || body === null) {
-    return { ok: false, code: -1, message: "\u54CD\u5E94\u4E0D\u662F JSON \u5BF9\u8C61" };
-  }
-  const record = body;
-  const code = readNumberField2(record, "code") ?? -1;
-  const message2 = readStringField2(record, "msg") || readStringField2(record, "message");
-  if (code !== 0) {
-    return { ok: false, code, message: message2.length > 0 ? message2 : `code=${code}` };
-  }
-  const data = record.data;
-  if (typeof data !== "object" || data === null || Array.isArray(data)) {
-    return {
-      ok: false,
-      code,
-      message: message2.length > 0 ? message2 : "data \u4E3A\u7A7A\uFF08accessToken \u53EF\u80FD\u5DF2\u5931\u6548\uFF09"
-    };
-  }
-  return { ok: true, data };
-}
-function lobsteraiCredentialExpiresAtMs(credential) {
-  const raw = credential.expires_at;
-  if (typeof raw === "string" && raw.length > 0) {
-    if (/^\d+$/.test(raw)) {
-      const value = Number(raw);
-      return value > 1e12 ? value : value * 1e3;
-    }
-    const parsed = Date.parse(raw);
-    if (!Number.isNaN(parsed)) return parsed;
-  }
-  return jwtExpiresAtMs(credential.access_token);
-}
-function isLobsteraiExpired(credential) {
-  const expiresAt = lobsteraiCredentialExpiresAtMs(credential);
-  return expiresAt === void 0 ? false : Date.now() >= expiresAt;
-}
-function isLobsteraiRefreshable(credential) {
-  return typeof credential.refresh_token === "string" && credential.refresh_token.length > 0;
-}
-function lobsteraiKeyfromBody(credential, clientVersion) {
-  const body = {
-    firstKeyfrom: credential.first_keyfrom ?? "",
-    // 直接用凭据里**存储的**值，不取当前时刻 —— 严格对齐 Go 的
-    // `KeyfromBody()`（`auth.go:37-50`）：它读的就是 `a.LatestKeyfrom`，
-    // 而 `RefreshToken`（`client.go:137-145`）从不更新该字段。
-    // 因此 Go 每次续期发的都是「登录时的那一刻」，本插件照做。
-    latestKeyfrom: credential.latest_keyfrom ?? "",
-    version: clientVersion
-  };
-  if (credential.uuid !== void 0 && credential.uuid.length > 0) body.uuid = credential.uuid;
-  if (credential.user_id !== void 0 && credential.user_id.length > 0) body.userId = credential.user_id;
-  return body;
-}
-function lobsteraiRefreshBody(credential, clientVersion) {
-  return {
-    ...lobsteraiKeyfromBody(credential, clientVersion),
-    refreshToken: credential.refresh_token
-  };
-}
-function parseLobsteraiTokenPayload(data) {
-  const user = typeof data.user === "object" && data.user !== null ? data.user : {};
-  const expiresIn = readNumberField2(data, "expiresIn");
-  return {
-    accessToken: readStringField2(data, "accessToken"),
-    refreshToken: readStringField2(data, "refreshToken"),
-    ...expiresIn === void 0 ? {} : { expiresIn },
-    userId: readStringField2(user, "id"),
-    yid: readStringField2(user, "yid"),
-    accountUserId: readStringField2(user, "userId"),
-    nickname: readStringField2(user, "nickname")
-  };
-}
-function resolveLobsteraiUid(payload) {
-  for (const candidate of [payload.userId, payload.accountUserId, payload.yid]) {
-    if (candidate !== void 0 && candidate.length > 0) return candidate;
-  }
-  return createHash2("sha256").update(payload.accessToken).digest("hex").slice(0, 16);
-}
-function buildLobsteraiCredential(payload, session) {
-  const expiresAt = payload.expiresIn !== void 0 && payload.expiresIn > 0 ? String(Date.now() + payload.expiresIn * 1e3) : (() => {
-    const exp = jwtExpiresAtMs(payload.accessToken);
-    return exp === void 0 ? "" : String(exp);
-  })();
-  const uid = resolveLobsteraiUid(payload);
-  return {
-    access_token: payload.accessToken,
-    refresh_token: payload.refreshToken,
-    expires_at: expiresAt,
-    uid,
-    user_id: payload.accountUserId !== void 0 && payload.accountUserId.length > 0 ? payload.accountUserId : payload.yid ?? "",
-    nickname: payload.nickname ?? "",
-    uuid: session.uuid,
-    first_keyfrom: session.firstKeyfrom,
-    latest_keyfrom: session.latestKeyfrom
-  };
-}
-function applyLobsteraiRefresh(previous, payload, nowMs = Date.now()) {
-  const expiresAt = payload.expiresIn !== void 0 && payload.expiresIn > 0 ? String(nowMs + payload.expiresIn * 1e3) : (() => {
-    const exp = jwtExpiresAtMs(payload.accessToken);
-    return exp === void 0 ? previous.expires_at ?? "" : String(exp);
-  })();
-  return {
-    ...previous,
-    access_token: payload.accessToken,
-    // refresh 响应可能不返回新 refreshToken（沿用旧的），不能覆盖成空串。
-    refresh_token: payload.refreshToken.length > 0 ? payload.refreshToken : previous.refresh_token,
-    expires_at: expiresAt
-  };
-}
-function lobsteraiAuthHeaders(credential, product, accept = "application/json") {
-  return {
-    Authorization: `Bearer ${credential.access_token}`,
-    Accept: accept,
-    "Content-Type": "application/json",
-    "User-Agent": product.userAgent
-  };
-}
-function lobsteraiChatHeaders(credential, product, clientVersion) {
-  return {
-    ...lobsteraiAuthHeaders(credential, product, "text/event-stream, application/json"),
-    "X-LobsterAI-Client-Capabilities": product.clientCapabilities,
-    "X-LobsterAI-Client-Version": clientVersion
-  };
-}
-function lobsteraiModelsHeaders(credential, product, clientVersion) {
-  return {
-    ...lobsteraiAuthHeaders(credential, product, "application/json"),
-    "X-LobsterAI-Client-Capabilities": product.clientCapabilities,
-    "X-LobsterAI-Client-Version": clientVersion
-  };
-}
-function lobsteraiAnonymousHeaders(product) {
-  return {
-    Accept: "application/json",
-    "Content-Type": "application/json",
-    "User-Agent": product.userAgent
-  };
-}
-function parseClientVersion(raw) {
-  if (typeof raw !== "string") return void 0;
-  const trimmed = raw.trim();
-  if (!/^(\d+(?:\.\d+)*)(?:-[0-9A-Za-z.-]+)?$/.test(trimmed)) return void 0;
-  return trimmed;
-}
-function parseClientVersionFromUpdate(body) {
-  if (typeof body !== "object" || body === null) return void 0;
-  const outer = body.data;
-  if (typeof outer !== "object" || outer === null) return void 0;
-  const value = outer.value;
-  if (typeof value !== "object" || value === null) return void 0;
-  return parseClientVersion(value.version);
-}
-var LobsteraiClientVersionResolver = class {
-  constructor(options = {}) {
-    this.options = options;
-  }
-  cached;
-  cachedAt = 0;
-  /**
-   * 解析当前客户端版本号。
-   *
-   * 顺序：进程内缓存（未过期）→ 请求上游更新接口 → 兜底常量。
-   *
-   * **失败不回退到抛错**（与 `sigin.py:73-76` 的「整个脚本放弃签到」不同）：
-   * 返回 `fallbackClientVersion` 并在返回值里标出 `source`，
-   * 让调用方能决定是否记日志。理由见 `LOBSTERAI_FALLBACK_CLIENT_VERSION` 说明。
-   */
-  async resolve(product) {
-    const now = this.options.now?.() ?? Date.now();
-    const ttl = this.options.ttlMs ?? LOBSTERAI_VERSION_CACHE_TTL_MS;
-    if (this.cached !== void 0 && now - this.cachedAt < ttl) {
-      return { version: this.cached, source: "cache" };
-    }
-    const fetched = this.options.fetcher ?? fetch;
-    try {
-      const response = await fetched(product.clientVersionApi, {
-        method: "GET",
-        headers: { Accept: "application/json", "User-Agent": product.userAgent },
-        signal: AbortSignal.timeout(LOBSTERAI_REQUEST_TIMEOUT_MS)
-      });
-      if (response.ok) {
-        const version = parseClientVersionFromUpdate(await response.json());
-        if (version !== void 0) {
-          this.cached = version;
-          this.cachedAt = now;
-          return { version, source: "remote" };
-        }
-      }
-    } catch {
-    }
-    return { version: product.fallbackClientVersion, source: "fallback" };
-  }
-  /** 清空缓存（测试与「强制刷新版本号」场景用）。 */
-  clear() {
-    this.cached = void 0;
-    this.cachedAt = 0;
-  }
-};
-
-// vendor/channel-pack/src/lobsterai-product.ts
-var LOBSTERAI_API_BASE = "https://lobsterai-server.youdao.com";
-var LOBSTERAI_PORTAL_BASE = "https://lobsterai.youdao.com";
-var LOBSTERAI_CLIENT_VERSION_API = "https://api-overmind.youdao.com/openapi/get/luna/hardware/lobsterai/prod/update";
-var LOBSTERAI_FALLBACK_CLIENT_VERSION = "2026.9.4";
-var LOBSTERAI_CLIENT_CAPABILITIES = "kimi-k3-agentic-v1,thinking-level-control-v1";
-var LOBSTERAI_USER_AGENT = "LobsterAI/0.1.0";
-var LOBSTERAI_FALLBACK_MODELS = [
-  { id: "deepseek-v4-flash", name: "deepseek-v4-flash", contextWindow: 131072 },
-  { id: "deepseek-v4-pro", name: "deepseek-v4-pro", contextWindow: 131072 },
-  { id: "MiniMax-M3", name: "MiniMax-M3", contextWindow: 131072 },
-  { id: "MiniMax-M2.7", name: "MiniMax-M2.7", contextWindow: 131072 },
-  { id: "qwen3.7-max", name: "qwen3.7-max", contextWindow: 131072 },
-  { id: "qwen3.7-plus", name: "qwen3.7-plus", contextWindow: 131072 },
-  { id: "qwen3.6-plus", name: "qwen3.6-plus", contextWindow: 131072 },
-  { id: "qwen3.5-plus-2026-04-20", name: "qwen3.5-plus-2026-04-20", contextWindow: 131072 },
-  { id: "kimi-k2.7-code", name: "kimi-k2.7-code", contextWindow: 131072 },
-  { id: "kimi-k2.7-code-highspeed", name: "kimi-k2.7-code-highspeed", contextWindow: 131072 },
-  { id: "kimi-k2.6", name: "kimi-k2.6", contextWindow: 131072 },
-  { id: "kimi-k2.5", name: "kimi-k2.5", contextWindow: 131072 },
-  { id: "doubao-seed-2-1-pro-260628", name: "doubao-seed-2-1-pro-260628", contextWindow: 131072 },
-  { id: "doubao-seed-2-1-turbo-260628", name: "doubao-seed-2-1-turbo-260628", contextWindow: 131072 },
-  { id: "doubao-seed-2-0-code-preview-260215", name: "doubao-seed-2-0-code-preview-260215", contextWindow: 131072 },
-  { id: "glm-5.2", name: "glm-5.2", contextWindow: 131072 },
-  { id: "glm-5.1", name: "glm-5.1", contextWindow: 131072 },
-  { id: "glm-5v-turbo", name: "glm-5v-turbo", contextWindow: 131072 },
-  { id: "glm-5", name: "glm-5", contextWindow: 131072 }
-];
-var LOBSTERAI = {
-  id: "lobsterai",
-  displayName: "LobsterAI (\u6709\u9053)",
-  portalBase: LOBSTERAI_PORTAL_BASE,
-  apiBase: LOBSTERAI_API_BASE,
-  clientVersionApi: LOBSTERAI_CLIENT_VERSION_API,
-  fallbackClientVersion: LOBSTERAI_FALLBACK_CLIENT_VERSION,
-  userAgent: LOBSTERAI_USER_AGENT,
-  clientCapabilities: LOBSTERAI_CLIENT_CAPABILITIES,
-  defaultCredentialRef: "LOBSTERAI_ACCESS_TOKEN",
-  fallbackModels: LOBSTERAI_FALLBACK_MODELS
-};
-var ALL_LOBSTERAI_PRODUCTS = [LOBSTERAI];
-function lobsteraiProductById(id) {
-  return ALL_LOBSTERAI_PRODUCTS.find((product) => product.id === id);
-}
-
-// vendor/channel-pack/src/lobsterai-errors.ts
-var LOBSTERAI_HARD_CREDIT_MARKERS = [
-  "insufficient credit",
-  "no credit",
-  "credit exhausted",
-  "out of credit",
-  "quota exceeded",
-  "quota exhaust",
-  "payment required",
-  "credit not enough",
-  "not enough credit",
-  "freecreditsused",
-  "free credits used",
-  // 2026-09 补充（真实缺陷，用户报障）：额度耗尽的**实际文案**是
-  // 「免费额度已用完，请升级套餐」，而早期表里只有「额度用尽」「积分用完」
-  // ——「已用完」与「用尽」字面不同，于是这个最主要的失败模式判成 `none`
-  // （不换号、不记徽章），用户看到「一个账号用完出错但没有切换」。
-  // 英文侧同理补上同类文案。
-  "free quota",
-  "quota used up",
-  "upgrade your plan",
-  "upgrade to continue",
-  "\u79EF\u5206\u4E0D\u8DB3",
-  "\u989D\u5EA6\u4E0D\u8DB3",
-  "\u4F59\u989D\u4E0D\u8DB3",
-  "\u79EF\u5206\u7528\u5B8C",
-  "\u989D\u5EA6\u7528\u5C3D",
-  "\u6CA1\u6709\u79EF\u5206",
-  "\u79EF\u5206\u8017\u5C3D",
-  "\u989D\u5EA6\u5DF2\u7528\u5B8C",
-  "\u5347\u7EA7\u5957\u9910"
-];
-var LOBSTERAI_SESSION_DEAD_MARKERS = [
-  "40100",
-  "40101",
-  "token rejected",
-  "refresh token was rejected"
-];
-var HTTP_PAYMENT_REQUIRED = 402;
-var HTTP_TOO_MANY_REQUESTS = 429;
-var HTTP_NOT_FOUND = 404;
-function classifyLobsteraiError(status, body) {
-  if (status === HTTP_PAYMENT_REQUIRED) return "hard-credit";
-  const lower = body.toLowerCase();
-  for (const marker of LOBSTERAI_HARD_CREDIT_MARKERS) {
-    if (lower.includes(marker.toLowerCase()) || body.includes(marker)) return "hard-credit";
-  }
-  for (const marker of LOBSTERAI_SESSION_DEAD_MARKERS) {
-    if (body.includes(marker)) return "session-dead";
-  }
-  if (status === HTTP_TOO_MANY_REQUESTS) return "soft-rate";
-  if (status === HTTP_NOT_FOUND) return "not-found";
-  if (status >= 500) return "server";
-  if (status >= 400) return "client";
-  return "none";
-}
-function classifyLobsteraiStreamError(message2) {
-  const byKeyword = classifyLobsteraiError(200, message2);
-  return byKeyword === "none" ? "client" : byKeyword;
-}
-function shouldRotateLobsteraiAccount(kind) {
-  return kind !== "none";
-}
-function recordsLobsteraiRateLimit(kind) {
-  return kind === "hard-credit" || kind === "soft-rate" || kind === "not-found";
-}
-function isLobsteraiTerminalError(kind) {
-  return kind === "session-dead";
-}
-
-// vendor/channel-pack/src/lobsterai-adapter.ts
-var EFFORT_NAMES2 = {
-  off: "Off",
-  minimal: "Minimal",
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "XHigh",
-  max: "Max"
-};
-var LOBSTERAI_RATE_LIMIT_FALLBACK_MS = 36e5;
-var LOBSTERAI_MAX_ROTATE = 3;
-var THINKING_LEVELS = /* @__PURE__ */ new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
-var OPENCLAW_THINKING_LEVELS = /* @__PURE__ */ new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
-function parseLobsteraiThinkingConfig(value) {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return void 0;
-  const record = value;
-  const rawOptions = record.options;
-  if (!Array.isArray(rawOptions) || rawOptions.length === 0) return void 0;
-  const options = [];
-  const seenLevels = /* @__PURE__ */ new Set();
-  const seenWireLevels = /* @__PURE__ */ new Set();
-  for (const raw of rawOptions) {
-    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return void 0;
-    const entry = raw;
-    const level = typeof entry.level === "string" ? entry.level : "";
-    const openclawLevel = typeof entry.openclawLevel === "string" ? entry.openclawLevel : "";
-    if (!THINKING_LEVELS.has(level) || !OPENCLAW_THINKING_LEVELS.has(openclawLevel)) return void 0;
-    if (seenLevels.has(level) || seenWireLevels.has(openclawLevel)) return void 0;
-    if (level === "off" !== (openclawLevel === "off")) return void 0;
-    seenLevels.add(level);
-    seenWireLevels.add(openclawLevel);
-    options.push({ level, openclawLevel });
-  }
-  if (options.length === 1 && options[0].level === "off") return void 0;
-  const defaultLevel = typeof record.defaultLevel === "string" ? record.defaultLevel : "";
-  if (!seenLevels.has(defaultLevel)) return void 0;
-  return { options, defaultLevel };
-}
-function readLobsteraiModelArray(body) {
-  if (typeof body !== "object" || body === null) return [];
-  const record = body;
-  if ((readNumberField2(record, "code") ?? -1) !== 0) return [];
-  const data = record.data;
-  if (Array.isArray(data)) return data;
-  if (typeof data === "object" && data !== null) {
-    const nested = data.data;
-    if (Array.isArray(nested)) return nested;
-  }
-  return [];
-}
-function parseLobsteraiModels(body) {
-  const raw = readLobsteraiModelArray(body);
-  const models = [];
-  for (const item of raw) {
-    if (typeof item !== "object" || item === null) continue;
-    const record = item;
-    const id = readStringField2(record, "modelId");
-    if (id.length === 0) continue;
-    const name2 = readStringField2(record, "modelName");
-    const model = { id, name: name2.length > 0 ? name2 : id };
-    const contextWindow = readNumberField2(record, "contextWindow");
-    if (contextWindow !== void 0 && contextWindow > 0) model.contextWindow = contextWindow;
-    const maxTokens = readNumberField2(record, "maxTokens");
-    if (maxTokens !== void 0 && maxTokens > 0) model.maxTokens = maxTokens;
-    if (typeof record.supportsImage === "boolean") model.supportsImage = record.supportsImage;
-    if (typeof record.supportsThinking === "boolean") model.supportsThinking = record.supportsThinking;
-    const thinkingConfig = parseLobsteraiThinkingConfig(record.thinkingConfig);
-    if (thinkingConfig !== void 0) model.thinkingConfig = thinkingConfig;
-    if (Array.isArray(record.requestCapabilities)) {
-      const capabilities = record.requestCapabilities.filter((c) => typeof c === "string");
-      if (capabilities.length > 0) model.requestCapabilities = capabilities;
-    }
-    const description = readStringField2(record, "description");
-    if (description.length > 0) model.description = description;
-    const costMultiplier = readNumberField2(record, "costMultiplier");
-    if (costMultiplier !== void 0 && costMultiplier > 0) model.costMultiplier = costMultiplier;
-    models.push(model);
-  }
-  return models;
-}
-function buildLobsteraiModelsQuery(credential, clientVersion) {
-  const body = lobsteraiKeyfromBody(credential, clientVersion);
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(body)) {
-    if (typeof value === "string" && value.length > 0) params.set(key, value);
-  }
-  return params.toString();
-}
-function contentToText3(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content.filter((block) => typeof block === "object" && block !== null && block.type === "text").map((block) => String(block.text)).join("");
-}
-var TOOL_RESULT_IMAGE_TEXT2 = "Attached image(s) from tool result:";
-function userContentParts2(content, imageUrls) {
-  const parts = [];
-  let hasImage = false;
-  for (const raw of content) {
-    if (typeof raw !== "object" || raw === null) continue;
-    const block = raw;
-    if (block.type === "text") {
-      const text = String(block.text ?? "");
-      if (text.length > 0) parts.push({ type: "text", text });
-      continue;
-    }
-    if (block.type === "image") {
-      hasImage = true;
-      const url = block.attachment?.attachmentId === void 0 ? void 0 : imageUrls.get(String(block.attachment.attachmentId));
-      parts.push(url === void 0 ? { type: "text", text: "[image unavailable]" } : { type: "image_url", image_url: { url } });
-      continue;
-    }
-    if (block.type === "tool-result" && Array.isArray(block.content)) {
-      const inner = userContentParts2(block.content, imageUrls);
-      if (inner !== void 0) {
-        hasImage = true;
-        parts.push(...inner);
-      } else {
-        const text = contentToText3(block.content);
-        if (text.length > 0) parts.push({ type: "text", text });
-      }
-    }
-  }
-  return hasImage && parts.length > 0 ? parts : void 0;
-}
-function collectImages2(content, refs) {
-  for (const raw of content) {
-    if (typeof raw !== "object" || raw === null) continue;
-    const block = raw;
-    if (block.type === "image" && typeof block.attachment?.attachmentId === "string") {
-      refs.set(block.attachment.attachmentId, block.attachment);
-      continue;
-    }
-    if (block.type === "tool-result" && Array.isArray(block.content)) collectImages2(block.content, refs);
-  }
-}
-function serializeMessages3(messages, imageUrls) {
-  const wire = [];
-  const normalized = normalizeHarnessMessages(messages);
-  const { keepCallIds, keepResultIds } = resolveToolPairing(normalized);
-  let pendingToolImages = [];
-  const flushToolImages = () => {
-    if (pendingToolImages.length === 0) return;
-    wire.push({
-      role: "user",
-      content: [{ type: "text", text: TOOL_RESULT_IMAGE_TEXT2 }, ...pendingToolImages]
-    });
-    pendingToolImages = [];
-  };
-  for (const message2 of normalized) {
-    if (message2.role === "assistant") {
-      const content2 = stripCourseLeakFromHistoryContent(
-        message2.role,
-        Array.isArray(message2.content) ? message2.content : []
-      );
-      const toolCalls = content2.filter((block) => typeof block === "object" && block !== null && block.type === "tool-call").filter((block) => keepCallIds.has(String(block.id))).map((block) => ({
-        id: String(block.id),
-        type: "function",
-        function: { name: String(block.name), arguments: normalizeToolArguments(String(block.arguments)) }
-      }));
-      const reasoning = content2.filter((block) => typeof block === "object" && block !== null && block.type === "reasoning").map((block) => String(block.text)).join("");
-      const text2 = contentToText3(content2);
-      if (text2.trim().length === 0 && toolCalls.length === 0) continue;
-      flushToolImages();
-      wire.push({
-        role: "assistant",
-        // 正文为空且有工具调用时 content 必须为 null（OpenAI 规范）。
-        content: text2.length === 0 && toolCalls.length > 0 ? null : text2,
-        ...reasoning.length > 0 ? { reasoning_content: reasoning } : {},
-        ...toolCalls.length > 0 ? { tool_calls: toolCalls } : {}
-      });
-      continue;
-    }
-    if (message2.role === "system") {
-      flushToolImages();
-      wire.push({ role: "system", content: contentToText3(message2.content) });
-      continue;
-    }
-    const content = Array.isArray(message2.content) ? message2.content : [];
-    const toolResults = content.filter((block) => typeof block === "object" && block !== null && block.type === "tool-result");
-    const text = contentToText3(message2.content);
-    const regular = content.filter((block) => !(typeof block === "object" && block !== null && block.type === "tool-result"));
-    const parts = imageUrls === void 0 ? void 0 : userContentParts2(regular, imageUrls);
-    if (parts !== void 0) {
-      flushToolImages();
-      wire.push({ role: "user", content: parts });
-    } else if (text.trim().length > 0) {
-      flushToolImages();
-      wire.push({ role: "user", content: text });
-    }
-    for (const result of toolResults) {
-      if (!keepResultIds.has(String(result.toolCallId))) continue;
-      let resultText = "(no output)";
-      if (imageUrls !== void 0 && Array.isArray(result.content)) {
-        const resultParts = userContentParts2(result.content, imageUrls);
-        if (resultParts !== void 0) {
-          pendingToolImages.push(...resultParts.filter((part) => part.type !== "text"));
-          const joined = resultParts.filter((part) => part.type === "text").map((part) => String(part.text)).join("");
-          if (joined.length > 0) resultText = joined;
-        } else {
-          resultText = contentToText3(result.content) || "(no output)";
-        }
-      } else {
-        resultText = contentToText3(result.content) || "(no output)";
-      }
-      wire.push({
-        role: "tool",
-        tool_call_id: String(result.toolCallId),
-        content: resultText
-      });
-    }
-  }
-  flushToolImages();
-  return wire;
-}
-function errorMessage3(error) {
-  if (error instanceof Error) return error.message;
-  try {
-    return String(error);
-  } catch {
-    return "unknown error";
-  }
-}
-var LobsteraiStreamError = class extends LlmError4 {
-  constructor(message2, kind, detail, options) {
-    super(message2, kind === "hard-credit" ? "QUOTA_EXCEEDED" : "SERVER", options);
-    this.kind = kind;
-    this.detail = detail;
-  }
-};
-function buildLobsteraiFailure(input) {
-  const { kind, status, text, model, fromStream, exhausted } = input;
-  const detail = fromStream ? text : errorDetail3(text);
-  if (kind === "hard-credit") {
-    const prefix = exhausted ? `lobsterai: \u6A21\u578B ${model} \u6240\u6709\u8D26\u53F7\u5747\u4E0D\u53EF\u7528` : "lobsterai: \u79EF\u5206\u4E0D\u8DB3";
-    return new LlmError4(`${prefix}\uFF08${detail}\uFF09`, "QUOTA_EXCEEDED", { status });
-  }
-  if (exhausted) {
-    return new LlmError4(
-      `lobsterai: \u6A21\u578B ${model} \u6240\u6709\u8D26\u53F7\u5747\u4E0D\u53EF\u7528\uFF08${detail}\uFF09`,
-      fromStream ? "SERVER" : httpErrorCode3(status),
-      { status }
-    );
-  }
-  return new LlmError4(`lobsterai: ${detail}`, fromStream ? "SERVER" : httpErrorCode3(status), { status });
-}
-function errorDetail3(body) {
-  try {
-    const data = JSON.parse(body);
-    const parts = [
-      typeof data.code === "number" || typeof data.code === "string" ? `code=${String(data.code)}` : void 0,
-      typeof data.message === "string" ? data.message : void 0,
-      typeof data.msg === "string" ? data.msg : void 0
-    ].filter((value) => value !== void 0);
-    if (parts.length > 0) return parts.join(" ");
-  } catch {
-  }
-  return body;
-}
-function httpErrorCode3(status) {
-  if (status === 401 || status === 403) return "AUTH";
-  if (status === 429) return "RATE_LIMIT";
-  if (status === 400) return "INVALID_REQUEST";
-  if (status >= 500) return "SERVER";
-  return `HTTP_${status}`;
-}
-function isTransportError3(error) {
-  if (!(error instanceof Error)) return false;
-  const message2 = error.message.toLowerCase();
-  if (message2.includes("terminated")) return true;
-  if (error.name.startsWith("UND_ERR_")) return true;
-  if (message2.includes("fetch failed")) return true;
-  if (message2.includes("econnreset") || message2.includes("epipe") || message2.includes("socket hang up")) return true;
-  return false;
-}
-function resolveFirstTokenTimeoutMs3() {
-  return Number.parseInt(process.env.DSH_LOBSTERAI_SSE_FIRST_TOKEN_TIMEOUT_MS ?? "", 10) || 12e4;
-}
-function resolveChunkTimeoutMs3() {
-  return Number.parseInt(process.env.DSH_LOBSTERAI_SSE_CHUNK_TIMEOUT_MS ?? "", 10) || 12e4;
-}
-var LobsteraiAdapter = class extends LlmAdapter3 {
-  constructor(options) {
-    super();
-    this.options = options;
-    this.product = options.product ?? LOBSTERAI;
-    this.fetchImpl = options.fetchImpl ?? fetch;
-    this.fallbackIndex = new Map(
-      (this.product.fallbackModels ?? []).map((model) => [model.id, model])
-    );
-  }
-  product;
-  fetchImpl;
-  /** 动态模型缓存（首次 listModels 成功后填充）。 */
-  remoteModels;
-  /**
-   * 目录加载闸门：并发去重 + 失败/空结果冷却。
-   * 依据见 `src/remote-catalog-gate.ts`（首屏「加载模型巨长」的实测归因）。
-   */
-  catalogGate = new RemoteCatalogGate();
-  /** 远端下发的模型元数据（id → 条目），listModels/resolveModel 共用。 */
-  remoteMeta = /* @__PURE__ */ new Map();
-  /** 产品级兜底模型索引（`product.fallbackModels` 的 id → 条目）。 */
-  fallbackIndex;
-  /**
-   * 描述本适配器拥有的 provider 路由。
-   *
-   * 对入参做防御性归一化：DSH 会强制校验 `info.id === provider`，而模型设置页
-   * 会用该 id 计算 `deriveKeyRef(provider)`（内部调 `provider.toUpperCase()`）。
-   * 一旦 provider 不是字符串（上游传入 undefined），直接回退到本产品的 id，
-   * 避免 `undefined.toUpperCase is not a function` 在客户端炸开。
-   */
-  providerInfo(provider) {
-    const id = typeof provider === "string" && provider.length > 0 ? provider : this.product.id;
-    return { id, name: this.product.displayName };
-  }
-  /**
-   * 懒加载远端模型目录（仅拉取一次）。
-   *
-   * `listModels` 与 `resolveModel` 共用：`resolveModel` 可能先于 `listModels`
-   * 被调用（如直接从历史会话进入），此时同样需要触发一次拉取。
-   */
-  async ensureRemoteModels() {
-    const fetchRemote = this.options.fetchRemoteModels;
-    if (this.remoteModels !== void 0 || fetchRemote === void 0) return;
-    await this.catalogGate.run(async () => {
-      const models = await fetchRemote();
-      if (models.length === 0) return false;
-      this.remoteModels = models;
-      this.remoteMeta = new Map(models.map((model) => [model.id, model]));
-      return true;
-    });
-  }
-  /**
-   * 模型接受的输入模态。
-   *
-   * 远端 `supportsImage` 是权威来源（实测 26 个模型里 19 个为 true）。
-   * 远端未声明时**保守报 text**：宁可少报能力（用户改用文本描述），
-   * 也不要报一个服务端不认的模态（请求会以 400 失败）。
-   */
-  inputModalitiesFor(model) {
-    return this.remoteMeta.get(model)?.supportsImage === true ? ["text", "image"] : ["text"];
-  }
-  /**
-   * 模型的上下文窗口：远端权威值优先，兜底表估值次之。
-   *
-   * 兜底表统一写 131072，而实测远端多数模型返回 1000000 —— 采信估值会让
-   * DSH 在远未用满窗口时就触发上下文压缩。
-   */
-  contextWindowFor(model) {
-    return this.remoteMeta.get(model)?.contextWindow ?? this.fallbackIndex.get(model)?.contextWindow;
-  }
-  /**
-   * 模型可选的思考档位。
-   *
-   * ## `id` 与 `name` 的来源**不同**（这是本方法最容易搞错的地方）
-   *
-   * - **`id` = `openclawLevel`（wire 值）**：DSH 会把选中的 id 原样写进请求体的
-   *   `reasoning_effort`，故必须是服务端认的取值。⚠️ wire 侧**没有 `max`** ——
-   *   实测直接发 `reasoning_effort: 'max'` 与不带参数**无差异**（走服务端默认），
-   *   发 `'xhigh'` 才真正触发最高档。
-   * - **`name` = `level`（产品侧档位名）**：纯展示。远端把 `level: 'max'` 映射到
-   *   `openclawLevel: 'xhigh'`，用户在产品侧看到的就是 **Max**。
-   *
-   * ⚠️ **历史缺陷**（用户报障 / Issue #IKHCZF）：早期用 `openclawLevel` 同时查
-   * 展示名表，于是最强档显示成 **XHigh**，与产品侧命名 **Max** 不一致 ——
-   * 用户按 IDE 里的「Max」找，界面上却只有「XHigh」。
-   * 根因是把「wire 值」与「展示名」当成同一个概念。
-   *
-   * 无 `thinkingConfig` 的模型不声明 `reasoning`，UI 显示「当前模型未提供推理等级」，
-   * 而不是给一个发了也没用的档位。
-   */
-  reasoningFor(model) {
-    const config = this.remoteMeta.get(model)?.thinkingConfig;
-    if (config === void 0) return void 0;
-    const defaultWire = config.options.find((option) => option.level === config.defaultLevel)?.openclawLevel;
-    return {
-      efforts: config.options.map((option) => ({
-        id: ReasoningEffortId3(option.openclawLevel),
-        // 展示名优先用**产品侧 `level`**（含 `max`），再回退到按 wire 值查表。
-        // 回退分支只为兼容「上游只给 wire 值」的异常形态，正常不会走到。
-        name: EFFORT_NAMES2[option.level] ?? EFFORT_NAMES2[option.openclawLevel] ?? option.level
-      })),
-      ...defaultWire !== void 0 ? { defaultEffort: ReasoningEffortId3(defaultWire) } : {}
-    };
-  }
-  /**
-   * 静态兜底模型目录。
-   *
-   * **不做 buddy 那样的「以兜底表为准」裁剪**（`reconcileWithFallback`）：
-   * LobsterAI 的远端接口是**权威的**（产品兜底表本身就是从它实测抄来的），
-   * 远端可用时应完全采信，兜底只在远端整体失败时顶替。
-   *
-   * ⚠️ 兜底表**不含 `costMultiplier`**：它是编译期快照，而价格会变；
-   * 远端整体失败时拿不到权威倍率，此时**不显示**倍率（不猜）。
-   */
-  staticFallbackModels() {
-    return this.product.fallbackModels.map((model) => ({
-      id: model.id,
-      name: model.name,
-      contextWindow: model.contextWindow
-    }));
-  }
-  /**
-   * 完整模型目录（**不应用用户黑名单**），含最终展示名（倍率）。
-   *
-   * 设置页必须渲染被关闭的模型（否则用户无法重新打开），而 `listModels` 会按
-   * 黑名单过滤掉它们 —— RPC 层只能凭裸 id 补回，展示名与倍率随之丢失
-   * （用户报障：「关闭的就没有显示倍率」）。详见 `model.list` 端点的注释。
-   */
-  listAllModels() {
-    const source = this.remoteModels ?? this.staticFallbackModels();
-    return source.map((model) => ({ id: model.id, name: displayNameFor2(model) }));
-  }
-  async listModels(_provider) {
-    if (!await providerCatalogVisible(this.options.accountPool, this.product.id)) return [];
-    await this.ensureRemoteModels();
-    const source = this.remoteModels ?? this.staticFallbackModels();
-    const disabled = this.options.accountPool?.disabledModelsFor(this.product.id);
-    const listed = disabled === void 0 || disabled.size === 0 ? source : source.filter((model) => !disabled.has(model.id));
-    return listed.map((model) => ({
-      provider: this.product.id,
-      id: model.id,
-      // 倍率写进 name（**不是** description）：composer 的模型切换菜单只渲染
-      // `name`，description 仅用于 /model 弹窗。见 displayNameFor 的说明。
-      name: displayNameFor2(model),
-      ...model.description !== void 0 ? { description: model.description } : {},
-      // 远端 supportsImage 权威；未声明时保守报 text（见 inputModalitiesFor）。
-      inputModalities: this.inputModalitiesFor(model.id)
-    }));
-  }
-  async resolveModel(provider, model, _signal) {
-    await this.ensureRemoteModels();
-    const remoteName = this.remoteMeta.get(model)?.name;
-    const resolved = {
-      provider,
-      id: model,
-      name: remoteName ?? this.fallbackIndex.get(model)?.name ?? model,
-      inputModalities: this.inputModalitiesFor(model)
-    };
-    const contextWindow = this.contextWindowFor(model);
-    if (contextWindow !== void 0) resolved.context = { contextWindow };
-    const maxTokens = this.remoteMeta.get(model)?.maxTokens;
-    if (maxTokens !== void 0) resolved.defaultMaxTokens = maxTokens;
-    const reasoning = this.reasoningFor(model);
-    if (reasoning !== void 0) resolved.reasoning = reasoning;
-    return resolved;
-  }
-  /**
-   * 兼容 0.1.1-rc.2：新版 `LlmRuntime.prepareCall()` 会调用
-   * `registration.adapter.prepareCall(...)`，而本仓库链接的 dsh-llm 副本
-   * 基类尚未提供该方法，缺少时会在每轮请求开始时抛
-   * `registration.adapter.prepareCall is not a function`。
-   * 与 `BuddyAdapter` 同款 shim。
-   */
-  async prepareCall(provider, model, signal) {
-    return {
-      model: await this.resolveModel(provider, model, signal),
-      stream: (options) => this.stream(options)
-    };
-  }
-  /** 解析客户端版本号（未注入时用兜底值）。 */
-  async clientVersion() {
-    if (this.options.resolveClientVersion === void 0) return this.product.fallbackClientVersion;
-    try {
-      return await this.options.resolveClientVersion();
-    } catch {
-      return this.product.fallbackClientVersion;
-    }
-  }
-  async *stream(options) {
-    await this.ensureRemoteModels();
-    const imageRefs = /* @__PURE__ */ new Map();
-    for (const message2 of options.messages) {
-      if (Array.isArray(message2.content)) collectImages2(message2.content, imageRefs);
-    }
-    let imageUrls;
-    if (imageRefs.size > 0) {
-      if (!this.inputModalitiesFor(options.model).includes("image")) {
-        throw new LlmError4(
-          `lobsterai: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`,
-          "UNSUPPORTED_CONTENT"
-        );
-      }
-      if (this.options.readImage === void 0) {
-        throw new LlmError4("lobsterai: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
-      }
-      imageUrls = /* @__PURE__ */ new Map();
-      const readImage = this.options.readImage;
-      for (const [id, ref] of imageRefs) {
-        const projected = await projectRequestImage(ref, {
-          readImageRequest: this.options.readImageRequest,
-          pixelBudget: this.product.imagePixelBudget,
-          maxBytes: this.product.imageMaxBytes
-        });
-        const image = projected ?? await readImage(ref);
-        if (image === void 0) continue;
-        imageUrls.set(id, `data:${image.mediaType};base64,${Buffer.from(image.data).toString("base64")}`);
-      }
-    }
-    let credential = await this.options.resolveCredential(options.model);
-    if (credential === void 0 || isLobsteraiExpired(credential)) {
-      await this.options.refresh();
-      credential = await this.options.resolveCredential(options.model);
-    }
-    if (credential === void 0 || credential.access_token.length === 0) {
-      throw new LlmError4("lobsterai: no usable credential; log in first", "MISSING_CREDENTIAL");
-    }
-    let currentAccountId = "";
-    if (this.options.accountPool) {
-      try {
-        currentAccountId = await this.options.accountPool.findAccountIdByCredential(
-          this.product.id,
-          credential.access_token
-        );
-        if (currentAccountId === "") {
-          console.warn("[lobsterai] \u5F53\u524D\u51ED\u636E\u672A\u5339\u914D\u5230\u8D26\u53F7\u6C60\u6761\u76EE\uFF0C\u9650\u6D41\u8BB0\u5F55\u5C06\u88AB\u8DF3\u8FC7");
-        }
-        if (currentAccountId !== "") reportLedgerAccount(this.product.id, currentAccountId);
-      } catch (error) {
-        console.warn("[lobsterai] \u8D26\u53F7\u5339\u914D\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u672C\u6B21\u8BF7\u6C42\uFF09:", error);
-      }
-    }
-    const messages = serializeMessages3(options.messages, imageUrls);
-    if (options.system !== void 0 && options.system.length > 0) {
-      messages.unshift({ role: "system", content: options.system });
-    }
-    const tools = options.tools?.map((tool) => ({
-      type: "function",
-      function: { name: tool.name, description: tool.description, parameters: tool.parameters }
-    }));
-    const bodyObj = {
-      model: options.model,
-      messages,
-      // **恒为 true**：上游只支持 SSE，stream:false 会返回 500
-      // （`client.go:168-195` prepareChatBody 强制改写）。
-      stream: true
-    };
-    if (tools !== void 0 && tools.length > 0) bodyObj.tools = tools;
-    if (options.temperature !== void 0) bodyObj.temperature = options.temperature;
-    if (options.maxTokens !== void 0) bodyObj.max_tokens = options.maxTokens;
-    if (options.stop !== void 0 && options.stop.length > 0) bodyObj.stop = options.stop;
-    if (options.reasoningEffort !== void 0) {
-      bodyObj.reasoning_effort = options.reasoningEffort;
-    }
-    const body = JSON.stringify(bodyObj);
-    let response = await this.send(credential, body, options);
-    if (!response.ok && (response.status === 401 || response.status === 403)) {
-      await this.options.refresh();
-      const refreshed = await this.options.resolveCredential(options.model);
-      if (refreshed === void 0 || refreshed.access_token.length === 0) {
-        throw new LlmError4("lobsterai: credential expired and refresh failed", "AUTH", { status: response.status });
-      }
-      credential = refreshed;
-      response = await this.send(credential, body, options);
-    }
-    const tried = /* @__PURE__ */ new Set();
-    if (currentAccountId) tried.add(currentAccountId);
-    let lastStatus = response.status;
-    let lastKind = "none";
-    let lastText = "";
-    let lastFromStream = false;
-    for (let attempt = 0; ; attempt++) {
-      if (response.ok) {
-        let emitted = false;
-        try {
-          for await (const chunk of this.consumeSse(response, options)) {
-            emitted = true;
-            yield chunk;
-          }
-          return;
-        } catch (error) {
-          if (!(error instanceof LobsteraiStreamError)) throw error;
-          if (emitted) throw error;
-          lastFromStream = true;
-          lastStatus = response.status;
-          lastKind = error.kind;
-          lastText = error.detail;
-        }
-      } else {
-        lastFromStream = false;
-        lastText = await response.text().catch(() => "");
-        lastStatus = response.status;
-        lastKind = classifyLobsteraiError(lastStatus, lastText);
-      }
-      if (currentAccountId && recordsLobsteraiRateLimit(lastKind)) {
-        const parsed = parseRateLimitError(lastText, options.model);
-        await this.options.accountPool.updateModelRateLimit(
-          currentAccountId,
-          parsed?.modelId ?? options.model,
-          // `parseRateLimitError` 内部要求错误体是 JSON（它 `JSON.parse` 取 msg），
-          // 而部分上游/网关会用**纯文本** 429。此时它返回 null，这里用
-          // 「1 小时后」兜底 —— 与它自己 JSON 路径下的 fallback 同一口径，
-          // 也与本插件「标记只是快照、可主动重测」的语义一致。
-          parsed?.resetTimeMs ?? Date.now() + LOBSTERAI_RATE_LIMIT_FALLBACK_MS
-        );
-      }
-      if (!this.options.accountPool || !shouldRotateLobsteraiAccount(lastKind)) {
-        throw buildLobsteraiFailure({
-          kind: lastKind,
-          status: lastStatus,
-          text: lastText,
-          model: options.model,
-          fromStream: lastFromStream,
-          exhausted: false
-        });
-      }
-      if (attempt >= LOBSTERAI_MAX_ROTATE - 1) {
-        throw buildLobsteraiFailure({
-          kind: lastKind,
-          status: lastStatus,
-          text: lastText,
-          model: options.model,
-          fromStream: lastFromStream,
-          exhausted: true
-        });
-      }
-      const next = await this.options.accountPool.getAvailableAccount(
-        this.product.id,
-        options.model,
-        tried
-      );
-      if (!next || tried.has(next.entry.id)) {
-        throw buildLobsteraiFailure({
-          kind: lastKind,
-          status: lastStatus,
-          text: lastText,
-          model: options.model,
-          fromStream: lastFromStream,
-          exhausted: true
-        });
-      }
-      tried.add(next.entry.id);
-      credential = next.credential;
-      currentAccountId = next.entry.id;
-      response = await this.send(credential, body, options);
-    }
-  }
-  /** 发起一次 chat 请求；网络失败映射为可重试的 TRANSPORT 错误。 */
-  async send(credential, body, options) {
-    const clientVersion = await this.clientVersion();
-    const headers = new Headers(lobsteraiChatHeaders(credential, this.product, clientVersion));
-    try {
-      return await this.fetchImpl(`${this.product.apiBase}${LOBSTERAI_CHAT_PATH}`, {
-        method: "POST",
-        headers,
-        body,
-        signal: options.signal
-      });
-    } catch (error) {
-      if (options.signal?.aborted) throw error;
-      if (isTransportError3(error)) {
-        throw new LlmError4(`lobsterai: transport error: ${errorMessage3(error)}`, "TRANSPORT", { cause: error });
-      }
-      throw error;
-    }
-  }
-  /**
-   * 消费 SSE 响应并产出 `StreamChunk`。
-   *
-   * 上游返回标准 OpenAI SSE。移植了 Go 侧 `Aggregate` 的三处兼容处理：
-   * 1. **容忍 `data:` 后无空格**（`sse.go:37-39` 注释写明「龙虾上游实测无空格」）——
-   *    这里靠 `line.slice(5).trim()` 天然兼容两种形态；
-   * 2. `reasoning_content` 单独成块（`sse.go:74-76`）；
-   * 3. `tool_calls` 按 `index` 合并（首片带 id/name，后续只带 arguments 片段）。
-   *
-   * 额外保留 buddy 适配器里两条实测得出的防坑规则（与厂商无关，属协议层）：
-   * - **`function.name` 只允许非空覆盖**：后续分片带空串 `""`，
-   *   直接覆盖会清空已解析出的工具名 → `unknown tool ""`；
-   * - **`finish_reason` 映射顺序**：`length` / 中途断流 / 参数残缺一律归为
-   *   `max-tokens`，否则 harness 会执行残缺 JSON 参数并污染会话历史。
-   */
-  async *consumeSse(response, options) {
-    if (!response.body) throw new LlmError4("lobsterai: empty model response body", "EMPTY_RESPONSE");
-    const blocks = [];
-    let nextIndex = 0;
-    const loopGuard = isReasoningLoopGuardEnabled() ? createReasoningLoopDetector() : void 0;
-    let loopDetected = false;
-    const proseLoopGuard = isReasoningLoopGuardEnabled() ? createReasoningLoopDetector() : void 0;
-    let proseLoopDetected = false;
-    const suppressor = createBlankReasoningSuppressor();
-    const proseSuppressor = createBlankReasoningSuppressor();
-    const toolCalls = /* @__PURE__ */ new Map();
-    const toolOrder = [];
-    const toolIds = /* @__PURE__ */ new Map();
-    let buffer = "";
-    let streamEnded = false;
-    let finishReason2;
-    let gotAnyContent = false;
-    const reader = response.body.getReader();
-    const decoder2 = new TextDecoder();
-    let firstTokenReceived = false;
-    try {
-      for (; ; ) {
-        if (streamEnded) break;
-        let result;
-        try {
-          const timeoutMs = firstTokenReceived ? resolveChunkTimeoutMs3() : resolveFirstTokenTimeoutMs3();
-          const phase = firstTokenReceived ? "chunk" : "first-token";
-          result = await readWithIdleTimeout(reader, timeoutMs, "lobsterai", options.signal, phase);
-          if (!result.done) firstTokenReceived = true;
-        } catch (error) {
-          if (options.signal?.aborted) throw error;
-          if (error instanceof LlmError4) throw error;
-          if (isTransportError3(error)) {
-            throw new LlmError4(`lobsterai: sse transport error: ${errorMessage3(error)}`, "TRANSPORT", { cause: error });
-          }
-          throw error;
-        }
-        if (result.done) break;
-        buffer += decoder2.decode(result.value, { stream: true });
-        let newline;
-        while ((newline = buffer.indexOf("\n")) !== -1) {
-          const line2 = buffer.slice(0, newline).trim();
-          buffer = buffer.slice(newline + 1);
-          if (!line2.startsWith("data:")) continue;
-          const payload = line2.slice(5).trim();
-          if (payload === "[DONE]") {
-            streamEnded = true;
-            break;
-          }
-          let data;
-          try {
-            data = JSON.parse(payload);
-          } catch {
-            continue;
-          }
-          if (data.error !== void 0) {
-            const detail = data.error.message ?? "unknown error";
-            throw new LobsteraiStreamError(
-              `lobsterai: ${detail}`,
-              classifyLobsteraiStreamError(detail),
-              detail
-            );
-          }
-          const choice = data.choices?.[0];
-          const delta = choice?.delta;
-          if (typeof choice?.finish_reason === "string") {
-            finishReason2 = choice.finish_reason;
-          }
-          const deltaContent = delta?.content;
-          const rawTextDelta = typeof deltaContent === "string" && deltaContent.length > 0 ? deltaContent : !gotAnyContent && typeof choice?.message?.content === "string" ? choice.message.content : void 0;
-          if (typeof deltaContent === "string" && deltaContent.length > 0) gotAnyContent = true;
-          const textDelta = rawTextDelta === void 0 ? void 0 : proseSuppressor.feed(rawTextDelta);
-          if (textDelta !== void 0 && textDelta.length > 0) {
-            let block = blocks.find((candidate) => candidate.kind === "text");
-            if (block === void 0) {
-              block = { index: nextIndex++, kind: "text", text: "" };
-              blocks.push(block);
-              yield { type: "block-start", index: block.index, blockType: "text" };
-            }
-            if (proseLoopGuard !== void 0) {
-              if (proseLoopGuard.observe(textDelta)) proseLoopDetected = true;
-            }
-            if (!proseLoopDetected) {
-              block.text += textDelta;
-              yield { type: "text-delta", index: block.index, text: textDelta };
-            }
-          }
-          if (typeof delta?.reasoning_content === "string" && delta.reasoning_content.length > 0) {
-            if (loopGuard !== void 0) {
-              if (loopGuard.observe(delta.reasoning_content)) loopDetected = true;
-            }
-            if (!loopDetected) {
-              const emit = suppressor.feed(delta.reasoning_content);
-              if (emit !== void 0) {
-                let block = blocks.find((candidate) => candidate.kind === "reasoning");
-                if (block === void 0) {
-                  block = { index: nextIndex++, kind: "reasoning", text: "" };
-                  blocks.push(block);
-                  yield { type: "block-start", index: block.index, blockType: "reasoning" };
-                }
-                block.text = suppressor.text();
-                yield { type: "reasoning-delta", index: block.index, text: emit };
-              }
-            }
-          }
-          for (const call2 of delta?.tool_calls ?? []) {
-            const wireIndex = call2.index ?? 0;
-            if (typeof call2.id === "string" && call2.id.length > 0) toolIds.set(wireIndex, call2.id);
-            const callId = toolIds.get(wireIndex) ?? `call_${wireIndex}`;
-            let block = toolCalls.get(wireIndex);
-            if (block === void 0) {
-              block = { index: nextIndex++, text: "", callId, announced: false };
-              toolCalls.set(wireIndex, block);
-            }
-            block.callId = callId;
-            if (typeof call2.function?.name === "string" && call2.function.name.length > 0) {
-              block.name = call2.function.name;
-            }
-            const fragment = call2.function?.arguments ?? "";
-            block.text += fragment;
-            if (!block.announced) {
-              if (!hasUsableToolName(block.name)) continue;
-              block.announced = true;
-              toolOrder.push(block.index);
-              yield { type: "block-start", index: block.index, blockType: "tool-call" };
-              yield {
-                type: "tool-call-delta",
-                index: block.index,
-                id: ToolCallId3(callId),
-                name: block.name,
-                argumentsDelta: block.text
-              };
-              continue;
-            }
-            yield {
-              type: "tool-call-delta",
-              index: block.index,
-              id: ToolCallId3(callId),
-              ...block.name !== void 0 ? { name: block.name } : {},
-              argumentsDelta: fragment
-            };
-          }
-          if (data.usage) {
-            const promptTokens = data.usage.prompt_tokens ?? 0;
-            const cachedTokens = data.usage.prompt_tokens_details?.cached_tokens ?? data.usage.prompt_cache_hit_tokens ?? 0;
-            const reasoningTokens = data.usage.completion_tokens_details?.reasoning_tokens;
-            yield {
-              type: "usage",
-              usage: {
-                // inputTokens 只计**未命中缓存**的部分，命中部分单列
-                // cacheReadTokens，否则缓存命中率显示会偏大。
-                inputTokens: cachedTokens > 0 ? promptTokens - cachedTokens : promptTokens,
-                outputTokens: data.usage.completion_tokens ?? 0,
-                ...cachedTokens > 0 ? { cacheReadTokens: cachedTokens } : {},
-                ...reasoningTokens !== void 0 && reasoningTokens > 0 ? { reasoningTokens } : {}
-              }
-            };
-          }
-        }
-        if (loopDetected) {
-          await reader.cancel().catch(() => {
-          });
-          break;
-        }
-      }
-    } finally {
-      reader.releaseLock();
-    }
-    let blockCount = 0;
-    let emittedProse = "";
-    const textBlock = blocks.find((block) => block.kind === "text");
-    for (const index of toolOrder) {
-      const block = [...toolCalls.values()].find((candidate) => candidate.index === index);
-      blockCount += 1;
-      yield {
-        type: "block-end",
-        index,
-        block: {
-          type: "tool-call",
-          id: ToolCallId3(block.callId ?? ""),
-          name: block.name,
-          // 仅把「无参数工具下发的空分片」补成 {}；**残缺参数保持原样**，
-          // 由 max-tokens 判定触发重试 —— 把残缺 JSON 补成 {} 会伪造出
-          // 合法外观，让 harness 报 missing required property 而非重试。
-          arguments: isTruncatedArguments(block.text) ? block.text : normalizeToolArguments(block.text)
-        }
-      };
-    }
-    if (textBlock !== void 0) {
-      let textOut = textBlock.text;
-      {
-        const split = splitThinkTaggedContent(textBlock.text);
-        if (split !== void 0) {
-          if (split.reasoning !== "") {
-            const existing = blocks.find((candidate) => candidate.kind === "reasoning");
-            if (existing === void 0) {
-              blocks.push({ index: nextIndex++, kind: "reasoning", text: split.reasoning });
-            } else {
-              existing.text += split.reasoning;
-            }
-            suppressor.feed(split.reasoning);
-          }
-          textOut = split.text;
-        }
-      }
-      textOut = stripBareThinkCloseTagIfEnabled(textOut);
-      const truncated = proseLoopDetected && proseLoopGuard?.cutAt !== void 0 ? textOut.slice(0, proseLoopGuard.cutAt) : textOut;
-      const cleaned = stripCourseLeakIfEnabled(truncated);
-      if (cleaned.trim() !== "") {
-        blockCount += 1;
-        emittedProse = cleaned;
-        yield { type: "block-end", index: textBlock.index, block: { type: "text", text: cleaned } };
-      } else {
-        yield { type: "block-end", index: textBlock.index, block: { type: "text", text: "" } };
-      }
-    }
-    const reasoningBlock = blocks.find((block) => block.kind === "reasoning");
-    if (reasoningBlock !== void 0 && reasoningBlock.text.trim() !== "") {
-      const suppressedReasoning = suppressor.text();
-      const reasoningText = loopDetected && loopGuard?.cutAt !== void 0 ? suppressedReasoning.slice(0, loopGuard.cutAt) : suppressedReasoning;
-      const cleanedReasoning = stripCourseLeakIfEnabled(reasoningText);
-      if (cleanedReasoning !== "") {
-        blockCount += 1;
-        yield { type: "block-end", index: reasoningBlock.index, block: { type: "reasoning", text: cleanedReasoning } };
-      }
-    }
-    const argsTruncated = [...toolCalls.values()].some((block) => isTruncatedArguments(block.text));
-    const droppedUnnamedCalls = [...toolCalls.values()].some((block) => !block.announced);
-    const proseCutByStopString = finishReason2 === "stop" && toolOrder.length === 0 && isProseTruncatedByStopString(emittedProse);
-    const reasoningLoopIsSoleOutput = loopDetected && emittedProse === "" && toolOrder.length === 0;
-    const reason = reasoningLoopIsSoleOutput ? { kind: "error", failure: reasoningLoopFailure(
-      loopGuard?.diagnostics,
-      options.maxTokens,
-      "reasoning"
-    ) } : loopDetected ? { kind: "max-tokens" } : finishReason2 === "length" || finishReason2 === void 0 && toolOrder.length > 0 || argsTruncated || proseCutByStopString || droppedUnnamedCalls && toolOrder.length === 0 ? { kind: "max-tokens" } : finishReason2 === "tool_calls" || toolOrder.length > 0 ? { kind: "tool-calls" } : { kind: "stop" };
-    yield { type: "finish", reason: resolveEmptyResponseReason(reason, blockCount) };
-  }
-};
-function displayNameFor2(model) {
-  if (model.costMultiplier === void 0) return model.name;
-  return `${model.name} \xB7 x${model.costMultiplier}`;
-}
-function registerLobsteraiLlm(ctx, options) {
-  const product = options.product ?? LOBSTERAI;
-  const adapter = new LobsteraiAdapter(options);
-  registerAdapterIdempotent(ctx.llm, [product.id], adapter);
-  return adapter;
-}
-function buildLobsteraiModelsUrl(product, credential, clientVersion) {
-  const query = buildLobsteraiModelsQuery(credential, clientVersion);
-  const base = `${product.apiBase}${LOBSTERAI_MODELS_PATH}`;
-  return query.length > 0 ? `${base}?${query}` : base;
-}
-
 // vendor/channel-pack/src/qoder-adapter.ts
-import { LlmAdapter as LlmAdapter4, LlmError as LlmError7, ReasoningEffortId as ReasoningEffortId4 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter3, LlmError as LlmError6, ReasoningEffortId as ReasoningEffortId3 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/qoder.ts
-import { createHash as createHash3, randomUUID, randomBytes as randomBytes2 } from "node:crypto";
+import { createHash as createHash2, randomUUID, randomBytes as randomBytes2 } from "node:crypto";
 var QODER_REQUEST_TIMEOUT_MS = 3e4;
 var QODER_LOGIN_TIMEOUT_MS = 3e5;
 var QODER_POLL_INTERVAL_MS = 1e3;
@@ -39617,7 +38323,7 @@ function createQoderPkce() {
   for (let i = 0; i < length; i++) {
     verifier += PKCE_ALPHABET[bytes[i] % PKCE_ALPHABET.length];
   }
-  const challenge = createHash3("sha256").update(verifier).digest().toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const challenge = createHash2("sha256").update(verifier).digest().toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   return { verifier, challenge };
 }
 function createQoderDeviceSession(machineId) {
@@ -40105,7 +38811,7 @@ var QoderEncryptedInfer = class _QoderEncryptedInfer {
 };
 
 // vendor/channel-pack/src/qoder-envelope.ts
-import { LlmError as LlmError5 } from "@deepseek-ai/dsh-llm";
+import { LlmError as LlmError4 } from "@deepseek-ai/dsh-llm";
 function innerTextOf(payload) {
   let envelope;
   try {
@@ -40139,7 +38845,7 @@ function classifyInner(inner) {
 function unwrapQoderEnvelopeStream(response, label) {
   const upstream = response.body;
   if (upstream === null) {
-    throw new LlmError5(`${label}: \u54CD\u5E94\u6CA1\u6709 body`, "SERVER");
+    throw new LlmError4(`${label}: \u54CD\u5E94\u6CA1\u6709 body`, "SERVER");
   }
   const decoder2 = new TextDecoder("utf-8");
   const encoder2 = new TextEncoder();
@@ -40521,14 +39227,14 @@ function qoderProductById(id) {
 }
 
 // vendor/channel-pack/src/openai-compat.ts
-import { LlmError as LlmError6, ToolCallId as ToolCallId4 } from "@deepseek-ai/dsh-llm";
-function contentToText4(content) {
+import { LlmError as LlmError5, ToolCallId as ToolCallId3 } from "@deepseek-ai/dsh-llm";
+function contentToText3(content) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content.filter((block) => typeof block === "object" && block !== null && block.type === "text").map((block) => String(block.text)).join("");
 }
-var TOOL_RESULT_IMAGE_TEXT3 = "Attached image(s) from tool result:";
-function userContentParts3(content, imageUrls) {
+var TOOL_RESULT_IMAGE_TEXT2 = "Attached image(s) from tool result:";
+function userContentParts2(content, imageUrls) {
   const parts = [];
   let hasImage = false;
   for (const raw of content) {
@@ -40546,19 +39252,19 @@ function userContentParts3(content, imageUrls) {
       continue;
     }
     if (block.type === "tool-result" && Array.isArray(block.content)) {
-      const inner = userContentParts3(block.content, imageUrls);
+      const inner = userContentParts2(block.content, imageUrls);
       if (inner !== void 0) {
         hasImage = true;
         parts.push(...inner);
       } else {
-        const text = contentToText4(block.content);
+        const text = contentToText3(block.content);
         if (text.length > 0) parts.push({ type: "text", text });
       }
     }
   }
   return hasImage && parts.length > 0 ? parts : void 0;
 }
-function collectImages3(content, refs) {
+function collectImages2(content, refs) {
   for (const raw of content) {
     if (typeof raw !== "object" || raw === null) continue;
     const block = raw;
@@ -40566,10 +39272,10 @@ function collectImages3(content, refs) {
       refs.set(block.attachment.attachmentId, block.attachment);
       continue;
     }
-    if (block.type === "tool-result" && Array.isArray(block.content)) collectImages3(block.content, refs);
+    if (block.type === "tool-result" && Array.isArray(block.content)) collectImages2(block.content, refs);
   }
 }
-function serializeMessages4(messages, imageUrls) {
+function serializeMessages3(messages, imageUrls) {
   const normalized = normalizeHarnessMessages(messages);
   const wire = [];
   const { keepCallIds, keepResultIds } = resolveToolPairing(normalized);
@@ -40578,7 +39284,7 @@ function serializeMessages4(messages, imageUrls) {
     if (pendingToolImages.length === 0) return;
     wire.push({
       role: "user",
-      content: [{ type: "text", text: TOOL_RESULT_IMAGE_TEXT3 }, ...pendingToolImages]
+      content: [{ type: "text", text: TOOL_RESULT_IMAGE_TEXT2 }, ...pendingToolImages]
     });
     pendingToolImages = [];
   };
@@ -40594,7 +39300,7 @@ function serializeMessages4(messages, imageUrls) {
         function: { name: String(block.name), arguments: normalizeToolArguments(String(block.arguments)) }
       }));
       const reasoning = content2.filter((block) => typeof block === "object" && block !== null && block.type === "reasoning").map((block) => String(block.text)).join("");
-      const text2 = contentToText4(content2);
+      const text2 = contentToText3(content2);
       if (text2.trim().length === 0 && toolCalls.length === 0) continue;
       flushToolImages();
       wire.push({
@@ -40608,14 +39314,14 @@ function serializeMessages4(messages, imageUrls) {
     }
     if (message2.role === "system") {
       flushToolImages();
-      wire.push({ role: "system", content: contentToText4(message2.content) });
+      wire.push({ role: "system", content: contentToText3(message2.content) });
       continue;
     }
     const content = Array.isArray(message2.content) ? message2.content : [];
     const toolResults = content.filter((block) => typeof block === "object" && block !== null && block.type === "tool-result");
-    const text = contentToText4(message2.content);
+    const text = contentToText3(message2.content);
     const regular = content.filter((block) => !(typeof block === "object" && block !== null && block.type === "tool-result"));
-    const parts = imageUrls === void 0 ? void 0 : userContentParts3(regular, imageUrls);
+    const parts = imageUrls === void 0 ? void 0 : userContentParts2(regular, imageUrls);
     if (parts !== void 0) {
       flushToolImages();
       wire.push({ role: "user", content: parts });
@@ -40627,16 +39333,16 @@ function serializeMessages4(messages, imageUrls) {
       if (!keepResultIds.has(String(result.toolCallId))) continue;
       let resultText = "(no output)";
       if (imageUrls !== void 0 && Array.isArray(result.content)) {
-        const resultParts = userContentParts3(result.content, imageUrls);
+        const resultParts = userContentParts2(result.content, imageUrls);
         if (resultParts !== void 0) {
           pendingToolImages.push(...resultParts.filter((part) => part.type !== "text"));
           const joined = resultParts.filter((part) => part.type === "text").map((part) => String(part.text)).join("");
           if (joined.length > 0) resultText = joined;
         } else {
-          resultText = contentToText4(result.content) || "(no output)";
+          resultText = contentToText3(result.content) || "(no output)";
         }
       } else {
-        resultText = contentToText4(result.content) || "(no output)";
+        resultText = contentToText3(result.content) || "(no output)";
       }
       wire.push({
         role: "tool",
@@ -40648,7 +39354,7 @@ function serializeMessages4(messages, imageUrls) {
   flushToolImages();
   return wire;
 }
-function errorMessage4(error) {
+function errorMessage3(error) {
   if (error instanceof Error) return error.message;
   try {
     return String(error);
@@ -40656,7 +39362,7 @@ function errorMessage4(error) {
     return "unknown error";
   }
 }
-function errorDetail4(body) {
+function errorDetail3(body) {
   try {
     const data = JSON.parse(body);
     const nested = typeof data.error === "object" && data.error !== null ? data.error.message : data.error;
@@ -40671,14 +39377,14 @@ function errorDetail4(body) {
   }
   return body;
 }
-function httpErrorCode4(status) {
+function httpErrorCode3(status) {
   if (status === 401 || status === 403) return "AUTH";
   if (status === 429) return "RATE_LIMIT";
   if (status === 400) return "INVALID_REQUEST";
   if (status >= 500) return "SERVER";
   return `HTTP_${status}`;
 }
-var ModelQueuedError = class extends LlmError6 {
+var ModelQueuedError = class extends LlmError5 {
   /** 解析出的排队信息（`isQueued` / `serviceAvailable` / `waitTime` 等）。 */
   queueInfo;
   /** 服务端要求的等待时长（毫秒）；无法解析时为 undefined。 */
@@ -40690,7 +39396,7 @@ var ModelQueuedError = class extends LlmError6 {
     this.retryAfterMs = options.retryAfterMs;
   }
 };
-function isTransportError4(error) {
+function isTransportError3(error) {
   if (!(error instanceof Error)) return false;
   const message2 = error.message.toLowerCase();
   if (message2.includes("terminated")) return true;
@@ -40703,7 +39409,7 @@ var RAW_SNIPPET_LIMIT = 400;
 async function* consumeOpenAiSse(response, options, config) {
   const { label } = config;
   const restoreToolName2 = config.restoreToolName ?? ((name2) => name2);
-  if (!response.body) throw new LlmError6(`${label}: empty model response body`, "EMPTY_RESPONSE");
+  if (!response.body) throw new LlmError5(`${label}: empty model response body`, "EMPTY_RESPONSE");
   const blocks = [];
   let nextIndex = 0;
   const loopGuard = isReasoningLoopGuardEnabled() ? createReasoningLoopDetector() : void 0;
@@ -40736,9 +39442,9 @@ async function* consumeOpenAiSse(response, options, config) {
         if (!result.done) firstTokenReceived = true;
       } catch (error) {
         if (options.signal?.aborted) throw error;
-        if (error instanceof LlmError6) throw error;
-        if (isTransportError4(error)) {
-          throw new LlmError6(`${label}: sse transport error: ${errorMessage4(error)}`, "TRANSPORT", { cause: error });
+        if (error instanceof LlmError5) throw error;
+        if (isTransportError3(error)) {
+          throw new LlmError5(`${label}: sse transport error: ${errorMessage3(error)}`, "TRANSPORT", { cause: error });
         }
         throw error;
       }
@@ -40775,10 +39481,10 @@ async function* consumeOpenAiSse(response, options, config) {
           }
         }
         if (data.choices === void 0 && config.isQuotaError?.(data)) {
-          throw new LlmError6(`${label}: ${errorDetail4(payload)}`, "QUOTA_EXCEEDED");
+          throw new LlmError5(`${label}: ${errorDetail3(payload)}`, "QUOTA_EXCEEDED");
         }
         if (data.error !== void 0) {
-          throw new LlmError6(`${label}: ${data.error.message ?? "unknown error"}`, "SERVER");
+          throw new LlmError5(`${label}: ${data.error.message ?? "unknown error"}`, "SERVER");
         }
         if (data.choices === void 0 && data.code !== void 0 && typeof data.message === "string") {
           const queueInfo = parseQueueError(data.message);
@@ -40793,14 +39499,14 @@ async function* consumeOpenAiSse(response, options, config) {
             );
           }
           if (isBillingBusinessCode(data.code) || looksLikeBillingError(data.message)) {
-            throw new LlmError6(
+            throw new LlmError5(
               `${label}: ${data.message}`,
               "QUOTA_EXCEEDED",
               { ...typeof data.code === "number" ? { status: data.code } : {} }
             );
           }
           const detail = [String(data.code), data.type].filter(Boolean).join("/");
-          throw new LlmError6(
+          throw new LlmError5(
             `${label}: ${data.message}${detail.length > 0 ? ` (${detail})` : ""}`,
             "SERVER"
           );
@@ -40821,12 +39527,12 @@ async function* consumeOpenAiSse(response, options, config) {
               );
             }
             if (looksLikeBillingError(data.message)) {
-              throw new LlmError6(`${label}: ${data.message}`, "QUOTA_EXCEEDED", {
+              throw new LlmError5(`${label}: ${data.message}`, "QUOTA_EXCEEDED", {
                 ...status === void 0 ? {} : { status }
               });
             }
             const suffix = status === void 0 ? "" : ` (status=${status})`;
-            throw new LlmError6(`${label}: ${data.message}${suffix}`, "SERVER", {
+            throw new LlmError5(`${label}: ${data.message}${suffix}`, "SERVER", {
               ...status === void 0 ? {} : { status }
             });
           }
@@ -40897,7 +39603,7 @@ async function* consumeOpenAiSse(response, options, config) {
             yield {
               type: "tool-call-delta",
               index: block.index,
-              id: ToolCallId4(callId),
+              id: ToolCallId3(callId),
               name: restoreToolName2(block.name),
               argumentsDelta: block.text
             };
@@ -40906,7 +39612,7 @@ async function* consumeOpenAiSse(response, options, config) {
           yield {
             type: "tool-call-delta",
             index: block.index,
-            id: ToolCallId4(callId),
+            id: ToolCallId3(callId),
             ...block.name !== void 0 ? { name: restoreToolName2(block.name) } : {},
             argumentsDelta: fragment
           };
@@ -40949,7 +39655,7 @@ async function* consumeOpenAiSse(response, options, config) {
       index,
       block: {
         type: "tool-call",
-        id: ToolCallId4(block.callId ?? ""),
+        id: ToolCallId3(block.callId ?? ""),
         name: restoreToolName2(block.name),
         // 仅把「无参数工具下发的空分片」补成 {}；**残缺参数保持原样**，
         // 由 max-tokens 判定触发重试 —— 把残缺 JSON 补成 {} 会伪造出
@@ -41006,11 +39712,11 @@ async function* consumeOpenAiSse(response, options, config) {
     } catch {
     }
     if (typeof data === "object" && data !== null && !Array.isArray(data) && config.isQuotaError?.(data)) {
-      throw new LlmError6(`${label}: ${errorDetail4(rawJson)}`, "QUOTA_EXCEEDED");
+      throw new LlmError5(`${label}: ${errorDetail3(rawJson)}`, "QUOTA_EXCEEDED");
     }
     const snippet = rawSnippet.trim();
     if (snippet.length > 0) {
-      throw new LlmError6(
+      throw new LlmError5(
         `${label}: \u54CD\u5E94\u4E0D\u662F SSE\uFF08\u6CA1\u6709\u4EFB\u4F55 data: \u5E27\uFF09\uFF0C\u539F\u6587\u7247\u6BB5\uFF1A${snippet}`,
         "SERVER"
       );
@@ -41031,11 +39737,11 @@ async function* consumeOpenAiSse(response, options, config) {
 var parseQoderQueueError = parseQueueError;
 var qoderQueueDelayMs = queueDelayMs;
 function isQuotaExceededError2(error) {
-  if (error instanceof LlmError7) {
+  if (error instanceof LlmError6) {
     if (error.code === "QUOTA_EXCEEDED" || error.code === "QUOTA") return true;
   }
   if (error instanceof Error) {
-    if (!(error instanceof LlmError7)) return looksLikeBillingError(error.message);
+    if (!(error instanceof LlmError6)) return looksLikeBillingError(error.message);
   }
   return false;
 }
@@ -41131,13 +39837,13 @@ function buildQoderHistory(messages) {
   }
   return history2;
 }
-function resolveFirstTokenTimeoutMs4() {
+function resolveFirstTokenTimeoutMs3() {
   return Number.parseInt(process.env.DSH_QODER_SSE_FIRST_TOKEN_TIMEOUT_MS ?? "", 10) || 12e4;
 }
-function resolveChunkTimeoutMs4() {
+function resolveChunkTimeoutMs3() {
   return Number.parseInt(process.env.DSH_QODER_SSE_CHUNK_TIMEOUT_MS ?? "", 10) || 12e4;
 }
-var QoderAdapter = class extends LlmAdapter4 {
+var QoderAdapter = class extends LlmAdapter3 {
   constructor(options) {
     super();
     this.options = options;
@@ -41254,13 +39960,13 @@ var QoderAdapter = class extends LlmAdapter4 {
         const fallback2 = entry.defaultEffort;
         resolved.reasoning = {
           efforts: efforts.map((id) => ({
-            id: ReasoningEffortId4(id),
+            id: ReasoningEffortId3(id),
             name: QODER_EFFORT_NAMES[id] ?? id
           })),
           // ⚠️ `defaultEffort` 必须落在 `efforts` 内 —— DSH 会直接拿它发请求，
           // 给一个不存在的档位会抛 `UNSUPPORTED_REASONING_EFFORT`
           // （同 `trae-adapter.ts` 的教训）。
-          ...fallback2 !== void 0 && efforts.includes(fallback2) ? { defaultEffort: ReasoningEffortId4(fallback2) } : {}
+          ...fallback2 !== void 0 && efforts.includes(fallback2) ? { defaultEffort: ReasoningEffortId3(fallback2) } : {}
         };
       }
     }
@@ -41282,18 +39988,18 @@ var QoderAdapter = class extends LlmAdapter4 {
   async *stream(options) {
     const imageRefs = /* @__PURE__ */ new Map();
     for (const message2 of options.messages) {
-      if (Array.isArray(message2.content)) collectImages3(message2.content, imageRefs);
+      if (Array.isArray(message2.content)) collectImages2(message2.content, imageRefs);
     }
     let imageUrls;
     if (imageRefs.size > 0) {
       if (!this.inputModalitiesFor(options.model).includes("image")) {
-        throw new LlmError7(
+        throw new LlmError6(
           `qoder: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`,
           "UNSUPPORTED_CONTENT"
         );
       }
       if (this.options.readImage === void 0) {
-        throw new LlmError7("qoder: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
+        throw new LlmError6("qoder: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
       }
       imageUrls = /* @__PURE__ */ new Map();
       const readImage = this.options.readImage;
@@ -41314,10 +40020,10 @@ var QoderAdapter = class extends LlmAdapter4 {
       credential = await this.options.resolveCredential(options.model);
     }
     if (credential === void 0 || credential.access_token.length === 0) {
-      throw new LlmError7("qoder: no usable credential; log in first", "MISSING_CREDENTIAL");
+      throw new LlmError6("qoder: no usable credential; log in first", "MISSING_CREDENTIAL");
     }
     credential = await this.ensureUid(credential);
-    const messages = serializeMessages4(options.messages, imageUrls);
+    const messages = serializeMessages3(options.messages, imageUrls);
     const systemText = options.system !== void 0 && options.system.length > 0 ? options.system : void 0;
     const userMessages = messages.filter((m) => m.role === "user");
     const lastUser = userMessages.at(-1);
@@ -41390,19 +40096,19 @@ var QoderAdapter = class extends LlmAdapter4 {
             authRefreshed = false;
             continue;
           }
-          throw new LlmError7(`qoder: ${errorDetail4(errorText2)}`, "QUOTA_EXCEEDED", { status: response.status });
+          throw new LlmError6(`qoder: ${errorDetail3(errorText2)}`, "QUOTA_EXCEEDED", { status: response.status });
         }
         if (!authRefreshed) {
           authRefreshed = true;
           await this.options.refresh();
           const refreshed = await this.options.resolveCredential(options.model);
           if (refreshed === void 0 || refreshed.access_token.length === 0) {
-            throw new LlmError7("qoder: credential expired and refresh failed", "AUTH", { status: response.status });
+            throw new LlmError6("qoder: credential expired and refresh failed", "AUTH", { status: response.status });
           }
           credential = await this.ensureUid(refreshed);
           continue;
         }
-        throw new LlmError7(`qoder: ${errorDetail4(errorText2)}`, httpErrorCode4(response.status), { status: response.status });
+        throw new LlmError6(`qoder: ${errorDetail3(errorText2)}`, httpErrorCode3(response.status), { status: response.status });
       }
       if (!response.ok && response.status === 409 && !duplicateRetried) {
         duplicateRetried = true;
@@ -41410,15 +40116,15 @@ var QoderAdapter = class extends LlmAdapter4 {
       }
       if (!response.ok) {
         const errorText2 = await response.text().catch(() => "");
-        throw new LlmError7(`qoder: ${errorDetail4(errorText2)}`, httpErrorCode4(response.status), { status: response.status });
+        throw new LlmError6(`qoder: ${errorDetail3(errorText2)}`, httpErrorCode3(response.status), { status: response.status });
       }
       const inner = consumeOpenAiSse(
         unwrapQoderEnvelopeStream(response, "qoder"),
         { signal: options.signal },
         {
           label: "qoder",
-          firstTokenTimeoutMs: resolveFirstTokenTimeoutMs4(),
-          chunkTimeoutMs: resolveChunkTimeoutMs4(),
+          firstTokenTimeoutMs: resolveFirstTokenTimeoutMs3(),
+          chunkTimeoutMs: resolveChunkTimeoutMs3(),
           ...options.maxTokens === void 0 ? {} : { maxTokens: options.maxTokens }
         }
       );
@@ -41498,21 +40204,21 @@ var QoderAdapter = class extends LlmAdapter4 {
    */
   async waitForQueue(queueInfo, attempts, deadline, options) {
     if (Date.now() >= deadline) {
-      throw new LlmError7("qoder: \u6392\u961F\u7B49\u5F85\u8D85\u65F6", "QUEUE");
+      throw new LlmError6("qoder: \u6392\u961F\u7B49\u5F85\u8D85\u65F6", "QUEUE");
     }
     if (attempts > QUEUE_MAX_ATTEMPTS) {
-      throw new LlmError7(
+      throw new LlmError6(
         `qoder: \u6392\u961F\u91CD\u8BD5\u8D85\u8FC7\u4E0A\u9650\uFF08${QUEUE_MAX_ATTEMPTS} \u6B21\uFF09`,
         "QUEUE"
       );
     }
     if (options.signal?.aborted === true) {
-      throw new LlmError7("qoder: \u6392\u961F\u7B49\u5F85\u671F\u95F4\u8BF7\u6C42\u5DF2\u53D6\u6D88", "QUEUE");
+      throw new LlmError6("qoder: \u6392\u961F\u7B49\u5F85\u671F\u95F4\u8BF7\u6C42\u5DF2\u53D6\u6D88", "QUEUE");
     }
     const waitMs = qoderQueueDelayMs(queueInfo);
     await this.sleep(waitMs ?? 1e3, options.signal);
     if (isAborted(options.signal)) {
-      throw new LlmError7("qoder: \u6392\u961F\u7B49\u5F85\u671F\u95F4\u8BF7\u6C42\u5DF2\u53D6\u6D88", "QUEUE");
+      throw new LlmError6("qoder: \u6392\u961F\u7B49\u5F85\u671F\u95F4\u8BF7\u6C42\u5DF2\u53D6\u6D88", "QUEUE");
     }
   }
   /**
@@ -41526,7 +40232,7 @@ var QoderAdapter = class extends LlmAdapter4 {
     if (credential.uid !== void 0 && credential.uid.length > 0) return credential;
     const patched = await this.options.resolveUid?.(credential);
     if (patched?.uid !== void 0 && patched.uid.length > 0) return patched;
-    throw new LlmError7(
+    throw new LlmError6(
       "qoder: \u51ED\u636E\u7F3A\u5C11 uid\uFF0C\u52A0\u5BC6\u63A8\u7406\u65E0\u6CD5\u7B7E\u540D\uFF08\u8BF7\u91CD\u65B0\u767B\u5F55\u8BE5\u8D26\u53F7\uFF09",
       "MISSING_CREDENTIAL"
     );
@@ -41544,8 +40250,8 @@ var QoderAdapter = class extends LlmAdapter4 {
       });
     } catch (error) {
       if (options.signal?.aborted) throw error;
-      if (isTransportError4(error)) {
-        throw new LlmError7(
+      if (isTransportError3(error)) {
+        throw new LlmError6(
           `qoder: transport error: ${error instanceof Error ? error.message : String(error)}`,
           "TRANSPORT",
           { cause: error }
@@ -41594,8 +40300,8 @@ function registerQoderLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/trae-adapter.ts
-import { LlmAdapter as LlmAdapter5, LlmError as LlmError8, ReasoningEffortId as ReasoningEffortId5 } from "@deepseek-ai/dsh-llm";
-import { ToolCallId as ToolCallId5 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter4, LlmError as LlmError7, ReasoningEffortId as ReasoningEffortId4 } from "@deepseek-ai/dsh-llm";
+import { ToolCallId as ToolCallId4 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/reasoning-ladder.ts
 var REASONING_EFFORT_RANK = Object.freeze({
@@ -41666,7 +40372,7 @@ function canonicalReasoningEffortFor(effort) {
 }
 
 // vendor/channel-pack/src/trae.ts
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 
 // vendor/channel-pack/src/trae-product.ts
 var TRAE_AGENT_HOST = "https://trae-api-cn.mchost.guru";
@@ -41884,7 +40590,7 @@ function seededStream(seed, salt, nbytes) {
     counterBuf[1] = counter >> 16 & 255;
     counterBuf[2] = counter >> 8 & 255;
     counterBuf[3] = counter & 255;
-    const h = createHash4("sha256");
+    const h = createHash3("sha256");
     h.update(prefix, "utf8");
     h.update(counterBuf);
     for (const b of h.digest()) {
@@ -41921,31 +40627,31 @@ function parseTraeExchangeResponse(data) {
   const result = data.Result ?? data.result;
   if (typeof result !== "object" || result === null) return void 0;
   const r = result;
-  const accessToken = readStringField3(r, "Token") || readStringField3(r, "token") || readStringField3(r, "accessToken");
-  const refreshToken2 = readStringField3(r, "RefreshToken") || readStringField3(r, "refreshToken");
+  const accessToken = readStringField2(r, "Token") || readStringField2(r, "token") || readStringField2(r, "accessToken");
+  const refreshToken2 = readStringField2(r, "RefreshToken") || readStringField2(r, "refreshToken");
   if (accessToken.length === 0) return void 0;
   return {
     accessToken,
     refreshToken: refreshToken2,
-    tokenExpireAt: readNumberField3(r, "TokenExpireAt") ?? readNumberField3(r, "tokenExpireAt") ?? 0,
-    tokenExpireDuration: readNumberField3(r, "TokenExpireDuration") ?? readNumberField3(r, "tokenExpireDuration") ?? 0,
-    refreshExpireAt: readNumberField3(r, "RefreshExpireAt") ?? readNumberField3(r, "refreshExpireAt") ?? 0
+    tokenExpireAt: readNumberField2(r, "TokenExpireAt") ?? readNumberField2(r, "tokenExpireAt") ?? 0,
+    tokenExpireDuration: readNumberField2(r, "TokenExpireDuration") ?? readNumberField2(r, "tokenExpireDuration") ?? 0,
+    refreshExpireAt: readNumberField2(r, "RefreshExpireAt") ?? readNumberField2(r, "refreshExpireAt") ?? 0
   };
 }
 function parseTraeUserInfoResponse(data) {
   const result = data.Result ?? data.result;
   if (typeof result !== "object" || result === null) return void 0;
   const r = result;
-  const uid = readStringField3(r, "UserID") || readStringField3(r, "userId") || readStringField3(r, "uid");
+  const uid = readStringField2(r, "UserID") || readStringField2(r, "userId") || readStringField2(r, "uid");
   if (uid.length === 0) return void 0;
   return {
     uid,
-    screenName: readStringField3(r, "ScreenName") || readStringField3(r, "screenName") || uid,
-    enterpriseId: readStringField3(r, "EnterpriseID") || readStringField3(r, "enterpriseId") || "",
+    screenName: readStringField2(r, "ScreenName") || readStringField2(r, "screenName") || uid,
+    enterpriseId: readStringField2(r, "EnterpriseID") || readStringField2(r, "enterpriseId") || "",
     // ⚠️ 字段名是 **NonPlainTextMobile / NonPlainTextEmail**（不是 Mobile /
     // Phone / Email）—— 实测 `GetUserInfo` 只下发这两个脱敏形态。
-    phone: readStringField3(r, "NonPlainTextMobile") || readStringField3(r, "nonPlainTextMobile"),
-    email: readStringField3(r, "NonPlainTextEmail") || readStringField3(r, "nonPlainTextEmail")
+    phone: readStringField2(r, "NonPlainTextMobile") || readStringField2(r, "nonPlainTextMobile"),
+    email: readStringField2(r, "NonPlainTextEmail") || readStringField2(r, "nonPlainTextEmail")
   };
 }
 function buildTraeCredential(exchange, userInfo, session, nowMs = Date.now()) {
@@ -42020,14 +40726,14 @@ function readContextWindowField(entry) {
   const raw = entry.context_window_tokens ?? entry.ContextWindowTokens;
   if (typeof raw !== "object" || raw === null) return void 0;
   const record = raw;
-  const value = readNumberField3(record, "dev") ?? readNumberField3(record, "Dev") ?? readNumberField3(record, "max") ?? readNumberField3(record, "Max");
+  const value = readNumberField2(record, "dev") ?? readNumberField2(record, "Dev") ?? readNumberField2(record, "max") ?? readNumberField2(record, "Max");
   return value !== void 0 && value > 0 ? Math.trunc(value) : void 0;
 }
 function readMaxContextWindowField(entry) {
   const raw = entry.context_window_tokens ?? entry.ContextWindowTokens;
   if (typeof raw !== "object" || raw === null) return void 0;
   const record = raw;
-  const value = readNumberField3(record, "max") ?? readNumberField3(record, "Max");
+  const value = readNumberField2(record, "max") ?? readNumberField2(record, "Max");
   return value !== void 0 && value > 0 ? Math.trunc(value) : void 0;
 }
 function readDetailMaxTokens(entry, preferredSuffix = "__dev") {
@@ -42036,10 +40742,10 @@ function readDetailMaxTokens(entry, preferredSuffix = "__dev") {
   const details = raw.filter(
     (item) => typeof item === "object" && item !== null
   );
-  const preferred = details.find((item) => readStringField3(item, "model_name").endsWith(preferredSuffix));
+  const preferred = details.find((item) => readStringField2(item, "model_name").endsWith(preferredSuffix));
   const chosen = preferred ?? details[0];
   if (chosen === void 0) return void 0;
-  const value = readNumberField3(chosen, "max_tokens") ?? readNumberField3(chosen, "MaxTokens");
+  const value = readNumberField2(chosen, "max_tokens") ?? readNumberField2(chosen, "MaxTokens");
   return value !== void 0 && value > 0 ? Math.trunc(value) : void 0;
 }
 function readReasoningEffortConfig(entry) {
@@ -42054,12 +40760,12 @@ function readReasoningEffortConfig(entry) {
         options.push(item.trim());
       } else if (typeof item === "object" && item !== null) {
         const obj = item;
-        const wire = readStringField3(obj, "openclawLevel") || readStringField3(obj, "level") || readStringField3(obj, "Level");
+        const wire = readStringField2(obj, "openclawLevel") || readStringField2(obj, "level") || readStringField2(obj, "Level");
         if (wire.trim().length > 0) options.push(wire.trim());
       }
     }
   }
-  const defaultLevel = readStringField3(record, "default_level") || readStringField3(record, "DefaultLevel");
+  const defaultLevel = readStringField2(record, "default_level") || readStringField2(record, "DefaultLevel");
   const supportThinking = readBooleanField(record, "support_thinking") ?? readBooleanField(record, "SupportThinking");
   if (options.length === 0 && defaultLevel.length === 0 && supportThinking === void 0) {
     return void 0;
@@ -42081,7 +40787,7 @@ function readConsumptionRate(entry) {
   if (readBooleanField(rateRecord, "enable") === false) return void 0;
   const data = rateRecord.data ?? rateRecord.Data;
   if (typeof data !== "object" || data === null) return void 0;
-  const value = readNumberField3(data, "rate");
+  const value = readNumberField2(data, "rate");
   return value !== void 0 && value >= 0 ? value : void 0;
 }
 function readActivityDiscount(entry, nowSec = Math.floor(Date.now() / 1e3)) {
@@ -42099,16 +40805,16 @@ function readActivityDiscount(entry, nowSec = Math.floor(Date.now() / 1e3)) {
   const current = dataRecord.current ?? dataRecord.Current;
   if (typeof current !== "object" || current === null) return void 0;
   const currentRecord = current;
-  const type = (readStringField3(currentRecord, "discount_type") || readStringField3(currentRecord, "discountType")).trim().toLowerCase();
+  const type = (readStringField2(currentRecord, "discount_type") || readStringField2(currentRecord, "discountType")).trim().toLowerCase();
   if (type.length === 0 || type === "none") return void 0;
-  const before = readNumberField3(currentRecord, "before_consumption_rate") ?? readNumberField3(currentRecord, "beforeConsumptionRate");
-  const after = readNumberField3(currentRecord, "consumption_rate") ?? readNumberField3(currentRecord, "consumptionRate");
+  const before = readNumberField2(currentRecord, "before_consumption_rate") ?? readNumberField2(currentRecord, "beforeConsumptionRate");
+  const after = readNumberField2(currentRecord, "consumption_rate") ?? readNumberField2(currentRecord, "consumptionRate");
   if (before === void 0 || before <= 0) return void 0;
   if (after !== void 0 && before <= after) return void 0;
   let endsAtSec;
   for (const value of Object.values(dataRecord)) {
     if (typeof value !== "object" || value === null) continue;
-    const end = readNumberField3(value, "end_at") ?? readNumberField3(value, "endAt");
+    const end = readNumberField2(value, "end_at") ?? readNumberField2(value, "endAt");
     if (end !== void 0 && end > 0) {
       endsAtSec = end;
       break;
@@ -42127,15 +40833,15 @@ function parseJsonObject(raw) {
   }
 }
 function parseTraeConfigEntry(entry, channel) {
-  const id = readStringField3(entry, "config_name") || readStringField3(entry, "ConfigName");
+  const id = readStringField2(entry, "config_name") || readStringField2(entry, "ConfigName");
   if (id.length === 0) return void 0;
   const display = entry.display_config ?? entry.DisplayConfig;
   const displayRecord = typeof display === "object" && display !== null ? display : void 0;
-  const name2 = displayRecord !== void 0 ? readStringField3(displayRecord, "display_name") || id : id;
+  const name2 = displayRecord !== void 0 ? readStringField2(displayRecord, "display_name") || id : id;
   const isCustomModel = displayRecord === void 0 ? void 0 : readBooleanField(displayRecord, "is_custom_model") ?? readBooleanField(displayRecord, "IsCustomModel");
   const isHidden = readBooleanField(entry, "is_invisible_to_user") ?? readBooleanField(entry, "IsInvisibleToUser");
   const isEnabled = readBooleanField(entry, "config_switch") ?? readBooleanField(entry, "ConfigSwitch");
-  const usage = readStringField3(entry, "usage") || readStringField3(entry, "Usage");
+  const usage = readStringField2(entry, "usage") || readStringField2(entry, "Usage");
   const contextWindow = readContextWindowField(entry);
   const maxOutputTokens = readDetailMaxTokens(entry);
   const maxMode = displayRecord === void 0 ? void 0 : readBooleanField(displayRecord, "max_mode") ?? readBooleanField(displayRecord, "MaxMode");
@@ -42178,7 +40884,7 @@ function parseTraeBatchModelList(body, channelPriority = TRAE_CHANNELS) {
   for (const group of groups) {
     if (typeof group !== "object" || group === null) continue;
     const g = group;
-    const channel = readStringField3(g, "function") || readStringField3(g, "Function");
+    const channel = readStringField2(g, "function") || readStringField2(g, "Function");
     if (channel.length === 0 || rankOf(channel) < 0) continue;
     const list = g.config_info_list ?? g.ConfigInfoList;
     if (!Array.isArray(list)) continue;
@@ -42225,7 +40931,7 @@ function generateDeviceId() {
 }
 function deriveRotatingMachineId(baseMachineId, generation) {
   if (!Number.isFinite(generation) || generation <= 0) return baseMachineId;
-  return createHash4("sha256").update(`${baseMachineId}#machine${Math.floor(generation)}`, "utf8").digest("hex").slice(0, 32);
+  return createHash3("sha256").update(`${baseMachineId}#machine${Math.floor(generation)}`, "utf8").digest("hex").slice(0, 32);
 }
 var TRAE_DEFAULT_MAX_COMPLETION_TOKENS = 64e3;
 function resolveTraeMaxCompletionTokens() {
@@ -42238,13 +40944,13 @@ function clampTraeMaxTokens(value, limit = resolveTraeMaxCompletionTokens()) {
   if (limit <= 0) return value;
   return Math.min(value, limit);
 }
-function readStringField3(source, key) {
+function readStringField2(source, key) {
   const value = source[key];
   if (typeof value === "string") return value;
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
   return "";
 }
-function readNumberField3(source, key) {
+function readNumberField2(source, key) {
   const value = source[key];
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && /^-?\d+(\.\d+)?$/.test(value.trim())) return Number(value);
@@ -42521,10 +41227,10 @@ function defaultTraeEffort(config, fallback2) {
   }
   return fallback2;
 }
-function resolveFirstTokenTimeoutMs5() {
+function resolveFirstTokenTimeoutMs4() {
   return Number.parseInt(process.env.DSH_TRAE_SSE_FIRST_TOKEN_TIMEOUT_MS ?? "", 10) || 12e4;
 }
-function resolveChunkTimeoutMs5() {
+function resolveChunkTimeoutMs4() {
   return Number.parseInt(process.env.DSH_TRAE_SSE_CHUNK_TIMEOUT_MS ?? "", 10) || 12e4;
 }
 var TRAE_RATE_LIMIT_FALLBACK_MS = 36e5;
@@ -42534,7 +41240,7 @@ function isRotatableStreamError(code) {
   return code === 1005 || code === 4008 || code === 4011;
 }
 var TRAE_MACHINE_ID_ROTATE_EVERY = 4;
-function errorMessage5(error) {
+function errorMessage4(error) {
   if (error instanceof Error) return error.message;
   try {
     return String(error);
@@ -42542,13 +41248,13 @@ function errorMessage5(error) {
     return "unknown error";
   }
 }
-function contentToText6(content) {
+function contentToText5(content) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content.filter((block) => typeof block === "object" && block !== null && block.type === "text").map((block) => String(block.text)).join("");
 }
-var TOOL_RESULT_IMAGE_TEXT4 = "Attached image(s) from tool result:";
-function userContentParts4(content, imageUrls) {
+var TOOL_RESULT_IMAGE_TEXT3 = "Attached image(s) from tool result:";
+function userContentParts3(content, imageUrls) {
   const parts = [];
   let hasImage = false;
   for (const raw of content) {
@@ -42566,19 +41272,19 @@ function userContentParts4(content, imageUrls) {
       continue;
     }
     if (block.type === "tool-result" && Array.isArray(block.content)) {
-      const inner = userContentParts4(block.content, imageUrls);
+      const inner = userContentParts3(block.content, imageUrls);
       if (inner !== void 0) {
         hasImage = true;
         parts.push(...inner);
       } else {
-        const text = contentToText6(block.content);
+        const text = contentToText5(block.content);
         if (text.length > 0) parts.push({ type: "text", text });
       }
     }
   }
   return hasImage && parts.length > 0 ? parts : void 0;
 }
-function collectImages4(content, refs) {
+function collectImages3(content, refs) {
   for (const raw of content) {
     if (typeof raw !== "object" || raw === null) continue;
     const block = raw;
@@ -42586,7 +41292,7 @@ function collectImages4(content, refs) {
       refs.set(block.attachment.attachmentId, block.attachment);
       continue;
     }
-    if (block.type === "tool-result" && Array.isArray(block.content)) collectImages4(block.content, refs);
+    if (block.type === "tool-result" && Array.isArray(block.content)) collectImages3(block.content, refs);
   }
 }
 function serializeTraeMessages(messages, imageUrls) {
@@ -42598,7 +41304,7 @@ function serializeTraeMessages(messages, imageUrls) {
     if (pendingToolImages.length === 0) return;
     wire.push({
       role: "user",
-      content: [{ type: "text", text: TOOL_RESULT_IMAGE_TEXT4 }, ...pendingToolImages]
+      content: [{ type: "text", text: TOOL_RESULT_IMAGE_TEXT3 }, ...pendingToolImages]
     });
     pendingToolImages = [];
   };
@@ -42616,7 +41322,7 @@ function serializeTraeMessages(messages, imageUrls) {
           arguments: normalizeToolArguments(String(block.arguments))
         }
       }));
-      const text2 = contentToText6(content2);
+      const text2 = contentToText5(content2);
       if (text2.trim().length === 0 && toolCalls.length === 0) continue;
       flushToolImages();
       wire.push({
@@ -42628,18 +41334,18 @@ function serializeTraeMessages(messages, imageUrls) {
     }
     if (message2.role === "system") {
       flushToolImages();
-      wire.push({ role: "system", content: contentToText6(message2.content) });
+      wire.push({ role: "system", content: contentToText5(message2.content) });
       continue;
     }
     const content = Array.isArray(message2.content) ? message2.content : [];
     const toolResults = content.filter(
       (block) => typeof block === "object" && block !== null && block.type === "tool-result"
     );
-    const text = contentToText6(message2.content);
+    const text = contentToText5(message2.content);
     const outerContent = content.filter(
       (block) => !(typeof block === "object" && block !== null && block.type === "tool-result")
     );
-    const parts = imageUrls === void 0 ? void 0 : userContentParts4(outerContent, imageUrls);
+    const parts = imageUrls === void 0 ? void 0 : userContentParts3(outerContent, imageUrls);
     const deferred = toolResults.length > 0;
     if (!deferred) {
       if (parts !== void 0) {
@@ -42652,14 +41358,14 @@ function serializeTraeMessages(messages, imageUrls) {
     }
     for (const result of toolResults) {
       if (!keepResultIds.has(String(result.toolCallId))) continue;
-      const innerParts = imageUrls === void 0 ? void 0 : Array.isArray(result.content) ? userContentParts4(result.content, imageUrls) : void 0;
+      const innerParts = imageUrls === void 0 ? void 0 : Array.isArray(result.content) ? userContentParts3(result.content, imageUrls) : void 0;
       if (innerParts !== void 0) {
         pendingToolImages.push(...innerParts.filter((part) => part.type === "image_url"));
       }
       wire.push({
         role: "tool",
         tool_call_id: String(result.toolCallId),
-        content: contentToText6(result.content) || (innerParts !== void 0 ? TOOL_RESULT_IMAGE_TEXT4 : "(no output)")
+        content: contentToText5(result.content) || (innerParts !== void 0 ? TOOL_RESULT_IMAGE_TEXT3 : "(no output)")
       });
     }
     if (deferred && (parts !== void 0 || text.length > 0)) {
@@ -42670,7 +41376,7 @@ function serializeTraeMessages(messages, imageUrls) {
   flushToolImages();
   return wire;
 }
-function errorDetail5(body) {
+function errorDetail4(body) {
   try {
     const data = JSON.parse(body);
     const parts = [
@@ -42683,7 +41389,7 @@ function errorDetail5(body) {
   }
   return body;
 }
-function httpErrorCode5(status) {
+function httpErrorCode4(status) {
   if (status === 401 || status === 403) return "AUTH";
   if (status === 429) return "RATE_LIMIT";
   if (status === 400) return "INVALID_REQUEST";
@@ -42695,7 +41401,7 @@ function traeStreamErrorMessage(code, message2, model) {
   if (code !== 4001) return base;
   return `${base} \u2014\u2014 \u6A21\u578B\u300C${model}\u300D\u4E0D\u88AB\u4E0A\u6E38\u63A5\u53D7\uFF1A\u5B83\u901A\u5E38\u662F\u300C\u4EC5\u53EF\u89C1\u4F46\u4E0D\u53EF\u8C03\u7528\u300D\u7684\u81EA\u5B9A\u4E49\u6A21\u578B\uFF08\u9700\u5148\u5728 TRAE IDE \u5185\u81EA\u884C\u914D\u7F6E\u4F9B\u5E94\u5546\uFF09\uFF0C\u8BF7\u6539\u7528\u6A21\u578B\u5217\u8868\u4E2D\u7684\u5176\u5B83\u6A21\u578B`;
 }
-function isTransportError5(error) {
+function isTransportError4(error) {
   if (!(error instanceof Error)) return false;
   const message2 = error.message.toLowerCase();
   if (message2.includes("terminated")) return true;
@@ -42714,7 +41420,7 @@ function traeDisplayName(model) {
   }
   return `${model.name} \xB7 ${current}`;
 }
-var TraeAdapter = class extends LlmAdapter5 {
+var TraeAdapter = class extends LlmAdapter4 {
   constructor(options) {
     super();
     this.options = options;
@@ -42856,14 +41562,14 @@ var TraeAdapter = class extends LlmAdapter5 {
     if (config.supportThinking === false) return void 0;
     if (config.options.length === 0) return void 0;
     const efforts = config.options.map((option) => ({
-      id: ReasoningEffortId5(option),
+      id: ReasoningEffortId4(option),
       name: TRAE_EFFORT_NAMES[option] ?? option
     }));
     const fallback2 = strongestTraeEffort(config.options);
     const chosen = defaultTraeEffort(config, fallback2);
     return {
       efforts,
-      ...chosen !== void 0 ? { defaultEffort: ReasoningEffortId5(chosen) } : {}
+      ...chosen !== void 0 ? { defaultEffort: ReasoningEffortId4(chosen) } : {}
     };
   }
   /**
@@ -42955,7 +41661,7 @@ var TraeAdapter = class extends LlmAdapter5 {
       credential = await this.options.resolveCredential(options.model);
     }
     if (credential === void 0 || credential.access_token.length === 0) {
-      throw new LlmError8("trae: no usable credential; log in first", "MISSING_CREDENTIAL");
+      throw new LlmError7("trae: no usable credential; log in first", "MISSING_CREDENTIAL");
     }
     let currentAccountId = "";
     if (this.options.accountPool) {
@@ -42970,18 +41676,18 @@ var TraeAdapter = class extends LlmAdapter5 {
     }
     const imageRefs = /* @__PURE__ */ new Map();
     for (const message2 of options.messages) {
-      if (Array.isArray(message2.content)) collectImages4(message2.content, imageRefs);
+      if (Array.isArray(message2.content)) collectImages3(message2.content, imageRefs);
     }
     let imageUrls;
     if (imageRefs.size > 0) {
       if (!this.inputModalitiesFor(options.model).includes("image")) {
-        throw new LlmError8(
+        throw new LlmError7(
           `trae: model "${options.model}" does not accept image input.`,
           "UNSUPPORTED_CONTENT"
         );
       }
       if (this.options.readImage === void 0) {
-        throw new LlmError8(
+        throw new LlmError7(
           "trae: image input requires the attachment service; confirm the profile loads @deepseek-ai/dsh-attachment-local.",
           "UNSUPPORTED_CONTENT"
         );
@@ -43039,7 +41745,7 @@ var TraeAdapter = class extends LlmAdapter5 {
       await this.options.refresh();
       const refreshed = await this.options.resolveCredential(options.model);
       if (refreshed === void 0 || refreshed.access_token.length === 0) {
-        throw new LlmError8("trae: credential expired and refresh failed", "AUTH", { status: response.status });
+        throw new LlmError7("trae: credential expired and refresh failed", "AUTH", { status: response.status });
       }
       credential = refreshed;
       response = await this.send(credential, body, options);
@@ -43079,16 +41785,16 @@ var TraeAdapter = class extends LlmAdapter5 {
           lastKind = classifyTraeError(response.status, errorText2);
           if (!shouldRotateTraeAccount(lastKind)) break;
         }
-        throw new LlmError8(
-          `trae: \u6A21\u578B ${options.model} \u6240\u6709\u8D26\u53F7\u5747\u4E0D\u53EF\u7528\uFF08${errorDetail5(errorText2)}\uFF09`,
-          lastKind === "quota-exceeded" ? "QUOTA_EXCEEDED" : httpErrorCode5(lastStatus),
+        throw new LlmError7(
+          `trae: \u6A21\u578B ${options.model} \u6240\u6709\u8D26\u53F7\u5747\u4E0D\u53EF\u7528\uFF08${errorDetail4(errorText2)}\uFF09`,
+          lastKind === "quota-exceeded" ? "QUOTA_EXCEEDED" : httpErrorCode4(lastStatus),
           { status: lastStatus }
         );
       }
       if (lastKind === "quota-exceeded") {
-        throw new LlmError8(`trae: \u79EF\u5206\u4E0D\u8DB3\uFF08${errorDetail5(errorText2)}\uFF09`, "QUOTA_EXCEEDED", { status: lastStatus });
+        throw new LlmError7(`trae: \u79EF\u5206\u4E0D\u8DB3\uFF08${errorDetail4(errorText2)}\uFF09`, "QUOTA_EXCEEDED", { status: lastStatus });
       }
-      throw new LlmError8(`trae: ${errorDetail5(errorText2)}`, httpErrorCode5(lastStatus), { status: lastStatus });
+      throw new LlmError7(`trae: ${errorDetail4(errorText2)}`, httpErrorCode4(lastStatus), { status: lastStatus });
     }
     const triedStreamAccounts = /* @__PURE__ */ new Set();
     if (currentAccountId.length > 0) triedStreamAccounts.add(currentAccountId);
@@ -43098,9 +41804,9 @@ var TraeAdapter = class extends LlmAdapter5 {
         yield* this.consumeSse(response, options);
         return;
       } catch (error) {
-        if (error instanceof LlmError8 && error.code === TRAE_ROTATABLE_STREAM_ERROR) {
+        if (error instanceof LlmError7 && error.code === TRAE_ROTATABLE_STREAM_ERROR) {
           if (this.options.accountPool === void 0 || rotateBudget <= 0) {
-            throw new LlmError8(error.message, "QUOTA_EXCEEDED");
+            throw new LlmError7(error.message, "QUOTA_EXCEEDED");
           }
           if (options.signal?.aborted) throw error;
           rotateBudget -= 1;
@@ -43117,7 +41823,7 @@ var TraeAdapter = class extends LlmAdapter5 {
             triedStreamAccounts
           );
           if (next === null || next === void 0 || triedStreamAccounts.has(next.entry.id)) {
-            throw new LlmError8(error.message, "QUOTA_EXCEEDED");
+            throw new LlmError7(error.message, "QUOTA_EXCEEDED");
           }
           triedStreamAccounts.add(next.entry.id);
           credential = next.credential;
@@ -43127,19 +41833,19 @@ var TraeAdapter = class extends LlmAdapter5 {
             const text = await response.text().catch(() => "");
             const kind = classifyTraeError(response.status, text);
             if (!shouldRotateTraeAccount(kind)) {
-              throw new LlmError8(`trae: ${errorDetail5(text)}`, httpErrorCode5(response.status), { status: response.status });
+              throw new LlmError7(`trae: ${errorDetail4(text)}`, httpErrorCode4(response.status), { status: response.status });
             }
             continue;
           }
           continue;
         }
-        const empty = error instanceof LlmError8 && error.message.includes("upstream returned no events");
+        const empty = error instanceof LlmError7 && error.message.includes("upstream returned no events");
         if (!empty || attempt >= 1) throw error;
         if (options.signal?.aborted) throw error;
         response = await this.send(credential, body, options);
         if (!response.ok) {
           const text = await response.text().catch(() => "");
-          throw new LlmError8(`trae: ${errorDetail5(text)}`, httpErrorCode5(response.status), { status: response.status });
+          throw new LlmError7(`trae: ${errorDetail4(text)}`, httpErrorCode4(response.status), { status: response.status });
         }
       }
     }
@@ -43159,8 +41865,8 @@ var TraeAdapter = class extends LlmAdapter5 {
       });
     } catch (error) {
       if (options.signal?.aborted) throw error;
-      if (isTransportError5(error)) {
-        throw new LlmError8(`trae: transport error: ${errorMessage5(error)}`, "TRANSPORT", { cause: error });
+      if (isTransportError4(error)) {
+        throw new LlmError7(`trae: transport error: ${errorMessage4(error)}`, "TRANSPORT", { cause: error });
       }
       throw error;
     }
@@ -43198,7 +41904,7 @@ var TraeAdapter = class extends LlmAdapter5 {
    * ```
    */
   async *consumeSse(response, options) {
-    if (!response.body) throw new LlmError8("trae: empty model response body", "EMPTY_RESPONSE");
+    if (!response.body) throw new LlmError7("trae: empty model response body", "EMPTY_RESPONSE");
     const blocks = [];
     let nextIndex = 0;
     const loopGuard = isReasoningLoopGuardEnabled() ? createReasoningLoopDetector() : void 0;
@@ -43225,15 +41931,15 @@ var TraeAdapter = class extends LlmAdapter5 {
         if (streamEnded) break;
         let result;
         try {
-          const timeoutMs = firstTokenReceived ? resolveChunkTimeoutMs5() : resolveFirstTokenTimeoutMs5();
+          const timeoutMs = firstTokenReceived ? resolveChunkTimeoutMs4() : resolveFirstTokenTimeoutMs4();
           const phase = firstTokenReceived ? "chunk" : "first-token";
           result = await readWithIdleTimeout(reader, timeoutMs, "trae", options.signal, phase);
           if (!result.done) firstTokenReceived = true;
         } catch (error) {
           if (options.signal?.aborted) throw error;
-          if (error instanceof LlmError8) throw error;
-          if (isTransportError5(error)) {
-            throw new LlmError8(`trae: sse transport error: ${errorMessage5(error)}`, "TRANSPORT", { cause: error });
+          if (error instanceof LlmError7) throw error;
+          if (isTransportError4(error)) {
+            throw new LlmError7(`trae: sse transport error: ${errorMessage4(error)}`, "TRANSPORT", { cause: error });
           }
           throw error;
         }
@@ -43325,7 +42031,7 @@ var TraeAdapter = class extends LlmAdapter5 {
                           yield {
                             type: "tool-call-delta",
                             index: block.index,
-                            id: ToolCallId5(callId),
+                            id: ToolCallId4(callId),
                             name: block.name,
                             argumentsDelta: block.text
                           };
@@ -43334,7 +42040,7 @@ var TraeAdapter = class extends LlmAdapter5 {
                         yield {
                           type: "tool-call-delta",
                           index: block.index,
-                          id: ToolCallId5(callId),
+                          id: ToolCallId4(callId),
                           ...block.name !== void 0 ? { name: block.name } : {},
                           argumentsDelta: fragment
                         };
@@ -43369,9 +42075,9 @@ var TraeAdapter = class extends LlmAdapter5 {
                   if (ev.errorCode !== void 0 && ev.errorMessage !== void 0) {
                     const message2 = traeStreamErrorMessage(ev.errorCode, ev.errorMessage, options.model);
                     if (isRotatableStreamError(ev.errorCode) && !gotAnyContent) {
-                      throw new LlmError8(message2, TRAE_ROTATABLE_STREAM_ERROR);
+                      throw new LlmError7(message2, TRAE_ROTATABLE_STREAM_ERROR);
                     }
-                    throw new LlmError8(
+                    throw new LlmError7(
                       message2,
                       ev.errorCode === 1005 || ev.errorCode === 4008 ? "QUOTA_EXCEEDED" : "SERVER"
                     );
@@ -43399,7 +42105,7 @@ var TraeAdapter = class extends LlmAdapter5 {
       reader.releaseLock();
     }
     if (!sawAnyUpstreamEvent) {
-      throw new LlmError8(
+      throw new LlmError7(
         "trae: upstream returned no events (empty response before first model event)",
         "TRANSPORT"
       );
@@ -43416,7 +42122,7 @@ var TraeAdapter = class extends LlmAdapter5 {
         index,
         block: {
           type: "tool-call",
-          id: ToolCallId5(block.callId ?? ""),
+          id: ToolCallId4(block.callId ?? ""),
           name: block.name,
           arguments: isTruncatedArguments(block.text) ? block.text : normalizeToolArguments(block.text)
         }
@@ -43480,7 +42186,7 @@ function registerTraeLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/cline-adapter.ts
-import { LlmAdapter as LlmAdapter6, LlmError as LlmError9, ReasoningEffortId as ReasoningEffortId6 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter5, LlmError as LlmError8, ReasoningEffortId as ReasoningEffortId5 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/cline-rate-limit.ts
 var CLINE_WAIT_PATTERN = /try again in\s+([^.;\n]*)/i;
@@ -44155,13 +42861,13 @@ function sanitizeClineToolParameters(value) {
   }
   return out;
 }
-function resolveFirstTokenTimeoutMs6() {
+function resolveFirstTokenTimeoutMs5() {
   return Number.parseInt(process.env.DSH_CLINE_SSE_FIRST_TOKEN_TIMEOUT_MS ?? "", 10) || 12e4;
 }
-function resolveChunkTimeoutMs6() {
+function resolveChunkTimeoutMs5() {
   return Number.parseInt(process.env.DSH_CLINE_SSE_CHUNK_TIMEOUT_MS ?? "", 10) || 12e4;
 }
-var ClineAdapter = class extends LlmAdapter6 {
+var ClineAdapter = class extends LlmAdapter5 {
   constructor(options) {
     super();
     this.options = options;
@@ -44360,10 +43066,10 @@ var ClineAdapter = class extends LlmAdapter6 {
     if (maxTokens !== void 0) resolved.defaultMaxTokens = maxTokens;
     resolved.reasoning = {
       efforts: CLINE_REASONING_EFFORTS.map((effort) => ({
-        id: ReasoningEffortId6(effort.id),
+        id: ReasoningEffortId5(effort.id),
         name: effort.name
       })),
-      defaultEffort: ReasoningEffortId6(CLINE_DEFAULT_REASONING_EFFORT)
+      defaultEffort: ReasoningEffortId5(CLINE_DEFAULT_REASONING_EFFORT)
     };
     return resolved;
   }
@@ -44383,19 +43089,19 @@ var ClineAdapter = class extends LlmAdapter6 {
   async *stream(options) {
     const imageRefs = /* @__PURE__ */ new Map();
     for (const message2 of options.messages) {
-      if (Array.isArray(message2.content)) collectImages3(message2.content, imageRefs);
+      if (Array.isArray(message2.content)) collectImages2(message2.content, imageRefs);
     }
     let imageUrls;
     if (imageRefs.size > 0) {
       await this.ensureRemoteModels();
       if (!this.inputModalitiesFor(options.model).includes("image")) {
-        throw new LlmError9(
+        throw new LlmError8(
           `cline: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`,
           "UNSUPPORTED_CONTENT"
         );
       }
       if (this.options.readImage === void 0) {
-        throw new LlmError9("cline: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
+        throw new LlmError8("cline: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
       }
       imageUrls = /* @__PURE__ */ new Map();
       const readImage = this.options.readImage;
@@ -44416,9 +43122,9 @@ var ClineAdapter = class extends LlmAdapter6 {
       credential = await this.options.resolveCredential(options.model);
     }
     if (credential === void 0 || credential.access_token.length === 0) {
-      throw new LlmError9("cline: no usable credential; log in first", "MISSING_CREDENTIAL");
+      throw new LlmError8("cline: no usable credential; log in first", "MISSING_CREDENTIAL");
     }
-    const messages = serializeMessages4(options.messages, imageUrls);
+    const messages = serializeMessages3(options.messages, imageUrls);
     const bodyObj = {
       model: options.model,
       messages: options.system !== void 0 && options.system.length > 0 ? [{ role: "system", content: options.system }, ...messages] : messages,
@@ -44450,8 +43156,8 @@ var ClineAdapter = class extends LlmAdapter6 {
     if (!response.ok && (response.status === 401 || response.status === 403)) {
       const forbiddenText = await response.text().catch(() => "");
       if (isClineRegionForbidden(response.status, forbiddenText)) {
-        throw new LlmError9(
-          `cline: ${errorDetail4(forbiddenText)}`,
+        throw new LlmError8(
+          `cline: ${errorDetail3(forbiddenText)}`,
           "PERMISSION_DENIED",
           { status: response.status }
         );
@@ -44459,7 +43165,7 @@ var ClineAdapter = class extends LlmAdapter6 {
       await this.options.refresh();
       const refreshed = await this.options.resolveCredential(options.model);
       if (refreshed === void 0 || refreshed.access_token.length === 0) {
-        throw new LlmError9("cline: credential expired and refresh failed", "AUTH", { status: response.status });
+        throw new LlmError8("cline: credential expired and refresh failed", "AUTH", { status: response.status });
       }
       credential = refreshed;
       response = await this.send(credential, body, options);
@@ -44513,14 +43219,14 @@ var ClineAdapter = class extends LlmAdapter6 {
           hint,
           recordsClineRateLimit(response.status, errorText2) ? clineRateLimitResetAt(response, errorText2, options.model) : void 0
         );
-        throw new LlmError9(
+        throw new LlmError8(
           `cline: \u6A21\u578B ${options.model} \u7684\u6240\u6709\u8D26\u53F7\u5747\u4E0D\u53EF\u7528 \u2014\u2014 ${advice}`,
           "QUOTA_EXCEEDED"
         );
       }
-      throw new LlmError9(
-        `cline: ${errorDetail4(errorText2)}`,
-        httpErrorCode4(response.status),
+      throw new LlmError8(
+        `cline: ${errorDetail3(errorText2)}`,
+        httpErrorCode3(response.status),
         { status: response.status }
       );
     }
@@ -44623,8 +43329,8 @@ var ClineAdapter = class extends LlmAdapter6 {
   consume(response, options, onFrame) {
     return consumeOpenAiSse(response, { ...options.signal === void 0 ? {} : { signal: options.signal } }, {
       label: "cline",
-      firstTokenTimeoutMs: resolveFirstTokenTimeoutMs6(),
-      chunkTimeoutMs: resolveChunkTimeoutMs6(),
+      firstTokenTimeoutMs: resolveFirstTokenTimeoutMs5(),
+      chunkTimeoutMs: resolveChunkTimeoutMs5(),
       ...options.maxTokens === void 0 ? {} : { maxTokens: options.maxTokens },
       // 旁路观测网关路由元数据（真正服务这笔请求的上游渠道）。
       ...onFrame === void 0 ? {} : { onFrame }
@@ -44647,8 +43353,8 @@ var ClineAdapter = class extends LlmAdapter6 {
       });
     } catch (error) {
       if (options.signal?.aborted === true) throw error;
-      if (isTransportError4(error)) {
-        throw new LlmError9(
+      if (isTransportError3(error)) {
+        throw new LlmError8(
           `cline: transport error: ${error instanceof Error ? error.message : String(error)}`,
           "TRANSPORT",
           { cause: error }
@@ -44700,13 +43406,13 @@ function registerClineLlm(ctx, options) {
 init_commandcode_product();
 init_commandcode();
 init_commandcode_auth();
-import { LlmAdapter as LlmAdapter7, LlmError as LlmError10 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter6, LlmError as LlmError9 } from "@deepseek-ai/dsh-llm";
 var FIRST_TOKEN_TIMEOUT_MS = 3e5;
 var CHUNK_TIMEOUT_MS = 3e5;
 function fallbackRows(product) {
   return [...product.fallbackModels];
 }
-var CommandCodeAdapter = class extends LlmAdapter7 {
+var CommandCodeAdapter = class extends LlmAdapter6 {
   constructor(options) {
     super();
     this.options = options;
@@ -44797,10 +43503,10 @@ var CommandCodeAdapter = class extends LlmAdapter7 {
   async *stream(options) {
     const credential = await this.options.resolveCredential();
     if (!isCredentialUsable(credential)) {
-      throw new LlmError10("commandcode: \u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55", "MISSING_CREDENTIAL");
+      throw new LlmError9("commandcode: \u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55", "MISSING_CREDENTIAL");
     }
     const imageUrls = /* @__PURE__ */ new Map();
-    const messages = serializeMessages4(options.messages, imageUrls);
+    const messages = serializeMessages3(options.messages, imageUrls);
     if (options.system !== void 0 && options.system.length > 0) {
       messages.unshift({ role: "system", content: options.system });
     }
@@ -44831,30 +43537,30 @@ var CommandCodeAdapter = class extends LlmAdapter7 {
         ...options.signal === void 0 ? {} : { signal: options.signal }
       });
     } catch (error) {
-      if (options.signal?.aborted === true) throw new LlmError10("commandcode: \u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
-      if (isTransportError4(error)) throw new LlmError10(`commandcode: \u8FDE\u63A5\u5931\u8D25\uFF08${errorMessage4(error)}\uFF09`, "TRANSPORT");
-      throw new LlmError10(`commandcode: \u8BF7\u6C42\u5931\u8D25\uFF08${errorMessage4(error)}\uFF09`, "TRANSPORT");
+      if (options.signal?.aborted === true) throw new LlmError9("commandcode: \u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
+      if (isTransportError3(error)) throw new LlmError9(`commandcode: \u8FDE\u63A5\u5931\u8D25\uFF08${errorMessage3(error)}\uFF09`, "TRANSPORT");
+      throw new LlmError9(`commandcode: \u8BF7\u6C42\u5931\u8D25\uFF08${errorMessage3(error)}\uFF09`, "TRANSPORT");
     }
     if (!response.ok) {
       const text = await response.text().catch(() => "");
-      const detail = errorDetail4(text);
+      const detail = errorDetail3(text);
       if (response.status === 401) {
-        throw new LlmError10(
+        throw new LlmError9(
           `commandcode: API Key \u65E0\u6548\u6216\u5DF2\u64A4\u9500\uFF08HTTP 401\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`,
           "AUTH",
           { status: 401 }
         );
       }
       if (response.status === 429) {
-        throw new LlmError10(
+        throw new LlmError9(
           `commandcode: \u89E6\u53D1\u9650\u6D41\uFF08HTTP 429\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`,
           "RATE_LIMIT",
           { status: 429 }
         );
       }
-      throw new LlmError10(
+      throw new LlmError9(
         `commandcode: \u4E0A\u6E38\u8FD4\u56DE HTTP ${response.status}${detail === "" ? "" : `\uFF1A${detail}`}`,
-        httpErrorCode4(response.status),
+        httpErrorCode3(response.status),
         { status: response.status }
       );
     }
@@ -45029,7 +43735,7 @@ var CommandCodeAuth = class extends Service {
 };
 
 // vendor/channel-pack/src/monkeycode-adapter.ts
-import { LlmAdapter as LlmAdapter8, LlmError as LlmError11 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter7, LlmError as LlmError10 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/monkeycode-product.ts
 var MONKEYCODE_FALLBACK_MODELS = [
@@ -45170,13 +43876,13 @@ function flattenMessages(messages, system) {
   const parts = [];
   if (system !== void 0 && system.trim() !== "") parts.push(system.trim());
   for (const message2 of messages) {
-    const text = contentToText8(message2.content);
+    const text = contentToText7(message2.content);
     if (text.trim() === "") continue;
     parts.push(text.trim());
   }
   return parts.join("\n\n");
 }
-function contentToText8(content) {
+function contentToText7(content) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   const parts = [];
@@ -45193,7 +43899,7 @@ function contentToText8(content) {
 }
 
 // vendor/channel-pack/src/monkeycode-ws.ts
-import { createHash as createHash5, randomBytes as randomBytes3 } from "node:crypto";
+import { createHash as createHash4, randomBytes as randomBytes3 } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 var WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -45207,7 +43913,7 @@ var WS_OPCODE = {
 };
 var WS_MAX_PAYLOAD = 16 * 1024 * 1024;
 function wsAcceptKey(key) {
-  return createHash5("sha1").update(`${key}${WS_GUID}`).digest("base64");
+  return createHash4("sha1").update(`${key}${WS_GUID}`).digest("base64");
 }
 function createWsKey() {
   return randomBytes3(16).toString("base64");
@@ -45742,7 +44448,7 @@ async function* streamChat(fetcher, product, credential, options) {
 }
 
 // vendor/channel-pack/src/monkeycode-adapter.ts
-var MonkeyCodeAdapter = class extends LlmAdapter8 {
+var MonkeyCodeAdapter = class extends LlmAdapter7 {
   constructor(options) {
     super();
     this.options = options;
@@ -45826,7 +44532,7 @@ var MonkeyCodeAdapter = class extends LlmAdapter8 {
   async *stream(options) {
     const credential = await this.options.resolveCredential();
     if (!isCredentialUsable2(credential)) {
-      throw new LlmError11("MonkeyCode\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u7C98\u8D34 Cookie", "MISSING_CREDENTIAL");
+      throw new LlmError10("MonkeyCode\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u7C98\u8D34 Cookie", "MISSING_CREDENTIAL");
     }
     try {
       const content = flattenMessages(options.messages, options.system);
@@ -45838,12 +44544,12 @@ var MonkeyCodeAdapter = class extends LlmAdapter8 {
         yield { type: "text-delta", text: delta.text };
       }
     } catch (error) {
-      if (options.signal?.aborted === true) throw new LlmError11("MonkeyCode\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
+      if (options.signal?.aborted === true) throw new LlmError10("MonkeyCode\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
       const message2 = error instanceof Error ? error.message : String(error);
       if (/401|403|凭据|Cookie/.test(message2)) {
-        throw new LlmError11(`MonkeyCode\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u7C98\u8D34 Cookie\uFF08${message2}\uFF09`, "AUTH");
+        throw new LlmError10(`MonkeyCode\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u7C98\u8D34 Cookie\uFF08${message2}\uFF09`, "AUTH");
       }
-      throw new LlmError11(message2, "TRANSPORT");
+      throw new LlmError10(message2, "TRANSPORT");
     }
     yield { type: "finish", reason: "stop" };
   }
@@ -45871,7 +44577,7 @@ function registerMonkeyCodeLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/orcaterm-adapter.ts
-import { LlmAdapter as LlmAdapter9, LlmError as LlmError12 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter8, LlmError as LlmError11 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/orcaterm-product.ts
 var ORCATERM_FALLBACK_MODELS = [
@@ -45985,7 +44691,7 @@ function flattenMessages2(messages, system) {
   if (system !== void 0 && system.trim() !== "") parts.push(`## system
 ${system.trim()}`);
   for (const message2 of messages) {
-    const text = contentToText9(message2.content);
+    const text = contentToText8(message2.content);
     if (text.trim() === "") continue;
     const role = message2.role === "assistant" ? "assistant" : message2.role === "system" ? "system" : "user";
     parts.push(`## ${role}
@@ -45993,7 +44699,7 @@ ${text.trim()}`);
   }
   return parts.join("\n\n");
 }
-function contentToText9(content) {
+function contentToText8(content) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   const parts = [];
@@ -46092,7 +44798,7 @@ async function* streamChat2(fetcher, product, credential, options) {
 }
 
 // vendor/channel-pack/src/orcaterm-adapter.ts
-var OrcaTermAdapter = class extends LlmAdapter9 {
+var OrcaTermAdapter = class extends LlmAdapter8 {
   constructor(options) {
     super();
     this.options = options;
@@ -46149,7 +44855,7 @@ var OrcaTermAdapter = class extends LlmAdapter9 {
   async *stream(options) {
     const credential = await this.options.resolveCredential();
     if (!isCredentialUsable3(credential)) {
-      throw new LlmError12("OrcaTerm\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u5728\u6E20\u9053\u9762\u677F\u7C98\u8D34 Cookie", "MISSING_CREDENTIAL");
+      throw new LlmError11("OrcaTerm\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u5728\u6E20\u9053\u9762\u677F\u7C98\u8D34 Cookie", "MISSING_CREDENTIAL");
     }
     try {
       for await (const delta of streamChat2(this.fetchImpl, this.product, credential, {
@@ -46162,12 +44868,12 @@ var OrcaTermAdapter = class extends LlmAdapter9 {
         if (delta.text !== void 0) yield { type: "text-delta", text: delta.text };
       }
     } catch (error) {
-      if (options.signal?.aborted === true) throw new LlmError12("OrcaTerm\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
+      if (options.signal?.aborted === true) throw new LlmError11("OrcaTerm\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
       const message2 = error instanceof Error ? error.message : String(error);
       if (/401|403|Cookie|凭据/.test(message2)) {
-        throw new LlmError12(`OrcaTerm\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u7C98\u8D34 Cookie\uFF08${message2}\uFF09`, "AUTH");
+        throw new LlmError11(`OrcaTerm\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u7C98\u8D34 Cookie\uFF08${message2}\uFF09`, "AUTH");
       }
-      throw new LlmError12(message2, "TRANSPORT");
+      throw new LlmError11(message2, "TRANSPORT");
     }
     yield { type: "finish", reason: "stop" };
   }
@@ -46194,7 +44900,7 @@ function registerOrcaTermLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/kuku-adapter.ts
-import { LlmAdapter as LlmAdapter10, LlmError as LlmError13 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter9, LlmError as LlmError12 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/kuku-product.ts
 var KUKU_FALLBACK_MODELS = [
@@ -46337,13 +45043,13 @@ function flattenMessages3(messages, system) {
   const parts = [];
   if (system !== void 0 && system.trim() !== "") parts.push(system.trim());
   for (const message2 of messages) {
-    const text = contentToText10(message2.content);
+    const text = contentToText9(message2.content);
     if (text.trim() === "") continue;
     parts.push(text.trim());
   }
   return parts.join("\n\n");
 }
-function contentToText10(content) {
+function contentToText9(content) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   const parts = [];
@@ -46449,7 +45155,7 @@ async function* streamChat3(fetcher, product, credential, options) {
 }
 
 // vendor/channel-pack/src/kuku-adapter.ts
-var KukuAdapter = class extends LlmAdapter10 {
+var KukuAdapter = class extends LlmAdapter9 {
   constructor(options) {
     super();
     this.options = options;
@@ -46500,7 +45206,7 @@ var KukuAdapter = class extends LlmAdapter10 {
   async *stream(options) {
     const credential = await this.options.resolveCredential();
     if (!isCredentialUsable4(credential)) {
-      throw new LlmError13("KukuAI\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u5728\u6E20\u9053\u9762\u677F\u7C98\u8D34\u542B BDUSS \u7684 Cookie", "MISSING_CREDENTIAL");
+      throw new LlmError12("KukuAI\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u5728\u6E20\u9053\u9762\u677F\u7C98\u8D34\u542B BDUSS \u7684 Cookie", "MISSING_CREDENTIAL");
     }
     try {
       for await (const delta of streamChat3(this.fetchImpl, this.product, credential, {
@@ -46513,12 +45219,12 @@ var KukuAdapter = class extends LlmAdapter10 {
         if (delta.text !== void 0) yield { type: "text-delta", text: delta.text };
       }
     } catch (error) {
-      if (options.signal?.aborted === true) throw new LlmError13("KukuAI\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
+      if (options.signal?.aborted === true) throw new LlmError12("KukuAI\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
       const message2 = error instanceof Error ? error.message : String(error);
       if (/401|403|BDUSS|凭据/.test(message2)) {
-        throw new LlmError13(`KukuAI\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u7C98\u8D34 Cookie\uFF08${message2}\uFF09`, "AUTH");
+        throw new LlmError12(`KukuAI\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u7C98\u8D34 Cookie\uFF08${message2}\uFF09`, "AUTH");
       }
-      throw new LlmError13(message2, "TRANSPORT");
+      throw new LlmError12(message2, "TRANSPORT");
     }
     yield { type: "finish", reason: "stop" };
   }
@@ -46544,8 +45250,8 @@ function registerKukuLlm(ctx, options) {
 init_accio_product();
 init_accio();
 init_accio_auth();
-import { LlmAdapter as LlmAdapter11, LlmError as LlmError14 } from "@deepseek-ai/dsh-llm";
-var AccioAdapter = class extends LlmAdapter11 {
+import { LlmAdapter as LlmAdapter10, LlmError as LlmError13 } from "@deepseek-ai/dsh-llm";
+var AccioAdapter = class extends LlmAdapter10 {
   constructor(options) {
     super();
     this.options = options;
@@ -46623,7 +45329,7 @@ var AccioAdapter = class extends LlmAdapter11 {
   async credentialForUse() {
     let credential = await this.options.resolveCredential();
     if (!isCredentialUsable5(credential)) {
-      throw new LlmError14(`Accio\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55 ${this.product.displayName}`, "MISSING_CREDENTIAL");
+      throw new LlmError13(`Accio\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55 ${this.product.displayName}`, "MISSING_CREDENTIAL");
     }
     if (isCredentialExpired2(credential) && credential.refresh_token !== void 0) {
       const refreshed = await refreshCredential(this.fetchImpl, this.product, credential);
@@ -46654,12 +45360,12 @@ var AccioAdapter = class extends LlmAdapter11 {
         if (delta.text !== void 0) yield { type: "text-delta", text: delta.text };
       }
     } catch (error) {
-      if (options.signal?.aborted === true) throw new LlmError14("Accio\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
+      if (options.signal?.aborted === true) throw new LlmError13("Accio\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
       const message2 = error instanceof Error ? error.message : String(error);
       if (/401|403|凭据|登录/.test(message2)) {
-        throw new LlmError14(`Accio\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF08${message2}\uFF09`, "AUTH");
+        throw new LlmError13(`Accio\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF08${message2}\uFF09`, "AUTH");
       }
-      throw new LlmError14(message2, "TRANSPORT");
+      throw new LlmError13(message2, "TRANSPORT");
     }
     yield { type: "finish", reason: "stop" };
   }
@@ -46684,10 +45390,10 @@ function registerAccioLlm(ctx, options) {
 // vendor/channel-pack/src/officeace-adapter.ts
 init_officeace_product();
 init_officeace();
-import { LlmAdapter as LlmAdapter12, LlmError as LlmError15 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter11, LlmError as LlmError14 } from "@deepseek-ai/dsh-llm";
 var FIRST_TOKEN_TIMEOUT_MS2 = 3e5;
 var CHUNK_TIMEOUT_MS2 = 3e5;
-var OfficeAceAdapter = class extends LlmAdapter12 {
+var OfficeAceAdapter = class extends LlmAdapter11 {
   constructor(options) {
     super();
     this.options = options;
@@ -46781,11 +45487,11 @@ var OfficeAceAdapter = class extends LlmAdapter12 {
   async *stream(options) {
     const credential = await this.options.resolveCredential();
     if (!isCredentialUsable6(credential)) {
-      throw new LlmError15("OfficeAce\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55", "MISSING_CREDENTIAL");
+      throw new LlmError14("OfficeAce\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55", "MISSING_CREDENTIAL");
     }
     const base = normalizeBaseUrl(credential.base_url);
     const imageUrls = /* @__PURE__ */ new Map();
-    const messages = serializeMessages4(options.messages, imageUrls);
+    const messages = serializeMessages3(options.messages, imageUrls);
     if (options.system !== void 0 && options.system.length > 0) {
       messages.unshift({ role: "system", content: options.system });
     }
@@ -46811,26 +45517,26 @@ var OfficeAceAdapter = class extends LlmAdapter12 {
         ...options.signal === void 0 ? {} : { signal: options.signal }
       });
     } catch (error) {
-      if (options.signal?.aborted === true) throw new LlmError15("OfficeAce\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
-      if (isTransportError4(error)) throw new LlmError15(`OfficeAce\uFF1A\u8FDE\u63A5\u5931\u8D25\uFF08${errorMessage4(error)}\uFF09`, "TRANSPORT");
-      throw new LlmError15(`OfficeAce\uFF1A\u8BF7\u6C42\u5931\u8D25\uFF08${errorMessage4(error)}\uFF09`, "TRANSPORT");
+      if (options.signal?.aborted === true) throw new LlmError14("OfficeAce\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
+      if (isTransportError3(error)) throw new LlmError14(`OfficeAce\uFF1A\u8FDE\u63A5\u5931\u8D25\uFF08${errorMessage3(error)}\uFF09`, "TRANSPORT");
+      throw new LlmError14(`OfficeAce\uFF1A\u8BF7\u6C42\u5931\u8D25\uFF08${errorMessage3(error)}\uFF09`, "TRANSPORT");
     }
     if (!response.ok) {
       const text = await response.text().catch(() => "");
-      const detail = errorDetail4(text);
+      const detail = errorDetail3(text);
       if (response.status === 401 || response.status === 403) {
-        throw new LlmError15(
+        throw new LlmError14(
           `OfficeAce\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF08HTTP ${response.status}\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`,
           "AUTH",
           { status: response.status }
         );
       }
       if (response.status === 429) {
-        throw new LlmError15(`OfficeAce\uFF1A\u89E6\u53D1\u9650\u6D41\uFF08HTTP 429\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`, "RATE_LIMIT", { status: 429 });
+        throw new LlmError14(`OfficeAce\uFF1A\u89E6\u53D1\u9650\u6D41\uFF08HTTP 429\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`, "RATE_LIMIT", { status: 429 });
       }
-      throw new LlmError15(
+      throw new LlmError14(
         `OfficeAce\uFF1A\u4E0A\u6E38\u8FD4\u56DE HTTP ${response.status}${detail === "" ? "" : `\uFF1A${detail}`}`,
-        httpErrorCode4(response.status),
+        httpErrorCode3(response.status),
         { status: response.status }
       );
     }
@@ -46860,7 +45566,7 @@ function registerOfficeAceLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/autoclaw-adapter.ts
-import { LlmAdapter as LlmAdapter13, LlmError as LlmError16 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter12, LlmError as LlmError15 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/autoclaw-product.ts
 var AUTOCLAW_FALLBACK_MODELS = [
@@ -46935,7 +45641,7 @@ function parseModelConfig(value) {
 // vendor/channel-pack/src/autoclaw-adapter.ts
 var FIRST_TOKEN_TIMEOUT_MS3 = 3e5;
 var CHUNK_TIMEOUT_MS3 = 3e5;
-var AutoClawAdapter = class extends LlmAdapter13 {
+var AutoClawAdapter = class extends LlmAdapter12 {
   constructor(options) {
     super();
     this.options = options;
@@ -47034,10 +45740,10 @@ var AutoClawAdapter = class extends LlmAdapter13 {
   async *stream(options) {
     const credential = await this.options.resolveCredential();
     if (!isCredentialUsable7(credential)) {
-      throw new LlmError16(`AutoClaw\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55 ${this.product.displayName}`, "MISSING_CREDENTIAL");
+      throw new LlmError15(`AutoClaw\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55 ${this.product.displayName}`, "MISSING_CREDENTIAL");
     }
     const imageUrls = /* @__PURE__ */ new Map();
-    const messages = serializeMessages4(options.messages, imageUrls);
+    const messages = serializeMessages3(options.messages, imageUrls);
     if (options.system !== void 0 && options.system.length > 0) {
       messages.unshift({ role: "system", content: options.system });
     }
@@ -47058,26 +45764,26 @@ var AutoClawAdapter = class extends LlmAdapter13 {
         ...options.signal === void 0 ? {} : { signal: options.signal }
       });
     } catch (error) {
-      if (options.signal?.aborted === true) throw new LlmError16("AutoClaw\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
-      if (isTransportError4(error)) throw new LlmError16(`AutoClaw\uFF1A\u8FDE\u63A5\u5931\u8D25\uFF08${errorMessage4(error)}\uFF09`, "TRANSPORT");
-      throw new LlmError16(`AutoClaw\uFF1A\u8BF7\u6C42\u5931\u8D25\uFF08${errorMessage4(error)}\uFF09`, "TRANSPORT");
+      if (options.signal?.aborted === true) throw new LlmError15("AutoClaw\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
+      if (isTransportError3(error)) throw new LlmError15(`AutoClaw\uFF1A\u8FDE\u63A5\u5931\u8D25\uFF08${errorMessage3(error)}\uFF09`, "TRANSPORT");
+      throw new LlmError15(`AutoClaw\uFF1A\u8BF7\u6C42\u5931\u8D25\uFF08${errorMessage3(error)}\uFF09`, "TRANSPORT");
     }
     if (!response.ok) {
       const text = await response.text().catch(() => "");
-      const detail = errorDetail4(text);
+      const detail = errorDetail3(text);
       if (response.status === 401 || response.status === 403) {
-        throw new LlmError16(
+        throw new LlmError15(
           `AutoClaw\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF08HTTP ${response.status}\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`,
           "AUTH",
           { status: response.status }
         );
       }
       if (response.status === 429) {
-        throw new LlmError16(`AutoClaw\uFF1A\u89E6\u53D1\u9650\u6D41\uFF08HTTP 429\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`, "RATE_LIMIT", { status: 429 });
+        throw new LlmError15(`AutoClaw\uFF1A\u89E6\u53D1\u9650\u6D41\uFF08HTTP 429\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`, "RATE_LIMIT", { status: 429 });
       }
-      throw new LlmError16(
+      throw new LlmError15(
         `AutoClaw\uFF1A\u4E0A\u6E38\u8FD4\u56DE HTTP ${response.status}${detail === "" ? "" : `\uFF1A${detail}`}`,
-        httpErrorCode4(response.status),
+        httpErrorCode3(response.status),
         { status: response.status }
       );
     }
@@ -47107,7 +45813,7 @@ function registerAutoClawLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/loomy-adapter.ts
-import { LlmAdapter as LlmAdapter14, LlmError as LlmError17, ReasoningEffortId as ReasoningEffortId8 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter13, LlmError as LlmError16, ReasoningEffortId as ReasoningEffortId7 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/loomy.ts
 var LOOMY_API_BASE = "https://loomyad.xunfei.cn/api/v1";
@@ -47275,7 +45981,7 @@ function fallbackToRemote(model) {
     ...model.defaultEffort !== void 0 ? { defaultEffort: model.defaultEffort } : {}
   };
 }
-var LoomyAdapter = class extends LlmAdapter14 {
+var LoomyAdapter = class extends LlmAdapter13 {
   constructor(options) {
     super();
     this.options = options;
@@ -47387,11 +46093,11 @@ var LoomyAdapter = class extends LlmAdapter14 {
     const hasDefault = efforts.includes(defaultEffort);
     return {
       efforts: efforts.map((id) => ({
-        id: ReasoningEffortId8(id),
+        id: ReasoningEffortId7(id),
         // 未登记的中文名回退到 id 本身（新档位上线时不至于空白）。
         name: LOOMY_EFFORT_NAMES[id] ?? id
       })),
-      ...hasDefault ? { defaultEffort: ReasoningEffortId8(defaultEffort) } : {}
+      ...hasDefault ? { defaultEffort: ReasoningEffortId7(defaultEffort) } : {}
     };
   }
   /**
@@ -47410,17 +46116,17 @@ var LoomyAdapter = class extends LlmAdapter14 {
   async *stream(options) {
     const imageRefs = /* @__PURE__ */ new Map();
     for (const message2 of options.messages) {
-      if (Array.isArray(message2.content)) collectImages3(message2.content, imageRefs);
+      if (Array.isArray(message2.content)) collectImages2(message2.content, imageRefs);
     }
     const all = await this.loadModels();
     const entry = all.find((item) => item.id === options.model);
     let imageUrls;
     if (imageRefs.size > 0) {
       if (!this.inputModalitiesFor(entry).includes("image")) {
-        throw new LlmError17(`loomy: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`, "UNSUPPORTED_CONTENT");
+        throw new LlmError16(`loomy: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`, "UNSUPPORTED_CONTENT");
       }
       if (this.options.readImage === void 0) {
-        throw new LlmError17("loomy: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
+        throw new LlmError16("loomy: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
       }
       imageUrls = /* @__PURE__ */ new Map();
       for (const [id, ref] of imageRefs) {
@@ -47435,9 +46141,9 @@ var LoomyAdapter = class extends LlmAdapter14 {
       credential = await this.options.refresh(accountId || void 0) ?? await this.options.resolveCredential(options.model);
     }
     if (credential === void 0 || credential.access_token.length === 0) {
-      throw new LlmError17("loomy: no usable credential; log in first", "MISSING_CREDENTIAL");
+      throw new LlmError16("loomy: no usable credential; log in first", "MISSING_CREDENTIAL");
     }
-    const messages = serializeMessages4(options.messages, imageUrls);
+    const messages = serializeMessages3(options.messages, imageUrls);
     const wireMessages = options.system !== void 0 && options.system.length > 0 ? [{ role: "system", content: options.system }, ...messages] : messages;
     const effortsForModel = (await this.loadModels()).find((m) => m.id === options.model)?.efforts ?? this.fallbackIndex.get(options.model)?.efforts;
     const effort = options.reasoningEffort !== void 0 && effortsForModel !== void 0 && effortsForModel.includes(options.reasoningEffort) ? options.reasoningEffort : void 0;
@@ -47471,8 +46177,8 @@ var LoomyAdapter = class extends LlmAdapter14 {
         });
       } catch (error) {
         if (options.signal?.aborted) throw error;
-        if (isTransportError4(error)) {
-          throw new LlmError17(
+        if (isTransportError3(error)) {
+          throw new LlmError16(
             `loomy: transport error: ${error instanceof Error ? error.message : String(error)}`,
             "TRANSPORT",
             { cause: error }
@@ -47491,7 +46197,7 @@ var LoomyAdapter = class extends LlmAdapter14 {
           await response.body?.cancel();
           credential = await this.options.refresh(accountId || void 0) ?? await this.options.resolveCredential(options.model);
           if (credential === void 0 || credential.access_token.length === 0) {
-            throw new LlmError17("loomy: credential expired and refresh failed", "AUTH", { status: response.status });
+            throw new LlmError16("loomy: credential expired and refresh failed", "AUTH", { status: response.status });
           }
           response = await send(credential.access_token);
         }
@@ -47502,16 +46208,16 @@ var LoomyAdapter = class extends LlmAdapter14 {
             quota ||= isLoomyQuotaError(JSON.parse(errorText2));
           } catch {
           }
-          throw new LlmError17(
-            `loomy: ${errorDetail4(errorText2)}`,
-            quota ? "QUOTA_EXCEEDED" : httpErrorCode4(response.status),
+          throw new LlmError16(
+            `loomy: ${errorDetail3(errorText2)}`,
+            quota ? "QUOTA_EXCEEDED" : httpErrorCode3(response.status),
             { status: response.status }
           );
         }
         for await (const chunk of consumeOpenAiSse(response, { signal: options.signal }, {
           label: "loomy",
-          firstTokenTimeoutMs: resolveFirstTokenTimeoutMs7(),
-          chunkTimeoutMs: resolveChunkTimeoutMs7(),
+          firstTokenTimeoutMs: resolveFirstTokenTimeoutMs6(),
+          chunkTimeoutMs: resolveChunkTimeoutMs6(),
           isQuotaError: isLoomyQuotaError,
           ...options.maxTokens === void 0 ? {} : { maxTokens: options.maxTokens }
         })) {
@@ -47520,7 +46226,7 @@ var LoomyAdapter = class extends LlmAdapter14 {
         }
         return;
       } catch (error) {
-        if (options.signal?.aborted || !(error instanceof LlmError17) || error.code !== "QUOTA_EXCEEDED") throw error;
+        if (options.signal?.aborted || !(error instanceof LlmError16) || error.code !== "QUOTA_EXCEEDED") throw error;
         if (accountId) {
           await this.options.accountPool?.updateModelRateLimit(accountId, options.model, nextUtc8DayStartMs());
         }
@@ -47538,11 +46244,11 @@ function isLoomyQuotaError(data) {
   const error = typeof data.error === "object" && data.error !== null ? data.error : data;
   return String(error.code ?? data.code) === "402" || /积分不足|余额不足|insufficient[_\s]+(?:points|balance|credits)/i.test(String(error.message ?? error.msg ?? ""));
 }
-function resolveFirstTokenTimeoutMs7() {
+function resolveFirstTokenTimeoutMs6() {
   const raw = Number(process.env.DSH_LOOMY_FIRST_TOKEN_TIMEOUT_MS);
   return Number.isFinite(raw) && raw > 0 ? raw : 12e4;
 }
-function resolveChunkTimeoutMs7() {
+function resolveChunkTimeoutMs6() {
   const raw = Number(process.env.DSH_LOOMY_CHUNK_TIMEOUT_MS);
   return Number.isFinite(raw) && raw > 0 ? raw : 12e4;
 }
@@ -47554,7 +46260,7 @@ function registerLoomyLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/raccoon-adapter.ts
-import { LlmAdapter as LlmAdapter15, LlmError as LlmError18, ReasoningEffortId as ReasoningEffortId9 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter14, LlmError as LlmError17, ReasoningEffortId as ReasoningEffortId8 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/raccoon.ts
 import { createCipheriv, randomBytes as randomBytes4 } from "node:crypto";
@@ -47750,10 +46456,10 @@ function raccoonThinkingExtraBody(effort) {
 }
 function raccoonReasoningInfo() {
   const efforts = RACCOON_REASONING_EFFORTS.map((id) => ({
-    id: ReasoningEffortId9(id),
+    id: ReasoningEffortId8(id),
     name: RACCOON_EFFORT_NAMES[id] ?? id
   }));
-  const defaultEffort = RACCOON_REASONING_EFFORTS.includes(RACCOON_DEFAULT_EFFORT) ? ReasoningEffortId9(RACCOON_DEFAULT_EFFORT) : ReasoningEffortId9(RACCOON_REASONING_EFFORTS[0] ?? RACCOON_EFFORT_ON);
+  const defaultEffort = RACCOON_REASONING_EFFORTS.includes(RACCOON_DEFAULT_EFFORT) ? ReasoningEffortId8(RACCOON_DEFAULT_EFFORT) : ReasoningEffortId8(RACCOON_REASONING_EFFORTS[0] ?? RACCOON_EFFORT_ON);
   return { efforts, defaultEffort };
 }
 function positiveMaxTokens2(value) {
@@ -47769,7 +46475,7 @@ function fallbackToRemote2(model) {
     supportsImage: model.supportsImage
   };
 }
-var RaccoonAdapter = class extends LlmAdapter15 {
+var RaccoonAdapter = class extends LlmAdapter14 {
   constructor(options) {
     super();
     this.options = options;
@@ -47879,17 +46585,17 @@ var RaccoonAdapter = class extends LlmAdapter15 {
   async *stream(options) {
     const imageRefs = /* @__PURE__ */ new Map();
     for (const message2 of options.messages) {
-      if (Array.isArray(message2.content)) collectImages3(message2.content, imageRefs);
+      if (Array.isArray(message2.content)) collectImages2(message2.content, imageRefs);
     }
     const all = await this.loadModels();
     const entry = all.find((item) => item.id === options.model);
     let imageUrls;
     if (imageRefs.size > 0) {
       if (!this.inputModalitiesFor(entry).includes("image")) {
-        throw new LlmError18(`raccoon: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`, "UNSUPPORTED_CONTENT");
+        throw new LlmError17(`raccoon: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`, "UNSUPPORTED_CONTENT");
       }
       if (this.options.readImage === void 0) {
-        throw new LlmError18("raccoon: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
+        throw new LlmError17("raccoon: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
       }
       imageUrls = /* @__PURE__ */ new Map();
       const readImage = this.options.readImage;
@@ -47910,9 +46616,9 @@ var RaccoonAdapter = class extends LlmAdapter15 {
       credential = await this.options.refresh(accountId || void 0) ?? await this.options.resolveCredential(options.model);
     }
     if (credential === void 0 || credential.access_token.length === 0) {
-      throw new LlmError18("raccoon: no usable credential; log in first", "MISSING_CREDENTIAL");
+      throw new LlmError17("raccoon: no usable credential; log in first", "MISSING_CREDENTIAL");
     }
-    const messages = serializeMessages4(options.messages, imageUrls);
+    const messages = serializeMessages3(options.messages, imageUrls);
     const wireMessages = options.system !== void 0 && options.system.length > 0 ? [{ role: "system", content: options.system }, ...messages] : messages;
     const thinking = raccoonThinkingExtraBody(options.reasoningEffort);
     const buildBody = () => JSON.stringify({
@@ -47959,8 +46665,8 @@ var RaccoonAdapter = class extends LlmAdapter15 {
         );
       } catch (error) {
         if (options.signal?.aborted) throw error;
-        if (isTransportError4(error)) {
-          throw new LlmError18(
+        if (isTransportError3(error)) {
+          throw new LlmError17(
             `raccoon: transport error: ${error instanceof Error ? error.message : String(error)}`,
             "TRANSPORT",
             { cause: error }
@@ -47979,7 +46685,7 @@ var RaccoonAdapter = class extends LlmAdapter15 {
           await response.body?.cancel();
           const refreshed = await this.options.refresh(accountId || void 0) ?? await this.options.resolveCredential(options.model);
           if (refreshed === void 0 || refreshed.access_token.length === 0) {
-            throw new LlmError18("raccoon: credential expired and refresh failed", "AUTH", { status: response.status });
+            throw new LlmError17("raccoon: credential expired and refresh failed", "AUTH", { status: response.status });
           }
           credential = refreshed;
           response = await send();
@@ -47991,16 +46697,16 @@ var RaccoonAdapter = class extends LlmAdapter15 {
             quota ||= isQuotaError(JSON.parse(errorText2));
           } catch {
           }
-          throw new LlmError18(
-            `raccoon: ${errorDetail4(errorText2)}`,
-            quota ? "QUOTA_EXCEEDED" : httpErrorCode4(response.status),
+          throw new LlmError17(
+            `raccoon: ${errorDetail3(errorText2)}`,
+            quota ? "QUOTA_EXCEEDED" : httpErrorCode3(response.status),
             { status: response.status }
           );
         }
         for await (const chunk of consumeOpenAiSse(response, { signal: options.signal }, {
           label: "raccoon",
-          firstTokenTimeoutMs: resolveFirstTokenTimeoutMs8(),
-          chunkTimeoutMs: resolveChunkTimeoutMs8(),
+          firstTokenTimeoutMs: resolveFirstTokenTimeoutMs7(),
+          chunkTimeoutMs: resolveChunkTimeoutMs7(),
           isQuotaError,
           ...options.maxTokens === void 0 ? {} : { maxTokens: options.maxTokens }
         })) {
@@ -48009,7 +46715,7 @@ var RaccoonAdapter = class extends LlmAdapter15 {
         }
         return;
       } catch (error) {
-        if (options.signal?.aborted || !(error instanceof LlmError18) || error.code !== "QUOTA_EXCEEDED") throw error;
+        if (options.signal?.aborted || !(error instanceof LlmError17) || error.code !== "QUOTA_EXCEEDED") throw error;
         if (accountId) {
           await this.options.accountPool?.updateModelRateLimit(accountId, options.model, nextUtc8DayStartMs());
         }
@@ -48025,11 +46731,11 @@ var RaccoonAdapter = class extends LlmAdapter15 {
     }
   }
 };
-function resolveFirstTokenTimeoutMs8() {
+function resolveFirstTokenTimeoutMs7() {
   const raw = Number(process.env.DSH_RACCOON_FIRST_TOKEN_TIMEOUT_MS);
   return Number.isFinite(raw) && raw > 0 ? raw : 12e4;
 }
-function resolveChunkTimeoutMs8() {
+function resolveChunkTimeoutMs7() {
   const raw = Number(process.env.DSH_RACCOON_CHUNK_TIMEOUT_MS);
   return Number.isFinite(raw) && raw > 0 ? raw : 12e4;
 }
@@ -49335,680 +48041,9 @@ function createPoolRefresh(pool, productId, auth) {
   };
 }
 
-// vendor/channel-pack/src/lobsterai-auth.ts
+// vendor/channel-pack/src/qoder-auth.ts
 import { Service as Service4 } from "@deepseek-ai/cordis";
 import { credentialRef as credentialRef4 } from "@deepseek-ai/dsh-credentials";
-
-// vendor/channel-pack/src/lobsterai-oauth.ts
-import { createServer as createServer4 } from "node:http";
-import { randomUUID as randomUUID7 } from "node:crypto";
-function createLobsteraiLoginSession(nowMs = Date.now()) {
-  return { uuid: randomUUID7(), firstKeyfrom: String(nowMs) };
-}
-function buildLobsteraiLoginUrl(port, state, product) {
-  const redirectUri = `http://127.0.0.1:${port}${LOBSTERAI_CALLBACK_PATH}`;
-  const query = new URLSearchParams({
-    source: "electron",
-    redirect_uri: redirectUri,
-    state
-  });
-  return `${product.portalBase}/portal#/login?${query.toString()}`;
-}
-async function exchangeLobsteraiAuthCode(code, session, clientVersion, product, fetcher = fetch, signal) {
-  const body = {
-    authCode: code,
-    firstKeyfrom: session.firstKeyfrom,
-    latestKeyfrom: String(Date.now()),
-    uuid: session.uuid,
-    version: clientVersion
-  };
-  const signalToUse = signal === void 0 ? AbortSignal.timeout(LOBSTERAI_REQUEST_TIMEOUT_MS) : AbortSignal.any([AbortSignal.timeout(LOBSTERAI_REQUEST_TIMEOUT_MS), signal]);
-  let response;
-  try {
-    response = await fetcher(`${product.apiBase}${LOBSTERAI_EXCHANGE_PATH}`, {
-      method: "POST",
-      headers: lobsteraiAnonymousHeaders(product),
-      body: JSON.stringify(body),
-      signal: signalToUse
-    });
-  } catch (error) {
-    throw new Error(`LobsterAI exchange \u7F51\u7EDC\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`);
-  }
-  let parsed;
-  try {
-    parsed = await response.json();
-  } catch {
-    throw new Error(`LobsterAI exchange \u54CD\u5E94\u4E0D\u662F JSON\uFF08HTTP ${response.status}\uFF09`);
-  }
-  const envelope = parseLobsteraiEnvelope(parsed);
-  if (!envelope.ok) {
-    throw new Error(`LobsterAI exchange \u5931\u8D25\uFF1A${envelope.message}`);
-  }
-  const payload = parseLobsteraiTokenPayload(envelope.data);
-  if (payload.accessToken.length === 0) {
-    throw new Error("LobsterAI exchange \u54CD\u5E94\u7F3A\u5C11 accessToken");
-  }
-  return buildLobsteraiCredential(payload, {
-    uuid: session.uuid,
-    firstKeyfrom: session.firstKeyfrom,
-    latestKeyfrom: body.latestKeyfrom
-  });
-}
-function toLoginFlowResult(credential, loginUrl) {
-  return {
-    access: JSON.stringify(credential),
-    // 与 Buddy 侧一致：无法解析过期时间时报告 0，而不是抛错 ——
-    // 凭据本身可用（只是有效期未知），不该因为展示层的缺失而登录失败。
-    expires: lobsteraiCredentialExpiresAtMs(credential) ?? 0,
-    loginUrl,
-    refreshable: isLobsteraiRefreshable(credential)
-  };
-}
-async function defaultOpenBrowser2(url) {
-  const { openBrowser: openBrowser2 } = await Promise.resolve().then(() => (init_login(), login_exports));
-  openBrowser2(url);
-}
-async function startLobsteraiLoginFlow(options) {
-  const fetcher = options.fetcher ?? fetch;
-  const { product, clientVersion } = options;
-  const session = createLobsteraiLoginSession();
-  const state = randomUUID7();
-  let resolveResult;
-  let rejectResult;
-  const result = new Promise((resolve2, reject) => {
-    resolveResult = resolve2;
-    rejectResult = reject;
-  });
-  result.catch(() => {
-  });
-  const server = createServer4((request2, response) => {
-    const url = new URL(request2.url ?? "/", `http://127.0.0.1:${request2.socket.localPort}`);
-    if (!url.pathname.startsWith(LOBSTERAI_CALLBACK_PATH)) {
-      response.writeHead(404).end("Not found");
-      return;
-    }
-    const code = url.searchParams.get("code");
-    const gotState = url.searchParams.get("state");
-    if (code === null || code.length === 0 || gotState !== state) {
-      response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" }).end("\u767B\u5F55\u56DE\u8C03\u53C2\u6570\u65E0\u6548");
-      return;
-    }
-    void exchangeLobsteraiAuthCode(code, session, clientVersion, product, fetcher, options.signal).then((credential) => {
-      response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end("<html><body><h2>\u767B\u5F55\u6210\u529F\uFF0C\u53EF\u4EE5\u5173\u95ED\u6B64\u7A97\u53E3\u4E86</h2></body></html>");
-      const port2 = request2.socket.localPort ?? 0;
-      resolveResult(toLoginFlowResult(credential, buildLobsteraiLoginUrl(port2, state, product)));
-    }).catch((error) => {
-      response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" }).end("\u767B\u5F55\u6362\u53D6\u51ED\u636E\u5931\u8D25");
-      rejectResult(error);
-    });
-  });
-  const port = await listenOnRandomPort(server);
-  const loginUrl = buildLobsteraiLoginUrl(port, state, product);
-  let closed = false;
-  const close = async () => {
-    if (closed) return;
-    closed = true;
-    await new Promise((resolve2) => server.close(() => resolve2()));
-  };
-  const resultWithTimeout = Promise.race([
-    result,
-    new Promise((_, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error(`LobsterAI \u767B\u5F55\u8D85\u65F6\uFF08${Math.round((options.timeoutMs ?? LOBSTERAI_LOGIN_TIMEOUT_MS) / 1e3)} \u79D2\u5185\u672A\u5B8C\u6210\uFF09`)),
-        options.timeoutMs ?? LOBSTERAI_LOGIN_TIMEOUT_MS
-      );
-      timer.unref?.();
-    })
-  ]);
-  resultWithTimeout.catch(() => {
-  }).finally(() => {
-    void close();
-  });
-  return { loginUrl, result: resultWithTimeout, close };
-}
-async function runLobsteraiLoginFlow(options) {
-  const open = options.openBrowser ?? defaultOpenBrowser2;
-  const started = await startLobsteraiLoginFlow(options);
-  try {
-    await open(started.loginUrl);
-    return await started.result;
-  } finally {
-    await started.close();
-  }
-}
-function listenOnRandomPort(server) {
-  return new Promise((resolve2, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      const port = typeof address === "object" && address !== null ? address.port : 0;
-      if (port === 0) {
-        reject(new Error("LobsterAI \u767B\u5F55\u56DE\u8C03\u670D\u52A1\u5668\u672A\u80FD\u83B7\u5F97\u7AEF\u53E3"));
-        return;
-      }
-      resolve2(port);
-    });
-  });
-}
-
-// vendor/channel-pack/src/lobsterai-auth.ts
-var LOBSTERAI_EXPIRY_ACCESSORS = {
-  expiresAtOf: lobsteraiCredentialExpiresAtMs,
-  refreshableOf: isLobsteraiRefreshable,
-  identityOf: (credential) => credential.access_token ?? ""
-};
-var RefreshTokenExpiredError3 = class extends Error {
-  constructor(message2) {
-    super(message2);
-    this.name = "RefreshTokenExpiredError";
-  }
-};
-function parseCredential4(value) {
-  try {
-    const parsed = JSON.parse(value);
-    return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
-  } catch {
-    return void 0;
-  }
-}
-var LobsteraiAuth = class extends Service4 {
-  constructor(ctx, options = {}) {
-    const product = options.product ?? LOBSTERAI;
-    super(ctx, options.serviceName ?? `${product.id}Auth`);
-    this.options = options;
-    this.product = product;
-    this.credentialRefName = this.product.defaultCredentialRef;
-    this.versionResolver = options.versionResolver ?? new LobsteraiClientVersionResolver({
-      ...this.options.fetcher === void 0 ? {} : { fetcher: this.options.fetcher }
-    });
-  }
-  /** 本实例所属的产品配置。 */
-  product;
-  /**
-   * 本实例默认读写的凭据 ref 名称（`LOBSTERAI_ACCESS_TOKEN`）。
-   *
-   * 由产品配置派生，与 CodeBuddy 系的两个 ref 完全隔离。
-   */
-  credentialRefName;
-  scheduler = new RefreshScheduler(
-    () => this.refresh(),
-    (error) => {
-      if (error instanceof RefreshTokenExpiredError3) {
-        this.markRefreshTokenInvalid();
-        return;
-      }
-      this.lastRefreshError = error instanceof Error ? error.message : String(error);
-    }
-  );
-  /** refresh_token 已被后端判定失效；登录/刷新成功时重置。 */
-  refreshTokenInvalid = false;
-  lastRefreshError;
-  /** 登录会话是否仍处于活跃状态；logout()/stop() 置 false，防止在途刷新回写已登出凭据。 */
-  active = true;
-  /** 客户端版本号解析器（带缓存与兜底）。 */
-  versionResolver;
-  /** 注入的 fetch（测试用）；默认为全局 fetch。 */
-  get fetchImpl() {
-    return this.options.fetcher ?? fetch;
-  }
-  /**
-   * 解析客户端版本号（带缓存与兜底）。
-   *
-   * 三个消费点都需要它：登录 exchange 的 `version` 字段、续期请求体的
-   * `version`、以及签到接口的必填 query 参数。集中在此避免三处各自拉取。
-   */
-  async resolveClientVersion() {
-    return (await this.versionResolver.resolve(this.product)).version;
-  }
-  /** 标记 refresh_token 已失效：停止重试，并向 status() 暴露 refreshable: false 与重新登录提示。 */
-  markRefreshTokenInvalid() {
-    this.refreshTokenInvalid = true;
-    this.lastRefreshError = "refresh_token \u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55";
-  }
-  /**
-   * 运行完整登录流程并持久化凭据。
-   *
-   * `accountId` + `pool` 同时提供时，登录成功后自动把账号登记进账号池
-   * （Channel Pack 的「+ 新建账号」路径）。
-   */
-  async login(flowOptions = {}) {
-    this.active = true;
-    const clientVersion = await this.resolveClientVersion();
-    const flow = await runLobsteraiLoginFlow({
-      product: this.product,
-      clientVersion,
-      ...this.options.fetcher === void 0 ? {} : { fetcher: this.options.fetcher },
-      ...flowOptions
-    });
-    return this.persistLogin(flow, flowOptions);
-  }
-  /**
-   * **两步式登录**：起回调服务器并立即返回登录 URL，由调用方先打开窗口。
-   *
-   * 与 CodeArts 的 `CodeArtsAuth.startLogin` 同因（真实缺陷）：Channel Pack 的
-   * 「+ 新建账号」原先调用阻塞式 {@link login}，而浏览器只在用户点击后的
-   * 短暂窗口（transient activation，约 5 秒）内允许 `window.open`。
-   * 等阻塞调用返回时手势早已过期，`window.open` 被弹窗拦截器拒绝并返回
-   * `null`，前端兜底逻辑便执行 `window.location.href = loginUrl`，
-   * 把**整个设置页**跳转到登录页。
-   *
-   * 调用方拿到 `loginUrl` 后应当**立即** `window.open`，再 await `result`。
-   */
-  async startLogin(flowOptions = {}) {
-    this.active = true;
-    const clientVersion = await this.resolveClientVersion();
-    const started = await startLobsteraiLoginFlow({
-      product: this.product,
-      clientVersion,
-      ...this.options.fetcher === void 0 ? {} : { fetcher: this.options.fetcher },
-      ...flowOptions
-    });
-    const result = started.result.then((flow) => this.persistLogin(flow, flowOptions));
-    result.catch(() => {
-    });
-    return { loginUrl: started.loginUrl, result, close: started.close };
-  }
-  /**
-   * 持久化一次登录结果：写凭据、重置失效状态、武装续期、按需登记账号池。
-   *
-   * 抽成独立方法供 {@link login} 与 {@link startLogin} 共用 ——
-   * 两条路径的差别只在「何时返回 loginUrl」，落库逻辑必须完全一致。
-   */
-  async persistLogin(flow, flowOptions = {}) {
-    const ref = flowOptions.refName ? credentialRef4(flowOptions.refName) : credentialRef4(this.credentialRefName);
-    await this.ctx.credentials.set(ref, flow.access);
-    this.refreshTokenInvalid = false;
-    this.lastRefreshError = void 0;
-    this.scheduleRefresh();
-    const credential = parseCredential4(flow.access);
-    if (flowOptions.accountId !== void 0 && flowOptions.pool !== void 0) {
-      await flowOptions.pool.addAccount({
-        id: flowOptions.accountId,
-        provider: this.product.id,
-        // ⚠️ 用 `lobsteraiDisplayNickname`：服务端把**手机号本身**当昵称下发，
-        // 且只脱敏到「露末 4 位」，需归一化为末 2 位（用户要求 2026-09-27）。
-        nickname: lobsteraiDisplayNickname(credential, flowOptions.accountId),
-        enabled: true,
-        credentialRef: flowOptions.refName ?? this.credentialRefName,
-        createdAt: Date.now(),
-        expiresAt: credential ? lobsteraiCredentialExpiresAtMs(credential) : void 0,
-        refreshable: credential !== void 0 && isLobsteraiRefreshable(credential)
-      });
-    }
-    return {
-      access: flow.access,
-      expires: flow.expires,
-      ref,
-      loginUrl: flow.loginUrl,
-      refreshable: flow.refreshable
-    };
-  }
-  /**
-   * 用**已有的授权码**完成登录（供需要自行起回调的场景使用）。
-   *
-   * 与 {@link login} 的区别：不走本地服务器，直接拿 code 换凭据。
-   * 保留这个入口是为了让 e2e 探针能在不打开浏览器的情况下验证 exchange。
-   */
-  async loginWithCode(code, session, options = {}) {
-    this.active = true;
-    const ref = options.refName ? credentialRef4(options.refName) : credentialRef4(this.credentialRefName);
-    const clientVersion = await this.resolveClientVersion();
-    const credential = await exchangeLobsteraiAuthCode(
-      code,
-      session,
-      clientVersion,
-      this.product,
-      this.fetchImpl
-    );
-    const access = JSON.stringify(credential);
-    await this.ctx.credentials.set(ref, access);
-    this.refreshTokenInvalid = false;
-    this.lastRefreshError = void 0;
-    this.scheduleRefresh();
-    if (options.accountId !== void 0 && options.pool !== void 0) {
-      await options.pool.addAccount({
-        id: options.accountId,
-        provider: this.product.id,
-        // 同 `persistLogin`：手机号归一化为只露末 2 位。
-        nickname: lobsteraiDisplayNickname(credential, options.accountId),
-        enabled: true,
-        credentialRef: options.refName ?? this.credentialRefName,
-        createdAt: Date.now(),
-        expiresAt: lobsteraiCredentialExpiresAtMs(credential),
-        refreshable: isLobsteraiRefreshable(credential)
-      });
-    }
-    return {
-      access,
-      expires: lobsteraiCredentialExpiresAtMs(credential) ?? 0,
-      ref,
-      loginUrl: "",
-      refreshable: isLobsteraiRefreshable(credential)
-    };
-  }
-  /** 报告凭据是否已配置、过期时间、是否可刷新以及最近刷新错误。 */
-  async status() {
-    const ref = credentialRef4(this.credentialRefName);
-    const info = await this.ctx.credentials.describe(ref);
-    if (!info.configured) return { configured: false, refreshable: false };
-    let expiresAt;
-    let refreshable = false;
-    const resolved = await this.ctx.credentials.resolve(ref);
-    if (resolved) {
-      const credential = parseCredential4(resolved.value);
-      if (credential) {
-        expiresAt = lobsteraiCredentialExpiresAtMs(credential);
-        refreshable = isLobsteraiRefreshable(credential) && !this.refreshTokenInvalid;
-      }
-    }
-    return {
-      configured: true,
-      source: info.source,
-      expiresAt,
-      refreshable,
-      ...this.lastRefreshError === void 0 ? {} : { refreshError: this.lastRefreshError }
-    };
-  }
-  /**
-   * 静默续期：`refresh_token` + keyfrom 身份载荷换取新令牌。
-   *
-   * 终态判定（**比 Go 版精确**，见模块头注释）：
-   * - HTTP 401/403、或响应体命中 `session-dead` 标记 → 抛
-   *   {@link RefreshTokenExpiredError}，让调度器停止续期；
-   * - 其余错误（网络抖动、5xx、429）→ 抛普通 Error，走调度器的可重试路径。
-   */
-  async refresh() {
-    const ref = credentialRef4(this.credentialRefName);
-    const resolved = await this.ctx.credentials.resolve(ref);
-    if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
-    const credential = parseCredential4(resolved.value);
-    if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
-    if (!isLobsteraiRefreshable(credential)) {
-      throw new RefreshTokenExpiredError3("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
-    }
-    try {
-      const refreshed = await this.refreshCredential(credential);
-      if (!this.active) return;
-      await this.ctx.credentials.set(ref, JSON.stringify(refreshed));
-      this.refreshTokenInvalid = false;
-      this.lastRefreshError = void 0;
-      this.scheduleRefresh();
-    } catch (error) {
-      if (error instanceof RefreshTokenExpiredError3) this.markRefreshTokenInvalid();
-      throw error;
-    }
-  }
-  /**
-   * 按凭据 ref 续期**指定账号**的凭据。
-   *
-   * 与 {@link refresh} 的区别（与 `BuddyAuth.refreshAccountCredential` 同因）：
-   * `refresh()` 读写本实例的默认单凭据 ref（`LOBSTERAI_ACCESS_TOKEN`），
-   * 而 Channel Pack 账号卡片对应的是 `LOBSTERAI_ACCOUNT_XXX` ——
-   * 用 `refresh()` 刷账号池里的账号，实际刷的是另一个凭据。
-   *
-   * 同样**不触碰** `refreshTokenInvalid` / `lastRefreshError` / 调度器：
-   * 那些状态属于单凭据路径，被多账号操作污染会让 UI 显示错误的失效提示。
-   *
-   * ⚠️ **必须回写账号池的 `expiresAt`**（issue !IKIRTT 的真实缺陷）：
-   * UI 账号卡片的「有效期」读的正是池里的值，而不是凭据里 access_token 的真实
-   * `exp`。早期这里只 `credentials.set`，于是调用 `account.refresh` 后凭据确实续好了、
-   * 界面却**一直显示「已过期」**，且没有任何自救手段（「重测」按钮的 refresh
-   * 是刻意的 no-op）。
-   *
-   * @param pool 账号池；提供时会把新 `expiresAt` / `refreshable` 写回。
-   * @param accountId 账号 id。**调用方已知时请显式传入** ——
-   *   否则只能按凭据内容反查（代价高，且反查会跳过已停用账号）。
-   */
-  async refreshAccountCredential(refName, pool, accountId) {
-    const ref = credentialRef4(refName);
-    const resolved = await this.ctx.credentials.resolve(ref);
-    if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential4(resolved.value);
-    if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
-    if (!isLobsteraiRefreshable(credential)) {
-      throw new RefreshTokenExpiredError3("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
-    }
-    const refreshed = await this.refreshCredential(credential);
-    await this.ctx.credentials.set(ref, JSON.stringify(refreshed));
-    await syncAccountExpiry({
-      pool,
-      provider: this.product.id,
-      credential: refreshed,
-      accessors: LOBSTERAI_EXPIRY_ACCESSORS,
-      accountId,
-      tag: "[lobsterai]",
-      warn: (message2) => this.ctx.logger?.warn?.(message2)
-    });
-  }
-  /**
-   * 一次性修复**老账号**的展示名：把手机号掩码归一化为「只露末 2 位」。
-   *
-   * ## 为什么需要它（用户要求 2026-09-27）
-   *
-   * > lobsterai 的用户名字显示的手机号尾号漏出 4 位，现在也改为只漏出 2 位
-   *
-   * ⚠️ 那个 `130****1100` 是**服务端下发的 `user.nickname` 原值**，不是本插件
-   * 截取的（实测四个账号登录响应即为此形态）。故只改代码只影响新登录账号，
-   * 已登录的老账号昵称仍是露 4 位 —— 启动时主动补一次。
-   *
-   * 与 `RaccoonAuth.repairAccountNicknames` / `TraeAuth.repairAccountNicknames`
-   * 同一模式（都是「服务端下发的名字不适合直接展示」）。
-   *
-   * ## 契约
-   *
-   * - **幂等**：`lobsteraiDisplayNickname` 对已归一化的值算出同一结果，
-   *   故不触发写入（只在**确实变化**时落盘）。
-   * - **失败不阻塞**：逐账号 catch，异常只记 warn。
-   * - **纯本地**：不发任何网络请求（掩码只依赖凭据里的昵称）。
-   * - **不误伤真实昵称**：非手机号形态（如 `用户26815487395`）原样保留。
-   *
-   * @returns 被修复的账号 id 列表（供日志）
-   */
-  async repairAccountNicknames(pool) {
-    const repaired = [];
-    let entries;
-    try {
-      entries = await pool.listAccounts(this.product.id);
-    } catch {
-      return repaired;
-    }
-    for (const entry of entries) {
-      try {
-        const resolved = await this.ctx.credentials.resolve(credentialRef4(entry.credentialRef));
-        if (!resolved) continue;
-        const credential = parseCredential4(resolved.value);
-        if (credential === void 0) continue;
-        const target = lobsteraiDisplayNickname(credential, entry.id);
-        if (target !== entry.nickname) {
-          await pool.updateAccount(entry.id, { nickname: target });
-          repaired.push(entry.id);
-        }
-      } catch (error) {
-        this.ctx.logger?.warn?.(
-          `[lobsterai] \u4FEE\u590D\u8D26\u53F7 ${entry.id} \u7684\u663E\u793A\u540D\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u4F7F\u7528\uFF09\uFF1A${error instanceof Error ? error.message : String(error)}`
-        );
-      }
-    }
-    return repaired;
-  }
-  /**
-   * 对一份凭据执行一次续期并返回新凭据（不触碰存储）。
-   *
-   * 抽出来供 `refresh()` 与 `refreshAll()` 共用，避免两处各写一遍
-   * 「发请求 → 判终态 → 合并字段」的逻辑而逐渐分叉。
-   */
-  async refreshCredential(credential) {
-    const clientVersion = await this.resolveClientVersion();
-    const body = lobsteraiRefreshBody(credential, clientVersion);
-    let response;
-    try {
-      response = await this.fetchImpl(`${this.product.apiBase}${LOBSTERAI_REFRESH_PATH}`, {
-        method: "POST",
-        headers: lobsteraiAnonymousHeaders(this.product),
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(LOBSTERAI_REQUEST_TIMEOUT_MS)
-      });
-    } catch (error) {
-      throw new Error(`LobsterAI \u7EED\u671F\u7F51\u7EDC\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`);
-    }
-    let parsed;
-    try {
-      parsed = await response.json();
-    } catch {
-      throw new Error(`LobsterAI \u7EED\u671F\u54CD\u5E94\u4E0D\u662F JSON\uFF08HTTP ${response.status}\uFF09`);
-    }
-    const rawText = JSON.stringify(parsed);
-    const envelope = parseLobsteraiEnvelope(parsed);
-    if (!envelope.ok) {
-      const kind = classifyLobsteraiError(response.status, rawText);
-      if (response.status === 401 || response.status === 403 || isLobsteraiTerminalError(kind)) {
-        throw new RefreshTokenExpiredError3(envelope.message);
-      }
-      throw new Error(`LobsterAI \u7EED\u671F\u5931\u8D25\uFF1A${envelope.message}`);
-    }
-    const payload = parseLobsteraiTokenPayload(envelope.data);
-    if (payload.accessToken.length === 0) {
-      throw new RefreshTokenExpiredError3("\u7EED\u671F\u54CD\u5E94\u7F3A\u5C11 accessToken\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
-    }
-    return applyLobsteraiRefresh(credential, payload);
-  }
-  /**
-   * 批量续期本产品的所有账号。
-   *
-   * **包含已停用账号**（只按 `refreshable` 过滤）：停用只应影响账号池的自动
-   * 选号，不该让凭据烂掉 —— 否则用户重新启用时只能重新登录。
-   * 详见 `BuddyAuth.refreshAll` 的注释（同一缺陷）。
-   * 单账号失败不影响其他账号（与 `BuddyAuth.refreshAll` 同语义）。
-   *
-   * ⚠️ **lead-time 过滤**（issue !IKIRTT）：早先这里是**无条件全量续期** ——
-   * 定时器每 30 分钟就把每个账号的 refresh_token 轮换一次，与「凭据还剩多久」
-   * 无关。现复用单凭据时代 `REFRESH_LEAD_MS` 的语义：**距过期不足 1 小时才刷**。
-   * 跳过的账号仍会做一次**有效期对账**（见 `refreshAccountWithReconcile`），
-   * 因为「不刷」与「不回写池值」正是 UI 假过期的两个来源，必须分开处理。
-   */
-  async refreshAll(pool) {
-    const accounts = await pool.listAccounts(this.product.id);
-    for (const entry of accounts) {
-      if (!entry.refreshable) continue;
-      try {
-        const ref = credentialRef4(entry.credentialRef);
-        const resolved = await this.ctx.credentials.resolve(ref);
-        if (!resolved) {
-          await pool.updateAccount(entry.id, { refreshable: false });
-          continue;
-        }
-        const credential = parseCredential4(resolved.value);
-        if (!credential || !isLobsteraiRefreshable(credential)) {
-          await pool.updateAccount(entry.id, { refreshable: false });
-          continue;
-        }
-        await refreshAccountWithReconcile({
-          pool,
-          provider: this.product.id,
-          tag: "[lobsterai]",
-          accountId: entry.id,
-          credential,
-          accessors: LOBSTERAI_EXPIRY_ACCESSORS,
-          current: entry,
-          refresh: (c) => this.refreshCredential(c),
-          save: (c) => this.ctx.credentials.set(ref, JSON.stringify(c)),
-          warn: (message2) => this.ctx.logger?.warn?.(message2)
-        });
-      } catch (error) {
-        if (error instanceof RefreshTokenExpiredError3) {
-          try {
-            await pool.updateAccount(entry.id, { refreshable: false });
-          } catch {
-          }
-          this.ctx.logger?.warn?.(
-            `[lobsterai] \u8D26\u53F7 ${entry.id} \u7684 refresh_token \u5DF2\u5931\u6548\uFF0C\u5DF2\u6807\u8BB0\u4E3A\u4E0D\u53EF\u7EED\u671F\uFF08\u9700\u91CD\u65B0\u767B\u5F55\uFF09`
-          );
-        } else {
-          this.ctx.logger?.warn?.(
-            `[lobsterai] \u8D26\u53F7 ${entry.id} \u7EED\u671F\u5931\u8D25\uFF08\u5C06\u6309\u8C03\u5EA6\u5668\u7B56\u7565\u91CD\u8BD5\uFF09: ${error instanceof Error ? error.message : String(error)}`
-          );
-        }
-      }
-    }
-  }
-  /** 移除已存储的凭据并停止任何待处理的刷新。 */
-  async logout() {
-    this.active = false;
-    this.scheduler.stop();
-    await this.ctx.credentials.unset(credentialRef4(this.credentialRefName));
-  }
-  /** 停止刷新调度（不清理凭据）。 */
-  stop() {
-    this.active = false;
-    this.scheduler.stop();
-  }
-  /** 启动时若已有可刷新凭据则安排续期（由 apply 调用）。 */
-  scheduleRefresh() {
-    void this.ctx.credentials.resolve(credentialRef4(this.credentialRefName)).then((resolved) => {
-      if (!resolved) return;
-      const credential = parseCredential4(resolved.value);
-      if (!credential || !isLobsteraiRefreshable(credential)) return;
-      const expiresAt = lobsteraiCredentialExpiresAtMs(credential);
-      if (expiresAt !== void 0) this.scheduler.arm(expiresAt);
-    });
-  }
-  /** 从存储重载凭据，返回是否已过期（供 UI 判断是否需要提示重新登录）。 */
-  async checkExpired() {
-    const resolved = await this.ctx.credentials.resolve(credentialRef4(this.credentialRefName));
-    if (!resolved) return true;
-    const credential = parseCredential4(resolved.value);
-    return credential === void 0 ? true : isLobsteraiExpired(credential);
-  }
-  /**
-   * 解析本实例默认凭据 ref 下的凭据；不可用时返回 undefined。
-   *
-   * 供 e2e 探针与 `account-probe` 使用（后者实际走 `resolveCredentialForAccount`，
-   * 按账号 id 解析，不受 `enabled` 限制）。
-   */
-  async resolveStoredCredential() {
-    const resolved = await this.ctx.credentials.resolve(credentialRef4(this.credentialRefName));
-    if (!resolved) return void 0;
-    return parseCredential4(resolved.value);
-  }
-  /**
-   * `GET /api/models/available` → 远端模型列表。
-   *
-   * 失败或未登录时返回空数组（调用方回退到产品兜底目录），
-   * 与 `BuddyAuth.fetchModels` 同语义。
-   *
-   * 优先使用账号池中的可用账号；无账号池或池为空时回退到固定凭据 ref。
-   * 两处都必须带上 `this.product` 与真实版本号 —— 该端点的 query 是
-   * **身份载荷**（keyfrom），发错身份会让服务端返回错误的模型集合。
-   */
-  async fetchModels(pool) {
-    let credential;
-    if (pool) {
-      const available2 = await pool.getAvailableAccount(this.product.id, "");
-      if (available2) credential = available2.credential;
-    }
-    if (credential === void 0) credential = await this.resolveStoredCredential();
-    if (credential === void 0 || credential.access_token.length === 0) return [];
-    const clientVersion = await this.resolveClientVersion();
-    const url = buildLobsteraiModelsUrl(this.product, credential, clientVersion);
-    try {
-      const response = await this.fetchImpl(url, {
-        method: "GET",
-        // 必须带 `X-LobsterAI-Client-Capabilities`：服务端按该头声明的能力
-        // 过滤模型集合，不带时 `kimi-k3` 不会返回（实测 25 vs 26 个）。
-        headers: lobsteraiModelsHeaders(credential, this.product, clientVersion),
-        signal: AbortSignal.timeout(LOBSTERAI_REQUEST_TIMEOUT_MS)
-      });
-      if (!response.ok) return [];
-      return parseLobsteraiModels(await response.json());
-    } catch {
-      return [];
-    }
-  }
-};
-
-// vendor/channel-pack/src/qoder-auth.ts
-import { Service as Service5 } from "@deepseek-ai/cordis";
-import { credentialRef as credentialRef5 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/qoder-oauth.ts
 function sleep2(ms, signal) {
@@ -50071,7 +48106,7 @@ async function pollQoderDeviceToken(session, options) {
   }
   throw new Error("\u767B\u5F55\u7B49\u5F85\u5DF2\u8D85\u65F6\uFF0C\u8BF7\u91CD\u65B0\u53D1\u8D77\u767B\u5F55");
 }
-function toLoginFlowResult2(credential, loginUrl, machineId) {
+function toLoginFlowResult(credential, loginUrl, machineId) {
   return {
     access: JSON.stringify(credential),
     // 与其它 provider 一致：无法解析过期时间时报 0，而不是抛错 ——
@@ -50082,7 +48117,7 @@ function toLoginFlowResult2(credential, loginUrl, machineId) {
     machineId
   };
 }
-async function defaultOpenBrowser3(url) {
+async function defaultOpenBrowser2(url) {
   const { openBrowser: openBrowser2 } = await Promise.resolve().then(() => (init_login(), login_exports));
   openBrowser2(url);
 }
@@ -50097,7 +48132,7 @@ async function startQoderLoginFlow(options) {
       throw new Error("\u767B\u5F55\u54CD\u5E94\u7F3A\u5C11\u8BBF\u95EE\u4EE4\u724C");
     }
     const credential = buildQoderCredential(payload, { machineId: session.machineId });
-    return toLoginFlowResult2(credential, loginUrl, session.machineId);
+    return toLoginFlowResult(credential, loginUrl, session.machineId);
   })();
   result.catch(() => {
   });
@@ -50110,7 +48145,7 @@ async function startQoderLoginFlow(options) {
   return { loginUrl, result, close };
 }
 async function runQoderLoginFlow(options) {
-  const open = options.openBrowser ?? defaultOpenBrowser3;
+  const open = options.openBrowser ?? defaultOpenBrowser2;
   const started = await startQoderLoginFlow(options);
   try {
     await open(started.loginUrl);
@@ -50126,13 +48161,13 @@ var QODER_EXPIRY_ACCESSORS = {
   refreshableOf: isQoderRefreshable,
   identityOf: (credential) => credential.access_token ?? ""
 };
-var RefreshTokenExpiredError4 = class extends Error {
+var RefreshTokenExpiredError3 = class extends Error {
   constructor(message2) {
     super(message2);
     this.name = "RefreshTokenExpiredError";
   }
 };
-function parseCredential5(value) {
+function parseCredential4(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -50140,7 +48175,7 @@ function parseCredential5(value) {
     return void 0;
   }
 }
-var QoderAuth = class extends Service5 {
+var QoderAuth = class extends Service4 {
   constructor(ctx, options = {}) {
     const product = options.product ?? QODER;
     super(ctx, options.serviceName ?? `${product.id}Auth`);
@@ -50155,7 +48190,7 @@ var QoderAuth = class extends Service5 {
   scheduler = new RefreshScheduler(
     () => this.refresh(),
     (error) => {
-      if (error instanceof RefreshTokenExpiredError4) {
+      if (error instanceof RefreshTokenExpiredError3) {
         this.markRefreshTokenInvalid();
         return;
       }
@@ -50222,12 +48257,12 @@ var QoderAuth = class extends Service5 {
    * 两条路径的差别只在「何时返回 loginUrl」，落库逻辑必须完全一致。
    */
   async persistLogin(flow, flowOptions = {}) {
-    const ref = flowOptions.refName ? credentialRef5(flowOptions.refName) : credentialRef5(this.credentialRefName);
+    const ref = flowOptions.refName ? credentialRef4(flowOptions.refName) : credentialRef4(this.credentialRefName);
     await this.ctx.credentials.set(ref, flow.access);
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential5(flow.access);
+    const credential = parseCredential4(flow.access);
     if (flowOptions.accountId !== void 0 && flowOptions.pool !== void 0) {
       await flowOptions.pool.addAccount({
         id: flowOptions.accountId,
@@ -50250,14 +48285,14 @@ var QoderAuth = class extends Service5 {
   }
   /** 报告凭据是否已配置、过期时间、是否可刷新以及最近刷新错误。 */
   async status() {
-    const ref = credentialRef5(this.credentialRefName);
+    const ref = credentialRef4(this.credentialRefName);
     const info = await this.ctx.credentials.describe(ref);
     if (!info.configured) return { configured: false, refreshable: false };
     let expiresAt;
     let refreshable = false;
     const resolved = await this.ctx.credentials.resolve(ref);
     if (resolved) {
-      const credential = parseCredential5(resolved.value);
+      const credential = parseCredential4(resolved.value);
       if (credential) {
         expiresAt = qoderCredentialExpiresAtMs(credential);
         refreshable = isQoderRefreshable(credential) && !this.refreshTokenInvalid;
@@ -50280,13 +48315,13 @@ var QoderAuth = class extends Service5 {
    * - 其余错误（网络抖动、5xx、429）→ 抛普通 Error，走调度器的可重试路径。
    */
   async refresh() {
-    const ref = credentialRef5(this.credentialRefName);
+    const ref = credentialRef4(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
-    const credential = parseCredential5(resolved.value);
+    const credential = parseCredential4(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isQoderRefreshable(credential)) {
-      throw new RefreshTokenExpiredError4("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+      throw new RefreshTokenExpiredError3("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
     }
     try {
       const refreshed = await this.refreshCredential(credential);
@@ -50296,7 +48331,7 @@ var QoderAuth = class extends Service5 {
       this.lastRefreshError = void 0;
       this.scheduleRefresh();
     } catch (error) {
-      if (error instanceof RefreshTokenExpiredError4) this.markRefreshTokenInvalid();
+      if (error instanceof RefreshTokenExpiredError3) this.markRefreshTokenInvalid();
       throw error;
     }
   }
@@ -50322,13 +48357,13 @@ var QoderAuth = class extends Service5 {
    *   否则只能按凭据内容反查（代价高，且反查会跳过已停用账号）。
    */
   async refreshAccountCredential(refName, pool, accountId) {
-    const ref = credentialRef5(refName);
+    const ref = credentialRef4(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential5(resolved.value);
+    const credential = parseCredential4(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isQoderRefreshable(credential)) {
-      throw new RefreshTokenExpiredError4("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+      throw new RefreshTokenExpiredError3("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
     }
     const refreshed = await this.refreshCredential(credential);
     await this.ctx.credentials.set(ref, JSON.stringify(refreshed));
@@ -50365,7 +48400,7 @@ var QoderAuth = class extends Service5 {
       throw new Error(`Qoder \u7EED\u671F\u7F51\u7EDC\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`);
     }
     if (response.status === 401 || response.status === 403) {
-      throw new RefreshTokenExpiredError4(`Qoder \u7EED\u671F\u88AB\u62D2\u7EDD\uFF08HTTP ${response.status}\uFF09\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55`);
+      throw new RefreshTokenExpiredError3(`Qoder \u7EED\u671F\u88AB\u62D2\u7EDD\uFF08HTTP ${response.status}\uFF09\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55`);
     }
     let parsed;
     try {
@@ -50379,7 +48414,7 @@ var QoderAuth = class extends Service5 {
     }
     const payload = parseQoderTokenPayload(parsed);
     if (payload.accessToken.length === 0) {
-      throw new RefreshTokenExpiredError4("\u7EED\u671F\u54CD\u5E94\u7F3A\u5C11\u8BBF\u95EE\u4EE4\u724C\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+      throw new RefreshTokenExpiredError3("\u7EED\u671F\u54CD\u5E94\u7F3A\u5C11\u8BBF\u95EE\u4EE4\u724C\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
     }
     return applyQoderRefresh(credential, payload);
   }
@@ -50402,13 +48437,13 @@ var QoderAuth = class extends Service5 {
     for (const entry of accounts) {
       if (!entry.refreshable) continue;
       try {
-        const ref = credentialRef5(entry.credentialRef);
+        const ref = credentialRef4(entry.credentialRef);
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        const credential = parseCredential5(resolved.value);
+        const credential = parseCredential4(resolved.value);
         if (!credential || !isQoderRefreshable(credential)) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -50427,7 +48462,7 @@ var QoderAuth = class extends Service5 {
           warn: (message2) => this.ctx.logger?.warn?.(message2)
         });
       } catch (error) {
-        if (error instanceof RefreshTokenExpiredError4) {
+        if (error instanceof RefreshTokenExpiredError3) {
           try {
             await pool.updateAccount(entry.id, { refreshable: false });
           } catch {
@@ -50447,7 +48482,7 @@ var QoderAuth = class extends Service5 {
   async logout() {
     this.active = false;
     this.scheduler.stop();
-    await this.ctx.credentials.unset(credentialRef5(this.credentialRefName));
+    await this.ctx.credentials.unset(credentialRef4(this.credentialRefName));
   }
   /** 停止刷新调度（不清理凭据）。 */
   stop() {
@@ -50456,9 +48491,9 @@ var QoderAuth = class extends Service5 {
   }
   /** 启动时若已有可刷新凭据则安排续期（由 apply 调用）。 */
   scheduleRefresh() {
-    void this.ctx.credentials.resolve(credentialRef5(this.credentialRefName)).then((resolved) => {
+    void this.ctx.credentials.resolve(credentialRef4(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
-      const credential = parseCredential5(resolved.value);
+      const credential = parseCredential4(resolved.value);
       if (!credential || !isQoderRefreshable(credential)) return;
       const expiresAt = qoderCredentialExpiresAtMs(credential);
       if (expiresAt !== void 0) this.scheduler.arm(expiresAt);
@@ -50466,9 +48501,9 @@ var QoderAuth = class extends Service5 {
   }
   /** 从存储重载凭据，返回是否已过期（供 UI 判断是否需要提示重新登录）。 */
   async checkExpired() {
-    const resolved = await this.ctx.credentials.resolve(credentialRef5(this.credentialRefName));
+    const resolved = await this.ctx.credentials.resolve(credentialRef4(this.credentialRefName));
     if (!resolved) return true;
-    const credential = parseCredential5(resolved.value);
+    const credential = parseCredential4(resolved.value);
     return credential === void 0 ? true : isQoderExpired(credential);
   }
   /**
@@ -50477,18 +48512,18 @@ var QoderAuth = class extends Service5 {
    * 供 e2e 探针与 `account-probe` 使用。
    */
   async resolveStoredCredential() {
-    const resolved = await this.ctx.credentials.resolve(credentialRef5(this.credentialRefName));
+    const resolved = await this.ctx.credentials.resolve(credentialRef4(this.credentialRefName));
     if (!resolved) return void 0;
-    return parseCredential5(resolved.value);
+    return parseCredential4(resolved.value);
   }
 };
 
 // vendor/channel-pack/src/trae-auth.ts
-import { Service as Service6 } from "@deepseek-ai/cordis";
-import { credentialRef as credentialRef6 } from "@deepseek-ai/dsh-credentials";
+import { Service as Service5 } from "@deepseek-ai/cordis";
+import { credentialRef as credentialRef5 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/trae-oauth.ts
-import { createServer as createServer5 } from "node:http";
+import { createServer as createServer4 } from "node:http";
 var TRAE_CALLBACK_PORT = 18080;
 function machineTraceId(machineId, deviceId) {
   const joined = machineId + deviceId;
@@ -50740,7 +48775,7 @@ async function startTraeLoginFlow(options) {
   const machineId = generateMachineId();
   const deviceId = generateDeviceId();
   const preferredPort = options.callbackPort ?? TRAE_CALLBACK_PORT;
-  const server = createServer5();
+  const server = createServer4();
   let resultTimer;
   let rejectResult;
   let loginUrl = "";
@@ -50816,7 +48851,7 @@ async function startTraeLoginFlow(options) {
   };
 }
 async function startCallbackServer2(port = TRAE_CALLBACK_PORT, _consoleHost, timeoutMs = TRAE_LOGIN_TIMEOUT_MS) {
-  const server = createServer5();
+  const server = createServer4();
   let timer;
   let actualPort = port;
   const result = new Promise((resolve2, reject) => {
@@ -50870,13 +48905,13 @@ var TRAE_EXPIRY_ACCESSORS = {
   refreshableOf: isTraeRefreshable,
   identityOf: (credential) => credential.access_token ?? ""
 };
-var RefreshTokenExpiredError5 = class extends Error {
+var RefreshTokenExpiredError4 = class extends Error {
   constructor(message2) {
     super(message2);
     this.name = "RefreshTokenExpiredError";
   }
 };
-function parseCredential6(value) {
+function parseCredential5(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -50884,7 +48919,7 @@ function parseCredential6(value) {
     return void 0;
   }
 }
-var TraeAuth = class _TraeAuth extends Service6 {
+var TraeAuth = class _TraeAuth extends Service5 {
   constructor(ctx, options = {}) {
     const product = options.product ?? TRAE;
     super(ctx, options.serviceName ?? `${product.id}Auth`);
@@ -50899,7 +48934,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
   scheduler = new RefreshScheduler(
     () => this.refresh(),
     (error) => {
-      if (error instanceof RefreshTokenExpiredError5) {
+      if (error instanceof RefreshTokenExpiredError4) {
         this.markRefreshTokenInvalid();
         return;
       }
@@ -50969,13 +49004,13 @@ var TraeAuth = class _TraeAuth extends Service6 {
    * 持久化一次登录结果。
    */
   async persistLogin(flow, flowOptions = {}) {
-    const ref = flowOptions.refName ? credentialRef6(flowOptions.refName) : credentialRef6(this.credentialRefName);
+    const ref = flowOptions.refName ? credentialRef5(flowOptions.refName) : credentialRef5(this.credentialRefName);
     await this.ctx.credentials.set(ref, flow.access);
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
     this.modelsCache = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential6(flow.access);
+    const credential = parseCredential5(flow.access);
     if (flowOptions.accountId !== void 0 && flowOptions.pool !== void 0) {
       await flowOptions.pool.addAccount({
         id: flowOptions.accountId,
@@ -51001,14 +49036,14 @@ var TraeAuth = class _TraeAuth extends Service6 {
   }
   /** 报告凭据状态。 */
   async status() {
-    const ref = credentialRef6(this.credentialRefName);
+    const ref = credentialRef5(this.credentialRefName);
     const info = await this.ctx.credentials.describe(ref);
     if (!info.configured) return { configured: false, refreshable: false };
     let expiresAt;
     let refreshable = false;
     const resolved = await this.ctx.credentials.resolve(ref);
     if (resolved) {
-      const credential = parseCredential6(resolved.value);
+      const credential = parseCredential5(resolved.value);
       if (credential) {
         expiresAt = traeCredentialExpiresAtMs(credential);
         refreshable = isTraeRefreshable(credential) && !this.refreshTokenInvalid;
@@ -51030,13 +49065,13 @@ var TraeAuth = class _TraeAuth extends Service6 {
    * - 其余错误（网络抖动、5xx、429）→ 抛普通 Error，走可重试路径
    */
   async refresh() {
-    const ref = credentialRef6(this.credentialRefName);
+    const ref = credentialRef5(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
-    const credential = parseCredential6(resolved.value);
+    const credential = parseCredential5(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isTraeRefreshable(credential)) {
-      throw new RefreshTokenExpiredError5("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+      throw new RefreshTokenExpiredError4("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
     }
     try {
       const refreshed = await this.refreshCredential(credential);
@@ -51046,7 +49081,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
       this.lastRefreshError = void 0;
       this.scheduleRefresh();
     } catch (error) {
-      if (error instanceof RefreshTokenExpiredError5) this.markRefreshTokenInvalid();
+      if (error instanceof RefreshTokenExpiredError4) this.markRefreshTokenInvalid();
       throw error;
     }
   }
@@ -51073,13 +49108,13 @@ var TraeAuth = class _TraeAuth extends Service6 {
    *   否则只能按凭据内容反查（代价高，且反查会跳过已停用账号）。
    */
   async refreshAccountCredential(refName, pool, accountId) {
-    const ref = credentialRef6(refName);
+    const ref = credentialRef5(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential6(resolved.value);
+    const credential = parseCredential5(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isTraeRefreshable(credential)) {
-      throw new RefreshTokenExpiredError5("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+      throw new RefreshTokenExpiredError4("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
     }
     const refreshed = await this.refreshCredential(credential);
     await this.ctx.credentials.set(ref, JSON.stringify(refreshed));
@@ -51130,7 +49165,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
       const kind = classifyTraeError(response.status, text);
       const noTokenInSuccessResponse = response.ok && parsed !== void 0;
       if (response.status === 401 || response.status === 403 || isTraeTerminalError(kind) || noTokenInSuccessResponse) {
-        throw new RefreshTokenExpiredError5("TRAE refresh_token \u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+        throw new RefreshTokenExpiredError4("TRAE refresh_token \u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
       }
       throw new Error(`TRAE \u7EED\u671F\u5931\u8D25\uFF08HTTP ${response.status}\uFF09\uFF1A${text.slice(0, 200)}`);
     }
@@ -51152,13 +49187,13 @@ var TraeAuth = class _TraeAuth extends Service6 {
     for (const entry of accounts) {
       if (!entry.refreshable) continue;
       try {
-        const ref = credentialRef6(entry.credentialRef);
+        const ref = credentialRef5(entry.credentialRef);
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        const credential = parseCredential6(resolved.value);
+        const credential = parseCredential5(resolved.value);
         if (!credential || !isTraeRefreshable(credential)) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -51176,7 +49211,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
           warn: (message2) => this.ctx.logger?.warn?.(message2)
         });
       } catch (error) {
-        if (error instanceof RefreshTokenExpiredError5) {
+        if (error instanceof RefreshTokenExpiredError4) {
           try {
             await pool.updateAccount(entry.id, { refreshable: false });
           } catch {
@@ -51225,10 +49260,10 @@ var TraeAuth = class _TraeAuth extends Service6 {
     }
     for (const entry of entries) {
       try {
-        const ref = credentialRef6(entry.credentialRef);
+        const ref = credentialRef5(entry.credentialRef);
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) continue;
-        let credential = parseCredential6(resolved.value);
+        let credential = parseCredential5(resolved.value);
         if (credential === void 0) continue;
         if ((credential.phone === void 0 || credential.phone.length === 0) && (credential.email === void 0 || credential.email.length === 0)) {
           const info = await this.fetchUserContact(credential);
@@ -51282,7 +49317,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
   async logout() {
     this.active = false;
     this.scheduler.stop();
-    await this.ctx.credentials.unset(credentialRef6(this.credentialRefName));
+    await this.ctx.credentials.unset(credentialRef5(this.credentialRefName));
     this.modelsCache = void 0;
   }
   /** 停止刷新调度（不清理凭据）。 */
@@ -51292,9 +49327,9 @@ var TraeAuth = class _TraeAuth extends Service6 {
   }
   /** 启动时若已有可刷新凭据则安排续期。 */
   scheduleRefresh() {
-    void this.ctx.credentials.resolve(credentialRef6(this.credentialRefName)).then((resolved) => {
+    void this.ctx.credentials.resolve(credentialRef5(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
-      const credential = parseCredential6(resolved.value);
+      const credential = parseCredential5(resolved.value);
       if (!credential || !isTraeRefreshable(credential)) return;
       const expiresAt = traeCredentialExpiresAtMs(credential);
       if (expiresAt !== void 0) this.scheduler.arm(expiresAt);
@@ -51302,9 +49337,9 @@ var TraeAuth = class _TraeAuth extends Service6 {
   }
   /** 从存储重载凭据，返回是否已过期。 */
   async checkExpired() {
-    const resolved = await this.ctx.credentials.resolve(credentialRef6(this.credentialRefName));
+    const resolved = await this.ctx.credentials.resolve(credentialRef5(this.credentialRefName));
     if (!resolved) return true;
-    const credential = parseCredential6(resolved.value);
+    const credential = parseCredential5(resolved.value);
     return credential === void 0 ? true : isTraeExpired(credential);
   }
   /**
@@ -51339,9 +49374,9 @@ var TraeAuth = class _TraeAuth extends Service6 {
       if (available2) credential = available2.credential;
     }
     if (credential === void 0) {
-      const resolved = await this.ctx.credentials.resolve(credentialRef6(this.credentialRefName));
+      const resolved = await this.ctx.credentials.resolve(credentialRef5(this.credentialRefName));
       if (!resolved) return [];
-      credential = parseCredential6(resolved.value);
+      credential = parseCredential5(resolved.value);
       if (credential === void 0) return [];
     }
     if (credential.access_token.length === 0) return [];
@@ -51403,8 +49438,8 @@ var TraeAuth = class _TraeAuth extends Service6 {
 };
 
 // vendor/channel-pack/src/cline-auth.ts
-import { Service as Service7 } from "@deepseek-ai/cordis";
-import { credentialRef as credentialRef7 } from "@deepseek-ai/dsh-credentials";
+import { Service as Service6 } from "@deepseek-ai/cordis";
+import { credentialRef as credentialRef6 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/cline-oauth.ts
 var CLINE_HTTP_TIMEOUT_MS = 3e4;
@@ -51550,7 +49585,7 @@ async function registerClineTokens(workOsTokens, options) {
   }
   return payload;
 }
-function toLoginFlowResult3(credential, loginUrl, userCode) {
+function toLoginFlowResult2(credential, loginUrl, userCode) {
   return {
     access: JSON.stringify(credential),
     // 与其它 provider 一致：无法解析过期时间时报 0，而不是抛错 ——
@@ -51561,7 +49596,7 @@ function toLoginFlowResult3(credential, loginUrl, userCode) {
     ...userCode === void 0 ? {} : { userCode }
   };
 }
-async function defaultOpenBrowser4(url) {
+async function defaultOpenBrowser3(url) {
   const { openBrowser: openBrowser2 } = await Promise.resolve().then(() => (init_login(), login_exports));
   openBrowser2(url);
 }
@@ -51581,7 +49616,7 @@ async function startClineLoginFlow(options) {
       throw new Error("\u767B\u5F55\u54CD\u5E94\u7F3A\u5C11\u8BBF\u95EE\u4EE4\u724C");
     }
     const credential = buildClineCredential(payload, options.product);
-    return toLoginFlowResult3(credential, loginUrl, authorization.userCode);
+    return toLoginFlowResult2(credential, loginUrl, authorization.userCode);
   })();
   result.catch(() => {
   });
@@ -51599,7 +49634,7 @@ async function startClineLoginFlow(options) {
   };
 }
 async function runClineLoginFlow(options) {
-  const open = options.openBrowser ?? defaultOpenBrowser4;
+  const open = options.openBrowser ?? defaultOpenBrowser3;
   const started = await startClineLoginFlow(options);
   try {
     await open(started.loginUrl);
@@ -51615,13 +49650,13 @@ var CLINE_EXPIRY_ACCESSORS = {
   refreshableOf: isClineRefreshable,
   identityOf: (credential) => credential.access_token ?? ""
 };
-var RefreshTokenExpiredError6 = class extends Error {
+var RefreshTokenExpiredError5 = class extends Error {
   constructor(message2) {
     super(message2);
     this.name = "RefreshTokenExpiredError";
   }
 };
-function parseCredential7(value) {
+function parseCredential6(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -51629,7 +49664,7 @@ function parseCredential7(value) {
     return void 0;
   }
 }
-var ClineAuth = class extends Service7 {
+var ClineAuth = class extends Service6 {
   constructor(ctx, options = {}) {
     const product = options.product ?? CLINE;
     super(ctx, options.serviceName ?? `${product.id}Auth`);
@@ -51644,7 +49679,7 @@ var ClineAuth = class extends Service7 {
   scheduler = new RefreshScheduler(
     () => this.refresh(),
     (error) => {
-      if (error instanceof RefreshTokenExpiredError6) {
+      if (error instanceof RefreshTokenExpiredError5) {
         this.markRefreshTokenInvalid();
         return;
       }
@@ -51716,12 +49751,12 @@ var ClineAuth = class extends Service7 {
    * 两条路径的差别只在「何时返回 loginUrl」，落库逻辑必须完全一致。
    */
   async persistLogin(flow, flowOptions = {}) {
-    const ref = flowOptions.refName ? credentialRef7(flowOptions.refName) : credentialRef7(this.credentialRefName);
+    const ref = flowOptions.refName ? credentialRef6(flowOptions.refName) : credentialRef6(this.credentialRefName);
     await this.ctx.credentials.set(ref, flow.access);
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential7(flow.access);
+    const credential = parseCredential6(flow.access);
     if (flowOptions.accountId !== void 0 && flowOptions.pool !== void 0) {
       await flowOptions.pool.addAccount({
         id: flowOptions.accountId,
@@ -51745,14 +49780,14 @@ var ClineAuth = class extends Service7 {
   }
   /** 报告凭据是否已配置、过期时间、是否可刷新以及最近刷新错误。 */
   async status() {
-    const ref = credentialRef7(this.credentialRefName);
+    const ref = credentialRef6(this.credentialRefName);
     const info = await this.ctx.credentials.describe(ref);
     if (!info.configured) return { configured: false, refreshable: false };
     let expiresAt;
     let refreshable = false;
     const resolved = await this.ctx.credentials.resolve(ref);
     if (resolved) {
-      const credential = parseCredential7(resolved.value);
+      const credential = parseCredential6(resolved.value);
       if (credential) {
         expiresAt = clineCredentialExpiresAtMs(credential);
         refreshable = isClineRefreshable(credential) && !this.refreshTokenInvalid;
@@ -51775,13 +49810,13 @@ var ClineAuth = class extends Service7 {
    * - 其余错误（网络抖动、5xx、429）→ 抛普通 Error，走调度器的可重试路径。
    */
   async refresh() {
-    const ref = credentialRef7(this.credentialRefName);
+    const ref = credentialRef6(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
-    const credential = parseCredential7(resolved.value);
+    const credential = parseCredential6(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isClineRefreshable(credential)) {
-      throw new RefreshTokenExpiredError6("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+      throw new RefreshTokenExpiredError5("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
     }
     try {
       const refreshed = await this.refreshCredential(credential);
@@ -51791,7 +49826,7 @@ var ClineAuth = class extends Service7 {
       this.lastRefreshError = void 0;
       this.scheduleRefresh();
     } catch (error) {
-      if (error instanceof RefreshTokenExpiredError6) this.markRefreshTokenInvalid();
+      if (error instanceof RefreshTokenExpiredError5) this.markRefreshTokenInvalid();
       throw error;
     }
   }
@@ -51817,13 +49852,13 @@ var ClineAuth = class extends Service7 {
    *   否则只能按凭据内容反查（代价高，且反查会跳过已停用账号）。
    */
   async refreshAccountCredential(refName, pool, accountId) {
-    const ref = credentialRef7(refName);
+    const ref = credentialRef6(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential7(resolved.value);
+    const credential = parseCredential6(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isClineRefreshable(credential)) {
-      throw new RefreshTokenExpiredError6("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+      throw new RefreshTokenExpiredError5("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
     }
     const refreshed = await this.refreshCredential(credential);
     await this.ctx.credentials.set(ref, JSON.stringify(refreshed));
@@ -51861,7 +49896,7 @@ var ClineAuth = class extends Service7 {
       throw new Error(`Cline \u7EED\u671F\u7F51\u7EDC\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`);
     }
     if (response.status === 401 || response.status === 403) {
-      throw new RefreshTokenExpiredError6(`Cline \u7EED\u671F\u88AB\u62D2\u7EDD\uFF08HTTP ${response.status}\uFF09\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55`);
+      throw new RefreshTokenExpiredError5(`Cline \u7EED\u671F\u88AB\u62D2\u7EDD\uFF08HTTP ${response.status}\uFF09\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55`);
     }
     let parsed;
     try {
@@ -51875,7 +49910,7 @@ var ClineAuth = class extends Service7 {
     }
     const payload = parseClineTokenPayload(parsed);
     if (payload.accessToken.length === 0) {
-      throw new RefreshTokenExpiredError6("\u7EED\u671F\u54CD\u5E94\u7F3A\u5C11\u8BBF\u95EE\u4EE4\u724C\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+      throw new RefreshTokenExpiredError5("\u7EED\u671F\u54CD\u5E94\u7F3A\u5C11\u8BBF\u95EE\u4EE4\u724C\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
     }
     return applyClineRefresh(credential, payload, this.product);
   }
@@ -51898,13 +49933,13 @@ var ClineAuth = class extends Service7 {
     for (const entry of accounts) {
       if (!entry.refreshable) continue;
       try {
-        const ref = credentialRef7(entry.credentialRef);
+        const ref = credentialRef6(entry.credentialRef);
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        const credential = parseCredential7(resolved.value);
+        const credential = parseCredential6(resolved.value);
         if (!credential || !isClineRefreshable(credential)) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -51922,7 +49957,7 @@ var ClineAuth = class extends Service7 {
           warn: (message2) => this.ctx.logger?.warn?.(message2)
         });
       } catch (error) {
-        if (error instanceof RefreshTokenExpiredError6) {
+        if (error instanceof RefreshTokenExpiredError5) {
           try {
             await pool.updateAccount(entry.id, { refreshable: false });
           } catch {
@@ -51942,7 +49977,7 @@ var ClineAuth = class extends Service7 {
   async logout() {
     this.active = false;
     this.scheduler.stop();
-    await this.ctx.credentials.unset(credentialRef7(this.credentialRefName));
+    await this.ctx.credentials.unset(credentialRef6(this.credentialRefName));
   }
   /** 停止刷新调度（不清理凭据）。 */
   stop() {
@@ -51951,9 +49986,9 @@ var ClineAuth = class extends Service7 {
   }
   /** 启动时若已有可刷新凭据则安排续期（由 apply 调用）。 */
   scheduleRefresh() {
-    void this.ctx.credentials.resolve(credentialRef7(this.credentialRefName)).then((resolved) => {
+    void this.ctx.credentials.resolve(credentialRef6(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
-      const credential = parseCredential7(resolved.value);
+      const credential = parseCredential6(resolved.value);
       if (!credential || !isClineRefreshable(credential)) return;
       const expiresAt = clineCredentialExpiresAtMs(credential);
       if (expiresAt !== void 0) this.scheduler.arm(expiresAt);
@@ -51961,9 +49996,9 @@ var ClineAuth = class extends Service7 {
   }
   /** 从存储重载凭据，返回是否已过期（供 UI 判断是否需要提示重新登录）。 */
   async checkExpired() {
-    const resolved = await this.ctx.credentials.resolve(credentialRef7(this.credentialRefName));
+    const resolved = await this.ctx.credentials.resolve(credentialRef6(this.credentialRefName));
     if (!resolved) return true;
-    const credential = parseCredential7(resolved.value);
+    const credential = parseCredential6(resolved.value);
     return credential === void 0 ? true : isClineExpired(credential);
   }
   /**
@@ -51972,24 +50007,24 @@ var ClineAuth = class extends Service7 {
    * 供 e2e 探针与 `account-probe` 使用。
    */
   async resolveStoredCredential() {
-    const resolved = await this.ctx.credentials.resolve(credentialRef7(this.credentialRefName));
+    const resolved = await this.ctx.credentials.resolve(credentialRef6(this.credentialRefName));
     if (!resolved) return void 0;
-    return parseCredential7(resolved.value);
+    return parseCredential6(resolved.value);
   }
 };
 
 // vendor/channel-pack/src/loomy-auth.ts
-import { Service as Service8 } from "@deepseek-ai/cordis";
-import { credentialRef as credentialRef8 } from "@deepseek-ai/dsh-credentials";
+import { Service as Service7 } from "@deepseek-ai/cordis";
+import { credentialRef as credentialRef7 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/loomy-oauth.ts
-import { randomUUID as randomUUID9 } from "node:crypto";
+import { randomUUID as randomUUID8 } from "node:crypto";
 
 // vendor/channel-pack/src/loomy-sign.ts
-import { createHash as createHash7, createHmac, randomUUID as randomUUID8 } from "node:crypto";
+import { createHash as createHash6, createHmac, randomUUID as randomUUID7 } from "node:crypto";
 function loomyContentMd5(body) {
   if (body.length === 0) return "";
-  return createHash7("md5").update(body, "utf8").digest("base64");
+  return createHash6("md5").update(body, "utf8").digest("base64");
 }
 function escapeRfc3986(value) {
   return encodeURIComponent(value).replace(/!/g, "%21").replace(/'/g, "%27").replace(/\(/g, "%28").replace(/\)/g, "%29").replace(/\*/g, "%2A");
@@ -52028,7 +50063,7 @@ function buildLoomySigningString(options) {
 }
 function loomyAuthHeaders(options) {
   const date = (/* @__PURE__ */ new Date()).toUTCString();
-  const nonce = randomUUID8();
+  const nonce = randomUUID7();
   const contentType = options.contentType ?? "application/json";
   const body = options.body ?? "";
   const stringToSign = buildLoomySigningString({ ...options, contentType, body, date, nonce });
@@ -52056,7 +50091,7 @@ function buildLoomyAccountBody(product, param) {
       devid: "web",
       // ⚠️ 硬编码 macOS：客户端在 Windows 上发的也是这个值，照抄不要改。
       ua: "Loomy|Desktop|Electron|macOS",
-      traceid: randomUUID9().replace(/-/g, "")
+      traceid: randomUUID8().replace(/-/g, "")
     },
     param
   };
@@ -52188,8 +50223,8 @@ async function bindLoomySkip(rcode, product, fetcher = fetch) {
 }
 
 // vendor/channel-pack/src/loomy-wechat-login.ts
-import { createServer as createServer6 } from "node:http";
-import { randomUUID as randomUUID10 } from "node:crypto";
+import { createServer as createServer5 } from "node:http";
+import { randomUUID as randomUUID9 } from "node:crypto";
 
 // vendor/channel-pack/src/loomy-wechat.ts
 var LOOMY_WECHAT_APP_ID = "wx18d60be432287cf8";
@@ -52343,8 +50378,8 @@ async function startLoomyWechatLoginFlow(options) {
     settled = true;
     rejectResult(error);
   };
-  state.uuid = await fetchLoomyWechatUuid(randomUUID10(), fetcher);
-  const server = createServer6((request2, response) => {
+  state.uuid = await fetchLoomyWechatUuid(randomUUID9(), fetcher);
+  const server = createServer5((request2, response) => {
     void handleRequest(request2, response, {
       state,
       product,
@@ -52358,7 +50393,7 @@ async function startLoomyWechatLoginFlow(options) {
       }
     });
   });
-  const port = await listenOnRandomPort2(server);
+  const port = await listenOnRandomPort(server);
   const loginUrl = `http://127.0.0.1:${port}${LOOMY_WECHAT_QR_PATH}`;
   let closed = false;
   const close = async () => {
@@ -52477,7 +50512,7 @@ async function readJsonBody(request2) {
     throw new Error("\u8BF7\u6C42\u4F53\u4E0D\u662F\u5408\u6CD5 JSON");
   }
 }
-function listenOnRandomPort2(server) {
+function listenOnRandomPort(server) {
   return new Promise((resolve2, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
@@ -52882,13 +50917,13 @@ var LOOMY_EXPIRY_ACCESSORS = {
   expiresAtOf: credentialExpiresAtMs2,
   identityOf: (credential) => credential.access_token ?? ""
 };
-var RefreshTokenExpiredError7 = class extends Error {
+var RefreshTokenExpiredError6 = class extends Error {
   constructor(message2) {
     super(message2);
     this.name = "RefreshTokenExpiredError";
   }
 };
-function parseCredential8(value) {
+function parseCredential7(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -52896,7 +50931,7 @@ function parseCredential8(value) {
     return void 0;
   }
 }
-var LoomyAuth = class extends Service8 {
+var LoomyAuth = class extends Service7 {
   constructor(ctx, options = {}) {
     const product = options.product ?? LOOMY;
     super(ctx, options.serviceName ?? `${product.id}Auth`);
@@ -52968,7 +51003,7 @@ var LoomyAuth = class extends Service8 {
       login.nickname
     );
     const refName = flowOptions.refName ?? this.credentialRefName;
-    const ref = credentialRef8(refName);
+    const ref = credentialRef7(refName);
     await this.ctx.credentials.set(ref, JSON.stringify(credential));
     this.lastRefreshError = void 0;
     try {
@@ -52995,7 +51030,7 @@ var LoomyAuth = class extends Service8 {
     const result = await loginLoomyBySmsCode(phone, code, msgid, this.product, this.fetchImpl);
     const credential = this.buildCredential(result.session, result.userid, phone);
     const refName = flowOptions.refName ?? this.credentialRefName;
-    const ref = credentialRef8(refName);
+    const ref = credentialRef7(refName);
     await this.ctx.credentials.set(ref, JSON.stringify(credential));
     this.lastRefreshError = void 0;
     try {
@@ -53030,8 +51065,8 @@ var LoomyAuth = class extends Service8 {
   }
   /** 解析当前单凭据（默认 ref）。 */
   async resolveDefaultCredential() {
-    const resolved = await this.ctx.credentials.resolve(credentialRef8(this.credentialRefName));
-    return resolved === void 0 ? void 0 : parseCredential8(resolved.value);
+    const resolved = await this.ctx.credentials.resolve(credentialRef7(this.credentialRefName));
+    return resolved === void 0 ? void 0 : parseCredential7(resolved.value);
   }
   /** 只读登录状态。 */
   async status() {
@@ -53057,7 +51092,7 @@ var LoomyAuth = class extends Service8 {
    */
   async refresh() {
     const credential = await this.resolveDefaultCredential();
-    if (credential === void 0) throw new RefreshTokenExpiredError7("\u51ED\u636E\u672A\u914D\u7F6E\uFF0C\u8BF7\u5148\u767B\u5F55");
+    if (credential === void 0) throw new RefreshTokenExpiredError6("\u51ED\u636E\u672A\u914D\u7F6E\uFF0C\u8BF7\u5148\u767B\u5F55");
     await this.probeCredential(credential);
     this.lastRefreshError = void 0;
   }
@@ -53077,10 +51112,10 @@ var LoomyAuth = class extends Service8 {
    * 只回写 `expiresAt`，见 `LOOMY_EXPIRY_ACCESSORS` 的说明。
    */
   async refreshAccountCredential(refName, pool, accountId) {
-    const ref = credentialRef8(refName);
+    const ref = credentialRef7(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential8(resolved.value);
+    const credential = parseCredential7(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     await this.probeCredential(credential);
     await syncAccountExpiry({
@@ -53124,7 +51159,7 @@ var LoomyAuth = class extends Service8 {
     const envelope = parseLoomyEnvelope(parsed);
     if (envelope.ok) return;
     if (envelope.code === LOOMY_AUTH_ERROR_CODE) {
-      throw new RefreshTokenExpiredError7(`Loomy \u51ED\u8BC1\u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55\uFF08${envelope.message}\uFF09`);
+      throw new RefreshTokenExpiredError6(`Loomy \u51ED\u8BC1\u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55\uFF08${envelope.message}\uFF09`);
     }
     throw new Error(`Loomy \u51ED\u636E\u63A2\u6D4B\u5931\u8D25\uFF1A${envelope.message}`);
   }
@@ -53142,12 +51177,12 @@ var LoomyAuth = class extends Service8 {
   async refreshAll(pool) {
     const accounts = await pool.listAccounts(this.product.id);
     for (const entry of accounts) {
-      const ref = credentialRef8(entry.credentialRef);
+      const ref = credentialRef7(entry.credentialRef);
       let credential;
       try {
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) continue;
-        credential = parseCredential8(resolved.value);
+        credential = parseCredential7(resolved.value);
       } catch {
         continue;
       }
@@ -53168,7 +51203,7 @@ var LoomyAuth = class extends Service8 {
       try {
         await this.probeCredential(credential);
       } catch (error) {
-        if (error instanceof RefreshTokenExpiredError7) {
+        if (error instanceof RefreshTokenExpiredError6) {
           this.ctx.logger?.warn?.(
             `[loomy] \u8D26\u53F7 ${entry.id} \u7684\u51ED\u8BC1\u5DF2\u5931\u6548\uFF08Loomy \u65E0\u7EED\u671F\u7AEF\u70B9\uFF0C\u9700\u91CD\u65B0\u767B\u5F55\uFF09`
           );
@@ -53183,7 +51218,7 @@ var LoomyAuth = class extends Service8 {
   /** 登出：清除默认单凭据。 */
   async logout() {
     this.active = false;
-    await this.ctx.credentials.unset(credentialRef8(this.credentialRefName));
+    await this.ctx.credentials.unset(credentialRef7(this.credentialRefName));
     this.lastRefreshError = void 0;
   }
   /**
@@ -53231,8 +51266,8 @@ var LoomyAuth = class extends Service8 {
 };
 
 // vendor/channel-pack/src/raccoon-auth.ts
-import { Service as Service9 } from "@deepseek-ai/cordis";
-import { credentialRef as credentialRef9 } from "@deepseek-ai/dsh-credentials";
+import { Service as Service8 } from "@deepseek-ai/cordis";
+import { credentialRef as credentialRef8 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/raccoon-credits.ts
 var RACCOON_LOGIN_REWARD_POINTS = 3e3;
@@ -53556,7 +51591,7 @@ async function fetchRaccoonUserInfo(product, credential, fetcher = fetch) {
 }
 
 // vendor/channel-pack/src/raccoon-login-page.ts
-import { createServer as createServer7 } from "node:http";
+import { createServer as createServer6 } from "node:http";
 
 // vendor/channel-pack/src/raccoon-qr.ts
 var DATA_CODEWORDS = [0, 16, 28, 44, 64, 86, 108, 124, 154, 182, 216];
@@ -53993,7 +52028,7 @@ async function startRaccoonLoginFlow(options = {}) {
     settled = true;
     rejectResult(error);
   };
-  const server = createServer7((request2, response) => {
+  const server = createServer6((request2, response) => {
     void handleRequest2(request2, response, { state, product, fetcher, settleOk }).catch(
       (error) => {
         try {
@@ -54003,7 +52038,7 @@ async function startRaccoonLoginFlow(options = {}) {
       }
     );
   });
-  const port = await listenOnRandomPort3(server);
+  const port = await listenOnRandomPort2(server);
   const loginUrl = `http://127.0.0.1:${port}${RACCOON_LOGIN_PAGE_PATHS.login}`;
   let closed = false;
   const close = async () => {
@@ -54146,7 +52181,7 @@ async function readJsonBody2(request2) {
     throw new Error("\u8BF7\u6C42\u4F53\u4E0D\u662F\u5408\u6CD5 JSON");
   }
 }
-function listenOnRandomPort3(server) {
+function listenOnRandomPort2(server) {
   return new Promise((resolve2, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
@@ -54395,7 +52430,7 @@ var RACCOON_EXPIRY_ACCESSORS = {
   refreshableOf: isRaccoonRefreshable,
   identityOf: (credential) => credential.access_token ?? ""
 };
-var RefreshTokenExpiredError8 = class extends Error {
+var RefreshTokenExpiredError7 = class extends Error {
   constructor(message2) {
     super(message2);
     this.name = "RefreshTokenExpiredError";
@@ -54445,7 +52480,7 @@ function normalizeRemoteModel(entry) {
     supportsImage: raccoonSupportsImage(id, tags)
   };
 }
-var RaccoonAuth = class extends Service9 {
+var RaccoonAuth = class extends Service8 {
   constructor(ctx, options = {}) {
     const product = options.product ?? RACCOON;
     super(ctx, options.serviceName ?? `${product.id}Auth`);
@@ -54498,7 +52533,7 @@ var RaccoonAuth = class extends Service9 {
         ...info.phone !== void 0 && credential.phone === void 0 ? { phone: info.phone } : {}
       };
     }
-    const ref = credentialRef9(refName);
+    const ref = credentialRef8(refName);
     await this.ctx.credentials.set(ref, JSON.stringify(enriched));
     this.lastRefreshError = void 0;
     try {
@@ -54531,7 +52566,7 @@ var RaccoonAuth = class extends Service9 {
   /** 解析默认 ref 的凭据。 */
   async resolveDefaultCredential() {
     try {
-      const resolved = await this.ctx.credentials.resolve(credentialRef9(this.credentialRefName));
+      const resolved = await this.ctx.credentials.resolve(credentialRef8(this.credentialRefName));
       return resolved === void 0 ? void 0 : parseRaccoonCredential(resolved.value);
     } catch {
       return void 0;
@@ -54544,18 +52579,18 @@ var RaccoonAuth = class extends Service9 {
    */
   async refresh() {
     const credential = await this.resolveDefaultCredential();
-    if (credential === void 0) throw new RefreshTokenExpiredError8("\u51ED\u636E\u672A\u914D\u7F6E\uFF0C\u8BF7\u5148\u767B\u5F55");
+    if (credential === void 0) throw new RefreshTokenExpiredError7("\u51ED\u636E\u672A\u914D\u7F6E\uFF0C\u8BF7\u5148\u767B\u5F55");
     if (!isRaccoonRefreshable(credential)) {
-      throw new RefreshTokenExpiredError8("\u51ED\u636E\u7F3A\u5C11 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+      throw new RefreshTokenExpiredError7("\u51ED\u636E\u7F3A\u5C11 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
     }
     try {
       const next = await refreshRaccoonCredential(this.product, credential, this.fetchImpl);
-      await this.ctx.credentials.set(credentialRef9(this.credentialRefName), JSON.stringify(next));
+      await this.ctx.credentials.set(credentialRef8(this.credentialRefName), JSON.stringify(next));
       this.lastRefreshError = void 0;
     } catch (error) {
       const message2 = error instanceof Error ? error.message : String(error);
       this.lastRefreshError = message2;
-      if (message2.includes("\u91CD\u65B0\u767B\u5F55")) throw new RefreshTokenExpiredError8(message2);
+      if (message2.includes("\u91CD\u65B0\u767B\u5F55")) throw new RefreshTokenExpiredError7(message2);
       throw error;
     }
   }
@@ -54579,13 +52614,13 @@ var RaccoonAuth = class extends Service9 {
    *   逐个解析凭据比对，代价高且需要账号池具备凭据访问能力）。
    */
   async refreshAccountCredential(refName, pool, accountId) {
-    const ref = credentialRef9(refName);
+    const ref = credentialRef8(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
     const credential = parseRaccoonCredential(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isRaccoonRefreshable(credential)) {
-      throw new RefreshTokenExpiredError8("\u51ED\u636E\u7F3A\u5C11 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+      throw new RefreshTokenExpiredError7("\u51ED\u636E\u7F3A\u5C11 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
     }
     try {
       const next = await refreshRaccoonCredential(this.product, credential, this.fetchImpl);
@@ -54601,7 +52636,7 @@ var RaccoonAuth = class extends Service9 {
       });
     } catch (error) {
       const message2 = error instanceof Error ? error.message : String(error);
-      if (message2.includes("\u91CD\u65B0\u767B\u5F55")) throw new RefreshTokenExpiredError8(message2);
+      if (message2.includes("\u91CD\u65B0\u767B\u5F55")) throw new RefreshTokenExpiredError7(message2);
       throw error;
     }
   }
@@ -54625,7 +52660,7 @@ var RaccoonAuth = class extends Service9 {
     const accounts = await pool.listAccounts(this.product.id);
     for (const entry of accounts) {
       if (!entry.refreshable) continue;
-      const resolved = await this.ctx.credentials.resolve(credentialRef9(entry.credentialRef));
+      const resolved = await this.ctx.credentials.resolve(credentialRef8(entry.credentialRef));
       if (!resolved) continue;
       const credential = parseRaccoonCredential(resolved.value);
       if (credential === void 0) continue;
@@ -54648,7 +52683,7 @@ var RaccoonAuth = class extends Service9 {
       try {
         await this.refreshAccountCredential(entry.credentialRef, pool, entry.id);
       } catch (error) {
-        if (error instanceof RefreshTokenExpiredError8) {
+        if (error instanceof RefreshTokenExpiredError7) {
           this.ctx.logger?.warn?.(`[raccoon] \u8D26\u53F7 ${entry.id} \u7684 refresh_token \u5DF2\u5931\u6548\uFF0C\u9700\u91CD\u65B0\u767B\u5F55`);
         } else {
           this.ctx.logger?.warn?.(
@@ -54660,7 +52695,7 @@ var RaccoonAuth = class extends Service9 {
   }
   /** 登出：清除默认单凭据。 */
   async logout() {
-    await this.ctx.credentials.unset(credentialRef9(this.credentialRefName));
+    await this.ctx.credentials.unset(credentialRef8(this.credentialRefName));
     this.lastRefreshError = void 0;
   }
   /**
@@ -54754,7 +52789,7 @@ var RaccoonAuth = class extends Service9 {
     }
     for (const entry of entries) {
       try {
-        const ref = credentialRef9(entry.credentialRef);
+        const ref = credentialRef8(entry.credentialRef);
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) continue;
         const credential = parseRaccoonCredential(resolved.value);
@@ -54954,7 +52989,7 @@ var LoomyBalanceSelector = class {
 };
 
 // vendor/channel-pack/src/zcode-auth.ts
-import { Service as Service10 } from "@deepseek-ai/cordis";
+import { Service as Service9 } from "@deepseek-ai/cordis";
 
 // vendor/channel-pack/src/zcode.ts
 var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -55068,7 +53103,7 @@ function zcodeProductById(id) {
 // vendor/channel-pack/src/zcode-captcha.ts
 import { spawn as spawn2, spawnSync } from "node:child_process";
 import { existsSync as existsSync5, mkdtempSync, rmSync, writeFileSync as writeFileSync5 } from "node:fs";
-import { createServer as createServer8 } from "node:net";
+import { createServer as createServer7 } from "node:net";
 import { homedir as homedir2, tmpdir } from "node:os";
 import { basename, isAbsolute, join as join4, posix } from "node:path";
 var ZCODE_CAPTCHA_FALLBACK = {
@@ -55415,7 +53450,7 @@ async function pickFreePort() {
 }
 function isPortFree(port) {
   return new Promise((resolve2) => {
-    const server = createServer8();
+    const server = createServer7();
     server.once("error", () => resolve2(false));
     server.once("listening", () => {
       server.close(() => resolve2(true));
@@ -56772,7 +54807,7 @@ function buildCarrierPageHtml(config) {
 }
 
 // vendor/channel-pack/src/zcode-login.ts
-import { randomBytes as randomBytes7, randomUUID as randomUUID11 } from "node:crypto";
+import { randomBytes as randomBytes7, randomUUID as randomUUID10 } from "node:crypto";
 var ZCODE_ORIGIN = "https://zcode.z.ai";
 var ZCODE_OAUTH_CLI_INIT_URL = `${ZCODE_ORIGIN}/api/v1/oauth/cli/init`;
 var zcodeOauthCliPollUrl = (flowId) => `${ZCODE_ORIGIN}/api/v1/oauth/cli/poll/${encodeURIComponent(flowId)}`;
@@ -56788,7 +54823,7 @@ function generateFlowSecret() {
   return randomBytes7(32).toString("hex");
 }
 function generateDeviceMid() {
-  return randomUUID11();
+  return randomUUID10();
 }
 async function startZcodeLogin(fetchImpl = fetch, options = {}) {
   const flowSecret = generateFlowSecret();
@@ -57526,7 +55561,7 @@ async function withTimeout(work, ms) {
     if (timer !== void 0) clearTimeout(timer);
   }
 }
-var ZcodeAuth = class extends Service10 {
+var ZcodeAuth = class extends Service9 {
   product;
   fetchImpl;
   /** 注入的账号池（测试用；生产走 ctx.get）。 */
@@ -58977,7 +57012,7 @@ function emptyCheckinStatus(active, actionRequired = false) {
 }
 
 // vendor/channel-pack/src/zcode-adapter.ts
-import { EMPTY_RESPONSE_CODE as EMPTY_RESPONSE_CODE2, LlmAdapter as LlmAdapter16, LlmError as LlmError20, ReasoningEffortId as ReasoningEffortId10 } from "@deepseek-ai/dsh-llm";
+import { EMPTY_RESPONSE_CODE as EMPTY_RESPONSE_CODE2, LlmAdapter as LlmAdapter15, LlmError as LlmError19, ReasoningEffortId as ReasoningEffortId9 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/zcode-identity.ts
 var OFFICIAL_CLI_PREFIX = "You are ZCode, an interactive coding agent";
@@ -59068,7 +57103,7 @@ function withContextPrefix(messages, now = /* @__PURE__ */ new Date()) {
 }
 
 // vendor/channel-pack/src/zcode-anthropic.ts
-import { LlmError as LlmError19, ToolCallId as ToolCallId6 } from "@deepseek-ai/dsh-llm";
+import { LlmError as LlmError18, ToolCallId as ToolCallId5 } from "@deepseek-ai/dsh-llm";
 function parseToolArguments(raw) {
   if (raw === void 0 || raw === null) return {};
   if (typeof raw === "object") return raw;
@@ -59296,7 +57331,7 @@ async function* consumeAnthropicSse(body, options) {
       const error = payload.error;
       const message2 = typeof error === "object" && error !== null ? error.message : void 0;
       const type2 = typeof error === "object" && error !== null ? error.type : void 0;
-      throw new LlmError19(
+      throw new LlmError18(
         `${options.label}: ${typeof message2 === "string" ? message2 : JSON.stringify(payload).slice(0, 300)}`,
         // overloaded 是暂时性的，值得重试；其余按服务端错误处理。
         type2 === "overloaded_error" ? "RATE_LIMIT" : "SERVER"
@@ -59362,7 +57397,7 @@ async function* consumeAnthropicSse(body, options) {
         yield {
           type: "tool-call-delta",
           index,
-          id: ToolCallId6(block.callId),
+          id: ToolCallId5(block.callId),
           ...block.name.length > 0 ? { name: block.name } : {},
           argumentsDelta: partial
         };
@@ -59391,7 +57426,7 @@ async function* consumeAnthropicSse(body, options) {
     }
   }
   if (!sawAny) {
-    throw new LlmError19(
+    throw new LlmError18(
       `${options.label}: \u6A21\u578B\u8FD4\u56DE\u4E86\u7A7A\u54CD\u5E94\uFF08\u65E0\u4EFB\u4F55 text / thinking / tool \u5185\u5BB9\uFF09`,
       "EMPTY_RESPONSE"
     );
@@ -59414,7 +57449,7 @@ async function* consumeAnthropicSse(body, options) {
       index: block.index,
       block: {
         type: "tool-call",
-        id: ToolCallId6(block.callId),
+        id: ToolCallId5(block.callId),
         name: block.name,
         arguments: args
       }
@@ -59591,7 +57626,7 @@ function resolveRequestTimeoutMs(product) {
   const raw = Number(process.env.DSH_ZCODE_REQUEST_TIMEOUT_MS);
   return Number.isFinite(raw) ? raw : product.requestTimeoutMs;
 }
-var ZcodeAdapter = class extends LlmAdapter16 {
+var ZcodeAdapter = class extends LlmAdapter15 {
   constructor(options) {
     super();
     this.options = options;
@@ -59734,8 +57769,8 @@ var ZcodeAdapter = class extends LlmAdapter16 {
          *
          * ⚠ `ReasoningEffortId` 是 branded 类型，必须用构造函数（同 qoder 的写法）。
          */
-        efforts: levels.map((id) => ({ id: ReasoningEffortId10(id), name: reasoningEffortLabel(id) })),
-        ...defaultLevel !== void 0 && levels.includes(defaultLevel) ? { defaultEffort: ReasoningEffortId10(defaultLevel) } : {}
+        efforts: levels.map((id) => ({ id: ReasoningEffortId9(id), name: reasoningEffortLabel(id) })),
+        ...defaultLevel !== void 0 && levels.includes(defaultLevel) ? { defaultEffort: ReasoningEffortId9(defaultLevel) } : {}
       };
     }
     return resolved;
@@ -59845,20 +57880,20 @@ var ZcodeAdapter = class extends LlmAdapter16 {
   async *streamScoped(options, controller, timeoutMs) {
     const imageRefs = /* @__PURE__ */ new Map();
     for (const message2 of options.messages) {
-      if (Array.isArray(message2.content)) collectImages3(message2.content, imageRefs);
+      if (Array.isArray(message2.content)) collectImages2(message2.content, imageRefs);
     }
     let imageUrls;
     if (imageRefs.size > 0) {
       const all = await this.loadModels();
       const entry = all.find((item) => item.id === options.model);
       if (!this.inputModalitiesFor(entry).includes("image")) {
-        throw new LlmError20(
+        throw new LlmError19(
           `zcode: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`,
           "UNSUPPORTED_CONTENT"
         );
       }
       if (this.options.readImage === void 0) {
-        throw new LlmError20(
+        throw new LlmError19(
           "zcode: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1\uFF08\u5BBF\u4E3B\u672A\u63D0\u4F9B attachments.readImage\uFF09",
           "UNSUPPORTED_CONTENT"
         );
@@ -59886,7 +57921,7 @@ var ZcodeAdapter = class extends LlmAdapter16 {
     let activeAccountId = this.options.currentAccountId?.();
     if (activeAccountId !== void 0 && activeAccountId.length > 0) tried.add(activeAccountId);
     let credential = await this.resolveCredentialOrThrow(options);
-    const wire = serializeMessages4(options.messages, imageUrls);
+    const wire = serializeMessages3(options.messages, imageUrls);
     const messages = withContextPrefix(toAnthropicMessages(wire));
     const system = buildZcodeSystemBlocks(options.system, {
       cwd: process.cwd(),
@@ -59916,7 +57951,7 @@ var ZcodeAdapter = class extends LlmAdapter16 {
       }
     }
     const timedOut = () => controller.signal.aborted && options.signal?.aborted !== true;
-    const timeoutError = (cause) => new LlmError20(
+    const timeoutError = (cause) => new LlmError19(
       `zcode: \u8BF7\u6C42\u8D85\u65F6\uFF08${timeoutMs}ms \u5185\u672A\u5B8C\u6210\uFF09\u2014\u2014 \u4E0A\u6E38\u53EF\u80FD\u957F\u65F6\u95F4\u4E0D\u8FD4\u56DE\u6570\u636E`,
       "TIMEOUT",
       cause === void 0 ? void 0 : { cause }
@@ -59997,7 +58032,7 @@ var ZcodeAdapter = class extends LlmAdapter16 {
               break;
             }
           }
-          throw new LlmError20(
+          throw new LlmError19(
             `zcode: ${describeUpstreamError(response.status, text)}`,
             "QUOTA_EXCEEDED",
             { status: response.status }
@@ -60055,7 +58090,7 @@ var ZcodeAdapter = class extends LlmAdapter16 {
           shape: describeZcodeRequestShape(body.system, body.messages),
           now: Date.now()
         }) : void 0;
-        throw new LlmError20(
+        throw new LlmError19(
           `zcode: ${describeUpstreamError(response.status, text, diagnostic)}`,
           httpErrorCodeForZcode(response.status, text),
           { status: response.status }
@@ -60063,7 +58098,7 @@ var ZcodeAdapter = class extends LlmAdapter16 {
       }
       if (switchedAccount) continue;
       if (response === void 0) {
-        throw new LlmError20("zcode: \u4E0A\u6E38\u8BF7\u6C42\u672A\u53D1\u51FA\uFF08\u5185\u90E8\u72B6\u6001\u5F02\u5E38\uFF09", "SERVER");
+        throw new LlmError19("zcode: \u4E0A\u6E38\u8BF7\u6C42\u672A\u53D1\u51FA\uFF08\u5185\u90E8\u72B6\u6001\u5F02\u5E38\uFF09", "SERVER");
       }
       if (response.body === null) {
         if (quotaRound < this.product.quotaSwitchMax) {
@@ -60074,7 +58109,7 @@ var ZcodeAdapter = class extends LlmAdapter16 {
             continue;
           }
         }
-        throw new LlmError20(
+        throw new LlmError19(
           zcodeEntitlementErrorMessage(options.model, tried.size),
           "QUOTA_EXCEEDED"
         );
@@ -60102,7 +58137,7 @@ var ZcodeAdapter = class extends LlmAdapter16 {
               continue;
             }
           }
-          throw new LlmError20(
+          throw new LlmError19(
             zcodeEntitlementErrorMessage(options.model, tried.size),
             "QUOTA_EXCEEDED",
             { cause: error }
@@ -60127,7 +58162,7 @@ var ZcodeAdapter = class extends LlmAdapter16 {
       credential = await this.options.resolveCredential(options.model);
     }
     if (credential === void 0) {
-      throw new LlmError20(
+      throw new LlmError19(
         "zcode: \u6CA1\u6709\u53EF\u7528\u7684\u51ED\u636E \u2014\u2014 \u8BF7\u5728 Channel Pack \u7684 ZCode \u9762\u677F\u70B9\u300C\u6DFB\u52A0\u8D26\u53F7\u300D\u5B8C\u6210\u767B\u5F55\uFF08\u672C\u63D2\u4EF6\u53EA\u7528\u5B83\u81EA\u5DF1\u7684\u6388\u6743\u6D41\u7A0B\uFF0C\u4E0D\u4F1A\u8BFB\u53D6\u672C\u673A ZCode \u5BA2\u6237\u7AEF\u7684\u767B\u5F55\u6001\uFF09",
         "MISSING_CREDENTIAL"
       );
@@ -60166,13 +58201,13 @@ var ZcodeAdapter = class extends LlmAdapter16 {
       if (error instanceof GateAbortedError) throw error;
       if (userSignal?.aborted === true) throw error;
       if (signal.aborted) {
-        throw new LlmError20(
+        throw new LlmError19(
           `zcode: \u8BF7\u6C42\u8D85\u65F6\uFF08${timeoutMs}ms \u5185\u672A\u5B8C\u6210\uFF09\u2014\u2014 \u4E0A\u6E38\u53EF\u80FD\u957F\u65F6\u95F4\u4E0D\u8FD4\u56DE\u6570\u636E`,
           "TIMEOUT",
           { cause: error }
         );
       }
-      throw new LlmError20(
+      throw new LlmError19(
         `zcode: \u8BF7\u6C42\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`,
         "TRANSPORT",
         { cause: error }
@@ -60247,7 +58282,7 @@ var ZcodeAdapter = class extends LlmAdapter16 {
   }
 };
 function isFastEntitlementMiss(error, elapsedMs) {
-  if (!(error instanceof LlmError20)) return false;
+  if (!(error instanceof LlmError19)) return false;
   if (error.code !== EMPTY_RESPONSE_CODE2) return false;
   return elapsedMs < ZCODE_FAST_EMPTY_MS;
 }
@@ -60260,7 +58295,7 @@ async function defaultAdapterSleep(ms, signal) {
   await new Promise((resolve2, reject) => {
     const onAbort = () => {
       clearTimeout(timer);
-      reject(new LlmError20("zcode: \u9000\u907F\u7B49\u5F85\u671F\u95F4\u8BF7\u6C42\u5DF2\u53D6\u6D88", "TRANSPORT"));
+      reject(new LlmError19("zcode: \u9000\u907F\u7B49\u5F85\u671F\u95F4\u8BF7\u6C42\u5DF2\u53D6\u6D88", "TRANSPORT"));
     };
     const timer = setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
@@ -60349,7 +58384,7 @@ function registerZcodeLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/channel-pack-rpc.ts
-import { credentialRef as credentialRef13 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef12 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/openai-gateway/config.ts
 var DEFAULT_GATEWAY_HOST = "127.0.0.1";
@@ -60603,10 +58638,10 @@ function rankBuddyAccountsByBalance(accounts, options = {}) {
 }
 
 // vendor/channel-pack/src/kuku-qr-login-page.ts
-import { createServer as createServer9 } from "node:http";
+import { createServer as createServer8 } from "node:http";
 
 // vendor/channel-pack/src/kuku-qr-login.ts
-import { createHash as createHash8, randomBytes as randomBytes8 } from "node:crypto";
+import { createHash as createHash7, randomBytes as randomBytes8 } from "node:crypto";
 var KUKU_PASSPORT_BASE = "https://passport.baidu.com";
 var KUKU_QR_REFERER = "https://kuku.baidu.com/genflowpro/login";
 var KUKU_QR_TARGET = "https://kuku.baidu.com";
@@ -60898,7 +58933,7 @@ async function completeKukuQrLogin(session, ticket, options = {}) {
 async function exchangeKukuStoken(session, bduss, ptoken, options) {
   const fields = `appid=1&bduss=${bduss}&ptoken=${ptoken}&return_type=1&tpl=genflowpro&tpl_list=genflowpro|netdisk`;
   const signed = `${fields}&sign_key=${KUKU_ENGINE_SIGN_KEY}`;
-  const sig = createHash8("md5").update(signed).digest("hex");
+  const sig = createHash7("md5").update(signed).digest("hex");
   const body = `${fields}&sig=${sig}`;
   if (session.jar.has("BAIDUID") && !session.jar.has("gfprotpl")) session.jar.set("gfprotpl", "genflowpro");
   const url = `${session.passportBase}/v3/login/api/auth`;
@@ -61085,7 +59120,7 @@ async function startKukuLoginFlow(options) {
     }
     response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }).end("Not found");
   };
-  const server = createServer9((request2, response) => {
+  const server = createServer8((request2, response) => {
     void handle(request2, response).catch((error) => {
       try {
         response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" }).end(errorText(error));
@@ -61093,7 +59128,7 @@ async function startKukuLoginFlow(options) {
       }
     });
   });
-  const port = await listenOnRandomPort4(server);
+  const port = await listenOnRandomPort3(server);
   const loginUrl = `http://127.0.0.1:${port}${KUKU_LOGIN_PAGE_PATHS.login}`;
   let closed = false;
   const close = async () => {
@@ -61130,7 +59165,7 @@ function writeJson3(response, payload) {
   response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
   response.end(JSON.stringify(payload));
 }
-function listenOnRandomPort4(server) {
+function listenOnRandomPort3(server) {
   return new Promise((resolve2, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
@@ -61147,7 +59182,7 @@ init_accio_auth();
 init_commandcode_product();
 
 // vendor/channel-pack/src/autoclaw-sms.ts
-import { createHash as createHash9, randomUUID as randomUUID12 } from "node:crypto";
+import { createHash as createHash8, randomUUID as randomUUID11 } from "node:crypto";
 import { mkdirSync as mkdirSync5, readFileSync as readFileSync6, writeFileSync as writeFileSync6 } from "node:fs";
 import { join as join5 } from "node:path";
 var AUTOCLAW_SMS_APP_ID = "100003";
@@ -61158,7 +59193,7 @@ var AUTOCLAW_SOURCE_ID = "autoclaw";
 var REQUEST_TIMEOUT_MS2 = 2e4;
 var PHONE_RE2 = /^1[3-9]\d{9}$/;
 function autoclawSign(appId, timestamp, appKey) {
-  return createHash9("md5").update(`${appId}&${timestamp}&${appKey}`).digest("hex");
+  return createHash8("md5").update(`${appId}&${timestamp}&${appKey}`).digest("hex");
 }
 function autoclawAuthHeaders(timestamp = Math.floor(Date.now() / 1e3), appId = AUTOCLAW_SMS_APP_ID, appKey = AUTOCLAW_SMS_APP_KEY) {
   return {
@@ -61186,7 +59221,7 @@ function resolveAutoclawDeviceId(home) {
     if (typeof value === "string" && value.length >= 8) return value;
   } catch {
   }
-  const deviceId = randomUUID12();
+  const deviceId = randomUUID11();
   try {
     mkdirSync5(join5(home, "channel-pack"), { recursive: true });
     writeFileSync6(file, `${JSON.stringify({ deviceId, createdAt: Date.now() }, null, 2)}
@@ -61338,7 +59373,7 @@ async function loginAutoclawWithCode(options) {
 }
 
 // vendor/channel-pack/src/autoclaw-login-page.ts
-import { createServer as createServer10 } from "node:http";
+import { createServer as createServer9 } from "node:http";
 var AUTOCLAW_LOGIN_PAGE_PATHS = {
   login: "/autoclaw/login",
   smsSend: "/autoclaw/sms/send",
@@ -61367,7 +59402,7 @@ async function startAutoclawLoginFlow(options) {
     settled = true;
     rejectResult(error);
   };
-  const server = createServer10((request2, response) => {
+  const server = createServer9((request2, response) => {
     void handleRequest3(request2, response, { state, product, fetcher, deviceId, settleOk }).catch(
       (error) => {
         try {
@@ -61377,7 +59412,7 @@ async function startAutoclawLoginFlow(options) {
       }
     );
   });
-  const port = await listenOnRandomPort5(server);
+  const port = await listenOnRandomPort4(server);
   const loginUrl = `http://127.0.0.1:${port}${AUTOCLAW_LOGIN_PAGE_PATHS.login}`;
   let closed = false;
   const close = async () => {
@@ -61477,7 +59512,7 @@ async function readJsonBody3(request2) {
     return {};
   }
 }
-function listenOnRandomPort5(server) {
+function listenOnRandomPort4(server) {
   return new Promise((resolve2, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
@@ -62207,7 +60242,7 @@ async function fetchMinimaxCreditBalance(credential, fetcher = fetch, product = 
 
 // vendor/channel-pack/src/gemini.ts
 import { randomBytes as randomBytes9 } from "node:crypto";
-import { LlmError as LlmError21, ReasoningEffortId as ReasoningEffortId11 } from "@deepseek-ai/dsh-llm";
+import { LlmError as LlmError20, ReasoningEffortId as ReasoningEffortId10 } from "@deepseek-ai/dsh-llm";
 var GEMINI_ENDPOINT_DAILY = "https://daily-cloudcode-pa.googleapis.com";
 var GEMINI_ENDPOINT_SANDBOX = "https://daily-cloudcode-pa.sandbox.googleapis.com";
 var GEMINI_ENDPOINTS = [GEMINI_ENDPOINT_DAILY, GEMINI_ENDPOINT_SANDBOX];
@@ -62368,7 +60403,7 @@ function geminiCanonicalModelId(modelId) {
 }
 function geminiModelSpec(modelId, effort) {
   if (geminiCanonicalModelId(modelId) !== GEMINI_UPSTREAM_FLASH) {
-    throw new LlmError21(
+    throw new LlmError20(
       `gemini: \u6A21\u578B "${modelId}" \u4E0D\u5728\u672C provider \u76EE\u5F55\u4E2D\uFF08\u4EC5\u652F\u6301 ${GEMINI_UPSTREAM_FLASH}\uFF09`,
       "INVALID_REQUEST",
       // ⚠️ `status` 只落在 `LlmError.failure`（不是顶层属性），且网关的
@@ -62387,8 +60422,8 @@ function geminiModelSpec(modelId, effort) {
 function geminiReasoningInfo(entry) {
   const options = entry.effortOptions;
   if (options === void 0 || options.length === 0) return void 0;
-  const efforts = options.map((id) => ({ id: ReasoningEffortId11(id), name: geminiEffortLabel(id) }));
-  const defaultEffort = entry.defaultEffort !== void 0 && options.includes(entry.defaultEffort) ? ReasoningEffortId11(entry.defaultEffort) : void 0;
+  const efforts = options.map((id) => ({ id: ReasoningEffortId10(id), name: geminiEffortLabel(id) }));
+  const defaultEffort = entry.defaultEffort !== void 0 && options.includes(entry.defaultEffort) ? ReasoningEffortId10(entry.defaultEffort) : void 0;
   return { efforts, ...defaultEffort === void 0 ? {} : { defaultEffort } };
 }
 var GEMINI_SCHEMA_KEYS = /* @__PURE__ */ new Set([
@@ -63278,210 +61313,6 @@ async function fetchClineUsageLimits(credential, product, fetcher = fetch, optio
   return { ok: true, windows: result.windows, ...result.error === void 0 ? {} : { error: result.error } };
 }
 
-// vendor/channel-pack/src/lobsterai-credits.ts
-import { randomUUID as randomUUID13 } from "node:crypto";
-var LOBSTERAI_ACTIVITY_SLOT_PATH = "/api/client-activities/slot";
-var LOBSTERAI_ACTIVITY_CONTEXT_PATH = "/api/client-activities";
-var LOBSTERAI_PROFILE_SUMMARY_PATH = "/api/user/profile-summary";
-var LOBSTERAI_SLOT_PLACEMENT = "desktop_sidebar";
-var LOBSTERAI_SLOT_CONTAINER_API_VERSION = "2";
-var LOBSTERAI_SLOT_PLATFORM = "win32";
-var UNPARSABLE_RESPONSE_MESSAGE2 = "\u8BF7\u6C42\u5931\u8D25\u6216\u54CD\u5E94\u65E0\u6CD5\u89E3\u6790";
-async function requestJson2(url, credential, product, fetcher, init = { method: "GET" }) {
-  try {
-    const response = await fetcher(url, {
-      method: init.method,
-      headers: lobsteraiAuthHeaders(credential, product),
-      ...init.body === void 0 ? {} : { body: init.body },
-      signal: AbortSignal.timeout(LOBSTERAI_REQUEST_TIMEOUT_MS)
-    });
-    const text = await response.text();
-    let parsed;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      return { ok: false, message: describeNonJsonResponse2(response.status, text) };
-    }
-    if (typeof parsed !== "object" || parsed === null) {
-      return { ok: false, message: UNPARSABLE_RESPONSE_MESSAGE2 };
-    }
-    return { ok: true, body: parsed };
-  } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : String(error) };
-  }
-}
-function describeNonJsonResponse2(status, text) {
-  if (status === 401 || status === 403) {
-    return `\u51ED\u636E\u5DF2\u5931\u6548\uFF08HTTP ${status}\uFF09\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55\u8BE5\u8D26\u53F7`;
-  }
-  const snippet = text.trim().slice(0, 80).replace(/\s+/g, " ");
-  return `\u670D\u52A1\u7AEF\u8FD4\u56DE\u4E86\u975E JSON \u54CD\u5E94\uFF08HTTP ${status}\uFF09\uFF1A${snippet}`;
-}
-function readBool2(source, key) {
-  return source[key] === true;
-}
-function readNumber7(source, key) {
-  const value = source[key];
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && /^-?\d+(\.\d+)?$/.test(value.trim())) return Number(value);
-  return 0;
-}
-function readActions(source, key) {
-  const value = source[key];
-  if (!Array.isArray(value)) return [];
-  return value.filter((item) => typeof item === "string");
-}
-async function fetchLobsteraiActivitySlot(credential, product, clientVersion, fetcher = fetch) {
-  const query = new URLSearchParams({
-    placement: LOBSTERAI_SLOT_PLACEMENT,
-    clientVersion,
-    containerApiVersion: LOBSTERAI_SLOT_CONTAINER_API_VERSION,
-    platform: LOBSTERAI_SLOT_PLATFORM
-  });
-  const result = await requestJson2(
-    `${product.apiBase}${LOBSTERAI_ACTIVITY_SLOT_PATH}?${query.toString()}`,
-    credential,
-    product,
-    fetcher
-  );
-  if (!result.ok) return null;
-  const envelope = parseLobsteraiEnvelope(result.body);
-  if (!envelope.ok) return null;
-  const activity = typeof envelope.data.activity === "object" && envelope.data.activity !== null ? envelope.data.activity : {};
-  const activityCode = typeof activity.activityCode === "string" ? activity.activityCode : "";
-  return {
-    slotState: typeof envelope.data.slotState === "string" ? envelope.data.slotState : "",
-    activityCode,
-    configRevision: readNumber7(activity, "configRevision")
-  };
-}
-async function fetchLobsteraiActivityContext(credential, product, slot2, fetcher = fetch) {
-  const query = new URLSearchParams({ configRevision: String(slot2.configRevision) });
-  const url = `${product.apiBase}${LOBSTERAI_ACTIVITY_CONTEXT_PATH}/${encodeURIComponent(slot2.activityCode)}/context?${query.toString()}`;
-  const result = await requestJson2(url, credential, product, fetcher);
-  if (!result.ok) return null;
-  const envelope = parseLobsteraiEnvelope(result.body);
-  if (!envelope.ok) return null;
-  const state = typeof envelope.data.state === "object" && envelope.data.state !== null ? envelope.data.state : {};
-  return {
-    claimedToday: readBool2(state, "claimedToday"),
-    actions: readActions(envelope.data, "actions")
-  };
-}
-async function claimLobsteraiDailyCheckin(credential, product, clientVersion, fetcher = fetch) {
-  const slot2 = await fetchLobsteraiActivitySlot(credential, product, clientVersion, fetcher);
-  if (slot2 === null) {
-    return { kind: "failed", code: -1, message: "\u6D3B\u52A8\u69FD\u4F4D\u67E5\u8BE2\u5931\u8D25" };
-  }
-  if (slot2.slotState !== "available" || slot2.activityCode.length === 0) {
-    return { kind: "inactive", message: `\u65E0\u53EF\u7528\u6D3B\u52A8\uFF08slotState=${slot2.slotState}\uFF09` };
-  }
-  const context = await fetchLobsteraiActivityContext(credential, product, slot2, fetcher);
-  if (context === null) {
-    return { kind: "failed", code: -1, message: "\u6D3B\u52A8\u4E0A\u4E0B\u6587\u67E5\u8BE2\u5931\u8D25" };
-  }
-  if (context.claimedToday) {
-    return { kind: "already-claimed", message: "\u4ECA\u5929\u5DF2\u7B7E\u5230" };
-  }
-  if (!context.actions.includes("check_in")) {
-    return { kind: "inactive", message: "\u5F53\u524D\u4E0D\u53EF\u7B7E\u5230" };
-  }
-  const url = `${product.apiBase}${LOBSTERAI_ACTIVITY_CONTEXT_PATH}/${encodeURIComponent(slot2.activityCode)}/actions/check_in`;
-  const result = await requestJson2(url, credential, product, fetcher, {
-    method: "POST",
-    body: JSON.stringify({
-      configRevision: slot2.configRevision,
-      // 客户端幂等键（对齐 sigin.py:63 的 uuid4）：服务端据此去重。
-      idempotencyKey: randomUUID13(),
-      payload: {}
-    })
-  });
-  if (!result.ok) {
-    return { kind: "failed", code: -1, message: result.message };
-  }
-  const envelope = parseLobsteraiEnvelope(result.body);
-  if (!envelope.ok) {
-    return { kind: "failed", code: envelope.code, message: envelope.message };
-  }
-  const bodyResult = typeof envelope.data.result === "object" && envelope.data.result !== null ? envelope.data.result : {};
-  const credit = ["creditsGranted", "rewardCredits", "credits"].map((key) => bodyResult[key]).find((value) => typeof value === "number" && Number.isFinite(value)) ?? 0;
-  const message2 = typeof bodyResult.message === "string" ? bodyResult.message : "";
-  return {
-    kind: "claimed",
-    credit,
-    // LobsterAI 的签到响应不含连续天数概念（那是 CodeBuddy 的活动机制）。
-    streakDays: 0,
-    isStreakDay: false,
-    ...message2.length > 0 ? { delayedMessage: message2 } : {}
-  };
-}
-async function fetchLobsteraiCreditBalance(credential, product, fetcher = fetch) {
-  const result = await requestJson2(
-    `${product.apiBase}${LOBSTERAI_PROFILE_SUMMARY_PATH}`,
-    credential,
-    product,
-    fetcher
-  );
-  if (!result.ok) return null;
-  const envelope = parseLobsteraiEnvelope(result.body);
-  if (!envelope.ok) return null;
-  const packages = [];
-  const items = envelope.data.creditItems;
-  if (Array.isArray(items)) {
-    for (const item of items) {
-      if (typeof item !== "object" || item === null) continue;
-      const record = item;
-      const remaining = readNumber7(record, "creditsRemaining");
-      const type = typeof record.type === "string" ? record.type : "";
-      const label = typeof record.label === "string" ? record.label : "";
-      const expiresAt = typeof record.expiresAt === "string" ? record.expiresAt : "";
-      const expMs = expiresAt.length > 0 ? Date.parse(expiresAt.replace(" ", "T")) : Number.NaN;
-      packages.push({
-        // ⚠️ 包名用 `label`（实测"每日登录奖励"）而不是 `type`（"campaign"）：
-        // type 是机器分类码，label 才是人看的名字。label 缺失时回退 type，
-        // 再回退「积分包」（老用例锁死的形态）。
-        name: label.length > 0 ? label : type.length > 0 ? type : "\u79EF\u5206\u5305",
-        unit: "credit",
-        remaining,
-        // LobsterAI 只下发剩余量，不区分「周期总额/已用」。
-        // 用 remaining 充当 total 会让「剩余/总额」显示成 1:1；
-        // 这里如实置 0，UI 的 `formatPackageLine` 对 0 会显示 '?'（不误导）。
-        total: 0,
-        used: 0,
-        // 无 Status 字段可依据：有 expiresAt 且已过期才算失效。
-        active: !(expiresAt.length > 0 && Number.isFinite(Date.parse(expiresAt.replace(" ", "T"))) && Date.now() >= Date.parse(expiresAt.replace(" ", "T"))),
-        cycleStartTime: "",
-        cycleEndTime: "",
-        expiredTime: expiresAt,
-        ...Number.isFinite(expMs) ? { deductionEndTime: expMs } : {}
-      });
-    }
-  }
-  const faceValueByGroup = /* @__PURE__ */ new Map();
-  for (const pkg of packages) {
-    if (!pkg.active) continue;
-    const key = pkg.name;
-    const cur = faceValueByGroup.get(key) ?? 0;
-    if (pkg.remaining > cur) faceValueByGroup.set(key, pkg.remaining);
-  }
-  for (const pkg of packages) {
-    const face = faceValueByGroup.get(pkg.name);
-    if (face !== void 0 && face > 0) {
-      pkg.total = roundCredits2(face);
-      if (pkg.used <= 0) pkg.used = roundCredits2(Math.max(0, face - pkg.remaining));
-    }
-  }
-  const total = roundCredits2(Math.max(0, readNumber7(envelope.data, "totalCreditsRemaining")));
-  if (total === 0 && packages.length === 0) return null;
-  const expiredTotal = roundCredits2(
-    packages.reduce((sum, pkg) => sum + (pkg.active ? 0 : Math.max(0, pkg.remaining)), 0)
-  );
-  return { total, packages, expiredTotal };
-}
-function roundCredits2(value) {
-  return Math.round(value * 100) / 100;
-}
-
 // vendor/channel-pack/src/codearts-credits.ts
 var CODEARTS_SNAP_ENGINE_URL = "https://snap-access.cn-north-4.myhuaweicloud.com";
 var CODEARTS_PACKAGE_INFO_PATH = "/snap-manager/v1/statistics/plugin";
@@ -63503,7 +61334,7 @@ var CREDIT_METRIC_LABELS = {
   usageBonusPackageCredit: "\u8D60\u9001\u79EF\u5206\u5305"
 };
 var TOTAL_CREDIT_METRIC = "usageTotalPackageCredit";
-var UNPARSABLE_RESPONSE_MESSAGE3 = "\u8BF7\u6C42\u5931\u8D25\u6216\u54CD\u5E94\u65E0\u6CD5\u89E3\u6790";
+var UNPARSABLE_RESPONSE_MESSAGE2 = "\u8BF7\u6C42\u5931\u8D25\u6216\u54CD\u5E94\u65E0\u6CD5\u89E3\u6790";
 function describeHttpFailure(status, text) {
   let detail = "";
   try {
@@ -63516,13 +61347,13 @@ function describeHttpFailure(status, text) {
   }
   return detail.length > 0 ? `HTTP ${status}\uFF1A${detail}` : `HTTP ${status}`;
 }
-function readBool3(source, key) {
+function readBool2(source, key) {
   const value = source[key];
   if (typeof value === "boolean") return value;
   if (typeof value === "string") return value.trim().toLowerCase() === "true";
   return false;
 }
-function readNumber8(source, key) {
+function readNumber7(source, key) {
   const value = source[key];
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim().length > 0) {
@@ -63588,10 +61419,10 @@ async function signedSnapRequest(method, url, credential, body, fetcher) {
     try {
       parsed = JSON.parse(text);
     } catch {
-      return { ok: false, code: -1, message: UNPARSABLE_RESPONSE_MESSAGE3 };
+      return { ok: false, code: -1, message: UNPARSABLE_RESPONSE_MESSAGE2 };
     }
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      return { ok: false, code: -1, message: UNPARSABLE_RESPONSE_MESSAGE3 };
+      return { ok: false, code: -1, message: UNPARSABLE_RESPONSE_MESSAGE2 };
     }
     return unwrapSnapEnvelope(parsed);
   } catch (error) {
@@ -63614,9 +61445,9 @@ function parseCreditBalance(metrics) {
     const label = CREDIT_METRIC_LABELS[name2];
     if (label === void 0) continue;
     sawAnyCreditMetric = true;
-    const amount = readNumber8(record, "package_credit_amount");
-    const used = readNumber8(record, "package_credit_used");
-    const remain = readNumber8(record, "package_credit_remain");
+    const amount = readNumber7(record, "package_credit_amount");
+    const used = readNumber7(record, "package_credit_used");
+    const remain = readNumber7(record, "package_credit_remain");
     if (name2 === TOTAL_CREDIT_METRIC) totalRemain = remain;
     if (amount <= 0 && remain <= 0) continue;
     packages.push({
@@ -63634,7 +61465,7 @@ function parseCreditBalance(metrics) {
     });
   }
   if (!sawAnyCreditMetric) return void 0;
-  const total = roundCredits3(
+  const total = roundCredits2(
     totalRemain ?? packages.reduce((sum, pkg) => sum + pkg.remaining, 0)
   );
   return { total, packages, expiredTotal: 0 };
@@ -63650,8 +61481,8 @@ async function fetchCodeArtsAccountInfoDetailed(credential, fetcher = directFetc
   return {
     ok: true,
     info: {
-      isCreditPackage: readBool3(pkg, "is_credit_package"),
-      isTokenPackage: readBool3(pkg, "is_token_package"),
+      isCreditPackage: readBool2(pkg, "is_credit_package"),
+      isTokenPackage: readBool2(pkg, "is_token_package"),
       specCode: readString6(pkg, "spec_code"),
       packageName: packageNameCn.length > 0 ? packageNameCn : packageNameEn,
       packageStatus: readString6(pkg, "status"),
@@ -63665,11 +61496,11 @@ function parseActivity(item) {
     campaignId: readIdentifier(item, "campaignId"),
     type: readString6(item, "type"),
     title: readString6(item, "title"),
-    claimable: readBool3(item, "claimable"),
+    claimable: readBool2(item, "claimable"),
     status: readString6(item, "status"),
     // 可领积分数：实测字段名是 `benefitAmount`（值 1000）。
     // 保留另两个候选名作兼容回退，取不到才为 0。
-    amount: readNumber8(item, "benefitAmount") || readNumber8(item, "amount") || readNumber8(item, "creditAmount")
+    amount: readNumber7(item, "benefitAmount") || readNumber7(item, "amount") || readNumber7(item, "creditAmount")
   };
 }
 async function fetchCodeArtsOpsActivitiesDetailed(credential, fetcher = directFetch) {
@@ -63732,7 +61563,7 @@ async function claimCodeArtsDailyCheckin(credential, fetcher = directFetch) {
       fetcher
     );
   }
-  const claimCredit = readNumber8(claimResult.data, "benefitAmount") || readNumber8(claimResult.data, "credit") || readNumber8(claimResult.data, "credits") || readNumber8(claimResult.data, "creditAmount") || readNumber8(claimResult.data, "amount");
+  const claimCredit = readNumber7(claimResult.data, "benefitAmount") || readNumber7(claimResult.data, "credit") || readNumber7(claimResult.data, "credits") || readNumber7(claimResult.data, "creditAmount") || readNumber7(claimResult.data, "amount");
   return {
     kind: "claimed",
     credit: claimCredit > 0 ? claimCredit : activity.amount,
@@ -63741,7 +61572,7 @@ async function claimCodeArtsDailyCheckin(credential, fetcher = directFetch) {
     isStreakDay: false
   };
 }
-function roundCredits3(value) {
+function roundCredits2(value) {
   return Math.round(value * 100) / 100;
 }
 
@@ -63770,7 +61601,7 @@ function classifyTraeCheckinError(httpStatus, code) {
   }
   return { type: "Unknown", cooldownSecs: 0 };
 }
-function readNumber9(source, key) {
+function readNumber8(source, key) {
   const value = source[key];
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
@@ -63825,11 +61656,11 @@ async function fetchTraeCheckinStatus(credential, _product, fetcher = fetch) {
   return {
     active: body.enable === true,
     todayCheckedIn: body.checked_in === true,
-    streakDays: readNumber9(body, "streak_days") || 0,
-    dailyCredit: readNumber9(body, "credits") || 0,
+    streakDays: readNumber8(body, "streak_days") || 0,
+    dailyCredit: readNumber8(body, "credits") || 0,
     todayCredit: 0,
     isStreakDay: false,
-    totalCredits: readNumber9(body, "total_credits") || 0,
+    totalCredits: readNumber8(body, "total_credits") || 0,
     checkinDates: [],
     activityName: "",
     themeName: "",
@@ -63912,11 +61743,11 @@ async function fetchTraeCreditBalance(credential, _product, fetcher = fetch) {
     if (typeof base !== "object" || base === null) continue;
     const quota = base.quota;
     if (typeof quota !== "object" || quota === null) continue;
-    const creditsLimit = readNumber9(quota, "credits_limit");
+    const creditsLimit = readNumber8(quota, "credits_limit");
     if (creditsLimit <= 0) continue;
     const usage = entry.usage;
-    const used = typeof usage === "object" && usage !== null ? readNumber9(usage, "credits_amount") : 0;
-    const expireSec = readNumber9(entry, "expire_time");
+    const used = typeof usage === "object" && usage !== null ? readNumber8(usage, "credits_amount") : 0;
+    const expireSec = readNumber8(entry, "expire_time");
     const deductionEndMs = expireSec > 0 ? expireSec * 1e3 : void 0;
     const pkg = {
       // ⚠️ 包名用 `display_desc`（实测"每月登录赠送"/"签到奖励"/"免费"），
@@ -63939,20 +61770,20 @@ async function fetchTraeCreditBalance(credential, _product, fetcher = fetch) {
 }
 
 // vendor/channel-pack/src/account-probe.ts
-import { credentialRef as credentialRef10 } from "@deepseek-ai/dsh-credentials";
-import { createUserMessage, LlmError as LlmError23 } from "@deepseek-ai/dsh-llm";
+import { credentialRef as credentialRef9 } from "@deepseek-ai/dsh-credentials";
+import { createUserMessage, LlmError as LlmError22 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/gemini-adapter.ts
 import {
   CONTEXT_WINDOW_EXCEEDED_CODE as CONTEXT_WINDOW_EXCEEDED_CODE3,
   isContextWindowExceededError as isContextWindowExceededError3,
-  LlmAdapter as LlmAdapter17,
-  LlmError as LlmError22,
-  ReasoningEffortId as ReasoningEffortId12
+  LlmAdapter as LlmAdapter16,
+  LlmError as LlmError21,
+  ReasoningEffortId as ReasoningEffortId11
 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/gemini-messages.ts
-import { ToolCallId as ToolCallId7 } from "@deepseek-ai/dsh-llm";
+import { ToolCallId as ToolCallId6 } from "@deepseek-ai/dsh-llm";
 function canonicalArgs(args) {
   if (args === void 0 || args === null) return "{}";
   if (typeof args !== "object" || Array.isArray(args)) return sortedStringify(args);
@@ -64188,7 +62019,7 @@ async function* consumeGeminiSse(options) {
     } else {
       content = {
         type: "tool-call",
-        id: ToolCallId7(block.toolId ?? ""),
+        id: ToolCallId6(block.toolId ?? ""),
         name: block.toolName ?? "",
         arguments: block.text
       };
@@ -64244,7 +62075,7 @@ async function* consumeGeminiSse(options) {
           yield {
             type: "tool-call-delta",
             index: block.index,
-            id: ToolCallId7(block.toolId ?? ""),
+            id: ToolCallId6(block.toolId ?? ""),
             name: part.functionCall.name,
             argumentsDelta: argsJson
           };
@@ -64424,7 +62255,7 @@ var GEMINI_TOKEN_COUNT_OVERFLOW = /\btoken\s+count\b[\s\S]{0,60}?\bexceeds?\s+th
 function isGeminiContextOverflow(text) {
   return isContextWindowExceededError3(text) || GEMINI_TOKEN_COUNT_OVERFLOW.test(text);
 }
-var GeminiAdapter = class extends LlmAdapter17 {
+var GeminiAdapter = class extends LlmAdapter16 {
   constructor(options) {
     super();
     this.options = options;
@@ -64513,11 +62344,11 @@ var GeminiAdapter = class extends LlmAdapter17 {
   async collectInlineImages(messages, entry, model) {
     const imageRefs = /* @__PURE__ */ new Map();
     for (const message2 of messages) {
-      if (Array.isArray(message2.content)) collectImages3(message2.content, imageRefs);
+      if (Array.isArray(message2.content)) collectImages2(message2.content, imageRefs);
     }
     if (imageRefs.size === 0) return void 0;
     if (entry?.supportsImage !== true) {
-      throw new LlmError22(
+      throw new LlmError21(
         `gemini: \u6A21\u578B "${model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`,
         "UNSUPPORTED_CONTENT"
       );
@@ -64529,7 +62360,7 @@ var GeminiAdapter = class extends LlmAdapter17 {
       if (inline === void 0) {
         const readImage = this.options.readImage;
         if (readImage === void 0) {
-          throw new LlmError22(
+          throw new LlmError21(
             "gemini: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1\uFF08readImage / readImageRequest \u5747\u672A\u63D0\u4F9B\uFF09",
             "UNSUPPORTED_CONTENT"
           );
@@ -64537,7 +62368,7 @@ var GeminiAdapter = class extends LlmAdapter17 {
         try {
           inline = await readImage(ref);
         } catch (error) {
-          throw new LlmError22(
+          throw new LlmError21(
             "gemini: \u56FE\u7247\u9644\u4EF6\u8BFB\u53D6\u5931\u8D25\uFF1B\u9644\u4EF6\u670D\u52A1\u53EF\u80FD\u672A\u5C31\u7EEA\uFF0C\u6216\u8BE5\u5BF9\u8C61\u5DF2\u4E0D\u5B58\u5728\u3002",
             "UNSUPPORTED_CONTENT",
             { cause: error }
@@ -64545,20 +62376,20 @@ var GeminiAdapter = class extends LlmAdapter17 {
         }
       }
       if (inline === void 0) {
-        throw new LlmError22(
+        throw new LlmError21(
           "gemini: \u56FE\u7247\u9644\u4EF6\u8BFB\u53D6\u4E0D\u5230\u5185\u5BB9\uFF1B\u9644\u4EF6\u670D\u52A1\u53EF\u80FD\u672A\u5C31\u7EEA\uFF0C\u6216\u8BE5\u5BF9\u8C61\u5DF2\u4E0D\u5B58\u5728\u3002",
           "UNSUPPORTED_CONTENT"
         );
       }
       if (inline.data.byteLength > GEMINI_MAX_IMAGE_BYTES_INLINE) {
-        throw new LlmError22(
+        throw new LlmError21(
           `gemini: \u56FE\u7247\u4F53\u79EF ${inline.data.byteLength} \u5B57\u8282\u8D85\u8FC7\u4E0A\u6E38\u5185\u8054\u4E0A\u9650 ${GEMINI_MAX_IMAGE_BYTES_INLINE} \u5B57\u8282`,
           "UNSUPPORTED_CONTENT"
         );
       }
       const data = normalizeBase64(Buffer.from(inline.data).toString("base64"));
       if (data === void 0) {
-        throw new LlmError22("gemini: \u56FE\u7247\u7F16\u7801\u4E0D\u662F\u5408\u6CD5 base64", "UNSUPPORTED_CONTENT");
+        throw new LlmError21("gemini: \u56FE\u7247\u7F16\u7801\u4E0D\u662F\u5408\u6CD5 base64", "UNSUPPORTED_CONTENT");
       }
       images.set(id, { mediaType: inline.mediaType === "" ? "image/png" : inline.mediaType, data });
     }
@@ -64578,7 +62409,7 @@ var GeminiAdapter = class extends LlmAdapter17 {
   async *stream(options) {
     const entry = this.loadModels().find((item) => item.id === geminiCanonicalModelId(options.model));
     if (entry === void 0) {
-      throw new LlmError22(
+      throw new LlmError21(
         `gemini: \u6A21\u578B "${options.model}" \u4E0D\u5728\u672C provider \u76EE\u5F55\u4E2D\uFF08\u4EC5\u652F\u6301 ${GEMINI_UPSTREAM_FLASH}\uFF09`,
         "INVALID_REQUEST",
         // 模型名写错是确定性失败：带上 404，网关才不会把它当 502 让客户端白重试。
@@ -64591,7 +62422,7 @@ var GeminiAdapter = class extends LlmAdapter17 {
       credential = await this.options.resolveCredential(options.model);
     }
     if (credential === void 0 || credential.access_token === "") {
-      throw new LlmError22("gemini: no usable credential; log in first", "MISSING_CREDENTIAL");
+      throw new LlmError21("gemini: no usable credential; log in first", "MISSING_CREDENTIAL");
     }
     const requested = options.reasoningEffort === void 0 ? void 0 : String(options.reasoningEffort);
     const declared = entry === void 0 ? void 0 : geminiReasoningInfo(entry);
@@ -64633,7 +62464,7 @@ var GeminiAdapter = class extends LlmAdapter17 {
             ...options.signal === void 0 ? {} : { signal: options.signal }
           });
           if (probe.error !== void 0) {
-            throw new LlmError22(
+            throw new LlmError21(
               `gemini: \u9879\u76EE\u53F7\u63A2\u6D4B\u5931\u8D25\uFF0C\u672A\u53D1\u63A8\u7406\uFF08\u4E0E\u539F\u7248\u4E00\u81F4\uFF09\u2014 ${probe.error}`,
               "SERVER"
             );
@@ -64672,7 +62503,7 @@ var GeminiAdapter = class extends LlmAdapter17 {
         const wire = marshalAlphabetical(envelope);
         const wireBytes = Buffer.byteLength(wire, "utf8");
         if (wireBytes > GEMINI_MAX_REQUEST_BODY_BYTES) {
-          throw new LlmError22(
+          throw new LlmError21(
             `gemini: \u8BF7\u6C42\u4F53 ${wireBytes} \u5B57\u8282\u8D85\u8FC7\u4E0A\u9650 ${GEMINI_MAX_REQUEST_BODY_BYTES} \u5B57\u8282`,
             CONTEXT_WINDOW_EXCEEDED_CODE3
           );
@@ -64687,8 +62518,8 @@ var GeminiAdapter = class extends LlmAdapter17 {
             signal: options.signal
           });
         } catch (error) {
-          if (error instanceof LlmError22) throw error;
-          throw new LlmError22(
+          if (error instanceof LlmError21) throw error;
+          throw new LlmError21(
             `gemini: \u8BF7\u6C42\u53D1\u9001\u5931\u8D25 \u2014 ${error instanceof Error ? error.message : String(error)}`,
             "TRANSPORT",
             { cause: error }
@@ -64696,7 +62527,7 @@ var GeminiAdapter = class extends LlmAdapter17 {
         }
         if (response.ok) {
           if (response.body === null) {
-            throw new LlmError22("gemini: \u54CD\u5E94\u7F3A\u5C11 body", "EMPTY_RESPONSE");
+            throw new LlmError21("gemini: \u54CD\u5E94\u7F3A\u5C11 body", "EMPTY_RESPONSE");
           }
           const body = response.body;
           try {
@@ -64767,7 +62598,7 @@ var GeminiAdapter = class extends LlmAdapter17 {
               continue;
             }
           }
-          throw new LlmError22(
+          throw new LlmError21(
             `gemini: \u6A21\u578B ${options.model} \u7684\u6240\u6709\u8D26\u53F7\u5747\u4E0D\u53EF\u7528\uFF08\u9650\u6D41\u6216\u989D\u5EA6\u8017\u5C3D\uFF09\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5`,
             "QUOTA_EXCEEDED",
             { status }
@@ -64792,15 +62623,15 @@ var GeminiAdapter = class extends LlmAdapter17 {
     const detail = text === "" ? "" : ` \u2014 ${text.slice(0, 500)}`;
     const message2 = `gemini: HTTP ${status}${detail}`;
     if (status === 400 && isGeminiContextOverflow(text)) {
-      return new LlmError22(message2, CONTEXT_WINDOW_EXCEEDED_CODE3, { status });
+      return new LlmError21(message2, CONTEXT_WINDOW_EXCEEDED_CODE3, { status });
     }
     if (status === 400 && isGeminiQuotaText(text)) {
-      return new LlmError22(message2, "QUOTA_EXCEEDED", { status });
+      return new LlmError21(message2, "QUOTA_EXCEEDED", { status });
     }
-    if (status === 429) return new LlmError22(message2, "RATE_LIMIT", { status });
-    if (status === 403 || status === 404) return new LlmError22(message2, "SERVER", { status });
-    if (status === 401) return new LlmError22(message2, "AUTH", { status });
-    return new LlmError22(message2, httpErrorCode4(status), { status });
+    if (status === 429) return new LlmError21(message2, "RATE_LIMIT", { status });
+    if (status === 403 || status === 404) return new LlmError21(message2, "SERVER", { status });
+    if (status === 401) return new LlmError21(message2, "AUTH", { status });
+    return new LlmError21(message2, httpErrorCode3(status), { status });
   }
 };
 function registerGeminiLlm(ctx, options) {
@@ -64816,7 +62647,7 @@ var PROBE_PROMPT = "\u53EA\u56DE\u7B54\u4E24\u4E2A\u5B57\uFF1A\u6536\u5230";
 var PROBE_SYSTEM = "You are a helpful assistant.";
 var PROBE_TIMEOUT_MS = 12e4;
 function isRateLimitFailure(error) {
-  if (error instanceof LlmError23) {
+  if (error instanceof LlmError22) {
     if (error.code === "RATE_LIMIT" || error.code === "QUOTA_EXCEEDED" || error.code === "QUOTA") return true;
   }
   const message2 = error instanceof Error ? error.message : String(error);
@@ -64824,9 +62655,8 @@ function isRateLimitFailure(error) {
 }
 async function probeWithAdapter(entry, credential, modelId, timeoutMs) {
   const signal = AbortSignal.timeout(timeoutMs);
-  const ref = credentialRef10(entry.credentialRef);
+  const ref = credentialRef9(entry.credentialRef);
   const buddyProduct = productById(entry.provider);
-  const lobsteraiProduct = lobsteraiProductById(entry.provider);
   const qoderProduct = qoderProductById(entry.provider);
   const clineProduct = clineProductById(entry.provider);
   const zcodeProduct = zcodeProductById(entry.provider);
@@ -64838,14 +62668,6 @@ async function probeWithAdapter(entry, credential, modelId, timeoutMs) {
       refresh: async () => {
       },
       product: buddyProduct
-    });
-  } else if (lobsteraiProduct !== void 0) {
-    adapter = new LobsteraiAdapter({
-      credentialRef: ref,
-      resolveCredential: async () => credential,
-      refresh: async () => {
-      },
-      product: lobsteraiProduct
     });
   } else if (qoderProduct !== void 0) {
     adapter = new QoderAdapter({
@@ -65028,7 +62850,7 @@ async function resetAllAccounts(pool, provider) {
 }
 
 // vendor/channel-pack/src/backup.ts
-import { credentialRef as credentialRef11 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef10 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/types.ts
 var BACKUP_FORMAT = "dsh-codearts-auth/backup";
@@ -65043,7 +62865,7 @@ async function exportBackup(pool, credentials) {
   const warnings = [];
   for (const entry of state.accounts) {
     try {
-      const resolved = await credentials.resolve(credentialRef11(entry.credentialRef));
+      const resolved = await credentials.resolve(credentialRef10(entry.credentialRef));
       if (resolved === void 0) {
         warnings.push(`${entry.id}: \u51ED\u636E\u672A\u914D\u7F6E`);
       } else {
@@ -65119,7 +62941,7 @@ async function importBackup(credentials, pool, raw) {
       continue;
     }
     try {
-      await credentials.set(credentialRef11(refName), value);
+      await credentials.set(credentialRef10(refName), value);
       credentialsImported++;
     } catch (error) {
       skipped.push(refName);
@@ -65144,7 +62966,7 @@ async function importBackup(credentials, pool, raw) {
 }
 
 // vendor/channel-pack/src/opencode-rpc.ts
-import { credentialRef as credentialRef12 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef11 } from "@deepseek-ai/dsh-credentials";
 import { randomBytes as randomBytes11 } from "node:crypto";
 
 // vendor/channel-pack/src/opencode-auth.ts
@@ -65227,7 +63049,7 @@ async function handleOpencodeRpc(ctx, pool, method, payload) {
           return done({ accountId: id, existed: true });
         }
         const nickname = typeof req.nickname === "string" && req.nickname.trim().length > 0 ? req.nickname.trim() : `OpenCode ${apiKey.slice(-6)}`;
-        await ctx.credentials.set(credentialRef12(refName), JSON.stringify({
+        await ctx.credentials.set(credentialRef11(refName), JSON.stringify({
           api_key: apiKey,
           nickname,
           // 指纹在此**首次固化**，之后由池里的代次权威重算（见 index.ts 接线注释）。
@@ -65252,7 +63074,7 @@ async function handleOpencodeRpc(ctx, pool, method, payload) {
         const refName = `OPENCODE_ANON_${randomBytes11(4).toString("hex").toUpperCase()}`;
         const count2 = pool.listAccountsByProvider(OPENCODE.id).filter((a) => a.id.startsWith(`${OPENCODE.id}-anon-`)).length;
         const nickname = typeof req?.nickname === "string" && req.nickname.trim().length > 0 ? req.nickname.trim() : `\u533F\u540D\u901A\u9053 ${count2 + 1}`;
-        await ctx.credentials.set(credentialRef12(refName), JSON.stringify({
+        await ctx.credentials.set(credentialRef11(refName), JSON.stringify({
           api_key: OPENCODE.anonymousKey,
           nickname
         }));
@@ -65898,14 +63720,6 @@ function parseCodeArtsCredential(raw) {
     return void 0;
   }
 }
-function parseLobsteraiCredential(raw) {
-  try {
-    const parsed = JSON.parse(raw);
-    return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
-  } catch {
-    return void 0;
-  }
-}
 function parseQoderCredential(raw) {
   try {
     const parsed = JSON.parse(raw);
@@ -65995,7 +63809,7 @@ async function collectCreditsStatus(accounts, product, deps) {
   for (const entry of accounts) {
     let status = null;
     try {
-      const resolved = await deps.resolve(credentialRef13(entry.credentialRef));
+      const resolved = await deps.resolve(credentialRef12(entry.credentialRef));
       if (resolved !== void 0) {
         const credential = JSON.parse(resolved.value);
         status = await fetchStatus(credential, product);
@@ -66026,7 +63840,7 @@ async function collectClaimResults(accounts, product, deps) {
   for (const entry of accounts) {
     let outcome;
     try {
-      const resolved = await deps.resolve(credentialRef13(entry.credentialRef));
+      const resolved = await deps.resolve(credentialRef12(entry.credentialRef));
       if (resolved === void 0) {
         outcome = { kind: "failed", code: -1, message: "\u51ED\u636E\u672A\u914D\u7F6E" };
       } else {
@@ -66071,7 +63885,7 @@ async function collectCreditBalances(accounts, product, deps) {
     let error;
     let extra;
     try {
-      const resolved = await deps.resolve(credentialRef13(entry.credentialRef));
+      const resolved = await deps.resolve(credentialRef12(entry.credentialRef));
       if (resolved === void 0) {
         error = "\u51ED\u636E\u672A\u914D\u7F6E";
       } else {
@@ -66131,7 +63945,7 @@ function providerIdsOf(llm, modelAdapters) {
   const keys = Object.keys(modelAdapters ?? {});
   return keys.length > 0 ? keys.map((id) => ({ id })) : void 0;
 }
-function registerChannelPackRpc(ctx, pool, codearts, buddy, workbuddy, lobsterai, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, config = {}) {
+function registerChannelPackRpc(ctx, pool, codearts, buddy, workbuddy, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, config = {}) {
   ctx.inject(["connection"], (connectionCtx) => {
     registerChannelPackEndpoints(
       connectionCtx,
@@ -66139,7 +63953,6 @@ function registerChannelPackRpc(ctx, pool, codearts, buddy, workbuddy, lobsterai
       codearts,
       buddy,
       workbuddy,
-      lobsterai,
       qoder,
       qoderCn,
       trae,
@@ -66173,7 +63986,7 @@ async function fullCatalogIds(ctx, modelAdapters, provider) {
     return { error: `\u8BFB\u53D6\u6A21\u578B\u5217\u8868\u5931\u8D25\uFF1A${reason}` };
   }
 }
-function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lobsterai, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, config = {}) {
+function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, config = {}) {
   const connection = ctx.connection ?? ctx.get("connection");
   if (!connection || typeof connection.fetch?.register !== "function") {
     ctx.logger.warn("[channel-pack] connection.fetch not available, RPC endpoints not registered");
@@ -66285,7 +64098,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
     const out = [];
     for (const account of accounts) {
       try {
-        const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
+        const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
         if (!resolved) {
           out.push(account);
           continue;
@@ -66393,7 +64206,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
         const id = `${provider}-${shortId()}`;
         const refName = `${provider.toUpperCase().replace(/-/g, "_")}_ACCOUNT_${shortId().toUpperCase()}`;
         try {
-          await ctx.credentials.set(credentialRef13(refName), JSON.stringify(parsed));
+          await ctx.credentials.set(credentialRef12(refName), JSON.stringify(parsed));
         } catch (error) {
           return { ok: false, error: { code: "internal", message: `\u51ED\u636E\u5199\u5165\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}` } };
         }
@@ -66437,7 +64250,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             const reason = error instanceof Error ? error.message : String(error);
             throw new Error(`\u65E0\u6CD5\u83B7\u53D6 ${product.displayName} \u767B\u5F55\u5730\u5740\uFF08Host \u7F51\u7EDC\u8BF7\u6C42\u5931\u8D25\uFF09\uFF1A${reason}`);
           }
-          const ref = credentialRef13(refName);
+          const ref = credentialRef12(refName);
           await pool.addAccount({
             id,
             provider: product.id,
@@ -66486,7 +64299,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             createdAt: Date.now()
           });
           started.result.then(async (credential) => {
-            await ctx.credentials.set(credentialRef13(refName), JSON.stringify(credential));
+            await ctx.credentials.set(credentialRef12(refName), JSON.stringify(credential));
             await pool.updateAccount(id, {
               nickname: credential.nickname ?? id,
               expiresAt: credential.expire_time,
@@ -66511,7 +64324,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             createdAt: Date.now()
           });
           started.result.then(async (credential) => {
-            await ctx.credentials.set(credentialRef13(refName), JSON.stringify(credential));
+            await ctx.credentials.set(credentialRef12(refName), JSON.stringify(credential));
             await pool.updateAccount(id, {
               nickname: credential.nickname ?? id,
               // Cookie 型渠道没有续期端点，只能重新扫码/粘贴。
@@ -66538,7 +64351,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             createdAt: Date.now()
           });
           started.result.then(async ({ credential }) => {
-            await ctx.credentials.set(credentialRef13(refName), JSON.stringify(credential));
+            await ctx.credentials.set(credentialRef12(refName), JSON.stringify(credential));
             await pool.updateAccount(id, {
               nickname: credential.nickname ?? credential.key_name ?? id
             });
@@ -66587,7 +64400,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
               // 续期签 proof 必须用同一把私钥 —— 参考实现同款约束）。
               dpop: await dpop.exportDpopJwkPair(dpopKey)
             };
-            await ctx.credentials.set(credentialRef13(refName), JSON.stringify(credential));
+            await ctx.credentials.set(credentialRef12(refName), JSON.stringify(credential));
             await pool.updateAccount(id, {
               nickname: credential.nickname ?? id,
               expiresAt: credential.expire_time,
@@ -66615,7 +64428,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             createdAt: Date.now()
           });
           started.result.then(async (credential) => {
-            await ctx.credentials.set(credentialRef13(refName), JSON.stringify(credential));
+            await ctx.credentials.set(credentialRef12(refName), JSON.stringify(credential));
             await pool.updateAccount(id, {
               nickname: credential.nickname ?? credential.account_id ?? id,
               ...credential.expire_time === void 0 ? {} : { expiresAt: credential.expire_time },
@@ -66653,33 +64466,6 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             });
           });
           return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } };
-        } else if (provider === LOBSTERAI.id) {
-          const started = await lobsterai.startLogin({ refName });
-          await pool.addAccount({
-            id,
-            provider: LOBSTERAI.id,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now()
-          });
-          started.result.then(async (loginResult) => {
-            const credential = parseLobsteraiCredential(loginResult.access);
-            await pool.updateAccount(id, {
-              // ⚠️ 用 `lobsteraiDisplayNickname`：服务端把**手机号本身**当昵称
-              // 下发且只脱敏到「露末 4 位」，需归一化为末 2 位（用户要求）。
-              nickname: lobsteraiDisplayNickname(credential, id),
-              expiresAt: credential !== void 0 ? lobsteraiCredentialExpiresAtMs(credential) : void 0,
-              refreshable: credential !== void 0 && isLobsteraiRefreshable(credential)
-            });
-          }).catch((error) => {
-            ctx.logger.warn(`[channel-pack] background ${LOBSTERAI.id} login failed for ${id}: ${String(error)}`);
-            recordLoginFailure(id, error);
-            void pool.removeAccount(id).catch(() => {
-            });
-          });
-          return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } };
         } else if (isQoderFamily(provider)) {
           const { product: product2, auth } = requireQoderFamily(provider);
           const started = await auth.startLogin({ refName });
@@ -66699,7 +64485,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
               nickname = await fetchQoderUserNickname(credential, product2);
               if (nickname !== void 0 && loginResult.access.length > 0) {
                 const updated = withQoderNickname(credential, nickname);
-                await ctx.credentials.set(credentialRef13(refName), JSON.stringify(updated));
+                await ctx.credentials.set(credentialRef12(refName), JSON.stringify(updated));
               }
             }
             await pool.updateAccount(id, {
@@ -67039,9 +64825,6 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             case "workbuddy":
               await workbuddy.refreshAccountCredential(entry.credentialRef, pool, entry.id);
               break;
-            case LOBSTERAI.id:
-              await lobsterai.refreshAccountCredential(entry.credentialRef, pool, entry.id);
-              break;
             case QODER.id:
             case QODER_CN.id:
               await requireQoderFamily(entry.provider).auth.refreshAccountCredential(entry.credentialRef, pool, entry.id);
@@ -67068,7 +64851,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
               await gemini.refreshAccountCredential(entry.credentialRef, pool, entry.id);
               break;
             case AUTOCLAW.id: {
-              const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
+              const resolved = await ctx.credentials.resolve(credentialRef12(entry.credentialRef));
               if (resolved === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
               const current = JSON.parse(resolved.value);
               const refreshed = await refreshAutoclawCredential({
@@ -67077,7 +64860,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
                 credential: current
               });
               if (!refreshed.ok) throw new Error(refreshed.error);
-              await ctx.credentials.set(credentialRef13(entry.credentialRef), JSON.stringify(refreshed.credential));
+              await ctx.credentials.set(credentialRef12(entry.credentialRef), JSON.stringify(refreshed.credential));
               await pool.updateAccount(entry.id, {
                 expiresAt: refreshed.credential.expire_time,
                 refreshable: typeof refreshed.credential.refresh_token === "string" && refreshed.credential.refresh_token !== ""
@@ -67085,7 +64868,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
               break;
             }
             case KUKU.id: {
-              const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
+              const resolved = await ctx.credentials.resolve(credentialRef12(entry.credentialRef));
               if (resolved === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
               let token = "";
               try {
@@ -67098,7 +64881,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
               break;
             }
             case MONKEYCODE.id: {
-              const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
+              const resolved = await ctx.credentials.resolve(credentialRef12(entry.credentialRef));
               if (resolved === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
               let cookie = "";
               try {
@@ -67111,7 +64894,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
               break;
             }
             case COMMANDCODE.id: {
-              const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
+              const resolved = await ctx.credentials.resolve(credentialRef12(entry.credentialRef));
               if (resolved === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
               let key = "";
               try {
@@ -67127,7 +64910,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             case ACCIO.id:
             case ACCIO_CN.id: {
               const product = entry.provider === ACCIO_CN.id ? ACCIO_CN : ACCIO;
-              const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
+              const resolved = await ctx.credentials.resolve(credentialRef12(entry.credentialRef));
               if (resolved === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
               const current = JSON.parse(resolved.value);
               if (current.refresh_token === void 0 || current.refresh_token === "") {
@@ -67135,7 +64918,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
               }
               const refreshed = await refreshCredential(codeartsFetcher, product, current);
               if (refreshed === void 0) throw new Error("Accio\uFF1A\u7EED\u671F\u8BF7\u6C42\u5931\u8D25\uFF08\u4E0A\u6E38\u62D2\u7EDD\u6216\u54CD\u5E94\u7F3A\u5C11 accessToken\uFF09");
-              await ctx.credentials.set(credentialRef13(entry.credentialRef), JSON.stringify(refreshed));
+              await ctx.credentials.set(credentialRef12(entry.credentialRef), JSON.stringify(refreshed));
               await pool.updateAccount(entry.id, {
                 expiresAt: refreshed.expire_time,
                 refreshable: typeof refreshed.refresh_token === "string" && refreshed.refresh_token !== ""
@@ -67145,11 +64928,11 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
             case "officeace": {
               const { refreshOfficeAceCredential: refreshOfficeAceCredential2 } = await Promise.resolve().then(() => (init_officeace(), officeace_exports));
               const { OFFICEACE: OFFICEACE2 } = await Promise.resolve().then(() => (init_officeace_product(), officeace_product_exports));
-              const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
+              const resolved = await ctx.credentials.resolve(credentialRef12(entry.credentialRef));
               if (resolved === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
               const current = JSON.parse(resolved.value);
               const refreshed = await refreshOfficeAceCredential2(codeartsFetcher, OFFICEACE2, current);
-              await ctx.credentials.set(credentialRef13(entry.credentialRef), JSON.stringify(refreshed));
+              await ctx.credentials.set(credentialRef12(entry.credentialRef), JSON.stringify(refreshed));
               await pool.updateAccount(entry.id, {
                 expiresAt: refreshed.expire_time,
                 refreshable: typeof refreshed.refresh_token === "string" && refreshed.refresh_token !== ""
@@ -67180,7 +64963,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
         const accounts = await pool.listAllAccounts();
         const entry = accounts.find((a) => a.id === req.accountId);
         if (!entry) return { ok: true, value: { done: false } };
-        const ref = credentialRef13(entry.credentialRef);
+        const ref = credentialRef12(entry.credentialRef);
         const resolved = await ctx.credentials.resolve(ref);
         if (!resolved) return { ok: true, value: { done: false } };
         if (entry.provider === ZCODE.id) {
@@ -67280,7 +65063,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
         if (account === void 0) {
           return { ok: false, error: { code: "bad-request", message: "\u8D26\u53F7\u4E0D\u5B58\u5728" } };
         }
-        const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
+        const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
         if (!resolved) {
           return { ok: false, error: { code: "bad-request", message: "\u51ED\u636E\u672A\u914D\u7F6E" } };
         }
@@ -67380,7 +65163,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
         if (account === void 0) {
           return { ok: false, error: { code: "bad-request", message: "\u8D26\u53F7\u4E0D\u5B58\u5728" } };
         }
-        const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
+        const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
         if (!resolved) {
           return { ok: false, error: { code: "bad-request", message: "\u51ED\u636E\u672A\u914D\u7F6E" } };
         }
@@ -67496,7 +65279,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
       // 四个 provider 分属**三套互不相同的协议**，各自在自己的分支里处理：
       //   - CodeBuddy 系（buddy / workbuddy）：`productById()` 取 BuddyProduct，
       //     走 `collectCreditsStatus` 的默认实现；
-      //   - `lobsterai`：slot → context 三步，无独立状态端点；
+      //   - （LobsterAI 已移除）
       //   - `codearts`：华为云 SDK-HMAC-SHA256 签名，无独立状态端点。
       //
       // ⚠️ 只有 CodeBuddy 系能经 `productById()` 解析出产品配置；后两者
@@ -67511,7 +65294,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
           const accounts2 = await pool.listAccounts(req.provider);
           const rows = [];
           for (const entry of accounts2) {
-            const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
+            const resolved = await ctx.credentials.resolve(credentialRef12(entry.credentialRef));
             let status = null;
             if (resolved !== void 0) {
               try {
@@ -67540,15 +65323,6 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
           return { ok: true, value: { accounts: rows } };
         }
         if (req.provider === "codearts") {
-          const accounts2 = await pool.listAccounts(req.provider);
-          return {
-            ok: true,
-            value: {
-              accounts: accounts2.map((entry) => ({ accountId: entry.id, nickname: entry.nickname, status: null }))
-            }
-          };
-        }
-        if (req.provider === LOBSTERAI.id) {
           const accounts2 = await pool.listAccounts(req.provider);
           return {
             ok: true,
@@ -67631,17 +65405,6 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
           });
           return { ok: true, value: value2 };
         }
-        if (req.provider === LOBSTERAI.id) {
-          const clientVersion = await lobsterai.resolveClientVersion();
-          const value2 = await collectClaimResults(accounts, LOBSTERAI, {
-            resolve: (ref) => ctx.credentials.resolve(ref),
-            claim: (credential, product2) => claimLobsteraiDailyCheckin(credential, product2, clientVersion),
-            // 领取流程内部已做 slot/context 预检，不需要外部再查一次状态。
-            precheckStatus: false,
-            warn: (msg) => ctx.logger?.warn?.(msg)
-          });
-          return { ok: true, value: value2 };
-        }
         if (req.provider === TRAE.id) {
           const value2 = await collectClaimResults(accounts, void 0, {
             resolve: (ref) => ctx.credentials.resolve(ref),
@@ -67668,7 +65431,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
         if (req.provider === LOOMY.id) {
           const values = [];
           for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
+            const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
             if (!resolved) {
               values.push({
                 accountId: account.id,
@@ -67739,7 +65502,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
           const results = [];
           const outcomes = [];
           for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
+            const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
             let accountOutcomes;
             if (!resolved) {
               accountOutcomes = [{ kind: "failed", code: -1, message: "\u51ED\u636E\u672A\u914D\u7F6E" }];
@@ -67833,25 +65596,11 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
           });
           return { ok: true, value: { accounts: values2 } };
         }
-        if (req.provider === LOBSTERAI.id) {
-          const values2 = await collectCreditBalances(accounts, LOBSTERAI, {
-            resolve: (ref) => ctx.credentials.resolve(ref),
-            fetchBalance: (credential, product2) => fetchLobsteraiCreditBalance(credential, product2),
-            warn: (msg) => ctx.logger?.warn?.(msg)
-          });
-          return {
-            ok: true,
-            value: {
-              accounts: values2,
-              windowDays: buddyExpiringWindowDays()
-            }
-          };
-        }
         if (isQoderFamily(req.provider)) {
           const { product: product2 } = requireQoderFamily(req.provider);
           const values2 = [];
           for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
+            const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
             if (!resolved) {
               values2.push({
                 accountId: account.id,
@@ -68041,7 +65790,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
         if (req.provider === CLINE.id) {
           const values2 = [];
           for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
+            const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
             if (!resolved) {
               values2.push({
                 accountId: account.id,
@@ -68079,7 +65828,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
         if (req.provider === LOOMY.id) {
           const values2 = [];
           for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
+            const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
             if (!resolved) {
               values2.push({
                 accountId: account.id,
@@ -68115,7 +65864,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
         if (req.provider === RACCOON.id) {
           const values2 = [];
           for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
+            const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
             if (!resolved) {
               values2.push({
                 accountId: account.id,
@@ -68152,7 +65901,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
         if (req.provider === ZCODE.id) {
           const values2 = [];
           for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
+            const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
             if (!resolved) {
               values2.push({
                 accountId: account.id,
@@ -68255,7 +66004,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
         const accounts = await pool.listAccounts(req.provider);
         const values = [];
         for (const account of accounts) {
-          const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
+          const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
           if (!resolved) {
             values.push({
               accountId: account.id,
@@ -69019,8 +66768,8 @@ var ADOPTABLE_CHANNELS = {
 };
 
 // vendor/channel-pack/src/openai-gateway/server.ts
-import { createServer as createServer11 } from "node:http";
-import { randomUUID as randomUUID17 } from "node:crypto";
+import { createServer as createServer10 } from "node:http";
+import { randomUUID as randomUUID15 } from "node:crypto";
 import { homedir as homedir4 } from "node:os";
 import { join as join10 } from "node:path";
 
@@ -69063,8 +66812,8 @@ function loadOrCreateApiKey(home, env = process.env) {
 }
 
 // vendor/channel-pack/src/openai-gateway/messages.ts
-import { randomUUID as randomUUID14 } from "node:crypto";
-import { ReasoningEffortId as ReasoningEffortId13 } from "@deepseek-ai/dsh-llm";
+import { randomUUID as randomUUID12 } from "node:crypto";
+import { ReasoningEffortId as ReasoningEffortId12 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/openai-gateway/images.ts
 var DEFAULT_IMAGE_LIMITS = {
@@ -69258,7 +67007,7 @@ function gatewaySource() {
   return { kind: "plugin:dsh-openai-gateway" };
 }
 function createGatewayMessage(role, content, source) {
-  return { id: randomUUID14(), role, content, source };
+  return { id: randomUUID12(), role, content, source };
 }
 function convertToolCalls(raw) {
   if (!Array.isArray(raw)) throw new OpenAiGatewayError("assistant.tool_calls must be an array");
@@ -69374,7 +67123,7 @@ async function toGenerateOptions(body, signal, reasoningEffortOverride, maxToken
     // ⚠️ 判据是 `== null`（同时排除 undefined 与 null）：`null` = 明确不下发，
     // 两者都不能写进请求。写成 `=== undefined` 会把 null 塞进
     // `ReasoningEffortId(null)`，等于又发了一个非法档位。
-    ...reasoningEffort == null ? {} : { reasoningEffort: ReasoningEffortId13(reasoningEffort) },
+    ...reasoningEffort == null ? {} : { reasoningEffort: ReasoningEffortId12(reasoningEffort) },
     signal
   };
 }
@@ -69418,11 +67167,11 @@ function findCaseInsensitiveSuggestion(requested, catalog) {
 }
 
 // vendor/channel-pack/src/openai-gateway/responses.ts
-import { createHash as createHash10, randomUUID as randomUUID16 } from "node:crypto";
-import { ReasoningEffortId as ReasoningEffortId14 } from "@deepseek-ai/dsh-llm";
+import { createHash as createHash9, randomUUID as randomUUID14 } from "node:crypto";
+import { ReasoningEffortId as ReasoningEffortId13 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/openai-gateway/stream.ts
-import { randomUUID as randomUUID15 } from "node:crypto";
+import { randomUUID as randomUUID13 } from "node:crypto";
 
 // vendor/channel-pack/src/openai-gateway/usage.ts
 function count(value) {
@@ -69557,7 +67306,7 @@ function consumeChunk(state, chunk) {
       return void 0;
   }
 }
-async function* toOpenAiSse(chunks, requestId = `chatcmpl-${randomUUID15()}`, model, suggest) {
+async function* toOpenAiSse(chunks, requestId = `chatcmpl-${randomUUID13()}`, model, suggest) {
   const state = { content: "", reasoning: "", tools: /* @__PURE__ */ new Map() };
   try {
     for await (const chunk of chunks) {
@@ -69612,7 +67361,7 @@ async function* toOpenAiSse(chunks, requestId = `chatcmpl-${randomUUID15()}`, mo
     yield "data: [DONE]\n\n";
   }
 }
-async function collectOpenAiCompletion(chunks, requestId = `chatcmpl-${randomUUID15()}`, model, suggest) {
+async function collectOpenAiCompletion(chunks, requestId = `chatcmpl-${randomUUID13()}`, model, suggest) {
   const state = { content: "", reasoning: "", tools: /* @__PURE__ */ new Map() };
   try {
     for await (const chunk of chunks) {
@@ -69735,7 +67484,7 @@ function chatPartsFromResponses(content) {
 function flatNamespaceToolName(namespace, name2) {
   const flat = `${namespace}__${name2}`;
   if (flat.length <= 64) return flat;
-  const digest = createHash10("sha256").update(flat).digest("hex").slice(0, 8);
+  const digest = createHash9("sha256").update(flat).digest("hex").slice(0, 8);
   return `${flat.slice(0, 55)}_${digest}`;
 }
 function responsesNamespaceToolMap(body) {
@@ -69944,12 +67693,12 @@ async function toResponsesGenerateOptions(body, signal, reasoningEffortOverride,
     ...tools === void 0 ? {} : { tools },
     ...maxTokens === void 0 ? {} : { maxTokens },
     ...temperature === void 0 ? {} : { temperature },
-    ...reasoningEffort == null ? {} : { reasoningEffort: ReasoningEffortId14(reasoningEffort) },
+    ...reasoningEffort == null ? {} : { reasoningEffort: ReasoningEffortId13(reasoningEffort) },
     signal
   };
 }
 function hexId() {
-  return randomUUID16().replaceAll("-", "");
+  return randomUUID14().replaceAll("-", "");
 }
 function itemId(kind) {
   if (kind === "reasoning") return `rs_${hexId()}`;
@@ -70620,7 +68369,7 @@ function createOpenAiGateway(options) {
       });
       const stream = options.llm.stream(markGatewayChannel(generate));
       const fullId = `${route.provider}/${route.model}`;
-      const responseId = `resp_${randomUUID17().replaceAll("-", "")}`;
+      const responseId = `resp_${randomUUID15().replaceAll("-", "")}`;
       if (body.stream === true) {
         writeSseHead(response);
         for await (const event of toResponsesSse(stream, responseId, fullId, body, makeSuggestion(fullId))) {
@@ -70670,7 +68419,7 @@ function createOpenAiGateway(options) {
   return {
     async start() {
       if (server !== void 0) return;
-      const current = createServer11(requestHandler);
+      const current = createServer10(requestHandler);
       server = current;
       await new Promise((resolve2, reject) => {
         const onError = (error) => {
@@ -70758,7 +68507,7 @@ function mountOpenAiGateway(ctx, pool) {
 }
 
 // vendor/channel-pack/src/loop-recovery.ts
-import { createUserMessage as createUserMessage2, LlmError as LlmError24 } from "@deepseek-ai/dsh-llm";
+import { createUserMessage as createUserMessage2, LlmError as LlmError23 } from "@deepseek-ai/dsh-llm";
 var LOOP_RESUME_PROMPT = "\u7EE7\u7EED\u672A\u5B8C\u6210\u7684\u4EFB\u52A1\u3002\u4E0A\u4E00\u8F6E\u4F60\u7684\u601D\u8003\u9677\u5165\u4E86\u91CD\u590D\uFF08\u540C\u4E00\u6BB5\u63A8\u7406\u53CD\u590D\u51FA\u73B0\uFF09\u800C\u88AB\u4E2D\u6B62 \u2014\u2014 \u8BF7\u6362\u4E00\u79CD\u601D\u8DEF\uFF0C\u4E0D\u8981\u91CD\u590D\u521A\u624D\u90A3\u6BB5\u63A8\u7406\uFF0C\u76F4\u63A5\u63A8\u8FDB\u4EFB\u52A1\u3002";
 var LOOP_RESUME_DEFAULT_MAX = 2;
 var LOOP_RESUME_MAX_LIMIT = 10;
@@ -70779,7 +68528,7 @@ function resolveLoopResumePolicy(env = process.env) {
   };
 }
 function isReasoningLoopFailure(error) {
-  if (error instanceof LlmError24) return error.code === REASONING_LOOP_CODE;
+  if (error instanceof LlmError23) return error.code === REASONING_LOOP_CODE;
   if (typeof error !== "object" || error === null) return false;
   return error.code === REASONING_LOOP_CODE;
 }
@@ -71350,11 +69099,11 @@ init_accio_product();
 init_officeace_product();
 
 // vendor/channel-pack/src/minimax-auth.ts
-import { Service as Service11 } from "@deepseek-ai/cordis";
-import { credentialRef as credentialRef14 } from "@deepseek-ai/dsh-credentials";
+import { Service as Service10 } from "@deepseek-ai/cordis";
+import { credentialRef as credentialRef13 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/minimax-oauth.ts
-import { createHash as createHash11, randomBytes as randomBytes13 } from "node:crypto";
+import { createHash as createHash10, randomBytes as randomBytes13 } from "node:crypto";
 var MinimaxLoginCancelledError = class extends Error {
   constructor(message2 = "\u7528\u6237\u53D6\u6D88\u4E86 MiniMax \u6388\u6743") {
     super(message2);
@@ -71454,7 +69203,7 @@ function parseMinimaxTokenGrant(payload, previousRefreshToken, product = MINIMAX
 }
 function createMinimaxPkce() {
   const codeVerifier = randomBytes13(32).toString("base64url");
-  const codeChallenge = createHash11("sha256").update(codeVerifier, "ascii").digest("base64url");
+  const codeChallenge = createHash10("sha256").update(codeVerifier, "ascii").digest("base64url");
   return { codeVerifier, codeChallenge };
 }
 async function startMinimaxDeviceAuthorization(fetcher = fetch, product = MINIMAX) {
@@ -71565,7 +69314,7 @@ function parseMinimaxCredential(value) {
     return void 0;
   }
 }
-var MinimaxAuth = class extends Service11 {
+var MinimaxAuth = class extends Service10 {
   constructor(ctx, options = {}) {
     const product = options.product ?? MINIMAX;
     super(ctx, options.serviceName ?? `${product.id}Auth`);
@@ -71622,13 +69371,13 @@ var MinimaxAuth = class extends Service11 {
       ...credential,
       ...options.nickname === void 0 ? {} : { nickname: options.nickname }
     };
-    await this.ctx.credentials.set(credentialRef14(options.refName), JSON.stringify(payload));
+    await this.ctx.credentials.set(credentialRef13(options.refName), JSON.stringify(payload));
     this.lastRefreshError = void 0;
     return { ...credential.account_id === void 0 ? {} : { accountId: credential.account_id } };
   }
   /** 解析默认单凭据。 */
   async resolveDefaultCredential() {
-    const resolved = await this.ctx.credentials.resolve(credentialRef14(this.credentialRefName));
+    const resolved = await this.ctx.credentials.resolve(credentialRef13(this.credentialRefName));
     if (!resolved) return void 0;
     return parseMinimaxCredential(resolved.value);
   }
@@ -71647,7 +69396,7 @@ var MinimaxAuth = class extends Service11 {
         this.fetchImpl,
         this.product
       );
-      await this.ctx.credentials.set(credentialRef14(this.credentialRefName), JSON.stringify(next));
+      await this.ctx.credentials.set(credentialRef13(this.credentialRefName), JSON.stringify(next));
       this.lastRefreshError = void 0;
     } catch (error) {
       const message2 = error instanceof Error ? error.message : String(error);
@@ -71663,7 +69412,7 @@ var MinimaxAuth = class extends Service11 {
    * 也把池值对账（见 `refreshAll` 的注释）。
    */
   async refreshAccountCredential(refName, pool, accountId) {
-    const ref = credentialRef14(refName);
+    const ref = credentialRef13(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
     const credential = parseMinimaxCredential(resolved.value);
@@ -71705,7 +69454,7 @@ var MinimaxAuth = class extends Service11 {
     for (const entry of accounts) {
       if (!entry.refreshable) continue;
       try {
-        const ref = credentialRef14(entry.credentialRef);
+        const ref = credentialRef13(entry.credentialRef);
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) {
           await pool.updateAccount(entry.id, { refreshable: false });
@@ -71880,10 +69629,10 @@ function parseMinimaxModelsPayload(payload) {
 }
 
 // vendor/channel-pack/src/minimax-adapter.ts
-import { LlmAdapter as LlmAdapter18, LlmError as LlmError25, ReasoningEffortId as ReasoningEffortId15 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter17, LlmError as LlmError24, ReasoningEffortId as ReasoningEffortId14 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/minimax-messages.ts
-import { ToolCallId as ToolCallId8 } from "@deepseek-ai/dsh-llm";
+import { ToolCallId as ToolCallId7 } from "@deepseek-ai/dsh-llm";
 function buildMinimaxMessagesPayload(options) {
   const payload = {
     model: options.model,
@@ -72150,7 +69899,7 @@ async function* consumeMinimaxSse(options) {
         yield {
           type: "tool-call-delta",
           index,
-          id: ToolCallId8(state?.toolId ?? ""),
+          id: ToolCallId7(state?.toolId ?? ""),
           argumentsDelta: d.partial_json
         };
       }
@@ -72168,7 +69917,7 @@ async function* consumeMinimaxSse(options) {
       } else {
         block = {
           type: "tool-call",
-          id: ToolCallId8(state.toolId ?? ""),
+          id: ToolCallId7(state.toolId ?? ""),
           name: state.toolName ?? "",
           arguments: state.toolArgs
         };
@@ -72225,14 +69974,14 @@ function minimaxReasoningInfo(entry) {
     if (!ids.includes("none")) ids.push("none");
   }
   const efforts = ids.map((id) => {
-    if (id === "none") return { id: ReasoningEffortId15(id), name: "\u5173\u95ED\u601D\u8003" };
-    if (id === "on") return { id: ReasoningEffortId15(id), name: "\u5F00\u542F\u601D\u8003" };
-    return { id: ReasoningEffortId15(id), name: id };
+    if (id === "none") return { id: ReasoningEffortId14(id), name: "\u5173\u95ED\u601D\u8003" };
+    if (id === "on") return { id: ReasoningEffortId14(id), name: "\u5F00\u542F\u601D\u8003" };
+    return { id: ReasoningEffortId14(id), name: id };
   });
-  const defaultEffort = entry.defaultEffort !== void 0 && ids.includes(entry.defaultEffort) ? ReasoningEffortId15(entry.defaultEffort) : void 0;
+  const defaultEffort = entry.defaultEffort !== void 0 && ids.includes(entry.defaultEffort) ? ReasoningEffortId14(entry.defaultEffort) : void 0;
   return { efforts, ...defaultEffort === void 0 ? {} : { defaultEffort } };
 }
-var MinimaxAdapter = class extends LlmAdapter18 {
+var MinimaxAdapter = class extends LlmAdapter17 {
   constructor(options) {
     super();
     this.options = options;
@@ -72356,23 +70105,23 @@ var MinimaxAdapter = class extends LlmAdapter18 {
       credential = await this.options.resolveCredential(options.model);
     }
     if (credential === void 0 || credential.access_token === "") {
-      throw new LlmError25("minimax: no usable credential; log in first", "MISSING_CREDENTIAL");
+      throw new LlmError24("minimax: no usable credential; log in first", "MISSING_CREDENTIAL");
     }
     const entry = (await this.loadModels()).find((item) => item.id === options.model);
     const imageRefs = /* @__PURE__ */ new Map();
     for (const message2 of options.messages) {
-      if (Array.isArray(message2.content)) collectImages3(message2.content, imageRefs);
+      if (Array.isArray(message2.content)) collectImages2(message2.content, imageRefs);
     }
     let images;
     if (imageRefs.size > 0) {
       if (entry?.supportsImage !== true) {
-        throw new LlmError25(
+        throw new LlmError24(
           `minimax: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`,
           "UNSUPPORTED_CONTENT"
         );
       }
       if (this.options.readImage === void 0) {
-        throw new LlmError25(
+        throw new LlmError24(
           "minimax: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1\uFF08readImage \u672A\u63D0\u4F9B\uFF09",
           "UNSUPPORTED_CONTENT"
         );
@@ -72412,15 +70161,15 @@ var MinimaxAdapter = class extends LlmAdapter18 {
     });
     if (!response.ok) {
       const text = await response.text().catch(() => "");
-      const code = response.status === 402 ? "QUOTA_EXCEEDED" : httpErrorCode4(response.status);
-      throw new LlmError25(
+      const code = response.status === 402 ? "QUOTA_EXCEEDED" : httpErrorCode3(response.status);
+      throw new LlmError24(
         `minimax: HTTP ${response.status}${text === "" ? "" : ` \u2014 ${text.slice(0, 500)}`}`,
         code,
         { status: response.status }
       );
     }
     if (response.body === null) {
-      throw new LlmError25("minimax: \u54CD\u5E94\u7F3A\u5C11 body", "EMPTY_RESPONSE");
+      throw new LlmError24("minimax: \u54CD\u5E94\u7F3A\u5C11 body", "EMPTY_RESPONSE");
     }
     yield* consumeMinimaxSse({ body: response.body, signal: options.signal });
   }
@@ -72433,11 +70182,11 @@ function registerMinimaxLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/gemini-auth.ts
-import { Service as Service12 } from "@deepseek-ai/cordis";
-import { credentialRef as credentialRef15 } from "@deepseek-ai/dsh-credentials";
+import { Service as Service11 } from "@deepseek-ai/cordis";
+import { credentialRef as credentialRef14 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/gemini-oauth.ts
-import { createServer as createServer12 } from "node:http";
+import { createServer as createServer11 } from "node:http";
 import { randomBytes as randomBytes14 } from "node:crypto";
 var GEMINI_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 var GEMINI_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
@@ -72639,7 +70388,7 @@ async function fetchGeminiUserInfo(accessToken, options = {}) {
 var GEMINI_CALLBACK_HTML = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>\u6388\u6743\u5B8C\u6210</title><style>body{font:15px/1.7 -apple-system,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f1115;color:#e6e8eb}.b{text-align:center}.k{font-size:34px;margin-bottom:8px}</style></head><body><div class="b"><div class="k">\u2713</div><div>\u6388\u6743\u5DF2\u5B8C\u6210\uFF0C\u53EF\u4EE5\u5173\u95ED\u6B64\u9875\u56DE\u5230\u9762\u677F\u3002</div></div></body></html>`;
 function pickFreePort2() {
   return new Promise((resolve2, reject) => {
-    const probe = createServer12();
+    const probe = createServer11();
     probe.once("error", reject);
     probe.listen(0, "127.0.0.1", () => {
       const address = probe.address();
@@ -72653,7 +70402,7 @@ function pickFreePort2() {
 }
 async function listenCallback(handler, preferredPort) {
   const attempt = (port) => {
-    const primary = createServer12(handler);
+    const primary = createServer11(handler);
     return new Promise((resolve2, reject) => {
       primary.once("error", (error) => {
         if (error.code === "EADDRINUSE" && port !== 0) {
@@ -72665,7 +70414,7 @@ async function listenCallback(handler, preferredPort) {
       primary.listen(port, "127.0.0.1", () => {
         const address = primary.address();
         const assigned = typeof address === "object" && address !== null ? address.port : 0;
-        const secondary = createServer12(handler);
+        const secondary = createServer11(handler);
         secondary.once("error", () => {
           resolve2({ port: assigned, servers: [primary] });
         });
@@ -72768,7 +70517,7 @@ var GeminiRefreshTokenExpiredError = class extends Error {
     this.name = "RefreshTokenExpiredError";
   }
 };
-var GeminiAuth = class extends Service12 {
+var GeminiAuth = class extends Service11 {
   constructor(ctx, options = {}) {
     const product = options.product ?? GEMINI;
     super(ctx, options.serviceName ?? `${product.id}Auth`);
@@ -72802,7 +70551,7 @@ var GeminiAuth = class extends Service12 {
     return queue;
   }
   async readCredential(refName) {
-    const resolved = await this.ctx.credentials.resolve(credentialRef15(refName));
+    const resolved = await this.ctx.credentials.resolve(credentialRef14(refName));
     if (!resolved) return void 0;
     return parseGeminiCredential(resolved.value);
   }
@@ -72842,7 +70591,7 @@ var GeminiAuth = class extends Service12 {
    * 展示名走 `geminiAccountLabel`（邮箱优先，回退 `sub`）。
    */
   async persistLogin(credential, options) {
-    await this.ctx.credentials.set(credentialRef15(options.refName), JSON.stringify(credential));
+    await this.ctx.credentials.set(credentialRef14(options.refName), JSON.stringify(credential));
     return credential.sub === void 0 ? {} : { accountId: credential.sub };
   }
   /** 解析默认单凭据。 */
@@ -72859,7 +70608,7 @@ var GeminiAuth = class extends Service12 {
       throw new GeminiRefreshTokenExpiredError("\u51ED\u636E\u7F3A\u5C11 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
     }
     const next = await this.refreshCredential(credential);
-    await this.ctx.credentials.set(credentialRef15(this.credentialRefName), JSON.stringify(next));
+    await this.ctx.credentials.set(credentialRef14(this.credentialRefName), JSON.stringify(next));
   }
   /**
    * 续期**指定 ref**（RPC `account.refresh` / 定时器）。
@@ -72875,7 +70624,7 @@ var GeminiAuth = class extends Service12 {
       if (!isGeminiRefreshable(credential)) {
         throw new GeminiRefreshTokenExpiredError("\u51ED\u636E\u7F3A\u5C11 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
       }
-      const ref = credentialRef15(refName);
+      const ref = credentialRef14(refName);
       if (pool === void 0) {
         const next = await this.refreshCredential(credential);
         await this.ctx.credentials.set(ref, JSON.stringify(next));
@@ -72909,7 +70658,7 @@ var GeminiAuth = class extends Service12 {
   async refreshAll(pool) {
     const accounts = await pool.listAccounts(this.product.id);
     for (const entry of accounts) {
-      const ref = credentialRef15(entry.credentialRef);
+      const ref = credentialRef14(entry.credentialRef);
       let credential;
       try {
         const resolved = await this.ctx.credentials.resolve(ref);
@@ -73011,7 +70760,7 @@ var GeminiAuth = class extends Service12 {
     }
     for (const entry of entries) {
       try {
-        const ref = credentialRef15(entry.credentialRef);
+        const ref = credentialRef14(entry.credentialRef);
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) continue;
         let credential = parseGeminiCredential(resolved.value);
@@ -73081,7 +70830,7 @@ var GeminiAuth = class extends Service12 {
 };
 
 // vendor/channel-pack/src/gemini-sigstore.ts
-import { createHash as createHash12 } from "node:crypto";
+import { createHash as createHash11 } from "node:crypto";
 import { existsSync as existsSync11, mkdirSync as mkdirSync10, readFileSync as readFileSync12, renameSync as renameSync9, writeFileSync as writeFileSync11 } from "node:fs";
 import { dirname as dirname2, join as join12 } from "node:path";
 var GEMINI_SIG_FILE = "gemini-sigs.json";
@@ -73089,7 +70838,7 @@ var GEMINI_SIG_MAX_ENTRIES = 2e3;
 var SIG_KEY_BODY_LIMIT = 512;
 function geminiSigKey(role, text) {
   const body = text.length > SIG_KEY_BODY_LIMIT ? text.slice(0, SIG_KEY_BODY_LIMIT) : text;
-  return createHash12("sha256").update(`${role}\0${body}`, "utf8").digest("hex").slice(0, 16);
+  return createHash11("sha256").update(`${role}\0${body}`, "utf8").digest("hex").slice(0, 16);
 }
 function geminiToolSigKey(name2, argsJson) {
   return geminiSigKey(`tool:${name2}`, argsJson);
@@ -73234,7 +70983,7 @@ function createGeminiSigStore(ctx) {
 }
 
 // vendor/channel-pack/src/opencode-adapter.ts
-import { LlmAdapter as LlmAdapter19, LlmError as LlmError26, ReasoningEffortId as ReasoningEffortId16 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter18, LlmError as LlmError25, ReasoningEffortId as ReasoningEffortId15 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/opencode-messages.ts
 var FREE_LANE_GATE_TOOLS = ["read", "shell"];
@@ -73470,7 +71219,7 @@ var MEASURED_IMAGE_OVERRIDES = {
   "longcat-2.5-preview-free": { image: false, note: "2026-10-02 \u5B9E\u6D4B 500\uFF0Cmodels.dev \u591A\u62A5 image" }
 };
 var isFiniteNumber = (v) => typeof v === "number" && Number.isFinite(v);
-var EFFORT_NAMES3 = {
+var EFFORT_NAMES2 = {
   none: "\u5173\u95ED\u601D\u8003",
   minimal: "\u6700\u5C0F",
   low: "\u4F4E",
@@ -73480,7 +71229,7 @@ var EFFORT_NAMES3 = {
   max: "\u6700\u5927"
 };
 function opencodeEffortName(id) {
-  return EFFORT_NAMES3[id] ?? id;
+  return EFFORT_NAMES2[id] ?? id;
 }
 function normalizeEfforts(entry) {
   if (!Array.isArray(entry.reasoning_options)) return [];
@@ -73684,7 +71433,7 @@ function resolveOpencodeEffort(model, requested, capabilities) {
   if (translated.kind === "mapped") return { effort: translated.effort, outcome: "mapped" };
   return { outcome: "dropped" };
 }
-var OpencodeAdapter = class extends LlmAdapter19 {
+var OpencodeAdapter = class extends LlmAdapter18 {
   constructor(options) {
     super();
     this.options = options;
@@ -73752,7 +71501,7 @@ var OpencodeAdapter = class extends LlmAdapter19 {
         efforts: capability.efforts.map((effort) => ({
           // ⚠️ `id` 是**品牌类型**（`ReasoningEffortId`），必须经它的构造函数 ——
           // 与 Qoder 同款（`src/qoder-adapter.ts:581`）。
-          id: ReasoningEffortId16(effort),
+          id: ReasoningEffortId15(effort),
           // ⚠️ 没有官方中文的档位（models.dev 会下发 `minimal` / `xhigh` 等
           // Qoder 那份表里没有的值）**回退到 id 本身** —— 宁可显示英文原值，
           // 也不猜一个可能错译的中文。
@@ -73778,10 +71527,10 @@ var OpencodeAdapter = class extends LlmAdapter19 {
   async *stream(options) {
     const slots = await this.options.identitySlots();
     if (slots.length === 0) {
-      throw new LlmError26("opencode: \u6CA1\u6709\u53EF\u7528\u901A\u9053", "MISSING_CREDENTIAL");
+      throw new LlmError25("opencode: \u6CA1\u6709\u53EF\u7528\u901A\u9053", "MISSING_CREDENTIAL");
     }
     if (pickSlot(slots, options.model, /* @__PURE__ */ new Set()) === void 0) {
-      throw new LlmError26(
+      throw new LlmError25(
         `opencode: \u6A21\u578B "${options.model}" \u9700\u8981 API key \u8D26\u53F7\u901A\u9053\uFF08\u533F\u540D\u901A\u9053\u53EA\u652F\u6301\u514D\u8D39\u6A21\u578B\uFF09\uFF0C\u8BF7\u5148\u5728 Channel Pack \u7684 OpenCode \u9762\u677F\u6DFB\u52A0\u4E00\u4E2A\u8D26\u53F7`,
         "MISSING_CREDENTIAL"
       );
@@ -73791,7 +71540,7 @@ var OpencodeAdapter = class extends LlmAdapter19 {
     for (; ; ) {
       const slot2 = pickSlot(slots, options.model, tried);
       if (slot2 === void 0) {
-        throw new LlmError26(
+        throw new LlmError25(
           `opencode: \u6240\u6709\u901A\u9053\u5BF9\u8BE5\u6A21\u578B\u5747\u53D7\u9650${limited.length > 0 ? `\uFF08${limited.join("\u3001")}\uFF09` : ""}`,
           "QUOTA_EXCEEDED"
         );
@@ -73807,13 +71556,13 @@ var OpencodeAdapter = class extends LlmAdapter19 {
         return;
       } catch (error) {
         if (delivered) throw error;
-        if (error instanceof LlmError26 && error.code === "QUOTA_EXCEEDED") throw error;
+        if (error instanceof LlmError25 && error.code === "QUOTA_EXCEEDED") throw error;
         const info = classifyOpencodeFailure(error);
         if (info.kind === "free_tier") {
           this.options.warn?.(
             `opencode: \u514D\u8D39\u901A\u9053\u88AB FreeTierError \u62D2\u7EDD \u2014\u2014 \u68C0\u67E5 session id \u5F62\u72B6\uFF08\u5E94\u4E3A ses_ + 12hex + 14base62\uFF09\uFF1A${info.detail}`
           );
-          throw new LlmError26(
+          throw new LlmError25(
             `opencode: \u514D\u8D39\u901A\u9053\u88AB\u4E0A\u6E38\u62D2\u7EDD\uFF08FreeTierError\uFF09\u3002\u8BE5\u9519\u8BEF\u7531\u8BF7\u6C42\u5F62\u72B6\u89E6\u53D1\uFF08session id \u5F62\u72B6\u4E0D\u5BF9\u65F6\u51FA\u73B0\uFF09\uFF0C\u6362 API key \u6216\u6362\u51FA\u53E3\u90FD\u65E0\u6548\u3002`,
             "AUTH",
             { status: 403 }
@@ -73852,18 +71601,18 @@ var OpencodeAdapter = class extends LlmAdapter19 {
   async resolveImageUrls(model, messages) {
     const refs = /* @__PURE__ */ new Map();
     for (const message2 of messages) {
-      if (Array.isArray(message2.content)) collectImages3(message2.content, refs);
+      if (Array.isArray(message2.content)) collectImages2(message2.content, refs);
     }
     if (refs.size === 0) return void 0;
     const capabilities = getOpencodeCapabilitiesSync();
     if (!supportsOpencodeImage(capabilities.find((c) => c.id === model))) {
-      throw new LlmError26(
+      throw new LlmError25(
         `opencode: \u6A21\u578B "${model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165\uFF08\u80FD\u529B\u4EE5\u8FDC\u7AEF models.dev \u4E3A\u51C6\uFF09`,
         "UNSUPPORTED_CONTENT"
       );
     }
     if (this.options.readImage === void 0) {
-      throw new LlmError26("opencode: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
+      throw new LlmError25("opencode: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
     }
     const readImage = this.options.readImage;
     const out = /* @__PURE__ */ new Map();
@@ -73877,7 +71626,7 @@ var OpencodeAdapter = class extends LlmAdapter19 {
   /** 用指定槽发一次请求（轮换循环的复用单元）。 */
   async *streamVia(slot2, options) {
     const imageUrls = await this.resolveImageUrls(options.model, options.messages);
-    const messages = serializeMessages4(options.messages, imageUrls);
+    const messages = serializeMessages3(options.messages, imageUrls);
     const effort = resolveOpencodeEffort(
       options.model,
       options.reasoningEffort === void 0 ? void 0 : String(options.reasoningEffort),
@@ -73916,9 +71665,9 @@ var OpencodeAdapter = class extends LlmAdapter19 {
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       const retryAfterMs = retryAfterMsFromResponse(response.headers);
-      throw new LlmError26(
+      throw new LlmError25(
         `opencode: HTTP ${response.status} \u2014 ${text.slice(0, 300)}`,
-        httpErrorCode4(response.status),
+        httpErrorCode3(response.status),
         {
           status: response.status,
           // ⚠️ 走 dsh-llm 的**官方契约**字段（`LlmErrorOptions`）：
@@ -74056,7 +71805,6 @@ function apply(ctx, config = {}) {
     "llm-buddy",
     "llm-workbuddy",
     "llm-codearts",
-    "llm-lobsterai",
     "llm-qoder",
     "llm-qodercn",
     "llm-trae",
@@ -74090,7 +71838,7 @@ function apply(ctx, config = {}) {
   });
   const codearts = registerCodeArtsLlm(ctx, {
     fetchImpl: signedNetwork.fetch,
-    credentialRef: credentialRef16(CODEARTS_CREDENTIAL_REF),
+    credentialRef: credentialRef15(CODEARTS_CREDENTIAL_REF),
     resolveCredential: async () => {
       const available2 = await pool.getAvailableAccount("codearts", "");
       return available2?.credential;
@@ -74106,7 +71854,7 @@ function apply(ctx, config = {}) {
     accountPool: pool
   });
   const resolveBuddyCredentialByRef = async (refName) => {
-    const resolved = await ctx.credentials.resolve(credentialRef16(refName));
+    const resolved = await ctx.credentials.resolve(credentialRef15(refName));
     if (!resolved) return void 0;
     try {
       return JSON.parse(resolved.value);
@@ -74175,14 +71923,14 @@ function apply(ctx, config = {}) {
       modelId ?? ""
     );
     const siblingHint = siblings.length === 0 ? "\u8BE5\u6E20\u9053\u6240\u6709\u6A21\u578B\u5F53\u524D\u90FD\u53D7\u9650\u3002" : `\u8BE5\u6E20\u9053\u8FD9\u4E9B\u6A21\u578B\u5F53\u524D\u53EF\u7528\uFF1A${siblings.slice(0, 5).join("\u3001")}${siblings.length > 5 ? ` \u7B49 ${siblings.length} \u4E2A` : ""}\u3002`;
-    throw new LlmError27(
+    throw new LlmError26(
       `${product.displayName}\uFF1A\u6A21\u578B ${modelId} \u7684\u53EF\u7528\u8D26\u53F7\u5747\u5728\u9650\u6D41\u4E2D\uFF0C\u6700\u8FD1\u4E00\u4E2A\u5C06\u4E8E ${new Date(limited.resetAtMs).toLocaleString("zh-CN")} \u89E3\u7981\u3002` + siblingHint + `\u4E5F\u53EF\u6539\u7528\u5176\u5B83 provider\uFF0C\u6216\u7B49\u5F85\u89E3\u7981\u540E\u518D\u8BD5\uFF08\u65E0\u9700\u91CD\u65B0\u767B\u5F55\uFF09\u3002`,
       "QUOTA_EXCEEDED"
     );
   };
   const buddy = new BuddyAuth(ctx);
   const buddyAdapter = registerBuddyLlm(ctx, {
-    credentialRef: credentialRef16(BUDDY_CREDENTIAL_REF),
+    credentialRef: credentialRef15(BUDDY_CREDENTIAL_REF),
     resolveCredential: async (modelId) => {
       const picked = await pickBuddyCredential({
         product: CODEBUDDY,
@@ -74200,7 +71948,7 @@ function apply(ctx, config = {}) {
         return available2.credential;
       }
       throwIfAllAccountsRateLimited(CODEBUDDY, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef16(BUDDY_CREDENTIAL_REF));
+      const resolved = await ctx.credentials.resolve(credentialRef15(BUDDY_CREDENTIAL_REF));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -74221,7 +71969,7 @@ function apply(ctx, config = {}) {
   });
   const workbuddy = new BuddyAuth(ctx, { product: WORKBUDDY });
   const workbuddyAdapter = registerBuddyLlm(ctx, {
-    credentialRef: credentialRef16(WORKBUDDY.defaultCredentialRef),
+    credentialRef: credentialRef15(WORKBUDDY.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const picked = await pickBuddyCredential({
         product: WORKBUDDY,
@@ -74240,7 +71988,7 @@ function apply(ctx, config = {}) {
         return available2.credential;
       }
       throwIfAllAccountsRateLimited(WORKBUDDY, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef16(WORKBUDDY.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef15(WORKBUDDY.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -74257,41 +72005,10 @@ function apply(ctx, config = {}) {
     accountPool: pool,
     product: WORKBUDDY
   });
-  const lobsterai = new LobsteraiAuth(ctx);
-  const lobsteraiAdapter = registerLobsteraiLlm(ctx, {
-    credentialRef: credentialRef16(LOBSTERAI.defaultCredentialRef),
-    resolveCredential: async (modelId) => {
-      const available2 = await pool.getAvailableAccount(LOBSTERAI.id, modelId ?? "");
-      if (available2) {
-        reportLedgerAccount(LOBSTERAI.id, available2.entry.id);
-        return available2.credential;
-      }
-      const resolved = await ctx.credentials.resolve(credentialRef16(LOBSTERAI.defaultCredentialRef));
-      if (!resolved) return void 0;
-      try {
-        return JSON.parse(resolved.value);
-      } catch {
-        return void 0;
-      }
-    },
-    refresh: async () => {
-      const available2 = await pool.getAvailableAccount(LOBSTERAI.id, "");
-      if (available2) await lobsterai.refreshAccountCredential(available2.entry.credentialRef, pool, available2.entry.id);
-      else await lobsterai.refresh();
-    },
-    fetchRemoteModels: () => lobsterai.fetchModels(pool),
-    resolveClientVersion: () => lobsterai.resolveClientVersion(),
-    readImage: makeReadImage(ctx),
-    // 图片请求版本（缩放）桥接：issue !IKITT9。该家实测 13 张原图（≈50 MiB）
-    // 就回 `SERVER code=500`，撞的是请求体体积。
-    readImageRequest: makeReadImageRequest(ctx),
-    accountPool: pool,
-    product: LOBSTERAI
-  });
   const qoder = new QoderAuth(ctx);
   const activeQoderAccountId = /* @__PURE__ */ new Map();
   const qoderAdapter = registerQoderLlm(ctx, {
-    credentialRef: credentialRef16(QODER.defaultCredentialRef),
+    credentialRef: credentialRef15(QODER.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(QODER.id, modelId ?? "");
       if (available2) {
@@ -74301,7 +72018,7 @@ function apply(ctx, config = {}) {
       }
       activeQoderAccountId.set(QODER.id, void 0);
       throwIfAllAccountsRateLimited(QODER, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef16(QODER.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef15(QODER.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -74327,7 +72044,7 @@ function apply(ctx, config = {}) {
   });
   const qoderCn = new QoderAuth(ctx, { product: QODER_CN });
   const qoderCnAdapter = registerQoderLlm(ctx, {
-    credentialRef: credentialRef16(QODER_CN.defaultCredentialRef),
+    credentialRef: credentialRef15(QODER_CN.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(QODER_CN.id, modelId ?? "");
       if (available2) {
@@ -74337,7 +72054,7 @@ function apply(ctx, config = {}) {
       }
       activeQoderAccountId.set(QODER_CN.id, void 0);
       throwIfAllAccountsRateLimited(QODER_CN, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef16(QODER_CN.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef15(QODER_CN.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -74363,14 +72080,14 @@ function apply(ctx, config = {}) {
   });
   const trae = new TraeAuth(ctx);
   const traeAdapter = registerTraeLlm(ctx, {
-    credentialRef: credentialRef16(TRAE.defaultCredentialRef),
+    credentialRef: credentialRef15(TRAE.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(TRAE.id, modelId ?? "");
       if (available2) {
         reportLedgerAccount(TRAE.id, available2.entry.id);
         return available2.credential;
       }
-      const resolved = await ctx.credentials.resolve(credentialRef16(TRAE.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef15(TRAE.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -74394,14 +72111,14 @@ function apply(ctx, config = {}) {
   let activeClineAccountId = "";
   const clineAdapter = registerClineLlm(ctx, {
     fetchImpl: network.fetch,
-    credentialRef: credentialRef16(CLINE.defaultCredentialRef),
+    credentialRef: credentialRef15(CLINE.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(CLINE.id, modelId ?? "");
       activeClineAccountId = available2?.entry.id ?? "";
       if (activeClineAccountId.length > 0) reportLedgerAccount(CLINE.id, activeClineAccountId);
       if (available2) return available2.credential;
       throwIfAllAccountsRateLimited(CLINE, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef16(CLINE.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef15(CLINE.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -74434,7 +72151,7 @@ function apply(ctx, config = {}) {
       activeCommandCodeAccountId = available2?.entry.id ?? "";
       if (activeCommandCodeAccountId.length > 0) reportLedgerAccount(COMMANDCODE.id, activeCommandCodeAccountId);
       if (available2) return available2.credential;
-      const resolved = await ctx.credentials.resolve(credentialRef16(COMMANDCODE.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef15(COMMANDCODE.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -74453,7 +72170,7 @@ function apply(ctx, config = {}) {
       activeMonkeyCodeAccountId = available2?.entry.id ?? "";
       if (activeMonkeyCodeAccountId.length > 0) reportLedgerAccount(MONKEYCODE.id, activeMonkeyCodeAccountId);
       if (available2) return available2.credential;
-      const resolved = await ctx.credentials.resolve(credentialRef16(MONKEYCODE.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef15(MONKEYCODE.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -74472,7 +72189,7 @@ function apply(ctx, config = {}) {
       activeOrcaTermAccountId = available2?.entry.id ?? "";
       if (activeOrcaTermAccountId.length > 0) reportLedgerAccount(ORCATERM.id, activeOrcaTermAccountId);
       if (available2) return available2.credential;
-      const resolved = await ctx.credentials.resolve(credentialRef16(ORCATERM.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef15(ORCATERM.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -74491,7 +72208,7 @@ function apply(ctx, config = {}) {
       activeKukuAccountId = available2?.entry.id ?? "";
       if (activeKukuAccountId.length > 0) reportLedgerAccount(KUKU.id, activeKukuAccountId);
       if (available2) return available2.credential;
-      const resolved = await ctx.credentials.resolve(credentialRef16(KUKU.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef15(KUKU.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -74508,7 +72225,7 @@ function apply(ctx, config = {}) {
     activeAccioAccountId = available2?.entry.id ?? "";
     if (activeAccioAccountId.length > 0) reportLedgerAccount(product.id, activeAccioAccountId);
     if (available2) return available2.credential;
-    const resolved = await ctx.credentials.resolve(credentialRef16(product.defaultCredentialRef));
+    const resolved = await ctx.credentials.resolve(credentialRef15(product.defaultCredentialRef));
     if (!resolved) return void 0;
     try {
       return JSON.parse(resolved.value);
@@ -74536,7 +72253,7 @@ function apply(ctx, config = {}) {
       activeOfficeAceAccountId = available2?.entry.id ?? "";
       if (activeOfficeAceAccountId.length > 0) reportLedgerAccount(OFFICEACE.id, activeOfficeAceAccountId);
       if (available2) return available2.credential;
-      const resolved = await ctx.credentials.resolve(credentialRef16(OFFICEACE.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef15(OFFICEACE.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -74553,7 +72270,7 @@ function apply(ctx, config = {}) {
     activeAutoClawAccountId = available2?.entry.id ?? "";
     if (activeAutoClawAccountId.length > 0) reportLedgerAccount(product.id, activeAutoClawAccountId);
     if (available2) return available2.credential;
-    const resolved = await ctx.credentials.resolve(credentialRef16(product.defaultCredentialRef));
+    const resolved = await ctx.credentials.resolve(credentialRef15(product.defaultCredentialRef));
     if (!resolved) return void 0;
     try {
       return JSON.parse(resolved.value);
@@ -74569,7 +72286,7 @@ function apply(ctx, config = {}) {
   });
   const loomy = new LoomyAuth(ctx);
   const resolveLoomyCredentialByRef = async (refName) => {
-    const resolved = await ctx.credentials.resolve(credentialRef16(refName));
+    const resolved = await ctx.credentials.resolve(credentialRef15(refName));
     if (!resolved) return void 0;
     try {
       return JSON.parse(resolved.value);
@@ -74582,7 +72299,7 @@ function apply(ctx, config = {}) {
     resolveCredential: resolveLoomyCredentialByRef
   });
   const loomyAdapter = registerLoomyLlm(ctx, {
-    credentialRef: credentialRef16(LOOMY.defaultCredentialRef),
+    credentialRef: credentialRef15(LOOMY.defaultCredentialRef),
     /**
      * 解析本轮该用哪个账号的凭据。
      *
@@ -74620,7 +72337,7 @@ function apply(ctx, config = {}) {
         }
       }
       throwIfAllAccountsRateLimited(LOOMY, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef16(LOOMY.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef15(LOOMY.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -74633,7 +72350,7 @@ function apply(ctx, config = {}) {
       if (accountId !== void 0 && entry === void 0) throw new Error("loomy: account no longer exists");
       if (entry) await loomy.refreshAccountCredential(entry.credentialRef, pool, entry.id);
       else await loomy.refresh();
-      const resolved = await ctx.credentials.resolve(credentialRef16(entry?.credentialRef ?? LOOMY.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef15(entry?.credentialRef ?? LOOMY.defaultCredentialRef));
       if (!resolved) throw new Error("loomy: credential no longer exists");
       return JSON.parse(resolved.value);
     },
@@ -74652,7 +72369,7 @@ function apply(ctx, config = {}) {
     // 失败时返回空数组，由适配器回退兜底表。
     fetchRemoteModels: async () => {
       const available2 = await pool.getAvailableAccount(LOOMY.id, "");
-      const resolved = available2 !== null && available2 !== void 0 ? { value: JSON.stringify(available2.credential) } : await ctx.credentials.resolve(credentialRef16(LOOMY.defaultCredentialRef));
+      const resolved = available2 !== null && available2 !== void 0 ? { value: JSON.stringify(available2.credential) } : await ctx.credentials.resolve(credentialRef15(LOOMY.defaultCredentialRef));
       if (resolved === void 0) return [];
       let credential;
       try {
@@ -74674,7 +72391,7 @@ function apply(ctx, config = {}) {
   });
   const raccoon = new RaccoonAuth(ctx);
   const raccoonAdapter = registerRaccoonLlm(ctx, {
-    credentialRef: credentialRef16(RACCOON.defaultCredentialRef),
+    credentialRef: credentialRef15(RACCOON.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(RACCOON.id, modelId ?? "");
       if (available2) {
@@ -74682,7 +72399,7 @@ function apply(ctx, config = {}) {
         return available2.credential;
       }
       throwIfAllAccountsRateLimited(RACCOON, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef16(RACCOON.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef15(RACCOON.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -74695,7 +72412,7 @@ function apply(ctx, config = {}) {
       if (accountId !== void 0 && entry === void 0) throw new Error("raccoon: account no longer exists");
       if (entry) await raccoon.refreshAccountCredential(entry.credentialRef, pool, entry.id);
       else await raccoon.refresh();
-      const resolved = await ctx.credentials.resolve(credentialRef16(entry?.credentialRef ?? RACCOON.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef15(entry?.credentialRef ?? RACCOON.defaultCredentialRef));
       if (!resolved) throw new Error("raccoon: credential no longer exists");
       return JSON.parse(resolved.value);
     },
@@ -74719,14 +72436,14 @@ function apply(ctx, config = {}) {
   });
   const minimax = new MinimaxAuth(ctx);
   const minimaxAdapter = registerMinimaxLlm(ctx, {
-    credentialRef: credentialRef16(MINIMAX.defaultCredentialRef),
+    credentialRef: credentialRef15(MINIMAX.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(MINIMAX.id, modelId ?? "");
       if (available2) {
         reportLedgerAccount(MINIMAX.id, available2.entry.id);
         return available2.credential;
       }
-      const resolved = await ctx.credentials.resolve(credentialRef16(MINIMAX.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef15(MINIMAX.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -74769,14 +72486,14 @@ function apply(ctx, config = {}) {
   const geminiAdapter = registerGeminiLlm(ctx, {
     fetchImpl: network.fetch,
     projectFetcher: network.fetch,
-    credentialRef: credentialRef16(GEMINI.defaultCredentialRef),
+    credentialRef: credentialRef15(GEMINI.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(GEMINI.id, modelId ?? "");
       if (available2) {
         reportLedgerAccount(GEMINI.id, available2.entry.id);
         return available2.credential;
       }
-      const resolved = await ctx.credentials.resolve(credentialRef16(GEMINI.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef15(GEMINI.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -74809,8 +72526,8 @@ function apply(ctx, config = {}) {
     projectCache: geminiProjectCache,
     persistProject: async (value) => {
       const available2 = await pool.getAvailableAccount(GEMINI.id, "");
-      const ref = available2 ? available2.entry.credentialRef : credentialRef16(GEMINI.defaultCredentialRef);
-      await ctx.credentials.set(credentialRef16(ref), value);
+      const ref = available2 ? available2.entry.credentialRef : credentialRef15(GEMINI.defaultCredentialRef);
+      await ctx.credentials.set(credentialRef15(ref), value);
     },
     ...ctx.logger === void 0 ? {} : { logger: ctx.logger }
   });
@@ -74848,7 +72565,7 @@ function apply(ctx, config = {}) {
   };
   const activeZcodeAccountId = /* @__PURE__ */ new Map();
   const zcodeAdapter = registerZcodeLlm(ctx, {
-    credentialRef: credentialRef16(ZCODE.defaultCredentialRef),
+    credentialRef: credentialRef15(ZCODE.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(ZCODE.id, modelId ?? "");
       if (available2) {
@@ -74962,15 +72679,6 @@ function apply(ctx, config = {}) {
   }).catch((error) => {
     ctx.logger.warn(`[channel-pack] \u4FEE\u6B63 TRAE \u8D26\u53F7\u663E\u793A\u540D\u5931\u8D25\uFF1A${String(error)}`);
   });
-  void lobsterai.repairAccountNicknames(pool).then((repaired) => {
-    if (repaired.length > 0) {
-      ctx.logger.info(
-        `[channel-pack] \u5DF2\u4FEE\u6B63 ${repaired.length} \u4E2A LobsterAI \u8D26\u53F7\u7684\u663E\u793A\u540D\uFF08\u624B\u673A\u53F7\u6539\u4E3A\u53EA\u9732\u672B 2 \u4F4D\uFF09\uFF1A${repaired.join(", ")}`
-      );
-    }
-  }).catch((error) => {
-    ctx.logger.warn(`[channel-pack] \u4FEE\u6B63 LobsterAI \u8D26\u53F7\u663E\u793A\u540D\u5931\u8D25\uFF1A${String(error)}`);
-  });
   void gemini.repairAccountNicknames(pool).then((repaired) => {
     if (repaired.length > 0) {
       ctx.logger.info(
@@ -74985,7 +72693,6 @@ function apply(ctx, config = {}) {
     ["codearts", (p) => service.refreshAll(p)],
     ["buddy", (p) => buddy.refreshAll(p)],
     ["workbuddy", (p) => workbuddy.refreshAll(p)],
-    ["lobsterai", (p) => lobsterai.refreshAll(p)],
     ["qoder", (p) => qoder.refreshAll(p)],
     ["qodercn", (p) => qoderCn.refreshAll(p)],
     ["trae", (p) => trae.refreshAll(p)],
@@ -75027,7 +72734,6 @@ function apply(ctx, config = {}) {
       service.stop();
       buddy.stop();
       workbuddy.stop();
-      lobsterai.stop();
       qoder.stop();
       qoderCn.stop();
       trae.stop();
@@ -75045,7 +72751,6 @@ function apply(ctx, config = {}) {
     service.stop();
     buddy.stop();
     workbuddy.stop();
-    lobsterai.stop();
     qoder.stop();
     qoderCn.stop();
     trae.stop();
@@ -75060,7 +72765,7 @@ function apply(ctx, config = {}) {
     opencodeAdapter = registerOpencodeLlm(ctx, {
       identitySlots: async () => listIdentitySlots(
         await Promise.all(pool.listAccountsByProvider(OPENCODE.id).map(async (entry) => {
-          const resolved = await ctx.credentials.resolve(credentialRef16(entry.credentialRef)).catch(() => void 0);
+          const resolved = await ctx.credentials.resolve(credentialRef15(entry.credentialRef)).catch(() => void 0);
           let parsed = {};
           if (resolved !== void 0) {
             try {
@@ -75113,7 +72818,7 @@ function apply(ctx, config = {}) {
     });
     void ensureDefaultAnonymousSlot(
       (entry) => pool.addAccount(entry),
-      (refName, value) => ctx.credentials.set(credentialRef16(refName), value),
+      (refName, value) => ctx.credentials.set(credentialRef15(refName), value),
       () => pool.listAccountsByProvider(OPENCODE.id),
       // ⚠️ 判据是「池里有没有匿名条目」而不是「有没有账号」：用户若主动
       // 删光了匿名通道，那是明确选择，不该每次启动又塞回来（删除会像失灵）。
@@ -75149,7 +72854,6 @@ function apply(ctx, config = {}) {
     codearts: pruned(PROVIDER, codearts),
     buddy: pruned("buddy", buddyAdapter),
     workbuddy: pruned("workbuddy", workbuddyAdapter),
-    lobsterai: pruned(LOBSTERAI.id, lobsteraiAdapter),
     qoder: pruned(QODER.id, qoderAdapter),
     qodercn: pruned(QODER_CN.id, qoderCnAdapter),
     trae: pruned(TRAE.id, traeAdapter),
@@ -75176,7 +72880,7 @@ function apply(ctx, config = {}) {
     void geminiSigStore.flush().catch(() => {
     });
   });
-  registerChannelPackRpc(ctx, pool, service, buddy, workbuddy, lobsterai, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, {
+  registerChannelPackRpc(ctx, pool, service, buddy, workbuddy, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, {
     ...config,
     codeartsFetcher: signedNetwork.fetch
   });

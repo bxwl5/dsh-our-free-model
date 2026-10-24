@@ -82,7 +82,6 @@
 | 1 | `codearts` · CodeArts | 浏览器授权（华为云 IAM，本地回调 + ticketId） | ✅ | ✅ 远端 | ✅ | ✅ | ❌（非文本块被丢弃） |
 | 2 | `buddy` · WorkBuddy 国内版（CodeBuddy 端点） | 浏览器授权（两步：`POST /v2/plugin/auth/state` → authUrl） | ✅ | ✅ 远端 | ✅ | ✅ | ✅ 双桥 |
 | 3 | `workbuddy` · WorkBuddy 国际版 | 浏览器授权（同上，`platform=workbuddy-ai`） | ✅ | ✅ 远端 | ✅ | ❌（后端无签到接口） | ✅ 双桥 |
-| 4 | `lobsterai` · LobsterAI | 浏览器授权（slot → context 三步） | ✅ | ✅ 远端 | ✅ | ✅ | ✅ 双桥 |
 | 5 | `qoder` · Qoder | 浏览器授权（OAuth；推理走加密端点，需 WASM 签名） | ✅ | ✅ 本机客户端解密目录（`catalog-v6`） | ✅ | ✅ | ✅ 双桥 |
 | 6 | `qodercn` · Qoder 中国版 | 浏览器授权（同上，读 `~/.qoder-cn`） | ✅ | ✅ 本机客户端解密目录 | ✅ | ✅ | ✅ 双桥 |
 | 7 | `trae` · TRAE | 浏览器授权（官方登录页，手机号） | ✅ | ✅ 远端 | ✅ | ✅ | ✅ 单桥 |
@@ -109,7 +108,7 @@
 | 模型目录 | 非静态目录 19 条（其中 `qoder`/`qodercn` 来自官方客户端本机解密文件 `catalog-v6`） | 仅静态兜底表 3 条：`gemini`、`orcaterm`、`kuku` |
 | 额度查询 | **17 条**（原 13 条 + `commandcode` `monkeycode` `accio` `accio-cn`） | 4 条：`orcaterm` `kuku` `autoclaw` `officeace`（前三个上游无额度端点；officeace 有积分但领取端点未接） |
 | 签到 | **10 条**（原 9 条 + `monkeycode`） | 服务端显式守卫「无签到端点」3 条（`workbuddy` `cline` `raccoon`）+ `gemini`/`commandcode`/`accio`/`accio-cn`（无 claim 能力）+ 上游无签到 5 条 |
-| 图片（双桥） | 9 条：`buddy` `workbuddy` `lobsterai` `qoder` `qodercn` `cline` `raccoon` `gemini` `zcode` | 单桥 3 条：`trae` `loomy` `minimax`；未接 10 条 |
+| 图片（双桥） | 8 条：`buddy` `workbuddy` `qoder` `qodercn` `cline` `raccoon` `gemini` `zcode` | 单桥 3 条：`trae` `loomy` `minimax`；未接 9 条 |
 | 粘贴型登录 | 纯粘贴 2 条（`monkeycode` `orcaterm`） | — |
 
 ---
@@ -133,7 +132,7 @@
   服务端分支显式拒绝（`credits.claimAll` 的 `workbuddy` 守卫），避免用国际版凭据打国内签到。
 - 图片：两产品都接双桥（`readImage` + `readImageRequest`）。
 
-### 3.3 LobsterAI（`lobsterai`）
+### 3.3 ~~LobsterAI~~（已于 2026-10-25 移除）
 
 - 登录：slot → context 三步；签到必填 `clientVersion`（动态解析 + 缓存）。
 - 额度：资源包按 `expiresAt` 归一到「长期 / 临时」，回传 `windowDays`。

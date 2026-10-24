@@ -11,7 +11,6 @@
 | 1 | `codearts` | 浏览器授权 → 本地回调收授权码（两步式） | ✅ | 浏览器登录 | 是 | `channel-pack-rpc.ts:1613` |
 | 2 | `buddy` | 浏览器授权 → 轮询 token（`auth/state` 换登录页） | ✅ | 浏览器登录 | 否 | `channel-pack-rpc.ts:1481-1506`、`buddy-oauth.ts:137,178` |
 | 3 | `workbuddy` | 同 `buddy`（同一实现，不同产品配置） | ✅ | 浏览器登录 | 否 | 同上 + `product.ts` 的 `WORKBUDDY` |
-| 4 | `lobsterai` | 浏览器授权 → 本地回调（与 codearts 同款） | ✅ | 浏览器登录 | 是 | `channel-pack-rpc.ts:1651` 起 |
 | 5 | `qoder` | 设备码轮询（不起本地端口） | ✅ | 浏览器点授权/选账号 | 否 | `qoder-oauth.ts:119,205` |
 | 6 | `qodercn` | 同 `qoder`（同族不同端点） | ✅ | 浏览器点授权/选账号 | 否 | 同上 |
 | 7 | `trae` | 浏览器授权 → 本地回调 | ✅ | 浏览器登录 | 是 | `trae-oauth.ts:99,263` |
@@ -30,13 +29,13 @@
 | 20 | `kuku` | 百度 App 扫码，**本地弹窗页**承载 | ✅ | 手机扫码 + 确认 | 是（本地页） | `kuku-qr-login.ts`、`kuku-qr-login-page.ts` |
 | 21 | `autoclaw` | 手机号 + 短信验证码，**本地弹窗页**承载 | ✅ | 输手机号 + 验证码 | 是（本地页） | `autoclaw-login-page.ts`、`autoclaw-sms.ts` |
 
-统计：**一键 18 / 半自动 1 / 纯粘贴 2**（共 21 个渠道；2026-10-25 移除 `autoclaw-intl`）。
+统计：**一键 17 / 半自动 1 / 纯粘贴 2**（共 20 个渠道；2026-10-25 移除 `autoclaw-intl` 与 `lobsterai`）。
 
 ## 2. 三种流为什么不能统一
 
 - **设备码**（`qoder`/`qodercn`、`cline`、`minimax`、`zcode`）：插件只拿到 `verification_uri`
   与 `user_code`，不监听任何端口，因此不受本机端口冲突影响。
-- **本地回调**（`codearts`、`lobsterai`、`trae`、`gemini`、`commandcode`、`accio`）：在
+- **本地回调**（`codearts`、`trae`、`gemini`、`commandcode`、`accio`）：在
   `127.0.0.1` 上起一次性 HTTP 服务接授权码。`commandcode` 从 5959 起逐个试 10 个端口
   （与官方 CLI 一致，`commandcode-product.ts:139`），`accio` 用 5960–5969（两段有重叠），
   其余用候选端口探测。`codearts` 在 portal 回退路径上还有 ticket 轮询兜底（`login.ts:320-334`），

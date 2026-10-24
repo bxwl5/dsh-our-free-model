@@ -4,7 +4,6 @@ import { LlmError } from '@deepseek-ai/dsh-llm'
 import Schema from '@deepseek-ai/schemastery'
 import { registerCodeArtsLlm, PROVIDER as CODEARTS_PROVIDER } from './llm-adapter.js'
 import { registerBuddyLlm } from './buddy-adapter.js'
-import { registerLobsteraiLlm } from './lobsterai-adapter.js'
 import { registerQoderLlm } from './qoder-adapter.js'
 import { registerTraeLlm } from './trae-adapter.js'
 import { registerClineLlm } from './cline-adapter.js'
@@ -20,7 +19,6 @@ import { registerLoomyLlm, parseLoomyRemoteModels } from './loomy-adapter.js'
 import { registerRaccoonLlm } from './raccoon-adapter.js'
 import { CODEARTS_CREDENTIAL_REF, CodeArtsAuth } from './service.js'
 import { BUDDY_CREDENTIAL_REF, BuddyAuth, createPoolRefresh } from './buddy-auth.js'
-import { LobsteraiAuth } from './lobsterai-auth.js'
 import { QoderAuth } from './qoder-auth.js'
 import { TraeAuth } from './trae-auth.js'
 import { ClineAuth } from './cline-auth.js'
@@ -49,7 +47,6 @@ import {
 import { createTokenLedgerStore } from './token-ledger-store.js'
 import { buddyExpiringWindowDays } from './buddy-balance-rank.js'
 import { BuddyBalanceSelector, pickBuddyAccount } from './buddy-balance-selector.js'
-import { LOBSTERAI } from './lobsterai-product.js'
 import { QODER, QODER_CN } from './qoder-product.js'
 import { TRAE } from './trae-product.js'
 import { CLINE } from './cline-product.js'
@@ -62,7 +59,6 @@ import { OFFICEACE } from './officeace-product.js'
 import { AUTOCLAW } from './autoclaw-product.js'
 import { configureDeadModelStore, withDeadModelPruning } from './dead-model-store.js'
 import type { CodeArtsCredential, BuddyCredential } from './types.js'
-import type { LobsteraiCredential } from './lobsterai.js'
 import type { QoderCredential } from './qoder.js'
 import type { TraeCredential } from './trae.js'
 import type { ClineCredential } from './cline.js'
@@ -317,7 +313,7 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
   // ⚠️ 2026-10-01 起各 provider 已**不再**声明为可配置 provider，故这批 namespace
   // 在模型设置页上已无消费者（详见该函数头的说明）。
   registerProviderSettings(
-    ctx, 'llm-buddy', 'llm-workbuddy', 'llm-codearts', 'llm-lobsterai',
+    ctx, 'llm-buddy', 'llm-workbuddy', 'llm-codearts',
     'llm-qoder', 'llm-qodercn', 'llm-trae', 'llm-cline', 'llm-loomy', 'llm-raccoon',
     'llm-minimax', 'llm-zcode', 'llm-gemini',
   )
@@ -691,61 +687,6 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
     readImageRequest: makeReadImageRequest(ctx),
     accountPool: pool,
     product: WORKBUDDY,
-  })
-
-  // ===== LobsterAI (有道龙虾) 服务 =====
-  // 第三个产品线，但协议与腾讯系**完全不同**：不走 external-link 轮询登录，
-  // 而是本地回调 + authCode 换 token（见 src/lobsterai-oauth.ts）。
-  // 服务名由 LobsteraiAuth 依 product.id 派生，注册为 ctx.lobsteraiAuth。
-  // 与其他 provider 一样不注册斜杠命令：入口在 Channel Pack 的 LobsterAI 面板。
-  const lobsterai = new LobsteraiAuth(ctx)
-  const lobsteraiAdapter = registerLobsteraiLlm(ctx, {
-    credentialRef: credentialRef(LOBSTERAI.defaultCredentialRef),
-    resolveCredential: async (modelId?: string) => {
-      // 只从 LobsterAI 自己的账号池取账号，回退到自己的单凭据 ref，
-      // 保证不会串用 CodeBuddy / WorkBuddy / CodeArts 的凭据。
-      // provider 实参用 LOBSTERAI.id 而非字面量 'lobsterai'：写死字面量在
-      // 改名/多产品场景下会静默查不到账号（本插件在 workbuddy 上踩过同类坑）。
-      // ⚠️ `modelId` 透传：否则模型级限流标记被忽略（详见 buddy 处说明）。
-      const available = await pool.getAvailableAccount(LOBSTERAI.id, modelId ?? '')
-      // Token 账本（第 2 期）：回报「本笔请求解析出的账号」。
-      if (available) {
-        reportLedgerAccount(LOBSTERAI.id, available.entry.id)
-        return available.credential as LobsteraiCredential
-      }
-      const resolved = await ctx.credentials.resolve(credentialRef(LOBSTERAI.defaultCredentialRef))
-      if (!resolved) return undefined
-      try {
-        return JSON.parse(resolved.value) as LobsteraiCredential
-      } catch {
-        return undefined
-      }
-    },
-    refresh: async () => {
-      // 必须刷新**解析凭据时所用的那一个**账号，而不是默认单凭据 ref。
-      //
-      // 为什么：resolveCredential（上面）优先从账号池取
-      // `LOBSTERAI_ACCOUNT_XXX` 的凭据，而 `lobsterai.refresh()` 读写的是
-      // `LOBSTERAI_ACCESS_TOKEN`。两者错配的后果是 —— 适配器检测到池凭据
-      // 过期 → 调 refresh → 成功回写到**另一个** ref → 再 resolve 仍取到
-      // 那份未更新的过期凭据 → 带着过期 token 发请求 → 401。
-      // 用户看到的是「刚在 Channel Pack 登录好，却一直认证失败」，
-      // 而日志里续期全是成功的，极难排查。
-      //
-      // 与 Go 一致：`handler.go:197-209` 也是先 Pick 出账号、再对该账号
-      // `RefreshToken(acct)`（而非某个全局单例）。
-      const available = await pool.getAvailableAccount(LOBSTERAI.id, '')
-      if (available) await lobsterai.refreshAccountCredential(available.entry.credentialRef, pool, available.entry.id)
-      else await lobsterai.refresh()
-    },
-    fetchRemoteModels: () => lobsterai.fetchModels(pool),
-    resolveClientVersion: () => lobsterai.resolveClientVersion(),
-    readImage: makeReadImage(ctx),
-    // 图片请求版本（缩放）桥接：issue !IKITT9。该家实测 13 张原图（≈50 MiB）
-    // 就回 `SERVER code=500`，撞的是请求体体积。
-    readImageRequest: makeReadImageRequest(ctx),
-    accountPool: pool,
-    product: LOBSTERAI,
   })
 
   // ===== Qoder (阿里系 AI IDE) 服务 =====
@@ -1856,22 +1797,6 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
     ctx.logger.warn(`[channel-pack] 修正 TRAE 账号显示名失败：${String(error)}`)
   })
 
-  // 一次性修复**老 LobsterAI 账号**的展示名（同类，但成因不同）：
-  // 服务端把**手机号本身**当 `user.nickname` 下发，且只脱敏到「露末 4 位」
-  // （`130****1100`）—— 按用户要求收敛为只露末 2 位（`130******00`）。
-  // 纯本地归一化（幂等），无需重新登录。
-  //
-  // ⚠️ 幂等 + 失败不阻塞启动（`repairAccountNicknames` 内部逐账号 catch）。
-  void lobsterai.repairAccountNicknames(pool).then((repaired) => {
-    if (repaired.length > 0) {
-      ctx.logger.info(
-        `[channel-pack] 已修正 ${repaired.length} 个 LobsterAI 账号的显示名（手机号改为只露末 2 位）：${repaired.join(', ')}`,
-      )
-    }
-  }).catch((error: unknown) => {
-    ctx.logger.warn(`[channel-pack] 修正 LobsterAI 账号显示名失败：${String(error)}`)
-  })
-
   // 一次性修复**老 Gemini 账号**的展示名（同类，成因见 `gemini-auth.ts` 的
   // `repairAccountNicknames`）：旧版本解析令牌响应时丢掉了 `id_token`，身份只剩
   // userinfo 一次可静默失败的跨域请求，失败即让昵称退化成池 id（`gemini-6a53dbca`）。
@@ -1903,7 +1828,6 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
     ['codearts', (p) => service.refreshAll(p)],
     ['buddy', (p) => buddy.refreshAll(p)],
     ['workbuddy', (p) => workbuddy.refreshAll(p)],
-    ['lobsterai', (p) => lobsterai.refreshAll(p)],
     ['qoder', (p) => qoder.refreshAll(p)],
     ['qodercn', (p) => qoderCn.refreshAll(p)],
     ['trae', (p) => trae.refreshAll(p)],
@@ -1971,7 +1895,6 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
       service.stop()
       buddy.stop()
       workbuddy.stop()
-      lobsterai.stop()
       qoder.stop()
       qoderCn.stop()
       trae.stop()
@@ -1997,7 +1920,6 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
     service.stop()
     buddy.stop()
     workbuddy.stop()
-    lobsterai.stop()
     qoder.stop()
     qoderCn.stop()
     trae.stop()
@@ -2173,7 +2095,6 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
     codearts: pruned(CODEARTS_PROVIDER, codearts),
     buddy: pruned('buddy', buddyAdapter),
     workbuddy: pruned('workbuddy', workbuddyAdapter),
-    lobsterai: pruned(LOBSTERAI.id, lobsteraiAdapter),
     qoder: pruned(QODER.id, qoderAdapter),
     qodercn: pruned(QODER_CN.id, qoderCnAdapter),
     trae: pruned(TRAE.id, traeAdapter),
@@ -2202,7 +2123,7 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
   // 丢的却是「下一轮工具调用能不能带上签名」。
   ctx.effect(() => () => { void geminiSigStore.flush().catch(() => {}) })
 
-  registerChannelPackRpc(ctx, pool, service, buddy, workbuddy, lobsterai, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, {
+  registerChannelPackRpc(ctx, pool, service, buddy, workbuddy, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, {
     ...config,
     codeartsFetcher: signedNetwork.fetch,
   })

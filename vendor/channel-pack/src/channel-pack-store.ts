@@ -353,7 +353,7 @@ class MemoryStore implements ChannelPackStore {
  * 派生用例不校验顺序（恢复顺序由 refs 文件决定），但两者对齐后便于逐项核对。
  *
  * 依据 `src/product.ts` 与各 `*-product.ts` 的 `id` 字段：
- * `codearts` / `buddy` / `workbuddy` / `lobsterai` / `qoder` / `qodercn`
+ * `codearts` / `buddy` / `workbuddy` / `qoder` / `qodercn`
  * / `trae` / `cline` / `loomy` / `raccoon` / `minimax` / `zcode`
  * / `opencode` / `gemini`。
  */
@@ -361,7 +361,6 @@ const REF_PREFIX_TO_PROVIDER: ReadonlyArray<readonly [string, string]> = [
   ['CODEARTS', 'codearts'],
   ['BUDDY', 'buddy'],
   ['WORKBUDDY', 'workbuddy'],
-  ['LOBSTERAI', 'lobsterai'],
   ['QODER', 'qoder'],
   ['QODERCN', 'qodercn'],
   ['TRAE', 'trae'],

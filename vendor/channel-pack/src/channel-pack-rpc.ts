@@ -32,7 +32,6 @@ import {
 import type { CodeArtsAuth } from './service.js'
 import type { CodeArtsCredential } from './types.js'
 import type { BuddyAuth } from './buddy-auth.js'
-import type { LobsteraiAuth } from './lobsterai-auth.js'
 import type { QoderAuth } from './qoder-auth.js'
 import type { TraeAuth } from './trae-auth.js'
 import type { ClineAuth } from './cline-auth.js'
@@ -88,16 +87,9 @@ import type { GeminiCredential } from './gemini.js'
 import type { GeminiAuth, StartedGeminiLoginFlow } from './gemini-auth.js'
 import { fetchGeminiCreditBalance } from './gemini-credits.js'
 import { LOOMY_TASK_POINTS, LOOMY_TASK_TITLES } from './loomy-onboarding.js'
-import { LOBSTERAI } from './lobsterai-product.js'
 import { QODER, QODER_CN, type QoderProduct } from './qoder-product.js'
 import { TRAE } from './trae-product.js'
 import { CLINE } from './cline-product.js'
-import {
-  isLobsteraiRefreshable,
-  lobsteraiCredentialExpiresAtMs,
-  lobsteraiDisplayNickname,
-} from './lobsterai.js'
-import type { LobsteraiCredential } from './lobsterai.js'
 import {
   fetchQoderUserNickname,
   isQoderRefreshable,
@@ -136,10 +128,6 @@ import {
 } from './captcha-supply.js'
 import { ZCODE_CAPTCHA_FALLBACK, type ZcodeCaptchaConfig } from './zcode-captcha.js'
 import { buildCarrierPageHtml } from './zcode-carrier-page.js'
-import {
-  claimLobsteraiDailyCheckin,
-  fetchLobsteraiCreditBalance,
-} from './lobsterai-credits.js'
 import {
   claimCodeArtsDailyCheckin,
   fetchCodeArtsAccountInfoDetailed,
@@ -885,7 +873,6 @@ export function registerChannelPackRpc(
   codearts: CodeArtsAuth,
   buddy: BuddyAuth,
   workbuddy: BuddyAuth,
-  lobsterai: LobsteraiAuth,
   qoder: QoderAuth,
   /** Qoder **中国版**实例（与 `qoder` 同协议、不同 product；RPC 分支按注册表分派）。 */
   qoderCn: QoderAuth,
@@ -917,7 +904,7 @@ export function registerChannelPackRpc(
 ): void {
   ctx.inject(['connection'], (connectionCtx) => {
     registerChannelPackEndpoints(
-      connectionCtx as Context, pool, codearts, buddy, workbuddy, lobsterai,
+      connectionCtx as Context, pool, codearts, buddy, workbuddy,
       qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, config,
     )
   })
@@ -1002,7 +989,6 @@ function registerChannelPackEndpoints(
   codearts: CodeArtsAuth,
   buddy: BuddyAuth,
   workbuddy: BuddyAuth,
-  lobsterai: LobsteraiAuth,
   qoder: QoderAuth,
   qoderCn: QoderAuth,
   trae: TraeAuth,
@@ -1767,36 +1753,8 @@ function registerChannelPackEndpoints(
             void pool.removeAccount(id).catch(() => {})
           })
           return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } }
-        } else if (provider === LOBSTERAI.id) {
-          // LobsterAI 与 codearts 同款：回调式登录 + 两步式返回，
-          // 理由见上面的 codearts 分支（弹窗拦截导致主页面被跳转）。
-          const started = await lobsterai.startLogin({ refName })
-          await pool.addAccount({
-            id,
-            provider: LOBSTERAI.id,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now(),
-          })
-          started.result.then(async (loginResult) => {
-            const credential = parseLobsteraiCredential(loginResult.access)
-            await pool.updateAccount(id, {
-              // ⚠️ 用 `lobsteraiDisplayNickname`：服务端把**手机号本身**当昵称
-              // 下发且只脱敏到「露末 4 位」，需归一化为末 2 位（用户要求）。
-              nickname: lobsteraiDisplayNickname(credential, id),
-              expiresAt: credential !== undefined ? lobsteraiCredentialExpiresAtMs(credential) : undefined,
-              refreshable: credential !== undefined && isLobsteraiRefreshable(credential),
-            })
-          }).catch((error: unknown) => {
-            ctx.logger.warn(`[channel-pack] background ${LOBSTERAI.id} login failed for ${id}: ${String(error)}`)
-            recordLoginFailure(id, error)
-            void pool.removeAccount(id).catch(() => {})
-          })
-          return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } }
         } else if (isQoderFamily(provider)) {
-          // Qoder 同族（国际版 / 中国版）与 codearts / lobsterai 同款两步式，
+          // Qoder 同族（国际版 / 中国版）与 codearts 同款两步式，
           // 但登录机制不同：它是**设备码轮询**（不开本地回调服务器，见 src/qoder-oauth.ts），
           // 同样必须在用户授权前返回 loginUrl，理由见上面的 codearts 分支。
           //
@@ -2330,9 +2288,6 @@ function registerChannelPackEndpoints(
             case 'workbuddy':
               await workbuddy.refreshAccountCredential(entry.credentialRef, pool, entry.id)
               break
-            case LOBSTERAI.id:
-              await lobsterai.refreshAccountCredential(entry.credentialRef, pool, entry.id)
-              break
             case QODER.id:
             case QODER_CN.id:
               // 同协议族：按 provider 找到对应实例。
@@ -2340,7 +2295,7 @@ function registerChannelPackEndpoints(
               // ⚠️ **不要**图省事写 `qoder.refreshAccountCredential(...)` ——
               // 那会让中国版账号的续期去刷国际版的凭据（两站 token 不通用，
               // CN 永远续不动而国际版被无谓刷一次）。该串用由
-              // `lobsterai-rpc-dispatch.spec.ts` 的行为级用例锁死（已做反向验证）。
+              // 行为级用例锁死（已做反向验证）。
               await requireQoderFamily(entry.provider).auth.refreshAccountCredential(entry.credentialRef, pool, entry.id)
               break
             case TRAE.id:
@@ -2541,7 +2496,7 @@ function registerChannelPackEndpoints(
            * `Select-String -Path plugin-src\client\*.js -Pattern "rpcCall\('account\."`
            * （应零命中；`account.refreshable` 是另一个字段名，不是端点）。
            *
-           * 回归用例在 `tests/unit/lobsterai-rpc-dispatch.spec.ts` 的
+           * 回归用例在
            * 「issue IKJOZA」段（锁死「失败不得是 ok:true」+「失败必须带原因」）。
            */
           return {
@@ -2947,7 +2902,7 @@ function registerChannelPackEndpoints(
       // 四个 provider 分属**三套互不相同的协议**，各自在自己的分支里处理：
       //   - CodeBuddy 系（buddy / workbuddy）：`productById()` 取 BuddyProduct，
       //     走 `collectCreditsStatus` 的默认实现；
-      //   - `lobsterai`：slot → context 三步，无独立状态端点；
+      //   - （LobsterAI 已移除）
       //   - `codearts`：华为云 SDK-HMAC-SHA256 签名，无独立状态端点。
       //
       // ⚠️ 只有 CodeBuddy 系能经 `productById()` 解析出产品配置；后两者
@@ -2999,19 +2954,6 @@ function registerChannelPackEndpoints(
           // 两步才能得到，且语义与 CodeBuddy 的 CheckinStatus 不同构
           //（无 streak_days / daily_credit 等概念）。
           // 故与 LobsterAI 同样如实返回 null，而不是臆造一份状态对象。
-          const accounts = await pool.listAccounts(req.provider)
-          return {
-            ok: true,
-            value: {
-              accounts: accounts.map((entry) => ({ accountId: entry.id, nickname: entry.nickname, status: null })),
-            } satisfies RpcCreditsStatusResponse,
-          }
-        }
-        if (req.provider === LOBSTERAI.id) {
-          // LobsterAI 没有独立的「签到状态」端点：活动状态要经
-          // slot → context 两步才能得到，且语义与 CodeBuddy 的
-          // CheckinStatus 不同构（无 streak/dailyCredit 等概念）。
-          // 故这里如实返回 null，而不是臆造一份状态对象。
           const accounts = await pool.listAccounts(req.provider)
           return {
             ok: true,
@@ -3114,20 +3056,6 @@ function registerChannelPackEndpoints(
           const value = await collectClaimResults<CodeArtsCredential, undefined>(accounts, undefined, {
             resolve: (ref) => ctx.credentials.resolve(ref),
             claim: (credential) => claimCodeArtsDailyCheckin(credential, codeartsFetcher),
-            precheckStatus: false,
-            warn: (msg) => ctx.logger?.warn?.(msg),
-          })
-          return { ok: true, value: value satisfies RpcCreditsClaimAllResponse }
-        }
-        if (req.provider === LOBSTERAI.id) {
-          // LobsterAI 的 clientVersion 是签到必填参数，需动态解析
-          //（带缓存，通常无额外网络开销）。
-          const clientVersion = await lobsterai.resolveClientVersion()
-          const value = await collectClaimResults(accounts, LOBSTERAI, {
-            resolve: (ref) => ctx.credentials.resolve(ref),
-            claim: (credential, product) =>
-              claimLobsteraiDailyCheckin(credential, product, clientVersion),
-            // 领取流程内部已做 slot/context 预检，不需要外部再查一次状态。
             precheckStatus: false,
             warn: (msg) => ctx.logger?.warn?.(msg),
           })
@@ -3409,24 +3337,6 @@ function registerChannelPackEndpoints(
             warn: (msg) => ctx.logger?.warn?.(msg),
           })
           return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
-        }
-        if (req.provider === LOBSTERAI.id) {
-          const values = await collectCreditBalances(accounts, LOBSTERAI, {
-            resolve: (ref) => ctx.credentials.resolve(ref),
-            fetchBalance: (credential, product) => fetchLobsteraiCreditBalance(credential, product),
-            warn: (msg) => ctx.logger?.warn?.(msg),
-          })
-          // ⚠️ LobsterAI 也回传窗口天数（用户报障「账号的积分没按长期、临时方式
-          // 显示」）：它的每个资源包都带 `expiresAt`（已归一化到
-          // `deductionEndTime`），面板要按到期远近分「长期 / 临时」。
-          // 窗口语义与 buddy / TRAE 一致，共用同一个环境变量。
-          return {
-            ok: true,
-            value: {
-              accounts: values,
-              windowDays: buddyExpiringWindowDays(),
-            } satisfies RpcCreditsBalancesResponse,
-          }
         }
         if (isQoderFamily(req.provider)) {
           const { product } = requireQoderFamily(req.provider)

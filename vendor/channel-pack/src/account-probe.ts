@@ -32,21 +32,18 @@
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { createUserMessage, LlmError } from '@deepseek-ai/dsh-llm'
 import { BuddyAdapter } from './buddy-adapter.js'
-import { LobsteraiAdapter } from './lobsterai-adapter.js'
 import { QoderAdapter } from './qoder-adapter.js'
 import { ClineAdapter } from './cline-adapter.js'
 import { ZcodeAdapter } from './zcode-adapter.js'
 import { TraeAdapter } from './trae-adapter.js'
 import { CodeArtsAdapter, isRateLimited, parseRateLimitError } from './llm-adapter.js'
 import { productById } from './product.js'
-import { lobsteraiProductById } from './lobsterai-product.js'
 import { qoderProductById } from './qoder-product.js'
 import { clineProductById } from './cline-product.js'
 import { zcodeProductById } from './zcode-product.js'
 import { GeminiAdapter } from './gemini-adapter.js'
 import { GEMINI, GEMINI_DEFAULT_PROJECT, GEMINI_SESSION_LANE_SMOKE } from './gemini.js'
 import type { BuddyCredential } from './buddy.js'
-import type { LobsteraiCredential } from './lobsterai.js'
 import type { QoderCredential } from './qoder.js'
 import type { ClineCredential } from './cline.js'
 import type { ZcodeCredential } from './zcode.js'
@@ -79,7 +76,6 @@ const TRAE_PROVIDER_ID = 'trae'
 type ProbeCredential =
   | CodeArtsCredential
   | BuddyCredential
-  | LobsteraiCredential
   | QoderCredential
   | ClineCredential
   | ZcodeCredential
@@ -200,7 +196,6 @@ async function probeWithAdapter(
   //
   // **七条产品线各自选适配器**，顺序不能颠倒也不能漏判：
   // - CodeBuddy 系（buddy / workbuddy）→ BuddyAdapter，按各自 product 发请求；
-  // - LobsterAI → LobsteraiAdapter（自己的端点与头族）；
   // - Qoder 系（qoder / qodercn）→ QoderAdapter（WASM 加密体 + 签名头族）；
   // - Cline → ClineAdapter（WorkOS 凭据 + 自己的端点）；
   // - ZCode（智谱）→ ZcodeAdapter（Anthropic Messages 体 + 阿里云 captcha 参数）；
@@ -211,9 +206,9 @@ async function probeWithAdapter(
   //
   // 1. 初版只判断 `provider === 'buddy'` → workbuddy 落入 else，用华为云
   //    HMAC 签名去发 WorkBuddy 凭据而必然失败；
-  // 2. 加了 lobsterai 分支后**仍漏掉 trae** → TRAE 账号同样落入 else，
+  // 2. 加了几个分支后**仍漏掉 trae** → TRAE 账号同样落入 else，
   //    用 CodeArts 签名发 TRAE 请求而必然失败（2026-09-25 排查 workbuddy
-  //    缺陷时发现，实测 `productById('trae')` 与 `lobsteraiProductById('trae')`
+  //    缺陷时发现，实测 `productById('trae')` 与 `qoderProductById('trae')`
   //    均为 undefined）；
   // 3. 加了 trae 分支后**仍漏掉 qoder / qodercn / cline** → 三者同样落入
   //    else，被交给 CodeArtsAdapter 用华为云 HMAC 签名去发 Qoder / Cline
@@ -233,19 +228,17 @@ async function probeWithAdapter(
   //     grep -n 'updateModelRateLimit(' src/*.ts
   //
   // 命中者（除 `account-pool.ts` 的定义与 `account-probe.ts` 自身的回写）的每个
-  // 适配器都必须在这里有分支：buddy（含 workbuddy）/ lobsterai / qoder（含
+  // 适配器都必须在这里有分支：buddy（含 workbuddy）/ qoder（含
   // qodercn）/ cline / zcode / trae / codearts / **gemini**。反例：loomy 的
   // 积分耗尽时静默降级、**不写**标记，故它落 else 无害（`retestAccount`
   // 取不到 modelId 时根本不构造适配器）。新增 provider 时务必同步本分支，
   // 并补 `tests/unit/account-probe-adapter.spec.ts` 的对应用例。
   const buddyProduct = productById(entry.provider)
-  const lobsteraiProduct = lobsteraiProductById(entry.provider)
   const qoderProduct = qoderProductById(entry.provider)
   const clineProduct = clineProductById(entry.provider)
   const zcodeProduct = zcodeProductById(entry.provider)
   let adapter:
     | BuddyAdapter
-    | LobsteraiAdapter
     | QoderAdapter
     | ClineAdapter
     | ZcodeAdapter
@@ -258,13 +251,6 @@ async function probeWithAdapter(
       resolveCredential: async () => credential as BuddyCredential,
       refresh: async () => {},
       product: buddyProduct,
-    })
-  } else if (lobsteraiProduct !== undefined) {
-    adapter = new LobsteraiAdapter({
-      credentialRef: ref,
-      resolveCredential: async () => credential as LobsteraiCredential,
-      refresh: async () => {},
-      product: lobsteraiProduct,
     })
   } else if (qoderProduct !== undefined) {
     // Qoder 国际版与中国版**共用同一个适配器类**，差异全在 product 配置里
