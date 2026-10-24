@@ -33,7 +33,7 @@
  * 文件持久化惯例）。
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -113,6 +113,19 @@ export interface ChannelPackStore {
   load(): ChannelPackState | undefined
   /** 整体写入（账号与黑名单必须同时携带，见 AccountPool 的说明）。 */
   save(state: ChannelPackState): Promise<void>
+  /**
+   * 状态文档的**修改时间**（毫秒）。文件后端实现它，用于「外部改动后自动重读」。
+   *
+   * 为什么需要：AccountPool 的 `ensureLoaded()` 原本只加载一次、之后永不重读文件。
+   * 于是**手工改状态文件**（清限流标记、补账号）不会生效 —— 路由读的是内存副本，
+   * 而任何一次写操作又会用内存快照把文件整体覆盖回去。用户只能重启进程才能恢复，
+   * 长任务场景下等于不可用（真实报障）。有了 mtime，读路径可以只多一次 stat()
+   * 就感知外部改动，不必解析 JSON。
+   *
+   * 非文件后端（settings / memory）不实现它 —— 它们的读源是一个活对象，
+   * 不存在「文件被外部改」这种情形。
+   */
+  mtimeMs?(): number | undefined
 }
 
 /** settings scope 的最小接口（只用到 get/replace）。 */
@@ -474,11 +487,31 @@ class FileStore implements ChannelPackStore {
     this.write(state)
   }
 
+  /** 状态文档的 mtime（毫秒）；文件不存在或读取失败时返回 `undefined`。 */
+  mtimeMs(): number | undefined {
+    try {
+      return statSync(this.path).mtimeMs
+    } catch {
+      return undefined
+    }
+  }
+
+  /** 最近一次**由本进程**写盘后的 mtime，供账号池区分「自己写的」与「外部改的」。 */
+  private lastWriteMtimeMs: number | undefined
+
+  /** 最近一次写盘后的 mtime（账号池用来避免「自己写完立刻重读」）。 */
+  get writtenMtimeMs(): number | undefined {
+    return this.lastWriteMtimeMs
+  }
+
   private write(state: ChannelPackState): void {
     mkdirSync(join(this.home, 'channel-pack'), { recursive: true })
     const tmp = `${this.path}.tmp`
     writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf-8')
     renameSync(tmp, this.path)
+    // 记录写后 mtime：调用方据此跳过「刚写就被判为外部改动」的误判。
+    // 注意 rename 之后 stat 才准确（tmp 文件的时间戳不是目标文件的）。
+    this.lastWriteMtimeMs = this.mtimeMs()
   }
 
   /**

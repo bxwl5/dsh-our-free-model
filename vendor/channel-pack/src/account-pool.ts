@@ -161,10 +161,29 @@ export class AccountPool {
     }
   }
 
-  /** 首次访问时从后端载入账号列表、黑名单与锁定表。 */
+  /** 上次载入时的状态文件 mtime（`undefined` = 非文件后端，不重读）。 */
+  private loadedMtimeMs: number | undefined
+
+  /**
+   * 首次访问时从后端载入账号列表、黑名单与锁定表。
+   *
+   * ⚠️ **必须感知文件变化**（真实报障）：早期实现是 `if (this.loaded) return`，
+   * 加载一次后**永不重读文件**。后果是手工改状态文件（清限流标记、补账号）
+   * 完全不生效 —— 路由读的是这里的 `cache`，而任何写操作又会用 `cache`
+   * 把文件整体覆盖回去（`queueStoreSave` 写的是 `this.cache`）。
+   *
+   * 于是用户的所有现场补救手段全部失效（改文件没用、重载插件没用），
+   * 只剩「重启进程」一条路；长任务场景下等于不可用。
+   *
+   * 现在按 mtime 判断：只有**外部**改动才重读（自己写盘后 mtime 已同步记录，
+   * 不会自触发）。正常请求路径只多一次 `stat()`，不解析 JSON。
+   */
   private ensureLoaded(): void {
-    if (this.loaded) return
+    const stamp = typeof this.store.mtimeMs === 'function' ? this.store.mtimeMs() : undefined
+    // 非文件后端（settings / memory）：mtime 恒 undefined → 沿用「只加载一次」。
+    if (this.loaded && (stamp === undefined || stamp === this.loadedMtimeMs)) return
     this.loaded = true
+    this.loadedMtimeMs = stamp
     const state = this.store.load()
     if (state !== undefined) {
       this.cache = state.accounts
@@ -259,6 +278,11 @@ export class AccountPool {
         gatewayEnabled: this.gatewayEnabledCache,
         providerOrder: this.providerOrderCache,
       })
+      // 自己写盘后立即同步 mtime：否则下一次 ensureLoaded 会把「自己刚写的」
+      // 误判成外部改动，导致立刻整份重读（白解析一遍 JSON）。
+      if (typeof this.store.mtimeMs === 'function') {
+        this.loadedMtimeMs = this.store.mtimeMs()
+      }
     })
     this.storeChain = next.catch(() => {})
     return next

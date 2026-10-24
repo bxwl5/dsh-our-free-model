@@ -31323,7 +31323,7 @@ import { ReasoningEffortId, ToolCallId } from "@deepseek-ai/dsh-llm";
 import { credentialRef } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/channel-pack-store.ts
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import Schema from "@deepseek-ai/schemastery";
@@ -31562,11 +31562,26 @@ var FileStore = class {
   async save(state) {
     this.write(state);
   }
+  /** 状态文档的 mtime（毫秒）；文件不存在或读取失败时返回 `undefined`。 */
+  mtimeMs() {
+    try {
+      return statSync(this.path).mtimeMs;
+    } catch {
+      return void 0;
+    }
+  }
+  /** 最近一次**由本进程**写盘后的 mtime，供账号池区分「自己写的」与「外部改的」。 */
+  lastWriteMtimeMs;
+  /** 最近一次写盘后的 mtime（账号池用来避免「自己写完立刻重读」）。 */
+  get writtenMtimeMs() {
+    return this.lastWriteMtimeMs;
+  }
   write(state) {
     mkdirSync(join(this.home, "channel-pack"), { recursive: true });
     const tmp = `${this.path}.tmp`;
     writeFileSync(tmp, JSON.stringify(state, null, 2), "utf-8");
     renameSync(tmp, this.path);
+    this.lastWriteMtimeMs = this.mtimeMs();
   }
   /**
    * 首次启动的数据恢复（**仅在状态文档不存在时**执行一次）。
@@ -31775,10 +31790,27 @@ var AccountPool = class {
   storeChain = Promise.resolve();
   /** 锁定表的独立后端（权威落盘点）。 */
   lockStore;
-  /** 首次访问时从后端载入账号列表、黑名单与锁定表。 */
+  /** 上次载入时的状态文件 mtime（`undefined` = 非文件后端，不重读）。 */
+  loadedMtimeMs;
+  /**
+   * 首次访问时从后端载入账号列表、黑名单与锁定表。
+   *
+   * ⚠️ **必须感知文件变化**（真实报障）：早期实现是 `if (this.loaded) return`，
+   * 加载一次后**永不重读文件**。后果是手工改状态文件（清限流标记、补账号）
+   * 完全不生效 —— 路由读的是这里的 `cache`，而任何写操作又会用 `cache`
+   * 把文件整体覆盖回去（`queueStoreSave` 写的是 `this.cache`）。
+   *
+   * 于是用户的所有现场补救手段全部失效（改文件没用、重载插件没用），
+   * 只剩「重启进程」一条路；长任务场景下等于不可用。
+   *
+   * 现在按 mtime 判断：只有**外部**改动才重读（自己写盘后 mtime 已同步记录，
+   * 不会自触发）。正常请求路径只多一次 `stat()`，不解析 JSON。
+   */
   ensureLoaded() {
-    if (this.loaded) return;
+    const stamp = typeof this.store.mtimeMs === "function" ? this.store.mtimeMs() : void 0;
+    if (this.loaded && (stamp === void 0 || stamp === this.loadedMtimeMs)) return;
     this.loaded = true;
+    this.loadedMtimeMs = stamp;
     const state = this.store.load();
     if (state !== void 0) {
       this.cache = state.accounts;
@@ -31865,6 +31897,9 @@ var AccountPool = class {
         gatewayEnabled: this.gatewayEnabledCache,
         providerOrder: this.providerOrderCache
       });
+      if (typeof this.store.mtimeMs === "function") {
+        this.loadedMtimeMs = this.store.mtimeMs();
+      }
     });
     this.storeChain = next.catch(() => {
     });

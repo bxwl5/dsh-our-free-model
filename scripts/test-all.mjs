@@ -41,7 +41,10 @@ const suites = [
   ['channel-source', 'channel-pack-test.mjs', ['--source', '--channels-only']],
   ['channel-network', 'channel-network-test.mjs', []],
   ['channel-credits-rpc', 'channel-credits-rpc-test.mjs', []],
-  ['channel-credits-ui', 'channel-credits-ui-test.mjs', []],
+  // ⚠️ `channel-credits-ui-test.mjs` 是**纯导出模块**（只 export verifyChannelCreditsUi），
+  // 由 channel-pack-test.mjs --source 调用。此前把它同时列为套件 = **假绿**：
+  // `node scripts/channel-credits-ui-test.mjs` 直跑零断言、exit 0。
+  // 现已在那个文件里加 exitIfDirectRun 守卫，这里不能再把它当套件跑（否则守卫会判失败）。
   ['channel-model-actions', 'channel-model-actions-test.mjs', []],
   ['channel-login', 'channel-login-test.mjs', []],
   // 登录方式矩阵的漂移守卫：文档 / client.js 的 login 字段 / ADOPTABLE_CHANNELS 三方一致。

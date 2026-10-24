@@ -332,6 +332,10 @@ try {
 }
 
 async function verifySourceRegressions({ ctx, adapters, call, creds }) {
+  {
+    const { verifyAccountPoolCache } = await import('./account-pool-cache-test.mjs')
+    await verifyAccountPoolCache()
+  }
   const { verifyChannelPrFixes } = await import('./channel-pr-fixes-test.mjs')
   await verifyChannelPrFixes()
   const { verifyTencentFingerprint } = await import('./tencent-fingerprint-test.mjs')
