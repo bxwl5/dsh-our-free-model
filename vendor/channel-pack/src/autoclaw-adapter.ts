@@ -114,6 +114,17 @@ export class AutoClawAdapter extends LlmAdapter {
     }))
   }
 
+  /**
+   * 「显示列表」用的完整目录（不套用户黑名单）。
+   *
+   * `status` RPC 的模型数量统计走这个方法（`index.ts` 的 modelAdapters），
+   * 缺了它卡片就显示「—」—— 与其它渠道不一致。
+   */
+  listAllModels(): readonly { id: string; name: string }[] {
+    const source = this.remoteModels ?? this.product.fallbackModels
+    return source.map((model) => ({ id: model.id, name: model.name }))
+  }
+
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
     await this.ensureRemoteModels()
     const source = this.remoteModels ?? this.product.fallbackModels

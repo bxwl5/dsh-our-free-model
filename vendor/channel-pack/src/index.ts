@@ -2174,6 +2174,10 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
     minimax: pruned(MINIMAX.id, minimaxAdapter),
     gemini: pruned(GEMINI.id, geminiAdapter),
     zcode: pruned(ZCODE.id, zcodeAdapter),
+    // 后加的两个渠道也要有「显示列表」的完整目录，否则卡片模型数恒为「—」。
+    kuku: pruned(KUKU.id, kukuAdapter),
+    autoclaw: pruned(AUTOCLAW.id, autoClawAdapter),
+    'autoclaw-intl': pruned(AUTOCLAW_INTL.id, autoClawIntlAdapter),
     ...(opencodeAdapter === undefined ? {} : { opencode: pruned(OPENCODE.id, opencodeAdapter) }),
   }
 

@@ -42,9 +42,9 @@ import { normalizeCookie as normalizeMonkeyCodeCookie } from './monkeycode.js'
 import { normalizeCookie as normalizeOrcaTermCookie } from './orcaterm.js'
 import { KUKU } from './kuku-product.js'
 import { startKukuLoginFlow } from './kuku-qr-login-page.js'
-import { parseCredential as parseAutoClawCredential } from './autoclaw.js'
+import { parseCredential as parseAutoClawCredential, type AutoClawCredential } from './autoclaw.js'
 import { AUTOCLAW } from './autoclaw-product.js'
-import { resolveAutoclawDeviceId } from './autoclaw-sms.js'
+import { refreshAutoclawCredential, resolveAutoclawDeviceId } from './autoclaw-sms.js'
 import { startAutoclawLoginFlow } from './autoclaw-login-page.js'
 import { resolveChannelPackHome } from './channel-pack-store.js'
 import { parseCredential as parseOfficeAceCredential } from './officeace.js'
@@ -2351,6 +2351,41 @@ function registerChannelPackEndpoints(
               // ⚠️ Google 会**轮换 refresh_token**，`GeminiAuth` 内部已回写新值。
               await gemini.refreshAccountCredential(entry.credentialRef, pool, entry.id)
               break
+            case AUTOCLAW.id: {
+              // AutoClaw **有** refresh 端点（`/userapi/v1/refresh`，失败退
+              // `/userapi/v1/agent-refresh`），且短信登录拿到的就是 24 小时 JWT +
+              // refresh_token，所以这里是**真续期**。
+              const resolved = await ctx.credentials.resolve(credentialRef(entry.credentialRef))
+              if (resolved === undefined) throw new Error('凭据未配置')
+              const current = JSON.parse(resolved.value) as AutoClawCredential
+              const refreshed = await refreshAutoclawCredential({
+                product: AUTOCLAW,
+                fetcher: codeartsFetcher,
+                credential: current,
+              })
+              if (!refreshed.ok) throw new Error(refreshed.error)
+              await ctx.credentials.set(credentialRef(entry.credentialRef), JSON.stringify(refreshed.credential))
+              await pool.updateAccount(entry.id, {
+                expiresAt: refreshed.credential.expire_time,
+                refreshable: typeof refreshed.credential.refresh_token === 'string'
+                  && refreshed.credential.refresh_token !== '',
+              })
+              break
+            }
+            case KUKU.id: {
+              // KukuAI 是 Cookie 型渠道（百度 BDUSS），**没有续期端点**：
+              // 这里只重读凭据、确认形状可用（与 zcode 同类的「刷新即复核」），
+              // 不可用时如实抛错，引导用户重新扫码。
+              const resolved = await ctx.credentials.resolve(credentialRef(entry.credentialRef))
+              if (resolved === undefined) throw new Error('凭据未配置')
+              let token = ''
+              try {
+                const parsed = JSON.parse(resolved.value) as { access_token?: unknown }
+                token = typeof parsed.access_token === 'string' ? parsed.access_token : ''
+              } catch { token = '' }
+              if (token === '') throw new Error('凭据不可用，请重新扫码登录')
+              break
+            }
             default:
               throw new Error(`Unknown provider: ${entry.provider}`)
           }

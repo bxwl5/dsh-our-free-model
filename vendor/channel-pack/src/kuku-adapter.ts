@@ -64,6 +64,11 @@ export class KukuAdapter extends LlmAdapter {
     }))
   }
 
+  /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数会显示「—」。 */
+  listAllModels(): readonly { id: string; name: string }[] {
+    return this.product.fallbackModels.map((model) => ({ id: model.id, name: model.name }))
+  }
+
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
     const entry = this.product.fallbackModels.find((candidate) => candidate.id === model)
     const resolved: LlmResolvedModelInfo = {

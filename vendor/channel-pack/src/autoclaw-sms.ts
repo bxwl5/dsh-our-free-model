@@ -209,6 +209,90 @@ export function toAutoclawCredential(
 }
 
 /** 用手机号 + 验证码完成登录，返回可直接落盘的凭据。 */
+/** 续期端点：优先 `/userapi/v1/refresh`，失败退 `/userapi/v1/agent-refresh`。 */
+export const AUTOCLAW_REFRESH_PATHS = ['/userapi/v1/refresh', '/userapi/v1/agent-refresh'] as const
+
+/**
+ * 用 refresh_token 续期（上游两条端点，逐个试）。
+ *
+ * 真机依据（2026-10-24）：短信登录拿到的 access_token 是 24 小时 JWT，带 refresh_token；
+ * 续期响应与登录同构（`code === 0` + `data.access_token`），**过期时间同样以 JWT exp 为准**。
+ * 若响应没给新的 refresh_token，沿用旧的（上游会轮换）。
+ */
+export async function refreshAutoclawCredential(options: {
+  product: AutoClawProduct
+  fetcher: typeof fetch
+  credential: AutoClawCredential
+}): Promise<{ ok: true; credential: AutoClawCredential } | { ok: false; error: string }> {
+  const refreshToken = stripBearer(options.credential.refresh_token)
+  if (refreshToken === '') return { ok: false, error: '没有 refresh_token，请重新登录' }
+  const deviceId = options.credential.device_id ?? 'our-free-model-device'
+  let lastError = ''
+  for (const path of AUTOCLAW_REFRESH_PATHS) {
+    const timestamp = Math.floor(Date.now() / 1000)
+    try {
+      const response = await options.fetcher(`${options.product.apiBase}${path}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Auth-Appid': AUTOCLAW_SMS_APP_ID,
+          'X-Auth-TimeStamp': String(timestamp),
+          'X-Auth-Sign': autoclawSign(AUTOCLAW_SMS_APP_ID, timestamp, AUTOCLAW_SMS_APP_KEY),
+        },
+        body: JSON.stringify({
+          refresh_token: refreshToken,
+          source_id: AUTOCLAW_SOURCE_ID,
+          device_id: deviceId,
+        }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
+      const text = await response.text()
+      if (!response.ok) {
+        lastError = `HTTP ${response.status}：${text.slice(0, 160)}`
+        continue
+      }
+      let json: AutoclawEnvelope
+      try {
+        json = JSON.parse(text) as AutoclawEnvelope
+      } catch {
+        lastError = `非 JSON 响应：${text.slice(0, 160)}`
+        continue
+      }
+      if (json.code !== 0 || json.data?.access_token === undefined) {
+        lastError = json.msg ?? `上游错误码 ${json.code}`
+        continue
+      }
+      const mapped = toAutoclawCredential(json.data, deviceId, options.credential.nickname ?? '')
+      if (!mapped.ok) {
+        lastError = mapped.error
+        continue
+      }
+      // ⚠️ **身份不得漂移**：续期响应通常不带 `user_id`，此时若退回 JWT 里的数字 id，
+      // 就会和服务端 UUID 混成两套 id 空间（同一账号被判成两个）。所以只有上游**显式**
+      // 给了 `user_id` 才更新，否则原样保留。
+      const serverUserId = json.data.user_id
+      const accountId = typeof serverUserId === 'string' && serverUserId !== ''
+        ? serverUserId
+        : typeof serverUserId === 'number'
+          ? String(serverUserId)
+          : options.credential.account_id
+      return {
+        ok: true,
+        credential: {
+          ...mapped.credential,
+          // 上游轮换 refresh_token 时用新的；没给就沿用旧的（否则下次续期会因缺 token 失败）。
+          refresh_token: mapped.credential.refresh_token ?? options.credential.refresh_token,
+          account_id: accountId,
+          nickname: options.credential.nickname ?? mapped.credential.nickname,
+        },
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error)
+    }
+  }
+  return { ok: false, error: lastError === '' ? '续期失败（上游未返回 access_token）' : lastError }
+}
+
 export async function loginAutoclawWithCode(options: {
   product: AutoClawProduct
   fetcher: typeof fetch
