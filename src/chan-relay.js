@@ -1,7 +1,7 @@
 /**
  * LAN relay for the absorbed channels' OpenAI gateway.
  *
- * The vendored channel pack serves every 白嫖 provider through one
+ * The vendored channel pack serves every account channel through one
  * OpenAI-compatible gateway, but it always binds the loopback — a deliberate
  * upstream choice this plugin keeps. What the settings page promises in
  * exchange is a relay of our own: a second listener, bound wherever the user

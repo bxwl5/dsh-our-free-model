@@ -202,14 +202,14 @@ window.__ModuleLoader__.load({
         'reload.done': '插件已热重载（第 {n} 次）。',
         'reload.refresh': '刷新页面',
         'nav.tab.free': '免费模型',
-        'nav.tab.channels': '白嫖模型接入',
+        'nav.tab.channels': '渠道接入',
         'free.title': '免费模型',
         'free.sub': '免登录、免 Key、免配置：模型清单跟随上游刷新，可用性由这台机器实测。',
         'free.tankLabel': '免费车道可用度',
         'free.tankNote': '水位 = 当前可用模型占比（{ok}/{total}）',
         'free.tankEmpty': '尚未探测，水位按已声明模型占位。',
-        'chan.title': '白嫖模型接入',
-        'chan.sub': '把各家的免费额度接进来：登录一次，模型就出现在对话框的模型选择器里。凭据只写入本机凭据库，页面永远拿不到明文。',
+        'chan.title': '渠道接入',
+        'chan.sub': '把各家的渠道接进来：登录一次，模型就出现在对话框的模型选择器里。凭据只写入本机凭据库，页面永远拿不到明文。',
         'chan.pack.failed': '渠道包未挂载：{reason}（免费车道不受影响）',
         'chan.pack.hint': '渠道包由本插件内置（vendor/channel-pack），随插件一起升级。',
         'chan.state.on': '已接入',
@@ -646,14 +646,14 @@ window.__ModuleLoader__.load({
         'reload.done': 'Plugin hot-reloaded (#{n}).',
         'reload.refresh': 'Reload page',
         'nav.tab.free': 'Free models',
-        'nav.tab.channels': 'Free channels',
+        'nav.tab.channels': 'Channels',
         'free.title': 'Free models',
         'free.sub': 'No login, no key, no setup: the roster follows upstream, availability is measured from this machine.',
         'free.tankLabel': 'Free-lane availability',
         'free.tankNote': 'Water level = share of reachable models ({ok}/{total})',
         'free.tankEmpty': 'Not probed yet; the level stands at the declared roster.',
-        'chan.title': 'Free channel access',
-        'chan.sub': 'Bring each vendor\'s free quota in: sign in once and its models appear in the composer\'s model picker. Credentials are written to the local credential store only — this page never sees them.',
+        'chan.title': 'Channel access',
+        'chan.sub': 'Bring each vendor\'s channels in: sign in once and its models appear in the composer\'s model picker. Credentials are written to the local credential store only — this page never sees them.',
         'chan.pack.failed': 'Channel pack not mounted: {reason} (the free lane is unaffected)',
         'chan.pack.hint': 'The pack ships inside this plugin (vendor/channel-pack) and upgrades with it.',
         'chan.state.on': 'Connected',
@@ -2692,7 +2692,7 @@ window.__ModuleLoader__.load({
 
 
 
-    // ── 白嫖模型接入页 ────────────────────────────────────────────────────────
+    // ── 渠道接入页 ────────────────────────────────────────────────────────
     // Real channel logos carried over from the upstream Channel Pack client (see
     // vendor/channel-pack/NOTICE.md) — the same artwork users know from those
     // products, embedded so no network fetch is involved. Channels without an
@@ -4587,7 +4587,7 @@ window.__ModuleLoader__.load({
     // different questions and mixing them pushed the model roster — the thing
     // people actually open this page for — below the fold:
     //   免费模型       the no-account lane (this plugin's own gateway),
-    //   白嫖模型接入   the thirteen enabled account channels and their logins.
+    //   渠道接入   the enabled account channels and their logins.
     // The active page lives in localStorage so a reload — or the hot reload the
     // upgrader triggers — comes back to the page the user was reading.
     const TAB_KEY = 'ofm.tab'

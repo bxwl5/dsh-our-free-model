@@ -16,8 +16,10 @@ source = source.replace(api, "return '/api/management'")
 replaceOnce("...body === undefined ? {} : { body: JSON.stringify(body) },", "body: JSON.stringify(body ?? {}),")
 replaceOnce("h(PageHero, { t, titleKey: 'dash.title', subKey: 'dash.sub' },",
   "h(PageHero, { title: t('dash.title'), sub: t('dash.sub') },")
-replaceOnce("'chan.sub': '把各家的免费额度接进来：登录一次，模型就出现在对话框的模型选择器里。凭据只写入本机凭据库，页面永远拿不到明文。',",
-  "'chan.sub': '登录各家的账号后，通过同一个 API 地址接入免费额度。凭据保存在本机；账号管理页面不显示明文，导出备份包含凭据。',")
+// 独立端把「页面永远拿不到明文」换成「导出备份包含凭据」的如实说明：
+// 独立端没有宿主凭据库，凭据随它的数据文件一起导出，措辞必须与事实一致。
+replaceOnce("'chan.sub': '把各家的渠道接进来：登录一次，模型就出现在对话框的模型选择器里。凭据只写入本机凭据库，页面永远拿不到明文。',",
+  "'chan.sub': '登录各家的渠道后，通过同一个 API 地址接入模型。凭据保存在本机；账号管理页面不显示明文，导出备份包含凭据。',")
 let record
 vm.runInNewContext(source, { window: { __ModuleLoader__: { load: value => { record = value } } } })
 const shared = record.factory(() => ({})).standalone

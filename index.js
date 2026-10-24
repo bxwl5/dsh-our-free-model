@@ -418,7 +418,7 @@ export function apply(ctx, config) {
 
   // ── the channels' gateway relay ─────────────────────────────────────────────
   /**
-   * The absorbed pack serves every 白嫖 provider through one OpenAI-compatible
+   * The absorbed pack serves every account channel through one OpenAI-compatible
    * gateway on the loopback. The relay is this plugin's own door in front of
    * it: callers authenticate with `chanGateway.relay.key` and the forwarded
    * hop is re-stamped with the gateway's own credential, which never leaves
@@ -693,7 +693,7 @@ export function apply(ctx, config) {
   const fenceConnection = connectionAdmissionView(() => optional('connection'))
   // ── the absorbed free-channel pack ──────────────────────────────────────────
   /**
-   * The 白嫖 channels — CodeArts (华为云), CodeBuddy / WorkBuddy (腾讯), LobsterAI
+   * The account channels — CodeArts (华为云), CodeBuddy / WorkBuddy (腾讯), LobsterAI
    * (有道), Qoder / Qoder CN (阿里系), TRAE (字节), Cline, Loomy (讯飞), Raccoon
    * (商汤), MiniMax Code, ZCode (智谱) and Gemini (Google) — are
    * carried with local integration adaptations from the plugin that shipped them, vendored under
@@ -827,7 +827,7 @@ export function apply(ctx, config) {
       lanKey: settings.get().forwardLanKey ?? '',
       models: publicModelRows().map(row => row.id),
     }),
-    // The absorbed channel pack's liveness, for the 白嫖接入 page: the page
+    // The absorbed channel pack's liveness, for the channel page: the page
     // renders its channel grid from this bit plus the pack's own RPC.
     channels: () => channelPack,
     chanRelay: {
