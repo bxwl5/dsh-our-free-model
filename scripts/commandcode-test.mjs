@@ -31,6 +31,41 @@ async function main() {
   assert.equal(parseWhoami(null), undefined)
   assert.equal(parseWhoami('string'), undefined)
 
+  // ── credits 解析：真实响应形状（2026-10-24 实测）──
+  // 上游返回 { credits: { freeCredits, monthlyCredits, purchasedCredits }, windowLimits }，
+  // **没有** balance/limit/used。早期按通用形状猜的归一表一个都匹配不上，
+  // 于是 parseCredits 恒 undefined → 用户看到「余额查询失败」。
+  {
+    const real = {
+      credits: { belowThreshold: false, creditThreshold: 0, monthlyCredits: 0, purchasedCredits: 0, freeCredits: 0 },
+      windowLimits: { limited: false, exceeded: null, fiveHour: null, weekly: null },
+      sandboxAccess: false,
+      sandboxMinutes: null,
+    }
+    const parsed = parseCredits(real)
+    assert.ok(parsed !== undefined, '真实响应必须能解析（不能恒 undefined）')
+    assert.equal(parsed.balance, 0, '三类积分之和为余额')
+    assert.equal(parsed.currency, 'credits')
+    assert.equal(parsed.limited, undefined, '未限流时不应带 limited')
+
+    // 有额度时按来源求和
+    const withCredits = parseCredits({
+      credits: { freeCredits: 10, monthlyCredits: 200, purchasedCredits: 50 },
+      windowLimits: { limited: false },
+    })
+    assert.equal(withCredits.balance, 260, '余额 = free + monthly + purchased')
+
+    // 被窗口限流要单独标出来（与「额度为 0」不是一回事）
+    const limited = parseCredits({ credits: { freeCredits: 5 }, windowLimits: { limited: true } })
+    assert.equal(limited.limited, true)
+    assert.equal(limited.balance, 5)
+
+    // 信封包裹也要认
+    assert.equal(parseCredits({ data: { credits: { freeCredits: 7 } } }).balance, 7)
+    // 完全无关的响应仍返回 undefined（不编 0）
+    assert.equal(parseCredits({ ok: true }), undefined)
+  }
+
   // ── 凭据构造 ──
   const cred = credentialFromWhoami('key-abc', parseWhoami({ userId: 'u1', userName: 'alice', keyName: 'cli' }))
   assert.equal(cred.access_token, 'key-abc')

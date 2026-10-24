@@ -77,6 +77,13 @@ export interface CommandCodeCredits {
   currency?: string
   /** 重置时间（毫秒时间戳）。 */
   resetAtMs?: number
+  /**
+   * 是否被**窗口限流**（上游 `windowLimits.limited`）。
+   *
+   * 与「额度为 0」是两件事：前者是 5 小时/每周窗口打满，后者是积分用完。
+   * 分开表达才能让用户知道该等一会儿还是该充值。
+   */
+  limited?: boolean
 }
 
 /** 从任意 JSON 里安全取字符串。 */
@@ -146,14 +153,49 @@ export function credentialFromWhoami(apiKey: string, whoami: CommandCodeWhoami):
 /**
  * 解析 `/alpha/billing/credits` 响应。
  *
- * 上游字段名不确定，故做**宽松归一**：依次尝试常见命名，
- * 全部缺失时返回 `undefined`（表示「无法得知」，而不是「额度为零」——
- * 这两者对账号池的决策完全不同）。
+ * ## 真实形状（2026-10-24 实测，带有效 key）
+ *
+ * ```json
+ * {"credits":{"belowThreshold":false,"creditThreshold":0,
+ *             "monthlyCredits":0,"purchasedCredits":0,"freeCredits":0},
+ *  "windowLimits":{"limited":false,"exceeded":null,"fiveHour":null,"weekly":null},
+ *  "sandboxAccess":false,"sandboxMinutes":null}
+ * ```
+ *
+ * ⚠️ **没有 `balance` / `limit` / `used` 这类字段** —— 早期按「通用额度形状」猜的
+ * 归一表因此一个都匹配不上，`parseCredits` 恒返回 `undefined`，用户看到的
+ * 就是「余额查询失败」（本次报障）。额度是**按来源拆分的积分**：
+ * `freeCredits`（赠送）+ `monthlyCredits`（订阅月额）+ `purchasedCredits`（充值），
+ * 三者之和才是可用总量。
+ *
+ * 另外 `windowLimits` 是**窗口限流**（5 小时 / 每周），语义是「是否被限」而不是
+ * 「还剩多少」—— 不参与余额求和，但被限时要在文案里说清楚。
  */
 export function parseCredits(value: unknown): CommandCodeCredits | undefined {
   if (!isRecord(value)) return undefined
   // 有些实现套一层 { data: {...} } 信封。
-  const body = isRecord(value.data) ? value.data : value
+  const root = isRecord(value.data) ? value.data : value
+
+  // ── 真实形状：{ credits: {...}, windowLimits: {...} } ──
+  if (isRecord(root.credits)) {
+    const credits = root.credits
+    const free = numberValue(credits.freeCredits)
+    const monthly = numberValue(credits.monthlyCredits)
+    const purchased = numberValue(credits.purchasedCredits)
+    if (free === undefined && monthly === undefined && purchased === undefined) return undefined
+    const balance = (free ?? 0) + (monthly ?? 0) + (purchased ?? 0)
+    const limits = isRecord(root.windowLimits) ? root.windowLimits : undefined
+    return {
+      balance,
+      // 上游没有「总额度上限」概念（积分是预充值/赠送的），故不编造 limit/used；
+      // 但把「是否被窗口限流」如实带上，供文案区分「额度为 0」与「被限流」。
+      ...(limits?.limited === true ? { limited: true } : {}),
+      currency: 'credits',
+    }
+  }
+
+  // ── 兼容其它实现/旧版本的扁平形状 ──
+  const body = root
   const balance = numberValue(body.balance)
     ?? numberValue(body.credits)
     ?? numberValue(body.remaining)

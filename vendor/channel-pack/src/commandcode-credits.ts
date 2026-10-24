@@ -17,6 +17,8 @@ import { fetchCredits } from './commandcode-auth.js'
 
 /** 额度快照（展示用）。 */
 export interface CommandCodeCreditsSnapshot {
+  /** 是否被窗口限流（5 小时/每周），与「额度耗尽」分开表达。 */
+  limited?: boolean
   /** 剩余额度；`undefined` = 未知。 */
   balance?: number
   /** 额度上限；`undefined` = 未知。 */
@@ -61,6 +63,7 @@ export async function readCredits(
     ...(used === undefined ? {} : { used }),
     ...(raw.currency === undefined ? {} : { currency: raw.currency }),
     ...(raw.resetAtMs === undefined ? {} : { resetAtMs: raw.resetAtMs }),
+    ...(raw.limited === true ? { limited: true } : {}),
     exhausted,
   }
 }
@@ -82,6 +85,8 @@ export function formatCredits(snapshot: CommandCodeCreditsSnapshot | undefined):
     parts.push(`已用 ${formatNumber(snapshot.used)} / ${formatNumber(snapshot.limit)}`)
   }
   if (snapshot.exhausted) parts.push('已耗尽')
+  // 被窗口限流与额度为 0 是两件事：前者等窗口滚过去，后者要充值/等赠送。
+  if (snapshot.limited === true) parts.push('窗口限流中')
   return parts.length === 0 ? '额度暂不可查' : parts.join(' · ')
 }
 

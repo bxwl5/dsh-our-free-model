@@ -27901,7 +27901,24 @@ function credentialFromWhoami(apiKey, whoami) {
 }
 function parseCredits(value) {
   if (!isRecord2(value)) return void 0;
-  const body = isRecord2(value.data) ? value.data : value;
+  const root = isRecord2(value.data) ? value.data : value;
+  if (isRecord2(root.credits)) {
+    const credits = root.credits;
+    const free = numberValue(credits.freeCredits);
+    const monthly = numberValue(credits.monthlyCredits);
+    const purchased = numberValue(credits.purchasedCredits);
+    if (free === void 0 && monthly === void 0 && purchased === void 0) return void 0;
+    const balance2 = (free ?? 0) + (monthly ?? 0) + (purchased ?? 0);
+    const limits = isRecord2(root.windowLimits) ? root.windowLimits : void 0;
+    return {
+      balance: balance2,
+      // 上游没有「总额度上限」概念（积分是预充值/赠送的），故不编造 limit/used；
+      // 但把「是否被窗口限流」如实带上，供文案区分「额度为 0」与「被限流」。
+      ...limits?.limited === true ? { limited: true } : {},
+      currency: "credits"
+    };
+  }
+  const body = root;
   const balance = numberValue(body.balance) ?? numberValue(body.credits) ?? numberValue(body.remaining) ?? numberValue(body.available);
   const limit = numberValue(body.limit) ?? numberValue(body.total) ?? numberValue(body.quota);
   const used = numberValue(body.used) ?? numberValue(body.consumed);
@@ -44457,6 +44474,7 @@ async function readCredits(fetcher, product, credential, signal) {
     ...used === void 0 ? {} : { used },
     ...raw.currency === void 0 ? {} : { currency: raw.currency },
     ...raw.resetAtMs === void 0 ? {} : { resetAtMs: raw.resetAtMs },
+    ...raw.limited === true ? { limited: true } : {},
     exhausted
   };
 }
