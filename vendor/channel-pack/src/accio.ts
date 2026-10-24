@@ -56,6 +56,22 @@ export function isCredentialUsable(credential: AccioCredential | undefined): cre
   return typeof token === 'string' && token !== '' && token === token.trim()
 }
 
+/**
+ * 校验并归一一份**粘贴的访问令牌**（`account.adopt` 与「改用粘贴令牌」共用）。
+ *
+ * 为什么需要：Accio 的浏览器授权依赖上游回调白名单，未真机验证前必须留一条手动退路。
+ * 形状检查（不联网）：剥 `Bearer ` 前缀 / 成对引号 / 折行与首尾空白；长度 24–4096；
+ * 只允许可打印 ASCII（中文、控制字符一律拒绝）。
+ */
+export function normalizeAccessToken(raw: string): string | undefined {
+  let text = String(raw ?? '').replace(/[\r\n]+/g, ' ').trim()
+  text = text.replace(/^bearer\s+/i, '').replace(/^"([^"]*)"$/, '$1').trim()
+  if (text === '') return undefined
+  if (text.length < 24 || text.length > 4096) return undefined
+  if (!/^[\x21-\x7E]+$/.test(text)) return undefined
+  return text
+}
+
 /** 凭据是否已过期（留 60 秒余量）。 */
 export function isCredentialExpired(credential: AccioCredential, nowMs: number = Date.now()): boolean {
   if (credential.expire_time === undefined) return false

@@ -43,6 +43,7 @@ import { normalizeCookie as normalizeOrcaTermCookie } from './orcaterm.js'
 import { KUKU } from './kuku-product.js'
 import { startKukuLoginFlow } from './kuku-qr-login-page.js'
 import { parseCredential as parseAutoClawCredential, type AutoClawCredential } from './autoclaw.js'
+import { normalizeAccessToken as normalizeAccioToken } from './accio.js'
 import { AUTOCLAW } from './autoclaw-product.js'
 import { refreshAutoclawCredential, resolveAutoclawDeviceId } from './autoclaw-sms.js'
 import { startAutoclawLoginFlow } from './autoclaw-login-page.js'
@@ -4584,6 +4585,22 @@ const ADOPTABLE_CHANNELS: Readonly<Record<string, AdoptableChannel>> = {
     parse: (text) => {
       const cookie = normalizeOrcaTermCookie(text)
       return cookie === undefined ? undefined : { access_token: cookie, created_at: Date.now() }
+    },
+  },
+  // Accio 家族：浏览器授权是主路径，但上游回调白名单未真机验证，故保留**粘贴兜底**
+  //（UI 上以「改用粘贴令牌」入口呈现，不占默认路径）。
+  accio: {
+    hint: '访问令牌（Bearer token / JWT；先试浏览器授权，失败再走这里）',
+    parse: (text) => {
+      const token = normalizeAccioToken(text)
+      return token === undefined ? undefined : { access_token: token, created_at: Date.now() }
+    },
+  },
+  'accio-cn': {
+    hint: '访问令牌（Bearer token / JWT，国内站）',
+    parse: (text) => {
+      const token = normalizeAccioToken(text)
+      return token === undefined ? undefined : { access_token: token, created_at: Date.now() }
     },
   },
   'autoclaw-intl': {
