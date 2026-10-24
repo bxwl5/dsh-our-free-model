@@ -56,6 +56,19 @@ node scripts/refresh-integrity.mjs --check   # 复验（catalog 套件已内置�
 # 2. 提交：内容 commit → 只碰 catalog/ 的 revision 刷新 commit（见下一节）
 ```
 
+**改了 `client.js` 还要多一步**：独立端前端从 `client.js` 抽取共享页面
+（`scripts/lib/standalone-shared-ui.mjs`），所以必须重新生成 `packages/standalone/web/`：
+
+```bash
+node scripts/build-standalone-ui.mjs          # 重新生成 app.js / app.css / chunk / assets.json
+node scripts/build-standalone-ui.mjs --check  # CI 的 standalone-frontend job 跑的就是这条
+```
+
+漏了这步，CI 会在 `standalone-frontend` 红在「独立端资源需要重新生成：app.js」。
+在 vfat U 盘上这条命令很慢（vite 反复读 node_modules），可把仓库拷到主机盘再跑；
+注意用 **vite 自带的 esbuild 0.28.2** 原生二进制做 `ESBUILD_BINARY_PATH`，
+并把仓库根的 `icon.svg` 一起带进构建目录（`frontend/components/shell.tsx` 引用 `../../../../icon.svg?inline`）。
+
 `refresh-integrity` 与 `catalog-test` 的 `integrity records match the published bytes` 是
 **同一条口径**：改了任何发布文件却没刷新记录，`node scripts/test-all.mjs` 会直接变红。
 这替代了原先「重签 feed/manifest.json」的作用 —— 但**只覆盖字节记录，不覆盖签名**：
