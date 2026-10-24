@@ -80,7 +80,7 @@ https://github.com/bxwl5/dsh-our-free-model
 
 **看不到某个渠道的模型？** 默认会列出全部账号渠道的模型：未登录时给的是静态模型表，
 登录后下一次打开选择器会自动刷新成完整目录（远端目录只在拉取成功时缓存，不会被兜底表占据）。
-唯一例外是 `zcode`（它需要凭据才能确定目录）。想恢复「未登录就隐藏」的旧行为，把环境变量
+22 个渠道都适用（未登录时给静态模型表，登录后刷新成完整目录）。想恢复「未登录就隐藏」的旧行为，把环境变量
 `DSH_HIDE_MODELS_WITHOUT_ACCOUNT` 设为 `1`。各渠道支持哪种登录方式见
 [docs/channel-login-methods.md](docs/channel-login-methods.md)。
 

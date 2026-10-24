@@ -91,7 +91,7 @@ The settings page has seven parts: free models, channels, token savers, routing,
 **Can't see a channel's models?** Every account channel is listed by default: a signed-out channel
 shows its static catalog, and the next time you open the picker after signing in it refreshes to the
 full remote catalog (remote results are only cached on a successful fetch, never replaced by the
-fallback). The only exception is `zcode`, which needs a credential to know its catalog. To restore
+fallback). All 22 channels work this way (a static catalog before sign-in, the full catalog after). To restore
 the old "hide signed-out channels" behaviour, set `DSH_HIDE_MODELS_WITHOUT_ACCOUNT=1`. Per-channel
 sign-in methods: [docs/channel-login-methods.md](docs/channel-login-methods.md).
 

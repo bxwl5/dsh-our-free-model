@@ -60,7 +60,7 @@
 
 ## 4. 未登录时看不看得到模型（实测）
 
-**结论：默认就能看到（2026-10-24 起），`zcode` 是唯一例外。**
+**结论：默认就能看到（2026-10-24 起），22/22 全部渠道都覆盖。**
 
 机制：DSH 会把 `listModels` 返回空的 provider **整组隐藏**
 （`dsh-api-session-controller/lib/index.js:604` 的 `.filter(group => group.models.length > 0)`）。
@@ -72,7 +72,7 @@
 
 | 开关 | 结果 |
 | --- | --- |
-| 默认 | **21/22** 渠道可见（合计 163 条，离线兜底下限）；`zcode` 仍 0 条 |
+| 默认 | **22/22** 渠道可见（合计 165 条，离线兜底下限） |
 | `=1` | 22 个账号渠道的 `listModels` **全部 0 条**；未登录唯一可见的是插件自带免密车道兜底 **8 条**（`src/core/runtime.js:15-19`） |
 
 **登录后会刷新**：适配器的远端目录只在**拉取成功**时写缓存（`cline-adapter.ts` 的
@@ -81,8 +81,8 @@
 
 两个必须知道的边界：
 
-1. **`zcode` 是例外**：它的 `listModels` 先过 `ready()` 凭据判定（`zcode-adapter.ts:441`），
-   未登录时无论开关如何都是 0 条 —— 不要承诺「默认就全显示」。
+1. **`zcode` 也曾是例外，已于 2026-10-24 修掉**：它的 `listModels` 原来先过 `ready()` 凭据判定，
+   未登录恒 0 条；现在未就绪时播报 `fallbackModels`（与其余渠道一致）。
 2. **`cline` 已做无凭据保护**：未登录时只播报静态兜底表、**不发远端请求**（否则
    `models.dev` + recommended-models 各 20 s，首屏会白等）。其余渠道无凭据即短路。
 
@@ -112,7 +112,7 @@
 | `autoclaw-intl` OAuth | 可行但工作量大 | Z.ai OAuth loopback（端口白名单 18432/19654/19723/53699）+ 阿里滑块；国际账号无手机号，短信路不通（仍走粘贴）。 |
 | `orcaterm` 书签收号 | 半自动，待实测 | `ot_session` 非 HttpOnly，用户在已登录页点一次书签回传；未知项是 https 页 → `http://127.0.0.1` 的 PNA/混合内容限制。 |
 | `monkeycode` | 维持粘贴 | 设备码 client_id 写死 `monkeyai-runtime`、scope 仅 `device:*`；会话 Cookie HttpOnly ⇒ 内嵌浏览器也取不到。 |
-| 未登录展示模型列表 | **已改为默认显示** | 见 §4：默认展示静态模型表、登录后刷新；`DSH_HIDE_MODELS_WITHOUT_ACCOUNT=1` 才隐藏；`zcode` 例外。 |
+| 未登录展示模型列表 | **已改为默认显示** | 见 §4：默认展示静态模型表、登录后刷新；`DSH_HIDE_MODELS_WITHOUT_ACCOUNT=1` 才隐藏；22/22 渠道一致（zcode 的例外已修）。 |
 | 登录失败无反馈 | **已修** | 12 个渠道原先失败只写日志；现统一 `recordLoginFailure`，`login.poll` 能拿到原因（`scripts/login-failure-reporting-test.mjs` 守卫）。 |
 
 ## 6. 维护约定

@@ -142,6 +142,20 @@ try {
     delete process.env.DSH_HIDE_MODELS_WITHOUT_ACCOUNT
   }
   console.log('ok  未登录渠道默认展示静态模型（kuku 兜底表）；DSH_HIDE_MODELS_WITHOUT_ACCOUNT=1 时隐藏')
+
+  // zcode 曾因 `ready()` 门控在未登录时恒 0 条；现在也播报静态兜底表（22/22 一致）。
+  {
+    const zcodeAdapter = adapters.get('zcode')
+    assert.ok(zcodeAdapter !== undefined, 'zcode 适配器已注册')
+    const zcodeModels = await zcodeAdapter.listModels('zcode')
+    assert.ok(zcodeModels.length > 0, 'zcode 未登录也应展示静态模型表')
+    process.env.DSH_HIDE_MODELS_WITHOUT_ACCOUNT = '1'
+    try {
+      assert.deepEqual(await zcodeAdapter.listModels('zcode'), [], '显式隐藏时 zcode 也必须返回空数组')
+    } finally {
+      delete process.env.DSH_HIDE_MODELS_WITHOUT_ACCOUNT
+    }
+  }
   assert.equal(writes.length, 0, 'mount neither creates nor deletes credentials')
   assert.equal(fetched.some(url => url.includes('opencode') || url.includes('models.dev')), false, 'no OpenCode capability/catalog warmup')
   assert.deepEqual(ctx.accountPool.listAccountsByProvider('opencode'), state.accounts, 'historical account data survives')
