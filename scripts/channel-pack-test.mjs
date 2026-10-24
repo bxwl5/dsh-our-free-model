@@ -116,7 +116,7 @@ try {
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(adapters.has('opencode'), false, 'disabled account provider is not registered')
   // 22 个账号渠道（OpenCode 由 disableOpencode 关闭不计入；已移除的粘贴型渠道不再注册）。
-  assert.equal(adapters.size, 22, 'all other account providers remain registered')
+  assert.equal(adapters.size, 21, 'all other account providers remain registered')
   assert.equal(adapters.has('commandcode'), true, 'Command Code is registered')
   assert.equal(adapters.has('monkeycode'), true, 'MonkeyCode is registered')
   assert.equal(adapters.has('orcaterm'), true, 'OrcaTerm is registered')
@@ -125,7 +125,6 @@ try {
   assert.equal(adapters.has('accio-cn'), true, 'Accio CN is registered')
   assert.equal(adapters.has('officeace'), true, 'OfficeAce is registered')
   assert.equal(adapters.has('autoclaw'), true, 'AutoClaw is registered')
-  assert.equal(adapters.has('autoclaw-intl'), true, 'AutoClaw Intl is registered')
   verifyChannelImagePricing(adapters)
   console.log('ok  22 个账号渠道同步图片计价：缺失及默认方法兜底，厂商计价优先，重复图片与已卸载图片正确计数')
   // 原始行为（两层区分）：未登录的渠道**不进系统模型候选**（listModels 返回 []），
@@ -187,7 +186,7 @@ try {
     const allProviders = [
       'codearts', 'buddy', 'workbuddy', 'lobsterai', 'qoder', 'qodercn', 'trae', 'cline',
       'gemini', 'loomy', 'raccoon', 'minimax', 'zcode', 'commandcode', 'officeace',
-      'accio', 'accio-cn', 'orcaterm', 'kuku', 'monkeycode', 'autoclaw', 'autoclaw-intl',
+      'accio', 'accio-cn', 'orcaterm', 'kuku', 'monkeycode', 'autoclaw',
     ]
     const status = await call('provider.status', { providers: allProviders })
     for (const provider of allProviders) {
@@ -284,10 +283,10 @@ try {
     visit(node.children)
   }
   visit(tree)
-  assert.equal(cards.length, 22)
+  assert.equal(cards.length, 21)
   assert.equal(cards.includes('opencode'), false)
   assert.deepEqual([...cards].sort(), [...adapters.keys()].sort(), 'UI and mounted account providers agree')
-  console.log('ok  actual channel page: 22 account cards, OpenCode removed')
+  console.log('ok  actual channel page: 21 account cards, OpenCode removed')
   await verifyChannelModelActions()
   await verifyChannelCreditsUi()
   console.log('ok  共享渠道余额（13 条额度契约）：能力、失败原因、重试、签到反馈和请求交错')

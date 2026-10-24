@@ -25,7 +25,7 @@
 - `vendor/channel-pack/src/index.ts` 的注册段：22 个账号 provider（OFM 挂载时关闭上游 OpenCode 账号接入，故不计入）。
 
 **纯粘贴渠道 3 个**（上游没有可脚本化的授权流程，只能用 `account.adopt` 粘贴 Cookie / 令牌）：
-`monkeycode`、`orcaterm`、`autoclaw-intl`。
+`monkeycode`、`orcaterm`。
 `ADOPTABLE_CHANNELS` 因此有 3 条。**Accio 家族的粘贴兜底已移除**（2026-10-24，真机确认
 浏览器授权可用后按用户要求撤掉）——它们现在只有浏览器授权一条路径。
 
@@ -100,7 +100,6 @@
 | 19 | `kuku` · KukuAI | 粘贴 Cookie（`BDUSS`） | ✅ | ❌ 静态（上游无公开目录端点） | ❌ | ❌ | ❌ |
 | 20 | `monkeycode` · MonkeyCode | 粘贴 Cookie（`nebula_session`） | ✅（建任务 + WebSocket 两步） | ✅ 远端 | ✅（`/api/v1/users/wallet`） | ✅（`wallet/checkin`，每次奖励 100 积分） | ❌ |
 | 21 | `autoclaw` · AutoClaw | 粘贴令牌（上游 OAuth 被阿里云验证码 SDK 阻断） | ✅ | ✅ 远端（`autoclaw-model-config`） | ❌ | ❌ | ❌ |
-| 22 | `autoclaw-intl` · AutoClaw 国际版 | 粘贴令牌（国际站） | ✅ | ✅ 远端 | ❌ | ❌ | ❌ |
 
 **按维度汇总**：
 
@@ -108,10 +107,10 @@
 | --- | --- | --- |
 | 对话 | 22（全部） | — |
 | 模型目录 | 非静态目录 19 条（其中 `qoder`/`qodercn` 来自官方客户端本机解密文件 `catalog-v6`） | 仅静态兜底表 3 条：`gemini`、`orcaterm`、`kuku` |
-| 额度查询 | **17 条**（原 13 条 + `commandcode` `monkeycode` `accio` `accio-cn`） | 5 条：`officeace` `orcaterm` `kuku` `autoclaw` `autoclaw-intl`（上游无额度端点） |
+| 额度查询 | **17 条**（原 13 条 + `commandcode` `monkeycode` `accio` `accio-cn`） | 4 条：`orcaterm` `kuku` `autoclaw` `officeace`（前三个上游无额度端点；officeace 有积分但领取端点未接） |
 | 签到 | **10 条**（原 9 条 + `monkeycode`） | 服务端显式守卫「无签到端点」3 条（`workbuddy` `cline` `raccoon`）+ `gemini`/`commandcode`/`accio`/`accio-cn`（无 claim 能力）+ 上游无签到 5 条 |
 | 图片（双桥） | 9 条：`buddy` `workbuddy` `lobsterai` `qoder` `qodercn` `cline` `raccoon` `gemini` `zcode` | 单桥 3 条：`trae` `loomy` `minimax`；未接 10 条 |
-| 粘贴型登录 | 纯粘贴 3 条（`monkeycode` `orcaterm` `autoclaw-intl`） | — |
+| 粘贴型登录 | 纯粘贴 2 条（`monkeycode` `orcaterm`） | — |
 
 ---
 
@@ -278,7 +277,7 @@
   其余 CheckinStatus 字段如实留空（不编数字）。
 - 图片：未接字节桥。
 
-### 3.18 AutoClaw（国内 / 国际）（`autoclaw` / `autoclaw-intl`）
+### 3.18 AutoClaw（国内）（`autoclaw`）
 
 - 登录：**国内站 = 手机号 + 短信验证码**（本地弹窗页 `autoclaw-login-page.ts`，协议 `autoclaw-sms.ts`，
   真机已验证 24h token）；**国际站仍粘贴令牌** —— 其 OAuth 回调端口有白名单

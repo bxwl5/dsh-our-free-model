@@ -25,7 +25,7 @@ function parseAdoptableChannels() {
   const source = read('vendor/channel-pack/src/channel-pack-rpc.ts')
   const match = /const ADOPTABLE_CHANNELS[^=]*=\s*\{([\s\S]*?)\n\}/.exec(source)
   assert.ok(match !== null, 'ADOPTABLE_CHANNELS 不见了')
-  // 键可能带引号（`'autoclaw-intl'`），两种写法都要认。
+  // 键可能带引号，两种写法都要认。
   return new Set([...match[1].matchAll(/^ {2}'?([a-z][a-z0-9-]*)'?: \{/gm)].map(([, id]) => id))
 }
 
@@ -49,8 +49,8 @@ const client = parseClientLogins()
 const adoptable = parseAdoptableChannels()
 const doc = parseDocTiers()
 
-// ── 1) 界面声明本身：22 张卡片，取值都在已知集合内 ──
-assert.equal(client.size, 22, `CHANNEL_PROVIDERS 应为 22 条，实际 ${client.size}`)
+// ── 1) 界面声明本身：21 张卡片（2026-10-25 移除 autoclaw-intl），取值都在已知集合内 ──
+assert.equal(client.size, 21, `CHANNEL_PROVIDERS 应为 21 条，实际 ${client.size}`)
 for (const [id, login] of client) {
   assert.ok(CLIENT_TO_TIER[login] !== undefined, `${id} 的 login 取值未知：${login}`)
 }
@@ -88,11 +88,11 @@ assert.ok(
 // 纯粘贴渠道必须给出「去官网登录 + 抄哪一段」的引导，否则用户不知道去哪拿 Cookie。
 {
   const lines = read('client.js').split('\n')
-  for (const provider of ['monkeycode', 'orcaterm', 'autoclaw-intl']) {
+  for (const provider of ['monkeycode', 'orcaterm']) {
     const line = lines.find((item) => item.includes(`id: '${provider}'`))
     assert.ok(line !== undefined, `${provider} 卡片必须存在`)
     assert.ok(line.includes('loginPage:'), `${provider} 必须带官网登录页链接`)
-    if (provider !== 'autoclaw-intl') {
+    {
       // 允许带说明（上游改过字段名时会在括号里注明旧名），只要求写了 cookieName。
       assert.ok(/cookieName: '[^']+'/.test(line), `${provider} 必须写明要复制的 Cookie 名`)
     }

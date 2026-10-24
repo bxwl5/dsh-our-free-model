@@ -25,11 +25,11 @@
  */
 
 /** AutoClaw 地区。 */
-export type AutoClawRegion = 'cn' | 'intl'
+export type AutoClawRegion = 'cn'
 
 /** AutoClaw 产品配置。 */
 export interface AutoClawProduct {
-  id: 'autoclaw' | 'autoclaw-intl'
+  id: 'autoclaw'
   displayName: string
   region: AutoClawRegion
   /** API 基址。 */
@@ -75,18 +75,8 @@ export const AUTOCLAW: AutoClawProduct = {
   fallbackModels: AUTOCLAW_FALLBACK_MODELS,
 }
 
-/** 国际版。 */
-export const AUTOCLAW_INTL: AutoClawProduct = {
-  ...AUTOCLAW,
-  id: 'autoclaw-intl',
-  displayName: 'AutoClaw 国际版',
-  region: 'intl',
-  apiBase: 'https://autoglm-api.autoglm.ai',
-  defaultCredentialRef: 'AUTOCLAW_INTL_TOKEN',
-}
-
-/** 全部产品。 */
-export const ALL_AUTOCLAW_PRODUCTS: readonly AutoClawProduct[] = [AUTOCLAW, AUTOCLAW_INTL]
+/** 全部产品（国际版已于 2026-10-25 按用户要求整渠道移除，仅剩国内站）。 */
+export const ALL_AUTOCLAW_PRODUCTS: readonly AutoClawProduct[] = [AUTOCLAW]
 
 /** 按 id 取产品配置。 */
 export function autoClawProductById(id: string): AutoClawProduct | undefined {

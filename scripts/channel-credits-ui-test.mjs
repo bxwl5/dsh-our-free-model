@@ -235,7 +235,7 @@ export async function verifyChannelCreditsUi() {
   // 按钮文案必须是「校验凭据」；OAuth 型渠道（如 buddy）保持「续期」。
   // 卡片按钮只在有账号时渲染（accountsCount > 0），所以走 account.list 回 1 行。
   // ⚠️ 渠道选择：loader effect 的第一道门是 `CHANNEL_CREDITS[channel.id]`，
-  // 没有余额能力的渠道（orcaterm / autoclaw-intl）不会挂 loader effect，
+  // 没有余额能力的渠道（orcaterm）不会挂 loader effect，
   // mount 的 isLoader 探测就会失败。cookie 型里**有**余额能力的只有 monkeycode；
   // token / 其余 cookie 型渠道的文案分支与它共用同一个 `recheckOnly` 判定，
   // 由 monkeycode 一条锁死即可。

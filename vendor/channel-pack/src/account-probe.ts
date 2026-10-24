@@ -355,7 +355,7 @@ async function probeWithAdapter(
     // `codearts: no usable credential; log in first` —— 明明登录的是 autoclaw /
     // kuku / monkeycode，却被指向 codearts 去重新登录，方向完全错（本次用户报障）。
     //
-    // 这些渠道（autoclaw / autoclaw-intl / kuku / monkeycode / orcaterm /
+    // 这些渠道（autoclaw / kuku / monkeycode / orcaterm /
     // raccoon / officeace / accio 家族）**不写 `modelRateLimits`**，本来就没有
     // 「重测」语义，如实说明比伪造一次失败更有用。
     return {

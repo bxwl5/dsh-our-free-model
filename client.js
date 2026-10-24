@@ -2739,7 +2739,6 @@ window.__ModuleLoader__.load({
       { id: 'accio-cn', name: 'Accio 国内版', org: '阿里系', accent: '#FF8C42', note: '浏览器授权，国内站', login: 'browser' },
       { id: 'officeace', name: 'OfficeAce 果办', org: '华为云', accent: '#C7000B', note: '浏览器授权，扫码登录', login: 'browser' },
       { id: 'autoclaw', name: 'AutoClaw', org: '智谱', accent: '#3D5AFE', note: '手机号 + 短信验证码登录，国内站', login: 'browser' },
-      { id: 'autoclaw-intl', name: 'AutoClaw 国际版', org: '智谱', accent: '#7986CB', note: '粘贴令牌，国际站', login: 'token', loginPage: 'https://autoglm.ai' },
     ]
 
     /** 与现有 RPC 的能力对应：余额、每日领取及独立签到状态分别判断。 */
@@ -2869,7 +2868,7 @@ window.__ModuleLoader__.load({
       // `account.adopt` 支持的渠道一一对应。
       const pasteMode = channel.login === 'cookie' || channel.login === 'token'
       // 「续期」这个措辞只对**有续期端点**的渠道成立。Cookie / 长期 Key 型渠道
-      // （monkeycode / orcaterm / kuku / commandcode / autoclaw-intl）点下去只是
+      // （monkeycode / orcaterm / kuku / commandcode）点下去只是
       // 重新校验凭据形状，说「续期」会让用户以为能延长登录态（审计发现）。
       const recheckOnly = channel.login === 'cookie' || channel.login === 'token'
       const [pasteOpen, setPasteOpen] = useState(false)

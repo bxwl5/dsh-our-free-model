@@ -57,7 +57,7 @@ import {
 } from './monkeycode-auth.js'
 import type { MonkeyCodeCredential } from './monkeycode.js'
 import { MONKEYCODE } from './monkeycode-product.js'
-import { AUTOCLAW, AUTOCLAW_INTL } from './autoclaw-product.js'
+import { AUTOCLAW } from './autoclaw-product.js'
 import { refreshAutoclawCredential, resolveAutoclawDeviceId } from './autoclaw-sms.js'
 import { startAutoclawLoginFlow } from './autoclaw-login-page.js'
 import { resolveChannelPackHome } from './channel-pack-store.js'
@@ -2434,22 +2434,6 @@ function registerChannelPackEndpoints(
                 cookie = typeof parsed.access_token === 'string' ? parsed.access_token : ''
               } catch { cookie = '' }
               if (cookie === '') throw new Error('凭据不可用，请重新登录')
-              break
-            }
-            case AUTOCLAW_INTL.id: {
-              // AutoClaw 国际版：**没有 refresh_token**（OAuth 受阿里滑块限制，登录拿不到），
-              // 因此这里只能做凭据复核；真续期只有国内站短信登录那条链路才有。
-              // 缺了本分支时点刷新会抛 `Unknown provider: autoclaw-intl`。
-              const resolved = await ctx.credentials.resolve(credentialRef(entry.credentialRef))
-              if (resolved === undefined) throw new Error('凭据未配置')
-              const current = JSON.parse(resolved.value) as AutoClawCredential
-              if (typeof current.access_token !== 'string' || current.access_token === '') {
-                throw new Error('凭据不可用，请重新粘贴令牌')
-              }
-              // 没有 refresh_token 的凭据，落库的 `refreshable` 必须保持 false。
-              await pool.updateAccount(entry.id, {
-                refreshable: typeof current.refresh_token === 'string' && current.refresh_token !== '',
-              })
               break
             }
             case COMMANDCODE.id: {
@@ -4882,13 +4866,6 @@ const ADOPTABLE_CHANNELS: Readonly<Record<string, AdoptableChannel>> = {
     parse: (text) => {
       const cookie = normalizeOrcaTermCookie(text)
       return cookie === undefined ? undefined : { access_token: cookie, created_at: Date.now() }
-    },
-  },
-  'autoclaw-intl': {
-    hint: '访问令牌（Bearer token，国际站）',
-    parse: (text) => {
-      const parsed = parseAutoClawCredential({ token: text })
-      return parsed === undefined ? undefined : { ...parsed }
     },
   },
 }

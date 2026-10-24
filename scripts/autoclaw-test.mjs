@@ -9,7 +9,7 @@ async function main() {
     isCredentialUsable, isCredentialExpired, autoClawHeaders, autoClawCatalogHeaders, chatEndpoint,
     parseCredential, parseModelConfig,
   } = await import('../vendor/channel-pack/src/autoclaw.ts')
-  const { AUTOCLAW, AUTOCLAW_INTL, AUTOCLAW_MODEL_CONFIG_PATH, AUTOCLAW_CALLBACK_PORTS } = await import('../vendor/channel-pack/src/autoclaw-product.ts')
+  const { AUTOCLAW, AUTOCLAW_MODEL_CONFIG_PATH, AUTOCLAW_CALLBACK_PORTS } = await import('../vendor/channel-pack/src/autoclaw-product.ts')
   const { AutoClawAdapter } = await import('../vendor/channel-pack/src/autoclaw-adapter.ts')
   const { fetch: realFetch } = await import('undici')
 
@@ -39,7 +39,6 @@ async function main() {
 
   // ── 端点 ──
   assert.equal(chatEndpoint(AUTOCLAW), 'https://autoglm-acceleration-api.zhipuai.cn/autoclaw-proxy/proxy/autoclaw/chat/completions')
-  assert.equal(chatEndpoint(AUTOCLAW_INTL), 'https://autoglm-api.autoglm.ai/autoclaw-proxy/proxy/autoclaw/chat/completions')
   // ⚠️ 模型目录路径与聊天端点不同：实测 `GET /proxy/autoclaw-model-config` 是 404，
   // 真实路径带 `autoclaw-proxy` 前缀（2026-10-24 由团队审计发现并修）。
   assert.equal(AUTOCLAW_MODEL_CONFIG_PATH, '/autoclaw-proxy/proxy/autoclaw-model-config')

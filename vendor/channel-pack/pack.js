@@ -46879,14 +46879,6 @@ var AUTOCLAW = {
   defaultCredentialRef: "AUTOCLAW_TOKEN",
   fallbackModels: AUTOCLAW_FALLBACK_MODELS
 };
-var AUTOCLAW_INTL = {
-  ...AUTOCLAW,
-  id: "autoclaw-intl",
-  displayName: "AutoClaw \u56FD\u9645\u7248",
-  region: "intl",
-  apiBase: "https://autoglm-api.autoglm.ai",
-  defaultCredentialRef: "AUTOCLAW_INTL_TOKEN"
-};
 var AUTOCLAW_MODEL_CONFIG_PATH = "/autoclaw-proxy/proxy/autoclaw-model-config";
 
 // vendor/channel-pack/src/autoclaw.ts
@@ -46920,33 +46912,6 @@ function autoClawCatalogHeaders(product, credential) {
 }
 function chatEndpoint(product) {
   return `${product.apiBase}${product.proxyPrefix}/chat/completions`;
-}
-var TOKEN_MIN = 16;
-var TOKEN_MAX = 4096;
-function normalizeAccessToken(raw) {
-  let token = raw.trim();
-  token = token.replace(/^bearer\s+/i, "");
-  token = token.replace(/^"([^"]*)"$/, "$1").trim();
-  if (token.length < TOKEN_MIN || token.length > TOKEN_MAX) return void 0;
-  if (!/^[\x21-\x7E]+$/.test(token)) return void 0;
-  return token;
-}
-function parseCredential2(value) {
-  if (!isRecord9(value)) return void 0;
-  const tokenRaw = stringValue8(value.access_token) ?? stringValue8(value.accessToken) ?? stringValue8(value.token);
-  if (tokenRaw === void 0) return void 0;
-  const token = normalizeAccessToken(tokenRaw);
-  if (token === void 0) return void 0;
-  const expiresRaw = value.expire_time ?? value.expiresAt ?? value.expires_at;
-  const expireTime = typeof expiresRaw === "number" && Number.isFinite(expiresRaw) ? expiresRaw < 1e12 ? expiresRaw * 1e3 : expiresRaw : void 0;
-  return {
-    access_token: token,
-    ...stringValue8(value.refresh_token) === void 0 && stringValue8(value.refreshToken) === void 0 ? {} : { refresh_token: stringValue8(value.refresh_token) ?? stringValue8(value.refreshToken) },
-    ...expireTime === void 0 ? {} : { expire_time: expireTime },
-    ...stringValue8(value.account_id) === void 0 ? {} : { account_id: stringValue8(value.account_id) },
-    ...stringValue8(value.nickname) === void 0 ? {} : { nickname: stringValue8(value.nickname) },
-    created_at: Date.now()
-  };
 }
 function parseModelConfig(value) {
   const list = Array.isArray(value) ? value : isRecord9(value) && Array.isArray(value.models) ? value.models : isRecord9(value) && Array.isArray(value.data) ? value.data : void 0;
@@ -48324,7 +48289,7 @@ var CODEARTS_EXPIRY_ACCESSORS = {
   identityOf: (credential) => credential.access_key_id ?? ""
 };
 var CODEARTS_CREDENTIAL_REF = "CODEARTS_ACCESS_TOKEN";
-function parseCredential3(value) {
+function parseCredential2(value) {
   try {
     return JSON.parse(value);
   } catch {
@@ -48378,7 +48343,7 @@ var CodeArtsAuth = class extends Service2 {
   async readCredential(refName) {
     const resolved = await this.ctx.credentials.resolve(credentialRef2(refName));
     if (!resolved) return void 0;
-    return parseCredential3(resolved.value);
+    return parseCredential2(resolved.value);
   }
   /**
    * 判断两份凭据是否「同一份」（用于识别他处是否已经续过）。
@@ -48437,7 +48402,7 @@ var CodeArtsAuth = class extends Service2 {
       void this.refreshModels(options.pool).catch(() => {
       });
     }
-    const credential = parseCredential3(flow.access);
+    const credential = parseCredential2(flow.access);
     if (options.accountId && options.pool) {
       const expiresAt = credential?.expires_at ? Date.parse(credential.expires_at) : void 0;
       await options.pool.addAccount({
@@ -48595,7 +48560,7 @@ var CodeArtsAuth = class extends Service2 {
           if (entry.refreshable) await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        credential = parseCredential3(resolved.value);
+        credential = parseCredential2(resolved.value);
         if (credential === void 0 || !isCodeArtsRefreshable(credential)) {
           if (entry.refreshable) await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -48702,7 +48667,7 @@ var CodeArtsAuth = class extends Service2 {
     for (const entry of pool.listAccountsByProvider("codearts")) {
       const resolved = await this.ctx.credentials.resolve(credentialRef2(entry.credentialRef));
       if (!resolved) continue;
-      const credential = parseCredential3(resolved.value);
+      const credential = parseCredential2(resolved.value);
       if (credential?.access_key_id && credential.secret_access_key) return credential;
     }
     return void 0;
@@ -49041,7 +49006,7 @@ var BUDDY_EXPIRY_ACCESSORS = {
   identityOf: (credential) => credential.access_token ?? ""
 };
 var BUDDY_CREDENTIAL_REF = "BUDDY_ACCESS_TOKEN";
-function parseCredential4(value) {
+function parseCredential3(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -49100,7 +49065,7 @@ var BuddyAuth = class extends Service3 {
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential4(flow.access);
+    const credential = parseCredential3(flow.access);
     if (flowOptions.accountId && flowOptions.pool) {
       await flowOptions.pool.addAccount({
         id: flowOptions.accountId,
@@ -49132,7 +49097,7 @@ var BuddyAuth = class extends Service3 {
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential4(credentialJson);
+    const credential = parseCredential3(credentialJson);
     if (accountId && pool) {
       await pool.updateAccount(accountId, {
         nickname: credential?.nickname ?? accountId,
@@ -49150,7 +49115,7 @@ var BuddyAuth = class extends Service3 {
     let refreshable = false;
     const resolved = await this.ctx.credentials.resolve(ref);
     if (resolved) {
-      const credential = parseCredential4(resolved.value);
+      const credential = parseCredential3(resolved.value);
       if (credential) {
         expiresAt = credentialExpiresAtMs(credential);
         refreshable = isRefreshable(credential) && !this.refreshTokenInvalid;
@@ -49169,7 +49134,7 @@ var BuddyAuth = class extends Service3 {
     const ref = credentialRef3(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
-    const credential = parseCredential4(resolved.value);
+    const credential = parseCredential3(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isRefreshable(credential)) {
       throw new RefreshTokenExpiredError2("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -49223,7 +49188,7 @@ var BuddyAuth = class extends Service3 {
     const ref = credentialRef3(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential4(resolved.value);
+    const credential = parseCredential3(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isRefreshable(credential)) {
       throw new RefreshTokenExpiredError2("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -49270,7 +49235,7 @@ var BuddyAuth = class extends Service3 {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        const credential = parseCredential4(resolved.value);
+        const credential = parseCredential3(resolved.value);
         if (!credential || !isRefreshable(credential)) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -49319,7 +49284,7 @@ var BuddyAuth = class extends Service3 {
   scheduleRefresh() {
     void this.ctx.credentials.resolve(credentialRef3(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
-      const credential = parseCredential4(resolved.value);
+      const credential = parseCredential3(resolved.value);
       if (!credential || !isRefreshable(credential)) return;
       const expiresAt = credentialExpiresAtMs(credential);
       if (expiresAt !== void 0) this.scheduler.arm(expiresAt);
@@ -49329,7 +49294,7 @@ var BuddyAuth = class extends Service3 {
   async checkExpired() {
     const resolved = await this.ctx.credentials.resolve(credentialRef3(this.credentialRefName));
     if (!resolved) return true;
-    const credential = parseCredential4(resolved.value);
+    const credential = parseCredential3(resolved.value);
     return credential === void 0 ? true : isExpired(credential);
   }
   /**
@@ -49350,7 +49315,7 @@ var BuddyAuth = class extends Service3 {
     }
     const resolved = await this.ctx.credentials.resolve(credentialRef3(this.credentialRefName));
     if (!resolved) return [];
-    const credential = parseCredential4(resolved.value);
+    const credential = parseCredential3(resolved.value);
     if (!credential) return [];
     return fetchModels3(credential, this.fetchImpl, void 0, this.product);
   }
@@ -49538,7 +49503,7 @@ var RefreshTokenExpiredError3 = class extends Error {
     this.name = "RefreshTokenExpiredError";
   }
 };
-function parseCredential5(value) {
+function parseCredential4(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -49655,7 +49620,7 @@ var LobsteraiAuth = class extends Service4 {
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential5(flow.access);
+    const credential = parseCredential4(flow.access);
     if (flowOptions.accountId !== void 0 && flowOptions.pool !== void 0) {
       await flowOptions.pool.addAccount({
         id: flowOptions.accountId,
@@ -49730,7 +49695,7 @@ var LobsteraiAuth = class extends Service4 {
     let refreshable = false;
     const resolved = await this.ctx.credentials.resolve(ref);
     if (resolved) {
-      const credential = parseCredential5(resolved.value);
+      const credential = parseCredential4(resolved.value);
       if (credential) {
         expiresAt = lobsteraiCredentialExpiresAtMs(credential);
         refreshable = isLobsteraiRefreshable(credential) && !this.refreshTokenInvalid;
@@ -49756,7 +49721,7 @@ var LobsteraiAuth = class extends Service4 {
     const ref = credentialRef4(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
-    const credential = parseCredential5(resolved.value);
+    const credential = parseCredential4(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isLobsteraiRefreshable(credential)) {
       throw new RefreshTokenExpiredError3("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -49798,7 +49763,7 @@ var LobsteraiAuth = class extends Service4 {
     const ref = credentialRef4(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential5(resolved.value);
+    const credential = parseCredential4(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isLobsteraiRefreshable(credential)) {
       throw new RefreshTokenExpiredError3("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -49851,7 +49816,7 @@ var LobsteraiAuth = class extends Service4 {
       try {
         const resolved = await this.ctx.credentials.resolve(credentialRef4(entry.credentialRef));
         if (!resolved) continue;
-        const credential = parseCredential5(resolved.value);
+        const credential = parseCredential4(resolved.value);
         if (credential === void 0) continue;
         const target = lobsteraiDisplayNickname(credential, entry.id);
         if (target !== entry.nickname) {
@@ -49932,7 +49897,7 @@ var LobsteraiAuth = class extends Service4 {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        const credential = parseCredential5(resolved.value);
+        const credential = parseCredential4(resolved.value);
         if (!credential || !isLobsteraiRefreshable(credential)) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -49981,7 +49946,7 @@ var LobsteraiAuth = class extends Service4 {
   scheduleRefresh() {
     void this.ctx.credentials.resolve(credentialRef4(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
-      const credential = parseCredential5(resolved.value);
+      const credential = parseCredential4(resolved.value);
       if (!credential || !isLobsteraiRefreshable(credential)) return;
       const expiresAt = lobsteraiCredentialExpiresAtMs(credential);
       if (expiresAt !== void 0) this.scheduler.arm(expiresAt);
@@ -49991,7 +49956,7 @@ var LobsteraiAuth = class extends Service4 {
   async checkExpired() {
     const resolved = await this.ctx.credentials.resolve(credentialRef4(this.credentialRefName));
     if (!resolved) return true;
-    const credential = parseCredential5(resolved.value);
+    const credential = parseCredential4(resolved.value);
     return credential === void 0 ? true : isLobsteraiExpired(credential);
   }
   /**
@@ -50003,7 +49968,7 @@ var LobsteraiAuth = class extends Service4 {
   async resolveStoredCredential() {
     const resolved = await this.ctx.credentials.resolve(credentialRef4(this.credentialRefName));
     if (!resolved) return void 0;
-    return parseCredential5(resolved.value);
+    return parseCredential4(resolved.value);
   }
   /**
    * `GET /api/models/available` → 远端模型列表。
@@ -50167,7 +50132,7 @@ var RefreshTokenExpiredError4 = class extends Error {
     this.name = "RefreshTokenExpiredError";
   }
 };
-function parseCredential6(value) {
+function parseCredential5(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -50262,7 +50227,7 @@ var QoderAuth = class extends Service5 {
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential6(flow.access);
+    const credential = parseCredential5(flow.access);
     if (flowOptions.accountId !== void 0 && flowOptions.pool !== void 0) {
       await flowOptions.pool.addAccount({
         id: flowOptions.accountId,
@@ -50292,7 +50257,7 @@ var QoderAuth = class extends Service5 {
     let refreshable = false;
     const resolved = await this.ctx.credentials.resolve(ref);
     if (resolved) {
-      const credential = parseCredential6(resolved.value);
+      const credential = parseCredential5(resolved.value);
       if (credential) {
         expiresAt = qoderCredentialExpiresAtMs(credential);
         refreshable = isQoderRefreshable(credential) && !this.refreshTokenInvalid;
@@ -50318,7 +50283,7 @@ var QoderAuth = class extends Service5 {
     const ref = credentialRef5(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
-    const credential = parseCredential6(resolved.value);
+    const credential = parseCredential5(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isQoderRefreshable(credential)) {
       throw new RefreshTokenExpiredError4("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -50360,7 +50325,7 @@ var QoderAuth = class extends Service5 {
     const ref = credentialRef5(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential6(resolved.value);
+    const credential = parseCredential5(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isQoderRefreshable(credential)) {
       throw new RefreshTokenExpiredError4("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -50443,7 +50408,7 @@ var QoderAuth = class extends Service5 {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        const credential = parseCredential6(resolved.value);
+        const credential = parseCredential5(resolved.value);
         if (!credential || !isQoderRefreshable(credential)) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -50493,7 +50458,7 @@ var QoderAuth = class extends Service5 {
   scheduleRefresh() {
     void this.ctx.credentials.resolve(credentialRef5(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
-      const credential = parseCredential6(resolved.value);
+      const credential = parseCredential5(resolved.value);
       if (!credential || !isQoderRefreshable(credential)) return;
       const expiresAt = qoderCredentialExpiresAtMs(credential);
       if (expiresAt !== void 0) this.scheduler.arm(expiresAt);
@@ -50503,7 +50468,7 @@ var QoderAuth = class extends Service5 {
   async checkExpired() {
     const resolved = await this.ctx.credentials.resolve(credentialRef5(this.credentialRefName));
     if (!resolved) return true;
-    const credential = parseCredential6(resolved.value);
+    const credential = parseCredential5(resolved.value);
     return credential === void 0 ? true : isQoderExpired(credential);
   }
   /**
@@ -50514,7 +50479,7 @@ var QoderAuth = class extends Service5 {
   async resolveStoredCredential() {
     const resolved = await this.ctx.credentials.resolve(credentialRef5(this.credentialRefName));
     if (!resolved) return void 0;
-    return parseCredential6(resolved.value);
+    return parseCredential5(resolved.value);
   }
 };
 
@@ -50911,7 +50876,7 @@ var RefreshTokenExpiredError5 = class extends Error {
     this.name = "RefreshTokenExpiredError";
   }
 };
-function parseCredential7(value) {
+function parseCredential6(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -51010,7 +50975,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
     this.lastRefreshError = void 0;
     this.modelsCache = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential7(flow.access);
+    const credential = parseCredential6(flow.access);
     if (flowOptions.accountId !== void 0 && flowOptions.pool !== void 0) {
       await flowOptions.pool.addAccount({
         id: flowOptions.accountId,
@@ -51043,7 +51008,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
     let refreshable = false;
     const resolved = await this.ctx.credentials.resolve(ref);
     if (resolved) {
-      const credential = parseCredential7(resolved.value);
+      const credential = parseCredential6(resolved.value);
       if (credential) {
         expiresAt = traeCredentialExpiresAtMs(credential);
         refreshable = isTraeRefreshable(credential) && !this.refreshTokenInvalid;
@@ -51068,7 +51033,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
     const ref = credentialRef6(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
-    const credential = parseCredential7(resolved.value);
+    const credential = parseCredential6(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isTraeRefreshable(credential)) {
       throw new RefreshTokenExpiredError5("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -51111,7 +51076,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
     const ref = credentialRef6(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential7(resolved.value);
+    const credential = parseCredential6(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isTraeRefreshable(credential)) {
       throw new RefreshTokenExpiredError5("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -51193,7 +51158,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        const credential = parseCredential7(resolved.value);
+        const credential = parseCredential6(resolved.value);
         if (!credential || !isTraeRefreshable(credential)) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -51263,7 +51228,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
         const ref = credentialRef6(entry.credentialRef);
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) continue;
-        let credential = parseCredential7(resolved.value);
+        let credential = parseCredential6(resolved.value);
         if (credential === void 0) continue;
         if ((credential.phone === void 0 || credential.phone.length === 0) && (credential.email === void 0 || credential.email.length === 0)) {
           const info = await this.fetchUserContact(credential);
@@ -51329,7 +51294,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
   scheduleRefresh() {
     void this.ctx.credentials.resolve(credentialRef6(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
-      const credential = parseCredential7(resolved.value);
+      const credential = parseCredential6(resolved.value);
       if (!credential || !isTraeRefreshable(credential)) return;
       const expiresAt = traeCredentialExpiresAtMs(credential);
       if (expiresAt !== void 0) this.scheduler.arm(expiresAt);
@@ -51339,7 +51304,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
   async checkExpired() {
     const resolved = await this.ctx.credentials.resolve(credentialRef6(this.credentialRefName));
     if (!resolved) return true;
-    const credential = parseCredential7(resolved.value);
+    const credential = parseCredential6(resolved.value);
     return credential === void 0 ? true : isTraeExpired(credential);
   }
   /**
@@ -51376,7 +51341,7 @@ var TraeAuth = class _TraeAuth extends Service6 {
     if (credential === void 0) {
       const resolved = await this.ctx.credentials.resolve(credentialRef6(this.credentialRefName));
       if (!resolved) return [];
-      credential = parseCredential7(resolved.value);
+      credential = parseCredential6(resolved.value);
       if (credential === void 0) return [];
     }
     if (credential.access_token.length === 0) return [];
@@ -51656,7 +51621,7 @@ var RefreshTokenExpiredError6 = class extends Error {
     this.name = "RefreshTokenExpiredError";
   }
 };
-function parseCredential8(value) {
+function parseCredential7(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -51756,7 +51721,7 @@ var ClineAuth = class extends Service7 {
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
     this.scheduleRefresh();
-    const credential = parseCredential8(flow.access);
+    const credential = parseCredential7(flow.access);
     if (flowOptions.accountId !== void 0 && flowOptions.pool !== void 0) {
       await flowOptions.pool.addAccount({
         id: flowOptions.accountId,
@@ -51787,7 +51752,7 @@ var ClineAuth = class extends Service7 {
     let refreshable = false;
     const resolved = await this.ctx.credentials.resolve(ref);
     if (resolved) {
-      const credential = parseCredential8(resolved.value);
+      const credential = parseCredential7(resolved.value);
       if (credential) {
         expiresAt = clineCredentialExpiresAtMs(credential);
         refreshable = isClineRefreshable(credential) && !this.refreshTokenInvalid;
@@ -51813,7 +51778,7 @@ var ClineAuth = class extends Service7 {
     const ref = credentialRef7(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
-    const credential = parseCredential8(resolved.value);
+    const credential = parseCredential7(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isClineRefreshable(credential)) {
       throw new RefreshTokenExpiredError6("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -51855,7 +51820,7 @@ var ClineAuth = class extends Service7 {
     const ref = credentialRef7(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential8(resolved.value);
+    const credential = parseCredential7(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isClineRefreshable(credential)) {
       throw new RefreshTokenExpiredError6("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -51939,7 +51904,7 @@ var ClineAuth = class extends Service7 {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
-        const credential = parseCredential8(resolved.value);
+        const credential = parseCredential7(resolved.value);
         if (!credential || !isClineRefreshable(credential)) {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
@@ -51988,7 +51953,7 @@ var ClineAuth = class extends Service7 {
   scheduleRefresh() {
     void this.ctx.credentials.resolve(credentialRef7(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
-      const credential = parseCredential8(resolved.value);
+      const credential = parseCredential7(resolved.value);
       if (!credential || !isClineRefreshable(credential)) return;
       const expiresAt = clineCredentialExpiresAtMs(credential);
       if (expiresAt !== void 0) this.scheduler.arm(expiresAt);
@@ -51998,7 +51963,7 @@ var ClineAuth = class extends Service7 {
   async checkExpired() {
     const resolved = await this.ctx.credentials.resolve(credentialRef7(this.credentialRefName));
     if (!resolved) return true;
-    const credential = parseCredential8(resolved.value);
+    const credential = parseCredential7(resolved.value);
     return credential === void 0 ? true : isClineExpired(credential);
   }
   /**
@@ -52009,7 +51974,7 @@ var ClineAuth = class extends Service7 {
   async resolveStoredCredential() {
     const resolved = await this.ctx.credentials.resolve(credentialRef7(this.credentialRefName));
     if (!resolved) return void 0;
-    return parseCredential8(resolved.value);
+    return parseCredential7(resolved.value);
   }
 };
 
@@ -52923,7 +52888,7 @@ var RefreshTokenExpiredError7 = class extends Error {
     this.name = "RefreshTokenExpiredError";
   }
 };
-function parseCredential9(value) {
+function parseCredential8(value) {
   try {
     const parsed = JSON.parse(value);
     return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
@@ -53066,7 +53031,7 @@ var LoomyAuth = class extends Service8 {
   /** 解析当前单凭据（默认 ref）。 */
   async resolveDefaultCredential() {
     const resolved = await this.ctx.credentials.resolve(credentialRef8(this.credentialRefName));
-    return resolved === void 0 ? void 0 : parseCredential9(resolved.value);
+    return resolved === void 0 ? void 0 : parseCredential8(resolved.value);
   }
   /** 只读登录状态。 */
   async status() {
@@ -53115,7 +53080,7 @@ var LoomyAuth = class extends Service8 {
     const ref = credentialRef8(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-    const credential = parseCredential9(resolved.value);
+    const credential = parseCredential8(resolved.value);
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     await this.probeCredential(credential);
     await syncAccountExpiry({
@@ -53182,7 +53147,7 @@ var LoomyAuth = class extends Service8 {
       try {
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) continue;
-        credential = parseCredential9(resolved.value);
+        credential = parseCredential8(resolved.value);
       } catch {
         continue;
       }
@@ -67145,18 +67110,6 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, lob
               if (cookie === "") throw new Error("\u51ED\u636E\u4E0D\u53EF\u7528\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
               break;
             }
-            case AUTOCLAW_INTL.id: {
-              const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
-              if (resolved === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
-              const current = JSON.parse(resolved.value);
-              if (typeof current.access_token !== "string" || current.access_token === "") {
-                throw new Error("\u51ED\u636E\u4E0D\u53EF\u7528\uFF0C\u8BF7\u91CD\u65B0\u7C98\u8D34\u4EE4\u724C");
-              }
-              await pool.updateAccount(entry.id, {
-                refreshable: typeof current.refresh_token === "string" && current.refresh_token !== ""
-              });
-              break;
-            }
             case COMMANDCODE.id: {
               const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
               if (resolved === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
@@ -69061,13 +69014,6 @@ var ADOPTABLE_CHANNELS = {
     parse: (text) => {
       const cookie = normalizeCookie2(text);
       return cookie === void 0 ? void 0 : { access_token: cookie, created_at: Date.now() };
-    }
-  },
-  "autoclaw-intl": {
-    hint: "\u8BBF\u95EE\u4EE4\u724C\uFF08Bearer token\uFF0C\u56FD\u9645\u7AD9\uFF09",
-    parse: (text) => {
-      const parsed = parseCredential2({ token: text });
-      return parsed === void 0 ? void 0 : { ...parsed };
     }
   }
 };
@@ -74621,12 +74567,6 @@ function apply(ctx, config = {}) {
     accountPool: pool,
     product: AUTOCLAW
   });
-  const autoClawIntlAdapter = registerAutoClawLlm(ctx, {
-    fetchImpl: network.fetch,
-    resolveCredential: makeAutoClawResolver(AUTOCLAW_INTL),
-    accountPool: pool,
-    product: AUTOCLAW_INTL
-  });
   const loomy = new LoomyAuth(ctx);
   const resolveLoomyCredentialByRef = async (refName) => {
     const resolved = await ctx.credentials.resolve(credentialRef16(refName));
@@ -75222,7 +75162,6 @@ function apply(ctx, config = {}) {
     // 后加的两个渠道也要有「显示列表」的完整目录，否则卡片模型数恒为「—」。
     kuku: pruned(KUKU.id, kukuAdapter),
     autoclaw: pruned(AUTOCLAW.id, autoClawAdapter),
-    "autoclaw-intl": pruned(AUTOCLAW_INTL.id, autoClawIntlAdapter),
     // 首屏「模型数量」同样走这里；这几个适配器此前缺 listAllModels，
     // 卡片一直显示「—」（与其它渠道不一致）。
     commandcode: pruned(COMMANDCODE.id, commandCodeAdapter),

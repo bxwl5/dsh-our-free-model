@@ -29,7 +29,7 @@ async function main() {
   // 真·粘贴型：上游没有可脚本化的 OAuth，只能由用户复制 Cookie / 令牌。
   // AutoClaw 国内站已改为「本地页 + 短信验证码」登录（autoclaw-login-page.ts），
   // 只有国际站仍只能粘贴令牌。
-  const pasteOnly = ['monkeycode', 'orcaterm', 'autoclaw-intl']
+  const pasteOnly = ['monkeycode', 'orcaterm']
   for (const provider of pasteOnly) {
     const hint = adoptableChannelHint(provider)
     assert.equal(typeof hint, 'string', `${provider} 必须有粘贴提示`)
@@ -67,7 +67,7 @@ async function main() {
   assert.equal(normalizeKuku(`Cookie: BDUSS=${BDUSS}; Path=/`), `BDUSS=${BDUSS}`)
   assert.equal(normalizeKuku('BDUSS=short'), undefined)
   assert.equal(normalizeKuku('foo=bar'), undefined)
-  // autoclaw（autoclaw 与 autoclaw-intl 共用 parseCredential）
+  // autoclaw 的 parseCredential（国际版已移除，只剩国内站）
   assert.equal(parseAutoClaw({ token: TOKEN }).access_token, TOKEN)
   assert.equal(parseAutoClaw({ token: `Bearer ${TOKEN}` }).access_token, TOKEN)
   assert.equal(parseAutoClaw({ token: 'abc' }), undefined)
@@ -92,7 +92,6 @@ async function rpcProbes({ call, creds }) {
   for (const [provider, bad] of [
     ['monkeycode', 'nebula_session=abc'],
     ['orcaterm', 'foo=bar'],
-    ['autoclaw-intl', 'Bearer "x'],
   ]) {
     const result = await call('account.adopt', { provider, credential: bad })
     assert.equal(result.ok, false, `${provider} 非法凭据必须拒收`)
@@ -104,7 +103,6 @@ async function rpcProbes({ call, creds }) {
   for (const [provider, noisy, expectedToken] of [
     ['monkeycode', `  Cookie: "nebula_session=${SESSION}; Path=/; HttpOnly"`, `nebula_session=${SESSION}`],
     ['orcaterm', `Bearer ot_session=${SESSION}\r\n`, `ot_session=${SESSION}`],
-    ['autoclaw-intl', `  "${TOKEN}"  `, TOKEN],
   ]) {
     const result = await call('account.adopt', { provider, credential: noisy })
     assert.equal(result.ok, true, `${provider} 噪声凭据清洗后应收下：${JSON.stringify(result)}`)

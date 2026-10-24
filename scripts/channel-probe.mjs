@@ -530,20 +530,6 @@ const CHANNELS = [
       ep('余额', 'balance', null, { note: '插件无额度查询端点' }),
     ],
   },
-  {
-    id: 'autoclaw-intl',
-    name: 'AutoClaw 国际版',
-    loginMode: '粘贴令牌（OAuth 回调端口白名单）',
-    notes: ['与国内版同形，apiBase 换成 autoglm-api.autoglm.ai（autoclaw-product.ts AUTOCLAW_INTL）。'],
-    endpoints: [
-      ep('登录入口', 'login', null, { note: 'OAuth，无静态登录页；当前走粘贴令牌' }),
-      ep('模型目录', 'models', 'https://autoglm-api.autoglm.ai/proxy/autoclaw-model-config', {
-        requiresRealToken: true, source: 'autoclaw-product.ts AUTOCLAW_MODEL_CONFIG_PATH',
-        note: '需真实令牌终验（假令牌 404）',
-      }),
-      ep('余额', 'balance', null, { note: '插件无额度查询端点' }),
-    ],
-  },
 ]
 
 // ───────────────────────────── 参数解析 ─────────────────────────────

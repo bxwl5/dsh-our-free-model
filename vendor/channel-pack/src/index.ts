@@ -59,7 +59,7 @@ import { ORCATERM } from './orcaterm-product.js'
 import { KUKU } from './kuku-product.js'
 import { ACCIO, ACCIO_CN } from './accio-product.js'
 import { OFFICEACE } from './officeace-product.js'
-import { AUTOCLAW, AUTOCLAW_INTL } from './autoclaw-product.js'
+import { AUTOCLAW } from './autoclaw-product.js'
 import { configureDeadModelStore, withDeadModelPruning } from './dead-model-store.js'
 import type { CodeArtsCredential, BuddyCredential } from './types.js'
 import type { LobsteraiCredential } from './lobsterai.js'
@@ -1150,7 +1150,7 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
   // 对话是 OpenAI 兼容；⚠️ 认证头是 **X-Authorization**（不是 Authorization）。
   // 模型目录在 /proxy/autoclaw-model-config（不在 /autoclaw 那级）。
   let activeAutoClawAccountId = ''
-  const makeAutoClawResolver = (product: typeof AUTOCLAW | typeof AUTOCLAW_INTL) => async () => {
+  const makeAutoClawResolver = (product: typeof AUTOCLAW) => async () => {
     const available = await pool.getAvailableAccount(product.id, '')
     activeAutoClawAccountId = available?.entry.id ?? ''
     if (activeAutoClawAccountId.length > 0) reportLedgerAccount(product.id, activeAutoClawAccountId)
@@ -1168,12 +1168,6 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
     resolveCredential: makeAutoClawResolver(AUTOCLAW),
     accountPool: pool,
     product: AUTOCLAW,
-  })
-  const autoClawIntlAdapter = registerAutoClawLlm(ctx, {
-    fetchImpl: network.fetch,
-    resolveCredential: makeAutoClawResolver(AUTOCLAW_INTL),
-    accountPool: pool,
-    product: AUTOCLAW_INTL,
   })
 
   // ===== Loomy（讯飞办公助手）服务 =====
@@ -2192,7 +2186,6 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
     // 后加的两个渠道也要有「显示列表」的完整目录，否则卡片模型数恒为「—」。
     kuku: pruned(KUKU.id, kukuAdapter),
     autoclaw: pruned(AUTOCLAW.id, autoClawAdapter),
-    'autoclaw-intl': pruned(AUTOCLAW_INTL.id, autoClawIntlAdapter),
     // 首屏「模型数量」同样走这里；这几个适配器此前缺 listAllModels，
     // 卡片一直显示「—」（与其它渠道不一致）。
     commandcode: pruned(COMMANDCODE.id, commandCodeAdapter),
