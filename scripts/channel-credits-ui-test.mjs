@@ -62,8 +62,8 @@ export async function verifyChannelCreditsUi() {
     subscribe()
     return { calls, errors, cells, button, text, cleanup, events }
   }
-  const claimable = new Set(['codearts', 'buddy', 'lobsterai', 'qoder', 'qodercn', 'trae', 'loomy', 'minimax', 'zcode'])
-  for (const provider of [...claimable, 'workbuddy', 'cline', 'raccoon', 'gemini']) {
+  const claimable = new Set(['codearts', 'buddy', 'lobsterai', 'qoder', 'qodercn', 'trae', 'loomy', 'minimax', 'zcode', 'monkeycode'])
+  for (const provider of [...claimable, 'workbuddy', 'cline', 'raccoon', 'gemini', 'commandcode', 'accio', 'accio-cn']) {
     const app = mount(provider, async () => ({ accounts: [] }))
     await settle()
     assert.equal(app.calls[0].method, 'credits.balances', `${provider} 必须查询已有后端余额能力`)
@@ -73,6 +73,7 @@ export async function verifyChannelCreditsUi() {
     if (provider === 'zcode') assert.ok(app.text().includes('剩余 Token'))
     if (provider === 'cline') assert.ok(app.text().includes('USD'))
     if (provider === 'gemini') assert.ok(app.text().includes('剩余配额'))
+    if (provider === 'accio' || provider === 'accio-cn') assert.ok(app.text().includes('剩余配额'))
     app.cleanup()
   }
 

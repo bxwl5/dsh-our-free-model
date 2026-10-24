@@ -88,13 +88,13 @@ UI 上以「改用粘贴令牌」呈现）。`ADOPTABLE_CHANNELS` 因此有 5 �
 | 11 | `minimax` · MiniMax Code | OAuth 设备码 + PKCE | ✅（Anthropic Messages 协议族） | ✅ 远端 | ✅ | ✅ | ✅ 单桥 |
 | 12 | `zcode` · ZCode | 浏览器授权（官方 CLI 设备授权流 `/oauth/cli/init` → 轮询） | ✅（Anthropic Messages 协议族） | ✅ 静态白名单（远端接口保留） | ✅（单位 tokens） | ✅ | ✅ 双桥 |
 | 13 | `gemini` · Gemini | 浏览器授权（Google OAuth，本地回调；只做 OAuth） | ✅ | ❌ 静态（Cloud Code 无目录端点） | ✅（配额窗口） | ❌（无每日签到） | ✅ 双桥 |
-| 14 | `commandcode` · Command Code | 浏览器授权（自动回调；授权页 `/studio/auth/cli`） | ✅ | ✅ 远端 | ❌ ⚠️（上游 `/alpha/billing/credits` 未接入共享 credits RPC） | ❌ | ❌ |
+| 14 | `commandcode` · Command Code | 浏览器授权（自动回调；授权页 `/studio/auth/cli`） | ✅ | ✅ 远端 | ✅（`/alpha/billing/credits`，`readCredits`） | ❌ | ❌ |
 | 15 | `officeace` · OfficeAce 果办 | 浏览器授权（自助 OAuth + 轮询授权码，回调不落本机） | ✅ | ✅ 远端 | ❌ | ❌ | ❌ |
-| 16 | `accio` · Accio | 浏览器授权（国际站） | ✅ | ✅ 远端 | ❌ | ❌ | ❌ |
-| 17 | `accio-cn` · Accio 国内版 | 浏览器授权（国内站） | ✅ | ✅ 远端 | ❌ | ❌ | ❌ |
+| 16 | `accio` · Accio | 浏览器授权（国际站；可改用粘贴令牌） | ✅ | ✅ 远端 | ✅（配额百分比，`fetchQuota`） | ❌ | ❌ |
+| 17 | `accio-cn` · Accio 国内版 | 浏览器授权（国内站；可改用粘贴令牌） | ✅ | ✅ 远端 | ✅（配额百分比，`fetchQuota`） | ❌ | ❌ |
 | 18 | `orcaterm` · OrcaTerm | 粘贴 Cookie（`ot_session`） | ✅ | ❌ 静态（上游无公开目录端点） | ❌ | ❌ | ❌ |
 | 19 | `kuku` · KukuAI | 粘贴 Cookie（`BDUSS`） | ✅ | ❌ 静态（上游无公开目录端点） | ❌ | ❌ | ❌ |
-| 20 | `monkeycode` · MonkeyCode | 粘贴 Cookie（`nebula_session`） | ✅（建任务 + WebSocket 两步） | ✅ 远端 | ⚠️ 模块内已实现 `/api/v1/users/wallet`，未接入共享 credits RPC | ⚠️ 模块内已实现 `/api/v1/users/wallet/checkin`，未接入 | ❌ |
+| 20 | `monkeycode` · MonkeyCode | 粘贴 Cookie（`nebula_session`） | ✅（建任务 + WebSocket 两步） | ✅ 远端 | ✅（`/api/v1/users/wallet`） | ✅（`wallet/checkin`，每次奖励 100 积分） | ❌ |
 | 21 | `autoclaw` · AutoClaw | 粘贴令牌（上游 OAuth 被阿里云验证码 SDK 阻断） | ✅ | ✅ 远端（`autoclaw-model-config`） | ❌ | ❌ | ❌ |
 | 22 | `autoclaw-intl` · AutoClaw 国际版 | 粘贴令牌（国际站） | ✅ | ✅ 远端 | ❌ | ❌ | ❌ |
 
@@ -104,10 +104,10 @@ UI 上以「改用粘贴令牌」呈现）。`ADOPTABLE_CHANNELS` 因此有 5 �
 | --- | --- | --- |
 | 对话 | 22（全部） | — |
 | 模型目录 | 非静态目录 19 条（其中 `qoder`/`qodercn` 来自官方客户端本机解密文件 `catalog-v6`） | 仅静态兜底表 3 条：`gemini`、`orcaterm`、`kuku` |
-| 额度查询 | 13 条（`codearts` `buddy` `workbuddy` `lobsterai` `qoder` `qodercn` `trae` `cline` `loomy` `raccoon` `minimax` `zcode` `gemini`） | 9 条：其余新渠道（含 `monkeycode`/`commandcode` 的「模块内有实现但未接线」） |
-| 签到 | 9 条（`codearts` `buddy` `lobsterai` `qoder` `qodercn` `trae` `loomy` `minimax` `zcode`） | 服务端显式守卫「无签到端点」3 条（`workbuddy` `cline` `raccoon`）+ `gemini`（无 claim 能力，只有配额窗口）+ 未接入 9 条 |
+| 额度查询 | **17 条**（原 13 条 + `commandcode` `monkeycode` `accio` `accio-cn`） | 5 条：`officeace` `orcaterm` `kuku` `autoclaw` `autoclaw-intl`（上游无额度端点） |
+| 签到 | **10 条**（原 9 条 + `monkeycode`） | 服务端显式守卫「无签到端点」3 条（`workbuddy` `cline` `raccoon`）+ `gemini`/`commandcode`/`accio`/`accio-cn`（无 claim 能力）+ 上游无签到 5 条 |
 | 图片（双桥） | 9 条：`buddy` `workbuddy` `lobsterai` `qoder` `qodercn` `cline` `raccoon` `gemini` `zcode` | 单桥 3 条：`trae` `loomy` `minimax`；未接 10 条 |
-| 粘贴型登录 | 5 条 | — |
+| 粘贴型登录 | 纯粘贴 3 条 + 粘贴兜底 2 条（`accio`/`accio-cn`） | — |
 
 ---
 
@@ -216,7 +216,7 @@ UI 上以「改用粘贴令牌」呈现）。`ADOPTABLE_CHANNELS` 因此有 5 �
 - 凭据：单个**长期 API Key**（无 refresh_token 轮换），鉴权是标准 `Bearer <key>`。
 - 推理：标准 OpenAI 兼容 SSE。
 - 模型目录：远端 `GET /provider/v1/models`（+ 兜底表）。
-- 额度：上游有 `GET /alpha/billing/credits`，**尚未接入**共享 credits RPC（矩阵记 ❌⚠️）。
+- 额度：`GET /alpha/billing/credits` **已接入**共享 credits RPC（`readCredits`，只读余额，无签到端点）。
 - 图片：协议层有图片块序列化，但未接字节桥 → 退化为占位符。
 
 ### 3.13 OfficeAce 果办（`officeace`）
@@ -235,7 +235,9 @@ UI 上以「改用粘贴令牌」呈现）。`ADOPTABLE_CHANNELS` 因此有 5 �
 - 三个独特点：token **不走** `Authorization` 头（GET 拼 query、POST 放 body）；请求体是
   Gemini 风格信封；响应是 ADK 自有帧（`content.parts` / `turn_complete`）。
 - 模型目录：远端（适配器内 `fetchModels`）。
-- 额度 / 签到：未接入。图片：未接字节桥。
+- 额度：`fetchQuota`（`GET {gateway}/v1/quota?accessToken=…`）**已接入**共享 credits RPC ——
+  上游只给 `usedPercent`/`resetAtMs`，面板按「剩余百分比」展示（与 gemini 同型）。
+- 签到：无（上游只能读配额，没有签到端点）。图片：未接字节桥。
 
 ### 3.15 OrcaTerm（`orcaterm`）
 
@@ -243,7 +245,7 @@ UI 上以「改用粘贴令牌」呈现）。`ADOPTABLE_CHANNELS` 因此有 5 �
   （桌面端回调走 `orcaterm://`；微信扫码 state 绑服务端会话；Web 控制台扫码后写 Cookie —— 扫码动作仍须用户自己完成）。
 - 对话：**建会话 → SSE** 两步（每轮新建会话，历史拍平进输入）。
 - 模型目录：**静态兜底表**（上游没有公开目录端点，模型由控制台下发）。
-- 额度 / 签到 / 图片：未接入。
+- 额度 / 签到 / 图片：未接入（上游无对应端点）。
 
 ### 3.16 KukuAI（`kuku`）
 
@@ -251,7 +253,7 @@ UI 上以「改用粘贴令牌」呈现）。`ADOPTABLE_CHANNELS` 因此有 5 �
 - 对话：`POST /wenchain/genflowpro/sendmsg` → SSE `/wenchain/genflowpro/sse/getchatcontent`；
   `clienttype` / `version` / `channel` / `v` 照官方 PC 客户端原样下发。
 - 模型目录：**静态兜底表**（模型名由客户端自报）。额度 / 签到 / 图片：未接入 ——
-  因此渠道卡片**不显示余额/签到区**（那两块由 `CHANNEL_CREDITS` 的 13 渠道契约驱动）；
+  因此渠道卡片**不显示余额/签到区**（那两块由 `CHANNEL_CREDITS` 的 17 渠道契约驱动）；
   模型数量与「刷新」按钮正常（没有续期端点，刷新只做凭据复核）。
 
 ### 3.17 MonkeyCode（`monkeycode`）
@@ -261,10 +263,10 @@ UI 上以「改用粘贴令牌」呈现）。`ADOPTABLE_CHANNELS` 因此有 5 �
   `/api/v1/users/tasks/stream?id=<taskId>&mode=develop` 逐帧读正文；RFC6455 客户端手写
   （`monkeycode-ws.ts`），事件解析容错（认不出的帧忽略而不报错）。
 - 模型目录：远端 `GET /api/v1/users/models/available`（+ 兜底表）。
-- 额度 / 签到：`monkeycode-auth.ts` **已实现** `GET /api/v1/users/wallet` 与
-  `GET|POST /api/v1/users/wallet/checkin`，但**未接入**共享 credits RPC
-  （`channel-pack-rpc.ts` 的 `credits.balances` / `credits.claimAll` 无 `monkeycode` 分支，
-  `client.js` 的 `CHANNEL_CREDITS` 也没有该条目）—— 面板上因此没有余额/签到区块。
+- 额度 / 签到：**已接入**共享 credits RPC —— `GET /api/v1/users/wallet` 读积分余额，
+  `GET|POST /api/v1/users/wallet/checkin` 做状态查询与每日签到（每次 100 积分）；
+  面板上因此有「剩余额度 / 刷新余额 / 一键领取」。上游只给 `checkedIn`/`streak`/`reward`，
+  其余 CheckinStatus 字段如实留空（不编数字）。
 - 图片：未接字节桥。
 
 ### 3.18 AutoClaw（国内 / 国际）（`autoclaw` / `autoclaw-intl`）
