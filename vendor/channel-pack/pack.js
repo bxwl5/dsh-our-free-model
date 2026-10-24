@@ -31712,6 +31712,18 @@ function createPermanentLockStore(ctx) {
 
 // vendor/channel-pack/src/account-pool.ts
 var EMPTY_MODEL_SET = /* @__PURE__ */ new Set();
+function availableModelsForChannel(accounts, models, excludedModelId, now = Date.now()) {
+  const usable = [];
+  for (const model of models) {
+    if (model.id === excludedModelId) continue;
+    const anyFree = accounts.some((account) => {
+      const resetAt = account.modelRateLimits?.[model.id];
+      return resetAt === void 0 || resetAt === 0 || now >= resetAt;
+    });
+    if (anyFree) usable.push(model.name.length > 0 ? model.name : model.id);
+  }
+  return usable;
+}
 function allAccountsRateLimitedForModel(accounts, modelId, now = Date.now()) {
   if (modelId.length === 0) return void 0;
   let earliest;
@@ -74210,8 +74222,15 @@ function apply(ctx, config = {}) {
       modelId ?? ""
     );
     if (limited === void 0) return;
+    const enabled = pool.listAccountsByProvider(product.id).filter((a) => a.enabled);
+    const siblings = availableModelsForChannel(
+      enabled,
+      modelAdapters?.[product.id]?.listAllModels() ?? [],
+      modelId ?? ""
+    );
+    const siblingHint = siblings.length === 0 ? "\u8BE5\u6E20\u9053\u6240\u6709\u6A21\u578B\u5F53\u524D\u90FD\u53D7\u9650\u3002" : `\u8BE5\u6E20\u9053\u8FD9\u4E9B\u6A21\u578B\u5F53\u524D\u53EF\u7528\uFF1A${siblings.slice(0, 5).join("\u3001")}${siblings.length > 5 ? ` \u7B49 ${siblings.length} \u4E2A` : ""}\u3002`;
     throw new LlmError27(
-      `${product.displayName}\uFF1A\u6A21\u578B ${modelId} \u7684\u53EF\u7528\u8D26\u53F7\u5747\u5728\u9650\u6D41\u4E2D\uFF0C\u6700\u8FD1\u4E00\u4E2A\u5C06\u4E8E ${new Date(limited.resetAtMs).toLocaleString("zh-CN")} \u89E3\u7981\u3002\u53EF\u6539\u7528\u5176\u5B83 provider / \u6A21\u578B\uFF0C\u6216\u7B49\u5F85\u89E3\u7981\u540E\u518D\u8BD5\uFF08\u65E0\u9700\u91CD\u65B0\u767B\u5F55\uFF09\u3002`,
+      `${product.displayName}\uFF1A\u6A21\u578B ${modelId} \u7684\u53EF\u7528\u8D26\u53F7\u5747\u5728\u9650\u6D41\u4E2D\uFF0C\u6700\u8FD1\u4E00\u4E2A\u5C06\u4E8E ${new Date(limited.resetAtMs).toLocaleString("zh-CN")} \u89E3\u7981\u3002` + siblingHint + `\u4E5F\u53EF\u6539\u7528\u5176\u5B83 provider\uFF0C\u6216\u7B49\u5F85\u89E3\u7981\u540E\u518D\u8BD5\uFF08\u65E0\u9700\u91CD\u65B0\u767B\u5F55\uFF09\u3002`,
       "QUOTA_EXCEEDED"
     );
   };

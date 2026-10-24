@@ -62,6 +62,41 @@ const EMPTY_MODEL_SET: ReadonlySet<string> = new Set<string>()
  * @param now - 当前时刻（毫秒），供测试注入。
  * @returns 最早的解禁时刻与账号数；不满足条件时为 `undefined`。
  */
+/**
+ * 列出该渠道**当前仍可用**的模型（用于限流报错里给出可执行的替代建议）。
+ *
+ * 背景：限流是「账号 × 模型」维度的。workbuddy 这类渠道常见「只有某个热门模型
+ * 被限、同一账号的其它模型全好」的情况（实测 2026-10-25：`deepseek-v4.1-flash`
+ * 回 6004，而 `hy3` / `step-5-preview` / `glm-5.3` 同账号同时刻全部 200）。
+ * 上游自己的文案也写着 `you can switch to the other models`。
+ *
+ * 旧报错只说「可改用其它 provider / 模型」，用户仍要逐个试 —— 这里直接把
+ * **该渠道里还能用的模型名**报出来。
+ *
+ * @param accounts 该 provider 的**启用**账号（调用方已过滤）。
+ * @param models   该渠道的模型目录（`modelAdapters[provider].listAllModels()`）。
+ * @param excludedModelId 本次失败的模型（不重复推荐）。
+ * @returns 可用模型的展示名（保持目录顺序）；空数组表示该渠道确实全线受限。
+ */
+export function availableModelsForChannel(
+  accounts: readonly ProviderAccountEntry[],
+  models: readonly { id: string; name: string }[],
+  excludedModelId: string,
+  now: number = Date.now(),
+): string[] {
+  const usable: string[] = []
+  for (const model of models) {
+    if (model.id === excludedModelId) continue
+    // 与选号侧同一判据：只要有**任一**启用账号在该模型上没被限，它就可选。
+    const anyFree = accounts.some((account) => {
+      const resetAt = account.modelRateLimits?.[model.id]
+      return resetAt === undefined || resetAt === 0 || now >= resetAt
+    })
+    if (anyFree) usable.push(model.name.length > 0 ? model.name : model.id)
+  }
+  return usable
+}
+
 export function allAccountsRateLimitedForModel(
   accounts: readonly ProviderAccountEntry[],
   modelId: string,

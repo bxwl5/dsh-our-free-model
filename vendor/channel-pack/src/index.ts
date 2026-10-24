@@ -35,7 +35,7 @@ import { ZCODE } from './zcode-product.js'
 import { ZCODE_CAPTCHA_FALLBACK } from './zcode-captcha.js'
 import type { CarrierOutcome } from './captcha-carrier.js'
 import type { ZcodeCredential } from './zcode.js'
-import { AccountPool, allAccountsRateLimitedForModel } from './account-pool.js'
+import { AccountPool, allAccountsRateLimitedForModel, availableModelsForChannel } from './account-pool.js'
 import { hasLegacyNamespaceRegistration, settingsOf, suppressAutoSettingsPage } from './settings-compat.js'
 import type { ImageRequestTarget } from './image-budget.js'
 import { buildRaccoonNickname, registerChannelPackRpc } from './channel-pack-rpc.js'
@@ -568,10 +568,25 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
       modelId ?? '',
     )
     if (limited === undefined) return
+    // 限流是「账号 × 模型」维度的：同一账号换个模型常常立刻可用（实测 workbuddy：
+    // deepseek-v4.1-flash 回 6004，同账号同刻 hy3 / step-5-preview / glm-5.3 全 200）。
+    // 上游文案自己就写着 `you can switch to the other models`，故这里把**该渠道
+    // 当前还能用的模型**直接列出来，用户不必逐个试。
+    const enabled = pool.listAccountsByProvider(product.id).filter(a => a.enabled)
+    const siblings = availableModelsForChannel(
+      enabled,
+      modelAdapters?.[product.id]?.listAllModels() ?? [],
+      modelId ?? '',
+    )
+    const siblingHint = siblings.length === 0
+      ? '该渠道所有模型当前都受限。'
+      : `该渠道这些模型当前可用：${siblings.slice(0, 5).join('、')}`
+        + `${siblings.length > 5 ? ` 等 ${siblings.length} 个` : ''}。`
     throw new LlmError(
       `${product.displayName}：模型 ${modelId} 的可用账号均在限流中，`
       + `最近一个将于 ${new Date(limited.resetAtMs).toLocaleString('zh-CN')} 解禁。`
-      + `可改用其它 provider / 模型，或等待解禁后再试（无需重新登录）。`,
+      + siblingHint
+      + `也可改用其它 provider，或等待解禁后再试（无需重新登录）。`,
       'QUOTA_EXCEEDED',
     )
   }

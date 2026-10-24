@@ -86,7 +86,46 @@ export async function verifyAccountPoolCache() {
   assert.equal(store.loads, beforeSelfWrite, '自己写盘后不得再重读（mtime 已同步）')
   assert.equal(afterSelf.find(row => row.id === 'a1')?.nickname, 'renamed', '自有改动立即可见')
 
-  console.log('ok  account-pool-cache: 外部改动可感知、mtime 未变零重读、自写不自触发')
+  // ── 限流报错里的「该渠道还有哪些模型可用」──
+  {
+    const { availableModelsForChannel } = await import('../vendor/channel-pack/src/account-pool.ts')
+    const now = Date.now()
+    const limitedUntil = now + 60 * 60_000
+    const accounts = [
+      // 只在 m1 上受限，m2/m3 正常
+      { id: 'x', provider: 'workbuddy', enabled: true, modelRateLimits: { m1: limitedUntil, m3: 0 } },
+    ]
+    const models = [
+      { id: 'm1', name: '模型一' },
+      { id: 'm2', name: '模型二' },
+      { id: 'm3', name: '模型三' },
+    ]
+    assert.deepEqual(
+      availableModelsForChannel(accounts, models, 'm1', now),
+      ['模型二', '模型三'],
+      '必须排除失败的模型，且 0 值标记视为不受限',
+    )
+    // 全受限 → 空数组（调用方据此提示「该渠道所有模型都受限」）
+    assert.deepEqual(
+      availableModelsForChannel(
+        [{ id: 'y', provider: 'workbuddy', enabled: true, modelRateLimits: { m2: limitedUntil, m3: limitedUntil } }],
+        models, 'm1', now,
+      ),
+      [],
+      '全部受限时返回空数组',
+    )
+    // 已过期标记视为可用
+    assert.deepEqual(
+      availableModelsForChannel(
+        [{ id: 'z', provider: 'workbuddy', enabled: true, modelRateLimits: { m2: now - 1000 } }],
+        models, 'm1', now,
+      ),
+      ['模型二', '模型三'],
+      '过期标记不再限制',
+    )
+  }
+
+  console.log('ok  account-pool-cache: 外部改动可感知、mtime 未变零重读、自写不自触发、限流时可列出同渠道可用模型')
 }
 
 exitIfDirectRun(import.meta.url, 'account-pool-cache-test')
