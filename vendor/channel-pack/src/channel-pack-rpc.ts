@@ -3619,6 +3619,45 @@ function registerChannelPackEndpoints(
           })
           return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
         }
+        if (req.provider === AUTOCLAW.id) {
+          // AutoClaw 是**积分制**：`GET {userapi}/agent-assetmgr/api/v2/wallets`
+          // （v1 降级）。⚠️ 这个域认标准 `Authorization`，用对话链的
+          // `X-Authorization` 会回 `code 410000 用户未登录` —— 实测踩过。
+          const { fetchAutoClawWallets } = await import('./autoclaw-sms.js')
+          const { AUTOCLAW: AUTOCLAW_PRODUCT } = await import('./autoclaw-product.js')
+          const values = await collectCreditBalances<AutoClawCredential, typeof AUTOCLAW_PRODUCT>(accounts, AUTOCLAW_PRODUCT, {
+            fetcher: codeartsFetcher,
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalanceDetailed: async (credential) => {
+              const wallets = await fetchAutoClawWallets({
+                product: AUTOCLAW_PRODUCT,
+                fetcher: codeartsFetcher,
+                credential,
+              })
+              if (wallets === undefined) return { balance: null, error: '未返回积分数据' }
+              const total = wallets.reduce((sum, w) => sum + w.balance, 0)
+              return {
+                balance: {
+                  total,
+                  packages: wallets.map((w) => ({
+                    name: w.displayName,
+                    unit: 'credits',
+                    remaining: w.balance,
+                    total: w.balance,
+                    used: 0,
+                    active: true,
+                    cycleStartTime: '',
+                    cycleEndTime: '',
+                    expiredTime: '',
+                  })),
+                  expiredTotal: 0,
+                },
+              }
+            },
+            warn: (msg) => ctx.logger?.warn?.(msg),
+          })
+          return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
+        }
         if (req.provider === 'officeace') {
           // OfficeAce 果办是**积分制**：`GET {gateway}/v1/subscription`
           // （V11-HMAC-SHA256 签名 + `x-subscription-type: v2`，网关取凭据的

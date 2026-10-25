@@ -68,9 +68,27 @@ async function createConversation(
   if (!response.ok) {
     throw new Error(`OrcaTerm：建会话返回 HTTP ${response.status}`)
   }
+  // ⚠️ 上游的业务错误走 **HTTP 200 + body 的 `code`**（不是非 2xx）：
+  // 实测 `VERIFY_SKEY_UIN_FAILED` 就是 `{code:500, message:"VERIFY_SKEY_UIN_FAILED"}`，
+  // 只看 response.ok 会把它当成功，最后表现成「对话返回空」而看不出原因
+  //（2026-10-25 实测）。故先探一次 body。
+  const raw = await response.text().catch(() => '')
+  let parsed: unknown
+  try { parsed = raw === '' ? undefined : JSON.parse(raw) } catch { parsed = undefined }
+  if (parsed !== undefined && typeof parsed === 'object' && parsed !== null) {
+    const record = parsed as Record<string, unknown>
+    const code = typeof record.code === 'number' ? record.code : undefined
+    const message = typeof record.message === 'string' ? record.message : ''
+    if (code !== undefined && code !== 0) {
+      // skey 失效是凭据问题，归因到「重新登录」而不是笼统的上游错误。
+      if (/VERIFY_SKEY|UIN|SESSION|TOKEN|AUTH/i.test(message)) {
+        throw new Error(`OrcaTerm：登录态已失效（${message || code}）—— 请重新粘贴 Cookie`)
+      }
+      throw new Error(`OrcaTerm：建会话被上游拒绝（code ${code}）${message === '' ? '' : `：${message}`}`)
+    }
+  }
   // 上游回 `{code:0, data:{…}}`；conversationId 的形态是 `cid-<uuid>-orcaterm`。
   // 实测上游接受直接拼出的 cid（与返回的 id 一致），故不强依赖响应体字段。
-  void response.body?.cancel().catch(() => undefined)
   return `cid-${id}-${ORCATERM_CONVERSATION_TAG}`
 }
 
@@ -117,6 +135,26 @@ export async function* streamChat(
   if (!response.ok) {
     const text = await response.text().catch(() => '')
     throw new Error(`OrcaTerm：对话返回 HTTP ${response.status}${text === '' ? '' : `：${text.slice(0, 200)}`}`)
+  }
+  // 与 createConversation 同因：上游业务错误走 HTTP 200 + body 的 code
+  //（`VERIFY_SKEY_UIN_FAILED` 即此形态）。这里 content-type 已是 JSON，
+  // 说明不是 SSE 流，直接按错误体读。
+  const contentType = response.headers.get('content-type') ?? ''
+  if (/application\/json/i.test(contentType)) {
+    const text = await response.text().catch(() => '')
+    let parsed: unknown
+    try { parsed = text === '' ? undefined : JSON.parse(text) } catch { parsed = undefined }
+    if (parsed !== undefined && typeof parsed === 'object' && parsed !== null) {
+      const record = parsed as Record<string, unknown>
+      const code = typeof record.code === 'number' ? record.code : undefined
+      const message = typeof record.message === 'string' ? record.message : ''
+      if (code !== undefined && code !== 0) {
+        if (/VERIFY_SKEY|UIN|SESSION|TOKEN|AUTH/i.test(message)) {
+          throw new Error(`OrcaTerm：登录态已失效（${message || code}）—— 请重新粘贴 Cookie`)
+        }
+        throw new Error(`OrcaTerm：对话被上游拒绝（code ${code}）${message === '' ? '' : `：${message}`}`)
+      }
+    }
   }
   if (response.body === null) throw new Error('OrcaTerm：对话响应没有正文')
 

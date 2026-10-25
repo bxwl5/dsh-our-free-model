@@ -441,3 +441,237 @@ export async function claimAutoclawDailyCheckin(options: {
   if (already) return { claimed: 0, message: '今天已签到过（上游按天幂等）' }
   return { claimed: 0, message: '上游未返回可领取的积分（今日可能已领过）' }
 }
+
+// ── 模型路由（上游 `providers/autoclaw/models.rs` 的 resolve_model_route）──
+//
+// 上游要求一次转发带两个模型标识，且**两者不同**：
+// - `X-Request-Model` 请求头 ← 完整路由 ID（带通道前缀，如 `zaicoding_glm-5.3`）
+// - `body.model`           ← **剥掉前缀**后的模型 ID（如 `glm-5.3`）
+//
+// 我们此前把用户给的 model 原样塞进 body，既没那个头也没做前缀改写 ——
+// 于是上游按「未知模型」处理，回 `HTTP 400 非法模型`（2026-10-25 实测）。
+
+/** 已知路由前缀（上游 `KNOWN_ROUTE_PREFIXES`）。 */
+const AUTOCLAW_ROUTE_PREFIXES = ['zaicoding_', 'zai_', 'x_'] as const
+
+/** 默认路由（上游 `DEFAULT_ROUTE`；国际版同值）。 */
+const AUTOCLAW_DEFAULT_ROUTE = 'zai_auto'
+
+/** 上游静态路由表（`providers/autoclaw/models.rs` 的 `MODELS`）。 */
+const AUTOCLAW_MODEL_ROUTES: ReadonlyArray<{ id: string; routeId: string }> = [
+  { id: 'glm-5.3', routeId: 'zaicoding_glm-5.3' },
+  { id: 'glm-5.3-flash', routeId: 'zai_glm-5.3-flash' },
+]
+
+/** 剥掉路由前缀（上游 `strip_route_prefix`）。 */
+export function stripAutoClawRoutePrefix(routeId: string): string {
+  for (const prefix of AUTOCLAW_ROUTE_PREFIXES) {
+    if (routeId.startsWith(prefix)) return routeId.slice(prefix.length)
+  }
+  return routeId
+}
+
+/**
+ * 解析模型路由（上游 `resolve_model_route` 的等价实现）。
+ *
+ * 匹配口径与上游逐字一致：先比**目录 id**、再比展示名 `name`、最后比完整
+ * `routeId`，三轮都 `trim` + 忽略 ASCII 大小写。三者都不命中时回退默认路由
+ * `zai_auto`（兜住 Anthropic 客户端那类会传 `claude-*` 的调用方）。
+ *
+ * ⚠️ 大小写差异**不能**触发回退：上游注释记录了因此「客户端请求 GLM-5.3
+ * 被换成 auto（选错模型 + 走错计费通道）」的缺陷，故比对一律忽略大小写，
+ * 而回退只兜真正未知的名字。
+ */
+export function resolveAutoClawModelRoute(rawModel: string | undefined): {
+  /** 完整路由 ID → 发进 `X-Request-Model` 头。 */
+  routeModelId: string
+  /** 剥前缀后的模型 ID → 填进 `body.model`。 */
+  bodyModelId: string
+} {
+  const name = String(rawModel ?? '').trim()
+  if (name === '') {
+    return { routeModelId: AUTOCLAW_DEFAULT_ROUTE, bodyModelId: stripAutoClawRoutePrefix(AUTOCLAW_DEFAULT_ROUTE) }
+  }
+  const same = (text: string): boolean => text.localeCompare(name, undefined, { sensitivity: 'accent' }) === 0
+    || text.toLowerCase() === name.toLowerCase()
+  const byId = AUTOCLAW_MODEL_ROUTES.find(entry => same(entry.id))
+  const byRoute = AUTOCLAW_MODEL_ROUTES.find(entry => same(entry.routeId))
+  const entry = byId ?? byRoute
+  if (entry !== undefined) {
+    return { routeModelId: entry.routeId, bodyModelId: stripAutoClawRoutePrefix(entry.routeId) }
+  }
+  // 显式路由写法（`zaicoding_*` / `zai_*` / `x_*`）原样透传，只剥 body 前缀。
+  for (const prefix of AUTOCLAW_ROUTE_PREFIXES) {
+    if (name.startsWith(prefix)) return { routeModelId: name, bodyModelId: stripAutoClawRoutePrefix(name) }
+  }
+  return { routeModelId: AUTOCLAW_DEFAULT_ROUTE, bodyModelId: stripAutoClawRoutePrefix(AUTOCLAW_DEFAULT_ROUTE) }
+}
+
+// ── 上游 2026-09-22 起的两道闸（prompt.rs + adapter.rs 的归一化）──────────
+//
+// 不满足任一条，上游**稳定回 406（空响应体）**或 403：
+//   1. system 提示词必须以 OpenClaw 身份句开头（外来身份句要被改写成中性说法）；
+//   2. `max_tokens` 小于 10000 的小正整数会被预校验拒（8192 实测拒、10000 过）。
+//
+// 上游口径逐字照抄，别自己发明。
+
+/** 上游闸门要求「以它开头」的身份句。 */
+export const AUTOCLAW_IDENTITY_LINE = 'You are a personal assistant running inside OpenClaw.'
+
+/** 出站身份前缀（身份句 + `## Tooling` 段，官方 prompt 开头两行）。 */
+const AUTOCLAW_IDENTITY_PREFIX = 'You are a personal assistant running inside OpenClaw.\n\n'
+  + '## Tooling\n'
+  + 'Available tools are policy-filtered. Names are case-sensitive; call exactly as listed.\n'
+
+/** `max_tokens` 安全下限（实测 8192 拒、10000 过，取后者）。 */
+export const AUTOCLAW_MAX_TOKENS_FLOOR = 10_000
+
+/** 外来身份句 → 中性说法（**长的在前**，短的放最后）。 */
+const AUTOCLAW_FOREIGN_IDENTITIES: ReadonlyArray<[string, string]> = [
+  ['You are ZCode, an interactive coding agent', 'You are an interactive coding agent'],
+  ['You are a coding agent running in the Codex CLI tool', 'You are a coding agent running in a terminal CLI tool'],
+  ['You are a coding agent running in the Codex CLI', 'You are a coding agent running in a terminal CLI'],
+  ['You are running as a coding agent in the Codex CLI', 'You are running as a coding agent in a terminal CLI'],
+  // Claude Code 的整句是 "You are Claude Code, Anthropic official CLI…"；
+  // 只改到「You are Claude Code」为止，后面的产品说明原样保留。
+  ['You are Claude Code', 'You are a coding assistant'],
+  ['You are ZCode', 'You are an interactive coding agent'],
+  ['You are an AI agent powered by DeepSeek Harness', 'You are an AI agent powered by a local coding harness'],
+  // 放最后：它最短、最通用，必须让上面更长的 Codex CLI 句式先有机会命中。
+  ['You are Codex', 'You are a coding agent'],
+]
+
+/**
+ * 把一条 system 正文规范化成上游认得的形态。
+ *
+ * - 已经以身份句开头时**只改写、不再前置**（幂等：官方客户端自己的请求就带
+ *   OpenClaw 提示词，重复前缀会写两遍）；
+ * - 否则把身份前缀拼在原有正文**之前**，客户端提示词逐字保留在后
+ *   （上游只要求「以身份句开头」，前缀之后接什么它不管）。
+ */
+export function normalizeAutoClawSystem(text: string): string {
+  // 两步都与上游 `prompt.rs::normalize` 同序，**顺序不能反**：
+  //   1. 先改写外来身份句（对**所有** system 正文生效，与它是否已带身份句无关）；
+  //   2. 再决定要不要前置身份前缀。
+  // 此前的实现把改写只放在「已带身份句」分支里 —— 走前缀分支时外来身份句
+  // 原样留在前缀之后，上游闸门照样拦（稳定 406）。
+  let out = text.trimStart()
+  for (const [from, to] of AUTOCLAW_FOREIGN_IDENTITIES) {
+    if (out.toLowerCase().includes(from.toLowerCase())) {
+      out = out.replace(new RegExp(from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), to)
+    }
+  }
+  // 已经以身份句开头时只改写、不再前置（幂等：官方客户端自己的请求就带
+  // OpenClaw 提示词，重复前缀会把提示词写两遍）。
+  if (out.startsWith(AUTOCLAW_IDENTITY_LINE)) return out
+  return `${AUTOCLAW_IDENTITY_PREFIX}\n${out}`
+}
+
+/**
+ * `max_tokens` 下限归一：小正整数抬到 {@link AUTOCLAW_MAX_TOKENS_FLOOR}。
+ *
+ * 上游预校验会把小于 10000 的小正整数拒成 **406 空响应体**（实测 8192 拒、
+ * 10000 过）。0 / 负数 / 非数字不动（那是「没给」，由上游用默认值）。
+ */
+export function normalizeAutoClawMaxTokens(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+  const n = Math.trunc(value)
+  if (n <= 0) return undefined
+  return n < AUTOCLAW_MAX_TOKENS_FLOOR ? AUTOCLAW_MAX_TOKENS_FLOOR : n
+}
+
+// ── 积分钱包（上游 `providers/autoclaw/balance.rs`）─────────────────────────
+//
+// 两条链路都走 userapi 域（与签到同一个 `autoclawUserapiHeaders`）：
+// - 主：`GET /agent-assetmgr/api/v2/wallets?biz_app_id=autoclaw`
+//   → `{code:0, data:{schema_version:"wallets.v2", total_balance, wallets:[…]}}`
+// - 降级：`GET /agent-assetmgr/api/v1/wallet-instances?wallet_type=all&wallet_scope=all`
+//   → `{code:0, data:{total_balance, wallets:[…]}}`（v2 拿不到时才用）
+//
+// ⚠️ **鉴权头是 `Authorization`，不是对话链的 `X-Authorization`**：实测带
+// `X-Authorization` 打钱包接口回 `{"code":410000,"msg":"用户未登录"}`
+//（同一个 token 换 `Authorization` 立刻 SUCCESS）。两个域各一套头。
+
+/** 积分钱包 v2 路径（主链路）。 */
+export const AUTOCLAW_WALLET_V2_PATH = '/agent-assetmgr/api/v2/wallets?biz_app_id=autoclaw'
+
+/** 积分钱包 v1 路径（降级）。 */
+export const AUTOCLAW_WALLET_V1_PATH = '/agent-assetmgr/api/v1/wallet-instances?wallet_type=all&wallet_scope=all'
+
+/** 登录态失效的业务码（上游 `AUTH_EXPIRED_CODES`）。 */
+const AUTOCLAW_AUTH_EXPIRED_CODES = new Set([410000, 40100, 400002])
+
+/** 一个积分钱包条目。 */
+export interface AutoClawWallet {
+  type: string
+  displayName: string
+  balance: number
+  priority: number
+}
+
+/**
+ * 查积分钱包（v2 主链路，v1 降级）。
+ *
+ * 返回 `undefined` 表示拿不到（网络失败 / 结构不认识 / 登录态失效）——
+ * 由调用方显示「未配置查询」或跳过，**绝不显示成 0**（0 会让用户以为积分用光）。
+ *
+ * 登录态失效时抛错（`AUTH_EXPIRED`）：那是用户能自己修的状态，该明确归因。
+ */
+export async function fetchAutoClawWallets(options: {
+  product: AutoClawProduct
+  fetcher: typeof fetch
+  credential: AutoClawCredential
+  signal?: AbortSignal
+}): Promise<AutoClawWallet[] | undefined> {
+  const token = stripBearer(options.credential.access_token)
+  if (token === '') return undefined
+  const headers = autoclawUserapiHeaders(token)
+  for (const path of [AUTOCLAW_WALLET_V2_PATH, AUTOCLAW_WALLET_V1_PATH]) {
+    const response = await options.fetcher(`${options.product.apiBase}${path}`, {
+      method: 'GET',
+      headers,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    })
+    if (!response.ok) continue
+    const body: unknown = await response.json().catch(() => undefined)
+    if (typeof body !== 'object' || body === null) continue
+    const record = body as Record<string, unknown>
+    const code = typeof record.code === 'number' ? record.code : undefined
+    if (code === undefined || code === 0) {
+      // 两条链路的 data 里都有 `wallets` 数组；解析失败就当这条链路没拿到，
+      // 继续试下一条（v1 兜底）。
+      const data = record.data
+      if (typeof data !== 'object' || data === null) continue
+      const list = (data as Record<string, unknown>).wallets
+      if (!Array.isArray(list)) continue
+      const wallets: AutoClawWallet[] = []
+      for (const raw of list) {
+        if (typeof raw !== 'object' || raw === null) continue
+        const item = raw as Record<string, unknown>
+        // 源实现 `filter(w => w?.display)`：display 为假值的不展示。
+        if (item.display === false) continue
+        const type = typeof item.public_wallet_type === 'string' ? item.public_wallet_type : ''
+        const name = typeof item.display_name === 'string' && item.display_name.trim() !== ''
+          ? item.display_name.trim()
+          : (type !== '' ? type : '积分')
+        const balance = typeof item.balance === 'number' && Number.isFinite(item.balance)
+          ? item.balance
+          : Number(item.balance ?? Number.NaN)
+        const priority = typeof item.priority === 'number' && Number.isFinite(item.priority)
+          ? item.priority
+          : Number.MAX_SAFE_INTEGER
+        wallets.push({ type, displayName: name, balance: Number.isFinite(balance) ? balance : 0, priority })
+      }
+      if (wallets.length > 0) {
+        // 按 priority 升序（缺失视为 MAX_SAFE_INTEGER，即排在最后）。
+        wallets.sort((a, b) => a.priority - b.priority)
+        return wallets
+      }
+      continue
+    }
+    if (code !== undefined && AUTOCLAW_AUTH_EXPIRED_CODES.has(code)) {
+      throw new Error('AutoClaw：登录态已过期，无法查询积分（请重新登录）')
+    }
+  }
+  return undefined
+}

@@ -262,3 +262,94 @@ export async function verifyChannelCheckinJudgements() {
 
   console.log('channel-checkin: 5 组断言通过（autoclaw 三态判据 / officeace 增量与幂等）')
 }
+
+/**
+ * AutoClaw 出站归一化回归（上游 2026-09-22 起的两道闸 + 模型路由）。
+ *
+ * 上游 `providers/autoclaw/{adapter,prompt,models}.rs`：
+ * - system 必须以 OpenClaw 身份句开头；**首条不是 system 时要补一条**
+ *   （少这一步，不带系统提示的请求被稳定拒成 406 空响应体）；
+ * - `max_tokens` 小于 10000 的小正整数被预校验拒成 406（8192 拒、10000 过）；
+ * - 模型要发两个标识：`X-Request-Model` 头 = 完整路由 ID，
+ *   `body.model` = 剥前缀后的 ID。
+ */
+export async function verifyAutoClawOutbound() {
+  const http = await import('node:http')
+  const { fetch: realFetch } = await import('undici')
+  const {
+    normalizeAutoClawMaxTokens,
+    normalizeAutoClawSystem,
+    resolveAutoClawModelRoute,
+  } = await import('../vendor/channel-pack/src/autoclaw-sms.ts')
+  const { AutoClawAdapter } = await import('../vendor/channel-pack/src/autoclaw-adapter.ts')
+  const { AUTOCLAW } = await import('../vendor/channel-pack/src/autoclaw-product.ts')
+
+  // ── 1. system 归一化 ──
+  assert.match(normalizeAutoClawSystem('你是助手'), /^You are a personal assistant running inside OpenClaw\./, '无身份句要前置前缀')
+  assert.match(normalizeAutoClawSystem('你是助手'), /你是助手$/, '客户端提示词逐字保留在后')
+  // 幂等：已带身份句只改写、不再前置
+  const already = normalizeAutoClawSystem('You are a personal assistant running inside OpenClaw.\n\nbe nice')
+  assert.equal(already.match(/You are a personal assistant running inside OpenClaw\./g)?.length, 1, '已带身份句不重复前置')
+  // 外来身份句改写（忽略大小写）
+  assert.match(normalizeAutoClawSystem('You are Claude Code, Anthropic official CLI'), /You are a coding assistant/)
+
+  // ── 2. max_tokens 下限 ──
+  assert.equal(normalizeAutoClawMaxTokens(8192), 10_000, '小于下限抬到 10000')
+  assert.equal(normalizeAutoClawMaxTokens(20000), 20000, '达标不动')
+  assert.equal(normalizeAutoClawMaxTokens(0), undefined, '0 视为没给')
+  assert.equal(normalizeAutoClawMaxTokens(-5), undefined, '负数视为没给')
+  assert.equal(normalizeAutoClawMaxTokens('x'), undefined, '非数字视为没给')
+
+  // ── 3. 模型路由 ──
+  assert.deepEqual(resolveAutoClawModelRoute('glm-5.3'), { routeModelId: 'zaicoding_glm-5.3', bodyModelId: 'glm-5.3' })
+  assert.deepEqual(resolveAutoClawModelRoute('GLM-5.3'), { routeModelId: 'zaicoding_glm-5.3', bodyModelId: 'glm-5.3' }, '大小写不触发回退')
+  assert.deepEqual(resolveAutoClawModelRoute('glm-5.3-flash'), { routeModelId: 'zai_glm-5.3-flash', bodyModelId: 'glm-5.3-flash' })
+  assert.deepEqual(resolveAutoClawModelRoute('zaicoding_glm-5.3'), { routeModelId: 'zaicoding_glm-5.3', bodyModelId: 'glm-5.3' }, '显式路由写法透传')
+  assert.deepEqual(resolveAutoClawModelRoute('claude-sonnet-4-5'), { routeModelId: 'zai_auto', bodyModelId: 'auto' }, '未知回落默认路由')
+  assert.deepEqual(resolveAutoClawModelRoute(''), { routeModelId: 'zai_auto', bodyModelId: 'auto' }, '空值回落默认路由')
+
+  // ── 4. 无 system 的请求也要带身份前缀消息（真实打一次 mock）──
+  const seen = []
+  const upstream = http.createServer((req, res) => {
+    const chunks = []
+    req.on('data', c => chunks.push(c))
+    req.on('end', () => {
+      seen.push({
+        headers: req.headers,
+        body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+      })
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', Connection: 'close' })
+      res.end('data: {"choices":[{"delta":{"content":"可以"},"finish_reason":null}]}\n\ndata: [DONE]\n\n')
+    })
+  })
+  await new Promise(r => upstream.listen(0, '127.0.0.1', r))
+  const product = { ...AUTOCLAW, apiBase: `http://127.0.0.1:${upstream.address().port}` }
+  const adapter = new AutoClawAdapter({
+    product,
+    fetchImpl: realFetch,
+    resolveCredential: async () => ({
+      access_token: 'Bearer jwt-1234567890', refresh_token: 'r', expire_time: 0,
+      account_id: 'a', nickname: 'n', created_at: 0, device_id: 'd',
+    }),
+  })
+  try {
+    const out = []
+    for await (const chunk of adapter.stream({
+      model: 'glm-5.3',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+    })) if (chunk.type === 'text-delta') out.push(chunk.text)
+    assert.equal(out.join(''), '可以', '对话链路要能解出正文')
+    assert.equal(seen.length, 1)
+    assert.equal(seen[0].headers['x-request-model'], 'zaicoding_glm-5.3', 'X-Request-Model 是完整路由 ID')
+    assert.equal(seen[0].body.model, 'glm-5.3', 'body.model 是剥前缀后的 ID')
+    const messages = seen[0].body.messages
+    assert.equal(messages[0].role, 'system', '无 system 输入也要补一条 system')
+    assert.match(messages[0].content, /^You are a personal assistant running inside OpenClaw\./, '补的这条带身份前缀')
+    assert.equal(seen[0].headers['x-tm'], process.platform === 'darwin' ? 'mac' : 'win', 'Linux 回落 win（上游不认 linux）')
+    assert.equal(seen[0].headers['x-harness-type'], undefined, '对话链不发 X-Harness-Type（上游对它区别对待）')
+  } finally {
+    upstream.close()
+  }
+
+  console.log('autoclaw-outbound: 4 组断言通过（system 归一 / max_tokens / 路由 / 无 system 兜底）')
+}

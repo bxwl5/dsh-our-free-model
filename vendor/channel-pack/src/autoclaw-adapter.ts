@@ -31,6 +31,11 @@ import {
   type AutoClawCredential,
 } from './autoclaw.js'
 import {
+  normalizeAutoClawMaxTokens,
+  normalizeAutoClawSystem,
+  resolveAutoClawModelRoute,
+} from './autoclaw-sms.js'
+import {
   consumeOpenAiSse,
   errorDetail,
   errorMessage,
@@ -186,10 +191,26 @@ export class AutoClawAdapter extends LlmAdapter {
     const imageUrls = new Map<string, string>()
     const messages = serializeMessages(options.messages, imageUrls)
     if (options.system !== undefined && options.system.length > 0) {
-      messages.unshift({ role: 'system', content: options.system })
+      // 上游 2026-09-22 起的硬要求：system 必须以 OpenClaw 身份句开头，
+      // 不满足稳定 406 / 403。客户端自己的提示词逐字保留在前缀之后。
+      messages.unshift({ role: 'system', content: normalizeAutoClawSystem(options.system) })
+    } else if (messages.length === 0 || messages[0]?.role !== 'system') {
+      // ⚠️ 无 system 时也必须补一条只带身份前缀的 system 消息。
+      // 上游 `providers/autoclaw/prompt.rs` 的 normalize()：首条不是 system
+      // 就 `messages.insert(0, {role:'system', content: IDENTITY_PREFIX})` ——
+      // 少这一步，任何不带系统提示的请求都被稳定拒成 406 空响应体
+      //（2026-10-25 实测：只补 brand 头与 max_tokens 仍然 406）。
+      messages.unshift({ role: 'system', content: normalizeAutoClawSystem('') })
     }
-    const body: Record<string, unknown> = { model: options.model, messages, stream: true }
-    if (options.maxTokens !== undefined && options.maxTokens > 0) body.max_tokens = options.maxTokens
+    // 模型路由：上游要「X-Request-Model 头 = 完整路由 ID」+「body.model =
+    // 剥前缀后的 ID」，两者不同。原样透传会被上游按未知模型拒（HTTP 400
+    // 非法模型）。判据见 autoclaw-sms.ts 的 resolveAutoClawModelRoute。
+    const route = resolveAutoClawModelRoute(options.model)
+    const body: Record<string, unknown> = { model: route.bodyModelId, messages, stream: true }
+    // 上游预校验：小于 10000 的小正整数 max_tokens 会被拒成 406 空响应体
+    //（实测 8192 拒、10000 过），故抬到安全下限。
+    const maxTokens = normalizeAutoClawMaxTokens(options.maxTokens)
+    if (maxTokens !== undefined) body.max_tokens = maxTokens
     if (options.tools !== undefined && options.tools.length > 0) {
       body.tools = options.tools.map((tool) => ({
         type: 'function',
@@ -201,7 +222,11 @@ export class AutoClawAdapter extends LlmAdapter {
     try {
       response = await this.fetchImpl(chatEndpoint(this.product), {
         method: 'POST',
-        headers: { ...autoClawHeaders(this.product, credential), Accept: 'text/event-stream' },
+        headers: {
+          ...autoClawHeaders(this.product, credential),
+          Accept: 'text/event-stream',
+          'X-Request-Model': route.routeModelId,
+        },
         body: JSON.stringify(body),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
       })

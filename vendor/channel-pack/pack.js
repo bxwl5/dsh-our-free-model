@@ -30174,6 +30174,393 @@ var init_autoclaw_product = __esm({
   }
 });
 
+// vendor/channel-pack/src/autoclaw-sms.ts
+var autoclaw_sms_exports = {};
+__export(autoclaw_sms_exports, {
+  AUTOCLAW_DAILY_SIGNIN_TASK: () => AUTOCLAW_DAILY_SIGNIN_TASK,
+  AUTOCLAW_IDENTITY_LINE: () => AUTOCLAW_IDENTITY_LINE,
+  AUTOCLAW_LOGIN_PATH: () => AUTOCLAW_LOGIN_PATH,
+  AUTOCLAW_MAX_TOKENS_FLOOR: () => AUTOCLAW_MAX_TOKENS_FLOOR,
+  AUTOCLAW_REFRESH_PATHS: () => AUTOCLAW_REFRESH_PATHS,
+  AUTOCLAW_SEND_CODE_PATH: () => AUTOCLAW_SEND_CODE_PATH,
+  AUTOCLAW_SMS_APP_ID: () => AUTOCLAW_SMS_APP_ID,
+  AUTOCLAW_SMS_APP_KEY: () => AUTOCLAW_SMS_APP_KEY,
+  AUTOCLAW_SOURCE_ID: () => AUTOCLAW_SOURCE_ID,
+  AUTOCLAW_TASK_COMPLETE_PATH: () => AUTOCLAW_TASK_COMPLETE_PATH,
+  AUTOCLAW_TASK_LIST_PATH: () => AUTOCLAW_TASK_LIST_PATH,
+  AUTOCLAW_USERAPI_VERSION: () => AUTOCLAW_USERAPI_VERSION,
+  AUTOCLAW_WALLET_V1_PATH: () => AUTOCLAW_WALLET_V1_PATH,
+  AUTOCLAW_WALLET_V2_PATH: () => AUTOCLAW_WALLET_V2_PATH,
+  autoclawAuthHeaders: () => autoclawAuthHeaders,
+  autoclawDeviceIdPath: () => autoclawDeviceIdPath,
+  autoclawSign: () => autoclawSign,
+  autoclawUserapiHeaders: () => autoclawUserapiHeaders,
+  claimAutoclawDailyCheckin: () => claimAutoclawDailyCheckin,
+  fetchAutoClawWallets: () => fetchAutoClawWallets,
+  loginAutoclawWithCode: () => loginAutoclawWithCode,
+  normalizeAutoClawMaxTokens: () => normalizeAutoClawMaxTokens,
+  normalizeAutoClawSystem: () => normalizeAutoClawSystem,
+  normalizeAutoclawPhone: () => normalizeAutoclawPhone,
+  refreshAutoclawCredential: () => refreshAutoclawCredential,
+  resolveAutoClawModelRoute: () => resolveAutoClawModelRoute,
+  resolveAutoclawDeviceId: () => resolveAutoclawDeviceId,
+  sendAutoclawCode: () => sendAutoclawCode,
+  stripAutoClawRoutePrefix: () => stripAutoClawRoutePrefix,
+  toAutoclawCredential: () => toAutoclawCredential
+});
+import { createHash as createHash5, randomUUID as randomUUID7 } from "node:crypto";
+import { mkdirSync as mkdirSync5, readFileSync as readFileSync6, writeFileSync as writeFileSync5 } from "node:fs";
+import { join as join4 } from "node:path";
+function autoclawSign(appId, timestamp, appKey) {
+  return createHash5("md5").update(`${appId}&${timestamp}&${appKey}`).digest("hex");
+}
+function autoclawAuthHeaders(timestamp = Math.floor(Date.now() / 1e3), appId = AUTOCLAW_SMS_APP_ID, appKey = AUTOCLAW_SMS_APP_KEY) {
+  return {
+    "Content-Type": "application/json",
+    "X-Auth-Appid": appId,
+    "X-Auth-TimeStamp": String(timestamp),
+    "X-Auth-Sign": autoclawSign(appId, timestamp, appKey),
+    "X-Lang": "zh-CN",
+    "X-Channel": "official"
+  };
+}
+function normalizeAutoclawPhone(raw) {
+  const digits = String(raw ?? "").replace(/[\s-]/g, "");
+  const local = digits.startsWith("+86") ? digits.slice(3) : digits.startsWith("86") && digits.length === 13 ? digits.slice(2) : digits;
+  return PHONE_RE.test(local) ? local : "";
+}
+function autoclawDeviceIdPath(home) {
+  return join4(home, "channel-pack", "autoclaw-device.json");
+}
+function resolveAutoclawDeviceId(home) {
+  const file = autoclawDeviceIdPath(home);
+  try {
+    const parsed = JSON.parse(readFileSync6(file, "utf8"));
+    const value = parsed?.deviceId;
+    if (typeof value === "string" && value.length >= 8) return value;
+  } catch {
+  }
+  const deviceId = randomUUID7();
+  try {
+    mkdirSync5(join4(home, "channel-pack"), { recursive: true });
+    writeFileSync5(file, `${JSON.stringify({ deviceId, createdAt: Date.now() }, null, 2)}
+`, "utf8");
+  } catch {
+  }
+  return deviceId;
+}
+async function postEnvelope(product, fetcher, path2, body) {
+  let response;
+  try {
+    response = await fetcher(`${product.apiBase}${path2}`, {
+      method: "POST",
+      headers: autoclawAuthHeaders(),
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS2)
+    });
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+  const text = await response.text().catch(() => "");
+  if (!response.ok) return { ok: false, error: `HTTP ${response.status}\uFF1A${text.slice(0, 200)}` };
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return { ok: false, error: `\u4E0A\u6E38\u8FD4\u56DE\u975E JSON\uFF1A${text.slice(0, 200)}` };
+  }
+  if (json.code !== 0) return { ok: false, error: json.msg ?? `\u4E0A\u6E38\u9519\u8BEF\u7801 ${json.code}` };
+  return { ok: true, json };
+}
+async function sendAutoclawCode(options) {
+  const phone = normalizeAutoclawPhone(options.phone);
+  if (phone === "") return { ok: false, error: "\u624B\u673A\u53F7\u683C\u5F0F\u4E0D\u6B63\u786E" };
+  const result = await postEnvelope(options.product, options.fetcher, AUTOCLAW_SEND_CODE_PATH, {
+    phone,
+    source_id: AUTOCLAW_SOURCE_ID,
+    device_id: options.deviceId
+  });
+  return result.ok ? { ok: true } : { ok: false, error: result.error };
+}
+function jwtClaims2(token) {
+  const parts = token.split(".");
+  if (parts.length < 2) return {};
+  try {
+    return JSON.parse(Buffer.from(parts[1].replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"));
+  } catch {
+    return {};
+  }
+}
+function toAutoclawCredential(data, deviceId, phone) {
+  const accessToken = stripBearer(data?.access_token);
+  if (accessToken === "") return { ok: false, error: "\u4E0A\u6E38\u54CD\u5E94\u7F3A\u5C11 access_token" };
+  const claims = jwtClaims2(accessToken);
+  const declared = typeof data?.expires_at === "number" ? data.expires_at * (data.expires_at < 1e12 ? 1e3 : 1) : typeof data?.expires_in === "number" ? Date.now() + data.expires_in * 1e3 : void 0;
+  const jwtExpires = typeof claims.exp === "number" ? claims.exp * 1e3 : void 0;
+  const userId = data?.user_id ?? claims.user_id ?? claims.uid ?? claims.sub;
+  const userName = typeof data?.user_name === "string" ? data.user_name : void 0;
+  const userPhone = typeof data?.user_phone === "string" ? data.user_phone : phone;
+  const fallbackId = userPhone !== "" ? `phone:${userPhone}` : void 0;
+  const credential = {
+    access_token: accessToken,
+    refresh_token: stripBearer(data?.refresh_token) || void 0,
+    expire_time: jwtExpires ?? declared,
+    account_id: userId === void 0 ? fallbackId : String(userId),
+    nickname: userName ?? `AutoClaw ${userPhone.slice(-4)}`,
+    created_at: Date.now(),
+    device_id: deviceId
+  };
+  return { ok: true, credential };
+}
+async function refreshAutoclawCredential(options) {
+  const refreshToken2 = stripBearer(options.credential.refresh_token);
+  if (refreshToken2 === "") return { ok: false, error: "\u6CA1\u6709 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55" };
+  const deviceId = options.credential.device_id ?? "our-free-model-device";
+  let lastError = "";
+  for (const path2 of AUTOCLAW_REFRESH_PATHS) {
+    const timestamp = Math.floor(Date.now() / 1e3);
+    try {
+      const response = await options.fetcher(`${options.product.apiBase}${path2}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Auth-Appid": AUTOCLAW_SMS_APP_ID,
+          "X-Auth-TimeStamp": String(timestamp),
+          "X-Auth-Sign": autoclawSign(AUTOCLAW_SMS_APP_ID, timestamp, AUTOCLAW_SMS_APP_KEY)
+        },
+        body: JSON.stringify({
+          refresh_token: refreshToken2,
+          source_id: AUTOCLAW_SOURCE_ID,
+          device_id: deviceId
+        }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS2)
+      });
+      const text = await response.text();
+      if (!response.ok) {
+        lastError = `HTTP ${response.status}\uFF1A${text.slice(0, 160)}`;
+        continue;
+      }
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        lastError = `\u975E JSON \u54CD\u5E94\uFF1A${text.slice(0, 160)}`;
+        continue;
+      }
+      if (json.code !== 0 || json.data?.access_token === void 0) {
+        lastError = json.msg ?? `\u4E0A\u6E38\u9519\u8BEF\u7801 ${json.code}`;
+        continue;
+      }
+      const mapped = toAutoclawCredential(json.data, deviceId, options.credential.nickname ?? "");
+      if (!mapped.ok) {
+        lastError = mapped.error;
+        continue;
+      }
+      const serverUserId = json.data.user_id;
+      const accountId = typeof serverUserId === "string" && serverUserId !== "" ? serverUserId : typeof serverUserId === "number" ? String(serverUserId) : options.credential.account_id;
+      return {
+        ok: true,
+        credential: {
+          ...mapped.credential,
+          // 上游轮换 refresh_token 时用新的；没给就沿用旧的（否则下次续期会因缺 token 失败）。
+          refresh_token: mapped.credential.refresh_token ?? options.credential.refresh_token,
+          account_id: accountId,
+          nickname: options.credential.nickname ?? mapped.credential.nickname
+        }
+      };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+  }
+  return { ok: false, error: lastError === "" ? "\u7EED\u671F\u5931\u8D25\uFF08\u4E0A\u6E38\u672A\u8FD4\u56DE access_token\uFF09" : lastError };
+}
+async function loginAutoclawWithCode(options) {
+  const phone = normalizeAutoclawPhone(options.phone);
+  if (phone === "") return { ok: false, error: "\u624B\u673A\u53F7\u683C\u5F0F\u4E0D\u6B63\u786E" };
+  const code = options.code.trim();
+  if (!/^\d{4,8}$/.test(code)) return { ok: false, error: "\u9A8C\u8BC1\u7801\u5FC5\u987B\u662F 4\u20138 \u4F4D\u6570\u5B57" };
+  const result = await postEnvelope(options.product, options.fetcher, AUTOCLAW_LOGIN_PATH, {
+    phone,
+    code: Number(code),
+    source_id: AUTOCLAW_SOURCE_ID,
+    device_id: options.deviceId
+  });
+  if (!result.ok) return { ok: false, error: result.error };
+  return toAutoclawCredential(result.json.data, options.deviceId, phone);
+}
+function autoclawUserapiHeaders(token, timestamp = Math.floor(Date.now() / 1e3)) {
+  return {
+    "Content-Type": "application/json",
+    Accept: "*/*",
+    "X-Version": AUTOCLAW_USERAPI_VERSION,
+    "X-Product": "autoclaw",
+    "X-Client-Type": "pc",
+    "X-Harness-Type": "zcode",
+    "X-Tm": process.platform === "win32" ? "win" : "linux",
+    "X-Lang": "zh-CN",
+    "X-Channel": "official",
+    "X-Auth-Appid": AUTOCLAW_SMS_APP_ID,
+    "X-Auth-TimeStamp": String(timestamp),
+    "X-Auth-Sign": autoclawSign(AUTOCLAW_SMS_APP_ID, timestamp, AUTOCLAW_SMS_APP_KEY),
+    ...token === "" ? {} : { Authorization: `Bearer ${token}` }
+  };
+}
+async function claimAutoclawDailyCheckin(options) {
+  const token = stripBearer(options.credential.access_token);
+  const timestamp = Math.floor(Date.now() / 1e3);
+  const url = `${options.product.apiBase}${AUTOCLAW_TASK_COMPLETE_PATH}`;
+  const response = await options.fetcher(url, {
+    method: "POST",
+    headers: autoclawUserapiHeaders(token, timestamp),
+    body: JSON.stringify({ task_id: AUTOCLAW_DAILY_SIGNIN_TASK }),
+    ...options.signal === void 0 ? {} : { signal: options.signal }
+  });
+  if (response.status === 401) {
+    return { claimed: 0, message: "\u767B\u5F55\u6001\u5DF2\u8FC7\u671F\uFF0C\u65E0\u6CD5\u7B7E\u5230\uFF08\u8BF7\u5148\u7EED\u671F\u6216\u91CD\u65B0\u767B\u5F55\uFF09" };
+  }
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    return { claimed: 0, message: `\u7B7E\u5230\u8FD4\u56DE HTTP ${response.status}${text === "" ? "" : `\uFF1A${text.slice(0, 160)}`}` };
+  }
+  const body = await response.json().catch(() => void 0);
+  const data = body !== null && typeof body === "object" ? body.data : void 0;
+  const record = data !== null && typeof data === "object" ? data : {};
+  const reward = typeof record.reward_points === "number" && Number.isFinite(record.reward_points) ? record.reward_points : Number(record.reward_points ?? 0);
+  const success = record.success === true;
+  const already = record.already_completed === true;
+  if (reward > 0) return { claimed: reward, message: `\u5DF2\u9886\u53D6 ${reward} \u79EF\u5206` };
+  if (success) return { claimed: 0, message: "\u7B7E\u5230\u6210\u529F\uFF08\u672C\u8F6E\u672A\u8FD4\u56DE\u79EF\u5206\u6570\uFF09" };
+  if (already) return { claimed: 0, message: "\u4ECA\u5929\u5DF2\u7B7E\u5230\u8FC7\uFF08\u4E0A\u6E38\u6309\u5929\u5E42\u7B49\uFF09" };
+  return { claimed: 0, message: "\u4E0A\u6E38\u672A\u8FD4\u56DE\u53EF\u9886\u53D6\u7684\u79EF\u5206\uFF08\u4ECA\u65E5\u53EF\u80FD\u5DF2\u9886\u8FC7\uFF09" };
+}
+function stripAutoClawRoutePrefix(routeId) {
+  for (const prefix of AUTOCLAW_ROUTE_PREFIXES) {
+    if (routeId.startsWith(prefix)) return routeId.slice(prefix.length);
+  }
+  return routeId;
+}
+function resolveAutoClawModelRoute(rawModel) {
+  const name2 = String(rawModel ?? "").trim();
+  if (name2 === "") {
+    return { routeModelId: AUTOCLAW_DEFAULT_ROUTE, bodyModelId: stripAutoClawRoutePrefix(AUTOCLAW_DEFAULT_ROUTE) };
+  }
+  const same = (text) => text.localeCompare(name2, void 0, { sensitivity: "accent" }) === 0 || text.toLowerCase() === name2.toLowerCase();
+  const byId = AUTOCLAW_MODEL_ROUTES.find((entry2) => same(entry2.id));
+  const byRoute = AUTOCLAW_MODEL_ROUTES.find((entry2) => same(entry2.routeId));
+  const entry = byId ?? byRoute;
+  if (entry !== void 0) {
+    return { routeModelId: entry.routeId, bodyModelId: stripAutoClawRoutePrefix(entry.routeId) };
+  }
+  for (const prefix of AUTOCLAW_ROUTE_PREFIXES) {
+    if (name2.startsWith(prefix)) return { routeModelId: name2, bodyModelId: stripAutoClawRoutePrefix(name2) };
+  }
+  return { routeModelId: AUTOCLAW_DEFAULT_ROUTE, bodyModelId: stripAutoClawRoutePrefix(AUTOCLAW_DEFAULT_ROUTE) };
+}
+function normalizeAutoClawSystem(text) {
+  let out = text.trimStart();
+  for (const [from, to] of AUTOCLAW_FOREIGN_IDENTITIES) {
+    if (out.toLowerCase().includes(from.toLowerCase())) {
+      out = out.replace(new RegExp(from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), to);
+    }
+  }
+  if (out.startsWith(AUTOCLAW_IDENTITY_LINE)) return out;
+  return `${AUTOCLAW_IDENTITY_PREFIX}
+${out}`;
+}
+function normalizeAutoClawMaxTokens(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return void 0;
+  const n = Math.trunc(value);
+  if (n <= 0) return void 0;
+  return n < AUTOCLAW_MAX_TOKENS_FLOOR ? AUTOCLAW_MAX_TOKENS_FLOOR : n;
+}
+async function fetchAutoClawWallets(options) {
+  const token = stripBearer(options.credential.access_token);
+  if (token === "") return void 0;
+  const headers = autoclawUserapiHeaders(token);
+  for (const path2 of [AUTOCLAW_WALLET_V2_PATH, AUTOCLAW_WALLET_V1_PATH]) {
+    const response = await options.fetcher(`${options.product.apiBase}${path2}`, {
+      method: "GET",
+      headers,
+      ...options.signal === void 0 ? {} : { signal: options.signal }
+    });
+    if (!response.ok) continue;
+    const body = await response.json().catch(() => void 0);
+    if (typeof body !== "object" || body === null) continue;
+    const record = body;
+    const code = typeof record.code === "number" ? record.code : void 0;
+    if (code === void 0 || code === 0) {
+      const data = record.data;
+      if (typeof data !== "object" || data === null) continue;
+      const list = data.wallets;
+      if (!Array.isArray(list)) continue;
+      const wallets = [];
+      for (const raw of list) {
+        if (typeof raw !== "object" || raw === null) continue;
+        const item = raw;
+        if (item.display === false) continue;
+        const type = typeof item.public_wallet_type === "string" ? item.public_wallet_type : "";
+        const name2 = typeof item.display_name === "string" && item.display_name.trim() !== "" ? item.display_name.trim() : type !== "" ? type : "\u79EF\u5206";
+        const balance = typeof item.balance === "number" && Number.isFinite(item.balance) ? item.balance : Number(item.balance ?? Number.NaN);
+        const priority = typeof item.priority === "number" && Number.isFinite(item.priority) ? item.priority : Number.MAX_SAFE_INTEGER;
+        wallets.push({ type, displayName: name2, balance: Number.isFinite(balance) ? balance : 0, priority });
+      }
+      if (wallets.length > 0) {
+        wallets.sort((a, b) => a.priority - b.priority);
+        return wallets;
+      }
+      continue;
+    }
+    if (code !== void 0 && AUTOCLAW_AUTH_EXPIRED_CODES.has(code)) {
+      throw new Error("AutoClaw\uFF1A\u767B\u5F55\u6001\u5DF2\u8FC7\u671F\uFF0C\u65E0\u6CD5\u67E5\u8BE2\u79EF\u5206\uFF08\u8BF7\u91CD\u65B0\u767B\u5F55\uFF09");
+    }
+  }
+  return void 0;
+}
+var AUTOCLAW_SMS_APP_ID, AUTOCLAW_SMS_APP_KEY, AUTOCLAW_SEND_CODE_PATH, AUTOCLAW_LOGIN_PATH, AUTOCLAW_SOURCE_ID, REQUEST_TIMEOUT_MS2, PHONE_RE, stripBearer, AUTOCLAW_REFRESH_PATHS, AUTOCLAW_USERAPI_VERSION, AUTOCLAW_TASK_COMPLETE_PATH, AUTOCLAW_TASK_LIST_PATH, AUTOCLAW_DAILY_SIGNIN_TASK, AUTOCLAW_ROUTE_PREFIXES, AUTOCLAW_DEFAULT_ROUTE, AUTOCLAW_MODEL_ROUTES, AUTOCLAW_IDENTITY_LINE, AUTOCLAW_IDENTITY_PREFIX, AUTOCLAW_MAX_TOKENS_FLOOR, AUTOCLAW_FOREIGN_IDENTITIES, AUTOCLAW_WALLET_V2_PATH, AUTOCLAW_WALLET_V1_PATH, AUTOCLAW_AUTH_EXPIRED_CODES;
+var init_autoclaw_sms = __esm({
+  "vendor/channel-pack/src/autoclaw-sms.ts"() {
+    "use strict";
+    AUTOCLAW_SMS_APP_ID = "100003";
+    AUTOCLAW_SMS_APP_KEY = "38d2391985e2369a5fb8227d8e6cd5e5";
+    AUTOCLAW_SEND_CODE_PATH = "/userapi/v1/agent-send-code";
+    AUTOCLAW_LOGIN_PATH = "/userapi/v1/agent-login";
+    AUTOCLAW_SOURCE_ID = "autoclaw";
+    REQUEST_TIMEOUT_MS2 = 2e4;
+    PHONE_RE = /^1[3-9]\d{9}$/;
+    stripBearer = (value) => typeof value === "string" ? value.replace(/^Bearer\s+/i, "").trim() : "";
+    AUTOCLAW_REFRESH_PATHS = ["/userapi/v1/refresh", "/userapi/v1/agent-refresh"];
+    AUTOCLAW_USERAPI_VERSION = "1.18.5";
+    AUTOCLAW_TASK_COMPLETE_PATH = "/autoclaw-proxy/proxy/autoclaw-task-complete";
+    AUTOCLAW_TASK_LIST_PATH = "/autoclaw-proxy/proxy/autoclaw-task-list";
+    AUTOCLAW_DAILY_SIGNIN_TASK = "daily_signin";
+    AUTOCLAW_ROUTE_PREFIXES = ["zaicoding_", "zai_", "x_"];
+    AUTOCLAW_DEFAULT_ROUTE = "zai_auto";
+    AUTOCLAW_MODEL_ROUTES = [
+      { id: "glm-5.3", routeId: "zaicoding_glm-5.3" },
+      { id: "glm-5.3-flash", routeId: "zai_glm-5.3-flash" }
+    ];
+    AUTOCLAW_IDENTITY_LINE = "You are a personal assistant running inside OpenClaw.";
+    AUTOCLAW_IDENTITY_PREFIX = "You are a personal assistant running inside OpenClaw.\n\n## Tooling\nAvailable tools are policy-filtered. Names are case-sensitive; call exactly as listed.\n";
+    AUTOCLAW_MAX_TOKENS_FLOOR = 1e4;
+    AUTOCLAW_FOREIGN_IDENTITIES = [
+      ["You are ZCode, an interactive coding agent", "You are an interactive coding agent"],
+      ["You are a coding agent running in the Codex CLI tool", "You are a coding agent running in a terminal CLI tool"],
+      ["You are a coding agent running in the Codex CLI", "You are a coding agent running in a terminal CLI"],
+      ["You are running as a coding agent in the Codex CLI", "You are running as a coding agent in a terminal CLI"],
+      // Claude Code 的整句是 "You are Claude Code, Anthropic official CLI…"；
+      // 只改到「You are Claude Code」为止，后面的产品说明原样保留。
+      ["You are Claude Code", "You are a coding assistant"],
+      ["You are ZCode", "You are an interactive coding agent"],
+      ["You are an AI agent powered by DeepSeek Harness", "You are an AI agent powered by a local coding harness"],
+      // 放最后：它最短、最通用，必须让上面更长的 Codex CLI 句式先有机会命中。
+      ["You are Codex", "You are a coding agent"]
+    ];
+    AUTOCLAW_WALLET_V2_PATH = "/agent-assetmgr/api/v2/wallets?biz_app_id=autoclaw";
+    AUTOCLAW_WALLET_V1_PATH = "/agent-assetmgr/api/v1/wallet-instances?wallet_type=all&wallet_scope=all";
+    AUTOCLAW_AUTH_EXPIRED_CODES = /* @__PURE__ */ new Set([41e4, 40100, 400002]);
+  }
+});
+
 // node_modules/jose/dist/webapi/lib/buffer_utils.js
 function concat(...buffers) {
   const size = buffers.reduce((acc, { length }) => acc + length, 0);
@@ -31555,10 +31942,10 @@ var init_webapi = __esm({
 });
 
 // vendor/channel-pack/src/oauth.ts
-import { createHash as createHash5, randomBytes as randomBytes5 } from "node:crypto";
+import { createHash as createHash6, randomBytes as randomBytes5 } from "node:crypto";
 function generatePkcePair() {
   const codeVerifier = randomBytes5(48).toString("base64url");
-  const codeChallenge = createHash5("sha256").update(codeVerifier).digest("base64url");
+  const codeChallenge = createHash6("sha256").update(codeVerifier).digest("base64url");
   return { codeVerifier, codeChallenge };
 }
 async function generateDpopKeyPair() {
@@ -31693,7 +32080,7 @@ __export(login_exports, {
 });
 import { createServer as createServer3 } from "node:http";
 import { spawn } from "node:child_process";
-import { getRandomValues, randomUUID as randomUUID7, randomBytes as randomBytes6 } from "node:crypto";
+import { getRandomValues, randomUUID as randomUUID8, randomBytes as randomBytes6 } from "node:crypto";
 function generateRandomSecret() {
   const bytes = getRandomValues(new Uint8Array(32));
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -31865,7 +32252,7 @@ function startCallbackServer(ticketId, secret, options) {
   });
 }
 async function runLoginFlow(options = {}) {
-  const ticketId = randomUUID7();
+  const ticketId = randomUUID8();
   const secret = generateRandomSecret();
   const { port, server, result } = await startCallbackServer(ticketId, secret, options);
   const { loginUrl } = buildLoginUrl(port, ticketId);
@@ -32013,276 +32400,6 @@ var init_login = __esm({
     OAUTH_LOCALE = "zh-cn";
     OAUTH_CALLBACK_TIMEOUT_MS = 18e4;
     MIN_CALLBACK_PORT = 1e4;
-  }
-});
-
-// vendor/channel-pack/src/autoclaw-sms.ts
-var autoclaw_sms_exports = {};
-__export(autoclaw_sms_exports, {
-  AUTOCLAW_DAILY_SIGNIN_TASK: () => AUTOCLAW_DAILY_SIGNIN_TASK,
-  AUTOCLAW_LOGIN_PATH: () => AUTOCLAW_LOGIN_PATH,
-  AUTOCLAW_REFRESH_PATHS: () => AUTOCLAW_REFRESH_PATHS,
-  AUTOCLAW_SEND_CODE_PATH: () => AUTOCLAW_SEND_CODE_PATH,
-  AUTOCLAW_SMS_APP_ID: () => AUTOCLAW_SMS_APP_ID,
-  AUTOCLAW_SMS_APP_KEY: () => AUTOCLAW_SMS_APP_KEY,
-  AUTOCLAW_SOURCE_ID: () => AUTOCLAW_SOURCE_ID,
-  AUTOCLAW_TASK_COMPLETE_PATH: () => AUTOCLAW_TASK_COMPLETE_PATH,
-  AUTOCLAW_TASK_LIST_PATH: () => AUTOCLAW_TASK_LIST_PATH,
-  AUTOCLAW_USERAPI_VERSION: () => AUTOCLAW_USERAPI_VERSION,
-  autoclawAuthHeaders: () => autoclawAuthHeaders,
-  autoclawDeviceIdPath: () => autoclawDeviceIdPath,
-  autoclawSign: () => autoclawSign,
-  autoclawUserapiHeaders: () => autoclawUserapiHeaders,
-  claimAutoclawDailyCheckin: () => claimAutoclawDailyCheckin,
-  loginAutoclawWithCode: () => loginAutoclawWithCode,
-  normalizeAutoclawPhone: () => normalizeAutoclawPhone,
-  refreshAutoclawCredential: () => refreshAutoclawCredential,
-  resolveAutoclawDeviceId: () => resolveAutoclawDeviceId,
-  sendAutoclawCode: () => sendAutoclawCode,
-  toAutoclawCredential: () => toAutoclawCredential
-});
-import { createHash as createHash8, randomUUID as randomUUID12 } from "node:crypto";
-import { mkdirSync as mkdirSync5, readFileSync as readFileSync6, writeFileSync as writeFileSync6 } from "node:fs";
-import { join as join5 } from "node:path";
-function autoclawSign(appId, timestamp, appKey) {
-  return createHash8("md5").update(`${appId}&${timestamp}&${appKey}`).digest("hex");
-}
-function autoclawAuthHeaders(timestamp = Math.floor(Date.now() / 1e3), appId = AUTOCLAW_SMS_APP_ID, appKey = AUTOCLAW_SMS_APP_KEY) {
-  return {
-    "Content-Type": "application/json",
-    "X-Auth-Appid": appId,
-    "X-Auth-TimeStamp": String(timestamp),
-    "X-Auth-Sign": autoclawSign(appId, timestamp, appKey),
-    "X-Lang": "zh-CN",
-    "X-Channel": "official"
-  };
-}
-function normalizeAutoclawPhone(raw) {
-  const digits = String(raw ?? "").replace(/[\s-]/g, "");
-  const local = digits.startsWith("+86") ? digits.slice(3) : digits.startsWith("86") && digits.length === 13 ? digits.slice(2) : digits;
-  return PHONE_RE2.test(local) ? local : "";
-}
-function autoclawDeviceIdPath(home) {
-  return join5(home, "channel-pack", "autoclaw-device.json");
-}
-function resolveAutoclawDeviceId(home) {
-  const file = autoclawDeviceIdPath(home);
-  try {
-    const parsed = JSON.parse(readFileSync6(file, "utf8"));
-    const value = parsed?.deviceId;
-    if (typeof value === "string" && value.length >= 8) return value;
-  } catch {
-  }
-  const deviceId = randomUUID12();
-  try {
-    mkdirSync5(join5(home, "channel-pack"), { recursive: true });
-    writeFileSync6(file, `${JSON.stringify({ deviceId, createdAt: Date.now() }, null, 2)}
-`, "utf8");
-  } catch {
-  }
-  return deviceId;
-}
-async function postEnvelope(product, fetcher, path2, body) {
-  let response;
-  try {
-    response = await fetcher(`${product.apiBase}${path2}`, {
-      method: "POST",
-      headers: autoclawAuthHeaders(),
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS2)
-    });
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
-  }
-  const text = await response.text().catch(() => "");
-  if (!response.ok) return { ok: false, error: `HTTP ${response.status}\uFF1A${text.slice(0, 200)}` };
-  let json;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    return { ok: false, error: `\u4E0A\u6E38\u8FD4\u56DE\u975E JSON\uFF1A${text.slice(0, 200)}` };
-  }
-  if (json.code !== 0) return { ok: false, error: json.msg ?? `\u4E0A\u6E38\u9519\u8BEF\u7801 ${json.code}` };
-  return { ok: true, json };
-}
-async function sendAutoclawCode(options) {
-  const phone = normalizeAutoclawPhone(options.phone);
-  if (phone === "") return { ok: false, error: "\u624B\u673A\u53F7\u683C\u5F0F\u4E0D\u6B63\u786E" };
-  const result = await postEnvelope(options.product, options.fetcher, AUTOCLAW_SEND_CODE_PATH, {
-    phone,
-    source_id: AUTOCLAW_SOURCE_ID,
-    device_id: options.deviceId
-  });
-  return result.ok ? { ok: true } : { ok: false, error: result.error };
-}
-function jwtClaims2(token) {
-  const parts = token.split(".");
-  if (parts.length < 2) return {};
-  try {
-    return JSON.parse(Buffer.from(parts[1].replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"));
-  } catch {
-    return {};
-  }
-}
-function toAutoclawCredential(data, deviceId, phone) {
-  const accessToken = stripBearer(data?.access_token);
-  if (accessToken === "") return { ok: false, error: "\u4E0A\u6E38\u54CD\u5E94\u7F3A\u5C11 access_token" };
-  const claims = jwtClaims2(accessToken);
-  const declared = typeof data?.expires_at === "number" ? data.expires_at * (data.expires_at < 1e12 ? 1e3 : 1) : typeof data?.expires_in === "number" ? Date.now() + data.expires_in * 1e3 : void 0;
-  const jwtExpires = typeof claims.exp === "number" ? claims.exp * 1e3 : void 0;
-  const userId = data?.user_id ?? claims.user_id ?? claims.uid ?? claims.sub;
-  const userName = typeof data?.user_name === "string" ? data.user_name : void 0;
-  const userPhone = typeof data?.user_phone === "string" ? data.user_phone : phone;
-  const fallbackId = userPhone !== "" ? `phone:${userPhone}` : void 0;
-  const credential = {
-    access_token: accessToken,
-    refresh_token: stripBearer(data?.refresh_token) || void 0,
-    expire_time: jwtExpires ?? declared,
-    account_id: userId === void 0 ? fallbackId : String(userId),
-    nickname: userName ?? `AutoClaw ${userPhone.slice(-4)}`,
-    created_at: Date.now(),
-    device_id: deviceId
-  };
-  return { ok: true, credential };
-}
-async function refreshAutoclawCredential(options) {
-  const refreshToken2 = stripBearer(options.credential.refresh_token);
-  if (refreshToken2 === "") return { ok: false, error: "\u6CA1\u6709 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55" };
-  const deviceId = options.credential.device_id ?? "our-free-model-device";
-  let lastError = "";
-  for (const path2 of AUTOCLAW_REFRESH_PATHS) {
-    const timestamp = Math.floor(Date.now() / 1e3);
-    try {
-      const response = await options.fetcher(`${options.product.apiBase}${path2}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Auth-Appid": AUTOCLAW_SMS_APP_ID,
-          "X-Auth-TimeStamp": String(timestamp),
-          "X-Auth-Sign": autoclawSign(AUTOCLAW_SMS_APP_ID, timestamp, AUTOCLAW_SMS_APP_KEY)
-        },
-        body: JSON.stringify({
-          refresh_token: refreshToken2,
-          source_id: AUTOCLAW_SOURCE_ID,
-          device_id: deviceId
-        }),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS2)
-      });
-      const text = await response.text();
-      if (!response.ok) {
-        lastError = `HTTP ${response.status}\uFF1A${text.slice(0, 160)}`;
-        continue;
-      }
-      let json;
-      try {
-        json = JSON.parse(text);
-      } catch {
-        lastError = `\u975E JSON \u54CD\u5E94\uFF1A${text.slice(0, 160)}`;
-        continue;
-      }
-      if (json.code !== 0 || json.data?.access_token === void 0) {
-        lastError = json.msg ?? `\u4E0A\u6E38\u9519\u8BEF\u7801 ${json.code}`;
-        continue;
-      }
-      const mapped = toAutoclawCredential(json.data, deviceId, options.credential.nickname ?? "");
-      if (!mapped.ok) {
-        lastError = mapped.error;
-        continue;
-      }
-      const serverUserId = json.data.user_id;
-      const accountId = typeof serverUserId === "string" && serverUserId !== "" ? serverUserId : typeof serverUserId === "number" ? String(serverUserId) : options.credential.account_id;
-      return {
-        ok: true,
-        credential: {
-          ...mapped.credential,
-          // 上游轮换 refresh_token 时用新的；没给就沿用旧的（否则下次续期会因缺 token 失败）。
-          refresh_token: mapped.credential.refresh_token ?? options.credential.refresh_token,
-          account_id: accountId,
-          nickname: options.credential.nickname ?? mapped.credential.nickname
-        }
-      };
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-  }
-  return { ok: false, error: lastError === "" ? "\u7EED\u671F\u5931\u8D25\uFF08\u4E0A\u6E38\u672A\u8FD4\u56DE access_token\uFF09" : lastError };
-}
-async function loginAutoclawWithCode(options) {
-  const phone = normalizeAutoclawPhone(options.phone);
-  if (phone === "") return { ok: false, error: "\u624B\u673A\u53F7\u683C\u5F0F\u4E0D\u6B63\u786E" };
-  const code = options.code.trim();
-  if (!/^\d{4,8}$/.test(code)) return { ok: false, error: "\u9A8C\u8BC1\u7801\u5FC5\u987B\u662F 4\u20138 \u4F4D\u6570\u5B57" };
-  const result = await postEnvelope(options.product, options.fetcher, AUTOCLAW_LOGIN_PATH, {
-    phone,
-    code: Number(code),
-    source_id: AUTOCLAW_SOURCE_ID,
-    device_id: options.deviceId
-  });
-  if (!result.ok) return { ok: false, error: result.error };
-  return toAutoclawCredential(result.json.data, options.deviceId, phone);
-}
-function autoclawUserapiHeaders(token, timestamp = Math.floor(Date.now() / 1e3)) {
-  return {
-    "Content-Type": "application/json",
-    Accept: "*/*",
-    "X-Version": AUTOCLAW_USERAPI_VERSION,
-    "X-Product": "autoclaw",
-    "X-Client-Type": "pc",
-    "X-Harness-Type": "zcode",
-    "X-Tm": process.platform === "win32" ? "win" : "linux",
-    "X-Lang": "zh-CN",
-    "X-Channel": "official",
-    "X-Auth-Appid": AUTOCLAW_SMS_APP_ID,
-    "X-Auth-TimeStamp": String(timestamp),
-    "X-Auth-Sign": autoclawSign(AUTOCLAW_SMS_APP_ID, timestamp, AUTOCLAW_SMS_APP_KEY),
-    ...token === "" ? {} : { Authorization: `Bearer ${token}` }
-  };
-}
-async function claimAutoclawDailyCheckin(options) {
-  const token = stripBearer(options.credential.access_token);
-  const timestamp = Math.floor(Date.now() / 1e3);
-  const url = `${options.product.apiBase}${AUTOCLAW_TASK_COMPLETE_PATH}`;
-  const response = await options.fetcher(url, {
-    method: "POST",
-    headers: autoclawUserapiHeaders(token, timestamp),
-    body: JSON.stringify({ task_id: AUTOCLAW_DAILY_SIGNIN_TASK }),
-    ...options.signal === void 0 ? {} : { signal: options.signal }
-  });
-  if (response.status === 401) {
-    return { claimed: 0, message: "\u767B\u5F55\u6001\u5DF2\u8FC7\u671F\uFF0C\u65E0\u6CD5\u7B7E\u5230\uFF08\u8BF7\u5148\u7EED\u671F\u6216\u91CD\u65B0\u767B\u5F55\uFF09" };
-  }
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    return { claimed: 0, message: `\u7B7E\u5230\u8FD4\u56DE HTTP ${response.status}${text === "" ? "" : `\uFF1A${text.slice(0, 160)}`}` };
-  }
-  const body = await response.json().catch(() => void 0);
-  const data = body !== null && typeof body === "object" ? body.data : void 0;
-  const record = data !== null && typeof data === "object" ? data : {};
-  const reward = typeof record.reward_points === "number" && Number.isFinite(record.reward_points) ? record.reward_points : Number(record.reward_points ?? 0);
-  const success = record.success === true;
-  const already = record.already_completed === true;
-  if (reward > 0) return { claimed: reward, message: `\u5DF2\u9886\u53D6 ${reward} \u79EF\u5206` };
-  if (success) return { claimed: 0, message: "\u7B7E\u5230\u6210\u529F\uFF08\u672C\u8F6E\u672A\u8FD4\u56DE\u79EF\u5206\u6570\uFF09" };
-  if (already) return { claimed: 0, message: "\u4ECA\u5929\u5DF2\u7B7E\u5230\u8FC7\uFF08\u4E0A\u6E38\u6309\u5929\u5E42\u7B49\uFF09" };
-  return { claimed: 0, message: "\u4E0A\u6E38\u672A\u8FD4\u56DE\u53EF\u9886\u53D6\u7684\u79EF\u5206\uFF08\u4ECA\u65E5\u53EF\u80FD\u5DF2\u9886\u8FC7\uFF09" };
-}
-var AUTOCLAW_SMS_APP_ID, AUTOCLAW_SMS_APP_KEY, AUTOCLAW_SEND_CODE_PATH, AUTOCLAW_LOGIN_PATH, AUTOCLAW_SOURCE_ID, REQUEST_TIMEOUT_MS2, PHONE_RE2, stripBearer, AUTOCLAW_REFRESH_PATHS, AUTOCLAW_USERAPI_VERSION, AUTOCLAW_TASK_COMPLETE_PATH, AUTOCLAW_TASK_LIST_PATH, AUTOCLAW_DAILY_SIGNIN_TASK;
-var init_autoclaw_sms = __esm({
-  "vendor/channel-pack/src/autoclaw-sms.ts"() {
-    "use strict";
-    AUTOCLAW_SMS_APP_ID = "100003";
-    AUTOCLAW_SMS_APP_KEY = "38d2391985e2369a5fb8227d8e6cd5e5";
-    AUTOCLAW_SEND_CODE_PATH = "/userapi/v1/agent-send-code";
-    AUTOCLAW_LOGIN_PATH = "/userapi/v1/agent-login";
-    AUTOCLAW_SOURCE_ID = "autoclaw";
-    REQUEST_TIMEOUT_MS2 = 2e4;
-    PHONE_RE2 = /^1[3-9]\d{9}$/;
-    stripBearer = (value) => typeof value === "string" ? value.replace(/^Bearer\s+/i, "").trim() : "";
-    AUTOCLAW_REFRESH_PATHS = ["/userapi/v1/refresh", "/userapi/v1/agent-refresh"];
-    AUTOCLAW_USERAPI_VERSION = "1.18.5";
-    AUTOCLAW_TASK_COMPLETE_PATH = "/autoclaw-proxy/proxy/autoclaw-task-complete";
-    AUTOCLAW_TASK_LIST_PATH = "/autoclaw-proxy/proxy/autoclaw-task-list";
-    AUTOCLAW_DAILY_SIGNIN_TASK = "daily_signin";
   }
 });
 
@@ -45971,6 +46088,9 @@ var MonkeyCodeAdapter = class extends LlmAdapter7 {
       if (/401|403|凭据|Cookie/.test(message2)) {
         throw new LlmError11(`MonkeyCode\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u7C98\u8D34 Cookie\uFF08${message2}\uFF09`, "AUTH");
       }
+      if (/code \d{4,}|HTTP \d|建任务|正在运行|WebSocket|握手/.test(message2)) {
+        throw new LlmError11(message2, "SERVER_ERROR");
+      }
       throw new LlmError11(message2, "TRANSPORT");
     }
     yield { type: "finish", reason: "stop" };
@@ -46176,7 +46296,24 @@ async function createConversation(fetcher, product, credential, signal) {
   if (!response.ok) {
     throw new Error(`OrcaTerm\uFF1A\u5EFA\u4F1A\u8BDD\u8FD4\u56DE HTTP ${response.status}`);
   }
-  void response.body?.cancel().catch(() => void 0);
+  const raw = await response.text().catch(() => "");
+  let parsed;
+  try {
+    parsed = raw === "" ? void 0 : JSON.parse(raw);
+  } catch {
+    parsed = void 0;
+  }
+  if (parsed !== void 0 && typeof parsed === "object" && parsed !== null) {
+    const record = parsed;
+    const code = typeof record.code === "number" ? record.code : void 0;
+    const message2 = typeof record.message === "string" ? record.message : "";
+    if (code !== void 0 && code !== 0) {
+      if (/VERIFY_SKEY|UIN|SESSION|TOKEN|AUTH/i.test(message2)) {
+        throw new Error(`OrcaTerm\uFF1A\u767B\u5F55\u6001\u5DF2\u5931\u6548\uFF08${message2 || code}\uFF09\u2014\u2014 \u8BF7\u91CD\u65B0\u7C98\u8D34 Cookie`);
+      }
+      throw new Error(`OrcaTerm\uFF1A\u5EFA\u4F1A\u8BDD\u88AB\u4E0A\u6E38\u62D2\u7EDD\uFF08code ${code}\uFF09${message2 === "" ? "" : `\uFF1A${message2}`}`);
+    }
+  }
   return `cid-${id}-${ORCATERM_CONVERSATION_TAG}`;
 }
 async function* streamChat2(fetcher, product, credential, options) {
@@ -46207,6 +46344,27 @@ async function* streamChat2(fetcher, product, credential, options) {
   if (!response.ok) {
     const text = await response.text().catch(() => "");
     throw new Error(`OrcaTerm\uFF1A\u5BF9\u8BDD\u8FD4\u56DE HTTP ${response.status}${text === "" ? "" : `\uFF1A${text.slice(0, 200)}`}`);
+  }
+  const contentType = response.headers.get("content-type") ?? "";
+  if (/application\/json/i.test(contentType)) {
+    const text = await response.text().catch(() => "");
+    let parsed;
+    try {
+      parsed = text === "" ? void 0 : JSON.parse(text);
+    } catch {
+      parsed = void 0;
+    }
+    if (parsed !== void 0 && typeof parsed === "object" && parsed !== null) {
+      const record = parsed;
+      const code = typeof record.code === "number" ? record.code : void 0;
+      const message2 = typeof record.message === "string" ? record.message : "";
+      if (code !== void 0 && code !== 0) {
+        if (/VERIFY_SKEY|UIN|SESSION|TOKEN|AUTH/i.test(message2)) {
+          throw new Error(`OrcaTerm\uFF1A\u767B\u5F55\u6001\u5DF2\u5931\u6548\uFF08${message2 || code}\uFF09\u2014\u2014 \u8BF7\u91CD\u65B0\u7C98\u8D34 Cookie`);
+        }
+        throw new Error(`OrcaTerm\uFF1A\u5BF9\u8BDD\u88AB\u4E0A\u6E38\u62D2\u7EDD\uFF08code ${code}\uFF09${message2 === "" ? "" : `\uFF1A${message2}`}`);
+      }
+    }
   }
   if (response.body === null) throw new Error("OrcaTerm\uFF1A\u5BF9\u8BDD\u54CD\u5E94\u6CA1\u6709\u6B63\u6587");
   const reader = response.body.getReader();
@@ -46476,8 +46634,11 @@ var KukuAdapter = class extends LlmAdapter9 {
     } catch (error) {
       if (options.signal?.aborted === true) throw new LlmError13("KukuAI\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
       const message2 = error instanceof Error ? error.message : String(error);
-      if (/401|403|BDUSS|凭据/.test(message2)) {
+      if (/401|403|BDUSS|凭据|未登录|invalid session/i.test(message2)) {
         throw new LlmError13(`KukuAI\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u7C98\u8D34 Cookie\uFF08${message2}\uFF09`, "AUTH");
+      }
+      if (/session_id|task not found|订阅失败|上游错误|HTTP \d/.test(message2)) {
+        throw new LlmError13(message2, "SERVER_ERROR");
       }
       throw new LlmError13(message2, "TRANSPORT");
     }
@@ -46857,11 +47018,27 @@ function isCredentialUsable7(credential) {
   const token = credential.access_token;
   return typeof token === "string" && token !== "" && token === token.trim();
 }
+var AUTOCLAW_DESKTOP_VERSION = "1.18.5";
+var autoclawPlatformTm = () => {
+  if (process.platform === "darwin") return "mac";
+  return "win";
+};
 function autoClawHeaders(product, credential) {
   return {
     "Content-Type": "application/json",
-    Accept: "application/json",
+    // 源实现给的是 `Accept: */*`（LLM 代理两种响应形态都可能回；
+    // 不是 text/event-stream —— 要不要流式由 body.stream 决定）。
+    Accept: "*/*",
+    // 认证头名照抄源实现：`X-Authorization`，不是 `Authorization`。
     "X-Authorization": `Bearer ${credential.access_token}`,
+    // 客户端指纹（上游 `brand_headers`）：缺了会被上游按非官方客户端拒。
+    "X-Product": "autoclaw",
+    "X-Client-Type": "pc",
+    "X-Tm": autoclawPlatformTm(),
+    "X-Version": AUTOCLAW_DESKTOP_VERSION,
+    "X-Lang": "zh-CN",
+    "X-Channel": "official",
+    "x_trace_id": "autoclaw-desktop",
     Origin: product.apiBase,
     Referer: `${product.apiBase}/`
   };
@@ -46897,6 +47074,7 @@ function parseModelConfig(value) {
 }
 
 // vendor/channel-pack/src/autoclaw-adapter.ts
+init_autoclaw_sms();
 var FIRST_TOKEN_TIMEOUT_MS3 = 3e5;
 var CHUNK_TIMEOUT_MS3 = 3e5;
 var REMOTE_MODELS_TTL_MS6 = 3e5;
@@ -47010,10 +47188,14 @@ var AutoClawAdapter = class extends LlmAdapter12 {
     const imageUrls = /* @__PURE__ */ new Map();
     const messages = serializeMessages3(options.messages, imageUrls);
     if (options.system !== void 0 && options.system.length > 0) {
-      messages.unshift({ role: "system", content: options.system });
+      messages.unshift({ role: "system", content: normalizeAutoClawSystem(options.system) });
+    } else if (messages.length === 0 || messages[0]?.role !== "system") {
+      messages.unshift({ role: "system", content: normalizeAutoClawSystem("") });
     }
-    const body = { model: options.model, messages, stream: true };
-    if (options.maxTokens !== void 0 && options.maxTokens > 0) body.max_tokens = options.maxTokens;
+    const route = resolveAutoClawModelRoute(options.model);
+    const body = { model: route.bodyModelId, messages, stream: true };
+    const maxTokens = normalizeAutoClawMaxTokens(options.maxTokens);
+    if (maxTokens !== void 0) body.max_tokens = maxTokens;
     if (options.tools !== void 0 && options.tools.length > 0) {
       body.tools = options.tools.map((tool) => ({
         type: "function",
@@ -47024,7 +47206,11 @@ var AutoClawAdapter = class extends LlmAdapter12 {
     try {
       response = await this.fetchImpl(chatEndpoint(this.product), {
         method: "POST",
-        headers: { ...autoClawHeaders(this.product, credential), Accept: "text/event-stream" },
+        headers: {
+          ...autoClawHeaders(this.product, credential),
+          Accept: "text/event-stream",
+          "X-Request-Model": route.routeModelId
+        },
         body: JSON.stringify(body),
         ...options.signal === void 0 ? {} : { signal: options.signal }
       });
@@ -51291,13 +51477,13 @@ import { Service as Service7 } from "@deepseek-ai/cordis";
 import { credentialRef as credentialRef7 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/loomy-oauth.ts
-import { randomUUID as randomUUID9 } from "node:crypto";
+import { randomUUID as randomUUID10 } from "node:crypto";
 
 // vendor/channel-pack/src/loomy-sign.ts
-import { createHash as createHash6, createHmac, randomUUID as randomUUID8 } from "node:crypto";
+import { createHash as createHash7, createHmac, randomUUID as randomUUID9 } from "node:crypto";
 function loomyContentMd5(body) {
   if (body.length === 0) return "";
-  return createHash6("md5").update(body, "utf8").digest("base64");
+  return createHash7("md5").update(body, "utf8").digest("base64");
 }
 function escapeRfc3986(value) {
   return encodeURIComponent(value).replace(/!/g, "%21").replace(/'/g, "%27").replace(/\(/g, "%28").replace(/\)/g, "%29").replace(/\*/g, "%2A");
@@ -51336,7 +51522,7 @@ function buildLoomySigningString(options) {
 }
 function loomyAuthHeaders(options) {
   const date = (/* @__PURE__ */ new Date()).toUTCString();
-  const nonce = randomUUID8();
+  const nonce = randomUUID9();
   const contentType = options.contentType ?? "application/json";
   const body = options.body ?? "";
   const stringToSign = buildLoomySigningString({ ...options, contentType, body, date, nonce });
@@ -51364,7 +51550,7 @@ function buildLoomyAccountBody(product, param) {
       devid: "web",
       // ⚠️ 硬编码 macOS：客户端在 Windows 上发的也是这个值，照抄不要改。
       ua: "Loomy|Desktop|Electron|macOS",
-      traceid: randomUUID9().replace(/-/g, "")
+      traceid: randomUUID10().replace(/-/g, "")
     },
     param
   };
@@ -51497,7 +51683,7 @@ async function bindLoomySkip(rcode, product, fetcher = fetch) {
 
 // vendor/channel-pack/src/loomy-wechat-login.ts
 import { createServer as createServer5 } from "node:http";
-import { randomUUID as randomUUID10 } from "node:crypto";
+import { randomUUID as randomUUID11 } from "node:crypto";
 
 // vendor/channel-pack/src/loomy-wechat.ts
 var LOOMY_WECHAT_APP_ID = "wx18d60be432287cf8";
@@ -51651,7 +51837,7 @@ async function startLoomyWechatLoginFlow(options) {
     settled = true;
     rejectResult(error);
   };
-  state.uuid = await fetchLoomyWechatUuid(randomUUID10(), fetcher);
+  state.uuid = await fetchLoomyWechatUuid(randomUUID11(), fetcher);
   const server = createServer5((request2, response) => {
     void handleRequest(request2, response, {
       state,
@@ -54268,11 +54454,11 @@ var LoomyBalanceSelector = class {
 import { Service as Service9 } from "@deepseek-ai/cordis";
 
 // vendor/channel-pack/src/zcode.ts
-var PHONE_RE = /^1[3-9]\d{9}$/;
+var PHONE_RE2 = /^1[3-9]\d{9}$/;
 function phoneFromUserId(userId) {
   if (typeof userId !== "string" || userId.length < 11) return void 0;
   const head = userId.slice(0, 11);
-  if (!PHONE_RE.test(head)) return void 0;
+  if (!PHONE_RE2.test(head)) return void 0;
   return `${head.slice(0, 3)}****${head.slice(-4)}`;
 }
 var ZCODE_APP_VERSION_FALLBACK = "3.14.3";
@@ -54378,10 +54564,10 @@ function zcodeProductById(id) {
 
 // vendor/channel-pack/src/zcode-captcha.ts
 import { spawn as spawn2, spawnSync } from "node:child_process";
-import { existsSync as existsSync5, mkdtempSync, rmSync, writeFileSync as writeFileSync5 } from "node:fs";
+import { existsSync as existsSync5, mkdtempSync, rmSync, writeFileSync as writeFileSync6 } from "node:fs";
 import { createServer as createServer7 } from "node:net";
 import { homedir as homedir2, tmpdir } from "node:os";
-import { basename, isAbsolute, join as join4, posix } from "node:path";
+import { basename, isAbsolute, join as join5, posix } from "node:path";
 var ZCODE_CAPTCHA_FALLBACK = {
   region: "cn",
   prefix: "no8xfe",
@@ -54448,21 +54634,21 @@ function windowsBrowserCandidates(env, home) {
      * 用户设了它们就说明默认路径不对。若排在 `~/scoop` 之后，会出现
      * 「旧默认路径恰好存在 → 用它，而用户实际在用的那个被忽略」。
      */
-    ...env.SCOOP !== void 0 && env.SCOOP.trim().length > 0 ? [join4(env.SCOOP.trim(), "apps", "chromium", "current", "chrome.exe")] : [],
-    ...env.SCOOP_GLOBAL !== void 0 && env.SCOOP_GLOBAL.trim().length > 0 ? [join4(env.SCOOP_GLOBAL.trim(), "apps", "chromium", "current", "chrome.exe")] : [],
+    ...env.SCOOP !== void 0 && env.SCOOP.trim().length > 0 ? [join5(env.SCOOP.trim(), "apps", "chromium", "current", "chrome.exe")] : [],
+    ...env.SCOOP_GLOBAL !== void 0 && env.SCOOP_GLOBAL.trim().length > 0 ? [join5(env.SCOOP_GLOBAL.trim(), "apps", "chromium", "current", "chrome.exe")] : [],
     // ② scoop 默认根目录（`~/scoop`）。实测可用。
-    join4(home, "scoop", "apps", "chromium", "current", "chrome.exe"),
+    join5(home, "scoop", "apps", "chromium", "current", "chrome.exe"),
     // ③ 系统 Chrome。
-    join4(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
-    join4(programFilesX86, "Google", "Chrome", "Application", "chrome.exe"),
-    join4(localAppData, "Google", "Chrome", "Application", "chrome.exe"),
+    join5(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
+    join5(programFilesX86, "Google", "Chrome", "Application", "chrome.exe"),
+    join5(localAppData, "Google", "Chrome", "Application", "chrome.exe"),
     // ④ Chromium。
-    join4(localAppData, "Chromium", "Application", "chrome.exe"),
-    join4(programFiles, "Chromium", "Application", "chrome.exe"),
+    join5(localAppData, "Chromium", "Application", "chrome.exe"),
+    join5(programFiles, "Chromium", "Application", "chrome.exe"),
     // ⑤ Edge（Chromium 内核，系统普遍自带）。
-    join4(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe"),
-    join4(programFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
-    join4(localAppData, "Microsoft", "Edge", "Application", "msedge.exe")
+    join5(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe"),
+    join5(programFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
+    join5(localAppData, "Microsoft", "Edge", "Application", "msedge.exe")
   ];
 }
 function macBrowserCandidates(home) {
@@ -54789,10 +54975,10 @@ foreach ($h in $all) {
 }
 Write-Output "hidden=$n"
 `;
-    const dir = mkdtempSync(join4(tmpdir(), "zcode-hide-"));
-    const file = join4(dir, "hide.ps1");
+    const dir = mkdtempSync(join5(tmpdir(), "zcode-hide-"));
+    const file = join5(dir, "hide.ps1");
     dirCreated = dir;
-    writeFileSync5(file, script, "ascii");
+    writeFileSync6(file, script, "ascii");
     const child = spawn2("powershell.exe", [
       "-NoProfile",
       "-NonInteractive",
@@ -54950,7 +55136,7 @@ var ZcodeCaptchaBrowser = class {
       );
     }
     this.spawnFailure = void 0;
-    this.profileDir = mkdtempSync(join4(tmpdir(), "zcode-captcha-"));
+    this.profileDir = mkdtempSync(join5(tmpdir(), "zcode-captcha-"));
     this.port = this.options.debugPort ?? await pickFreePort();
     const hide = this.options.hideWindow !== false;
     this.child = spawn2(executable, [
@@ -56085,7 +56271,7 @@ function buildCarrierPageHtml(config) {
 }
 
 // vendor/channel-pack/src/zcode-login.ts
-import { randomBytes as randomBytes7, randomUUID as randomUUID11 } from "node:crypto";
+import { randomBytes as randomBytes7, randomUUID as randomUUID12 } from "node:crypto";
 var ZCODE_ORIGIN = "https://zcode.z.ai";
 var ZCODE_OAUTH_CLI_INIT_URL = `${ZCODE_ORIGIN}/api/v1/oauth/cli/init`;
 var zcodeOauthCliPollUrl = (flowId) => `${ZCODE_ORIGIN}/api/v1/oauth/cli/poll/${encodeURIComponent(flowId)}`;
@@ -56102,7 +56288,7 @@ function generateFlowSecret() {
   return randomBytes7(32).toString("hex");
 }
 function generateDeviceMid() {
-  return randomUUID11();
+  return randomUUID12();
 }
 async function startZcodeLogin(fetchImpl = fetch, options = {}) {
   const flowSecret = generateFlowSecret();
@@ -59557,7 +59743,7 @@ import { createServer as createServer8 } from "node:http";
 
 // vendor/channel-pack/src/kuku-qr-login.ts
 init_kuku();
-import { createHash as createHash7, randomBytes as randomBytes8 } from "node:crypto";
+import { createHash as createHash8, randomBytes as randomBytes8 } from "node:crypto";
 var KUKU_PASSPORT_BASE = "https://passport.baidu.com";
 var KUKU_QR_REFERER = "https://kuku.baidu.com/genflowpro/login";
 var KUKU_QR_TARGET = "https://kuku.baidu.com";
@@ -59849,7 +60035,7 @@ async function completeKukuQrLogin(session, ticket, options = {}) {
 async function exchangeKukuStoken(session, bduss, ptoken, options) {
   const fields = `appid=1&bduss=${bduss}&ptoken=${ptoken}&return_type=1&tpl=genflowpro&tpl_list=genflowpro|netdisk`;
   const signed = `${fields}&sign_key=${KUKU_ENGINE_SIGN_KEY}`;
-  const sig = createHash7("md5").update(signed).digest("hex");
+  const sig = createHash8("md5").update(signed).digest("hex");
   const body = `${fields}&sig=${sig}`;
   if (session.jar.has("BAIDUID") && !session.jar.has("gfprotpl")) session.jar.set("gfprotpl", "genflowpro");
   const url = `${session.passportBase}/v3/login/api/auth`;
@@ -66537,6 +66723,42 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             fetchBalanceDetailed: async (credential) => {
               const points = await fetchKukuPoints2(codeartsFetcher, KUKU_PRODUCT, credential);
               return points === void 0 ? { balance: null, error: "\u672A\u8FD4\u56DE\u79EF\u5206\u6570\u636E\uFF08\u4E0A\u6E38\u4E1A\u52A1\u7801\u975E 0 \u6216\u7ED3\u6784\u4E0D\u8BA4\u8BC6\uFF09" } : { balance: { total: points, packages: [] } };
+            },
+            warn: (msg) => ctx.logger?.warn?.(msg)
+          });
+          return { ok: true, value: { accounts: values2 } };
+        }
+        if (req.provider === AUTOCLAW.id) {
+          const { fetchAutoClawWallets: fetchAutoClawWallets2 } = await Promise.resolve().then(() => (init_autoclaw_sms(), autoclaw_sms_exports));
+          const { AUTOCLAW: AUTOCLAW_PRODUCT } = await Promise.resolve().then(() => (init_autoclaw_product(), autoclaw_product_exports));
+          const values2 = await collectCreditBalances(accounts, AUTOCLAW_PRODUCT, {
+            fetcher: codeartsFetcher,
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalanceDetailed: async (credential) => {
+              const wallets = await fetchAutoClawWallets2({
+                product: AUTOCLAW_PRODUCT,
+                fetcher: codeartsFetcher,
+                credential
+              });
+              if (wallets === void 0) return { balance: null, error: "\u672A\u8FD4\u56DE\u79EF\u5206\u6570\u636E" };
+              const total = wallets.reduce((sum, w) => sum + w.balance, 0);
+              return {
+                balance: {
+                  total,
+                  packages: wallets.map((w) => ({
+                    name: w.displayName,
+                    unit: "credits",
+                    remaining: w.balance,
+                    total: w.balance,
+                    used: 0,
+                    active: true,
+                    cycleStartTime: "",
+                    cycleEndTime: "",
+                    expiredTime: ""
+                  })),
+                  expiredTotal: 0
+                }
+              };
             },
             warn: (msg) => ctx.logger?.warn?.(msg)
           });

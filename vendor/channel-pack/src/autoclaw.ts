@@ -53,11 +53,41 @@ export function isCredentialExpired(credential: AutoClawCredential, nowMs: numbe
  *
  * ⚠️ `X-Authorization`（不是 `Authorization`）—— 见模块头注释。
  */
+/**
+ * 桌面端版本（上游 `DESKTOP_APP_VERSION`；userapi 域另有
+ * `AUTOCLAW_USERAPI_VERSION`，两个域各按各的门控，别混）。
+ */
+const AUTOCLAW_DESKTOP_VERSION = '1.18.5'
+
+/**
+ * 平台标识（上游 `platform_tm`）。
+ *
+ * ⚠️ **Linux 必须回落 `win`**：上游注释记录了实测 —— 被绑为 Windows 的账号
+ * 收到 `X-Tm: linux` 一律 403/406，而 `win` / `mac` / 不带该头都放行。
+ * 上游只拒绝「恰好等于 linux」的值。官方桌面端只有 Windows / macOS，
+ * Linux 不是它认得的客户端平台，故这里同样回落。
+ */
+const autoclawPlatformTm = (): string => {
+  if (process.platform === 'darwin') return 'mac'
+  return 'win'
+}
+
 export function autoClawHeaders(product: AutoClawProduct, credential: AutoClawCredential): Record<string, string> {
   return {
     'Content-Type': 'application/json',
-    Accept: 'application/json',
+    // 源实现给的是 `Accept: */*`（LLM 代理两种响应形态都可能回；
+    // 不是 text/event-stream —— 要不要流式由 body.stream 决定）。
+    Accept: '*/*',
+    // 认证头名照抄源实现：`X-Authorization`，不是 `Authorization`。
     'X-Authorization': `Bearer ${credential.access_token}`,
+    // 客户端指纹（上游 `brand_headers`）：缺了会被上游按非官方客户端拒。
+    'X-Product': 'autoclaw',
+    'X-Client-Type': 'pc',
+    'X-Tm': autoclawPlatformTm(),
+    'X-Version': AUTOCLAW_DESKTOP_VERSION,
+    'X-Lang': 'zh-CN',
+    'X-Channel': 'official',
+    'x_trace_id': 'autoclaw-desktop',
     Origin: product.apiBase,
     Referer: `${product.apiBase}/`,
   }

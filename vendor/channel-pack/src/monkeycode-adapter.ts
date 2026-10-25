@@ -213,6 +213,14 @@ export class MonkeyCodeAdapter extends LlmAdapter {
       if (/401|403|凭据|Cookie/.test(message)) {
         throw new LlmError(`MonkeyCode：凭据无效或已过期，请重新粘贴 Cookie（${message}）`, 'AUTH')
       }
+      // 上游业务错误（同账号已有运行中任务 10811、建任务被拒等）→ SERVER_ERROR。
+      // ⚠️ 不能标成 TRANSPORT：那会让内核重试，而重试会把**原生 Error** 塞进
+      // `llm/retry` 事件载荷，内核序列化不了 —— 用户看到的是
+      // 「llm/retry carries non-JSON-serializable data」而不是真实原因
+      //（2026-10-25 实测）。code 10811 也没有取消接口可绕过，重试纯属浪费。
+      if (/code \d{4,}|HTTP \d|建任务|正在运行|WebSocket|握手/.test(message)) {
+        throw new LlmError(message, 'SERVER_ERROR')
+      }
       throw new LlmError(message, 'TRANSPORT')
     }
     yield { type: 'finish', reason: 'stop' }

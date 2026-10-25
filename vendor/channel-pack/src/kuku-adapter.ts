@@ -190,8 +190,17 @@ export class KukuAdapter extends LlmAdapter {
     } catch (error) {
       if (options.signal?.aborted === true) throw new LlmError('KukuAI：请求已取消', 'ABORTED')
       const message = error instanceof Error ? error.message : String(error)
-      if (/401|403|BDUSS|凭据/.test(message)) {
+      // 凭据类 → AUTH（重试无意义，只会继续撞墙）
+      if (/401|403|BDUSS|凭据|未登录|invalid session/i.test(message)) {
         throw new LlmError(`KukuAI：凭据无效或已过期，请重新粘贴 Cookie（${message}）`, 'AUTH')
+      }
+      // 上游业务错误（session_id 失效、任务不存在、上游错误帧）→ SERVER_ERROR。
+      // ⚠️ 绝不能标成 TRANSPORT：那会让内核重试，而重试会把**原生 Error**
+      // 塞进 `llm/retry` 事件载荷 —— 内核序列化不了，于是用户看到的是
+      // 「llm/retry carries non-JSON-serializable data」而不是真实原因
+      //（2026-10-25 实测：kuku / monkeycode 都踩到）。
+      if (/session_id|task not found|订阅失败|上游错误|HTTP \d/.test(message)) {
+        throw new LlmError(message, 'SERVER_ERROR')
       }
       throw new LlmError(message, 'TRANSPORT')
     }
