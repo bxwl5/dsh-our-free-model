@@ -24,6 +24,7 @@ import {
 import { fetchModels, refreshCredential, streamChat } from './accio-auth.js'
 import { providerCatalogVisible } from './account-pool.js'
 import { registerAdapterIdempotent } from './llm-register-compat.js'
+import { emitDeltaBlocks } from './delta-blocks.js'
 
 /** 适配器依赖。 */
 export interface AccioAdapterOptions {
@@ -158,7 +159,7 @@ export class AccioAdapter extends LlmAdapter {
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     const credential = await this.credentialForUse()
     try {
-      for await (const delta of streamChat(this.fetchImpl, this.product, credential, {
+      yield* emitDeltaBlocks(streamChat(this.fetchImpl, this.product, credential, {
         model: options.model,
         messages: options.messages,
         ...(options.system === undefined ? {} : { system: options.system }),
@@ -170,11 +171,7 @@ export class AccioAdapter extends LlmAdapter {
           })),
         }),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
-      })) {
-        if (delta.reasoning !== undefined) yield { type: 'reasoning-delta', text: delta.reasoning }
-        if (delta.text !== undefined) yield { type: 'text-delta', text: delta.text }
-      }
-    } catch (error) {
+      }))    } catch (error) {
       if (options.signal?.aborted === true) throw new LlmError('Accio：请求已取消', 'ABORTED')
       const message = error instanceof Error ? error.message : String(error)
       if (/401|403|凭据|登录/.test(message)) {

@@ -372,3 +372,53 @@ export async function* streamChat(
     client.close()
   }
 }
+
+/**
+ * 列出该账号最近的任务（上游 `GET /api/v1/users/tasks?page=1&size=5`）。
+ *
+ * 上游只在登录流程里用它发现 `image_id`，但对**诊断 10811** 同样有用：
+ * 「同账号已有正在运行的任务」这种事，干等用户什么都做不了，
+ * 而把卡住任务的 id / 状态 / 创建时间报出来，用户至少知道该等多久、
+ * 或者去网页端处理。返回空数组表示查不到（不抛错 —— 诊断失败不该
+ * 盖过真正的建任务错误）。
+ */
+export async function listMonkeyCodeTasks(
+  fetcher: typeof fetch,
+  product: MonkeyCodeProduct,
+  credential: MonkeyCodeCredential,
+  signal?: AbortSignal,
+): Promise<Array<{ id: string; status: string; createdAt: number; lastActiveAt?: number }>> {
+  if (!isCredentialUsable(credential)) return []
+  try {
+    const response = await fetcher(`${product.apiBase}/api/v1/users/tasks?page=1&size=5`, {
+      method: 'GET',
+      headers: { Accept: 'application/json', ...monkeyCodeHeaders(product, credential) },
+      ...(signal === undefined ? {} : { signal }),
+    })
+    if (!response.ok) return []
+    const body: unknown = await response.json().catch(() => undefined)
+    if (typeof body !== 'object' || body === null) return []
+    const data = (body as Record<string, unknown>).data
+    if (typeof data !== 'object' || data === null) return []
+    const tasks = (data as Record<string, unknown>).tasks
+    if (!Array.isArray(tasks)) return []
+    const rows: Array<{ id: string; status: string; createdAt: number; lastActiveAt?: number }> = []
+    for (const raw of tasks) {
+      if (typeof raw !== 'object' || raw === null) continue
+      const item = raw as Record<string, unknown>
+      const id = typeof item.id === 'string' ? item.id : undefined
+      if (id === undefined) continue
+      const at = typeof item.created_at === 'number' ? item.created_at * 1000 : 0
+      const last = typeof item.last_active_at === 'number' ? item.last_active_at * 1000 : undefined
+      rows.push({
+        id,
+        status: typeof item.status === 'string' ? item.status : 'unknown',
+        createdAt: at,
+        ...(last === undefined ? {} : { lastActiveAt: last }),
+      })
+    }
+    return rows
+  } catch {
+    return []
+  }
+}

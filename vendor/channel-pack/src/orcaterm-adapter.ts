@@ -17,6 +17,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 
 import { ORCATERM, resolveOrcaTermModel, type OrcaTermProduct } from './orcaterm-product.js'
+import { emitDeltaBlocks } from './delta-blocks.js'
 import { isCredentialUsable, type OrcaTermCredential } from './orcaterm.js'
 import { streamChat } from './orcaterm-auth.js'
 import { providerCatalogVisible } from './account-pool.js'
@@ -116,16 +117,16 @@ export class OrcaTermAdapter extends LlmAdapter {
       throw new LlmError('OrcaTerm：没有可用凭据，请先在渠道面板粘贴 Cookie', 'MISSING_CREDENTIAL')
     }
     try {
-      for await (const delta of streamChat(this.fetchImpl, this.product, credential, {
+      // 内核的 StreamChunk 契约要求 delta 带 index 且以 block-start/block-end
+      // 成对包裹；直接发 `{type:'text-delta',text}` 会被内核拒
+      //（`index must be a non-negative safe integer`）。故走共用 helper。
+      yield* emitDeltaBlocks(streamChat(this.fetchImpl, this.product, credential, {
         // 上游要求 `TokenHub/<name>` 挂载名，裸名会被判为未知名。
         model: resolveOrcaTermModel(options.model),
         messages: options.messages,
         ...(options.system === undefined ? {} : { system: options.system }),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
-      })) {
-        if (delta.reasoning !== undefined) yield { type: 'reasoning-delta', text: delta.reasoning }
-        if (delta.text !== undefined) yield { type: 'text-delta', text: delta.text }
-      }
+      }))
     } catch (error) {
       if (options.signal?.aborted === true) throw new LlmError('OrcaTerm：请求已取消', 'ABORTED')
       const message = error instanceof Error ? error.message : String(error)

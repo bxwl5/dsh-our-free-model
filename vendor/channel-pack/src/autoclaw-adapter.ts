@@ -190,23 +190,44 @@ export class AutoClawAdapter extends LlmAdapter {
     }
     const imageUrls = new Map<string, string>()
     const messages = serializeMessages(options.messages, imageUrls)
-    if (options.system !== undefined && options.system.length > 0) {
-      // 上游 2026-09-22 起的硬要求：system 必须以 OpenClaw 身份句开头，
-      // 不满足稳定 406 / 403。客户端自己的提示词逐字保留在前缀之后。
-      messages.unshift({ role: 'system', content: normalizeAutoClawSystem(options.system) })
-    } else if (messages.length === 0 || messages[0]?.role !== 'system') {
-      // ⚠️ 无 system 时也必须补一条只带身份前缀的 system 消息。
-      // 上游 `providers/autoclaw/prompt.rs` 的 normalize()：首条不是 system
-      // 就 `messages.insert(0, {role:'system', content: IDENTITY_PREFIX})` ——
-      // 少这一步，任何不带系统提示的请求都被稳定拒成 406 空响应体
-      //（2026-10-25 实测：只补 brand 头与 max_tokens 仍然 406）。
-      messages.unshift({ role: 'system', content: normalizeAutoClawSystem('') })
+    /**
+     * system 提示词收集 + 首条必须是 system。
+     *
+     * 两个来源都要收：`options.system`（显式参数）与 `options.messages` 里
+     * role=system 的消息（harness 的透明载体 —— 实测它才是 406 的触发路径：
+     * 只处理 options.system 时，走 messages 的 system 原样到达上游，
+     * 而它不带 OpenClaw 身份句，被稳定拒成 406）。
+     *
+     * 上游 `providers/autoclaw/prompt.rs` 的 normalize()：**首条不是 system
+     * 就补一条只带身份前缀的 system 消息**，少这一步同样 406。
+     */
+    const systemTexts: string[] = []
+    for (const message of messages) {
+      if (message.role !== 'system') continue
+      const content = message.content
+      const text = typeof content === 'string'
+        ? content
+        : Array.isArray(content)
+          ? content.map(part => (part !== null && typeof part === 'object' && typeof (part as { text?: unknown }).text === 'string'
+              ? (part as { text: string }).text
+              : '')).join('')
+          : ''
+      if (text.trim() !== '') systemTexts.push(text)
     }
+    const kept = messages.filter(message => message.role !== 'system')
+    if (options.system !== undefined && options.system.trim() !== '') systemTexts.unshift(options.system)
+    // 合并成一条 system：上游要求「以身份句开头」，多条 system 时把客户端
+    // 提示词依序拼在同一段后面（逐字保留）。
+    const merged = systemTexts.join('\n\n')
+    const normalizedSystem = normalizeAutoClawSystem(merged)
+    kept.unshift({ role: 'system', content: normalizedSystem })
     // 模型路由：上游要「X-Request-Model 头 = 完整路由 ID」+「body.model =
     // 剥前缀后的 ID」，两者不同。原样透传会被上游按未知模型拒（HTTP 400
     // 非法模型）。判据见 autoclaw-sms.ts 的 resolveAutoClawModelRoute。
     const route = resolveAutoClawModelRoute(options.model)
-    const body: Record<string, unknown> = { model: route.bodyModelId, messages, stream: true }
+    // ⚠️ 用 `kept`（已重组：首条是带身份前缀的 system），不是 `messages`
+    // （serializeMessages 的原始输出，里面可能残留未归一的 system）。
+    const body: Record<string, unknown> = { model: route.bodyModelId, messages: kept, stream: true }
     // 上游预校验：小于 10000 的小正整数 max_tokens 会被拒成 406 空响应体
     //（实测 8192 拒、10000 过），故抬到安全下限。
     const maxTokens = normalizeAutoClawMaxTokens(options.maxTokens)

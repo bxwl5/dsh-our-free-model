@@ -162,14 +162,23 @@ export async function probeCredential(
 ): Promise<'valid' | 'expired' | 'network_error'> {
   if (!isCredentialUsable(credential)) return 'expired'
   try {
-    const response = await fetcher(`${product.apiBase}${KUKU_VIP_REMAIN_PATH}`, {
+    // ⚠️ 必须打 **userreport**（对话同域）而不是 `getgfvipremain`：
+    // 实测 bizapi 域对**已失效**的 Cookie 仍返回 HTTP 200 + `status.code=0`
+    // （连用户名都照常给），于是探测误判 valid，直到真正对话才失败
+    //（2026-10-25 用户遇到的就是这条路径）。
+    // userreport 的 `errno` 才是可靠的登录态判据（-6 = 未登录）。
+    const response = await fetcher(`${product.apiBase}${KUKU_USERREPORT_PATH}?${KUKU_WEB_QUERY}`, {
       method: 'GET',
       headers: kukuHeaders(product, credential),
       ...(signal === undefined ? {} : { signal }),
     })
-    void response.body?.cancel().catch(() => undefined)
     if (response.status === 401 || response.status === 403) return 'expired'
-    return response.ok ? 'valid' : 'network_error'
+    if (!response.ok) return 'network_error'
+    const body: unknown = await response.json().catch(() => undefined)
+    if (typeof body !== 'object' || body === null) return 'network_error'
+    const errno = (body as Record<string, unknown>).errno
+    if (typeof errno === 'number' && errno !== 0) return 'expired'
+    return 'valid'
   } catch {
     return 'network_error'
   }

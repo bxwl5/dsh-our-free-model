@@ -60,6 +60,7 @@ import {
 import { fetchModels, streamChat } from './monkeycode-auth.js'
 import { providerCatalogVisible } from './account-pool.js'
 import { registerAdapterIdempotent } from './llm-register-compat.js'
+import { emitDeltaBlocks } from './delta-blocks.js'
 
 /** 适配器依赖。 */
 export interface MonkeyCodeAdapterOptions {
@@ -199,13 +200,12 @@ export class MonkeyCodeAdapter extends LlmAdapter {
     }
     try {
       const content = flattenMessages(options.messages, options.system)
-      for await (const delta of streamChat(this.fetchImpl, this.product, credential, {
+      // 内核契约：delta 必须带 index 且以 block-start/block-end 成对包裹。
+      yield* emitDeltaBlocks(streamChat(this.fetchImpl, this.product, credential, {
         content,
         modelId: options.model,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
-      })) {
-        yield { type: 'text-delta', text: delta.text }
-      }
+      }))
     } catch (error) {
       if (options.signal?.aborted === true) throw new LlmError('MonkeyCode：请求已取消', 'ABORTED')
       const message = error instanceof Error ? error.message : String(error)
@@ -219,6 +219,24 @@ export class MonkeyCodeAdapter extends LlmAdapter {
       // 「llm/retry carries non-JSON-serializable data」而不是真实原因
       //（2026-10-25 实测）。code 10811 也没有取消接口可绕过，重试纯属浪费。
       if (/code \d{4,}|HTTP \d|建任务|正在运行|WebSocket|握手/.test(message)) {
+        // 10811 附带一次任务列表诊断：把卡住任务的 id / 状态 / 创建时间报出来，
+        // 否则用户只看到「请等它结束」却不知道要等多久、也没有可执行的动作。
+        // 上游没有取消端点，故只能诊断不能代劳。
+        if (/code 10811/.test(message)) {
+          const { listMonkeyCodeTasks } = await import('./monkeycode-auth.js')
+          const tasks = await listMonkeyCodeTasks(this.fetchImpl, this.product, credential, options.signal)
+          const stuck = tasks.filter(task => task.status !== 'completed' && task.status !== 'failed')
+          if (stuck.length > 0) {
+            const detail = stuck.slice(0, 3).map(task => {
+              const when = task.createdAt > 0 ? new Date(task.createdAt).toLocaleString('zh-CN') : '时间未知'
+              return `${task.id}（${task.status}，建于 ${when}）`
+            }).join('；')
+            throw new LlmError(
+              `${message}\n卡住的任务：${detail}\n上游没有取消端点，请等它结束，或去 monkeycode 网页端处理。`,
+              'SERVER_ERROR',
+            )
+          }
+        }
         throw new LlmError(message, 'SERVER_ERROR')
       }
       throw new LlmError(message, 'TRANSPORT')

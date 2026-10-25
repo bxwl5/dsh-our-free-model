@@ -19,6 +19,7 @@ import { isCredentialUsable, kukuHeaders, type KukuCredential } from './kuku.js'
 import { streamChat } from './kuku-auth.js'
 import { providerCatalogVisible } from './account-pool.js'
 import { registerAdapterIdempotent } from './llm-register-compat.js'
+import { emitDeltaBlocks } from './delta-blocks.js'
 
 /** 适配器依赖。 */
 export interface KukuAdapterOptions {
@@ -178,15 +179,13 @@ export class KukuAdapter extends LlmAdapter {
       throw new LlmError('KukuAI：没有可用凭据，请先在渠道面板粘贴含 BDUSS 的 Cookie', 'MISSING_CREDENTIAL')
     }
     try {
-      for await (const delta of streamChat(this.fetchImpl, this.product, credential, {
+      // 内核契约：delta 必须带 index 且以 block-start/block-end 成对包裹。
+      yield* emitDeltaBlocks(streamChat(this.fetchImpl, this.product, credential, {
         model: options.model,
         messages: options.messages,
         ...(options.system === undefined ? {} : { system: options.system }),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
-      })) {
-        if (delta.reasoning !== undefined) yield { type: 'reasoning-delta', text: delta.reasoning }
-        if (delta.text !== undefined) yield { type: 'text-delta', text: delta.text }
-      }
+      }))
     } catch (error) {
       if (options.signal?.aborted === true) throw new LlmError('KukuAI：请求已取消', 'ABORTED')
       const message = error instanceof Error ? error.message : String(error)

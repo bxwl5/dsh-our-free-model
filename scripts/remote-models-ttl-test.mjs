@@ -353,3 +353,43 @@ export async function verifyAutoClawOutbound() {
 
   console.log('autoclaw-outbound: 4 组断言通过（system 归一 / max_tokens / 路由 / 无 system 兜底）')
 }
+
+/** delta-blocks：内核 StreamChunk 契约回归。 */
+/** delta-blocks：内核 StreamChunk 契约回归（index + block-start/end 配对）。 */
+export async function verifyDeltaBlocks() {
+  const { emitDeltaBlocks } = await import('../vendor/channel-pack/src/delta-blocks.ts')
+  const collect = async (it) => { const out = []; for await (const c of it) out.push(c); return out }
+  async function* deltas(list) { for (const d of list) yield d }
+
+// 1) 纯文本：block-start → text-delta(带 index) → block-end(完整文本)
+const a = await collect(emitDeltaBlocks(deltas([{text:'你'},{text:'好'}])))
+assert.deepEqual(a.map(c=>c.type), ['block-start','text-delta','text-delta','block-end'], '块生命周期完整')
+assert.equal(a[0].index, 0, 'index 是非负整数')
+assert.equal(a[3].block.text, '你好', 'block-end 带完整文本')
+
+// 2) reasoning + text：两个块，index 各占一个
+const b = await collect(emitDeltaBlocks(deltas([{reasoning:'想'},{text:'答'}])))
+assert.deepEqual(b.map(c=>c.type), ['block-start','reasoning-delta','block-start','text-delta','block-end','block-end'])
+assert.equal(b[0].index, 0); assert.equal(b[2].index, 1, '两类各占一个 index')
+
+// 3) 空流：什么都不发
+const c = await collect(emitDeltaBlocks(deltas([])))
+assert.deepEqual(c, [], '空流不产生任何块')
+
+// 4) 纯空白 reasoning：块必须配对（block-start 已发就不能跳过 block-end）
+const d = await collect(emitDeltaBlocks(deltas([{reasoning:'  '},{text:'答'}])))
+assert.deepEqual(d.map(x=>x.type), ['block-start','reasoning-delta','block-start','text-delta','block-end','block-end'], '纯空白思考也配对收尾')
+assert.equal(d.filter(x=>x.type==='block-start').length, d.filter(x=>x.type==='block-end').length, 'start 与 end 数量相等')
+
+// 4b) 空字符串增量不产生块
+const d2 = await collect(emitDeltaBlocks(deltas([{text:''},{text:'答'}])))
+assert.deepEqual(d2.map(x=>x.type), ['block-start','text-delta','block-end'], '空串增量被忽略')
+
+// 5) 交替增量复用同一块
+const e = await collect(emitDeltaBlocks(deltas([{text:'a'},{text:'b'},{text:'c'}])))
+assert.equal(e.filter(x=>x.type==='block-start').length, 1, '同类增量只开一个块')
+assert.equal(e.filter(x=>x.type==='text-delta').every(x=>x.index===0), true, 'index 稳定')
+assert.equal(e.at(-1).block.text, 'abc')
+
+  console.log('delta-blocks: 5 组断言通过（块生命周期 / index 分配 / 空流 / 纯空白 / 块复用）')
+}
