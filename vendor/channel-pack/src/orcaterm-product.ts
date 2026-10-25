@@ -55,10 +55,23 @@ export interface OrcaTermFallbackModel {
  * 兜底模型目录。
  *
  * ⚠️ 上游模型集合由控制台下发，这张表只是**拉取失败时**的兜底。
+ *
+ * 2026-10-25 更正：原表里的 `deepseek-v3.2` / `hunyuan-t1` 是**开发期
+ * 测试连通性用的探针 id，实际不可用**（用户实测确认），却因为上游没有
+ * 目录接口而被当成"全部模型"长期展示。现按上游 `aimod-cc/Agent2API`
+ * 的 `providers/orcaterm/models.rs`（2026-10-16 逐个真发对话实测可用）
+ * 与用户 2026-10-25 控制台截图逐项对齐，换成真实清单。
  */
 const ORCATERM_FALLBACK_MODELS: readonly OrcaTermFallbackModel[] = [
-  { id: 'deepseek-v3.2', name: 'DeepSeek V3.2', contextWindow: 128_000 },
-  { id: 'hunyuan-t1', name: 'Hunyuan T1', contextWindow: 128_000 },
+  { id: 'hy4-preview', name: 'Hy4-preview', contextWindow: 128_000 },
+  { id: 'hy3', name: 'Hy3', contextWindow: 128_000 },
+  { id: 'kimi-k3', name: 'Kimi-K3', contextWindow: 128_000 },
+  { id: 'glm-5.3-flash', name: 'GLM-5.3-Flash', contextWindow: 128_000 },
+  { id: 'glm-5.3', name: 'GLM-5.3', contextWindow: 128_000 },
+  { id: 'glm-5.2', name: 'GLM-5.2', contextWindow: 128_000 },
+  { id: 'deepseek-v4.1-flash', name: 'DeepSeek-V4.1-Flash', contextWindow: 128_000 },
+  { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', contextWindow: 128_000 },
+  { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', contextWindow: 128_000 },
 ]
 
 /** OrcaTerm provider 配置。 */
@@ -74,6 +87,40 @@ export const ORCATERM: OrcaTermProduct = {
 /** 按 id 取产品配置。 */
 export function orcaTermProductById(id: string): OrcaTermProduct | undefined {
   return id === ORCATERM.id ? ORCATERM : undefined
+}
+
+/**
+ * 上游的模型挂载名（`TokenHub/<name>`）。
+ *
+ * 上游 `aimod-cc/Agent2API` 的 `providers/orcaterm/models.rs` 记录：对话
+ * 请求的 `user.model` 必须是 `TokenHub/<name>` 形态，裸名会被上游判为
+ * 未知名而回流内 `LLM_ERROR`。这里保留该前缀作为**挂载名**，目录里的
+ * `id` 仍是裸名（与上游面板展示一致，便于用户认）。
+ */
+export const ORCATERM_MODEL_MOUNT_PREFIX = 'TokenHub/'
+
+/** 上游默认档（实测可用，兜底用；对应上游 `DEFAULT_MODEL`）。 */
+export const ORCATERM_DEFAULT_MODEL = 'glm-5.3-flash'
+
+/**
+ * 把用户选中的模型名归一成上游挂载名。
+ *
+ * 接受裸名（`glm-5.3-flash`）与全名（`TokenHub/glm-5.3-flash`）两种形态；
+ * 空值回落到默认档。
+ *
+ * ⚠️ 目录内的模型**原样放行**（含上游未挂载的 `hy4-preview`）：上游会把
+ * 明确错误下发到流里，由 `orcaterm-adapter.ts` 报给用户，比静默换成
+ * 别的模型诚实。未知模型也回退到默认档（上游对未知名回流内 `LLM_ERROR`，
+ * 与其直接失败不如回退到实测可用的档）。
+ */
+export function resolveOrcaTermModel(name: string | undefined): string {
+  const trimmed = (name ?? '').trim()
+  const bare = trimmed.startsWith(ORCATERM_MODEL_MOUNT_PREFIX)
+    ? trimmed.slice(ORCATERM_MODEL_MOUNT_PREFIX.length).trim()
+    : trimmed
+  if (bare === '') return `${ORCATERM_MODEL_MOUNT_PREFIX}${ORCATERM_DEFAULT_MODEL}`
+  const known = ORCATERM_FALLBACK_MODELS.some((model) => model.id === bare)
+  return `${ORCATERM_MODEL_MOUNT_PREFIX}${known ? bare : ORCATERM_DEFAULT_MODEL}`
 }
 
 // ── 端点路径（挂 lightaiBase）──

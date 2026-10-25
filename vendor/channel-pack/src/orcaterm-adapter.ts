@@ -16,7 +16,7 @@ import type {
   StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 
-import { ORCATERM, type OrcaTermProduct } from './orcaterm-product.js'
+import { ORCATERM, resolveOrcaTermModel, type OrcaTermProduct } from './orcaterm-product.js'
 import { isCredentialUsable, type OrcaTermCredential } from './orcaterm.js'
 import { streamChat } from './orcaterm-auth.js'
 import { providerCatalogVisible } from './account-pool.js'
@@ -81,6 +81,9 @@ export class OrcaTermAdapter extends LlmAdapter {
     const entry = this.product.fallbackModels.find((candidate) => candidate.id === model)
     const resolved: LlmResolvedModelInfo = {
       provider,
+      // 这里保留**裸 id**（不是 `TokenHub/` 挂载名）：目录展示与用户
+      // 黑名单（disabledModels）都按裸 id 匹配。挂载名只在真正发请求时
+      // 由 `resolveOrcaTermModel` 加上。
       id: model,
       name: entry?.name ?? model,
       inputModalities: ['text'],
@@ -114,7 +117,8 @@ export class OrcaTermAdapter extends LlmAdapter {
     }
     try {
       for await (const delta of streamChat(this.fetchImpl, this.product, credential, {
-        model: options.model,
+        // 上游要求 `TokenHub/<name>` 挂载名，裸名会被判为未知名。
+        model: resolveOrcaTermModel(options.model),
         messages: options.messages,
         ...(options.system === undefined ? {} : { system: options.system }),
         ...(options.signal === undefined ? {} : { signal: options.signal }),

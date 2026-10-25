@@ -9,7 +9,7 @@ async function main() {
     normalizeCookie, isCredentialUsable, parseChatFrame, flattenMessages, contentToText,
     orcaTermHeaders,
   } = await import('../vendor/channel-pack/src/orcaterm.ts')
-  const { ORCATERM } = await import('../vendor/channel-pack/src/orcaterm-product.ts')
+  const { ORCATERM, resolveOrcaTermModel } = await import('../vendor/channel-pack/src/orcaterm-product.ts')
   const { streamChat, probeCredential } = await import('../vendor/channel-pack/src/orcaterm-auth.ts')
   const { OrcaTermAdapter } = await import('../vendor/channel-pack/src/orcaterm-adapter.ts')
   const { fetch: realFetch } = await import('undici')
@@ -32,6 +32,29 @@ async function main() {
   assert.equal(normalizeCookie(`ot_session=0123456789abcdef0123456789abcdef; x=${'y'.repeat(9000)}`), undefined, '整串超长拒绝')
   assert.equal(isCredentialUsable({ access_token: `ot_session=0123456789abcdef0123456789abcdef` }), true)
   assert.equal(isCredentialUsable({ access_token: 'x=1' }), false)
+
+  // ── 模型目录：9 个真实 id（2026-10-25 更正，替掉测试期探针 id）──
+  assert.equal(ORCATERM.fallbackModels.length, 9, 'OrCaTerm 目录是 9 个真实模型')
+  assert.deepEqual(
+    ORCATERM.fallbackModels.map((m) => m.id),
+    ['hy4-preview', 'hy3', 'kimi-k3', 'glm-5.3-flash', 'glm-5.3', 'glm-5.2',
+      'deepseek-v4.1-flash', 'deepseek-v4-flash', 'deepseek-v4-pro'],
+    '目录 id 与上游面板逐项对齐（顺序一致）',
+  )
+  assert.ok(
+    !ORCATERM.fallbackModels.some((m) => m.id === 'deepseek-v3.2' || m.id === 'hunyuan-t1'),
+    '测试期探针 id 已移除（那两条实际不可用）',
+  )
+
+  // ── 挂载名归一：上游要求 TokenHub/<name> ──
+  assert.equal(resolveOrcaTermModel('glm-5.3-flash'), 'TokenHub/glm-5.3-flash', '裸名补挂载前缀')
+  assert.equal(resolveOrcaTermModel('TokenHub/glm-5.3-flash'), 'TokenHub/glm-5.3-flash', '全名幂等')
+  assert.equal(resolveOrcaTermModel('  hy3  '), 'TokenHub/hy3', '去空白')
+  assert.equal(resolveOrcaTermModel(''), 'TokenHub/glm-5.3-flash', '空值回落默认档')
+  assert.equal(resolveOrcaTermModel(undefined), 'TokenHub/glm-5.3-flash', 'undefined 回落默认档')
+  assert.equal(resolveOrcaTermModel('hy4-preview'), 'TokenHub/hy4-preview', '目录内模型原样放行（含未挂载的）')
+  assert.equal(resolveOrcaTermModel('不存在的模型'), 'TokenHub/glm-5.3-flash', '未知模型回落默认档')
+  assert.equal(resolveOrcaTermModel('deepseek-v3.2'), 'TokenHub/glm-5.3-flash', '旧的测试探针 id 不再被当作已知模型')
 
   // ── SSE 帧解析：四种形态 ──
   assert.deepEqual(parseChatFrame('[DONE]'), { kind: 'done' })
@@ -101,7 +124,7 @@ async function main() {
     // ── 流式对话 ──
     const deltas = []
     for await (const d of streamChat(realFetch, product, cred, {
-      model: 'deepseek-v3.2',
+      model: 'TokenHub/deepseek-v4-pro',
       messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
       system: 'be nice',
     })) deltas.push(d)
@@ -118,6 +141,8 @@ async function main() {
     assert.ok(chat.body.input.input.includes('## user\nhi'))
     assert.ok(chat.body.input.input.includes('## system\nbe nice'))
     assert.equal(chat.body.stream, true)
+    // 请求体的 user.model 必须是 TokenHub/<name> 挂载名（裸名上游会判未知名）
+    assert.equal(chat.body.user.model, 'TokenHub/deepseek-v4-pro', '对话请求带挂载名')
 
     // ── 上游错误帧必须抛错 ──
     mode = 'upstream_error'
@@ -138,7 +163,7 @@ async function main() {
       product, fetchImpl: realFetch, resolveCredential: async () => cred,
     })
     const chunks = await collect(adapter.stream({
-      model: 'deepseek-v3.2',
+      model: 'deepseek-v4-pro',
       messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
     }))
     const reasoning = chunks.filter(c => c.type === 'reasoning-delta').map(c => c.text).join('')
