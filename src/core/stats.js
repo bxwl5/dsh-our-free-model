@@ -1,17 +1,23 @@
 import { MIN_DECODE_MS } from '../store.js'
 import { describeSavingsTotal, emptySavings, savingsPercent } from '../token-saver/index.js'
 
-export function buildStats(stats, catalog) {
+export function buildStats(stats, catalog, options = {}) {
+  const includeCacheRead = options.includeCacheRead === true
   const days = stats.days ?? {}
-  const series = Object.keys(days).sort().map(day => ({
-    day,
-    total: days[day].total ?? 0,
-    models: Object.entries(days[day].models ?? {}).map(([model, value]) => ({ model, ...value })),
-  }))
+  const series = Object.keys(days).sort().map(day => {
+    const rows = Object.entries(days[day].models ?? {}).map(([model, value]) => ({ model, ...value }))
+    // 历史口径 `total` 只累加 input+output。缓存读同样是模型真实处理过的
+    // token（只是计费打折），按需并进来——否则看板会系统性低估（实测缺口
+    // 见 `channel-usage.js` 文件头）。
+    const total = includeCacheRead
+      ? rows.reduce((sum, row) => sum + (row.input ?? 0) + (row.output ?? 0) + (row.cacheRead ?? 0), 0)
+      : days[day].total ?? 0
+    return { day, total, models: rows }
+  })
   const totals = {}
   for (const entry of series) for (const row of entry.models) {
     const previous = totals[row.model] ?? {
-      model: row.model, input: 0, output: 0, reasoning: 0, calls: 0, failed: 0,
+      model: row.model, input: 0, output: 0, reasoning: 0, cacheRead: 0, calls: 0, failed: 0,
       ttftMs: 0, ttftSamples: 0, decodeMs: 0, decodeTokens: 0,
     }
     totals[row.model] = {
@@ -19,6 +25,7 @@ export function buildStats(stats, catalog) {
       input: previous.input + row.input,
       output: previous.output + row.output,
       reasoning: previous.reasoning + row.reasoning,
+      cacheRead: previous.cacheRead + (row.cacheRead ?? 0),
       calls: previous.calls + row.calls,
       failed: previous.failed + row.failed,
       ttftMs: previous.ttftMs + (row.ttftMs ?? 0),
@@ -88,6 +95,9 @@ export function buildStats(stats, catalog) {
       input: named.reduce((sum, row) => sum + row.input, 0),
       output: named.reduce((sum, row) => sum + row.output, 0),
       reasoning: named.reduce((sum, row) => sum + row.reasoning, 0),
+      // 缓存读单列出来：合计（输入+输出+缓存读）由调用方决定要不要并，
+      // 但分量必须一直可用，否则前端只能靠猜。
+      cacheRead: named.reduce((sum, row) => sum + (row.cacheRead ?? 0), 0),
       calls: named.reduce((sum, row) => sum + row.calls, 0),
       failed: hasLifetimeFailures ? stats.failedRequests : physicalFailed,
       turns,

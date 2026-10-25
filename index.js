@@ -50,6 +50,7 @@ import { createModelRuntime, createRuntimeStores } from './src/core/runtime.js'
 
 export { fromOpenAiMessages } from './src/core/completion.js'
 import { buildStats } from './src/core/stats.js'
+import { mergeChannelStats, readChannelUsage, resolveChannelLedgerPath } from './src/core/channel-usage.js'
 export { buildStats }
 
 export const name = 'our-free-model'
@@ -739,7 +740,7 @@ export function apply(ctx, config) {
     logger.warn?.(`our-free-model: ${surface} admission rejected status=${status} source=${source} reason=${reason}`)
   }
   const api = createApiRoutes({
-    settings, stats, availability, catalog: () => modelRuntime.catalog, state,
+    settings, stats, availability, catalog: () => modelRuntime.catalog, state, dataDir,
     refreshCatalog, refreshAvailability, syncForward, syncRelay, syncEgress,
     onVisibilityChanged: emitTopology,
     // ── fallback chains ─────────────────────────────────────────────────────
@@ -1215,7 +1216,14 @@ export function createApiRoutes(deps) {
         return send(200, buildSummary(deps))
       }
       if (method === 'GET' && routePath === '/stats') {
-        return send(200, buildStats(deps.stats.get(), deps.catalog()))
+        // 看板口径：合计 = 输入 + 输出 + 缓存读；并合入渠道台账
+        // （`vendor/channel-pack` 的 20 个渠道只写 token-ledger.json，
+        //  从不写 stats.json —— 不合并就会整块缺失）。
+        const payload = buildStats(deps.stats.get(), deps.catalog(), { includeCacheRead: true })
+        const ledgerPath = typeof deps.dataDir === 'string'
+          ? resolveChannelLedgerPath(path.dirname(deps.dataDir))
+          : undefined
+        return send(200, mergeChannelStats(payload, ledgerPath === undefined ? undefined : readChannelUsage(ledgerPath), { includeCacheRead: true }))
       }
       if (method === 'GET' && routePath === '/outlet') {
         return send(200, await deps.outletStatus())

@@ -81,6 +81,7 @@ const suites = [
   ['recovery', 'recovery-test.mjs', []],
   ['retry-safety', 'retry-safety-test.mjs', []],
   ['usage-sanitize', 'usage-sanitize-test.mjs', []],
+  ['channel-usage', 'channel-usage-test.mjs', []],
   ['speed-stat', 'speed-stat-test.mjs', []],
   ['picker', 'picker-test.mjs', []],
   ['tui', 'tui-test.mjs', []],

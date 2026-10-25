@@ -119,6 +119,7 @@ window.__ModuleLoader__.load({
         'curve.requests': '请求数',
         'curve.total': '总计',
         'stat.output': '输出 Token',
+        'stat.cacheRead': '缓存读 Token',
         'stat.reasoning': '推理 Token',
         'col.reason': '推理',
         'col.output': '输出',
@@ -291,10 +292,9 @@ window.__ModuleLoader__.load({
         'dash.reasoning': '思考',
         'dash.ttft': '首字',
         'dash.cacheTokens': '缓存命中',
+        'dash.cacheRead': '缓存读',
         'dash.successRate': '成功率',
         'dash.failed': '失败',
-        'dash.recentTitle': '总览 · 最近请求',
-        'dash.recentHint': '来自渠道包的逐请求账本：时间、账号、首字延迟、生成速度与 Token 细分。',
         'dash.empty': '暂无数据——通过渠道模型发起一次对话后，这里就会开始记录。',
         'dash.accountsTitle': '各账号用量透视与模型消耗分布',
         'dash.accountsHint': '按账号汇总请求数与 Token 细分，附调用量最高的模型。',
@@ -563,6 +563,7 @@ window.__ModuleLoader__.load({
         'curve.requests': 'Requests',
         'curve.total': 'Total',
         'stat.output': 'Output tokens',
+        'stat.cacheRead': 'Cache-read tokens',
         'stat.reasoning': 'Reasoning tokens',
         'col.reason': 'reason',
         'col.output': 'output',
@@ -735,10 +736,9 @@ window.__ModuleLoader__.load({
         'dash.reasoning': 'Reasoning',
         'dash.ttft': 'TTFT',
         'dash.cacheTokens': 'Cache hits',
+        'dash.cacheRead': 'Cache read',
         'dash.successRate': 'Success',
         'dash.failed': 'Failed',
-        'dash.recentTitle': 'Overview · Recent requests',
-        'dash.recentHint': 'From the pack\'s per-request ledger: time, account, TTFT, speed and the token breakdown.',
         'dash.empty': 'Nothing yet — one conversation through a channel model starts the record.',
         'dash.accountsTitle': 'Per-account usage & model mix',
         'dash.accountsHint': 'Requests and token breakdown per account, with the most-used models.',
@@ -2358,8 +2358,9 @@ window.__ModuleLoader__.load({
         : SEASON[Math.max(0, models.findIndex(m => m.model === metric)) % SEASON.length]
 
       const headline = h('div', { className: 'ofm_stats' },
-        stat(kilo(stats.grand.input + stats.grand.output), t('curve.tokens')),
+        stat(kilo(stats.grand.input + stats.grand.output + (stats.grand.cacheRead ?? 0)), t('curve.tokens')),
         stat(kilo(stats.grand.output), t('stat.output')),
+        stat(kilo(stats.grand.cacheRead ?? 0), t('stat.cacheRead')),
         stat(kilo(stats.grand.reasoning), t('stat.reasoning')),
         stat(String(stats.requests ?? 0), t('speed.calls')),
         stat(String(stats.requestFailures ?? stats.grand.failed ?? 0), t('speed.failed')),
@@ -3632,18 +3633,28 @@ window.__ModuleLoader__.load({
       const channels = scope === 'today'
         ? (ledger.snapshot?.channels ?? [])
         : mergedHistoryChannels(ledger.history)
+      // 「今日」必须读**日聚合表**（`history` 里今天的那个桶），不能读
+      // `snapshot.totals` —— 后者由内存环形缓冲（`TOKEN_LEDGER_LIMIT = 500` 条）
+      // 现算，请求一多就把最旧的挤掉，今日数字会越用越小（2026-10-25 实测：
+      // 1247 个请求只剩 500 条在算，少了 60%）。日聚合是落盘的权威累计。
+      const todayKeyForTotals = (() => {
+        const now = new Date(Date.now() + 8 * 60 * 60 * 1000) // UTC+8，与台账日键一致
+        return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`
+      })()
       const totals = scope === 'today'
-        ? mergeLedgerRows([ledger.snapshot?.totals ?? {}])
+        ? mergeLedgerRows([(ledger.history ?? []).find(day => day.day === todayKeyForTotals)?.totals ?? ledger.snapshot?.totals ?? {}])
         : mergeLedgerRows((ledger.history ?? []).map(day => day.totals ?? {}))
       const cumulative = ledger.totals ?? ledger.snapshot?.totals ?? {}
       const accounts = ledgerAccountRows(channels)
-      const models = ledgerModelRows(channels).sort((a, b) => (b.inputTokens + b.outputTokens) - (a.inputTokens + a.outputTokens))
+      const models = ledgerModelRows(channels).sort((a, b) => (b.inputTokens + b.outputTokens + b.cacheReadTokens) - (a.inputTokens + a.outputTokens + a.cacheReadTokens))
       // The pack's ring is already newest-first (`token-ledger.ts`: "最近明细
       // （最新在前）", built with `unshift`), so it is used as served. Reversing it
       // here put the oldest request at the top of the table — and, behind the log
       // page's pagination, the request the user just made on the last page.
       const entries = ledger.snapshot?.entries ?? []
-      const tokenTotal = totals.inputTokens + totals.outputTokens
+      // 合计口径：输入 + 输出 + 缓存读。缓存读是模型真实处理过的 token，
+      // 只是计费打折；旧口径排除它会让看板系统性低估（单日可差两个数量级）。
+      const tokenTotal = totals.inputTokens + totals.outputTokens + totals.cacheReadTokens
       const cacheBase = totals.inputTokens + totals.cacheReadTokens
 
       if (ledger.status === 'unavailable') {
@@ -3661,44 +3672,11 @@ window.__ModuleLoader__.load({
           h(Button, { onClick: () => void ledger.reload() }, t('dash.refresh'))),
         !loaded ? h('div', { className: 'ofm_chanwrap' }, [0, 1, 2].map(i => h('div', { className: 'ofm_skel', key: i, style: { minHeight: 120 } }))) : null,
         loaded ? h('div', { className: 'ofm_kpis' },
-          h(KpiCard, { label: scope === 'today' ? t('dash.kpiToday') : t('dash.kpiScopeAll'), value: fmtInt(tokenTotal), sub: `${t('dash.input')} ${fmtInt(totals.inputTokens)} · ${t('dash.output')} ${fmtInt(totals.outputTokens)} · ${t('dash.reasoning')} ${fmtInt(totals.reasoningTokens)}` }),
-          h(KpiCard, { label: t('dash.kpiCumulative'), value: fmtInt((cumulative.inputTokens ?? 0) + (cumulative.outputTokens ?? 0)), sub: `${t('dash.input')} ${fmtInt(cumulative.inputTokens)} · ${t('dash.output')} ${fmtInt(cumulative.outputTokens)} · ${t('dash.reasoning')} ${fmtInt(cumulative.reasoningTokens)}` }),
+          h(KpiCard, { label: scope === 'today' ? t('dash.kpiToday') : t('dash.kpiScopeAll'), value: fmtInt(tokenTotal), sub: `${t('dash.input')} ${fmtInt(totals.inputTokens)} · ${t('dash.output')} ${fmtInt(totals.outputTokens)} · ${t('dash.reasoning')} ${fmtInt(totals.reasoningTokens)} · ${t('dash.cacheRead')} ${fmtInt(totals.cacheReadTokens)}` }),
+          h(KpiCard, { label: t('dash.kpiCumulative'), value: fmtInt((cumulative.inputTokens ?? 0) + (cumulative.outputTokens ?? 0) + (cumulative.cacheReadTokens ?? 0)), sub: `${t('dash.input')} ${fmtInt(cumulative.inputTokens)} · ${t('dash.output')} ${fmtInt(cumulative.outputTokens)} · ${t('dash.reasoning')} ${fmtInt(cumulative.reasoningTokens)} · ${t('dash.cacheRead')} ${fmtInt(cumulative.cacheReadTokens ?? 0)}` }),
           h(KpiCard, { label: t('dash.kpiSpeed'), value: fmtTps(totals.avgTps), sub: `${t('dash.ttft')} ${fmtMs(totals.avgTtftMs)}` }),
           h(KpiCard, { label: t('dash.kpiCache'), value: fmtPct(totals.cacheReadTokens, cacheBase), sub: `${t('dash.cacheTokens')} ${fmtInt(totals.cacheReadTokens)}` }),
           h(KpiCard, { label: t('dash.kpiRequests'), value: fmtInt(totals.requests), sub: `${t('dash.successRate')} ${fmtPct(totals.requests - totals.errors, totals.requests)} · ${t('dash.failed')} ${fmtInt(totals.errors)}`, tone: totals.errors > 0 ? 'warn' : '' })) : null,
-        loaded ? h(Section, { title: t('dash.recentTitle'), hint: t('dash.recentHint') },
-          entries.length === 0 ? h('p', { className: 'ofm_note' }, t('dash.empty'))
-            : h('div', { className: 'ofm_tablewrap' }, h('table', { className: 'ofm_table' },
-                h('thead', null, h('tr', null,
-                h('th', { key: 'time' }, t('log.time')),
-                h('th', { key: 'chan' }, t('chan.titleSingle')),
-                h('th', { key: 'model' }, t('log.model')),
-                h('th', { key: 'account' }, t('log.account')),
-                h('th', { key: 'via' }, t('log.via')),
-                h('th', { key: 'result' }, t('log.result')),
-                h('th', { key: 'duration' }, t('log.duration')),
-                h('th', { key: 'ttft' }, t('log.ttft')),
-                h('th', { key: 'speed' }, t('log.speed')),
-                h('th', { key: 'input' }, t('log.input')),
-                h('th', { key: 'output' }, t('log.output')),
-                h('th', { key: 'reasoning' }, t('log.reasoning')),
-                h('th', { key: 'cache' }, t('log.cache')),
-                h('th', { key: 'total' }, t('log.total')))),
-              h('tbody', null, entries.slice(0, 12).map((entry, index) => h('tr', { key: index },
-                h('td', null, new Date(entry.ts).toLocaleString()),
-                h('td', null, entry.provider),
-                h('td', null, entry.model),
-                h('td', null, entry.accountId || '—'),
-                h('td', null, entry.channel === 'gateway' ? t('log.viaGateway') : t('log.viaDirect')),
-                h('td', null, entry.error ? h('span', { className: 'ofm_badge unavailable', title: entry.error }, t('log.failed')) : h('span', { className: 'ofm_badge available' }, t('log.ok'))),
-                h('td', { className: 'ofm_num' }, fmtMs(entry.durationMs)),
-                h('td', { className: 'ofm_num' }, fmtMs(entry.ttftMs)),
-                h('td', { className: 'ofm_num' }, fmtTps(entry.tps)),
-                h('td', { className: 'ofm_num' }, fmtInt(entry.inputTokens)),
-                h('td', { className: 'ofm_num' }, fmtInt(entry.outputTokens)),
-                h('td', { className: 'ofm_num' }, Number.isFinite(entry.reasoningTokens) ? fmtInt(entry.reasoningTokens) : '—'),
-                h('td', { className: 'ofm_num' }, Number.isFinite(entry.cacheReadTokens) ? fmtInt(entry.cacheReadTokens) : '—'),
-                h('td', { className: 'ofm_num' }, h('b', null, fmtInt(entry.inputTokens + entry.outputTokens))))))))) : null,
         loaded ? h(Section, { title: t('dash.accountsTitle'), hint: t('dash.accountsHint') },
           accounts.length === 0 ? h('p', { className: 'ofm_note' }, t('dash.empty'))
             : h('div', { className: 'ofm_tablewrap' }, h('table', { className: 'ofm_table' },
@@ -3712,16 +3690,16 @@ window.__ModuleLoader__.load({
                 h('th', { key: 'reasoning' }, t('log.reasoning')),
                 h('th', { key: 'cache' }, t('log.cache')),
                 h('th', { key: 'mix' }, t('log.modelMix')))),
-              h('tbody', null, accounts.sort((a, b) => b.requests - a.requests).map((row, index) => h('tr', { key: index },
+              h('tbody', null, accounts.slice().sort((a, b) => (b.inputTokens + b.outputTokens + b.cacheReadTokens) - (a.inputTokens + a.outputTokens + a.cacheReadTokens)).slice(0, 10).map((row, index) => h('tr', { key: index },
                 h('td', null, h('b', null, row.accountId || t('log.unattributed'))),
                 h('td', null, row.provider),
                 h('td', { className: 'ofm_num' }, fmtInt(row.requests)),
-                h('td', { className: 'ofm_num' }, fmtInt(row.inputTokens + row.outputTokens)),
+                h('td', { className: 'ofm_num' }, fmtInt(row.inputTokens + row.outputTokens + row.cacheReadTokens)),
                 h('td', { className: 'ofm_num' }, fmtInt(row.inputTokens)),
                 h('td', { className: 'ofm_num' }, fmtInt(row.outputTokens)),
                 h('td', { className: 'ofm_num' }, fmtInt(row.reasoningTokens)),
                 h('td', { className: 'ofm_num' }, fmtInt(row.cacheReadTokens)),
-                h('td', null, (row.models ?? []).slice().sort((a, b) => ((b.inputTokens ?? 0) + (b.outputTokens ?? 0)) - ((a.inputTokens ?? 0) + (a.outputTokens ?? 0))).slice(0, 2).map(model => `${model.model} · ${fmtInt((model.inputTokens ?? 0) + (model.outputTokens ?? 0))}`).join('，') || '—'))))))) : null,
+                h('td', null, (row.models ?? []).slice().sort((a, b) => ((b.inputTokens ?? 0) + (b.outputTokens ?? 0) + (b.cacheReadTokens ?? 0)) - ((a.inputTokens ?? 0) + (a.outputTokens ?? 0) + (a.cacheReadTokens ?? 0))).slice(0, 10).map(model => `${model.model} · ${fmtInt((model.inputTokens ?? 0) + (model.outputTokens ?? 0) + (model.cacheReadTokens ?? 0))}`).join('，') || '—'))))))) : null,
         loaded ? h(Section, { title: t('dash.modelsTitle'), hint: t('dash.modelsHint') },
           models.length === 0 ? h('p', { className: 'ofm_note' }, t('dash.empty'))
             : h('div', { className: 'ofm_tablewrap' }, h('table', { className: 'ofm_table' },
@@ -3736,17 +3714,17 @@ window.__ModuleLoader__.load({
                 h('th', { key: 'speed' }, t('log.speed')),
                 h('th', { key: 'hit' }, t('log.cacheHit')),
                 h('th', { key: 'share' }, t('log.share')))),
-              h('tbody', null, models.map(row => h('tr', { key: row.model },
+              h('tbody', null, models.slice(0, 10).map(row => h('tr', { key: row.model },
                 h('td', null, h('b', null, row.model)),
                 h('td', null, row.providers.join('，')),
                 h('td', { className: 'ofm_num' }, fmtInt(row.requests)),
                 h('td', { className: 'ofm_num' }, row.errors > 0 ? h('span', { className: 'ofm_badge unavailable' }, fmtInt(row.errors)) : fmtInt(0)),
-                h('td', { className: 'ofm_num' }, fmtInt(row.inputTokens + row.outputTokens)),
+                h('td', { className: 'ofm_num' }, fmtInt(row.inputTokens + row.outputTokens + row.cacheReadTokens)),
                 h('td', { className: 'ofm_num' }, `${fmtInt(row.inputTokens)} / ${fmtInt(row.outputTokens)} / ${fmtInt(row.reasoningTokens)}`),
                 h('td', { className: 'ofm_num' }, fmtMs(row.avgTtftMs)),
                 h('td', { className: 'ofm_num' }, fmtTps(row.avgTps)),
                 h('td', { className: 'ofm_num' }, fmtPct(row.cacheReadTokens, row.inputTokens + row.cacheReadTokens)),
-                h('td', { className: 'ofm_num' }, `${fmtPct(row.inputTokens + row.outputTokens, tokenTotal)}`))))))) : null)
+                h('td', { className: 'ofm_num' }, `${fmtPct(row.inputTokens + row.outputTokens + row.cacheReadTokens, tokenTotal)}`))))))) : null)
     }
 
     /** The log page: the same request ring, at full width and full detail. */
