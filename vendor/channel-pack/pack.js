@@ -47166,6 +47166,7 @@ init_autoclaw_product();
 import { LlmAdapter as LlmAdapter12, LlmError as LlmError16 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/autoclaw.ts
+init_autoclaw_sms();
 function stringValue8(value) {
   return typeof value === "string" && value !== "" ? value : void 0;
 }
@@ -47202,10 +47203,17 @@ function autoClawHeaders(product, credential) {
     Referer: `${product.apiBase}/`
   };
 }
-function autoClawCatalogHeaders(product, credential) {
+function autoClawCatalogHeaders(product, credential, timestamp = Math.floor(Date.now() / 1e3)) {
   return {
     Accept: "application/json",
     Authorization: `Bearer ${credential.access_token}`,
+    // 签名三件套（与 userapi 域同口径，见 autoclaw-sms.ts 的 autoclawSign）。
+    // 上游 catalog.rs：目录接口除 Bearer 外还要这套可复算的签名头，
+    // 且**与刷新接口共用同一份实现**（复制会让 appId/appKey 与时间戳单位
+    // 各自演进，签名一旦分叉就是稳定 400002）。
+    "X-Auth-Appid": AUTOCLAW_SMS_APP_ID,
+    "X-Auth-TimeStamp": String(timestamp),
+    "X-Auth-Sign": autoclawSign(AUTOCLAW_SMS_APP_ID, timestamp, AUTOCLAW_SMS_APP_KEY),
     Origin: product.apiBase,
     Referer: `${product.apiBase}/`
   };

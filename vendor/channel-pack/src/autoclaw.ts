@@ -6,6 +6,7 @@
  */
 
 import type { AutoClawProduct } from './autoclaw-product.js'
+import { AUTOCLAW_SMS_APP_ID, AUTOCLAW_SMS_APP_KEY, autoclawSign } from './autoclaw-sms.js'
 
 /** AutoClaw 凭据。 */
 export interface AutoClawCredential {
@@ -104,10 +105,18 @@ export function autoClawHeaders(product: AutoClawProduct, credential: AutoClawCr
 export function autoClawCatalogHeaders(
   product: AutoClawProduct,
   credential: AutoClawCredential,
+  timestamp: number = Math.floor(Date.now() / 1000),
 ): Record<string, string> {
   return {
     Accept: 'application/json',
     Authorization: `Bearer ${credential.access_token}`,
+    // 签名三件套（与 userapi 域同口径，见 autoclaw-sms.ts 的 autoclawSign）。
+    // 上游 catalog.rs：目录接口除 Bearer 外还要这套可复算的签名头，
+    // 且**与刷新接口共用同一份实现**（复制会让 appId/appKey 与时间戳单位
+    // 各自演进，签名一旦分叉就是稳定 400002）。
+    'X-Auth-Appid': AUTOCLAW_SMS_APP_ID,
+    'X-Auth-TimeStamp': String(timestamp),
+    'X-Auth-Sign': autoclawSign(AUTOCLAW_SMS_APP_ID, timestamp, AUTOCLAW_SMS_APP_KEY),
     Origin: product.apiBase,
     Referer: `${product.apiBase}/`,
   }
