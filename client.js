@@ -2762,8 +2762,19 @@ window.__ModuleLoader__.load({
       'accio-cn': { unit: 'quota', quota: true },
       // OfficeAce 是**积分制**（上游 `GET /v1/subscription` 的 skus[].quotas
       // 含 officeace_points，另有 bonus_skus：新用户 4000 + 每日签到 100）。
-      // 有积分查询能力（status: true），但**领取端点尚未接入**，故无 claim。
-      officeace: { status: true },
+      // 2026-10-25：领取端点已接入（`POST /v1/subscription/bonus/claim`，
+      // 上游一次调用把当天所有可领奖励一起发下来，幂等由上游保证）。
+      officeace: { status: true, claim: true },
+      // KukuAI 是**积分制**：`GET /bizapi/gfpro/getgfvipremain` 取
+      // `data.list[assetName=="token"].totalPoint`；签到走
+      // `freepoint/homenew`（面板）+ `taskComplete`（LOGIN/CHAT），
+      // 上游幂等（重复领返回 SUCCESS + reward 0）。
+      kuku: { status: true, claim: true },
+      // AutoClaw 是**积分制**：`GET {userapi}/agent-assetmgr/api/v2/wallets`
+      // （v1 降级）；签到是「完成客户端任务」通用入口的一个 task_id
+      // （`autoclaw-task-complete` + `task_id=daily_signin`），
+      // 成功判据是 body 里的 reward_points/success，不能只看 HTTP 200。
+      autoclaw: { status: true, claim: true },
     }
 
     /**
