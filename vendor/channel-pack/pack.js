@@ -27806,34 +27806,95 @@ __export(commandcode_product_exports, {
   COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS: () => COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS,
   COMMANDCODE_LOGIN_START_PORT: () => COMMANDCODE_LOGIN_START_PORT,
   COMMANDCODE_LOGIN_TIMEOUT_MS: () => COMMANDCODE_LOGIN_TIMEOUT_MS,
+  COMMANDCODE_MESSAGES_PATH: () => COMMANDCODE_MESSAGES_PATH,
   COMMANDCODE_MODELS_PATH: () => COMMANDCODE_MODELS_PATH,
   COMMANDCODE_STUDIO_AUTH_PATH: () => COMMANDCODE_STUDIO_AUTH_PATH,
   COMMANDCODE_WHOAMI_PATH: () => COMMANDCODE_WHOAMI_PATH,
-  commandCodeProductById: () => commandCodeProductById
+  commandCodeProductById: () => commandCodeProductById,
+  requiresAnthropicMessages: () => requiresAnthropicMessages
 });
 function commandCodeProductById(id) {
   return ALL_COMMANDCODE_PRODUCTS.find((product) => product.id === id);
 }
-var COMMANDCODE_FALLBACK_MODELS, COMMANDCODE, ALL_COMMANDCODE_PRODUCTS, COMMANDCODE_STUDIO_AUTH_PATH, COMMANDCODE_WHOAMI_PATH, COMMANDCODE_CREDITS_PATH, COMMANDCODE_MODELS_PATH, COMMANDCODE_CHAT_PATH, COMMANDCODE_LOGIN_START_PORT, COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS, COMMANDCODE_LOGIN_TIMEOUT_MS;
+function requiresAnthropicMessages(model) {
+  return /claude/i.test(String(model));
+}
+var COMMANDCODE_FALLBACK_MODELS, COMMANDCODE, ALL_COMMANDCODE_PRODUCTS, COMMANDCODE_STUDIO_AUTH_PATH, COMMANDCODE_WHOAMI_PATH, COMMANDCODE_CREDITS_PATH, COMMANDCODE_MODELS_PATH, COMMANDCODE_CHAT_PATH, COMMANDCODE_MESSAGES_PATH, COMMANDCODE_LOGIN_START_PORT, COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS, COMMANDCODE_LOGIN_TIMEOUT_MS;
 var init_commandcode_product = __esm({
   "vendor/channel-pack/src/commandcode-product.ts"() {
     "use strict";
     COMMANDCODE_FALLBACK_MODELS = [
       {
-        id: "claude-sonnet-4-5",
-        name: "Claude Sonnet 4.5",
+        id: "claude-sonnet-5-5",
+        name: "Claude Sonnet 5.5",
         contextWindow: 2e5,
         maxTokens: 64e3,
         supportsImage: true,
-        description: "Anthropic Claude Sonnet 4.5"
+        description: "Anthropic Claude Sonnet 5.5"
       },
       {
-        id: "gpt-5",
-        name: "GPT-5",
+        id: "claude-opus-5-5",
+        name: "Claude Opus 5.5",
+        contextWindow: 2e5,
+        maxTokens: 64e3,
+        supportsImage: true,
+        description: "Anthropic Claude Opus 5.5"
+      },
+      {
+        id: "claude-sonnet-5",
+        name: "Claude Sonnet 5",
+        contextWindow: 2e5,
+        maxTokens: 64e3,
+        supportsImage: true,
+        description: "Anthropic Claude Sonnet 5"
+      },
+      {
+        id: "claude-opus-5",
+        name: "Claude Opus 5",
+        contextWindow: 2e5,
+        maxTokens: 64e3,
+        supportsImage: true,
+        description: "Anthropic Claude Opus 5"
+      },
+      {
+        id: "claude-haiku-5-5",
+        name: "Claude Haiku 5.5",
+        contextWindow: 2e5,
+        maxTokens: 64e3,
+        supportsImage: true,
+        description: "Anthropic Claude Haiku 5.5"
+      },
+      {
+        id: "gpt-6-astra",
+        name: "GPT-6 Astra",
         contextWindow: 4e5,
         maxTokens: 128e3,
         supportsImage: true,
-        description: "OpenAI GPT-5"
+        description: "OpenAI GPT-6 Astra"
+      },
+      {
+        id: "gpt-6.1-sol",
+        name: "GPT-6.1 Sol",
+        contextWindow: 4e5,
+        maxTokens: 128e3,
+        supportsImage: true,
+        description: "OpenAI GPT-6.1 Sol"
+      },
+      {
+        id: "gpt-6-sol",
+        name: "GPT-6 Sol",
+        contextWindow: 4e5,
+        maxTokens: 128e3,
+        supportsImage: true,
+        description: "OpenAI GPT-6 Sol"
+      },
+      {
+        id: "gpt-6-luna",
+        name: "GPT-6 Luna",
+        contextWindow: 4e5,
+        maxTokens: 128e3,
+        supportsImage: true,
+        description: "OpenAI GPT-6 Luna"
       }
     ];
     COMMANDCODE = {
@@ -27854,6 +27915,7 @@ var init_commandcode_product = __esm({
     COMMANDCODE_CREDITS_PATH = "/alpha/billing/credits";
     COMMANDCODE_MODELS_PATH = "/provider/v1/models";
     COMMANDCODE_CHAT_PATH = "/provider/v1/chat/completions";
+    COMMANDCODE_MESSAGES_PATH = "/provider/v1/messages";
     COMMANDCODE_LOGIN_START_PORT = 5959;
     COMMANDCODE_LOGIN_MAX_PORT_ATTEMPTS = 10;
     COMMANDCODE_LOGIN_TIMEOUT_MS = 12e4;
@@ -27872,13 +27934,13 @@ function numberValue(value) {
   }
   return void 0;
 }
-function isRecord2(value) {
+function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function parseWhoami(value) {
-  if (!isRecord2(value)) return void 0;
-  const outer = isRecord2(value.data) ? value.data : value;
-  const body = isRecord2(outer.user) ? outer.user : outer;
+  if (!isRecord(value)) return void 0;
+  const outer = isRecord(value.data) ? value.data : value;
+  const body = isRecord(outer.user) ? outer.user : outer;
   const userId = stringValue(body.userId) ?? stringValue(body.user_id) ?? stringValue(body.id) ?? stringValue(body.uid) ?? stringValue(body.account_id);
   if (userId === void 0) return void 0;
   return {
@@ -27900,16 +27962,16 @@ function credentialFromWhoami(apiKey, whoami) {
   };
 }
 function parseCredits(value) {
-  if (!isRecord2(value)) return void 0;
-  const root = isRecord2(value.data) ? value.data : value;
-  if (isRecord2(root.credits)) {
+  if (!isRecord(value)) return void 0;
+  const root = isRecord(value.data) ? value.data : value;
+  if (isRecord(root.credits)) {
     const credits = root.credits;
     const free = numberValue(credits.freeCredits);
     const monthly = numberValue(credits.monthlyCredits);
     const purchased = numberValue(credits.purchasedCredits);
     if (free === void 0 && monthly === void 0 && purchased === void 0) return void 0;
     const balance2 = (free ?? 0) + (monthly ?? 0) + (purchased ?? 0);
-    const limits = isRecord2(root.windowLimits) ? root.windowLimits : void 0;
+    const limits = isRecord(root.windowLimits) ? root.windowLimits : void 0;
     return {
       balance: balance2,
       // 上游没有「总额度上限」概念（积分是预充值/赠送的），故不编造 limit/used；
@@ -27947,7 +28009,7 @@ function buildCommandCodeAuthUrl(product, port, state) {
   return `${product.studioBase}${COMMANDCODE_STUDIO_AUTH_PATH}?${query.toString()}`;
 }
 function parseCallbackCredentials(value) {
-  if (!isRecord2(value)) return void 0;
+  if (!isRecord(value)) return void 0;
   const apiKey = stringValue(value.apiKey);
   const state = stringValue(value.state);
   const userId = stringValue(value.userId);
@@ -28791,7 +28853,32 @@ var init_officeace_product = __esm({
   "vendor/channel-pack/src/officeace-product.ts"() {
     "use strict";
     OFFICEACE_FALLBACK_MODELS = [
-      { id: "officeace-default", name: "OfficeAce", contextWindow: 128e3 }
+      { id: "deepseek-v4.1-flash", name: "deepseek-v4.1-flash", contextWindow: 128e3 },
+      { id: "deepseek-v4-flash", name: "deepseek-v4-flash", contextWindow: 128e3 },
+      { id: "glm-5.3", name: "glm-5.3", contextWindow: 128e3 },
+      { id: "qwen3-30b-a3b", name: "qwen3-30b-a3b", contextWindow: 128e3 },
+      { id: "kimi-k3.1-pro", name: "kimi-k3.1-pro", contextWindow: 128e3 },
+      { id: "kimi-k3-test-1009", name: "kimi-k3-test-1009", contextWindow: 128e3 },
+      { id: "openpangu-2.0-pro", name: "openpangu-2.0-pro", contextWindow: 128e3 },
+      { id: "qwen3-32b", name: "qwen3-32b", contextWindow: 128e3 },
+      { id: "glm-5.2-zx", name: "glm-5.2-zx", contextWindow: 128e3 },
+      { id: "kimi-k3", name: "kimi-k3", contextWindow: 128e3 },
+      { id: "glm-5.2-a3", name: "glm-5.2-a3", contextWindow: 128e3 },
+      { id: "glm-5.3-test", name: "glm-5.3-test", contextWindow: 128e3 },
+      { id: "openpangu-2.0-flash", name: "openpangu-2.0-flash", contextWindow: 128e3 },
+      { id: "glm-5.1", name: "glm-5.1", contextWindow: 128e3 },
+      { id: "glm-5.3-zx", name: "glm-5.3-zx", contextWindow: 128e3 },
+      { id: "deepseek-v4.1-flash-0930", name: "deepseek-v4.1-flash-0930", contextWindow: 128e3 },
+      { id: "deepseek-v4.1-flash-bnt", name: "deepseek-v4.1-flash-bnt", contextWindow: 128e3 },
+      { id: "glm-5.2", name: "glm-5.2", contextWindow: 128e3 },
+      { id: "deepseek-v4-flash-0731", name: "deepseek-v4-flash-0731", contextWindow: 128e3 },
+      { id: "glm-5.2-harmony", name: "glm-5.2-harmony", contextWindow: 128e3 },
+      { id: "kimi-k2.6", name: "kimi-k2.6", contextWindow: 128e3 },
+      { id: "deepseek-v4-pro", name: "deepseek-v4-pro", contextWindow: 128e3 },
+      { id: "glm-5.3-flash", name: "glm-5.3-flash", contextWindow: 128e3 },
+      { id: "kimi-k3-1019", name: "kimi-k3-1019", contextWindow: 128e3 },
+      { id: "glm.5.2-arkts-spark", name: "glm.5.2-arkts-spark", contextWindow: 128e3 },
+      { id: "deepseek-v4.1-flash-1017", name: "deepseek-v4.1-flash-1017", contextWindow: 128e3 }
     ];
     OFFICEACE = {
       id: "officeace",
@@ -43424,12 +43511,383 @@ function registerClineLlm(ctx, options) {
 init_commandcode_product();
 init_commandcode();
 init_commandcode_auth();
-import { LlmAdapter as LlmAdapter6, LlmError as LlmError9 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter6, LlmError as LlmError10 } from "@deepseek-ai/dsh-llm";
+
+// vendor/channel-pack/src/zcode-anthropic.ts
+import { LlmError as LlmError9, ToolCallId as ToolCallId5 } from "@deepseek-ai/dsh-llm";
+function parseToolArguments(raw) {
+  if (raw === void 0 || raw === null) return {};
+  if (typeof raw === "object") return raw;
+  if (typeof raw !== "string") return {};
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return {};
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return { __zcodeUnparsableArguments: trimmed };
+  }
+}
+function toText(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  const parts = [];
+  for (const block of content) {
+    if (typeof block !== "object" || block === null) continue;
+    const record = block;
+    if (record.type === "text" && typeof record.text === "string") parts.push(record.text);
+    else if (record.type === "input_text" && typeof record.text === "string") parts.push(record.text);
+  }
+  return parts.join("");
+}
+function toImageBlock(block) {
+  const imageUrl = block.image_url;
+  const url = typeof imageUrl === "string" ? imageUrl : typeof imageUrl === "object" && imageUrl !== null ? imageUrl.url : void 0;
+  if (typeof url !== "string") return void 0;
+  const match = /^data:([^;]+);base64,(.*)$/.exec(url);
+  if (match === null) return void 0;
+  const rawMediaType = match[1] ?? "image/png";
+  const mediaType = rawMediaType === "image/*" ? "image/jpeg" : rawMediaType;
+  return {
+    type: "image",
+    source: { type: "base64", media_type: mediaType, data: match[2] ?? "" }
+  };
+}
+function toAnthropicMessages(wire) {
+  const out = [];
+  const pushToolResult = (block) => {
+    const last = out[out.length - 1];
+    if (last !== void 0 && last.role === "user" && Array.isArray(last.content)) {
+      last.content.push(block);
+      return;
+    }
+    out.push({ role: "user", content: [block] });
+  };
+  for (const message2 of wire) {
+    const role = message2.role;
+    if (role === "tool") {
+      const toolUseId = typeof message2.tool_call_id === "string" ? message2.tool_call_id : "";
+      if (toolUseId.length === 0) continue;
+      pushToolResult({
+        type: "tool_result",
+        tool_use_id: toolUseId,
+        content: toText(message2.content)
+      });
+      continue;
+    }
+    if (role === "assistant") {
+      const blocks2 = [];
+      const text = toText(message2.content);
+      if (text.length > 0) blocks2.push({ type: "text", text });
+      const toolCalls = message2.tool_calls;
+      if (Array.isArray(toolCalls)) {
+        for (const call2 of toolCalls) {
+          if (typeof call2 !== "object" || call2 === null) continue;
+          const record = call2;
+          const fn = record.function;
+          const name2 = typeof fn === "object" && fn !== null ? fn.name : void 0;
+          if (typeof name2 !== "string" || name2.length === 0) continue;
+          const rawArgs = typeof fn === "object" && fn !== null ? fn.arguments : void 0;
+          blocks2.push({
+            type: "tool_use",
+            id: typeof record.id === "string" && record.id.length > 0 ? record.id : `call_${out.length}`,
+            name: name2,
+            input: parseToolArguments(rawArgs)
+          });
+        }
+      }
+      if (blocks2.length === 0) continue;
+      out.push({ role: "assistant", content: blocks2 });
+      continue;
+    }
+    const content = message2.content;
+    if (typeof content === "string") {
+      if (content.length > 0) out.push({ role: "user", content });
+      continue;
+    }
+    if (!Array.isArray(content)) continue;
+    const blocks = [];
+    for (const block of content) {
+      if (typeof block !== "object" || block === null) continue;
+      const record = block;
+      if (record.type === "text" && typeof record.text === "string") {
+        blocks.push({ type: "text", text: record.text });
+        continue;
+      }
+      if (record.type === "image" || record.type === "image_url" || record.type === "input_image") {
+        const image = toImageBlock(
+          record.type === "input_image" && typeof record.image_url === "string" ? { image_url: record.image_url } : record
+        );
+        if (image !== void 0) blocks.push(image);
+      }
+    }
+    if (blocks.length === 0) continue;
+    out.push({ role: "user", content: blocks });
+  }
+  return out;
+}
+function toAnthropicTools(tools) {
+  return tools.map((tool) => ({
+    name: tool.name,
+    ...tool.description !== void 0 && tool.description.length > 0 ? { description: tool.description } : {},
+    input_schema: tool.parameters ?? { type: "object", properties: {} }
+  }));
+}
+async function* iterateSseFrames(body, options = {}) {
+  const reader = body.getReader();
+  const decoder2 = new TextDecoder();
+  const signal = options.signal;
+  const idleTimeoutMs = options.idleTimeoutMs ?? 0;
+  const label = options.label ?? "zcode";
+  let buffer = "";
+  const onAbort = () => {
+    void reader.cancel().catch(() => {
+    });
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    for (; ; ) {
+      if (signal?.aborted === true) break;
+      const { done, value } = idleTimeoutMs > 0 ? await readWithIdleTimeout(reader, idleTimeoutMs, label, signal) : await reader.read();
+      if (done) break;
+      buffer += decoder2.decode(value, { stream: true });
+      for (; ; ) {
+        const boundary = findFrameBoundary(buffer);
+        if (boundary === void 0) break;
+        const rawFrame = buffer.slice(0, boundary.start);
+        buffer = buffer.slice(boundary.end);
+        const frame = parseFrame(rawFrame);
+        if (frame !== void 0) yield frame;
+      }
+    }
+    const tail = parseFrame(buffer);
+    if (tail !== void 0) yield tail;
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    try {
+      await reader.cancel();
+    } catch {
+    }
+    reader.releaseLock();
+  }
+}
+function findFrameBoundary(buffer) {
+  const lf = buffer.indexOf("\n\n");
+  const crlf = buffer.indexOf("\r\n\r\n");
+  if (lf === -1 && crlf === -1) return void 0;
+  if (crlf === -1) return { start: lf, end: lf + 2 };
+  if (lf === -1) return { start: crlf, end: crlf + 4 };
+  return crlf < lf ? { start: crlf, end: crlf + 4 } : { start: lf, end: lf + 2 };
+}
+function parseFrame(raw) {
+  const lines = raw.split(/\r?\n/);
+  let event;
+  const dataLines = [];
+  for (const line2 of lines) {
+    if (line2.startsWith("event:")) event = line2.slice(6).trim();
+    else if (line2.startsWith("data:")) dataLines.push(line2.slice(5).trimStart());
+  }
+  if (dataLines.length === 0 && event === void 0) return void 0;
+  return { event, data: dataLines.join("\n") };
+}
+async function* consumeAnthropicSse(body, options) {
+  const blocks = [];
+  const blockByIndex = /* @__PURE__ */ new Map();
+  const toolMeta = /* @__PURE__ */ new Map();
+  const started = /* @__PURE__ */ new Set();
+  let sawAny = false;
+  let inputTokens;
+  let outputTokens;
+  let cacheReadTokens;
+  let cacheWriteTokens;
+  let stopReasonSeen;
+  const collectUsage = (usage) => {
+    if (typeof usage !== "object" || usage === null) return;
+    const u = usage;
+    const num2 = (v) => typeof v === "number" && Number.isFinite(v) ? v : void 0;
+    inputTokens = num2(u.input_tokens) ?? inputTokens;
+    outputTokens = num2(u.output_tokens) ?? outputTokens;
+    cacheReadTokens = num2(u.cache_read_input_tokens) ?? cacheReadTokens;
+    cacheWriteTokens = num2(u.cache_creation_input_tokens) ?? cacheWriteTokens;
+  };
+  const ensureBlock = (index, kind) => {
+    const existing = blockByIndex.get(index);
+    if (existing !== void 0) return existing;
+    const meta = toolMeta.get(index);
+    const block = {
+      index,
+      kind,
+      text: "",
+      callId: meta?.id ?? `call_${index}`,
+      name: meta?.name ?? "",
+      argumentsRaw: ""
+    };
+    blocks.push(block);
+    blockByIndex.set(index, block);
+    return block;
+  };
+  for await (const frame of iterateSseFrames(body, {
+    signal: options.signal,
+    ...options.idleTimeoutMs === void 0 ? {} : { idleTimeoutMs: options.idleTimeoutMs },
+    label: options.label
+  })) {
+    const eventName = frame.event;
+    if (frame.data.length === 0) continue;
+    let payload;
+    try {
+      payload = JSON.parse(frame.data);
+    } catch {
+      continue;
+    }
+    if (eventName === "error" || payload.type === "error") {
+      const error = payload.error;
+      const message2 = typeof error === "object" && error !== null ? error.message : void 0;
+      const type2 = typeof error === "object" && error !== null ? error.type : void 0;
+      throw new LlmError9(
+        `${options.label}: ${typeof message2 === "string" ? message2 : JSON.stringify(payload).slice(0, 300)}`,
+        // overloaded 是暂时性的，值得重试；其余按服务端错误处理。
+        type2 === "overloaded_error" ? "RATE_LIMIT" : "SERVER"
+      );
+    }
+    const type = typeof payload.type === "string" ? payload.type : eventName;
+    const index = typeof payload.index === "number" ? payload.index : 0;
+    if (type === "content_block_start") {
+      const block = payload.content_block;
+      const blockType = typeof block === "object" && block !== null ? block.type : void 0;
+      if (blockType === "tool_use") {
+        const record = block;
+        toolMeta.set(index, {
+          id: typeof record.id === "string" ? record.id : `call_${index}`,
+          name: typeof record.name === "string" ? record.name : ""
+        });
+      } else if (blockType === "thinking" || blockType === "redacted_thinking") {
+        ensureBlock(index, "reasoning");
+        started.add(index);
+        yield { type: "block-start", index, blockType: "reasoning" };
+      } else {
+        ensureBlock(index, "text");
+        started.add(index);
+        yield { type: "block-start", index, blockType: "text" };
+      }
+      continue;
+    }
+    if (type === "content_block_delta") {
+      const delta = payload.delta;
+      if (typeof delta !== "object" || delta === null) continue;
+      const record = delta;
+      const deltaType = record.type;
+      if (deltaType === "text_delta" && typeof record.text === "string") {
+        const block = ensureBlock(index, "text");
+        block.text += record.text;
+        if (record.text.length > 0) sawAny = true;
+        yield { type: "text-delta", index, text: record.text };
+        continue;
+      }
+      if (deltaType === "thinking_delta" && typeof record.thinking === "string") {
+        const block = ensureBlock(index, "reasoning");
+        block.text += record.thinking;
+        if (record.thinking.length > 0) sawAny = true;
+        yield { type: "reasoning-delta", index, text: record.thinking };
+        continue;
+      }
+      if (deltaType === "input_json_delta") {
+        const partial = typeof record.partial_json === "string" ? record.partial_json : "";
+        const block = ensureBlock(index, "tool-call");
+        if (block.name.length === 0) {
+          const meta = toolMeta.get(index);
+          if (meta !== void 0) {
+            block.callId = meta.id;
+            block.name = meta.name;
+          }
+        }
+        block.argumentsRaw += partial;
+        if (!started.has(index)) {
+          started.add(index);
+          yield { type: "block-start", index, blockType: "tool-call" };
+        }
+        if (partial.length > 0) sawAny = true;
+        yield {
+          type: "tool-call-delta",
+          index,
+          id: ToolCallId5(block.callId),
+          ...block.name.length > 0 ? { name: block.name } : {},
+          argumentsDelta: partial
+        };
+        continue;
+      }
+      continue;
+    }
+    if (type === "message_start") {
+      const message2 = payload.message;
+      if (typeof message2 === "object" && message2 !== null) {
+        const usage = message2.usage;
+        collectUsage(usage);
+      }
+      continue;
+    }
+    if (type === "message_delta") {
+      collectUsage(payload.usage);
+      const delta = payload.delta;
+      if (typeof delta === "object" && delta !== null) {
+        const stopReason = delta.stop_reason;
+        if (typeof stopReason === "string" && stopReason.length > 0) {
+          stopReasonSeen = stopReason;
+        }
+      }
+      continue;
+    }
+  }
+  if (!sawAny) {
+    throw new LlmError9(
+      `${options.label}: \u6A21\u578B\u8FD4\u56DE\u4E86\u7A7A\u54CD\u5E94\uFF08\u65E0\u4EFB\u4F55 text / thinking / tool \u5185\u5BB9\uFF09`,
+      "EMPTY_RESPONSE"
+    );
+  }
+  for (const block of blocks) {
+    if (block.kind === "text") {
+      if (block.text === "") continue;
+      yield { type: "block-end", index: block.index, block: { type: "text", text: block.text } };
+      continue;
+    }
+    if (block.kind === "reasoning") {
+      if (block.text.trim() === "") continue;
+      yield { type: "block-end", index: block.index, block: { type: "reasoning", text: block.text } };
+      continue;
+    }
+    if (block.name.length === 0) continue;
+    const args = block.argumentsRaw.trim() === "" ? "{}" : block.argumentsRaw;
+    yield {
+      type: "block-end",
+      index: block.index,
+      block: {
+        type: "tool-call",
+        id: ToolCallId5(block.callId),
+        name: block.name,
+        arguments: args
+      }
+    };
+  }
+  if (inputTokens !== void 0 || outputTokens !== void 0 || cacheReadTokens !== void 0 || cacheWriteTokens !== void 0) {
+    const usage = {
+      inputTokens: inputTokens ?? 0,
+      outputTokens: outputTokens ?? 0,
+      // totalTokens 只在两半都有值时才给（否则给出的是残缺总数）。
+      ...inputTokens !== void 0 && outputTokens !== void 0 ? { totalTokens: inputTokens + outputTokens + (cacheReadTokens ?? 0) + (cacheWriteTokens ?? 0) } : {},
+      ...cacheReadTokens !== void 0 ? { cacheReadTokens } : {},
+      ...cacheWriteTokens !== void 0 ? { cacheWriteTokens } : {}
+    };
+    yield { type: "usage", usage };
+  }
+  const reason = stopReasonSeen === "max_tokens" ? { kind: "max-tokens" } : stopReasonSeen === "tool_use" || blocks.some((b) => b.kind === "tool-call" && b.name.length > 0) ? { kind: "tool-calls" } : { kind: "stop" };
+  yield { type: "finish", reason };
+}
+
+// vendor/channel-pack/src/commandcode-adapter.ts
 var FIRST_TOKEN_TIMEOUT_MS = 3e5;
 var CHUNK_TIMEOUT_MS = 3e5;
 function fallbackRows(product) {
   return [...product.fallbackModels];
 }
+var REMOTE_MODELS_TTL_MS = 3e5;
 var CommandCodeAdapter = class extends LlmAdapter6 {
   constructor(options) {
     super();
@@ -43442,6 +43900,8 @@ var CommandCodeAdapter = class extends LlmAdapter6 {
   fetchImpl;
   /** 远端模型目录缓存。 */
   remoteModels;
+  /** 上次成功拉取的时刻；配合 REMOTE_MODELS_TTL_MS 判断是否重拉。 */
+  remoteModelsAt = 0;
   /** 正在进行中的目录加载（并发去重）。 */
   loading;
   providerInfo(provider) {
@@ -43460,13 +43920,14 @@ var CommandCodeAdapter = class extends LlmAdapter6 {
    * 不该让整轮对话因为一次目录请求失败而无法开始。
    */
   async ensureRemoteModels() {
-    if (this.remoteModels !== void 0) return;
+    if (this.remoteModels !== void 0 && Date.now() - this.remoteModelsAt < REMOTE_MODELS_TTL_MS) return;
     if (this.loading !== void 0) return this.loading;
     this.loading = (async () => {
       try {
         const credential = await this.options.resolveCredential();
         if (!isCredentialUsable(credential)) return;
         this.remoteModels = await fetchModelCatalog(this.fetchImpl, this.product, credential);
+        this.remoteModelsAt = Date.now();
       } catch {
       } finally {
         this.loading = void 0;
@@ -43522,29 +43983,40 @@ var CommandCodeAdapter = class extends LlmAdapter6 {
   async *stream(options) {
     const credential = await this.options.resolveCredential();
     if (!isCredentialUsable(credential)) {
-      throw new LlmError9("commandcode: \u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55", "MISSING_CREDENTIAL");
+      throw new LlmError10("commandcode: \u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55", "MISSING_CREDENTIAL");
     }
     const imageUrls = /* @__PURE__ */ new Map();
     const messages = serializeMessages3(options.messages, imageUrls);
     if (options.system !== void 0 && options.system.length > 0) {
       messages.unshift({ role: "system", content: options.system });
     }
-    const body = {
+    const anthropic = requiresAnthropicMessages(options.model);
+    const body = anthropic ? {
+      model: options.model,
+      max_tokens: options.maxTokens !== void 0 && options.maxTokens > 0 ? options.maxTokens : 8192,
+      messages: toAnthropicMessages(messages),
+      stream: true,
+      ...options.system !== void 0 && options.system.length > 0 ? { system: options.system } : {},
+      ...options.temperature === void 0 ? {} : { temperature: options.temperature },
+      ...options.tools === void 0 || options.tools.length === 0 ? {} : { tools: toAnthropicTools(options.tools) }
+    } : {
       model: options.model,
       messages,
       stream: true
     };
-    if (options.maxTokens !== void 0 && options.maxTokens > 0) body.max_tokens = options.maxTokens;
-    if (options.tools !== void 0 && options.tools.length > 0) {
-      body.tools = options.tools.map((tool) => ({
-        type: "function",
-        function: { name: tool.name, description: tool.description, parameters: tool.parameters }
-      }));
+    if (!anthropic) {
+      if (options.maxTokens !== void 0 && options.maxTokens > 0) body.max_tokens = options.maxTokens;
+      if (options.tools !== void 0 && options.tools.length > 0) {
+        body.tools = options.tools.map((tool) => ({
+          type: "function",
+          function: { name: tool.name, description: tool.description, parameters: tool.parameters }
+        }));
+      }
+      if (options.temperature !== void 0) body.temperature = options.temperature;
     }
-    if (options.temperature !== void 0) body.temperature = options.temperature;
     let response;
     try {
-      response = await this.fetchImpl(`${this.product.apiBase}${COMMANDCODE_CHAT_PATH}`, {
+      response = await this.fetchImpl(`${this.product.apiBase}${anthropic ? COMMANDCODE_MESSAGES_PATH : COMMANDCODE_CHAT_PATH}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -43556,32 +44028,42 @@ var CommandCodeAdapter = class extends LlmAdapter6 {
         ...options.signal === void 0 ? {} : { signal: options.signal }
       });
     } catch (error) {
-      if (options.signal?.aborted === true) throw new LlmError9("commandcode: \u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
-      if (isTransportError3(error)) throw new LlmError9(`commandcode: \u8FDE\u63A5\u5931\u8D25\uFF08${errorMessage3(error)}\uFF09`, "TRANSPORT");
-      throw new LlmError9(`commandcode: \u8BF7\u6C42\u5931\u8D25\uFF08${errorMessage3(error)}\uFF09`, "TRANSPORT");
+      if (options.signal?.aborted === true) throw new LlmError10("commandcode: \u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
+      if (isTransportError3(error)) throw new LlmError10(`commandcode: \u8FDE\u63A5\u5931\u8D25\uFF08${errorMessage3(error)}\uFF09`, "TRANSPORT");
+      throw new LlmError10(`commandcode: \u8BF7\u6C42\u5931\u8D25\uFF08${errorMessage3(error)}\uFF09`, "TRANSPORT");
     }
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       const detail = errorDetail3(text);
       if (response.status === 401) {
-        throw new LlmError9(
+        throw new LlmError10(
           `commandcode: API Key \u65E0\u6548\u6216\u5DF2\u64A4\u9500\uFF08HTTP 401\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`,
           "AUTH",
           { status: 401 }
         );
       }
       if (response.status === 429) {
-        throw new LlmError9(
+        throw new LlmError10(
           `commandcode: \u89E6\u53D1\u9650\u6D41\uFF08HTTP 429\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`,
           "RATE_LIMIT",
           { status: 429 }
         );
       }
-      throw new LlmError9(
+      throw new LlmError10(
         `commandcode: \u4E0A\u6E38\u8FD4\u56DE HTTP ${response.status}${detail === "" ? "" : `\uFF1A${detail}`}`,
         httpErrorCode3(response.status),
         { status: response.status }
       );
+    }
+    if (anthropic) {
+      if (response.body === null) throw new LlmError10("commandcode: \u4E0A\u6E38\u672A\u8FD4\u56DE\u54CD\u5E94\u6D41", "EMPTY_RESPONSE");
+      yield* consumeAnthropicSse(response.body, {
+        label: "commandcode",
+        model: options.model,
+        ...options.signal === void 0 ? {} : { signal: options.signal },
+        idleTimeoutMs: CHUNK_TIMEOUT_MS
+      });
+      return;
     }
     yield* consumeOpenAiSse(response, { signal: options.signal }, {
       label: "commandcode",
@@ -43755,7 +44237,7 @@ var CommandCodeAuth = class extends Service {
 };
 
 // vendor/channel-pack/src/monkeycode-adapter.ts
-import { LlmAdapter as LlmAdapter7, LlmError as LlmError10 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter7, LlmError as LlmError11 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/monkeycode-product.ts
 var MONKEYCODE_FALLBACK_MODELS = [
@@ -43806,12 +44288,12 @@ function numberValue2(value) {
   }
   return void 0;
 }
-function isRecord3(value) {
+function isRecord2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function unwrapData(value) {
-  if (!isRecord3(value)) return value;
-  if ("data" in value && isRecord3(value.data)) return value.data;
+  if (!isRecord2(value)) return value;
+  if ("data" in value && isRecord2(value.data)) return value.data;
   return value;
 }
 var SESSION_VALUE_MIN = 20;
@@ -43860,7 +44342,7 @@ function isCredentialUsable2(credential) {
 }
 function parseWallet(value) {
   const body = unwrapData(value);
-  if (!isRecord3(body)) return void 0;
+  if (!isRecord2(body)) return void 0;
   const balance = numberValue2(body.balance);
   const dailyBalance = numberValue2(body.daily_token_balance);
   const dailyLimit = numberValue2(body.daily_token_limit);
@@ -43874,7 +44356,7 @@ function parseWallet(value) {
 }
 function parseCheckin(value) {
   const body = unwrapData(value);
-  if (!isRecord3(body)) return { checkedIn: false };
+  if (!isRecord2(body)) return { checkedIn: false };
   const checkedIn = body.checked_in === true || body.checkedIn === true;
   const streak = numberValue2(body.streak_days) ?? numberValue2(body.streak);
   const reward = numberValue2(body.reward);
@@ -43911,7 +44393,7 @@ function contentToText7(content) {
       parts.push(block);
       continue;
     }
-    if (!isRecord3(block)) continue;
+    if (!isRecord2(block)) continue;
     const text = stringValue2(block.text);
     if (text !== void 0) parts.push(text);
   }
@@ -43938,7 +44420,7 @@ function wsAcceptKey(key) {
 function createWsKey() {
   return randomBytes3(16).toString("base64");
 }
-function parseFrame(buffer, maxPayload = WS_MAX_PAYLOAD) {
+function parseFrame2(buffer, maxPayload = WS_MAX_PAYLOAD) {
   if (buffer.length < 2) return void 0;
   const first = buffer[0];
   const second = buffer[1];
@@ -44102,7 +44584,7 @@ var MonkeyCodeWsClient = class {
         }
         buffer = buffer.length === 0 ? chunk : Buffer.concat([buffer, chunk]);
         let parsed;
-        while ((parsed = parseFrame(buffer, this.maxPayload)) !== void 0) {
+        while ((parsed = parseFrame2(buffer, this.maxPayload)) !== void 0) {
           buffer = buffer.subarray(parsed.consumed);
           yield parsed.frame;
         }
@@ -44266,7 +44748,7 @@ var TERMINAL_TYPES = /* @__PURE__ */ new Set(["done", "finish", "completed", "er
 var TEXT_TYPES = /* @__PURE__ */ new Set(["round", "message", "assistant", "delta", "text", "content", "delta_text"]);
 var TEXT_FIELDS = ["content", "text", "delta", "message"];
 var NESTED_TEXT_FIELDS = ["content", "text", "delta"];
-function isRecord4(value) {
+function isRecord3(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function stringValue3(value) {
@@ -44275,7 +44757,7 @@ function stringValue3(value) {
 function textFromValue(value) {
   const direct = stringValue3(value);
   if (direct !== void 0) return direct;
-  if (!isRecord4(value)) return void 0;
+  if (!isRecord3(value)) return void 0;
   for (const field of NESTED_TEXT_FIELDS) {
     const nested = stringValue3(value[field]);
     if (nested !== void 0) return nested;
@@ -44288,7 +44770,7 @@ function extractText(record) {
     const text = textFromValue(record[field]);
     if (text !== void 0) return text;
   }
-  if (isRecord4(record.data)) {
+  if (isRecord3(record.data)) {
     for (const field of TEXT_FIELDS) {
       if (!(field in record.data)) continue;
       const text = textFromValue(record.data[field]);
@@ -44300,11 +44782,11 @@ function extractText(record) {
 function extractErrorMessage(record, type) {
   const direct = stringValue3(record.message) ?? stringValue3(record.msg) ?? stringValue3(record.error) ?? stringValue3(record.reason) ?? stringValue3(record.content);
   if (direct !== void 0) return direct;
-  if (isRecord4(record.error)) {
+  if (isRecord3(record.error)) {
     const nested = stringValue3(record.error.message) ?? stringValue3(record.error.msg) ?? stringValue3(record.error.reason);
     if (nested !== void 0) return nested;
   }
-  if (isRecord4(record.data)) {
+  if (isRecord3(record.data)) {
     const nested = stringValue3(record.data.message) ?? stringValue3(record.data.msg) ?? stringValue3(record.data.error);
     if (nested !== void 0) return nested;
   }
@@ -44319,7 +44801,7 @@ function parseTaskStreamEvent(raw) {
   } catch {
     return { kind: "ignore" };
   }
-  if (!isRecord4(parsed)) return { kind: "ignore" };
+  if (!isRecord3(parsed)) return { kind: "ignore" };
   const type = stringValue3(parsed.type) ?? stringValue3(parsed.event) ?? stringValue3(parsed.kind);
   if (type === void 0) {
     const loose = extractText(parsed);
@@ -44345,6 +44827,9 @@ function toWebSocketUrl(apiBase, path2, query = {}) {
 }
 
 // vendor/channel-pack/src/monkeycode-auth.ts
+function isRecord4(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 async function call(fetcher, product, credential, path2, init = {}) {
   try {
     const response = await fetcher(`${product.apiBase}${path2}`, {
@@ -44443,8 +44928,21 @@ async function createTask(fetcher, product, credential, options) {
   if (result.status === 401 || result.status === 403) throw new Error("MonkeyCode\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u7C98\u8D34 Cookie");
   if (!result.ok) throw new Error(`MonkeyCode\uFF1A\u5EFA\u4EFB\u52A1\u8FD4\u56DE HTTP ${result.status}`);
   const body = unwrapData(result.body);
-  const taskId = isRecord(body) ? typeof body.id === "string" ? body.id : void 0 : void 0;
-  if (taskId === void 0 || taskId === "") throw new Error("MonkeyCode\uFF1A\u5EFA\u4EFB\u52A1\u54CD\u5E94\u7F3A\u5C11 id");
+  if (isRecord4(body)) {
+    const code = typeof body.code === "number" ? body.code : void 0;
+    const message2 = typeof body.message === "string" ? body.message : "";
+    if (code !== void 0 && code !== 0 && code !== 200) {
+      throw new Error(`MonkeyCode\uFF1A\u5EFA\u4EFB\u52A1\u88AB\u4E0A\u6E38\u62D2\u7EDD\uFF08code ${code}\uFF09${message2 === "" ? "" : `\uFF1A${message2}`}`);
+    }
+    if (message2 !== "" && body.id === void 0) {
+      throw new Error(`MonkeyCode\uFF1A\u5EFA\u4EFB\u52A1\u88AB\u4E0A\u6E38\u62D2\u7EDD\uFF1A${message2}`);
+    }
+  }
+  const taskId = isRecord4(body) ? typeof body.id === "string" ? body.id : void 0 : void 0;
+  if (taskId === void 0 || taskId === "") {
+    const raw = JSON.stringify(result.body ?? null);
+    throw new Error(`MonkeyCode\uFF1A\u5EFA\u4EFB\u52A1\u54CD\u5E94\u7F3A\u5C11 id\uFF08\u539F\u59CB\u54CD\u5E94\uFF1A${raw.slice(0, 200)}\uFF09`);
+  }
   return taskId;
 }
 async function* streamChat(fetcher, product, credential, options) {
@@ -44470,6 +44968,7 @@ async function* streamChat(fetcher, product, credential, options) {
 }
 
 // vendor/channel-pack/src/monkeycode-adapter.ts
+var REMOTE_MODELS_TTL_MS2 = 3e5;
 var MonkeyCodeAdapter = class extends LlmAdapter7 {
   constructor(options) {
     super();
@@ -44482,6 +44981,8 @@ var MonkeyCodeAdapter = class extends LlmAdapter7 {
   fetchImpl;
   /** 远端模型目录缓存。 */
   remoteModels;
+  /** 上次成功拉取的时刻；配合 REMOTE_MODELS_TTL_MS 判断是否重拉。 */
+  remoteModelsAt = 0;
   loading;
   providerInfo(provider) {
     const id = typeof provider === "string" && provider.length > 0 ? provider : this.product.id;
@@ -44489,13 +44990,14 @@ var MonkeyCodeAdapter = class extends LlmAdapter7 {
   }
   /** 确保远端目录已加载。失败静默（用兜底表）。 */
   async ensureRemoteModels() {
-    if (this.remoteModels !== void 0) return;
+    if (this.remoteModels !== void 0 && Date.now() - this.remoteModelsAt < REMOTE_MODELS_TTL_MS2) return;
     if (this.loading !== void 0) return this.loading;
     this.loading = (async () => {
       try {
         const credential = await this.options.resolveCredential();
         if (!isCredentialUsable2(credential)) return;
         this.remoteModels = await fetchModels(this.fetchImpl, this.product, credential);
+        this.remoteModelsAt = Date.now();
       } catch {
       } finally {
         this.loading = void 0;
@@ -44555,7 +45057,7 @@ var MonkeyCodeAdapter = class extends LlmAdapter7 {
   async *stream(options) {
     const credential = await this.options.resolveCredential();
     if (!isCredentialUsable2(credential)) {
-      throw new LlmError10("MonkeyCode\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u7C98\u8D34 Cookie", "MISSING_CREDENTIAL");
+      throw new LlmError11("MonkeyCode\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u7C98\u8D34 Cookie", "MISSING_CREDENTIAL");
     }
     try {
       const content = flattenMessages(options.messages, options.system);
@@ -44567,12 +45069,12 @@ var MonkeyCodeAdapter = class extends LlmAdapter7 {
         yield { type: "text-delta", text: delta.text };
       }
     } catch (error) {
-      if (options.signal?.aborted === true) throw new LlmError10("MonkeyCode\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
+      if (options.signal?.aborted === true) throw new LlmError11("MonkeyCode\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
       const message2 = error instanceof Error ? error.message : String(error);
       if (/401|403|凭据|Cookie/.test(message2)) {
-        throw new LlmError10(`MonkeyCode\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u7C98\u8D34 Cookie\uFF08${message2}\uFF09`, "AUTH");
+        throw new LlmError11(`MonkeyCode\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u7C98\u8D34 Cookie\uFF08${message2}\uFF09`, "AUTH");
       }
-      throw new LlmError10(message2, "TRANSPORT");
+      throw new LlmError11(message2, "TRANSPORT");
     }
     yield { type: "finish", reason: "stop" };
   }
@@ -44600,7 +45102,7 @@ function registerMonkeyCodeLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/orcaterm-adapter.ts
-import { LlmAdapter as LlmAdapter8, LlmError as LlmError11 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter8, LlmError as LlmError12 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/orcaterm-product.ts
 var ORCATERM_FALLBACK_MODELS = [
@@ -44898,7 +45400,7 @@ var OrcaTermAdapter = class extends LlmAdapter8 {
   async *stream(options) {
     const credential = await this.options.resolveCredential();
     if (!isCredentialUsable3(credential)) {
-      throw new LlmError11("OrcaTerm\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u5728\u6E20\u9053\u9762\u677F\u7C98\u8D34 Cookie", "MISSING_CREDENTIAL");
+      throw new LlmError12("OrcaTerm\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u5728\u6E20\u9053\u9762\u677F\u7C98\u8D34 Cookie", "MISSING_CREDENTIAL");
     }
     try {
       for await (const delta of streamChat2(this.fetchImpl, this.product, credential, {
@@ -44912,12 +45414,12 @@ var OrcaTermAdapter = class extends LlmAdapter8 {
         if (delta.text !== void 0) yield { type: "text-delta", text: delta.text };
       }
     } catch (error) {
-      if (options.signal?.aborted === true) throw new LlmError11("OrcaTerm\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
+      if (options.signal?.aborted === true) throw new LlmError12("OrcaTerm\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
       const message2 = error instanceof Error ? error.message : String(error);
       if (/401|403|Cookie|凭据/.test(message2)) {
-        throw new LlmError11(`OrcaTerm\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u7C98\u8D34 Cookie\uFF08${message2}\uFF09`, "AUTH");
+        throw new LlmError12(`OrcaTerm\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u7C98\u8D34 Cookie\uFF08${message2}\uFF09`, "AUTH");
       }
-      throw new LlmError11(message2, "TRANSPORT");
+      throw new LlmError12(message2, "TRANSPORT");
     }
     yield { type: "finish", reason: "stop" };
   }
@@ -44944,11 +45446,23 @@ function registerOrcaTermLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/kuku-adapter.ts
-import { LlmAdapter as LlmAdapter9, LlmError as LlmError12 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter9, LlmError as LlmError13 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/kuku-product.ts
 var KUKU_FALLBACK_MODELS = [
-  { id: "kuku", name: "Kuku", contextWindow: 128e3 }
+  { id: "auto", name: "Auto", contextWindow: 128e3 },
+  { id: "gateway-deepseek-v4.1-flash-tencent", name: "DeepSeek-V4.1-Flash", contextWindow: 128e3 },
+  { id: "gateway-deepseek-v4-pro-tencent", name: "DeepSeek-V4-Pro", contextWindow: 128e3 },
+  { id: "gateway-deepseek-v4-flash-tencent", name: "DeepSeek-V4-Flash", contextWindow: 128e3 },
+  { id: "gateway-glm-5.3-flash", name: "GLM-5.3-Flash", contextWindow: 128e3 },
+  { id: "glm-5.3", name: "GLM-5.3", contextWindow: 128e3 },
+  { id: "gateway-glm-5.2", name: "GLM-5.2", contextWindow: 128e3 },
+  { id: "gateway-glm-5.1-kuaishou", name: "GLM-5.1", contextWindow: 128e3 },
+  { id: "ernie-5.1", name: "ERNIE-5.1", contextWindow: 128e3 },
+  { id: "ms-kimi-k3", name: "Kimi-K3", contextWindow: 128e3 },
+  { id: "gateway-kimi-k2.7-code-tencent", name: "Kimi-K2.7-Code", contextWindow: 128e3 },
+  { id: "gateway-kimi-k2.6", name: "Kimi-K2.6", contextWindow: 128e3 },
+  { id: "ali-minimax/minimax-m3", name: "MiniMax-M3", contextWindow: 128e3 }
 ];
 var KUKU = {
   id: "kuku",
@@ -44963,6 +45477,8 @@ var KUKU_CHANNEL = "kuku_pc_genflowpro_v1";
 var KUKU_PROTOCOL_V = "cd1755270722192e4536f605";
 var KUKU_SENDMSG_PATH = "/wenchain/genflowpro/sendmsg";
 var KUKU_SSE_PATH = "/wenchain/genflowpro/sse/getchatcontent";
+var KUKU_MODEL_LIST_PATH = "/wenchain/genflowpro/model/list";
+var KUKU_WEB_QUERY = "clienttype=400&app_id=123971023&web=1&channel=chunlei&version=1.4.4";
 var KUKU_SESSION_COOKIE = "BDUSS";
 
 // vendor/channel-pack/src/kuku.ts
@@ -45199,6 +45715,27 @@ async function* streamChat3(fetcher, product, credential, options) {
 }
 
 // vendor/channel-pack/src/kuku-adapter.ts
+var REMOTE_MODELS_TTL_MS3 = 6e5;
+function extractKukuModels(value) {
+  const out = /* @__PURE__ */ new Map();
+  const walk = (node) => {
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item);
+      return;
+    }
+    if (typeof node !== "object" || node === null) return;
+    const record = node;
+    const id = typeof record.model_name === "string" ? record.model_name.trim() : typeof record.modelName === "string" ? record.modelName.trim() : typeof record.modelId === "string" ? record.modelId.trim() : void 0;
+    if (id !== void 0 && id !== "") {
+      const display = typeof record.display_name === "string" && record.display_name.trim() !== "" ? record.display_name.trim() : id;
+      if (!out.has(id)) out.set(id, display);
+      return;
+    }
+    for (const child of Object.values(record)) walk(child);
+  };
+  walk(value);
+  return [...out.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([id, name2]) => ({ id, name: name2 }));
+}
 var KukuAdapter = class extends LlmAdapter9 {
   constructor(options) {
     super();
@@ -45209,6 +45746,11 @@ var KukuAdapter = class extends LlmAdapter9 {
   options;
   product;
   fetchImpl;
+  /** 远端模型目录（拉到后用；拉不到回落到 `product.fallbackModels`）。 */
+  remoteModels;
+  /** 上次成功拉取的时刻；配合 REMOTE_MODELS_TTL_MS 判断是否重拉。 */
+  remoteModelsAt = 0;
+  loading;
   providerInfo(provider) {
     const id = typeof provider === "string" && provider.length > 0 ? provider : this.product.id;
     return { id, name: this.product.displayName };
@@ -45217,8 +45759,10 @@ var KukuAdapter = class extends LlmAdapter9 {
     if (this.options.accountPool !== void 0 && !await providerCatalogVisible(this.options.accountPool, this.product.id)) {
       return [];
     }
+    await this.ensureRemoteModels();
+    const source = this.remoteModels ?? this.product.fallbackModels;
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id);
-    const listed = disabled === void 0 || disabled.size === 0 ? this.product.fallbackModels : this.product.fallbackModels.filter((model) => !disabled.has(model.id));
+    const listed = disabled === void 0 || disabled.size === 0 ? source : source.filter((model) => !disabled.has(model.id));
     return listed.map((model) => ({
       provider: this.product.id,
       id: model.id,
@@ -45228,7 +45772,41 @@ var KukuAdapter = class extends LlmAdapter9 {
   }
   /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数会显示「—」。 */
   listAllModels() {
-    return this.product.fallbackModels.map((model) => ({ id: model.id, name: model.name }));
+    const source = this.remoteModels ?? this.product.fallbackModels;
+    return source.map((model) => ({ id: model.id, name: model.name }));
+  }
+  /** 拉远端模型目录（`GET /wenchain/genflowpro/model/list`）。失败静默回落静态表。 */
+  async ensureRemoteModels() {
+    if (this.remoteModels !== void 0 && Date.now() - this.remoteModelsAt < REMOTE_MODELS_TTL_MS3) return;
+    if (this.loading !== void 0) return this.loading;
+    this.loading = (async () => {
+      try {
+        const credential = await this.options.resolveCredential();
+        if (!isCredentialUsable4(credential)) return;
+        const response = await this.fetchImpl(`${this.product.apiBase}${KUKU_MODEL_LIST_PATH}?${KUKU_WEB_QUERY}`, {
+          method: "GET",
+          headers: kukuHeaders(this.product, credential)
+        });
+        if (!response.ok) return;
+        const body = await response.json().catch(() => void 0);
+        if (typeof body !== "object" || body === null) return;
+        const record = body;
+        const status = record.status;
+        if (typeof status === "object" && status !== null) {
+          const code = status.code;
+          if (typeof code === "number" && code !== 0) return;
+        }
+        const parsed = extractKukuModels(record.data);
+        if (parsed.length > 0) {
+          this.remoteModels = parsed;
+          this.remoteModelsAt = Date.now();
+        }
+      } catch {
+      } finally {
+        this.loading = void 0;
+      }
+    })();
+    return this.loading;
   }
   async resolveModel(provider, model, _signal) {
     const entry = this.product.fallbackModels.find((candidate) => candidate.id === model);
@@ -45251,7 +45829,7 @@ var KukuAdapter = class extends LlmAdapter9 {
   async *stream(options) {
     const credential = await this.options.resolveCredential();
     if (!isCredentialUsable4(credential)) {
-      throw new LlmError12("KukuAI\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u5728\u6E20\u9053\u9762\u677F\u7C98\u8D34\u542B BDUSS \u7684 Cookie", "MISSING_CREDENTIAL");
+      throw new LlmError13("KukuAI\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u5728\u6E20\u9053\u9762\u677F\u7C98\u8D34\u542B BDUSS \u7684 Cookie", "MISSING_CREDENTIAL");
     }
     try {
       for await (const delta of streamChat3(this.fetchImpl, this.product, credential, {
@@ -45264,12 +45842,12 @@ var KukuAdapter = class extends LlmAdapter9 {
         if (delta.text !== void 0) yield { type: "text-delta", text: delta.text };
       }
     } catch (error) {
-      if (options.signal?.aborted === true) throw new LlmError12("KukuAI\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
+      if (options.signal?.aborted === true) throw new LlmError13("KukuAI\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
       const message2 = error instanceof Error ? error.message : String(error);
       if (/401|403|BDUSS|凭据/.test(message2)) {
-        throw new LlmError12(`KukuAI\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u7C98\u8D34 Cookie\uFF08${message2}\uFF09`, "AUTH");
+        throw new LlmError13(`KukuAI\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u7C98\u8D34 Cookie\uFF08${message2}\uFF09`, "AUTH");
       }
-      throw new LlmError12(message2, "TRANSPORT");
+      throw new LlmError13(message2, "TRANSPORT");
     }
     yield { type: "finish", reason: "stop" };
   }
@@ -45295,7 +45873,8 @@ function registerKukuLlm(ctx, options) {
 init_accio_product();
 init_accio();
 init_accio_auth();
-import { LlmAdapter as LlmAdapter10, LlmError as LlmError13 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter10, LlmError as LlmError14 } from "@deepseek-ai/dsh-llm";
+var REMOTE_MODELS_TTL_MS4 = 3e5;
 var AccioAdapter = class extends LlmAdapter10 {
   constructor(options) {
     super();
@@ -45307,19 +45886,22 @@ var AccioAdapter = class extends LlmAdapter10 {
   product;
   fetchImpl;
   remoteModels;
+  /** 上次成功拉取的时刻；配合 REMOTE_MODELS_TTL_MS 判断是否重拉。 */
+  remoteModelsAt = 0;
   loading;
   providerInfo(provider) {
     const id = typeof provider === "string" && provider.length > 0 ? provider : this.product.id;
     return { id, name: this.product.displayName };
   }
   async ensureRemoteModels() {
-    if (this.remoteModels !== void 0) return;
+    if (this.remoteModels !== void 0 && Date.now() - this.remoteModelsAt < REMOTE_MODELS_TTL_MS4) return;
     if (this.loading !== void 0) return this.loading;
     this.loading = (async () => {
       try {
         const credential = await this.options.resolveCredential();
         if (!isCredentialUsable5(credential)) return;
         this.remoteModels = await fetchModels2(this.fetchImpl, this.product, credential);
+        this.remoteModelsAt = Date.now();
       } catch {
       } finally {
         this.loading = void 0;
@@ -45375,7 +45957,7 @@ var AccioAdapter = class extends LlmAdapter10 {
   async credentialForUse() {
     let credential = await this.options.resolveCredential();
     if (!isCredentialUsable5(credential)) {
-      throw new LlmError13(`Accio\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55 ${this.product.displayName}`, "MISSING_CREDENTIAL");
+      throw new LlmError14(`Accio\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55 ${this.product.displayName}`, "MISSING_CREDENTIAL");
     }
     if (isCredentialExpired2(credential) && credential.refresh_token !== void 0) {
       const refreshed = await refreshCredential(this.fetchImpl, this.product, credential);
@@ -45406,12 +45988,12 @@ var AccioAdapter = class extends LlmAdapter10 {
         if (delta.text !== void 0) yield { type: "text-delta", text: delta.text };
       }
     } catch (error) {
-      if (options.signal?.aborted === true) throw new LlmError13("Accio\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
+      if (options.signal?.aborted === true) throw new LlmError14("Accio\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
       const message2 = error instanceof Error ? error.message : String(error);
       if (/401|403|凭据|登录/.test(message2)) {
-        throw new LlmError13(`Accio\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF08${message2}\uFF09`, "AUTH");
+        throw new LlmError14(`Accio\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF08${message2}\uFF09`, "AUTH");
       }
-      throw new LlmError13(message2, "TRANSPORT");
+      throw new LlmError14(message2, "TRANSPORT");
     }
     yield { type: "finish", reason: "stop" };
   }
@@ -45436,9 +46018,10 @@ function registerAccioLlm(ctx, options) {
 // vendor/channel-pack/src/officeace-adapter.ts
 init_officeace_product();
 init_officeace();
-import { LlmAdapter as LlmAdapter11, LlmError as LlmError14 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter11, LlmError as LlmError15 } from "@deepseek-ai/dsh-llm";
 var FIRST_TOKEN_TIMEOUT_MS2 = 3e5;
 var CHUNK_TIMEOUT_MS2 = 3e5;
+var REMOTE_MODELS_TTL_MS5 = 3e5;
 var OfficeAceAdapter = class extends LlmAdapter11 {
   constructor(options) {
     super();
@@ -45450,14 +46033,25 @@ var OfficeAceAdapter = class extends LlmAdapter11 {
   product;
   fetchImpl;
   remoteModels;
+  /** 上次成功拉取的时刻。配合 {@link REMOTE_MODELS_TTL_MS} 决定是否重拉。 */
+  remoteModelsAt = 0;
   loading;
   providerInfo(provider) {
     const id = typeof provider === "string" && provider.length > 0 ? provider : this.product.id;
     return { id, name: this.product.displayName };
   }
-  /** 拉模型目录（OpenAI 格式）。失败静默（用兜底表）。 */
+  /**
+   * 拉模型目录（OpenAI 格式）。失败静默（用兜底表）。
+   *
+   * ⚠ **必须带 TTL**：原先的判据是 `if (this.remoteModels !== undefined) return`
+   * —— 拉成功一次就永久缓存，上游下架/新增模型后进程不重启永远不跟上
+   *（2026-10-25 实测：与 OrCaTerm 静态表过期是同一类问题）。现按
+   * {@link REMOTE_MODELS_TTL_MS} 过期重拉；**失败时保留旧列表**，
+   * 不能因为一次网络抖动就把已拿到的目录清空。
+   */
   async ensureRemoteModels() {
-    if (this.remoteModels !== void 0) return;
+    const fresh = this.remoteModels !== void 0 && Date.now() - this.remoteModelsAt < REMOTE_MODELS_TTL_MS5;
+    if (fresh) return;
     if (this.loading !== void 0) return this.loading;
     this.loading = (async () => {
       try {
@@ -45483,7 +46077,10 @@ var OfficeAceAdapter = class extends LlmAdapter11 {
           const contextWindow = typeof contextRaw === "number" && contextRaw > 0 ? contextRaw : 128e3;
           rows.push({ id, name: typeof item.name === "string" && item.name !== "" ? item.name : id, contextWindow });
         }
-        if (rows.length > 0) this.remoteModels = rows;
+        if (rows.length > 0) {
+          this.remoteModels = rows;
+          this.remoteModelsAt = Date.now();
+        }
       } catch {
       } finally {
         this.loading = void 0;
@@ -45534,7 +46131,7 @@ var OfficeAceAdapter = class extends LlmAdapter11 {
   async *stream(options) {
     const credential = await this.options.resolveCredential();
     if (!isCredentialUsable6(credential)) {
-      throw new LlmError14("OfficeAce\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55", "MISSING_CREDENTIAL");
+      throw new LlmError15("OfficeAce\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55", "MISSING_CREDENTIAL");
     }
     const base = normalizeBaseUrl(credential.base_url);
     const imageUrls = /* @__PURE__ */ new Map();
@@ -45564,24 +46161,24 @@ var OfficeAceAdapter = class extends LlmAdapter11 {
         ...options.signal === void 0 ? {} : { signal: options.signal }
       });
     } catch (error) {
-      if (options.signal?.aborted === true) throw new LlmError14("OfficeAce\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
-      if (isTransportError3(error)) throw new LlmError14(`OfficeAce\uFF1A\u8FDE\u63A5\u5931\u8D25\uFF08${errorMessage3(error)}\uFF09`, "TRANSPORT");
-      throw new LlmError14(`OfficeAce\uFF1A\u8BF7\u6C42\u5931\u8D25\uFF08${errorMessage3(error)}\uFF09`, "TRANSPORT");
+      if (options.signal?.aborted === true) throw new LlmError15("OfficeAce\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
+      if (isTransportError3(error)) throw new LlmError15(`OfficeAce\uFF1A\u8FDE\u63A5\u5931\u8D25\uFF08${errorMessage3(error)}\uFF09`, "TRANSPORT");
+      throw new LlmError15(`OfficeAce\uFF1A\u8BF7\u6C42\u5931\u8D25\uFF08${errorMessage3(error)}\uFF09`, "TRANSPORT");
     }
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       const detail = errorDetail3(text);
       if (response.status === 401 || response.status === 403) {
-        throw new LlmError14(
+        throw new LlmError15(
           `OfficeAce\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF08HTTP ${response.status}\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`,
           "AUTH",
           { status: response.status }
         );
       }
       if (response.status === 429) {
-        throw new LlmError14(`OfficeAce\uFF1A\u89E6\u53D1\u9650\u6D41\uFF08HTTP 429\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`, "RATE_LIMIT", { status: 429 });
+        throw new LlmError15(`OfficeAce\uFF1A\u89E6\u53D1\u9650\u6D41\uFF08HTTP 429\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`, "RATE_LIMIT", { status: 429 });
       }
-      throw new LlmError14(
+      throw new LlmError15(
         `OfficeAce\uFF1A\u4E0A\u6E38\u8FD4\u56DE HTTP ${response.status}${detail === "" ? "" : `\uFF1A${detail}`}`,
         httpErrorCode3(response.status),
         { status: response.status }
@@ -45613,7 +46210,7 @@ function registerOfficeAceLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/autoclaw-adapter.ts
-import { LlmAdapter as LlmAdapter12, LlmError as LlmError15 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter12, LlmError as LlmError16 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/autoclaw-product.ts
 var AUTOCLAW_FALLBACK_MODELS = [
@@ -45688,6 +46285,7 @@ function parseModelConfig(value) {
 // vendor/channel-pack/src/autoclaw-adapter.ts
 var FIRST_TOKEN_TIMEOUT_MS3 = 3e5;
 var CHUNK_TIMEOUT_MS3 = 3e5;
+var REMOTE_MODELS_TTL_MS6 = 3e5;
 var AutoClawAdapter = class extends LlmAdapter12 {
   constructor(options) {
     super();
@@ -45699,6 +46297,8 @@ var AutoClawAdapter = class extends LlmAdapter12 {
   product;
   fetchImpl;
   remoteModels;
+  /** 上次成功拉取的时刻；配合 REMOTE_MODELS_TTL_MS 判断是否重拉。 */
+  remoteModelsAt = 0;
   loading;
   providerInfo(provider) {
     const id = typeof provider === "string" && provider.length > 0 ? provider : this.product.id;
@@ -45706,7 +46306,7 @@ var AutoClawAdapter = class extends LlmAdapter12 {
   }
   /** 拉模型目录（路径**不在** proxyPrefix 下）。 */
   async ensureRemoteModels() {
-    if (this.remoteModels !== void 0) return;
+    if (this.remoteModels !== void 0 && Date.now() - this.remoteModelsAt < REMOTE_MODELS_TTL_MS6) return;
     if (this.loading !== void 0) return this.loading;
     this.loading = (async () => {
       try {
@@ -45719,7 +46319,10 @@ var AutoClawAdapter = class extends LlmAdapter12 {
         });
         if (!response.ok) return;
         const rows = parseModelConfig(await response.json().catch(() => void 0));
-        if (rows.length > 0) this.remoteModels = rows;
+        if (rows.length > 0) {
+          this.remoteModels = rows;
+          this.remoteModelsAt = Date.now();
+        }
       } catch {
       } finally {
         this.loading = void 0;
@@ -45788,7 +46391,7 @@ var AutoClawAdapter = class extends LlmAdapter12 {
   async *stream(options) {
     const credential = await this.options.resolveCredential();
     if (!isCredentialUsable7(credential)) {
-      throw new LlmError15(`AutoClaw\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55 ${this.product.displayName}`, "MISSING_CREDENTIAL");
+      throw new LlmError16(`AutoClaw\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55 ${this.product.displayName}`, "MISSING_CREDENTIAL");
     }
     const imageUrls = /* @__PURE__ */ new Map();
     const messages = serializeMessages3(options.messages, imageUrls);
@@ -45812,24 +46415,24 @@ var AutoClawAdapter = class extends LlmAdapter12 {
         ...options.signal === void 0 ? {} : { signal: options.signal }
       });
     } catch (error) {
-      if (options.signal?.aborted === true) throw new LlmError15("AutoClaw\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
-      if (isTransportError3(error)) throw new LlmError15(`AutoClaw\uFF1A\u8FDE\u63A5\u5931\u8D25\uFF08${errorMessage3(error)}\uFF09`, "TRANSPORT");
-      throw new LlmError15(`AutoClaw\uFF1A\u8BF7\u6C42\u5931\u8D25\uFF08${errorMessage3(error)}\uFF09`, "TRANSPORT");
+      if (options.signal?.aborted === true) throw new LlmError16("AutoClaw\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
+      if (isTransportError3(error)) throw new LlmError16(`AutoClaw\uFF1A\u8FDE\u63A5\u5931\u8D25\uFF08${errorMessage3(error)}\uFF09`, "TRANSPORT");
+      throw new LlmError16(`AutoClaw\uFF1A\u8BF7\u6C42\u5931\u8D25\uFF08${errorMessage3(error)}\uFF09`, "TRANSPORT");
     }
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       const detail = errorDetail3(text);
       if (response.status === 401 || response.status === 403) {
-        throw new LlmError15(
+        throw new LlmError16(
           `AutoClaw\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF08HTTP ${response.status}\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`,
           "AUTH",
           { status: response.status }
         );
       }
       if (response.status === 429) {
-        throw new LlmError15(`AutoClaw\uFF1A\u89E6\u53D1\u9650\u6D41\uFF08HTTP 429\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`, "RATE_LIMIT", { status: 429 });
+        throw new LlmError16(`AutoClaw\uFF1A\u89E6\u53D1\u9650\u6D41\uFF08HTTP 429\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`, "RATE_LIMIT", { status: 429 });
       }
-      throw new LlmError15(
+      throw new LlmError16(
         `AutoClaw\uFF1A\u4E0A\u6E38\u8FD4\u56DE HTTP ${response.status}${detail === "" ? "" : `\uFF1A${detail}`}`,
         httpErrorCode3(response.status),
         { status: response.status }
@@ -45861,7 +46464,7 @@ function registerAutoClawLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/loomy-adapter.ts
-import { LlmAdapter as LlmAdapter13, LlmError as LlmError16, ReasoningEffortId as ReasoningEffortId7 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter13, LlmError as LlmError17, ReasoningEffortId as ReasoningEffortId7 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/loomy.ts
 var LOOMY_API_BASE = "https://loomyad.xunfei.cn/api/v1";
@@ -46172,10 +46775,10 @@ var LoomyAdapter = class extends LlmAdapter13 {
     let imageUrls;
     if (imageRefs.size > 0) {
       if (!this.inputModalitiesFor(entry).includes("image")) {
-        throw new LlmError16(`loomy: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`, "UNSUPPORTED_CONTENT");
+        throw new LlmError17(`loomy: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`, "UNSUPPORTED_CONTENT");
       }
       if (this.options.readImage === void 0) {
-        throw new LlmError16("loomy: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
+        throw new LlmError17("loomy: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
       }
       imageUrls = /* @__PURE__ */ new Map();
       for (const [id, ref] of imageRefs) {
@@ -46190,7 +46793,7 @@ var LoomyAdapter = class extends LlmAdapter13 {
       credential = await this.options.refresh(accountId || void 0) ?? await this.options.resolveCredential(options.model);
     }
     if (credential === void 0 || credential.access_token.length === 0) {
-      throw new LlmError16("loomy: no usable credential; log in first", "MISSING_CREDENTIAL");
+      throw new LlmError17("loomy: no usable credential; log in first", "MISSING_CREDENTIAL");
     }
     const messages = serializeMessages3(options.messages, imageUrls);
     const wireMessages = options.system !== void 0 && options.system.length > 0 ? [{ role: "system", content: options.system }, ...messages] : messages;
@@ -46227,7 +46830,7 @@ var LoomyAdapter = class extends LlmAdapter13 {
       } catch (error) {
         if (options.signal?.aborted) throw error;
         if (isTransportError3(error)) {
-          throw new LlmError16(
+          throw new LlmError17(
             `loomy: transport error: ${error instanceof Error ? error.message : String(error)}`,
             "TRANSPORT",
             { cause: error }
@@ -46246,7 +46849,7 @@ var LoomyAdapter = class extends LlmAdapter13 {
           await response.body?.cancel();
           credential = await this.options.refresh(accountId || void 0) ?? await this.options.resolveCredential(options.model);
           if (credential === void 0 || credential.access_token.length === 0) {
-            throw new LlmError16("loomy: credential expired and refresh failed", "AUTH", { status: response.status });
+            throw new LlmError17("loomy: credential expired and refresh failed", "AUTH", { status: response.status });
           }
           response = await send(credential.access_token);
         }
@@ -46257,7 +46860,7 @@ var LoomyAdapter = class extends LlmAdapter13 {
             quota ||= isLoomyQuotaError(JSON.parse(errorText2));
           } catch {
           }
-          throw new LlmError16(
+          throw new LlmError17(
             `loomy: ${errorDetail3(errorText2)}`,
             quota ? "QUOTA_EXCEEDED" : httpErrorCode3(response.status),
             { status: response.status }
@@ -46275,7 +46878,7 @@ var LoomyAdapter = class extends LlmAdapter13 {
         }
         return;
       } catch (error) {
-        if (options.signal?.aborted || !(error instanceof LlmError16) || error.code !== "QUOTA_EXCEEDED") throw error;
+        if (options.signal?.aborted || !(error instanceof LlmError17) || error.code !== "QUOTA_EXCEEDED") throw error;
         if (accountId) {
           await this.options.accountPool?.updateModelRateLimit(accountId, options.model, nextUtc8DayStartMs());
         }
@@ -46309,7 +46912,7 @@ function registerLoomyLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/raccoon-adapter.ts
-import { LlmAdapter as LlmAdapter14, LlmError as LlmError17, ReasoningEffortId as ReasoningEffortId8 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter14, LlmError as LlmError18, ReasoningEffortId as ReasoningEffortId8 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/raccoon.ts
 import { createCipheriv, randomBytes as randomBytes4 } from "node:crypto";
@@ -46642,10 +47245,10 @@ var RaccoonAdapter = class extends LlmAdapter14 {
     let imageUrls;
     if (imageRefs.size > 0) {
       if (!this.inputModalitiesFor(entry).includes("image")) {
-        throw new LlmError17(`raccoon: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`, "UNSUPPORTED_CONTENT");
+        throw new LlmError18(`raccoon: \u6A21\u578B "${options.model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`, "UNSUPPORTED_CONTENT");
       }
       if (this.options.readImage === void 0) {
-        throw new LlmError17("raccoon: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
+        throw new LlmError18("raccoon: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1", "UNSUPPORTED_CONTENT");
       }
       imageUrls = /* @__PURE__ */ new Map();
       const readImage = this.options.readImage;
@@ -46666,7 +47269,7 @@ var RaccoonAdapter = class extends LlmAdapter14 {
       credential = await this.options.refresh(accountId || void 0) ?? await this.options.resolveCredential(options.model);
     }
     if (credential === void 0 || credential.access_token.length === 0) {
-      throw new LlmError17("raccoon: no usable credential; log in first", "MISSING_CREDENTIAL");
+      throw new LlmError18("raccoon: no usable credential; log in first", "MISSING_CREDENTIAL");
     }
     const messages = serializeMessages3(options.messages, imageUrls);
     const wireMessages = options.system !== void 0 && options.system.length > 0 ? [{ role: "system", content: options.system }, ...messages] : messages;
@@ -46716,7 +47319,7 @@ var RaccoonAdapter = class extends LlmAdapter14 {
       } catch (error) {
         if (options.signal?.aborted) throw error;
         if (isTransportError3(error)) {
-          throw new LlmError17(
+          throw new LlmError18(
             `raccoon: transport error: ${error instanceof Error ? error.message : String(error)}`,
             "TRANSPORT",
             { cause: error }
@@ -46735,7 +47338,7 @@ var RaccoonAdapter = class extends LlmAdapter14 {
           await response.body?.cancel();
           const refreshed = await this.options.refresh(accountId || void 0) ?? await this.options.resolveCredential(options.model);
           if (refreshed === void 0 || refreshed.access_token.length === 0) {
-            throw new LlmError17("raccoon: credential expired and refresh failed", "AUTH", { status: response.status });
+            throw new LlmError18("raccoon: credential expired and refresh failed", "AUTH", { status: response.status });
           }
           credential = refreshed;
           response = await send();
@@ -46747,7 +47350,7 @@ var RaccoonAdapter = class extends LlmAdapter14 {
             quota ||= isQuotaError(JSON.parse(errorText2));
           } catch {
           }
-          throw new LlmError17(
+          throw new LlmError18(
             `raccoon: ${errorDetail3(errorText2)}`,
             quota ? "QUOTA_EXCEEDED" : httpErrorCode3(response.status),
             { status: response.status }
@@ -46765,7 +47368,7 @@ var RaccoonAdapter = class extends LlmAdapter14 {
         }
         return;
       } catch (error) {
-        if (options.signal?.aborted || !(error instanceof LlmError17) || error.code !== "QUOTA_EXCEEDED") throw error;
+        if (options.signal?.aborted || !(error instanceof LlmError18) || error.code !== "QUOTA_EXCEEDED") throw error;
         if (accountId) {
           await this.options.accountPool?.updateModelRateLimit(accountId, options.model, nextUtc8DayStartMs());
         }
@@ -57162,374 +57765,6 @@ function withContextPrefix(messages, now = /* @__PURE__ */ new Date()) {
     first.content = [prefix];
   }
   return out;
-}
-
-// vendor/channel-pack/src/zcode-anthropic.ts
-import { LlmError as LlmError18, ToolCallId as ToolCallId5 } from "@deepseek-ai/dsh-llm";
-function parseToolArguments(raw) {
-  if (raw === void 0 || raw === null) return {};
-  if (typeof raw === "object") return raw;
-  if (typeof raw !== "string") return {};
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return {};
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    return { __zcodeUnparsableArguments: trimmed };
-  }
-}
-function toText(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  const parts = [];
-  for (const block of content) {
-    if (typeof block !== "object" || block === null) continue;
-    const record = block;
-    if (record.type === "text" && typeof record.text === "string") parts.push(record.text);
-    else if (record.type === "input_text" && typeof record.text === "string") parts.push(record.text);
-  }
-  return parts.join("");
-}
-function toImageBlock(block) {
-  const imageUrl = block.image_url;
-  const url = typeof imageUrl === "string" ? imageUrl : typeof imageUrl === "object" && imageUrl !== null ? imageUrl.url : void 0;
-  if (typeof url !== "string") return void 0;
-  const match = /^data:([^;]+);base64,(.*)$/.exec(url);
-  if (match === null) return void 0;
-  const rawMediaType = match[1] ?? "image/png";
-  const mediaType = rawMediaType === "image/*" ? "image/jpeg" : rawMediaType;
-  return {
-    type: "image",
-    source: { type: "base64", media_type: mediaType, data: match[2] ?? "" }
-  };
-}
-function toAnthropicMessages(wire) {
-  const out = [];
-  const pushToolResult = (block) => {
-    const last = out[out.length - 1];
-    if (last !== void 0 && last.role === "user" && Array.isArray(last.content)) {
-      last.content.push(block);
-      return;
-    }
-    out.push({ role: "user", content: [block] });
-  };
-  for (const message2 of wire) {
-    const role = message2.role;
-    if (role === "tool") {
-      const toolUseId = typeof message2.tool_call_id === "string" ? message2.tool_call_id : "";
-      if (toolUseId.length === 0) continue;
-      pushToolResult({
-        type: "tool_result",
-        tool_use_id: toolUseId,
-        content: toText(message2.content)
-      });
-      continue;
-    }
-    if (role === "assistant") {
-      const blocks2 = [];
-      const text = toText(message2.content);
-      if (text.length > 0) blocks2.push({ type: "text", text });
-      const toolCalls = message2.tool_calls;
-      if (Array.isArray(toolCalls)) {
-        for (const call2 of toolCalls) {
-          if (typeof call2 !== "object" || call2 === null) continue;
-          const record = call2;
-          const fn = record.function;
-          const name2 = typeof fn === "object" && fn !== null ? fn.name : void 0;
-          if (typeof name2 !== "string" || name2.length === 0) continue;
-          const rawArgs = typeof fn === "object" && fn !== null ? fn.arguments : void 0;
-          blocks2.push({
-            type: "tool_use",
-            id: typeof record.id === "string" && record.id.length > 0 ? record.id : `call_${out.length}`,
-            name: name2,
-            input: parseToolArguments(rawArgs)
-          });
-        }
-      }
-      if (blocks2.length === 0) continue;
-      out.push({ role: "assistant", content: blocks2 });
-      continue;
-    }
-    const content = message2.content;
-    if (typeof content === "string") {
-      if (content.length > 0) out.push({ role: "user", content });
-      continue;
-    }
-    if (!Array.isArray(content)) continue;
-    const blocks = [];
-    for (const block of content) {
-      if (typeof block !== "object" || block === null) continue;
-      const record = block;
-      if (record.type === "text" && typeof record.text === "string") {
-        blocks.push({ type: "text", text: record.text });
-        continue;
-      }
-      if (record.type === "image" || record.type === "image_url" || record.type === "input_image") {
-        const image = toImageBlock(
-          record.type === "input_image" && typeof record.image_url === "string" ? { image_url: record.image_url } : record
-        );
-        if (image !== void 0) blocks.push(image);
-      }
-    }
-    if (blocks.length === 0) continue;
-    out.push({ role: "user", content: blocks });
-  }
-  return out;
-}
-function toAnthropicTools(tools) {
-  return tools.map((tool) => ({
-    name: tool.name,
-    ...tool.description !== void 0 && tool.description.length > 0 ? { description: tool.description } : {},
-    input_schema: tool.parameters ?? { type: "object", properties: {} }
-  }));
-}
-async function* iterateSseFrames(body, options = {}) {
-  const reader = body.getReader();
-  const decoder2 = new TextDecoder();
-  const signal = options.signal;
-  const idleTimeoutMs = options.idleTimeoutMs ?? 0;
-  const label = options.label ?? "zcode";
-  let buffer = "";
-  const onAbort = () => {
-    void reader.cancel().catch(() => {
-    });
-  };
-  signal?.addEventListener("abort", onAbort, { once: true });
-  try {
-    for (; ; ) {
-      if (signal?.aborted === true) break;
-      const { done, value } = idleTimeoutMs > 0 ? await readWithIdleTimeout(reader, idleTimeoutMs, label, signal) : await reader.read();
-      if (done) break;
-      buffer += decoder2.decode(value, { stream: true });
-      for (; ; ) {
-        const boundary = findFrameBoundary(buffer);
-        if (boundary === void 0) break;
-        const rawFrame = buffer.slice(0, boundary.start);
-        buffer = buffer.slice(boundary.end);
-        const frame = parseFrame2(rawFrame);
-        if (frame !== void 0) yield frame;
-      }
-    }
-    const tail = parseFrame2(buffer);
-    if (tail !== void 0) yield tail;
-  } finally {
-    signal?.removeEventListener("abort", onAbort);
-    try {
-      await reader.cancel();
-    } catch {
-    }
-    reader.releaseLock();
-  }
-}
-function findFrameBoundary(buffer) {
-  const lf = buffer.indexOf("\n\n");
-  const crlf = buffer.indexOf("\r\n\r\n");
-  if (lf === -1 && crlf === -1) return void 0;
-  if (crlf === -1) return { start: lf, end: lf + 2 };
-  if (lf === -1) return { start: crlf, end: crlf + 4 };
-  return crlf < lf ? { start: crlf, end: crlf + 4 } : { start: lf, end: lf + 2 };
-}
-function parseFrame2(raw) {
-  const lines = raw.split(/\r?\n/);
-  let event;
-  const dataLines = [];
-  for (const line2 of lines) {
-    if (line2.startsWith("event:")) event = line2.slice(6).trim();
-    else if (line2.startsWith("data:")) dataLines.push(line2.slice(5).trimStart());
-  }
-  if (dataLines.length === 0 && event === void 0) return void 0;
-  return { event, data: dataLines.join("\n") };
-}
-async function* consumeAnthropicSse(body, options) {
-  const blocks = [];
-  const blockByIndex = /* @__PURE__ */ new Map();
-  const toolMeta = /* @__PURE__ */ new Map();
-  const started = /* @__PURE__ */ new Set();
-  let sawAny = false;
-  let inputTokens;
-  let outputTokens;
-  let cacheReadTokens;
-  let cacheWriteTokens;
-  let stopReasonSeen;
-  const collectUsage = (usage) => {
-    if (typeof usage !== "object" || usage === null) return;
-    const u = usage;
-    const num2 = (v) => typeof v === "number" && Number.isFinite(v) ? v : void 0;
-    inputTokens = num2(u.input_tokens) ?? inputTokens;
-    outputTokens = num2(u.output_tokens) ?? outputTokens;
-    cacheReadTokens = num2(u.cache_read_input_tokens) ?? cacheReadTokens;
-    cacheWriteTokens = num2(u.cache_creation_input_tokens) ?? cacheWriteTokens;
-  };
-  const ensureBlock = (index, kind) => {
-    const existing = blockByIndex.get(index);
-    if (existing !== void 0) return existing;
-    const meta = toolMeta.get(index);
-    const block = {
-      index,
-      kind,
-      text: "",
-      callId: meta?.id ?? `call_${index}`,
-      name: meta?.name ?? "",
-      argumentsRaw: ""
-    };
-    blocks.push(block);
-    blockByIndex.set(index, block);
-    return block;
-  };
-  for await (const frame of iterateSseFrames(body, {
-    signal: options.signal,
-    ...options.idleTimeoutMs === void 0 ? {} : { idleTimeoutMs: options.idleTimeoutMs },
-    label: options.label
-  })) {
-    const eventName = frame.event;
-    if (frame.data.length === 0) continue;
-    let payload;
-    try {
-      payload = JSON.parse(frame.data);
-    } catch {
-      continue;
-    }
-    if (eventName === "error" || payload.type === "error") {
-      const error = payload.error;
-      const message2 = typeof error === "object" && error !== null ? error.message : void 0;
-      const type2 = typeof error === "object" && error !== null ? error.type : void 0;
-      throw new LlmError18(
-        `${options.label}: ${typeof message2 === "string" ? message2 : JSON.stringify(payload).slice(0, 300)}`,
-        // overloaded 是暂时性的，值得重试；其余按服务端错误处理。
-        type2 === "overloaded_error" ? "RATE_LIMIT" : "SERVER"
-      );
-    }
-    const type = typeof payload.type === "string" ? payload.type : eventName;
-    const index = typeof payload.index === "number" ? payload.index : 0;
-    if (type === "content_block_start") {
-      const block = payload.content_block;
-      const blockType = typeof block === "object" && block !== null ? block.type : void 0;
-      if (blockType === "tool_use") {
-        const record = block;
-        toolMeta.set(index, {
-          id: typeof record.id === "string" ? record.id : `call_${index}`,
-          name: typeof record.name === "string" ? record.name : ""
-        });
-      } else if (blockType === "thinking" || blockType === "redacted_thinking") {
-        ensureBlock(index, "reasoning");
-        started.add(index);
-        yield { type: "block-start", index, blockType: "reasoning" };
-      } else {
-        ensureBlock(index, "text");
-        started.add(index);
-        yield { type: "block-start", index, blockType: "text" };
-      }
-      continue;
-    }
-    if (type === "content_block_delta") {
-      const delta = payload.delta;
-      if (typeof delta !== "object" || delta === null) continue;
-      const record = delta;
-      const deltaType = record.type;
-      if (deltaType === "text_delta" && typeof record.text === "string") {
-        const block = ensureBlock(index, "text");
-        block.text += record.text;
-        if (record.text.length > 0) sawAny = true;
-        yield { type: "text-delta", index, text: record.text };
-        continue;
-      }
-      if (deltaType === "thinking_delta" && typeof record.thinking === "string") {
-        const block = ensureBlock(index, "reasoning");
-        block.text += record.thinking;
-        if (record.thinking.length > 0) sawAny = true;
-        yield { type: "reasoning-delta", index, text: record.thinking };
-        continue;
-      }
-      if (deltaType === "input_json_delta") {
-        const partial = typeof record.partial_json === "string" ? record.partial_json : "";
-        const block = ensureBlock(index, "tool-call");
-        if (block.name.length === 0) {
-          const meta = toolMeta.get(index);
-          if (meta !== void 0) {
-            block.callId = meta.id;
-            block.name = meta.name;
-          }
-        }
-        block.argumentsRaw += partial;
-        if (!started.has(index)) {
-          started.add(index);
-          yield { type: "block-start", index, blockType: "tool-call" };
-        }
-        if (partial.length > 0) sawAny = true;
-        yield {
-          type: "tool-call-delta",
-          index,
-          id: ToolCallId5(block.callId),
-          ...block.name.length > 0 ? { name: block.name } : {},
-          argumentsDelta: partial
-        };
-        continue;
-      }
-      continue;
-    }
-    if (type === "message_start") {
-      const message2 = payload.message;
-      if (typeof message2 === "object" && message2 !== null) {
-        const usage = message2.usage;
-        collectUsage(usage);
-      }
-      continue;
-    }
-    if (type === "message_delta") {
-      collectUsage(payload.usage);
-      const delta = payload.delta;
-      if (typeof delta === "object" && delta !== null) {
-        const stopReason = delta.stop_reason;
-        if (typeof stopReason === "string" && stopReason.length > 0) {
-          stopReasonSeen = stopReason;
-        }
-      }
-      continue;
-    }
-  }
-  if (!sawAny) {
-    throw new LlmError18(
-      `${options.label}: \u6A21\u578B\u8FD4\u56DE\u4E86\u7A7A\u54CD\u5E94\uFF08\u65E0\u4EFB\u4F55 text / thinking / tool \u5185\u5BB9\uFF09`,
-      "EMPTY_RESPONSE"
-    );
-  }
-  for (const block of blocks) {
-    if (block.kind === "text") {
-      if (block.text === "") continue;
-      yield { type: "block-end", index: block.index, block: { type: "text", text: block.text } };
-      continue;
-    }
-    if (block.kind === "reasoning") {
-      if (block.text.trim() === "") continue;
-      yield { type: "block-end", index: block.index, block: { type: "reasoning", text: block.text } };
-      continue;
-    }
-    if (block.name.length === 0) continue;
-    const args = block.argumentsRaw.trim() === "" ? "{}" : block.argumentsRaw;
-    yield {
-      type: "block-end",
-      index: block.index,
-      block: {
-        type: "tool-call",
-        id: ToolCallId5(block.callId),
-        name: block.name,
-        arguments: args
-      }
-    };
-  }
-  if (inputTokens !== void 0 || outputTokens !== void 0 || cacheReadTokens !== void 0 || cacheWriteTokens !== void 0) {
-    const usage = {
-      inputTokens: inputTokens ?? 0,
-      outputTokens: outputTokens ?? 0,
-      // totalTokens 只在两半都有值时才给（否则给出的是残缺总数）。
-      ...inputTokens !== void 0 && outputTokens !== void 0 ? { totalTokens: inputTokens + outputTokens + (cacheReadTokens ?? 0) + (cacheWriteTokens ?? 0) } : {},
-      ...cacheReadTokens !== void 0 ? { cacheReadTokens } : {},
-      ...cacheWriteTokens !== void 0 ? { cacheWriteTokens } : {}
-    };
-    yield { type: "usage", usage };
-  }
-  const reason = stopReasonSeen === "max_tokens" ? { kind: "max-tokens" } : stopReasonSeen === "tool_use" || blocks.some((b) => b.kind === "tool-call" && b.name.length > 0) ? { kind: "tool-calls" } : { kind: "stop" };
-  yield { type: "finish", reason };
 }
 
 // vendor/channel-pack/src/model-gate.ts

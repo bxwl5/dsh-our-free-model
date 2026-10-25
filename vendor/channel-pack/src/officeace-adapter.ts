@@ -53,11 +53,22 @@ export interface OfficeAceAdapterOptions {
   } & Parameters<typeof providerCatalogVisible>[0]
 }
 
+/**
+ * 远端模型目录的缓存有效期（5 分钟）。
+ *
+ * 与 `opencode-adapter.ts` 的 `DEFAULT_CATALOG_TTL_MS` 同档。取 5 分钟的理由：
+ * 上游改目录不是秒级事件，但也不该等到进程重启；5 分钟既不放大请求量
+ * （每渠道每 5 分钟最多 1 次），又能让新上架的模型在一个工作时段内出现。
+ */
+const REMOTE_MODELS_TTL_MS = 300_000
+
 /** OfficeAce 适配器。 */
 export class OfficeAceAdapter extends LlmAdapter {
   private readonly product: OfficeAceProduct
   private readonly fetchImpl: typeof fetch
   private remoteModels: Array<{ id: string; name: string; contextWindow: number; maxTokens?: number }> | undefined
+  /** 上次成功拉取的时刻。配合 {@link REMOTE_MODELS_TTL_MS} 决定是否重拉。 */
+  private remoteModelsAt = 0
   private loading: Promise<void> | undefined
 
   constructor(private readonly options: OfficeAceAdapterOptions) {
@@ -71,9 +82,18 @@ export class OfficeAceAdapter extends LlmAdapter {
     return { id, name: this.product.displayName }
   }
 
-  /** 拉模型目录（OpenAI 格式）。失败静默（用兜底表）。 */
+  /**
+   * 拉模型目录（OpenAI 格式）。失败静默（用兜底表）。
+   *
+   * ⚠ **必须带 TTL**：原先的判据是 `if (this.remoteModels !== undefined) return`
+   * —— 拉成功一次就永久缓存，上游下架/新增模型后进程不重启永远不跟上
+   *（2026-10-25 实测：与 OrCaTerm 静态表过期是同一类问题）。现按
+   * {@link REMOTE_MODELS_TTL_MS} 过期重拉；**失败时保留旧列表**，
+   * 不能因为一次网络抖动就把已拿到的目录清空。
+   */
   private async ensureRemoteModels(): Promise<void> {
-    if (this.remoteModels !== undefined) return
+    const fresh = this.remoteModels !== undefined && Date.now() - this.remoteModelsAt < REMOTE_MODELS_TTL_MS
+    if (fresh) return
     if (this.loading !== undefined) return this.loading
     this.loading = (async () => {
       try {
@@ -99,7 +119,7 @@ export class OfficeAceAdapter extends LlmAdapter {
           const contextWindow = typeof contextRaw === 'number' && contextRaw > 0 ? contextRaw : 128_000
           rows.push({ id, name: typeof item.name === 'string' && item.name !== '' ? item.name : id, contextWindow })
         }
-        if (rows.length > 0) this.remoteModels = rows
+        if (rows.length > 0) { this.remoteModels = rows; this.remoteModelsAt = Date.now() }
       } catch {
         // 兜底表接管。
       } finally {

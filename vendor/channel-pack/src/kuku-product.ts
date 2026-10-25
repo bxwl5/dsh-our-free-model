@@ -49,8 +49,33 @@ export interface KukuFallbackModel {
  * ⚠️ 上游模型集合由服务端下发，这张表只是拉取失败时的兜底。
  * `id` 同时用作 `model_name` 与 `model_display_name`（实测上游两者一致时可用）。
  */
+/**
+ * 兜底模型目录。
+ *
+ * 2026-10-25 更正：原表只有占位 id `kuku`，而它**不是真实模型名** ——
+ * 拿它发对话上游只会回空/错误。上游真实模型 id 是
+ * `gateway-<family>-<version>-<vendor>` 这类长名（`auto` 是自动选路）。
+ * 清单取自上游 `aimod-cc/Agent2API` 的 `providers/kuku/models.rs`
+ * `FALLBACK_MODEL_IDS`（kuku2api 2026-09-13 实测的 13 个 `model_name`），
+ * 并已由本仓库 2026-10-25 与远端 `model/list` 对照。
+ *
+ * ⚠ 只是兜底：`kuku-adapter.ts` 会拉远端 `GET /wenchain/genflowpro/model/list`
+ * （TTL 10 分钟）。拉不到时才用这张表。
+ */
 const KUKU_FALLBACK_MODELS: readonly KukuFallbackModel[] = [
-  { id: 'kuku', name: 'Kuku', contextWindow: 128_000 },
+  { id: 'auto', name: 'Auto', contextWindow: 128_000 },
+  { id: 'gateway-deepseek-v4.1-flash-tencent', name: 'DeepSeek-V4.1-Flash', contextWindow: 128_000 },
+  { id: 'gateway-deepseek-v4-pro-tencent', name: 'DeepSeek-V4-Pro', contextWindow: 128_000 },
+  { id: 'gateway-deepseek-v4-flash-tencent', name: 'DeepSeek-V4-Flash', contextWindow: 128_000 },
+  { id: 'gateway-glm-5.3-flash', name: 'GLM-5.3-Flash', contextWindow: 128_000 },
+  { id: 'glm-5.3', name: 'GLM-5.3', contextWindow: 128_000 },
+  { id: 'gateway-glm-5.2', name: 'GLM-5.2', contextWindow: 128_000 },
+  { id: 'gateway-glm-5.1-kuaishou', name: 'GLM-5.1', contextWindow: 128_000 },
+  { id: 'ernie-5.1', name: 'ERNIE-5.1', contextWindow: 128_000 },
+  { id: 'ms-kimi-k3', name: 'Kimi-K3', contextWindow: 128_000 },
+  { id: 'gateway-kimi-k2.7-code-tencent', name: 'Kimi-K2.7-Code', contextWindow: 128_000 },
+  { id: 'gateway-kimi-k2.6', name: 'Kimi-K2.6', contextWindow: 128_000 },
+  { id: 'ali-minimax/minimax-m3', name: 'MiniMax-M3', contextWindow: 128_000 },
 ]
 
 /** KukuAI provider 配置。 */
@@ -88,6 +113,23 @@ export const KUKU_SSE_PATH = '/wenchain/genflowpro/sse/getchatcontent'
 export const KUKU_FREEPOINT_PATH = '/api/genflowpro/freepoint/homenew'
 /** VIP 剩余额度。 */
 export const KUKU_VIP_REMAIN_PATH = '/bizapi/gfpro/getgfvipremain'
+
+/**
+ * 模型目录（挂 `apiBase`）。
+ *
+ * 上游 `aimod-cc/Agent2API` 的 `providers/kuku/models.rs` 记录：路径是
+ * `model/list`（2026-10-07 逆向 app.asar + 真实凭证实测；旧路径 `model_list`
+ * 已废弃返回 404）。响应是顶层 `{status, data}` 包络，模型名在 `data` 里。
+ */
+export const KUKU_MODEL_LIST_PATH = '/wenchain/genflowpro/model/list'
+
+/**
+ * 目录请求的固定查询串（与官方 Web 客户端一致）。
+ *
+ * 取自上游 `providers/kuku/mod.rs` 的 `WEB_QUERY`。上游对这批参数敏感，
+ * 缺了会拿到空列表或 4xx。
+ */
+export const KUKU_WEB_QUERY = 'clienttype=400&app_id=123971023&web=1&channel=chunlei&version=1.4.4'
 
 /** 登录态 Cookie 名。 */
 export const KUKU_SESSION_COOKIE = 'BDUSS'

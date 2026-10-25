@@ -38,10 +38,20 @@ export interface AccioAdapterOptions {
 }
 
 /** Accio 适配器。 */
+/**
+ * 远端模型目录缓存有效期（5 分钟），与 `opencode-adapter.ts` 的目录 TTL 同档。
+ *
+ * 上游改目录不是秒级事件，但也不该等到进程重启；5 分钟既不放大请求量
+ * （每渠道每 5 分钟最多 1 次），又能让新上架的模型在一个工作时段内出现。
+ */
+const REMOTE_MODELS_TTL_MS = 300_000
+
 export class AccioAdapter extends LlmAdapter {
   private readonly product: AccioProduct
   private readonly fetchImpl: typeof fetch
   private remoteModels: Array<{ id: string; name: string; contextWindow: number; maxTokens?: number }> | undefined
+  /** 上次成功拉取的时刻；配合 REMOTE_MODELS_TTL_MS 判断是否重拉。 */
+  private remoteModelsAt = 0
   private loading: Promise<void> | undefined
 
   constructor(private readonly options: AccioAdapterOptions) {
@@ -56,13 +66,15 @@ export class AccioAdapter extends LlmAdapter {
   }
 
   private async ensureRemoteModels(): Promise<void> {
-    if (this.remoteModels !== undefined) return
+    // 带 TTL：成功即永久缓存会让上游改目录后永远跟不上（同 opencode 目录 TTL）。
+    if (this.remoteModels !== undefined && Date.now() - this.remoteModelsAt < REMOTE_MODELS_TTL_MS) return
     if (this.loading !== undefined) return this.loading
     this.loading = (async () => {
       try {
         const credential = await this.options.resolveCredential()
         if (!isCredentialUsable(credential)) return
         this.remoteModels = await fetchModels(this.fetchImpl, this.product, credential)
+        this.remoteModelsAt = Date.now()
       } catch {
         // 兜底表接管。
       } finally {

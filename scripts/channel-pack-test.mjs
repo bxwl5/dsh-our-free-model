@@ -357,6 +357,8 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   await verifyKuku()
   const { verifyAccio } = await import('./accio-test.mjs')
   await verifyAccio()
+  const { verifyRemoteModelsTtl } = await import('./remote-models-ttl-test.mjs')
+  await verifyRemoteModelsTtl()
   const { verifyOfficeAce } = await import('./officeace-test.mjs')
   await verifyOfficeAce()
   const { verifyAutoClaw } = await import('./autoclaw-test.mjs')

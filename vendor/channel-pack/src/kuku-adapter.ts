@@ -14,8 +14,8 @@ import type {
   StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 
-import { KUKU, type KukuProduct } from './kuku-product.js'
-import { isCredentialUsable, type KukuCredential } from './kuku.js'
+import { KUKU, KUKU_MODEL_LIST_PATH, KUKU_WEB_QUERY, type KukuProduct } from './kuku-product.js'
+import { isCredentialUsable, kukuHeaders, type KukuCredential } from './kuku.js'
 import { streamChat } from './kuku-auth.js'
 import { providerCatalogVisible } from './account-pool.js'
 import { registerAdapterIdempotent } from './llm-register-compat.js'
@@ -31,9 +31,51 @@ export interface KukuAdapterOptions {
 }
 
 /** KukuAI 适配器。 */
+/**
+ * 远端模型目录缓存有效期（10 分钟，与上游 `providers/kuku/models.rs` 的
+ * `CATALOG_CACHE_TTL_MS` 同值）。
+ */
+const REMOTE_MODELS_TTL_MS = 600_000
+
+/**
+ * 从上游目录响应里提取 `{ id, name }`。
+ *
+ * 上游响应（实测 2026-10-25）：`data.model_list[]` 每项含
+ * `model_name`（真实 id，如 `gateway-deepseek-v4.1-flash-volcengine`）、
+ * `display_name`（展示名，如 `DeepSeek-V4.1-Flash`）、`cost_ratio`、`vip_type`。
+ * 结构未公开（上游 `models.rs` 也做宽松提取），故递归找，缺 display_name 时用 id 兜底。
+ */
+function extractKukuModels(value: unknown): Array<{ id: string; name: string }> {
+  const out = new Map<string, string>()
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) { for (const item of node) walk(item); return }
+    if (typeof node !== 'object' || node === null) return
+    const record = node as Record<string, unknown>
+    const id = typeof record.model_name === 'string' ? record.model_name.trim()
+      : typeof record.modelName === 'string' ? record.modelName.trim()
+        : typeof record.modelId === 'string' ? record.modelId.trim()
+          : undefined
+    if (id !== undefined && id !== '') {
+      const display = typeof record.display_name === 'string' && record.display_name.trim() !== ''
+        ? record.display_name.trim()
+        : id
+      if (!out.has(id)) out.set(id, display)
+      return
+    }
+    for (const child of Object.values(record)) walk(child)
+  }
+  walk(value)
+  return [...out.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([id, name]) => ({ id, name }))
+}
+
 export class KukuAdapter extends LlmAdapter {
   private readonly product: KukuProduct
   private readonly fetchImpl: typeof fetch
+  /** 远端模型目录（拉到后用；拉不到回落到 `product.fallbackModels`）。 */
+  private remoteModels: Array<{ id: string; name: string }> | undefined
+  /** 上次成功拉取的时刻；配合 REMOTE_MODELS_TTL_MS 判断是否重拉。 */
+  private remoteModelsAt = 0
+  private loading: Promise<void> | undefined
 
   constructor(private readonly options: KukuAdapterOptions) {
     super()
@@ -51,11 +93,12 @@ export class KukuAdapter extends LlmAdapter {
       && !await providerCatalogVisible(this.options.accountPool, this.product.id)) {
       return []
     }
-    // 上游没有公开的模型目录端点（模型名由客户端自报），用兜底表。
+    await this.ensureRemoteModels()
+    const source = this.remoteModels ?? this.product.fallbackModels
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id)
     const listed = disabled === undefined || disabled.size === 0
-      ? this.product.fallbackModels
-      : this.product.fallbackModels.filter((model) => !disabled.has(model.id))
+      ? source
+      : source.filter((model) => !disabled.has(model.id))
     return listed.map((model) => ({
       provider: this.product.id,
       id: model.id,
@@ -66,7 +109,43 @@ export class KukuAdapter extends LlmAdapter {
 
   /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数会显示「—」。 */
   listAllModels(): readonly { id: string; name: string }[] {
-    return this.product.fallbackModels.map((model) => ({ id: model.id, name: model.name }))
+    const source = this.remoteModels ?? this.product.fallbackModels
+    return source.map((model) => ({ id: model.id, name: model.name }))
+  }
+
+  /** 拉远端模型目录（`GET /wenchain/genflowpro/model/list`）。失败静默回落静态表。 */
+  private async ensureRemoteModels(): Promise<void> {
+    if (this.remoteModels !== undefined && Date.now() - this.remoteModelsAt < REMOTE_MODELS_TTL_MS) return
+    if (this.loading !== undefined) return this.loading
+    this.loading = (async () => {
+      try {
+        const credential = await this.options.resolveCredential()
+        if (!isCredentialUsable(credential)) return
+        const response = await this.fetchImpl(`${this.product.apiBase}${KUKU_MODEL_LIST_PATH}?${KUKU_WEB_QUERY}`, {
+          method: 'GET',
+          headers: kukuHeaders(this.product, credential),
+        })
+        if (!response.ok) return
+        const body: unknown = await response.json().catch(() => undefined)
+        if (typeof body !== 'object' || body === null) return
+        const record = body as Record<string, unknown>
+        const status = record.status
+        if (typeof status === 'object' && status !== null) {
+          const code = (status as Record<string, unknown>).code
+          if (typeof code === 'number' && code !== 0) return
+        }
+        const parsed = extractKukuModels(record.data)
+        if (parsed.length > 0) {
+          this.remoteModels = parsed
+          this.remoteModelsAt = Date.now()
+        }
+      } catch {
+        // 静态表接管。
+      } finally {
+        this.loading = undefined
+      }
+    })()
+    return this.loading
   }
 
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {

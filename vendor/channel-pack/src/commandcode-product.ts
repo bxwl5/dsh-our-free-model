@@ -69,22 +69,89 @@ export interface CommandCodeProduct {
  * ⚠️ 这张表是**编译期快照**，上游增删模型时不会自己跟着变。
  * 它只在远端 `/provider/v1/models` 拉取失败时整表兜底；远端可用时以远端为准。
  */
+/**
+ * 兜底模型目录。
+ *
+ * 2026-10-25 更正：原表只有 `claude-sonnet-4-5` / `gpt-5` 两条，而上游
+ * `GET /provider/v1/models` 实际下发 93 个 —— 这两条已下架，发对话直接
+ * 400（`Model "claude-sonnet-4-5" is not supported on this endpoint`）。
+ * 现换成上游当前在架的代表性模型（完整目录由远端拉取覆盖）。
+ *
+ * ⚠ Claude 系列必须走 Anthropic Messages 端点，见
+ * `COMMANDCODE_MESSAGES_PATH` 与 `requiresAnthropicMessages()`。
+ */
 const COMMANDCODE_FALLBACK_MODELS: readonly CommandCodeFallbackModel[] = [
   {
-    id: 'claude-sonnet-4-5',
-    name: 'Claude Sonnet 4.5',
-    contextWindow: 200_000,
-    maxTokens: 64_000,
+    id: 'claude-sonnet-5-5',
+    name: 'Claude Sonnet 5.5',
+    contextWindow: 200000,
+    maxTokens: 64000,
     supportsImage: true,
-    description: 'Anthropic Claude Sonnet 4.5',
+    description: 'Anthropic Claude Sonnet 5.5',
   },
   {
-    id: 'gpt-5',
-    name: 'GPT-5',
-    contextWindow: 400_000,
-    maxTokens: 128_000,
+    id: 'claude-opus-5-5',
+    name: 'Claude Opus 5.5',
+    contextWindow: 200000,
+    maxTokens: 64000,
     supportsImage: true,
-    description: 'OpenAI GPT-5',
+    description: 'Anthropic Claude Opus 5.5',
+  },
+  {
+    id: 'claude-sonnet-5',
+    name: 'Claude Sonnet 5',
+    contextWindow: 200000,
+    maxTokens: 64000,
+    supportsImage: true,
+    description: 'Anthropic Claude Sonnet 5',
+  },
+  {
+    id: 'claude-opus-5',
+    name: 'Claude Opus 5',
+    contextWindow: 200000,
+    maxTokens: 64000,
+    supportsImage: true,
+    description: 'Anthropic Claude Opus 5',
+  },
+  {
+    id: 'claude-haiku-5-5',
+    name: 'Claude Haiku 5.5',
+    contextWindow: 200000,
+    maxTokens: 64000,
+    supportsImage: true,
+    description: 'Anthropic Claude Haiku 5.5',
+  },
+  {
+    id: 'gpt-6-astra',
+    name: 'GPT-6 Astra',
+    contextWindow: 400000,
+    maxTokens: 128000,
+    supportsImage: true,
+    description: 'OpenAI GPT-6 Astra',
+  },
+  {
+    id: 'gpt-6.1-sol',
+    name: 'GPT-6.1 Sol',
+    contextWindow: 400000,
+    maxTokens: 128000,
+    supportsImage: true,
+    description: 'OpenAI GPT-6.1 Sol',
+  },
+  {
+    id: 'gpt-6-sol',
+    name: 'GPT-6 Sol',
+    contextWindow: 400000,
+    maxTokens: 128000,
+    supportsImage: true,
+    description: 'OpenAI GPT-6 Sol',
+  },
+  {
+    id: 'gpt-6-luna',
+    name: 'GPT-6 Luna',
+    contextWindow: 400000,
+    maxTokens: 128000,
+    supportsImage: true,
+    description: 'OpenAI GPT-6 Luna',
   },
 ]
 
@@ -130,6 +197,28 @@ export const COMMANDCODE_CREDITS_PATH = '/alpha/billing/credits'
 export const COMMANDCODE_MODELS_PATH = '/provider/v1/models'
 /** 对话（OpenAI 兼容，挂 `apiBase`）。 */
 export const COMMANDCODE_CHAT_PATH = '/provider/v1/chat/completions'
+
+/**
+ * 对话（Anthropic Messages 形状，挂 `apiBase`）。
+ *
+ * ⚠️ Claude 系列**只能**走这个端点：实测把 `claude-sonnet-5-5` 发到
+ * `/provider/v1/chat/completions`，上游直接 400：
+ * `Model "claude-sonnet-5-5" must be called via /provider/v1/messages
+ * (Anthropic Messages shape).` —— 2026-10-25 真实调用测试发现。
+ * 非 Claude 模型（gpt-6-* 等）仍走上面那条 OpenAI 兼容路径。
+ */
+export const COMMANDCODE_MESSAGES_PATH = '/provider/v1/messages'
+
+/**
+ * 判断某个模型是否必须走 Anthropic Messages 端点。
+ *
+ * 只按模型名里的 `claude` 判定：上游没有下发「端点类型」字段（目录里
+ * 只有 id/name/context_length/supported_endpoints，后者是 image 之类），
+ * 所以只能按家族名分派。新增家族时在这里补一条。
+ */
+export function requiresAnthropicMessages(model: string): boolean {
+  return /claude/i.test(String(model))
+}
 
 /**
  * 登录本地回调端口范围。

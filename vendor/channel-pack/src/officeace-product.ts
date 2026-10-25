@@ -63,8 +63,43 @@ export interface OfficeAceFallbackModel {
 }
 
 /** 兜底模型目录（真实目录由 `client-permission-validate` 下发）。 */
+/**
+ * 兜底模型目录。
+ *
+ * 2026-10-25 更正：原表只有一个占位 id `officeace-default`，而上游
+ * `GET {base}/models` 实际下发 26 个真实模型 —— 用占位 id 发对话会
+ * 直接 404（`ModelArts.81009 Invalid model`）。现按真实目录替换。
+ *
+ * ⚠ 这张表只是**兜底**：`officeace-adapter.ts` 有远端目录拉取（成功时
+ * 用远端）。但兜底必须是对的，否则拉取失败时用户看到的是假模型。
+ */
 const OFFICEACE_FALLBACK_MODELS: readonly OfficeAceFallbackModel[] = [
-  { id: 'officeace-default', name: 'OfficeAce', contextWindow: 128_000 },
+  { id: 'deepseek-v4.1-flash', name: 'deepseek-v4.1-flash', contextWindow: 128_000 },
+  { id: 'deepseek-v4-flash', name: 'deepseek-v4-flash', contextWindow: 128_000 },
+  { id: 'glm-5.3', name: 'glm-5.3', contextWindow: 128_000 },
+  { id: 'qwen3-30b-a3b', name: 'qwen3-30b-a3b', contextWindow: 128_000 },
+  { id: 'kimi-k3.1-pro', name: 'kimi-k3.1-pro', contextWindow: 128_000 },
+  { id: 'kimi-k3-test-1009', name: 'kimi-k3-test-1009', contextWindow: 128_000 },
+  { id: 'openpangu-2.0-pro', name: 'openpangu-2.0-pro', contextWindow: 128_000 },
+  { id: 'qwen3-32b', name: 'qwen3-32b', contextWindow: 128_000 },
+  { id: 'glm-5.2-zx', name: 'glm-5.2-zx', contextWindow: 128_000 },
+  { id: 'kimi-k3', name: 'kimi-k3', contextWindow: 128_000 },
+  { id: 'glm-5.2-a3', name: 'glm-5.2-a3', contextWindow: 128_000 },
+  { id: 'glm-5.3-test', name: 'glm-5.3-test', contextWindow: 128_000 },
+  { id: 'openpangu-2.0-flash', name: 'openpangu-2.0-flash', contextWindow: 128_000 },
+  { id: 'glm-5.1', name: 'glm-5.1', contextWindow: 128_000 },
+  { id: 'glm-5.3-zx', name: 'glm-5.3-zx', contextWindow: 128_000 },
+  { id: 'deepseek-v4.1-flash-0930', name: 'deepseek-v4.1-flash-0930', contextWindow: 128_000 },
+  { id: 'deepseek-v4.1-flash-bnt', name: 'deepseek-v4.1-flash-bnt', contextWindow: 128_000 },
+  { id: 'glm-5.2', name: 'glm-5.2', contextWindow: 128_000 },
+  { id: 'deepseek-v4-flash-0731', name: 'deepseek-v4-flash-0731', contextWindow: 128_000 },
+  { id: 'glm-5.2-harmony', name: 'glm-5.2-harmony', contextWindow: 128_000 },
+  { id: 'kimi-k2.6', name: 'kimi-k2.6', contextWindow: 128_000 },
+  { id: 'deepseek-v4-pro', name: 'deepseek-v4-pro', contextWindow: 128_000 },
+  { id: 'glm-5.3-flash', name: 'glm-5.3-flash', contextWindow: 128_000 },
+  { id: 'kimi-k3-1019', name: 'kimi-k3-1019', contextWindow: 128_000 },
+  { id: 'glm.5.2-arkts-spark', name: 'glm.5.2-arkts-spark', contextWindow: 128_000 },
+  { id: 'deepseek-v4.1-flash-1017', name: 'deepseek-v4.1-flash-1017', contextWindow: 128_000 },
 ]
 
 /** OfficeAce provider 配置。 */

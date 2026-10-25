@@ -58,6 +58,18 @@ interface CallResult {
 }
 
 /**
+ * 判断是不是普通对象（排除 null 与数组）。
+ *
+ * 与 `accio.ts` / `autoclaw.ts` / `commandcode.ts` / `kuku.ts` 里的同名函数
+ * 实现一致。此前本文件直接调用它却没定义也没 import —— 建任务响应一走到
+ * 「取 id」那行就抛 `ReferenceError: isRecord is not defined`，导致
+ * MonkeyCode 渠道**每次对话必崩**（2026-10-25 真实调用测试发现）。
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
  * 带 Cookie 调一次上游 JSON 接口。
  *
  * 不抛错（网络失败返回 `{ok:false, status:0}`）——
@@ -303,8 +315,24 @@ export async function createTask(
   if (result.status === 401 || result.status === 403) throw new Error('MonkeyCode：凭据无效或已过期，请重新粘贴 Cookie')
   if (!result.ok) throw new Error(`MonkeyCode：建任务返回 HTTP ${result.status}`)
   const body = unwrapData(result.body)
+  // ⚠ 上游的业务错误走 HTTP 200 + `{code, message}`，不是非 2xx。若不先看
+  // `code`，会把它误报成「响应缺少 id」，把「你已有一个正在运行的任务」这种
+  // 可操作的原因藏掉（2026-10-25 实测 code=10811）。
+  if (isRecord(body)) {
+    const code = typeof body.code === 'number' ? body.code : undefined
+    const message = typeof body.message === 'string' ? body.message : ''
+    if (code !== undefined && code !== 0 && code !== 200) {
+      throw new Error(`MonkeyCode：建任务被上游拒绝（code ${code}）${message === '' ? '' : `：${message}`}`)
+    }
+    if (message !== '' && body.id === undefined) {
+      throw new Error(`MonkeyCode：建任务被上游拒绝：${message}`)
+    }
+  }
   const taskId = isRecord(body) ? (typeof body.id === 'string' ? body.id : undefined) : undefined
-  if (taskId === undefined || taskId === '') throw new Error('MonkeyCode：建任务响应缺少 id')
+  if (taskId === undefined || taskId === '') {
+    const raw = JSON.stringify(result.body ?? null)
+    throw new Error(`MonkeyCode：建任务响应缺少 id（原始响应：${raw.slice(0, 200)}）`)
+  }
   return taskId
 }
 

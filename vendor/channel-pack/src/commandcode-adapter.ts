@@ -30,6 +30,8 @@ import type {
 import {
   COMMANDCODE,
   COMMANDCODE_CHAT_PATH,
+  COMMANDCODE_MESSAGES_PATH,
+  requiresAnthropicMessages,
   type CommandCodeProduct,
   type CommandCodeFallbackModel,
 } from './commandcode-product.js'
@@ -49,6 +51,7 @@ import {
   serializeMessages,
 } from './openai-compat.js'
 import { providerCatalogVisible } from './account-pool.js'
+import { consumeAnthropicSse, toAnthropicMessages, toAnthropicTools } from './zcode-anthropic.js'
 import { registerAdapterIdempotent } from './llm-register-compat.js'
 
 /** 首 token 空闲超时（毫秒）。 */
@@ -80,11 +83,21 @@ function fallbackRows(product: CommandCodeProduct): CommandCodeFallbackModel[] {
 /**
  * Command Code 适配器。
  */
+/**
+ * 远端模型目录缓存有效期（5 分钟），与 `opencode-adapter.ts` 的目录 TTL 同档。
+ *
+ * 上游改目录不是秒级事件，但也不该等到进程重启；5 分钟既不放大请求量
+ * （每渠道每 5 分钟最多 1 次），又能让新上架的模型在一个工作时段内出现。
+ */
+const REMOTE_MODELS_TTL_MS = 300_000
+
 export class CommandCodeAdapter extends LlmAdapter {
   private readonly product: CommandCodeProduct
   private readonly fetchImpl: typeof fetch
   /** 远端模型目录缓存。 */
   private remoteModels: Array<{ id: string; name: string; contextWindow: number; maxTokens?: number; supportsImage?: boolean }> | undefined
+  /** 上次成功拉取的时刻；配合 REMOTE_MODELS_TTL_MS 判断是否重拉。 */
+  private remoteModelsAt = 0
   /** 正在进行中的目录加载（并发去重）。 */
   private loading: Promise<void> | undefined
 
@@ -115,13 +128,15 @@ export class CommandCodeAdapter extends LlmAdapter {
    * 不该让整轮对话因为一次目录请求失败而无法开始。
    */
   private async ensureRemoteModels(): Promise<void> {
-    if (this.remoteModels !== undefined) return
+    // 带 TTL：成功即永久缓存会让上游改目录后永远跟不上（同 opencode 目录 TTL）。
+    if (this.remoteModels !== undefined && Date.now() - this.remoteModelsAt < REMOTE_MODELS_TTL_MS) return
     if (this.loading !== undefined) return this.loading
     this.loading = (async () => {
       try {
         const credential = await this.options.resolveCredential()
         if (!isCredentialUsable(credential)) return
         this.remoteModels = await fetchModelCatalog(this.fetchImpl, this.product, credential)
+        this.remoteModelsAt = Date.now()
       } catch {
         // 静默：兜底表接管。
       } finally {
@@ -204,24 +219,46 @@ export class CommandCodeAdapter extends LlmAdapter {
       messages.unshift({ role: 'system', content: options.system })
     }
 
-    const body: Record<string, unknown> = {
-      model: options.model,
-      messages,
-      stream: true,
-    }
+    /**
+     * Claude 系列必须走 Anthropic Messages 形状的端点。
+     *
+     * 实测（2026-10-25）：把 `claude-sonnet-5-5` 发到 OpenAI 兼容的
+     * `/provider/v1/chat/completions`，上游直接 400：
+     * `Model "claude-sonnet-5-5" must be called via /provider/v1/messages
+     * (Anthropic Messages shape).` 故按模型家族分派两条端点。
+     */
+    const anthropic = requiresAnthropicMessages(options.model)
+    const body: Record<string, unknown> = anthropic
+      ? {
+          model: options.model,
+          max_tokens: options.maxTokens !== undefined && options.maxTokens > 0 ? options.maxTokens : 8192,
+          messages: toAnthropicMessages(messages),
+          stream: true,
+          ...(options.system !== undefined && options.system.length > 0 ? { system: options.system } : {}),
+          ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
+          ...(options.tools === undefined || options.tools.length === 0 ? {} : { tools: toAnthropicTools(options.tools) }),
+        }
+      : {
+          model: options.model,
+          messages,
+          stream: true,
+        }
     // 输出上限：只在本轮确实有值时才下发，避免覆盖模型自身默认。
-    if (options.maxTokens !== undefined && options.maxTokens > 0) body.max_tokens = options.maxTokens
-    if (options.tools !== undefined && options.tools.length > 0) {
-      body.tools = options.tools.map((tool) => ({
-        type: 'function',
-        function: { name: tool.name, description: tool.description, parameters: tool.parameters },
-      }))
+    // Anthropic 分支已在构造时处理（它的 tools 形态也不同，不能复用这段）。
+    if (!anthropic) {
+      if (options.maxTokens !== undefined && options.maxTokens > 0) body.max_tokens = options.maxTokens
+      if (options.tools !== undefined && options.tools.length > 0) {
+        body.tools = options.tools.map((tool) => ({
+          type: 'function',
+          function: { name: tool.name, description: tool.description, parameters: tool.parameters },
+        }))
+      }
+      if (options.temperature !== undefined) body.temperature = options.temperature
     }
-    if (options.temperature !== undefined) body.temperature = options.temperature
 
     let response: Response
     try {
-      response = await this.fetchImpl(`${this.product.apiBase}${COMMANDCODE_CHAT_PATH}`, {
+      response = await this.fetchImpl(`${this.product.apiBase}${anthropic ? COMMANDCODE_MESSAGES_PATH : COMMANDCODE_CHAT_PATH}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -263,6 +300,18 @@ export class CommandCodeAdapter extends LlmAdapter {
       )
     }
 
+    // 两种端点的事件格式不同：OpenAI 兼容是 `data: {...}` 的 choices 增量，
+    // Anthropic 是 `event: content_block_delta` 等命名事件。解析器不能混用。
+    if (anthropic) {
+      if (response.body === null) throw new LlmError('commandcode: 上游未返回响应流', 'EMPTY_RESPONSE')
+      yield* consumeAnthropicSse(response.body, {
+        label: 'commandcode',
+        model: options.model,
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        idleTimeoutMs: CHUNK_TIMEOUT_MS,
+      })
+      return
+    }
     yield* consumeOpenAiSse(response, { signal: options.signal }, {
       label: 'commandcode',
       firstTokenTimeoutMs: FIRST_TOKEN_TIMEOUT_MS,
