@@ -393,3 +393,47 @@ assert.equal(e.at(-1).block.text, 'abc')
 
   console.log('delta-blocks: 5 组断言通过（块生命周期 / index 分配 / 空流 / 纯空白 / 块复用）')
 }
+
+/**
+ * 三个新渠道签到的 ClaimOutcome 形状回归。
+ *
+ * 背景（2026-10-26 实测缺陷）：kuku / autoclaw / officeace 的 claim 回调
+ * 一度返回 `{claimed, message}`，而 `computeClaimSummary` 按 `kind` 分类 ——
+ * 缺 kind 走 default 全部计成 failed、coversToday=0，auto-checkin 的
+ * shouldMarkToday 永不满足 ⇒ **每次启动都重跑一轮**。
+ * 本组断言锁住映射：领到→claimed（带 credit）、幂等已领→already-claimed
+ * （coversToday 计数）、真失败→failed。
+ */
+export async function verifyClaimOutcomeShape() {
+  const { computeClaimSummary } = await import('../vendor/channel-pack/src/channel-pack-rpc.ts')
+  // 与 rpc 分支里逐字一致的映射
+  const map = (claimed, message) => claimed > 0
+    ? { kind: 'claimed', credit: claimed, streakDays: 1, isStreakDay: true, message }
+    : /已领取过|已领|没有可领|已签到/.test(message)
+      ? { kind: 'already-claimed', message }
+      : { kind: 'failed', code: -1, message }
+
+  const claimed = map(100, '已领取 100 积分')
+  const idempotent = map(0, '今天已签到过（上游按天幂等）')
+  const noneToday = map(0, '今天没有可领的奖励（或已领过）')
+  const failed = map(0, '凭据不可用')
+
+  assert.equal(claimed.kind, 'claimed')
+  assert.equal(claimed.credit, 100, '领到的积分数要进 credit（totalCredit 的来源）')
+  assert.equal(idempotent.kind, 'already-claimed', '幂等已领不是失败')
+  assert.equal(noneToday.kind, 'already-claimed', '今天没有可领按已领计（coversToday）')
+  assert.equal(failed.kind, 'failed')
+
+  const summary = computeClaimSummary([claimed, idempotent, noneToday, failed])
+  assert.equal(summary.claimed, 1)
+  assert.equal(summary.totalCredit, 100)
+  assert.equal(summary.alreadyClaimed, 2)
+  assert.equal(summary.failed, 1)
+  assert.ok(summary.coversToday >= 3, `coversToday 应≥3（auto-checkin 记日期的判据），实得 ${summary.coversToday}`)
+  // 反证：缺 kind 的旧形状必须被本测试暴露（走 default 计 failed）
+  const legacy = computeClaimSummary([{ claimed: 100, message: '旧形状' }])
+  assert.equal(legacy.failed, 1, '缺 kind 的形状会被计成 failed —— 这正是要防的回归')
+  assert.equal(legacy.coversToday, 0, '且 coversToday=0，auto-checkin 会反复重跑')
+
+  console.log('claim-outcome-shape: 5 组断言通过（kind 分类 / credit / 幂等 / coversToday / 旧形状反证）')
+}

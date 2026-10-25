@@ -3049,7 +3049,15 @@ function registerChannelPackEndpoints(
                 fetcher: codeartsFetcher,
                 credential,
               })
-              return { claimed: outcome.claimed, message: outcome.message }
+              // ⚠️ 必须返回 ClaimOutcome（带 kind），不是 {claimed,message}：
+              // computeClaimSummary 按 kind 分类，缺 kind 会走 default 计成
+              // failed 且 coversToday=0 —— auto-checkin 的 shouldMarkToday
+              // 因此永不满足，每次启动都重跑一轮（2026-10-26 实测发现）。
+              return outcome.claimed > 0
+                ? { kind: 'claimed', credit: outcome.claimed, streakDays: 1, isStreakDay: true, message: outcome.message }
+                : /已签到|已领/.test(outcome.message)
+                  ? { kind: 'already-claimed', message: outcome.message }
+                  : { kind: 'failed', code: -1, message: outcome.message }
             },
             precheckStatus: false,
             warn: (msg) => ctx.logger?.warn?.(msg),
@@ -3069,7 +3077,12 @@ function registerChannelPackEndpoints(
             resolve: (ref) => ctx.credentials.resolve(ref),
             claim: async (credential) => {
               const outcome = await claimBonus(codeartsFetcher, OFFICEACE, credential)
-              return { claimed: outcome.gained ?? 0, message: outcome.message }
+              // 同 autoclaw：返回 ClaimOutcome（computeClaimSummary 按 kind 分类）。
+              return (outcome.gained ?? 0) > 0
+                ? { kind: 'claimed', credit: outcome.gained ?? 0, streakDays: 1, isStreakDay: true, message: outcome.message }
+                : /已领|没有可领/.test(outcome.message)
+                  ? { kind: 'already-claimed', message: outcome.message }
+                  : { kind: 'failed', code: -1, message: outcome.message }
             },
             precheckStatus: false,
             warn: (msg) => ctx.logger?.warn?.(msg),
@@ -3089,7 +3102,13 @@ function registerChannelPackEndpoints(
             resolve: (ref) => ctx.credentials.resolve(ref),
             claim: async (credential) => {
               const outcome = await claimKukuDailyCheckin(codeartsFetcher, KUKU_PRODUCT, credential)
-              return { claimed: outcome.claimed, message: outcome.message }
+              // 同上：返回 ClaimOutcome。kuku 的幂等口径（taskComplete 重复领
+              // 返回 SUCCESS + reward 0）对应 already-claimed。
+              return outcome.claimed > 0
+                ? { kind: 'claimed', credit: outcome.claimed, streakDays: 1, isStreakDay: true, message: outcome.message }
+                : /已领取过|已领/.test(outcome.message)
+                  ? { kind: 'already-claimed', message: outcome.message }
+                  : { kind: 'failed', code: -1, message: outcome.message }
             },
             precheckStatus: false,
             warn: (msg) => ctx.logger?.warn?.(msg),

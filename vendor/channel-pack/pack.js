@@ -66498,7 +66498,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
                 fetcher: codeartsFetcher,
                 credential
               });
-              return { claimed: outcome.claimed, message: outcome.message };
+              return outcome.claimed > 0 ? { kind: "claimed", credit: outcome.claimed, streakDays: 1, isStreakDay: true, message: outcome.message } : /已签到|已领/.test(outcome.message) ? { kind: "already-claimed", message: outcome.message } : { kind: "failed", code: -1, message: outcome.message };
             },
             precheckStatus: false,
             warn: (msg) => ctx.logger?.warn?.(msg)
@@ -66513,7 +66513,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             resolve: (ref) => ctx.credentials.resolve(ref),
             claim: async (credential) => {
               const outcome = await claimBonus2(codeartsFetcher, OFFICEACE2, credential);
-              return { claimed: outcome.gained ?? 0, message: outcome.message };
+              return (outcome.gained ?? 0) > 0 ? { kind: "claimed", credit: outcome.gained ?? 0, streakDays: 1, isStreakDay: true, message: outcome.message } : /已领|没有可领/.test(outcome.message) ? { kind: "already-claimed", message: outcome.message } : { kind: "failed", code: -1, message: outcome.message };
             },
             precheckStatus: false,
             warn: (msg) => ctx.logger?.warn?.(msg)
@@ -66528,7 +66528,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             resolve: (ref) => ctx.credentials.resolve(ref),
             claim: async (credential) => {
               const outcome = await claimKukuDailyCheckin2(codeartsFetcher, KUKU_PRODUCT, credential);
-              return { claimed: outcome.claimed, message: outcome.message };
+              return outcome.claimed > 0 ? { kind: "claimed", credit: outcome.claimed, streakDays: 1, isStreakDay: true, message: outcome.message } : /已领取过|已领/.test(outcome.message) ? { kind: "already-claimed", message: outcome.message } : { kind: "failed", code: -1, message: outcome.message };
             },
             precheckStatus: false,
             warn: (msg) => ctx.logger?.warn?.(msg)
