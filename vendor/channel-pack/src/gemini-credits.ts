@@ -458,7 +458,21 @@ function quotaRejectionHint(text: string): string {
             : undefined))
           .find((value): value is string => typeof value === 'string' && value !== '')
         const message = typeof record.message === 'string' ? record.message : ''
-        if (reason !== undefined) return `（${reason}）：${message.slice(0, 160)}`
+        if (reason !== undefined) {
+          // `UNSUPPORTED_LOCATION` 是**地区限制**，不是凭据问题也不是额度问题：
+          // Google 只允许在支持的国家/地区使用 Gemini Code Assist 个人版。
+          // 用户报障原话：「配额查询被拒（HTTP 403）（UNSUPPORTED_LOCATION）：
+          // Your current account is not eligible … not currently available in your location.」
+          // 光把原文抛出来，用户会以为是账号/登录坏了 —— 这里补一条**可操作**的指引：
+          // 渠道包的请求走 `network.fetch`，而它接的就是本插件的「出口代理」
+          // （`pack.apply(..., { outlet })`），所以开出口即可换到支持的地区。
+          const locationHint = reason === 'UNSUPPORTED_LOCATION'
+            ? '。这是 Google 的地区限制（Gemini Code Assist 个人版在你所在地区不可用），'
+              + '不是凭据或额度问题；可在本插件设置页开启「出口代理」，'
+              + '让请求从 Gemini 支持的地区发出后重试'
+            : ''
+          return `（${reason}）：${message.slice(0, 160)}${locationHint}`
+        }
         if (message !== '') return `：${message.slice(0, 160)}`
       }
     }

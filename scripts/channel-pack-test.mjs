@@ -335,6 +335,10 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
     const { verifyAccountPoolCache } = await import('./account-pool-cache-test.mjs')
     await verifyAccountPoolCache()
   }
+  {
+    const { verifyGeminiLocationHint } = await import('./gemini-location-hint-test.mjs')
+    await verifyGeminiLocationHint()
+  }
   const { verifyChannelPrFixes } = await import('./channel-pr-fixes-test.mjs')
   await verifyChannelPrFixes()
   const { verifyTencentFingerprint } = await import('./tencent-fingerprint-test.mjs')
