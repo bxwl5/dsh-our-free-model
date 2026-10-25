@@ -111,6 +111,15 @@ export const KUKU_SENDMSG_PATH = '/wenchain/genflowpro/sendmsg'
 export const KUKU_SSE_PATH = '/wenchain/genflowpro/sse/getchatcontent'
 /** 免费积分首页（额度）。 */
 export const KUKU_FREEPOINT_PATH = '/api/genflowpro/freepoint/homenew'
+
+/**
+ * 领取免费积分任务（挂 `apiBase`，POST 表单 `task_type=LOGIN|CHAT`）。
+ *
+ * 上游 `providers/kuku/checkin.rs`：`taskComplete` 是**幂等**的 —— 重复领
+ * 返回 `SUCCESS` + `reward_point=0`（或 `BADGE_ALREADY_RECEIVED`），
+ * 因此「已领过」不算失败。
+ */
+export const KUKU_TASK_COMPLETE_PATH = '/api/genflowpro/freepoint/taskComplete'
 /** VIP 剩余额度。 */
 export const KUKU_VIP_REMAIN_PATH = '/bizapi/gfpro/getgfvipremain'
 

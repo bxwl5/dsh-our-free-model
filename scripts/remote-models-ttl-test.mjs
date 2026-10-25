@@ -87,3 +87,73 @@ try {
 
 import { exitIfDirectRun } from './lib/direct-run.mjs'
 exitIfDirectRun(import.meta.url, 'remote-models-ttl-test')
+
+/**
+ * KukuAI 积分与签到解析回归。
+ *
+ * 上游形态按 `aimod-cc/Agent2API` 的 `providers/kuku/{balance,checkin}.rs`：
+ * - 余额：`data.list[assetName=="token"].totalPoint`（**字符串**）
+ * - 判据在**顶层** `status.code`（不是 `data.status.code`）
+ * - 签到：`taskComplete` 幂等，`SUCCESS` + reward 0 表示「已领过」
+ */
+export async function verifyKukuCredits() {
+  const http = await import('node:http')
+  const { fetchKukuPoints, claimKukuDailyCheckin } = await import('../vendor/channel-pack/src/kuku-auth.ts')
+  const { KUKU } = await import('../vendor/channel-pack/src/kuku-product.ts')
+  const { fetch: realFetch } = await import('undici')
+
+  let balanceBody = {
+    status: { code: 0, msg: 'success' },
+    data: { uname: 'u', list: [
+      { assetType: 1, assetName: 'token', totalPoint: '1100' },
+      { assetType: 2, assetName: 'duration', totalPoint: '9' },
+    ] },
+  }
+  let claimReward = 50
+  let claimStatus = 'SUCCESS'
+
+  const upstream = http.createServer((req, res) => {
+    const send = (body) => res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' }).end(JSON.stringify(body))
+    if (req.url.startsWith('/bizapi/gfpro/getgfvipremain')) { send(balanceBody); return }
+    if (req.url.startsWith('/api/genflowpro/freepoint/taskComplete')) {
+      req.resume()
+      req.on('end', () => send({ errno: 0, data: { complete_status: claimStatus, reward_point: claimReward } }))
+      return
+    }
+    res.writeHead(404, { Connection: 'close' }).end('{}')
+  })
+  await new Promise(r => upstream.listen(0, '127.0.0.1', r))
+  const product = { ...KUKU, apiBase: `http://127.0.0.1:${upstream.address().port}` }
+  const credential = { access_token: 'BDUSS=abcdefghijklmnopqrstuvwxyz0123456789' }
+
+  try {
+    // ── 1. 余额取 assetName==token 的 totalPoint（字符串转数字）──
+    assert.equal(await fetchKukuPoints(realFetch, product, credential), 1100, '取 token 项而不是第一项')
+
+    // ── 2. 判据在顶层 status.code ──
+    balanceBody = { status: { code: 5, msg: 'boom' }, data: { list: [{ assetName: 'token', totalPoint: '999' }] } }
+    assert.equal(await fetchKukuPoints(realFetch, product, credential), undefined, '业务码非 0 时返回 undefined（不是 0）')
+
+    // ── 3. 结构不认识也返回 undefined，绝不显示成 0 ──
+    balanceBody = { status: { code: 0 }, data: { other: [] } }
+    assert.equal(await fetchKukuPoints(realFetch, product, credential), undefined, '没有 list 时 undefined')
+
+    // ── 4. 签到：正常领到积分 ──
+    balanceBody = { status: { code: 0 }, data: { list: [] } }
+    claimReward = 50
+    claimStatus = 'SUCCESS'
+    const first = await claimKukuDailyCheckin(realFetch, product, credential)
+    assert.equal(first.claimed, 100, 'LOGIN + CHAT 各 50，合计 100')
+
+    // ── 5. 幂等：已领过返回 0 且说明原因，不算失败 ──
+    claimReward = 0
+    claimStatus = 'BADGE_ALREADY_RECEIVED'
+    const second = await claimKukuDailyCheckin(realFetch, product, credential)
+    assert.equal(second.claimed, 0, '重复领返回 0')
+    assert.match(second.message, /已领取/, '要说明「已领过」而不是失败')
+
+    console.log('kuku-credits: 5 组断言通过（余额取 token 项 / 业务码 / 结构容错 / 签到 / 幂等）')
+  } finally {
+    upstream.close()
+  }
+}

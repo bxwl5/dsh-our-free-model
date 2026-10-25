@@ -3032,6 +3032,26 @@ function registerChannelPackEndpoints(
       case 'credits.claimAll': {
         const req = payload as RpcCreditsClaimAllRequest
         const accounts = await pool.listAccounts(req.provider)
+        if (req.provider === KUKU.id) {
+          // KukuAI 的签到是「免费领积分」活动的任务领取（`freepoint/homenew`
+          // 面板 + `taskComplete` 的 LOGIN/CHAT）。上游**幂等**：重复领返回
+          // `SUCCESS` + `reward_point=0`，故「已领过」不算失败。
+          // 领取流程自带面板查询，故 precheckStatus: false 跳过外部状态检查
+          // （与 Qoder / LobsterAI 同因：避免重复发一次 GET）。
+          const { claimKukuDailyCheckin } = await import('./kuku-auth.js')
+          const { KUKU: KUKU_PRODUCT } = await import('./kuku-product.js')
+          const value = await collectClaimResults<KukuCredential, typeof KUKU_PRODUCT>(accounts, KUKU_PRODUCT, {
+            fetcher: codeartsFetcher,
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            claim: async (credential) => {
+              const outcome = await claimKukuDailyCheckin(codeartsFetcher, KUKU_PRODUCT, credential)
+              return { claimed: outcome.claimed, message: outcome.message }
+            },
+            precheckStatus: false,
+            warn: (msg) => ctx.logger?.warn?.(msg),
+          })
+          return { ok: true, value: value satisfies RpcCreditsClaimAllResponse }
+        }
         if (isQoderFamily(req.provider)) {
           const { product } = requireQoderFamily(req.provider)
           // Qoder 的领取流程**自带活动列表查询**（loadCampaigns → 逐个 claim），
@@ -3529,6 +3549,27 @@ function registerChannelPackEndpoints(
                 }],
                 expiredTotal: 0,
               }
+            },
+            warn: (msg) => ctx.logger?.warn?.(msg),
+          })
+          return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
+        }
+        if (req.provider === KUKU.id) {
+          // KukuAI 是**积分制**：`GET /bizapi/gfpro/getgfivpremain` 的
+          // `data.list[assetName=="token"].totalPoint`（详见 kuku-auth.ts 的
+          // `fetchKukuPoints`）。上游另有每日签到（`freepoint/homenew` +
+          // `taskComplete` 的 LOGIN/CHAT），见下方 `credits.claimAll` 分支。
+          const { fetchKukuPoints } = await import('./kuku-auth.js')
+          const { KUKU: KUKU_PRODUCT } = await import('./kuku-product.js')
+          const values = await collectCreditBalances<KukuCredential, typeof KUKU_PRODUCT>(accounts, KUKU_PRODUCT, {
+            fetcher: codeartsFetcher,
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalanceDetailed: async (credential) => {
+              const points = await fetchKukuPoints(codeartsFetcher, KUKU_PRODUCT, credential)
+              // 拿不到就说清楚，不显示成 0（0 会被误读为「积分用光」）。
+              return points === undefined
+                ? { balance: null, error: '未返回积分数据（上游业务码非 0 或结构不认识）' }
+                : { balance: { total: points, packages: [] } }
             },
             warn: (msg) => ctx.logger?.warn?.(msg),
           })

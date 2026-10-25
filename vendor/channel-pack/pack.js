@@ -28278,6 +28278,445 @@ var init_commandcode_auth = __esm({
   }
 });
 
+// vendor/channel-pack/src/kuku-product.ts
+var kuku_product_exports = {};
+__export(kuku_product_exports, {
+  KUKU: () => KUKU,
+  KUKU_CHANNEL: () => KUKU_CHANNEL,
+  KUKU_CLIENT_TYPE: () => KUKU_CLIENT_TYPE,
+  KUKU_FREEPOINT_PATH: () => KUKU_FREEPOINT_PATH2,
+  KUKU_MODEL_LIST_PATH: () => KUKU_MODEL_LIST_PATH,
+  KUKU_PROTOCOL_V: () => KUKU_PROTOCOL_V,
+  KUKU_SENDMSG_PATH: () => KUKU_SENDMSG_PATH,
+  KUKU_SESSION_COOKIE: () => KUKU_SESSION_COOKIE,
+  KUKU_SSE_PATH: () => KUKU_SSE_PATH,
+  KUKU_TASK_COMPLETE_PATH: () => KUKU_TASK_COMPLETE_PATH,
+  KUKU_VERSION: () => KUKU_VERSION,
+  KUKU_VIP_REMAIN_PATH: () => KUKU_VIP_REMAIN_PATH,
+  KUKU_WEB_QUERY: () => KUKU_WEB_QUERY,
+  kukuProductById: () => kukuProductById
+});
+function kukuProductById(id) {
+  return id === KUKU.id ? KUKU : void 0;
+}
+var KUKU_FALLBACK_MODELS, KUKU, KUKU_CLIENT_TYPE, KUKU_VERSION, KUKU_CHANNEL, KUKU_PROTOCOL_V, KUKU_SENDMSG_PATH, KUKU_SSE_PATH, KUKU_FREEPOINT_PATH2, KUKU_TASK_COMPLETE_PATH, KUKU_VIP_REMAIN_PATH, KUKU_MODEL_LIST_PATH, KUKU_WEB_QUERY, KUKU_SESSION_COOKIE;
+var init_kuku_product = __esm({
+  "vendor/channel-pack/src/kuku-product.ts"() {
+    "use strict";
+    KUKU_FALLBACK_MODELS = [
+      { id: "auto", name: "Auto", contextWindow: 128e3 },
+      { id: "gateway-deepseek-v4.1-flash-tencent", name: "DeepSeek-V4.1-Flash", contextWindow: 128e3 },
+      { id: "gateway-deepseek-v4-pro-tencent", name: "DeepSeek-V4-Pro", contextWindow: 128e3 },
+      { id: "gateway-deepseek-v4-flash-tencent", name: "DeepSeek-V4-Flash", contextWindow: 128e3 },
+      { id: "gateway-glm-5.3-flash", name: "GLM-5.3-Flash", contextWindow: 128e3 },
+      { id: "glm-5.3", name: "GLM-5.3", contextWindow: 128e3 },
+      { id: "gateway-glm-5.2", name: "GLM-5.2", contextWindow: 128e3 },
+      { id: "gateway-glm-5.1-kuaishou", name: "GLM-5.1", contextWindow: 128e3 },
+      { id: "ernie-5.1", name: "ERNIE-5.1", contextWindow: 128e3 },
+      { id: "ms-kimi-k3", name: "Kimi-K3", contextWindow: 128e3 },
+      { id: "gateway-kimi-k2.7-code-tencent", name: "Kimi-K2.7-Code", contextWindow: 128e3 },
+      { id: "gateway-kimi-k2.6", name: "Kimi-K2.6", contextWindow: 128e3 },
+      { id: "ali-minimax/minimax-m3", name: "MiniMax-M3", contextWindow: 128e3 }
+    ];
+    KUKU = {
+      id: "kuku",
+      displayName: "KukuAI",
+      apiBase: "https://kuku.baidu.com",
+      defaultCredentialRef: "KUKU_SESSION_COOKIE",
+      fallbackModels: KUKU_FALLBACK_MODELS
+    };
+    KUKU_CLIENT_TYPE = "401";
+    KUKU_VERSION = "1.6.5.130";
+    KUKU_CHANNEL = "kuku_pc_genflowpro_v1";
+    KUKU_PROTOCOL_V = "cd1755270722192e4536f605";
+    KUKU_SENDMSG_PATH = "/wenchain/genflowpro/sendmsg";
+    KUKU_SSE_PATH = "/wenchain/genflowpro/sse/getchatcontent";
+    KUKU_FREEPOINT_PATH2 = "/api/genflowpro/freepoint/homenew";
+    KUKU_TASK_COMPLETE_PATH = "/api/genflowpro/freepoint/taskComplete";
+    KUKU_VIP_REMAIN_PATH = "/bizapi/gfpro/getgfvipremain";
+    KUKU_MODEL_LIST_PATH = "/wenchain/genflowpro/model/list";
+    KUKU_WEB_QUERY = "clienttype=400&app_id=123971023&web=1&channel=chunlei&version=1.4.4";
+    KUKU_SESSION_COOKIE = "BDUSS";
+  }
+});
+
+// vendor/channel-pack/src/kuku.ts
+function stringValue5(value) {
+  return typeof value === "string" && value !== "" ? value : void 0;
+}
+function isRecord6(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function stripSetCookieAttributes3(text) {
+  const parts = text.split(";");
+  let end = parts.length;
+  while (end > 1) {
+    const name2 = parts[end - 1].trim().split("=")[0].trim();
+    if (SET_COOKIE_ATTRIBUTE3.test(name2)) end -= 1;
+    else break;
+  }
+  return parts.slice(0, end).join(";").trim();
+}
+function normalizeCookie3(raw) {
+  let text = raw.replace(/[\r\n]+/g, " ").trim();
+  text = text.replace(/^cookie\s*:\s*/i, "").replace(/^bearer\s+/i, "");
+  text = text.replace(/^"([^"]*)"$/, "$1").trim();
+  text = stripSetCookieAttributes3(text);
+  if (text === "") return void 0;
+  if (text.length > COOKIE_MAX3) return void 0;
+  if (!/^[\x20-\x7E]+$/.test(text)) return void 0;
+  const prefix = `${KUKU_SESSION_COOKIE}=`;
+  const hit = text.split(";").find((part) => part.trim().startsWith(prefix));
+  if (hit === void 0) return void 0;
+  const value = hit.trim().slice(prefix.length).trim();
+  if (value.length < SESSION_VALUE_MIN3 || value.length > SESSION_VALUE_MAX3) return void 0;
+  if (!/^[\x21-\x7E]+$/.test(value)) return void 0;
+  return text;
+}
+function isCredentialUsable4(credential) {
+  if (credential === void 0) return false;
+  const cookie = credential.access_token;
+  return typeof cookie === "string" && cookie !== "" && cookie.includes(`${KUKU_SESSION_COOKIE}=`);
+}
+function kukuHeaders(product, credential) {
+  return {
+    Accept: "application/json",
+    Referer: `${product.apiBase}/`,
+    Origin: product.apiBase,
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    Cookie: credential.access_token
+  };
+}
+function buildSendmsgBody(options) {
+  const textBlock = { id: "textId", version: "1.0", type: "text", text: options.text, data: { content: options.text } };
+  return {
+    type: "message",
+    sub_type: "chat_create",
+    client_session_id: options.clientSessionId,
+    session_id: options.sessionId,
+    reply_id: options.replyId,
+    uk: "",
+    cid: 0,
+    channel: KUKU_CHANNEL,
+    device_type: Number(KUKU_CLIENT_TYPE),
+    created_at: Date.now(),
+    msg_type: 1,
+    sync_type: 0,
+    sync_id: "",
+    v: KUKU_PROTOCOL_V,
+    data: {
+      project_type: 1,
+      text: options.text,
+      rich_input_params: [textBlock],
+      fsid: [],
+      quotes: [],
+      skills: [],
+      experts: [],
+      model_name: options.model,
+      model_display_name: options.model,
+      think_mode: options.thinkMode ?? 0,
+      show_text: "",
+      device_id: options.deviceId,
+      premake_data: {},
+      custom_instructions: "",
+      memory_sign: false,
+      skill_dig_sign: false,
+      // ⚠️ 必须是字符串化 JSON，不是嵌套对象。
+      client_added: JSON.stringify({
+        client_session_id: options.clientSessionId,
+        permission_type: 0,
+        clienttype: KUKU_CLIENT_TYPE,
+        version: KUKU_VERSION,
+        device_os: "windows"
+      })
+    }
+  };
+}
+function parseSseFrame(data) {
+  const trimmed = data.trim();
+  if (trimmed === "") return void 0;
+  if (trimmed === "[DONE]") return { kind: "done" };
+  let parsed;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return void 0;
+  }
+  if (!isRecord6(parsed)) return void 0;
+  const code = parsed.errno ?? parsed.code;
+  if (typeof code === "number" && code !== 0) {
+    return { kind: "error", message: stringValue5(parsed.errmsg) ?? stringValue5(parsed.msg) ?? `errno=${code}` };
+  }
+  const dataObj = isRecord6(parsed.data) ? parsed.data : void 0;
+  const text = stringValue5(parsed.content) ?? stringValue5(parsed.text) ?? (dataObj === void 0 ? void 0 : stringValue5(dataObj.content));
+  const reasoning = stringValue5(parsed.reasoning_content) ?? stringValue5(parsed.reasoningContent);
+  if (reasoning !== void 0) return { kind: "delta", reasoning };
+  if (text !== void 0) return { kind: "delta", text };
+  return void 0;
+}
+function flattenMessages3(messages, system) {
+  const parts = [];
+  if (system !== void 0 && system.trim() !== "") parts.push(system.trim());
+  for (const message2 of messages) {
+    const text = contentToText9(message2.content);
+    if (text.trim() === "") continue;
+    parts.push(text.trim());
+  }
+  return parts.join("\n\n");
+}
+function contentToText9(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  const parts = [];
+  for (const block of content) {
+    if (typeof block === "string") {
+      parts.push(block);
+      continue;
+    }
+    if (!isRecord6(block)) continue;
+    const text = stringValue5(block.text);
+    if (text !== void 0) parts.push(text);
+  }
+  return parts.join("\n");
+}
+var SESSION_VALUE_MIN3, SESSION_VALUE_MAX3, COOKIE_MAX3, SET_COOKIE_ATTRIBUTE3;
+var init_kuku = __esm({
+  "vendor/channel-pack/src/kuku.ts"() {
+    "use strict";
+    init_kuku_product();
+    SESSION_VALUE_MIN3 = 20;
+    SESSION_VALUE_MAX3 = 4096;
+    COOKIE_MAX3 = 8192;
+    SET_COOKIE_ATTRIBUTE3 = /^(?:path|domain|expires|max-age|secure|httponly|samesite|priority|partitioned|comment)$/i;
+  }
+});
+
+// vendor/channel-pack/src/kuku-auth.ts
+var kuku_auth_exports = {};
+__export(kuku_auth_exports, {
+  KUKU_CLAIMABLE_TASK_TYPES: () => KUKU_CLAIMABLE_TASK_TYPES,
+  claimKukuDailyCheckin: () => claimKukuDailyCheckin,
+  fetchKukuCheckinTasks: () => fetchKukuCheckinTasks,
+  fetchKukuPoints: () => fetchKukuPoints,
+  probeCredential: () => probeCredential,
+  streamChat: () => streamChat3
+});
+import { randomUUID as randomUUID4 } from "node:crypto";
+function pickId(body, ...keys) {
+  if (typeof body !== "object" || body === null) return void 0;
+  const record = body;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value !== "") return value;
+  }
+  const data = record.data;
+  if (typeof data === "object" && data !== null) return pickId(data, ...keys);
+  return void 0;
+}
+async function* streamChat3(fetcher, product, credential, options) {
+  if (!isCredentialUsable4(credential)) {
+    throw new Error("KukuAI\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u7C98\u8D34\u542B BDUSS \u7684 Cookie");
+  }
+  const sessionId = randomUUID4();
+  const replyId = randomUUID4();
+  const clientSessionId = randomUUID4();
+  const deviceId = String(Date.now());
+  const sendResponse = await fetcher(`${product.apiBase}${KUKU_SENDMSG_PATH}`, {
+    method: "POST",
+    headers: { ...kukuHeaders(product, credential), "Content-Type": "application/json" },
+    body: JSON.stringify(buildSendmsgBody({
+      text: flattenMessages3(options.messages, options.system),
+      model: options.model,
+      sessionId,
+      replyId,
+      clientSessionId,
+      deviceId,
+      ...options.thinkMode === void 0 ? {} : { thinkMode: options.thinkMode }
+    })),
+    ...options.signal === void 0 ? {} : { signal: options.signal }
+  });
+  if (!sendResponse.ok) {
+    const text = await sendResponse.text().catch(() => "");
+    throw new Error(`KukuAI\uFF1A\u5EFA\u6D88\u606F\u8FD4\u56DE HTTP ${sendResponse.status}${text === "" ? "" : `\uFF1A${text.slice(0, 200)}`}`);
+  }
+  const sendBody = await sendResponse.json().catch(() => void 0);
+  const actualSession = pickId(sendBody, "session_id", "sessionId") ?? sessionId;
+  const actualReply = pickId(sendBody, "reply_id", "replyId") ?? replyId;
+  const query = new URLSearchParams({
+    session_id: actualSession,
+    reply_id: actualReply,
+    client_session_id: clientSessionId,
+    device_id: deviceId
+  }).toString();
+  const sseResponse = await fetcher(`${product.apiBase}${KUKU_SSE_PATH}?${query}`, {
+    method: "POST",
+    headers: {
+      ...kukuHeaders(product, credential),
+      "Content-Type": "application/json",
+      Accept: "text/event-stream"
+    },
+    body: JSON.stringify({ session_id: actualSession, reply_id: actualReply, msg_id: "" }),
+    ...options.signal === void 0 ? {} : { signal: options.signal }
+  });
+  if (!sseResponse.ok) {
+    const text = await sseResponse.text().catch(() => "");
+    throw new Error(`KukuAI\uFF1A\u6D41\u5F0F\u63A5\u53E3\u8FD4\u56DE HTTP ${sseResponse.status}${text === "" ? "" : `\uFF1A${text.slice(0, 200)}`}`);
+  }
+  if (sseResponse.body === null) throw new Error("KukuAI\uFF1A\u6D41\u5F0F\u54CD\u5E94\u6CA1\u6709\u6B63\u6587");
+  const reader = sseResponse.body.getReader();
+  const decoder2 = new TextDecoder();
+  let buffer = "";
+  try {
+    for (; ; ) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder2.decode(value, { stream: true });
+      let newline = buffer.indexOf("\n");
+      while (newline !== -1) {
+        const line2 = buffer.slice(0, newline).replace(/\r$/, "");
+        buffer = buffer.slice(newline + 1);
+        newline = buffer.indexOf("\n");
+        if (!line2.startsWith("data:")) continue;
+        const frame = parseSseFrame(line2.slice(5));
+        if (frame === void 0) continue;
+        if (frame.kind === "done") return;
+        if (frame.kind === "error") throw new Error(`KukuAI \u4E0A\u6E38\u9519\u8BEF\uFF1A${frame.message}`);
+        yield frame;
+      }
+    }
+  } finally {
+    void reader.cancel().catch(() => void 0);
+  }
+}
+async function probeCredential(fetcher, product, credential, signal) {
+  if (!isCredentialUsable4(credential)) return "expired";
+  try {
+    const response = await fetcher(`${product.apiBase}${KUKU_VIP_REMAIN_PATH}`, {
+      method: "GET",
+      headers: kukuHeaders(product, credential),
+      ...signal === void 0 ? {} : { signal }
+    });
+    void response.body?.cancel().catch(() => void 0);
+    if (response.status === 401 || response.status === 403) return "expired";
+    return response.ok ? "valid" : "network_error";
+  } catch {
+    return "network_error";
+  }
+}
+async function fetchKukuPoints(fetcher, product, credential, signal) {
+  if (!isCredentialUsable4(credential)) return void 0;
+  try {
+    const query = new URLSearchParams({ channel: "chunlei", clienttype: "400", version: "1.4.4" });
+    const response = await fetcher(`${product.apiBase}${KUKU_VIP_REMAIN_PATH}?${query}`, {
+      method: "GET",
+      headers: kukuHeaders(product, credential),
+      ...signal === void 0 ? {} : { signal }
+    });
+    if (!response.ok) return void 0;
+    const body = await response.json().catch(() => void 0);
+    if (typeof body !== "object" || body === null) return void 0;
+    const record = body;
+    const status = record.status;
+    const code = typeof status === "object" && status !== null ? status.code : void 0;
+    if (typeof code === "number" && code !== 0) return void 0;
+    const data = record.data;
+    if (typeof data !== "object" || data === null) return void 0;
+    const list = data.list;
+    if (!Array.isArray(list)) return void 0;
+    const parse = (value) => {
+      if (typeof value === "number" && Number.isFinite(value)) return value;
+      if (typeof value === "string" && value.trim() !== "") {
+        const n = Number(value.trim());
+        return Number.isFinite(n) ? n : void 0;
+      }
+      return void 0;
+    };
+    const token = list.find((item) => {
+      if (typeof item !== "object" || item === null) return false;
+      return item.assetName === "token";
+    });
+    const fromToken = token === void 0 ? void 0 : parse(token.totalPoint);
+    if (fromToken !== void 0) return fromToken;
+    const first = list[0];
+    return first === void 0 || typeof first !== "object" || first === null ? void 0 : parse(first.totalPoint);
+  } catch {
+    return void 0;
+  }
+}
+async function fetchKukuCheckinTasks(fetcher, product, credential, signal) {
+  if (!isCredentialUsable4(credential)) return [];
+  try {
+    const response = await fetcher(`${product.apiBase}${KUKU_FREEPOINT_PATH}?${KUKU_WEB_QUERY}`, {
+      method: "GET",
+      headers: kukuHeaders(product, credential),
+      ...signal === void 0 ? {} : { signal }
+    });
+    if (!response.ok) return [];
+    const body = await response.json().catch(() => void 0);
+    if (typeof body !== "object" || body === null) return [];
+    const tasks = [];
+    const walk = (node) => {
+      if (Array.isArray(node)) {
+        for (const item of node) walk(item);
+        return;
+      }
+      if (typeof node !== "object" || node === null) return;
+      const record = node;
+      const taskType = typeof record.task_type === "string" ? record.task_type : void 0;
+      if (taskType !== void 0) {
+        tasks.push({
+          taskType,
+          taskName: typeof record.task_name === "string" ? record.task_name : taskType,
+          status: typeof record.task_status === "string" ? record.task_status : ""
+        });
+        return;
+      }
+      for (const child of Object.values(record)) walk(child);
+    };
+    walk(body.data);
+    return tasks;
+  } catch {
+    return [];
+  }
+}
+async function claimKukuDailyCheckin(fetcher, product, credential, signal) {
+  if (!isCredentialUsable4(credential)) return { claimed: 0, message: "\u51ED\u636E\u4E0D\u53EF\u7528" };
+  let total = 0;
+  let succeeded = 0;
+  for (const taskType of KUKU_CLAIMABLE_TASK_TYPES) {
+    try {
+      const response = await fetcher(`${product.apiBase}${KUKU_TASK_COMPLETE_PATH}?${KUKU_WEB_QUERY}`, {
+        method: "POST",
+        headers: { ...kukuHeaders(product, credential), "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ task_type: taskType }).toString(),
+        ...signal === void 0 ? {} : { signal }
+      });
+      if (!response.ok) continue;
+      const body = await response.json().catch(() => void 0);
+      if (typeof body !== "object" || body === null) continue;
+      const data = body.data;
+      if (typeof data !== "object" || data === null) continue;
+      const record = data;
+      const status = typeof record.complete_status === "string" ? record.complete_status : "";
+      const reward = typeof record.reward_point === "number" ? record.reward_point : Number(record.reward_point ?? 0);
+      if (Number.isFinite(reward) && reward > 0) total += reward;
+      if (status === "SUCCESS" || status === "BADGE_ALREADY_RECEIVED" || reward >= 0) succeeded += 1;
+    } catch {
+    }
+  }
+  if (succeeded === 0) return { claimed: 0, message: "\u4E0A\u6E38\u672A\u8FD4\u56DE\u53EF\u9886\u53D6\u7ED3\u679C\uFF08\u53EF\u80FD\u4ECA\u65E5\u65E0\u53EF\u9886\u4EFB\u52A1\uFF09" };
+  return total > 0 ? { claimed: total, message: `\u5DF2\u9886\u53D6 ${total} \u79EF\u5206` } : { claimed: 0, message: "\u4ECA\u65E5\u5DF2\u9886\u53D6\u8FC7\uFF08\u4EFB\u52A1\u5E42\u7B49\uFF09" };
+}
+var KUKU_CLAIMABLE_TASK_TYPES;
+var init_kuku_auth = __esm({
+  "vendor/channel-pack/src/kuku-auth.ts"() {
+    "use strict";
+    init_kuku_product();
+    init_kuku();
+    KUKU_CLAIMABLE_TASK_TYPES = ["LOGIN", "CHAT"];
+  }
+});
+
 // vendor/channel-pack/src/accio-product.ts
 var accio_product_exports = {};
 __export(accio_product_exports, {
@@ -45446,275 +45885,10 @@ function registerOrcaTermLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/kuku-adapter.ts
+init_kuku_product();
+init_kuku();
+init_kuku_auth();
 import { LlmAdapter as LlmAdapter9, LlmError as LlmError13 } from "@deepseek-ai/dsh-llm";
-
-// vendor/channel-pack/src/kuku-product.ts
-var KUKU_FALLBACK_MODELS = [
-  { id: "auto", name: "Auto", contextWindow: 128e3 },
-  { id: "gateway-deepseek-v4.1-flash-tencent", name: "DeepSeek-V4.1-Flash", contextWindow: 128e3 },
-  { id: "gateway-deepseek-v4-pro-tencent", name: "DeepSeek-V4-Pro", contextWindow: 128e3 },
-  { id: "gateway-deepseek-v4-flash-tencent", name: "DeepSeek-V4-Flash", contextWindow: 128e3 },
-  { id: "gateway-glm-5.3-flash", name: "GLM-5.3-Flash", contextWindow: 128e3 },
-  { id: "glm-5.3", name: "GLM-5.3", contextWindow: 128e3 },
-  { id: "gateway-glm-5.2", name: "GLM-5.2", contextWindow: 128e3 },
-  { id: "gateway-glm-5.1-kuaishou", name: "GLM-5.1", contextWindow: 128e3 },
-  { id: "ernie-5.1", name: "ERNIE-5.1", contextWindow: 128e3 },
-  { id: "ms-kimi-k3", name: "Kimi-K3", contextWindow: 128e3 },
-  { id: "gateway-kimi-k2.7-code-tencent", name: "Kimi-K2.7-Code", contextWindow: 128e3 },
-  { id: "gateway-kimi-k2.6", name: "Kimi-K2.6", contextWindow: 128e3 },
-  { id: "ali-minimax/minimax-m3", name: "MiniMax-M3", contextWindow: 128e3 }
-];
-var KUKU = {
-  id: "kuku",
-  displayName: "KukuAI",
-  apiBase: "https://kuku.baidu.com",
-  defaultCredentialRef: "KUKU_SESSION_COOKIE",
-  fallbackModels: KUKU_FALLBACK_MODELS
-};
-var KUKU_CLIENT_TYPE = "401";
-var KUKU_VERSION = "1.6.5.130";
-var KUKU_CHANNEL = "kuku_pc_genflowpro_v1";
-var KUKU_PROTOCOL_V = "cd1755270722192e4536f605";
-var KUKU_SENDMSG_PATH = "/wenchain/genflowpro/sendmsg";
-var KUKU_SSE_PATH = "/wenchain/genflowpro/sse/getchatcontent";
-var KUKU_MODEL_LIST_PATH = "/wenchain/genflowpro/model/list";
-var KUKU_WEB_QUERY = "clienttype=400&app_id=123971023&web=1&channel=chunlei&version=1.4.4";
-var KUKU_SESSION_COOKIE = "BDUSS";
-
-// vendor/channel-pack/src/kuku.ts
-function stringValue5(value) {
-  return typeof value === "string" && value !== "" ? value : void 0;
-}
-function isRecord6(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-var SESSION_VALUE_MIN3 = 20;
-var SESSION_VALUE_MAX3 = 4096;
-var COOKIE_MAX3 = 8192;
-var SET_COOKIE_ATTRIBUTE3 = /^(?:path|domain|expires|max-age|secure|httponly|samesite|priority|partitioned|comment)$/i;
-function stripSetCookieAttributes3(text) {
-  const parts = text.split(";");
-  let end = parts.length;
-  while (end > 1) {
-    const name2 = parts[end - 1].trim().split("=")[0].trim();
-    if (SET_COOKIE_ATTRIBUTE3.test(name2)) end -= 1;
-    else break;
-  }
-  return parts.slice(0, end).join(";").trim();
-}
-function normalizeCookie3(raw) {
-  let text = raw.replace(/[\r\n]+/g, " ").trim();
-  text = text.replace(/^cookie\s*:\s*/i, "").replace(/^bearer\s+/i, "");
-  text = text.replace(/^"([^"]*)"$/, "$1").trim();
-  text = stripSetCookieAttributes3(text);
-  if (text === "") return void 0;
-  if (text.length > COOKIE_MAX3) return void 0;
-  if (!/^[\x20-\x7E]+$/.test(text)) return void 0;
-  const prefix = `${KUKU_SESSION_COOKIE}=`;
-  const hit = text.split(";").find((part) => part.trim().startsWith(prefix));
-  if (hit === void 0) return void 0;
-  const value = hit.trim().slice(prefix.length).trim();
-  if (value.length < SESSION_VALUE_MIN3 || value.length > SESSION_VALUE_MAX3) return void 0;
-  if (!/^[\x21-\x7E]+$/.test(value)) return void 0;
-  return text;
-}
-function isCredentialUsable4(credential) {
-  if (credential === void 0) return false;
-  const cookie = credential.access_token;
-  return typeof cookie === "string" && cookie !== "" && cookie.includes(`${KUKU_SESSION_COOKIE}=`);
-}
-function kukuHeaders(product, credential) {
-  return {
-    Accept: "application/json",
-    Referer: `${product.apiBase}/`,
-    Origin: product.apiBase,
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    Cookie: credential.access_token
-  };
-}
-function buildSendmsgBody(options) {
-  const textBlock = { id: "textId", version: "1.0", type: "text", text: options.text, data: { content: options.text } };
-  return {
-    type: "message",
-    sub_type: "chat_create",
-    client_session_id: options.clientSessionId,
-    session_id: options.sessionId,
-    reply_id: options.replyId,
-    uk: "",
-    cid: 0,
-    channel: KUKU_CHANNEL,
-    device_type: Number(KUKU_CLIENT_TYPE),
-    created_at: Date.now(),
-    msg_type: 1,
-    sync_type: 0,
-    sync_id: "",
-    v: KUKU_PROTOCOL_V,
-    data: {
-      project_type: 1,
-      text: options.text,
-      rich_input_params: [textBlock],
-      fsid: [],
-      quotes: [],
-      skills: [],
-      experts: [],
-      model_name: options.model,
-      model_display_name: options.model,
-      think_mode: options.thinkMode ?? 0,
-      show_text: "",
-      device_id: options.deviceId,
-      premake_data: {},
-      custom_instructions: "",
-      memory_sign: false,
-      skill_dig_sign: false,
-      // ⚠️ 必须是字符串化 JSON，不是嵌套对象。
-      client_added: JSON.stringify({
-        client_session_id: options.clientSessionId,
-        permission_type: 0,
-        clienttype: KUKU_CLIENT_TYPE,
-        version: KUKU_VERSION,
-        device_os: "windows"
-      })
-    }
-  };
-}
-function parseSseFrame(data) {
-  const trimmed = data.trim();
-  if (trimmed === "") return void 0;
-  if (trimmed === "[DONE]") return { kind: "done" };
-  let parsed;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    return void 0;
-  }
-  if (!isRecord6(parsed)) return void 0;
-  const code = parsed.errno ?? parsed.code;
-  if (typeof code === "number" && code !== 0) {
-    return { kind: "error", message: stringValue5(parsed.errmsg) ?? stringValue5(parsed.msg) ?? `errno=${code}` };
-  }
-  const dataObj = isRecord6(parsed.data) ? parsed.data : void 0;
-  const text = stringValue5(parsed.content) ?? stringValue5(parsed.text) ?? (dataObj === void 0 ? void 0 : stringValue5(dataObj.content));
-  const reasoning = stringValue5(parsed.reasoning_content) ?? stringValue5(parsed.reasoningContent);
-  if (reasoning !== void 0) return { kind: "delta", reasoning };
-  if (text !== void 0) return { kind: "delta", text };
-  return void 0;
-}
-function flattenMessages3(messages, system) {
-  const parts = [];
-  if (system !== void 0 && system.trim() !== "") parts.push(system.trim());
-  for (const message2 of messages) {
-    const text = contentToText9(message2.content);
-    if (text.trim() === "") continue;
-    parts.push(text.trim());
-  }
-  return parts.join("\n\n");
-}
-function contentToText9(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  const parts = [];
-  for (const block of content) {
-    if (typeof block === "string") {
-      parts.push(block);
-      continue;
-    }
-    if (!isRecord6(block)) continue;
-    const text = stringValue5(block.text);
-    if (text !== void 0) parts.push(text);
-  }
-  return parts.join("\n");
-}
-
-// vendor/channel-pack/src/kuku-auth.ts
-import { randomUUID as randomUUID4 } from "node:crypto";
-function pickId(body, ...keys) {
-  if (typeof body !== "object" || body === null) return void 0;
-  const record = body;
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === "string" && value !== "") return value;
-  }
-  const data = record.data;
-  if (typeof data === "object" && data !== null) return pickId(data, ...keys);
-  return void 0;
-}
-async function* streamChat3(fetcher, product, credential, options) {
-  if (!isCredentialUsable4(credential)) {
-    throw new Error("KukuAI\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u7C98\u8D34\u542B BDUSS \u7684 Cookie");
-  }
-  const sessionId = randomUUID4();
-  const replyId = randomUUID4();
-  const clientSessionId = randomUUID4();
-  const deviceId = String(Date.now());
-  const sendResponse = await fetcher(`${product.apiBase}${KUKU_SENDMSG_PATH}`, {
-    method: "POST",
-    headers: { ...kukuHeaders(product, credential), "Content-Type": "application/json" },
-    body: JSON.stringify(buildSendmsgBody({
-      text: flattenMessages3(options.messages, options.system),
-      model: options.model,
-      sessionId,
-      replyId,
-      clientSessionId,
-      deviceId,
-      ...options.thinkMode === void 0 ? {} : { thinkMode: options.thinkMode }
-    })),
-    ...options.signal === void 0 ? {} : { signal: options.signal }
-  });
-  if (!sendResponse.ok) {
-    const text = await sendResponse.text().catch(() => "");
-    throw new Error(`KukuAI\uFF1A\u5EFA\u6D88\u606F\u8FD4\u56DE HTTP ${sendResponse.status}${text === "" ? "" : `\uFF1A${text.slice(0, 200)}`}`);
-  }
-  const sendBody = await sendResponse.json().catch(() => void 0);
-  const actualSession = pickId(sendBody, "session_id", "sessionId") ?? sessionId;
-  const actualReply = pickId(sendBody, "reply_id", "replyId") ?? replyId;
-  const query = new URLSearchParams({
-    session_id: actualSession,
-    reply_id: actualReply,
-    client_session_id: clientSessionId,
-    device_id: deviceId
-  }).toString();
-  const sseResponse = await fetcher(`${product.apiBase}${KUKU_SSE_PATH}?${query}`, {
-    method: "POST",
-    headers: {
-      ...kukuHeaders(product, credential),
-      "Content-Type": "application/json",
-      Accept: "text/event-stream"
-    },
-    body: JSON.stringify({ session_id: actualSession, reply_id: actualReply, msg_id: "" }),
-    ...options.signal === void 0 ? {} : { signal: options.signal }
-  });
-  if (!sseResponse.ok) {
-    const text = await sseResponse.text().catch(() => "");
-    throw new Error(`KukuAI\uFF1A\u6D41\u5F0F\u63A5\u53E3\u8FD4\u56DE HTTP ${sseResponse.status}${text === "" ? "" : `\uFF1A${text.slice(0, 200)}`}`);
-  }
-  if (sseResponse.body === null) throw new Error("KukuAI\uFF1A\u6D41\u5F0F\u54CD\u5E94\u6CA1\u6709\u6B63\u6587");
-  const reader = sseResponse.body.getReader();
-  const decoder2 = new TextDecoder();
-  let buffer = "";
-  try {
-    for (; ; ) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder2.decode(value, { stream: true });
-      let newline = buffer.indexOf("\n");
-      while (newline !== -1) {
-        const line2 = buffer.slice(0, newline).replace(/\r$/, "");
-        buffer = buffer.slice(newline + 1);
-        newline = buffer.indexOf("\n");
-        if (!line2.startsWith("data:")) continue;
-        const frame = parseSseFrame(line2.slice(5));
-        if (frame === void 0) continue;
-        if (frame.kind === "done") return;
-        if (frame.kind === "error") throw new Error(`KukuAI \u4E0A\u6E38\u9519\u8BEF\uFF1A${frame.message}`);
-        yield frame;
-      }
-    }
-  } finally {
-    void reader.cancel().catch(() => void 0);
-  }
-}
-
-// vendor/channel-pack/src/kuku-adapter.ts
 var REMOTE_MODELS_TTL_MS3 = 6e5;
 function extractKukuModels(value) {
   const out = /* @__PURE__ */ new Map();
@@ -58935,10 +59109,14 @@ function rankBuddyAccountsByBalance(accounts, options = {}) {
   return accounts.map((account, index) => ({ account, index, tier: buddyBalanceTier(account, options) })).sort((a, b) => a.tier - b.tier || a.index - b.index).map((entry) => entry.account);
 }
 
+// vendor/channel-pack/src/channel-pack-rpc.ts
+init_kuku_product();
+
 // vendor/channel-pack/src/kuku-qr-login-page.ts
 import { createServer as createServer8 } from "node:http";
 
 // vendor/channel-pack/src/kuku-qr-login.ts
+init_kuku();
 import { createHash as createHash7, randomBytes as randomBytes8 } from "node:crypto";
 var KUKU_PASSPORT_BASE = "https://passport.baidu.com";
 var KUKU_QR_REFERER = "https://kuku.baidu.com/genflowpro/login";
@@ -65693,6 +65871,21 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
       case "credits.claimAll": {
         const req = payload;
         const accounts = await pool.listAccounts(req.provider);
+        if (req.provider === KUKU.id) {
+          const { claimKukuDailyCheckin: claimKukuDailyCheckin2 } = await Promise.resolve().then(() => (init_kuku_auth(), kuku_auth_exports));
+          const { KUKU: KUKU_PRODUCT } = await Promise.resolve().then(() => (init_kuku_product(), kuku_product_exports));
+          const value2 = await collectClaimResults(accounts, KUKU_PRODUCT, {
+            fetcher: codeartsFetcher,
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            claim: async (credential) => {
+              const outcome = await claimKukuDailyCheckin2(codeartsFetcher, KUKU_PRODUCT, credential);
+              return { claimed: outcome.claimed, message: outcome.message };
+            },
+            precheckStatus: false,
+            warn: (msg) => ctx.logger?.warn?.(msg)
+          });
+          return { ok: true, value: value2 };
+        }
         if (isQoderFamily(req.provider)) {
           const { product: product2 } = requireQoderFamily(req.provider);
           const value2 = await collectClaimResults(accounts, void 0, {
@@ -66044,6 +66237,20 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
                 }],
                 expiredTotal: 0
               };
+            },
+            warn: (msg) => ctx.logger?.warn?.(msg)
+          });
+          return { ok: true, value: { accounts: values2 } };
+        }
+        if (req.provider === KUKU.id) {
+          const { fetchKukuPoints: fetchKukuPoints2 } = await Promise.resolve().then(() => (init_kuku_auth(), kuku_auth_exports));
+          const { KUKU: KUKU_PRODUCT } = await Promise.resolve().then(() => (init_kuku_product(), kuku_product_exports));
+          const values2 = await collectCreditBalances(accounts, KUKU_PRODUCT, {
+            fetcher: codeartsFetcher,
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalanceDetailed: async (credential) => {
+              const points = await fetchKukuPoints2(codeartsFetcher, KUKU_PRODUCT, credential);
+              return points === void 0 ? { balance: null, error: "\u672A\u8FD4\u56DE\u79EF\u5206\u6570\u636E\uFF08\u4E0A\u6E38\u4E1A\u52A1\u7801\u975E 0 \u6216\u7ED3\u6784\u4E0D\u8BA4\u8BC6\uFF09" } : { balance: { total: points, packages: [] } };
             },
             warn: (msg) => ctx.logger?.warn?.(msg)
           });
@@ -69408,6 +69615,7 @@ async function pickBuddyAccount(selector, candidates, options) {
 
 // vendor/channel-pack/src/index.ts
 init_commandcode_product();
+init_kuku_product();
 init_accio_product();
 init_officeace_product();
 

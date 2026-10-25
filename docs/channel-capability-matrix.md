@@ -96,7 +96,7 @@
 | 16 | `accio` · Accio | 浏览器授权（国际站） | ✅ | ✅ 远端 | ✅（配额百分比，`fetchQuota`） | ❌ | ❌ |
 | 17 | `accio-cn` · Accio 国内版 | 浏览器授权（国内站） | ✅ | ✅ 远端 | ✅（配额百分比，`fetchQuota`） | ❌ | ❌ |
 | 18 | `orcaterm` · OrcaTerm | 粘贴 Cookie（`ot_session`） | ✅ | ❌ 静态（上游无公开目录端点） | ❌ | ❌ | ❌ |
-| 19 | `kuku` · KukuAI | 粘贴 Cookie（`BDUSS`） | ✅ | ❌ 静态（上游无公开目录端点） | ❌ | ❌ | ❌ |
+| 19 | `kuku` · KukuAI | 粘贴 Cookie（`BDUSS`） | ✅ | ✅ 远端（`model/list`，TTL 10 分钟） | ✅ 积分（`getgfvipremain`） | ✅ 签到（`freepoint` LOGIN/CHAT） | ❌ |
 | 20 | `monkeycode` · MonkeyCode | 粘贴 Cookie（`nebula_session`） | ✅（建任务 + WebSocket 两步） | ✅ 远端 | ✅（`/api/v1/users/wallet`） | ✅（`wallet/checkin`，每次奖励 100 积分） | ❌ |
 | 21 | `autoclaw` · AutoClaw | 粘贴令牌（上游 OAuth 被阿里云验证码 SDK 阻断） | ✅ | ✅ 远端（`autoclaw-model-config`） | ❌ | ❌ | ❌ |
 
@@ -105,8 +105,8 @@
 | 维度 | 已接入 | 未接入 / 不支持 |
 | --- | --- | --- |
 | 对话 | 22（全部） | — |
-| 模型目录 | 非静态目录 19 条（其中 `qoder`/`qodercn` 来自官方客户端本机解密文件 `catalog-v6`） | 仅静态兜底表 3 条：`gemini`、`orcaterm`、`kuku` |
-| 额度查询 | **17 条**（原 13 条 + `commandcode` `monkeycode` `accio` `accio-cn`） | 4 条：`orcaterm` `kuku` `autoclaw` `officeace`（前三个上游无额度端点；officeace 有积分但领取端点未接） |
+| 模型目录 | 非静态目录 20 条（其中 `qoder`/`qodercn` 来自官方客户端本机解密文件 `catalog-v6`） | 仅静态兜底表 2 条：`gemini`、`orcaterm` |
+| 额度查询 | **18 条**（原 13 条 + `commandcode` `monkeycode` `accio` `accio-cn` + `kuku`） | 3 条：`orcaterm` `autoclaw` `officeace` |
 | 签到 | **10 条**（原 9 条 + `monkeycode`） | 服务端显式守卫「无签到端点」3 条（`workbuddy` `cline` `raccoon`）+ `gemini`/`commandcode`/`accio`/`accio-cn`（无 claim 能力）+ 上游无签到 5 条 |
 | 图片（双桥） | 8 条：`buddy` `workbuddy` `qoder` `qodercn` `cline` `raccoon` `gemini` `zcode` | 单桥 3 条：`trae` `loomy` `minimax`；未接 9 条 |
 | 粘贴型登录 | 纯粘贴 2 条（`monkeycode` `orcaterm`） | — |
@@ -259,9 +259,18 @@
 - 登录：**百度 App 扫码**（本地弹窗页 `kuku-qr-login-page.ts`，协议 `kuku-qr-login.ts`）。
 - 对话：`POST /wenchain/genflowpro/sendmsg` → SSE `/wenchain/genflowpro/sse/getchatcontent`；
   `clienttype` / `version` / `channel` / `v` 照官方 PC 客户端原样下发。
-- 模型目录：**静态兜底表**（模型名由客户端自报）。额度 / 签到 / 图片：未接入 ——
-  因此渠道卡片**不显示余额/签到区**（那两块由 `CHANNEL_CREDITS` 的 17 渠道契约驱动）；
-  模型数量与「刷新」按钮正常（没有续期端点，刷新只做凭据复核）。
+- 模型目录：**远端** `GET /wenchain/genflowpro/model/list?{WEB_QUERY}`（TTL 10 分钟，
+  实测 13 个真实模型，含 `display_name`）；拉不到时回落静态表 13 条。
+- 额度：**积分制** —— `GET /bizapi/gfpro/getgfvipremain`，取
+  `data.list[assetName=="token"].totalPoint`。⚠ 判据在**顶层** `status.code`
+  （不是 `data.status.code`）；拿不到时返回 `undefined` 而不是 0。
+- 签到：**已接入** —— `GET /api/genflowpro/freepoint/homenew`（面板）+
+  `POST /api/genflowpro/freepoint/taskComplete`（`task_type=LOGIN|CHAT`）。
+  上游幂等：重复领返回 `SUCCESS` + `reward_point=0`，故「已领过」不算失败。
+  邀请类任务（`INVITE_*`）要真实受邀人，不进领取清单。
+- 图片：未接入。
+- 凭据失效时两个域表现不同：`bizapi`（余额）仍可能 200，而 `api`（对话/签到）
+  返回 `errno:-6 未登录` / `invalid session_id` —— 排查时别只看余额能通就以为凭据有效。
 
 ### 3.17 MonkeyCode（`monkeycode`）
 
