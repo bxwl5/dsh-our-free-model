@@ -136,6 +136,15 @@ export const OFFICEACE_CODE_PATH = '/v1/claw/auth/code'
 export const OFFICEACE_PERMISSION_PATH = '/v1/claw/client-permission-validate'
 /** 开通订阅（仅 model_info 为空时调）。 */
 export const OFFICEACE_SUBSCRIPTION_PATH = '/v1/claw/client-subscription'
+/**
+ * 领取奖励积分（每日签到 + 一次性新人礼，挂**推理网关** `model_api_url_base`）。
+ *
+ * 上游 `aimod-cc/Agent2API` 的 `providers/officeace/checkin.rs`：一次调用把
+ * 当天**所有**可领奖励一起发下来，故签到与新手任务在服务端是同一个动作；
+ * 幂等由上游保证（重复领不报错，`current_value` 不变）。
+ */
+export const OFFICEACE_BONUS_CLAIM_PATH = '/v1/subscription/bonus/claim'
+
 /** STS 换临时凭据（表单 + DPoP 头）。 */
 export const OFFICEACE_STS_TOKENS_PATH = '/v1/oauth2/tokens'
 /** IAM projects（补 project_id）。 */

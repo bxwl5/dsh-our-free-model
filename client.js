@@ -3591,6 +3591,21 @@ window.__ModuleLoader__.load({
     }
 
     const fmtInt = value => Number.isFinite(value) ? value.toLocaleString() : '—'
+    /**
+     * Token 量的紧凑显示：>= 1B 用 B，>= 1M 用 M，都保留**三位小数**。
+     *
+     * 为什么不用 `fmtInt` 的千分位：缓存读动辄上亿，`366,436,608` 这种长串
+     * 在卡片与表格里既难读又挤爆布局。三位小数保证 20.776 亿与 3.690 亿
+     * 这类量级差异一眼可辨（而不是被压成 21B / 4B）。
+     */
+    const fmtTokens = (value) => {
+      const n = Number(value)
+      if (!Number.isFinite(n)) return '—'
+      if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(3)}B`
+      if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(3)}M`
+      if (n >= 1000) return `${(n / 1000).toFixed(3)}K`
+      return String(Math.round(n))
+    }
     const fmtPct = (part, whole) => whole > 0 ? `${Math.round(100 * part / whole)}%` : '—'
     const fmtMs = value => Number.isFinite(value) && value > 0 ? `${value >= 1000 ? `${(value / 1000).toFixed(2)} s` : `${Math.round(value)} ms`}` : '—'
     const fmtTps = value => Number.isFinite(value) && value > 0 ? `${value.toFixed(1)} tok/s` : '—'
@@ -3672,10 +3687,10 @@ window.__ModuleLoader__.load({
           h(Button, { onClick: () => void ledger.reload() }, t('dash.refresh'))),
         !loaded ? h('div', { className: 'ofm_chanwrap' }, [0, 1, 2].map(i => h('div', { className: 'ofm_skel', key: i, style: { minHeight: 120 } }))) : null,
         loaded ? h('div', { className: 'ofm_kpis' },
-          h(KpiCard, { label: scope === 'today' ? t('dash.kpiToday') : t('dash.kpiScopeAll'), value: fmtInt(tokenTotal), sub: `${t('dash.input')} ${fmtInt(totals.inputTokens)} · ${t('dash.output')} ${fmtInt(totals.outputTokens)} · ${t('dash.reasoning')} ${fmtInt(totals.reasoningTokens)} · ${t('dash.cacheRead')} ${fmtInt(totals.cacheReadTokens)}` }),
-          h(KpiCard, { label: t('dash.kpiCumulative'), value: fmtInt((cumulative.inputTokens ?? 0) + (cumulative.outputTokens ?? 0) + (cumulative.cacheReadTokens ?? 0)), sub: `${t('dash.input')} ${fmtInt(cumulative.inputTokens)} · ${t('dash.output')} ${fmtInt(cumulative.outputTokens)} · ${t('dash.reasoning')} ${fmtInt(cumulative.reasoningTokens)} · ${t('dash.cacheRead')} ${fmtInt(cumulative.cacheReadTokens ?? 0)}` }),
+          h(KpiCard, { label: scope === 'today' ? t('dash.kpiToday') : t('dash.kpiScopeAll'), value: fmtTokens(tokenTotal), sub: `${t('dash.input')} ${fmtTokens(totals.inputTokens)} · ${t('dash.output')} ${fmtTokens(totals.outputTokens)} · ${t('dash.reasoning')} ${fmtTokens(totals.reasoningTokens)} · ${t('dash.cacheRead')} ${fmtTokens(totals.cacheReadTokens)}` }),
+          h(KpiCard, { label: t('dash.kpiCumulative'), value: fmtTokens((cumulative.inputTokens ?? 0) + (cumulative.outputTokens ?? 0) + (cumulative.cacheReadTokens ?? 0)), sub: `${t('dash.input')} ${fmtTokens(cumulative.inputTokens)} · ${t('dash.output')} ${fmtTokens(cumulative.outputTokens)} · ${t('dash.reasoning')} ${fmtTokens(cumulative.reasoningTokens)} · ${t('dash.cacheRead')} ${fmtTokens(cumulative.cacheReadTokens ?? 0)}` }),
           h(KpiCard, { label: t('dash.kpiSpeed'), value: fmtTps(totals.avgTps), sub: `${t('dash.ttft')} ${fmtMs(totals.avgTtftMs)}` }),
-          h(KpiCard, { label: t('dash.kpiCache'), value: fmtPct(totals.cacheReadTokens, cacheBase), sub: `${t('dash.cacheTokens')} ${fmtInt(totals.cacheReadTokens)}` }),
+          h(KpiCard, { label: t('dash.kpiCache'), value: fmtPct(totals.cacheReadTokens, cacheBase), sub: `${t('dash.cacheTokens')} ${fmtTokens(totals.cacheReadTokens)}` }),
           h(KpiCard, { label: t('dash.kpiRequests'), value: fmtInt(totals.requests), sub: `${t('dash.successRate')} ${fmtPct(totals.requests - totals.errors, totals.requests)} · ${t('dash.failed')} ${fmtInt(totals.errors)}`, tone: totals.errors > 0 ? 'warn' : '' })) : null,
         loaded ? h(Section, { title: t('dash.accountsTitle'), hint: t('dash.accountsHint') },
           accounts.length === 0 ? h('p', { className: 'ofm_note' }, t('dash.empty'))
@@ -3694,12 +3709,12 @@ window.__ModuleLoader__.load({
                 h('td', null, h('b', null, row.accountId || t('log.unattributed'))),
                 h('td', null, row.provider),
                 h('td', { className: 'ofm_num' }, fmtInt(row.requests)),
-                h('td', { className: 'ofm_num' }, fmtInt(row.inputTokens + row.outputTokens + row.cacheReadTokens)),
-                h('td', { className: 'ofm_num' }, fmtInt(row.inputTokens)),
-                h('td', { className: 'ofm_num' }, fmtInt(row.outputTokens)),
-                h('td', { className: 'ofm_num' }, fmtInt(row.reasoningTokens)),
-                h('td', { className: 'ofm_num' }, fmtInt(row.cacheReadTokens)),
-                h('td', null, (row.models ?? []).slice().sort((a, b) => ((b.inputTokens ?? 0) + (b.outputTokens ?? 0) + (b.cacheReadTokens ?? 0)) - ((a.inputTokens ?? 0) + (a.outputTokens ?? 0) + (a.cacheReadTokens ?? 0))).slice(0, 10).map(model => `${model.model} · ${fmtInt((model.inputTokens ?? 0) + (model.outputTokens ?? 0) + (model.cacheReadTokens ?? 0))}`).join('，') || '—'))))))) : null,
+                h('td', { className: 'ofm_num' }, fmtTokens(row.inputTokens + row.outputTokens + row.cacheReadTokens)),
+                h('td', { className: 'ofm_num' }, fmtTokens(row.inputTokens)),
+                h('td', { className: 'ofm_num' }, fmtTokens(row.outputTokens)),
+                h('td', { className: 'ofm_num' }, fmtTokens(row.reasoningTokens)),
+                h('td', { className: 'ofm_num' }, fmtTokens(row.cacheReadTokens)),
+                h('td', null, (row.models ?? []).slice().sort((a, b) => ((b.inputTokens ?? 0) + (b.outputTokens ?? 0) + (b.cacheReadTokens ?? 0)) - ((a.inputTokens ?? 0) + (a.outputTokens ?? 0) + (a.cacheReadTokens ?? 0))).slice(0, 10).map(model => `${model.model} · ${fmtTokens((model.inputTokens ?? 0) + (model.outputTokens ?? 0) + (model.cacheReadTokens ?? 0))}`).join('，') || '—'))))))) : null,
         loaded ? h(Section, { title: t('dash.modelsTitle'), hint: t('dash.modelsHint') },
           models.length === 0 ? h('p', { className: 'ofm_note' }, t('dash.empty'))
             : h('div', { className: 'ofm_tablewrap' }, h('table', { className: 'ofm_table' },
@@ -3719,8 +3734,8 @@ window.__ModuleLoader__.load({
                 h('td', null, row.providers.join('，')),
                 h('td', { className: 'ofm_num' }, fmtInt(row.requests)),
                 h('td', { className: 'ofm_num' }, row.errors > 0 ? h('span', { className: 'ofm_badge unavailable' }, fmtInt(row.errors)) : fmtInt(0)),
-                h('td', { className: 'ofm_num' }, fmtInt(row.inputTokens + row.outputTokens + row.cacheReadTokens)),
-                h('td', { className: 'ofm_num' }, `${fmtInt(row.inputTokens)} / ${fmtInt(row.outputTokens)} / ${fmtInt(row.reasoningTokens)}`),
+                h('td', { className: 'ofm_num' }, fmtTokens(row.inputTokens + row.outputTokens + row.cacheReadTokens)),
+                h('td', { className: 'ofm_num' }, `${fmtTokens(row.inputTokens)} / ${fmtTokens(row.outputTokens)} / ${fmtTokens(row.reasoningTokens)}`),
                 h('td', { className: 'ofm_num' }, fmtMs(row.avgTtftMs)),
                 h('td', { className: 'ofm_num' }, fmtTps(row.avgTps)),
                 h('td', { className: 'ofm_num' }, fmtPct(row.cacheReadTokens, row.inputTokens + row.cacheReadTokens)),
@@ -3786,11 +3801,11 @@ window.__ModuleLoader__.load({
                 h('td', { className: 'ofm_num' }, fmtMs(entry.durationMs)),
                 h('td', { className: 'ofm_num' }, fmtMs(entry.ttftMs)),
                 h('td', { className: 'ofm_num' }, fmtTps(entry.tps)),
-                h('td', { className: 'ofm_num' }, fmtInt(entry.inputTokens)),
-                h('td', { className: 'ofm_num' }, fmtInt(entry.outputTokens)),
-                h('td', { className: 'ofm_num' }, Number.isFinite(entry.reasoningTokens) ? fmtInt(entry.reasoningTokens) : '—'),
-                h('td', { className: 'ofm_num' }, Number.isFinite(entry.cacheReadTokens) ? fmtInt(entry.cacheReadTokens) : '—'),
-                h('td', { className: 'ofm_num' }, h('b', null, fmtInt(entry.inputTokens + entry.outputTokens)))))))),
+                h('td', { className: 'ofm_num' }, fmtTokens(entry.inputTokens)),
+                h('td', { className: 'ofm_num' }, fmtTokens(entry.outputTokens)),
+                h('td', { className: 'ofm_num' }, Number.isFinite(entry.reasoningTokens) ? fmtTokens(entry.reasoningTokens) : '—'),
+                h('td', { className: 'ofm_num' }, Number.isFinite(entry.cacheReadTokens) ? fmtTokens(entry.cacheReadTokens) : '—'),
+                h('td', { className: 'ofm_num' }, h('b', null, fmtTokens(entry.inputTokens + entry.outputTokens)))))))),
           pages > 1 ? h('div', { className: 'ofm_row' },
             h(Button, { kind: 'ghost', disabled: safePage <= 1, onClick: () => setPage(value => Math.max(1, value - 1)) }, '‹'),
             h('span', { className: 'ofm_note' }, t('logs.page').replace('{page}', String(safePage)).replace('{pages}', String(pages))),
@@ -4161,9 +4176,9 @@ window.__ModuleLoader__.load({
                 ? h('p', { className: 'ofm_note' }, t('saver.noData'))
                 : h('div', { className: 'ofm_panel ofm_rise' },
                   h('div', { className: 'ofm_stats' },
-                    stat(`${fmtInt(savings.bytesBefore)} B`, t('saver.bytesBefore')),
-                    stat(`${fmtInt(savings.bytesAfter)} B`, t('saver.bytesAfter')),
-                    stat(`${fmtInt(savings.saved)} B`, t('saver.bytesSaved')),
+                    stat(`${fmtTokens(savings.bytesBefore)} B`, t('saver.bytesBefore')),
+                    stat(`${fmtTokens(savings.bytesAfter)} B`, t('saver.bytesAfter')),
+                    stat(`${fmtTokens(savings.saved)} B`, t('saver.bytesSaved')),
                     stat(String(savings.blocks), t('saver.blocks')),
                     stat(String(savings.calls), t('saver.calls')),
                     stat(String(savings.promptCalls), t('saver.promptCalls'))),

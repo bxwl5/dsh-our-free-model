@@ -82,6 +82,15 @@ async function main() {
     req.on('end', () => {
       const raw = Buffer.concat(body).toString('utf8')
       if (mode === 'expired') { res.writeHead(401, { Connection: 'close' }).end('{}'); return }
+      // 会话三件套换取（上游 session.rs：每次请求要带 bdstoken/uinfo/uk，
+      // 由 userreport 用登录 Cookie 换来）。缺了它 sendmsg 会回
+      // invalid session_id —— 这里给 mock 补上同一形态。
+      if (req.url.startsWith('/api/genflowpro/common/userreport')) {
+        seen.push({ path: 'userreport', url: req.url })
+        res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' })
+          .end(JSON.stringify({ errno: 0, data: { bdstoken: 'mock-bdstoken', uinfo: 'mock-uinfo', uk: 12345 } }))
+        return
+      }
       if (req.url.startsWith('/wenchain/genflowpro/sendmsg')) {
         seen.push({ path: 'sendmsg', body: JSON.parse(raw) })
         res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' })
@@ -162,7 +171,22 @@ async function main() {
     assert.equal(typeof policy.initialDelayMs, 'number')
     assert.equal('backoff' in policy, false)
 
-    console.log('ok  kuku: BDUSS 归一/sendmsg 载荷（client_added 字符串化）/SSE 帧/上游 session 复用/错误帧/探活/适配器端到端')
+    // ── 会话三件套必须换取并拼进两个请求的 query ──
+  // 上游 session.rs：对话链路每次请求都要带 bdstoken/uinfo/uk，
+  // 由 userreport 用登录 Cookie 换来；缺了它 sendmsg 回 invalid session_id。
+  const report = seen.find(x => x.path === 'userreport')
+  assert.ok(report !== undefined, '必须先打 userreport 换会话三件套')
+  const sendEntry = seen.find(x => x.path === 'sendmsg')
+  assert.ok(sendEntry !== undefined)
+  // 三件套拼在 query 上，这里经 spy 转发后仍可从 sendmsg 的请求体之外验证：
+  // 直接验 SSE 那条（它把 query 原样带过来了）。
+  const sseEntry = seen.find(x => x.path === 'sse')
+  assert.ok(sseEntry !== undefined)
+  assert.match(sseEntry.url, /bdstoken=mock-bdstoken/, 'SSE 请求要带 bdstoken')
+  assert.match(sseEntry.url, /uinfo=mock-uinfo/, 'SSE 请求要带 uinfo')
+  assert.match(sseEntry.url, /uk=12345/, 'SSE 请求要带 uk（数字形态也要收）')
+
+  console.log('ok  kuku: BDUSS 归一/sendmsg 载荷（client_added 字符串化）/SSE 帧/上游 session 复用/错误帧/探活/适配器端到端/会话三件套')
   } finally {
     upstream.closeAllConnections?.()
     await new Promise(r => upstream.close(r))

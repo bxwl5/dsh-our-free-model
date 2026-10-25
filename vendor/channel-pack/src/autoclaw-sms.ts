@@ -320,3 +320,124 @@ export async function loginAutoclawWithCode(options: {
   if (!result.ok) return { ok: false, error: result.error }
   return toAutoclawCredential(result.json.data, options.deviceId, phone)
 }
+
+// ── userapi 域的「官方客户端指纹」头 ────────────────────────────────────────
+//
+// 上游 `aimod-cc/Agent2API` 的 `providers/autoclaw/refresh.rs` `signed_auth_headers`
+// 记录：**userapi 域**（刷新 / 余额 / 签到 / 模型目录）这套链路**必须**带下面
+// 这批品牌头，且刻意与转发链路不一致：
+//
+// - `X-Harness-Type: zcode` **保留** —— 转发链（`/chat/completions`）自
+//   2026-09-22 起不发它（上游对该值区别对待：403 pay-view / 406），但 userapi
+//   链当天实测带着它照常 200。在这条链上删减，风险方向是**签名失败**
+//   （code 400002），收益是零。
+// - `X-Version` 是**客户端版本门控**：模型目录等接口按它决定下发哪一档清单。
+//
+// ⚠ 这套头与 `autoclawAuthHeaders()`（SMS 登录用）**不是同一套** —— 后者是
+// 登录/续期专用的精简版，别合并。
+
+/** 客户端版本（userapi 域的版本门控；上游 `CLIENT_VERSION`）。 */
+export const AUTOCLAW_USERAPI_VERSION = '1.18.5'
+
+/** 任务完成端点（`/autoclaw-proxy/proxy/autoclaw-task-complete`）。 */
+export const AUTOCLAW_TASK_COMPLETE_PATH = '/autoclaw-proxy/proxy/autoclaw-task-complete'
+
+/** 任务列表端点（失败归因用：拿不到说明登录态有问题）。 */
+export const AUTOCLAW_TASK_LIST_PATH = '/autoclaw-proxy/proxy/autoclaw-task-list'
+
+/** 每日签到任务 id（`autoclaw-task-complete` 的 `task_id`）。 */
+export const AUTOCLAW_DAILY_SIGNIN_TASK = 'daily_signin'
+
+/**
+ * userapi 域请求头（官方客户端指纹 + `X-Auth-Sign`）。
+ *
+ * 签名口径与 SMS 登录完全一致（`md5(appId & timestamp & appKey)`，
+ * 上游注释明确「不要复制，复制会让 appId/appKey、时间戳单位与品牌头分叉，
+ * 而签名一旦分叉就是稳定 400002」—— 因此这里的 appId/appKey 直接复用
+ * `AUTOCLAW_SMS_APP_ID` / `AUTOCLAW_SMS_APP_KEY`，**不另立常量**。
+ */
+export function autoclawUserapiHeaders(
+  token: string,
+  timestamp: number = Math.floor(Date.now() / 1000),
+): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    Accept: '*/*',
+    'X-Version': AUTOCLAW_USERAPI_VERSION,
+    'X-Product': 'autoclaw',
+    'X-Client-Type': 'pc',
+    'X-Harness-Type': 'zcode',
+    'X-Tm': process.platform === 'win32' ? 'win' : 'linux',
+    'X-Lang': 'zh-CN',
+    'X-Channel': 'official',
+    'X-Auth-Appid': AUTOCLAW_SMS_APP_ID,
+    'X-Auth-TimeStamp': String(timestamp),
+    'X-Auth-Sign': autoclawSign(AUTOCLAW_SMS_APP_ID, timestamp, AUTOCLAW_SMS_APP_KEY),
+    ...(token === '' ? {} : { Authorization: `Bearer ${token}` }),
+  }
+}
+
+/**
+ * AutoClaw 每日签到。
+ *
+ * ## 上游形态（`aimod-cc/Agent2API` 的 `providers/autoclaw/checkin.rs`）
+ *
+ * ```text
+ * POST {userapi}/autoclaw-proxy/proxy/autoclaw-task-complete
+ * body: {"task_id":"daily_signin"}
+ * → {"data":{"already_completed":true,"reward_points":0,"success":false,
+ *            "task_id":"daily_signin"}}
+ * ```
+ *
+ * ## 三个要点（照抄上游实测，别自己发明）
+ *
+ * 1. **不是签到专用接口** —— `autoclaw-task-complete` 是「完成客户端任务」的
+ *    通用入口，`daily_signin` 只是其中一个 task_id（同级还有
+ *    `daily_inspiration_center` / `upgrade_pc_app`）。
+ * 2. **HTTP 200 + body 里的成功标记**：判「签到成功」要看
+ *    `reward_points > 0`（或 `success === true`），**不能只看 HTTP 状态码**
+ *    —— 那会把「今天已领过」当成一次成功领取。
+ * 3. 上游**按天幂等**：重复调用不会重复入账，返回「已领取」。
+ *
+ * ## 失败归因
+ * 上游在签到失败时额外拉一次 `autoclaw-task-list`：拿不到列表说明**登录态
+ * 有问题**，能拿到而 `daily_signin` 已完成则说明是「今天已签到」而不是接口坏。
+ * 这里不复制那次往返（正常路径不多花请求），只把可判定的原因说清楚。
+ */
+export async function claimAutoclawDailyCheckin(options: {
+  product: AutoClawProduct
+  fetcher: typeof fetch
+  credential: AutoClawCredential
+  signal?: AbortSignal
+}): Promise<{ claimed: number; message: string }> {
+  const token = stripBearer(options.credential.access_token)
+  const timestamp = Math.floor(Date.now() / 1000)
+  const url = `${options.product.apiBase}${AUTOCLAW_TASK_COMPLETE_PATH}`
+  const response = await options.fetcher(url, {
+    method: 'POST',
+    headers: autoclawUserapiHeaders(token, timestamp),
+    body: JSON.stringify({ task_id: AUTOCLAW_DAILY_SIGNIN_TASK }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  })
+  if (response.status === 401) {
+    return { claimed: 0, message: '登录态已过期，无法签到（请先续期或重新登录）' }
+  }
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    return { claimed: 0, message: `签到返回 HTTP ${response.status}${text === '' ? '' : `：${text.slice(0, 160)}`}` }
+  }
+  const body: unknown = await response.json().catch(() => undefined)
+  const data = body !== null && typeof body === 'object'
+    ? (body as { data?: unknown }).data
+    : undefined
+  const record = data !== null && typeof data === 'object' ? data as Record<string, unknown> : {}
+  const reward = typeof record.reward_points === 'number' && Number.isFinite(record.reward_points)
+    ? record.reward_points
+    : Number(record.reward_points ?? 0)
+  const success = record.success === true
+  const already = record.already_completed === true
+  if (reward > 0) return { claimed: reward, message: `已领取 ${reward} 积分` }
+  if (success) return { claimed: 0, message: '签到成功（本轮未返回积分数）' }
+  if (already) return { claimed: 0, message: '今天已签到过（上游按天幂等）' }
+  return { claimed: 0, message: '上游未返回可领取的积分（今日可能已领过）' }
+}

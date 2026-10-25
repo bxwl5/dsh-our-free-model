@@ -21,6 +21,7 @@
  */
 
 import {
+  OFFICEACE_BONUS_CLAIM_PATH,
   OFFICEACE_CODE_PATH,
   OFFICEACE_IAM_PROJECTS_PATH,
   OFFICEACE_PERMISSION_PATH,
@@ -678,6 +679,109 @@ export async function fetchSubscriptionSnapshot(
   }
   const body: unknown = await response.json().catch(() => undefined)
   return parseSubscriptionSnapshot(body)
+}
+
+/**
+ * 领取今天的奖励积分（每日签到 + 一次性新人礼）。
+ *
+ * ## 上游形态（`aimod-cc/Agent2API` 的 `providers/officeace/checkin.rs`）
+ *
+ * `POST {gateway}/v1/subscription/bonus/claim`（V11 签名，与订阅查询同套）
+ * —— 上游**一次调用**把当天所有可领奖励一起发下来，所以「签到」与「新手
+ * 任务」在服务端是同一个动作。
+ *
+ * ## 幂等由上游保证
+ * 一天一个活动只能领一次，**重复领不报错**（返回同一份列表、
+ * `current_value` 不变），因此这里没有「已领过」这条分支 —— 上游不回错，
+ * 重复调就是安全的空动作。
+ *
+ * ## 返回值
+ * `gained` 是领奖前后的积分增量；领前读数拿不到时为 `undefined`，
+ * 此时**如实说「已签到」而不编一个数字**。
+ */
+export async function claimBonus(
+  fetcher: typeof fetch,
+  product: OfficeAceProduct,
+  credential: OfficeAceCredential,
+  options: { signal?: AbortSignal } = {},
+): Promise<{ gained: number | undefined; message: string }> {
+  // 领之前记一份余额好算增量；读失败不阻断签到（只是少一个读数，
+  // 不能因此判签到失败 —— 与上游同一取舍）。
+  let before: number | undefined
+  try {
+    const snapshot = await fetchSubscriptionSnapshot(fetcher, product, credential, options)
+    before = snapshot.remaining
+  } catch {
+    before = undefined
+  }
+
+  const rawBase = credential.model_info !== undefined && isRecord(credential.model_info)
+    ? stringValue(credential.model_info.model_api_url_base)
+    : undefined
+  if (rawBase === undefined || rawBase === '') {
+    throw new Error('OfficeAce：凭据缺少 model_info.model_api_url_base（重新登录可重建）')
+  }
+  const stripped = rawBase.replace(/^https?:\/\//, '').replace(/\/+$/, '')
+  const gateway = /^https?:\/\//.test(rawBase) ? rawBase.replace(/\/+$/, '') : `https://${stripped}`
+  const url = `${gateway}${OFFICEACE_BONUS_CLAIM_PATH}`
+  const host = new URL(url).host
+  const timestampMs = Date.now()
+  const sdkDate = formatSdkDate(timestampMs)
+  const projectId = stringValue(credential.project_id)
+  const signHeaders: Array<[string, string]> = [
+    ['host', host], ['x-sdk-date', sdkDate], ['x-subscription-type', 'v2'],
+  ]
+  if (credential.security_token !== undefined && credential.security_token !== '') {
+    signHeaders.push(['x-security-token', credential.security_token])
+  }
+  if (projectId !== undefined && projectId !== '') {
+    signHeaders.push(['x-project-id', projectId])
+  }
+  // POST 的空体：payloadHash 仍是 SHA-256('') —— 上游 SDK 同款口径。
+  const payloadHash = await sha256Hex('')
+  const { canonicalRequest, signedHeaders } = buildCanonicalRequest({
+    method: 'POST', path: OFFICEACE_BONUS_CLAIM_PATH, query: '', host, headers: signHeaders, payloadHash,
+  })
+  const { authorization } = await signV11({
+    accessKey: credential.access_key,
+    secretKey: credential.secret_key,
+    // ⚠️ V11 的 region 作用域：quota.mjs 固定 cn-southwest-2（网关所在 region）。
+    region: 'cn-southwest-2',
+    service: 'apic',
+    canonicalRequest, signedHeaders, timestampMs,
+  })
+  const response = await fetcher(url, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: authorization,
+      'X-Sdk-Date': sdkDate,
+      'X-Subscription-Type': 'v2',
+      ...(credential.security_token === undefined || credential.security_token === '' ? {} : { 'X-Security-Token': credential.security_token }),
+      ...(projectId === undefined || projectId === '' ? {} : { 'X-Project-ID': projectId }),
+    },
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  })
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    throw new Error(`OfficeAce：领奖返回 HTTP ${response.status}${text === '' ? '' : `：${text.slice(0, 200)}`}`)
+  }
+
+  // 增量算不出（领取前的读数没拿到）时如实说「已签到」，不编一个数字。
+  if (before === undefined) return { gained: undefined, message: '已签到' }
+  let after: number | undefined
+  try {
+    const snapshot = await fetchSubscriptionSnapshot(fetcher, product, credential, options)
+    after = snapshot.remaining
+  } catch {
+    after = undefined
+  }
+  if (after === undefined) return { gained: undefined, message: '已签到' }
+  const gained = after - before
+  return gained > 0
+    ? { gained, message: `已领取 ${gained} 积分` }
+    : { gained, message: '今天没有可领的奖励（或已领过）' }
 }
 
 /**

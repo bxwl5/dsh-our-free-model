@@ -19,6 +19,7 @@ import {
   KUKU_VIP_REMAIN_PATH,
   KUKU_WEB_QUERY,
   KUKU_TASK_COMPLETE_PATH,
+  KUKU_USERREPORT_PATH,
   type KukuProduct,
 } from './kuku-product.js'
 import {
@@ -72,8 +73,12 @@ export async function* streamChat(
   const clientSessionId = randomUUID()
   // device_id 是客户端自报的数字 id；用时间戳派生一个稳定的长整数。
   const deviceId = String(Date.now())
+  // 会话三件套：上游要求每次请求把 bdstoken/uinfo/uk 拼进 query，
+  // 由 userreport 用登录 Cookie 换来（见 ensureKukuTokenTriple 的说明）。
+  const triple = await ensureKukuTokenTriple(fetcher, product, credential, { signal: options.signal })
+  const tokenQuery = kukuTokenQuery(triple)
 
-  const sendResponse = await fetcher(`${product.apiBase}${KUKU_SENDMSG_PATH}`, {
+  const sendResponse = await fetcher(`${product.apiBase}${KUKU_SENDMSG_PATH}?${tokenQuery.slice(1)}`, {
     method: 'POST',
     headers: { ...kukuHeaders(product, credential), 'Content-Type': 'application/json' },
     body: JSON.stringify(buildSendmsgBody({
@@ -102,7 +107,7 @@ export async function* streamChat(
     client_session_id: clientSessionId,
     device_id: deviceId,
   }).toString()
-  const sseResponse = await fetcher(`${product.apiBase}${KUKU_SSE_PATH}?${query}`, {
+  const sseResponse = await fetcher(`${product.apiBase}${KUKU_SSE_PATH}?${query}&${tokenQuery.slice(1)}`, {
     method: 'POST',
     headers: {
       ...kukuHeaders(product, credential),
@@ -366,4 +371,92 @@ export async function claimKukuDailyCheckin(
   return total > 0
     ? { claimed: total, message: `已领取 ${total} 积分` }
     : { claimed: 0, message: '今日已领取过（任务幂等）' }
+}
+
+/**
+ * KukuAI 会话三件套（`bdstoken` / `uinfo` / `uk`）。
+ *
+ * ## 为什么必须换（上游 `providers/kuku/session.rs`）
+ *
+ * 对话链路要求每次请求把这三个值拼进 query，它们由
+ * `GET /api/genflowpro/common/userreport` 用登录 Cookie 换来（kuku2api 实测）。
+ * **少了这一步**，`sendmsg` 直接回
+ * `{"status":{"code":200002,"msg":"invalid session_id"}}`，
+ * 随后 SSE 那头报 `task not found` —— 表现就是「模型目录能拉到、对话永远空」。
+ *
+ * 每次对话都打一次 userreport 既没必要也招风控，参考实现与本处同值缓存
+ * 600 秒，key 用 BDUSS（同一账号 Cookie 不变，三件套可复用）。
+ */
+export interface KukuTokenTriple {
+  bdstoken: string
+  uinfo: string
+  uk: string
+}
+
+/** 三件套缓存有效期（600 秒，与参考实现同值）。 */
+const KUKU_TRIPLE_TTL_MS = 600_000
+
+/** 进程级缓存（key = BDUSS；热重载后自然重建，无落盘必要）。 */
+const tripleCache = new Map<string, { triple: KukuTokenTriple; at: number }>()
+
+/**
+ * 取（必要时刷新）会话三件套。
+ *
+ * 失败时抛错并说明原因：`userreport` 的 `errno === -6` 基本是凭据真失效
+ * （退出登录 / 换号）或上游临时风控限流（上游注释：换发业务令牌后仍失败
+ * 即这种情况，等 1-2 分钟再试）。
+ */
+export async function ensureKukuTokenTriple(
+  fetcher: typeof fetch,
+  product: KukuProduct,
+  credential: KukuCredential,
+  options: { force?: boolean; signal?: AbortSignal } = {},
+): Promise<KukuTokenTriple> {
+  if (!isCredentialUsable(credential)) throw new Error('KukuAI：没有可用凭据，请先粘贴含 BDUSS 的 Cookie')
+  const bduss = credential.access_token.split(';').map(part => part.trim())
+    .find(part => part.startsWith('BDUSS='))?.slice('BDUSS='.length) ?? credential.access_token
+  const key = bduss.slice(0, 64)
+  const cached = tripleCache.get(key)
+  if (options.force !== true && cached !== undefined && Date.now() - cached.at < KUKU_TRIPLE_TTL_MS) {
+    return cached.triple
+  }
+  const url = `${product.apiBase}${KUKU_USERREPORT_PATH}?${KUKU_WEB_QUERY}`
+  const response = await fetcher(url, {
+    method: 'GET',
+    headers: kukuHeaders(product, credential),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  })
+  const body: unknown = await response.json().catch(() => undefined)
+  const errno = typeof body === 'object' && body !== null
+    ? (body as Record<string, unknown>).errno
+    : undefined
+  const showMsg = typeof body === 'object' && body !== null
+    ? (body as Record<string, unknown>).show_msg ?? (body as Record<string, unknown>).errmsg
+    : undefined
+  if (typeof errno === 'number' && errno !== 0) {
+    throw new Error(
+      `KukuAI 会话校验未通过（userreport errno=${errno}：${typeof showMsg === 'string' ? showMsg : '未知错误'}）`
+      + '—— 请重新登录该账号（或重新粘贴完整 Cookie）后再试；若账号无误，等 1-2 分钟再试',
+    )
+  }
+  const data = typeof body === 'object' && body !== null
+    ? (body as Record<string, unknown>).data
+    : undefined
+  if (typeof data !== 'object' || data === null) throw new Error('KukuAI：userreport 返回缺少 data')
+  const record = data as Record<string, unknown>
+  const text = (key: string): string => {
+    const raw = record[key]
+    if (typeof raw === 'string') return raw.trim()
+    if (typeof raw === 'number' && Number.isFinite(raw)) return String(raw)
+    return ''
+  }
+  const triple: KukuTokenTriple = { bdstoken: text('bdstoken'), uinfo: text('uinfo'), uk: text('uk') }
+  if (triple.bdstoken === '') throw new Error('KukuAI：userreport 返回缺少 bdstoken')
+  tripleCache.set(key, { triple, at: Date.now() })
+  return triple
+}
+
+/** 三件套的 query 段（拼在接口 query 之后）。 */
+export function kukuTokenQuery(triple: KukuTokenTriple): string {
+  return `&bdstoken=${encodeURIComponent(triple.bdstoken)}&uinfo=${encodeURIComponent(triple.uinfo)}&uk=${encodeURIComponent(triple.uk)}`
 }

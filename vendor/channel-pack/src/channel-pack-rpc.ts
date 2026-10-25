@@ -3032,6 +3032,50 @@ function registerChannelPackEndpoints(
       case 'credits.claimAll': {
         const req = payload as RpcCreditsClaimAllRequest
         const accounts = await pool.listAccounts(req.provider)
+        if (req.provider === AUTOCLAW.id) {
+          // AutoClaw 的签到是「完成客户端任务」通用入口的一个 task_id
+          // （`autoclaw-task-complete` + `task_id=daily_signin`），走 userapi 域
+          // 的官方客户端指纹签名头（见 autoclaw-sms.ts 的
+          // `claimAutoclawDailyCheckin`）。上游按天幂等，且**成功判据是
+          // body 里的 reward_points/success**，不能只看 HTTP 200。
+          const { claimAutoclawDailyCheckin } = await import('./autoclaw-sms.js')
+          const { AUTOCLAW: AUTOCLAW_PRODUCT } = await import('./autoclaw-product.js')
+          const value = await collectClaimResults<AutoClawCredential, typeof AUTOCLAW_PRODUCT>(accounts, AUTOCLAW_PRODUCT, {
+            fetcher: codeartsFetcher,
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            claim: async (credential) => {
+              const outcome = await claimAutoclawDailyCheckin({
+                product: AUTOCLAW_PRODUCT,
+                fetcher: codeartsFetcher,
+                credential,
+              })
+              return { claimed: outcome.claimed, message: outcome.message }
+            },
+            precheckStatus: false,
+            warn: (msg) => ctx.logger?.warn?.(msg),
+          })
+          return { ok: true, value: value satisfies RpcCreditsClaimAllResponse }
+        }
+        if (req.provider === 'officeace') {
+          // OfficeAce 的签到：`POST {gateway}/v1/subscription/bonus/claim`
+          // （V11 签名）—— 上游一次调用把当天所有可领奖励（每日签到 +
+          // 一次性新人礼）一起发下来，故签到与新手任务是同一个上游动作。
+          // 幂等由上游保证（重复领不报错，current_value 不变），
+          // 因此没有「已领过」这条分支。积分增量 = 领奖前后 remaining 之差。
+          const { claimBonus } = await import('./officeace.js')
+          const { OFFICEACE } = await import('./officeace-product.js')
+          const value = await collectClaimResults<OfficeAceCredential, typeof OFFICEACE>(accounts, OFFICEACE, {
+            fetcher: codeartsFetcher,
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            claim: async (credential) => {
+              const outcome = await claimBonus(codeartsFetcher, OFFICEACE, credential)
+              return { claimed: outcome.gained ?? 0, message: outcome.message }
+            },
+            precheckStatus: false,
+            warn: (msg) => ctx.logger?.warn?.(msg),
+          })
+          return { ok: true, value: value satisfies RpcCreditsClaimAllResponse }
+        }
         if (req.provider === KUKU.id) {
           // KukuAI 的签到是「免费领积分」活动的任务领取（`freepoint/homenew`
           // 面板 + `taskComplete` 的 LOGIN/CHAT）。上游**幂等**：重复领返回

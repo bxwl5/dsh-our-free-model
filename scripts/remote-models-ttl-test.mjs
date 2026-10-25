@@ -157,3 +157,108 @@ export async function verifyKukuCredits() {
     upstream.close()
   }
 }
+
+/**
+ * AutoClaw / OfficeAce 签到判据回归。
+ *
+ * 上游形态按 `aimod-cc/Agent2API`：
+ * - autoclaw：`autoclaw-task-complete` 的 `task_id=daily_signin`，
+ *   **成功判据是 body 里的 reward_points/success**，不能只看 HTTP 200
+ *   （否则「今天已领过」会被当成一次成功领取）。
+ * - officeace：`POST /v1/subscription/bonus/claim`，幂等由上游保证
+ *   （重复领不报错），增量 = 领奖前后 remaining 之差。
+ */
+export async function verifyChannelCheckinJudgements() {
+  const http = await import('node:http')
+  const { fetch: realFetch } = await import('undici')
+
+  // ── AutoClaw ──
+  const { claimAutoclawDailyCheckin } = await import('../vendor/channel-pack/src/autoclaw-sms.ts')
+  const { AUTOCLAW } = await import('../vendor/channel-pack/src/autoclaw-product.ts')
+  let taskBody = { data: { already_completed: true, reward_points: 0, success: false, task_id: 'daily_signin' } }
+  let taskStatus = 200
+  const acServer = http.createServer((req, res) => {
+    req.resume()
+    req.on('end', () => {
+      if (!req.url.startsWith('/autoclaw-proxy/proxy/autoclaw-task-complete')) {
+        res.writeHead(404, { Connection: 'close' }).end('{}'); return
+      }
+      res.writeHead(taskStatus, { 'Content-Type': 'application/json', Connection: 'close' }).end(JSON.stringify(taskBody))
+    })
+  })
+  await new Promise(r => acServer.listen(0, '127.0.0.1', r))
+  const acProduct = { ...AUTOCLAW, apiBase: `http://127.0.0.1:${acServer.address().port}` }
+  const acCredential = { access_token: 'Bearer jwt-token-value-1234567890', refresh_token: 'r', expire_time: 0, account_id: 'a', nickname: 'n', created_at: 0, device_id: 'd' }
+  try {
+    // 1) HTTP 200 但 success:false + already_completed:true → 已领过，不是成功
+    taskStatus = 200
+    taskBody = { data: { already_completed: true, reward_points: 0, success: false, task_id: 'daily_signin' } }
+    const already = await claimAutoclawDailyCheckin({ product: acProduct, fetcher: realFetch, credential: acCredential })
+    assert.equal(already.claimed, 0, '已领过不能算成功领取')
+    assert.match(already.message, /已签到/, '要说明「今天已签到过」')
+
+    // 2) reward_points > 0 → 成功且报到数
+    taskBody = { data: { already_completed: false, reward_points: 200, success: true, task_id: 'daily_signin' } }
+    const won = await claimAutoclawDailyCheckin({ product: acProduct, fetcher: realFetch, credential: acCredential })
+    assert.equal(won.claimed, 200, 'reward_points>0 才算成功并上报积分数')
+    assert.match(won.message, /已领取 200/, '文案要带积分数')
+
+    // 3) 401 → 登录态过期（明确归因，不当成「已领过」）
+    taskStatus = 401
+    const expired = await claimAutoclawDailyCheckin({ product: acProduct, fetcher: realFetch, credential: acCredential })
+    assert.equal(expired.claimed, 0)
+    assert.match(expired.message, /登录态已过期/, '401 要归因到登录态')
+  } finally {
+    acServer.close()
+  }
+
+  // ── OfficeAce ──
+  const { claimBonus } = await import('../vendor/channel-pack/src/officeace.ts')
+  const { OFFICEACE } = await import('../vendor/channel-pack/src/officeace-product.ts')
+  // 订阅响应按 parseSubscriptionSnapshot 的真实结构造：skus[].quotas[] 里
+  // `officeace_points` 的 sku_value - current_value 即剩余积分。
+  let pointsTotal = 500
+  let pointsUsed = 0
+  const oaServer = http.createServer((req, res) => {
+    req.resume()
+    req.on('end', () => {
+      const json = (body) => res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' }).end(JSON.stringify(body))
+      if (req.url.startsWith('/v1/subscription/bonus/claim')) {
+        // 幂等由上游保证：一天一个活动只能领一次，重复领不重复入账。
+        // 首次入账 +100，之后重复调用总额不变。
+        if (pointsTotal === 500) pointsTotal += 100
+        json({ ok: true })
+        return
+      }
+      if (req.url.startsWith('/v1/subscription')) {
+        json({ skus: [{ sku_name: '基础套餐', sku_code: 'basic', quotas: [
+          { sku_attr_code: 'officeace_points', sku_value: pointsTotal, current_value: pointsUsed },
+        ] }] })
+        return
+      }
+      res.writeHead(404, { Connection: 'close' }).end('{}')
+    })
+  })
+  await new Promise(r => oaServer.listen(0, '127.0.0.1', r))
+  const oaCredential = {
+    base_url: `http://127.0.0.1:${oaServer.address().port}`,
+    app_key: 'k', app_secret: 's', access_key: 'ak', secret_key: 'sk',
+    security_token: 't', refresh_token: 'r', expire_time: 0,
+    nickname: 'n', created_at: 0, account_id: 'a', principal_id: 'p',
+    model_info: { model_api_url_base: `http://127.0.0.1:${oaServer.address().port}` },
+  }
+  try {
+    const gained = await claimBonus(realFetch, OFFICEACE, oaCredential)
+    assert.equal(gained.gained, 100, '增量 = 领奖前后 remaining 之差')
+    assert.match(gained.message, /已领取 100/, '文案要带增量')
+
+    // 幂等：重复调用 remaining 不再变（上游保证），文案说明已领过/无可领
+    const again = await claimBonus(realFetch, OFFICEACE, oaCredential)
+    assert.equal(again.gained, 0, '重复领不重复入账')
+    assert.match(again.message, /已领过|没有可领/, '要说明「已领过或今天没有可领」')
+  } finally {
+    oaServer.close()
+  }
+
+  console.log('channel-checkin: 5 组断言通过（autoclaw 三态判据 / officeace 增量与幂等）')
+}

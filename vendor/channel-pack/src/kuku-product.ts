@@ -113,6 +113,17 @@ export const KUKU_SSE_PATH = '/wenchain/genflowpro/sse/getchatcontent'
 export const KUKU_FREEPOINT_PATH = '/api/genflowpro/freepoint/homenew'
 
 /**
+ * 会话校验 / 换取三件套（挂 `apiBase`）。
+ *
+ * 上游 `aimod-cc/Agent2API` 的 `providers/kuku/session.rs`：对话链路**每次
+ * 请求都要带 `bdstoken` / `uinfo` / `uk`（拼进 query）**，它们由本接口用
+ * 登录 Cookie 换来（kuku2api 实测）。少了这一步直接打 `sendmsg` 会拿到
+ * `{"status":{"code":200002,"msg":"invalid session_id"}}` —— 我们此前正是
+ * 这么做的，于是「模型列表能拉到、对话永远回空」。
+ */
+export const KUKU_USERREPORT_PATH = '/api/genflowpro/common/userreport'
+
+/**
  * 领取免费积分任务（挂 `apiBase`，POST 表单 `task_type=LOGIN|CHAT`）。
  *
  * 上游 `providers/kuku/checkin.rs`：`taskComplete` 是**幂等**的 —— 重复领

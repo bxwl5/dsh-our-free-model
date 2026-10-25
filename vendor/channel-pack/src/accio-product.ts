@@ -160,6 +160,19 @@ export const ACCIO_GENERATE_PATH = '/generateContent'
 /** 地区头名。 */
 export const ACCIO_REGION_HEADER = 'x-package-region'
 
+/**
+ * 推理请求头 `appKey`（**必填**，上游只校验「有没有」不校验取值）。
+ *
+ * 上游 `aimod-cc/Agent2API` 的 `providers/accio/endpoints.rs`：不带它打
+ * `generateContent`，上游回一段「Your app version is no longer supported」
+ * 的普通文本（HTTP 200 + `data:` 帧），会被误当成模型输出。取的是
+ * accio-manager 的默认值，与桌面端同源。
+ */
+export const ACCIO_APP_KEY = '35298846'
+
+/** 推理请求头 `x-app-version`（桌面端 appVersion；上游 `DEFAULT_APP_VERSION`）。 */
+export const ACCIO_APP_VERSION = '0.32.6'
+
 /** 登录回调路径。 */
 export const ACCIO_CALLBACK_PATH = '/callback'
 /** PKCE 回调端口起点。 */

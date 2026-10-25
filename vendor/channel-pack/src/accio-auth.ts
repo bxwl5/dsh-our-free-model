@@ -277,6 +277,7 @@ export async function* streamChat(
     headers: { ...accioHeaders(product), Accept: 'text/event-stream' },
     body: JSON.stringify(buildGenerateBody({
       token: credential.access_token,
+      model: options.model,
       messages: options.messages,
       ...(options.system === undefined ? {} : { system: options.system }),
       ...(options.tools === undefined ? {} : { tools: options.tools }),

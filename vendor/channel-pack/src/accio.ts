@@ -8,7 +8,11 @@
  * 3. **响应是 ADK 帧**：`{ content: { role, parts: [{text} | {thought,text} | {function_call}] }, turn_complete? }`。
  */
 
+import { randomUUID } from 'node:crypto'
+
 import {
+  ACCIO_APP_KEY,
+  ACCIO_APP_VERSION,
   ACCIO_REGION_HEADER,
   type AccioProduct,
 } from './accio-product.js'
@@ -68,11 +72,30 @@ export function isCredentialExpired(credential: AccioCredential, nowMs: number =
  * ⚠️ **不带 Authorization** —— Accio 的 token 走 query/body。
  * 带了反而可能被当成冲突凭据。
  */
+/**
+ * 推理 / 目录请求的公共头。
+ *
+ * ⚠️ `appKey` **必填**（上游 `aimod-cc/Agent2API` 的 `providers/accio/endpoints.rs`
+ * 记录）：不带它打 `generateContent`，上游**不报错**，而是回一段普通文本
+ * 「Your app version is no longer supported. Please update…」—— HTTP 200、
+ * `data:` 帧，形态与正常回答完全一样，会被当成模型输出吐给下游。
+ * 带上任意非空取值即恢复（实测 `35298846` / `12345678` 都通，空串等同于没带）
+ * —— 上游只校验「有没有」，不校验取值。
+ *
+ * 其余 `x-app-version` / `x-platform` / `x-os` / `x-language` /
+ * `Accept-Language` 与上游 `api_headers()` 逐字段对齐（同一份客户端指纹）。
+ */
 export function accioHeaders(product: AccioProduct): Record<string, string> {
   return {
     Accept: 'application/json',
     'Content-Type': 'application/json',
+    'Accept-Language': 'en',
+    'x-language': 'en',
+    'x-platform': 'desktop',
+    'x-os': process.platform === 'win32' ? 'windows' : process.platform,
+    'x-app-version': ACCIO_APP_VERSION,
     [ACCIO_REGION_HEADER]: product.region,
+    appKey: ACCIO_APP_KEY,
     Origin: product.loginBase,
     Referer: `${product.loginBase}/`,
   }
@@ -107,6 +130,7 @@ export function parseTokenResponse(value: unknown): AccioCredential | undefined 
  */
 export function buildGenerateBody(options: {
   token: string
+  model?: string
   messages: readonly { role: string; content: unknown }[]
   system?: string
   tools?: readonly { name: string; description?: string; parameters?: unknown }[]
@@ -125,7 +149,28 @@ export function buildGenerateBody(options: {
       parts: [{ text: text.trim() }],
     })
   }
-  const body: Record<string, unknown> = { contents, token: options.token }
+  /**
+   * ADK 信封字段（上游 `providers/accio/protocol.rs` 的四个必须照抄点）。
+   *
+   * - `tenant` / `iai_tag` / `empid`：桌面端客户端指纹，缺了会被上游风控
+   *   （实测回 `{"rgv587_flag":"sm", …}` 的 punish 页，HTTP 200 但 body 是
+   *   风控跳转而不是 SSE，最终表现为「模型可用但返回空」）。
+   * - `request_id` / `message_id`：**`message_id` 必填** —— 上游注释记录
+   *   缺了它回 `{"error_code":"400","error_message":"invalid params"}`
+   *   （同样是 HTTP 200 的帧）。形态不限，用同源随机串加前缀。
+   */
+  // 与 `accio-auth.ts` 同款：Node 内建 crypto（该文件顶部已 import）。
+  const requestId = randomUUID()
+  const body: Record<string, unknown> = {
+    model: options.model,
+    tenant: 'accio-agent',
+    iai_tag: 'phoenix-desktop',
+    empid: '',
+    request_id: requestId,
+    message_id: `msg-${requestId}`,
+    token: options.token,
+    contents,
+  }
   if (options.tools !== undefined && options.tools.length > 0) {
     body.tools = [{
       functionDeclarations: options.tools.map((tool) => ({
