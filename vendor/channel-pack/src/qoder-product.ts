@@ -186,6 +186,20 @@ export interface QoderProduct {
   /** OpenAPI 基址（轮询、续期、userinfo 都走它）。 */
   openApiBase: string
   /**
+   * **模型目录**基址（COSY 签名端点所在 host，2026-10-26 实测确定）。
+   *
+   * 目录端点 `GET {catalogBase}/algo/api/v2/model/list?Encode=1` 需要 COSY
+   * 签名（见 `qoder-cosy.ts`）。此前本项目不实现签名、恒用静态兜底表，
+   * 于是上游上新后必须发版才能跟上 —— 用户报障「很多都是旧列表，里面已经有
+   * 模型不能用了」的直接来源之一。
+   *
+   * ⚠️ **与 `inferBase` / `encryptedInferBase` 都不是同一个 host**：
+   * 实测国际版 `api2-v2.qoder.sh` 打目录端点回 404，`api3.qoder.sh` 才是
+   * 目录所在（返回 14 个模型）；国内版 `gateway.qoder.com.cn` 返回 10 个。
+   * 三处只有一字之差，写错只表现为 404，很容易误判成「没有目录接口」。
+   */
+  catalogBase: string
+  /**
    * 推理基址（**公开的 OpenAI 兼容端点**）。
    *
    * ⚠️ **不是** `environments.prod.inferBaseUrl`（那是 `https://api2.qoder.sh`）。
@@ -443,6 +457,8 @@ export const QODER: QoderProduct = {
   openApiBase: 'https://openapi.qoder.sh',
   inferBase: 'https://api2-v2.qoder.sh',
   encryptedInferBase: 'https://api2.qoder.sh',
+  // 模型目录（COSY 签名）：实测 api3 返回 14 个模型，api2-v2 是 404。
+  catalogBase: 'https://api3.qoder.sh',
   clientId: 'e883ade2-e6e3-4d6d-adf7-f92ceff5fdcb',
   testClientId: 'e93fe488-5778-4c35-a6fc-0f54ed7b3139',
   clientMetadata: {
@@ -602,6 +618,8 @@ export const QODER_CN: QoderProduct = {
   // E4 + E9：`algo` 网关在 CN 换域名，路径与协议同形
   // （零凭据 POST 的错误响应形态与国际版逐字节一致）。
   encryptedInferBase: 'https://gateway.qoder.com.cn',
+  // 模型目录（COSY 签名）：实测返回 10 个模型。
+  catalogBase: 'https://gateway.qoder.com.cn',
   // E2：取自 CN asar 的 `Vpe.authClientIds.prod`。
   // ⚠️ **与国际版完全不同** —— 国际版两个 id 在 CN asar 里命中 0 次。
   // 用错的症状是「授权页 302 正常、点击授权后报参数无效」，

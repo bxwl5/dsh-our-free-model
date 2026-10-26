@@ -33,6 +33,7 @@ import { QoderEncryptedInfer, type QoderInferMessage, type QoderInferRequest, ty
 import { unwrapQoderEnvelopeStream } from './qoder-envelope.js'
 import { QODER, type QoderFallbackModel, type QoderModelPromotion, type QoderProduct } from './qoder-product.js'
 import { projectRequestImage, type ImageRequestTarget } from './image-budget.js'
+import { buildCosyHeaders } from './qoder-cosy.js'
 import {
   registerAdapterIdempotent,
 } from './llm-register-compat.js'
@@ -448,11 +449,86 @@ export interface QoderAdapterOptions {
 }
 
 /** Qoder 模型适配器。使用 Bearer access_token 鉴权，仅支持 SSE。 */
+/**
+ * 远端模型目录路径（挂 `product.catalogBase`，需 COSY 签名）。
+ *
+ * `Encode=1` 只影响**请求体**编码，GET 无体，故这里保留参数与原样一致。
+ */
+const QODER_CATALOG_PATH = '/algo/api/v2/model/list?Encode=1'
+
+/**
+ * 目录缓存有效期（1 小时），与上游参考实现同步。
+ *
+ * 上游 `providers/qoder/models.rs` 的注释：「缓存 1 小时；失败保留现有清单」。
+ * 目录变动不是秒级事件，1 小时既不放大请求量（每渠道每小时最多 1 次），
+ * 又能让新上架模型在一个工作时段内出现。
+ */
+const QODER_CATALOG_TTL_MS = 3_600_000
+
+/**
+ * 解析 Qoder 目录响应为兜底表同构的条目。
+ *
+ * 上游响应形状（2026-10-26 实测）：
+ * ```json
+ * { "chat": [ { "key": "dmodel", "display_name": "DeepSeek-V4-Pro",
+ *               "is_reasoning": true, "is_vl": false,
+ *               "thinking_config": { "enabled": { "efforts": { "high": {} } } },
+ *               "price_factor": 1.2, "enable": true }, ... ] }
+ * ```
+ *
+ * ## id 与 name 的口径（**必须与兜底表一致**）
+ *
+ * 上游参考实现用 `display_name` **去掉所有空白**作为模型 id（`id` 由展示名
+ * 派生），`key` 只在发请求时用作上游模型键。我们照抄这条：兜底表里的 id
+ * 就是这种形态（如 `DeepSeek-V4-Pro`），两边对得上才能做并集去重。
+ *
+ * ## 为什么复用兜底表的字段
+ *
+ * 目录响应**不含** `supportsImage` 之外的全部能力位（上下文窗口、倍率文案等
+ * 在兜底表里更完整，且已与界面口径对齐）。故这里只补「新出现的 id」，
+ * 已知 id 一律保留兜底表条目（倍率/免费标记不会因远端刷新而丢失）。
+ */
+export function parseQoderCatalog(
+  payload: unknown,
+  fallback: readonly QoderFallbackModel[],
+): Array<{ id: string; name: string; supportsImage: boolean }> {
+  if (payload === null || typeof payload !== 'object') return []
+  const chat = (payload as Record<string, unknown>).chat
+  if (!Array.isArray(chat)) return []
+  const fallbackById = new Map(fallback.map((model) => [model.id, model]))
+  const out: Array<{ id: string; name: string; supportsImage: boolean }> = []
+  const seen = new Set<string>()
+  for (const raw of chat) {
+    if (raw === null || typeof raw !== 'object') continue
+    const item = raw as Record<string, unknown>
+    const displayName = typeof item.display_name === 'string' ? item.display_name.trim() : ''
+    if (displayName === '') continue
+    const id = displayName.replace(/\s+/g, '')
+    if (id === '') continue
+    const lowered = id.toLowerCase()
+    if (seen.has(lowered)) continue
+    seen.add(lowered)
+    const known = fallbackById.get(id)
+    out.push({
+      id,
+      name: displayName,
+      supportsImage: known?.supportsImage ?? item.is_vl === true,
+    })
+  }
+  return out
+}
+
 export class QoderAdapter extends LlmAdapter {
   private readonly product: QoderProduct
   private readonly fetchImpl: typeof fetch
   /** 产品级兜底模型索引（`product.fallbackModels` 的 id → 条目）。 */
   private readonly fallbackIndex: ReadonlyMap<string, QoderFallbackModel>
+  /** 远端目录缓存（COSY 签名拉取）；`undefined` 表示还没成功拉到过。 */
+  private remoteModels: Array<{ id: string; name: string; supportsImage: boolean }> | undefined
+  /** 上次成功拉取的时刻（配合 TTL 判断是否重拉）。 */
+  private remoteModelsAt = 0
+  /** 进行中的拉取（并发请求共用同一个 Promise，避免打爆上游）。 */
+  private loadingRemote: Promise<void> | undefined
 
   constructor(private readonly options: QoderAdapterOptions) {
     super()
@@ -512,12 +588,71 @@ export class QoderAdapter extends LlmAdapter {
   }
 
   /**
-   * 模型目录。
+   * 拉取远端模型目录（COSY 签名），带 TTL 缓存。
    *
-   * **不发任何网络请求**：Qoder 的模型列表端点需要 WASM 签名
-   * （`qoder_auth_wasm`），本插件不实现，故恒用产品兜底表。
-   * 见设计文档 §2.6 与 `qoder-product.ts` 的 `fallbackModels` 说明。
+   * ## 为什么现在能拉了
+   *
+   * 此前注释写「目录端点需要 WASM 签名，本插件不实现」—— 那是个**误判**：
+   * 签名不需要 WASM，用 Node 原生 `crypto` 就能复刻（见 `qoder-cosy.ts`，
+   * 算法逐行对照上游 `providers/qoder/cosy.rs`）。2026-10-26 实测：
+   * 带 COSY 头请求 `{catalogBase}/algo/api/v2/model/list?Encode=1`，
+   * 国际版回 **14 个模型**、国内版回 **10 个** —— 而只带 Bearer 是
+   * `403 {"code":"101","message":"Signature invalid"}`。
+   *
+   * ## 失败策略
+   *
+   * 与上游一致：**失败保留现有清单**（`remoteModels` 不动），而不是清空。
+   * 清空会让「网络抖一下」变成「模型全没了」。拉不到时 `listModels` 自然
+   * 回落到产品兜底表。
    */
+  private async ensureRemoteModels(): Promise<void> {
+    if (this.remoteModels !== undefined && Date.now() - this.remoteModelsAt < QODER_CATALOG_TTL_MS) return
+    if (this.loadingRemote !== undefined) return this.loadingRemote
+    this.loadingRemote = (async () => {
+      try {
+        const credential = await this.options.resolveCredential()
+        if (credential === undefined || credential.access_token === '') return
+        const url = `${this.product.catalogBase}${QODER_CATALOG_PATH}`
+        const headers = buildCosyHeaders(undefined, url, {
+          userId: credential.uid ?? '',
+          authToken: credential.access_token,
+          name: credential.nickname ?? '',
+          email: '',
+          machineId: credential.machine_id,
+        })
+        const response = await this.fetchImpl(url, {
+          method: 'GET',
+          headers: { Accept: 'application/json', ...headers },
+        })
+        if (!response.ok) return
+        const payload: unknown = await response.json().catch(() => undefined)
+        const rows = parseQoderCatalog(payload, this.product.fallbackModels)
+        if (rows.length > 0) {
+          this.remoteModels = rows
+          this.remoteModelsAt = Date.now()
+        }
+      } catch {
+        // 兜底表接管（含 uid 缺失时 buildCosyHeaders 抛错的情况）。
+      } finally {
+        this.loadingRemote = undefined
+      }
+    })()
+    return this.loadingRemote
+  }
+
+  /**
+   * 可用模型集合：**远端与兜底的并集**（远端优先）。
+   *
+   * 取并集而不是替换，理由与 autoclaw 相同：目录下发的集合可能**不完整**
+   * （权限、灰度、套餐档位都会影响），而兜底表里的模型实测可用。直接替换会
+   * 让用户「模型突然少了几个」。
+   */
+  private modelSource(): readonly QoderFallbackModel[] {
+    if (this.remoteModels === undefined) return this.product.fallbackModels
+    const seen = new Set(this.remoteModels.map((model) => model.id))
+    const missing = this.product.fallbackModels.filter((model) => !seen.has(model.id))
+    return [...this.remoteModels, ...missing]
+  }
   /**
    * 完整模型目录（**不应用用户黑名单**），含最终展示名（倍率/免费标记）。
    *
@@ -526,7 +661,11 @@ export class QoderAdapter extends LlmAdapter {
    * （用户报障：「关闭的就没有显示倍率」）。详见 `model.list` 端点的注释。
    */
   listAllModels(): readonly { id: string; name: string }[] {
-    return this.product.fallbackModels.map((model) => ({ id: model.id, name: qoderDisplayName(model) }))
+    // 用 `modelSource()`（远端+兜底并集）而不是裸兜底表：设置页必须能显示
+    // 远端新出现的模型，否则用户在那里看不到、也无法开关它们。
+    // ⚠️ 该方法不 await 远端拉取（设置页同步渲染）；远端未就绪时就是兜底表，
+    // 下次渲染会带上（TTL 内已缓存）。
+    return this.modelSource().map((model) => ({ id: model.id, name: qoderDisplayName(model) }))
   }
 
   async listModels(_provider: string): Promise<readonly LlmModelInfo[]> {
@@ -535,9 +674,11 @@ export class QoderAdapter extends LlmAdapter {
     // ⚠️ 必须返回 `[]` 而**不能抛错**（抛错会被归入 catalog 的 `failures`，
     // 界面上反而多出一条 provider 报错）。
     if (!await providerCatalogVisible(this.options.accountPool, this.product.id)) return []
+    // 先尝试拉远端目录（带 1 小时 TTL；失败静默回落兜底表）。
+    await this.ensureRemoteModels()
     // 用户在 Channel Pack 关闭的模型（黑名单制：不在表里即默认打开）。
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id)
-    const source = this.product.fallbackModels
+    const source = this.modelSource()
     const listed = disabled === undefined || disabled.size === 0
       ? source
       : source.filter((model) => !disabled.has(model.id))

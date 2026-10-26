@@ -790,3 +790,85 @@ export async function verifyClaimClassification() {
 
   console.log('claim-classification: 6 组断言通过（officeace already-claimed / autoclaw claimed / kuku 显式 status / minimax UTC+8 / loomy dailyQuotaDate）')
 }
+
+/**
+ * Qoder COSY 目录解析回归（2026-10-26，P0 修复）。
+ *
+ * qoder/qodercn 此前只有静态兜底表（注释误判「目录端点需要 WASM 签名」），
+ * 上游上新后必须发版才能跟上。实际签名用 Node 原生 crypto 即可复刻，
+ * 目录端点带 COSY 头后国际版回 14 个、国内版回 10 个模型。
+ */
+export async function verifyQoderCatalog() {
+  const http = await import('node:http')
+  const { fetch: realFetch } = await import('undici')
+  const { QoderAdapter, parseQoderCatalog } = await import('../vendor/channel-pack/src/qoder-adapter.ts')
+  const { QODER } = await import('../vendor/channel-pack/src/qoder-product.ts')
+  const { buildCosyHeaders, cosySignaturePath, encodeCosyBody } = await import('../vendor/channel-pack/src/qoder-cosy.ts')
+
+  // 1) 签名路径规则：去掉 /algo 前缀、不含查询串。
+  assert.equal(cosySignaturePath('https://api3.qoder.sh/algo/api/v2/model/list?Encode=1'), '/api/v2/model/list')
+  assert.equal(cosySignaturePath('https://x.test/other/path'), '/other/path')
+
+  // 2) 签名头齐全且格式正确
+  const headers = buildCosyHeaders(undefined, 'https://api3.qoder.sh/algo/api/v2/model/list?Encode=1', {
+    userId: 'u1', authToken: 'tok', name: 'n', email: '', machineId: 'm1',
+  })
+  assert.match(headers.Authorization, /^Bearer COSY\.[A-Za-z0-9+/=]+\.[0-9a-f]{32}$/, 'Authorization 必须是 COSY.<payload>.<md5>')
+  for (const key of ['Cosy-Key', 'Cosy-User', 'Cosy-Date', 'Cosy-Version', 'Cosy-Sigpath', 'Cosy-Bodyhash', 'Cosy-Bodylength']) {
+    assert.ok(key in headers, `必须带 ${key} 头`)
+  }
+  assert.equal(headers['Cosy-Sigpath'], '/api/v2/model/list', '签名路径去掉 /algo')
+  assert.equal(headers['Cosy-Bodylength'], '0', 'GET 无体')
+  // 缺 uid 或 token 必须报错（不能发出必然失败的请求）
+  assert.throws(() => buildCosyHeaders(undefined, 'https://x/algo/a', { userId: '', authToken: 't', name: '', email: '', machineId: 'm' }), /用户标识/)
+  assert.throws(() => buildCosyHeaders(undefined, 'https://x/algo/a', { userId: 'u', authToken: '', name: '', email: '', machineId: 'm' }), /访问令牌/)
+
+  // 3) body 编码是可逆的字节变换（长度不变、字符表替换）
+  const encoded = encodeCosyBody(Buffer.from('{"a":1}', 'utf8')).toString()
+  assert.equal(encoded.length, Buffer.from('{"a":1}','utf8').toString('base64').length, '编码后长度不变')
+  assert.equal(/[+/=]/.test(encoded), false, '标准字母表的 +//= 必须被替换掉')
+
+  // 4) 目录解析：id 由 display_name 去空白派生、去重、保留兜底表能力位
+  const parsed = parseQoderCatalog({ chat: [
+    { key: 'dmodel', display_name: 'DeepSeek-V4-Pro', is_vl: false },
+    { key: 'qwen', display_name: 'Qwen 3.8 Max', is_vl: true },
+    { key: 'dup', display_name: 'DeepSeek-V4-Pro' },
+    { key: 'bad', display_name: '   ' },
+    { key: 'nokey' },
+  ] }, QODER.fallbackModels)
+  assert.equal(parsed.length, 2, '去重 + 跳过空名/无 display_name')
+  assert.equal(parsed[0].id, 'DeepSeek-V4-Pro')
+  assert.equal(parsed[1].id, 'Qwen3.8Max', 'id 去掉所有空白')
+  assert.equal(parsed[1].supportsImage, true, '远端 is_vl 补能力位')
+
+  // 5) adapter 合并远端与兜底（并集，远端优先）
+  const upstream = http.createServer((req, res) => {
+    const send = (body) => res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' }).end(JSON.stringify(body))
+    if (req.url.startsWith('/algo/api/v2/model/list')) {
+      // 断言请求确实带了 COSY 头
+      if (!String(req.headers.authorization ?? '').startsWith('Bearer COSY.')) { res.writeHead(403, { Connection: 'close' }).end('{}'); return }
+      send({ chat: [{ display_name: 'RemoteOnly-Model', is_vl: false }] })
+      return
+    }
+    res.writeHead(404, { Connection: 'close' }).end('{}')
+  })
+  await new Promise(r => upstream.listen(0, '127.0.0.1', r))
+  const product = { ...QODER, catalogBase: `http://127.0.0.1:${upstream.address().port}` }
+  const adapter = new QoderAdapter({
+    product, fetchImpl: realFetch,
+    resolveCredential: async () => ({
+      security_oauth_token: 's', access_token: 'tok', machine_id: 'm1', uid: 'u1', nickname: 'n',
+    }),
+    refresh: async () => {},
+  })
+  try {
+    const models = await adapter.listModels(product.id)
+    const ids = models.map(m => m.id)
+    assert.ok(ids.includes('RemoteOnly-Model'), '远端模型必须出现')
+    assert.ok(ids.length > product.fallbackModels.length, '并集应多于纯兜底表')
+    assert.equal(new Set(ids).size, ids.length, '不得重复')
+    console.log(`qoder-catalog: 5 组断言通过（签名路径 / COSY 头 / body 编码 / 目录解析 / 并集合并，实际 ${ids.length} 个模型）`)
+  } finally {
+    upstream.close()
+  }
+}

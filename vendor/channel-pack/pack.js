@@ -28045,7 +28045,7 @@ __export(commandcode_auth_exports, {
   validateApiKey: () => validateApiKey
 });
 import { createServer } from "node:http";
-import { randomUUID as randomUUID2 } from "node:crypto";
+import { randomUUID as randomUUID3 } from "node:crypto";
 async function validateApiKey(fetcher, product, apiKey, signal) {
   try {
     const response = await fetcher(`${product.apiBase}${COMMANDCODE_WHOAMI_PATH}`, {
@@ -28114,7 +28114,7 @@ async function listenForCallbackPort(server, startPort = COMMANDCODE_LOGIN_START
 async function startCommandCodeLogin(options) {
   const fetcher = options.fetcher ?? fetch;
   const { product } = options;
-  const state = randomUUID2();
+  const state = randomUUID3();
   let resolveResult;
   let rejectResult;
   const result = new Promise((resolve2, reject) => {
@@ -28465,14 +28465,14 @@ var init_monkeycode = __esm({
 });
 
 // vendor/channel-pack/src/monkeycode-ws.ts
-import { createHash as createHash4, randomBytes as randomBytes3 } from "node:crypto";
+import { createHash as createHash5, randomBytes as randomBytes4 } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 function wsAcceptKey(key) {
-  return createHash4("sha1").update(`${key}${WS_GUID}`).digest("base64");
+  return createHash5("sha1").update(`${key}${WS_GUID}`).digest("base64");
 }
 function createWsKey() {
-  return randomBytes3(16).toString("base64");
+  return randomBytes4(16).toString("base64");
 }
 function parseFrame2(buffer, maxPayload = WS_MAX_PAYLOAD) {
   if (buffer.length < 2) return void 0;
@@ -28525,7 +28525,7 @@ function encodeFrame(opcode, payload, options = {}) {
   }
   const headBuffer = Buffer.from(head);
   if (!mask) return Buffer.concat([headBuffer, body]);
-  const maskKey = randomBytes3(4);
+  const maskKey = randomBytes4(4);
   const masked = Buffer.allocUnsafe(body.length);
   for (let index = 0; index < body.length; index += 1) masked[index] = body[index] ^ maskKey[index & 3];
   return Buffer.concat([headBuffer, maskKey, masked]);
@@ -28941,7 +28941,7 @@ __export(monkeycode_auth_exports, {
   stopMonkeyCodeTask: () => stopMonkeyCodeTask,
   streamChat: () => streamChat
 });
-import { createHash as createHash5 } from "node:crypto";
+import { createHash as createHash6 } from "node:crypto";
 function isRecord4(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -29346,7 +29346,7 @@ var init_monkeycode_auth = __esm({
     init_monkeycode_product();
     init_monkeycode();
     capSha256Hex = (input) => {
-      return createHash5("sha256").update(input).digest("hex");
+      return createHash6("sha256").update(input).digest("hex");
     };
     MONKEYCODE_BAIZHI_BASE = "https://baizhi.cloud";
     BRIDGE_MAX_HOPS = 12;
@@ -29605,7 +29605,7 @@ var init_kuku = __esm({
 });
 
 // vendor/channel-pack/src/kuku-qr-login.ts
-import { createHash as createHash6, randomBytes as randomBytes4 } from "node:crypto";
+import { createHash as createHash7, randomBytes as randomBytes5 } from "node:crypto";
 function createKukuCookieJar(initial = {}) {
   const cookies = new Map(Object.entries(initial));
   return {
@@ -29639,7 +29639,7 @@ function readSetCookie(response) {
   return joined.split(/,(?=\s*[A-Za-z0-9_\-]+=)/);
 }
 function jsonpName() {
-  return `bd__cbs__${randomBytes4(4).toString("hex")}`;
+  return `bd__cbs__${randomBytes5(4).toString("hex")}`;
 }
 function unwrapJsonp(text) {
   const match = /^[^(]*\(([\s\S]*)\)\s*;?\s*$/.exec(text);
@@ -29872,7 +29872,7 @@ async function completeKukuQrLogin(session, ticket, options = {}) {
 async function exchangeKukuStoken(session, bduss, ptoken, options) {
   const fields = `appid=1&bduss=${bduss}&ptoken=${ptoken}&return_type=1&tpl=genflowpro&tpl_list=genflowpro|netdisk`;
   const signed = `${fields}&sign_key=${KUKU_ENGINE_SIGN_KEY}`;
-  const sig = createHash6("md5").update(signed).digest("hex");
+  const sig = createHash7("md5").update(signed).digest("hex");
   const body = `${fields}&sig=${sig}`;
   if (session.jar.has("BAIDUID") && !session.jar.has("gfprotpl")) session.jar.set("gfprotpl", "genflowpro");
   const url = `${session.passportBase}/v3/login/api/auth`;
@@ -30021,7 +30021,7 @@ __export(kuku_auth_exports, {
   probeCredential: () => probeCredential2,
   streamChat: () => streamChat3
 });
-import { createHash as createHash7, randomUUID as randomUUID4 } from "node:crypto";
+import { createHash as createHash8, randomUUID as randomUUID5 } from "node:crypto";
 function pickId(body, ...keys) {
   if (typeof body !== "object" || body === null) return void 0;
   const record = body;
@@ -30037,9 +30037,9 @@ async function* streamChat3(fetcher, product, credential, options) {
   if (!isCredentialUsable4(credential)) {
     throw new Error("KukuAI\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u7C98\u8D34\u542B BDUSS \u7684 Cookie");
   }
-  const sessionId = randomUUID4();
-  const replyId = randomUUID4();
-  const clientSessionId = randomUUID4();
+  const sessionId = randomUUID5();
+  const replyId = randomUUID5();
+  const clientSessionId = randomUUID5();
   const deviceId = String(Date.now());
   const triple = await ensureKukuTokenTriple(fetcher, product, credential, { signal: options.signal });
   const tokenQuery = kukuTokenQuery(triple);
@@ -30253,7 +30253,7 @@ async function exchangeKukuStokenLive(fetcher, product, credential, signal) {
   const ptoken = value("PTOKEN");
   if (bduss === "" || ptoken === "") return void 0;
   const fields = `appid=1&bduss=${bduss}&ptoken=${ptoken}&return_type=1&tpl=genflowpro&tpl_list=genflowpro|netdisk`;
-  const signature = createHash7("md5").update(`${fields}&sign_key=${KUKU_ENGINE_SIGN_KEY}`).digest("hex");
+  const signature = createHash8("md5").update(`${fields}&sign_key=${KUKU_ENGINE_SIGN_KEY}`).digest("hex");
   try {
     const response = await fetcher(`${KUKU_PASSPORT_BASE}/v3/login/api/auth`, {
       method: "POST",
@@ -30452,7 +30452,7 @@ var init_accio_product = __esm({
 });
 
 // vendor/channel-pack/src/accio.ts
-import { randomUUID as randomUUID5 } from "node:crypto";
+import { randomUUID as randomUUID6 } from "node:crypto";
 function stringValue7(value) {
   return typeof value === "string" && value !== "" ? value : void 0;
 }
@@ -30520,7 +30520,7 @@ function buildGenerateBody(options) {
       parts: [{ text: text.trim() }]
     });
   }
-  const requestId = randomUUID5();
+  const requestId = randomUUID6();
   const body = {
     model: options.model,
     tenant: "accio-agent",
@@ -30585,9 +30585,9 @@ function contentToText10(content) {
   return parts.join("\n");
 }
 async function createPkcePair() {
-  const { randomBytes: randomBytes15, createHash: createHash14 } = await import("node:crypto");
-  const verifier = randomBytes15(32).toString("base64url");
-  const challenge = createHash14("sha256").update(verifier).digest("base64url");
+  const { randomBytes: randomBytes16, createHash: createHash15 } = await import("node:crypto");
+  const verifier = randomBytes16(32).toString("base64url");
+  const challenge = createHash15("sha256").update(verifier).digest("base64url");
   return { verifier, challenge };
 }
 function buildAccioAuthUrl(product, redirectUri, state, challenge) {
@@ -30620,7 +30620,7 @@ __export(accio_auth_exports, {
   streamChat: () => streamChat4
 });
 import { createServer as createServer2 } from "node:http";
-import { randomUUID as randomUUID6 } from "node:crypto";
+import { randomUUID as randomUUID7 } from "node:crypto";
 function numberOrUndefined(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : void 0;
 }
@@ -30762,9 +30762,9 @@ async function* streamChat4(fetcher, product, credential, options) {
   if (!isCredentialUsable5(credential)) {
     throw new Error("Accio\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
   }
-  const { createHash: createHash14, randomUUID: randomUUID17 } = await import("node:crypto");
-  const requestId = randomUUID17();
-  const sgK = createHash14("md5").update(requestId).digest("hex");
+  const { createHash: createHash15, randomUUID: randomUUID18 } = await import("node:crypto");
+  const requestId = randomUUID18();
+  const sgK = createHash15("md5").update(requestId).digest("hex");
   const response = await fetcher(`${product.llmBase}${ACCIO_GENERATE_PATH}?sg_k=${sgK}`, {
     method: "POST",
     headers: { ...accioHeaders(product), Accept: "text/event-stream" },
@@ -30818,7 +30818,7 @@ async function* streamChat4(fetcher, product, credential, options) {
 async function startAccioLogin(options) {
   const fetcher = options.fetcher ?? fetch;
   const { product } = options;
-  const state = randomUUID6();
+  const state = randomUUID7();
   const pkce = await createPkcePair();
   let resolveResult;
   let rejectResult;
@@ -31803,11 +31803,11 @@ __export(autoclaw_sms_exports, {
   stripAutoClawRoutePrefix: () => stripAutoClawRoutePrefix,
   toAutoclawCredential: () => toAutoclawCredential
 });
-import { createHash as createHash8, randomUUID as randomUUID7 } from "node:crypto";
+import { createHash as createHash9, randomUUID as randomUUID8 } from "node:crypto";
 import { mkdirSync as mkdirSync5, readFileSync as readFileSync6, writeFileSync as writeFileSync5 } from "node:fs";
 import { join as join4 } from "node:path";
 function autoclawSign(appId, timestamp, appKey) {
-  return createHash8("md5").update(`${appId}&${timestamp}&${appKey}`).digest("hex");
+  return createHash9("md5").update(`${appId}&${timestamp}&${appKey}`).digest("hex");
 }
 function autoclawAuthHeaders(timestamp = Math.floor(Date.now() / 1e3), appId = AUTOCLAW_SMS_APP_ID, appKey = AUTOCLAW_SMS_APP_KEY) {
   return {
@@ -31835,7 +31835,7 @@ function resolveAutoclawDeviceId(home) {
     if (typeof value === "string" && value.length >= 8) return value;
   } catch {
   }
-  const deviceId = randomUUID7();
+  const deviceId = randomUUID8();
   try {
     mkdirSync5(join4(home, "channel-pack"), { recursive: true });
     writeFileSync5(file, `${JSON.stringify({ deviceId, createdAt: Date.now() }, null, 2)}
@@ -33537,10 +33537,10 @@ var init_webapi = __esm({
 });
 
 // vendor/channel-pack/src/oauth.ts
-import { createHash as createHash9, randomBytes as randomBytes6 } from "node:crypto";
+import { createHash as createHash10, randomBytes as randomBytes7 } from "node:crypto";
 function generatePkcePair() {
-  const codeVerifier = randomBytes6(48).toString("base64url");
-  const codeChallenge = createHash9("sha256").update(codeVerifier).digest("base64url");
+  const codeVerifier = randomBytes7(48).toString("base64url");
+  const codeChallenge = createHash10("sha256").update(codeVerifier).digest("base64url");
   return { codeVerifier, codeChallenge };
 }
 async function generateDpopKeyPair() {
@@ -33556,7 +33556,7 @@ async function signDpopJws(keyPair, htm, htu) {
     htm,
     htu,
     iat: Math.floor(Date.now() / 1e3),
-    jti: randomBytes6(32).toString("hex")
+    jti: randomBytes7(32).toString("hex")
   };
   return new SignJWT(payload).setProtectedHeader({ alg: "ES256", typ: "dpop+jwt", jwk: keyPair.publicKeyJwk }).sign(key);
 }
@@ -33675,7 +33675,7 @@ __export(login_exports, {
 });
 import { createServer as createServer3 } from "node:http";
 import { spawn } from "node:child_process";
-import { getRandomValues, randomUUID as randomUUID8, randomBytes as randomBytes7 } from "node:crypto";
+import { getRandomValues, randomUUID as randomUUID9, randomBytes as randomBytes8 } from "node:crypto";
 function generateRandomSecret() {
   const bytes = getRandomValues(new Uint8Array(32));
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -33847,7 +33847,7 @@ function startCallbackServer(ticketId, secret, options) {
   });
 }
 async function runLoginFlow(options = {}) {
-  const ticketId = randomUUID8();
+  const ticketId = randomUUID9();
   const secret = generateRandomSecret();
   const { port, server, result } = await startCallbackServer(ticketId, secret, options);
   const { loginUrl } = buildLoginUrl(port, ticketId);
@@ -33937,7 +33937,7 @@ function listenOnCallbackPort(server) {
   });
 }
 async function startOAuthFlow(options = {}) {
-  const ticketId = randomBytes7(32).toString("hex");
+  const ticketId = randomBytes8(32).toString("hex");
   const pkce = generatePkcePair();
   const keyPair = await generateDpopKeyPair();
   const { port, server, result } = await startOAuthCallbackServer(ticketId, pkce, keyPair, options);
@@ -41897,6 +41897,8 @@ var QODER = {
   openApiBase: "https://openapi.qoder.sh",
   inferBase: "https://api2-v2.qoder.sh",
   encryptedInferBase: "https://api2.qoder.sh",
+  // 模型目录（COSY 签名）：实测 api3 返回 14 个模型，api2-v2 是 404。
+  catalogBase: "https://api3.qoder.sh",
   clientId: "e883ade2-e6e3-4d6d-adf7-f92ceff5fdcb",
   testClientId: "e93fe488-5778-4c35-a6fc-0f54ed7b3139",
   clientMetadata: {
@@ -42061,6 +42063,8 @@ var QODER_CN = {
   // E4 + E9：`algo` 网关在 CN 换域名，路径与协议同形
   // （零凭据 POST 的错误响应形态与国际版逐字节一致）。
   encryptedInferBase: "https://gateway.qoder.com.cn",
+  // 模型目录（COSY 签名）：实测返回 10 个模型。
+  catalogBase: "https://gateway.qoder.com.cn",
   // E2：取自 CN asar 的 `Vpe.authClientIds.prod`。
   // ⚠️ **与国际版完全不同** —— 国际版两个 id 在 CN asar 里命中 0 次。
   // 用错的症状是「授权页 302 正常、点击授权后报参数无效」，
@@ -42091,6 +42095,101 @@ var QODER_CN = {
 var ALL_QODER_PRODUCTS = [QODER, QODER_CN];
 function qoderProductById(id) {
   return ALL_QODER_PRODUCTS.find((product) => product.id === id);
+}
+
+// vendor/channel-pack/src/qoder-cosy.ts
+import { createCipheriv, createHash as createHash3, randomBytes as randomBytes3, randomUUID as randomUUID2 } from "node:crypto";
+var QODER_COSY_VERSION = "1.1.38";
+var CLIENT_TYPE = "5";
+var DATA_POLICY = "disagree";
+var LOGIN_VERSION = "v2";
+var MACHINE_TYPE = "5";
+var CLIENT_IP = "127.0.0.1";
+var RSA_MODULUS_HEX = "c0f22307e5cd362e296bb04470f6de8fbf935ce24e8fcf511a0e2701329769c4a76e499bb938036a52af1eaf818cf79a2600620e3ce87e371d2ca6d85803606a1b3fa5e874643c9ed2db7e85673ef7227fca56e2e7c08f0927609bb896a9f24be1782099a66016a5bfdc3f1ff756bfc9e88d7b5dc5be30bf45a0223a00ebcecf";
+var RSA_EXPONENT = 65537n;
+function machineOs() {
+  const arch = process.arch === "arm64" ? "aarch64" : "x86_64";
+  const platform = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
+  return `${arch}_${platform}`;
+}
+function jsonText(value) {
+  return JSON.stringify(value);
+}
+function aes128CbcBase64(key16, plaintext) {
+  const key = Buffer.from(key16, "utf8");
+  if (key.length !== 16) throw new Error("Qoder \u7B7E\u540D\u5BC6\u94A5\u957F\u5EA6\u65E0\u6548");
+  const cipher = createCipheriv("aes-128-cbc", key, key);
+  return Buffer.concat([cipher.update(plaintext), cipher.final()]).toString("base64");
+}
+function modPow(base, exponent, modulus) {
+  let result = 1n;
+  let b = base % modulus;
+  let e = exponent;
+  while (e > 0n) {
+    if (e & 1n) result = result * b % modulus;
+    b = b * b % modulus;
+    e >>= 1n;
+  }
+  return result;
+}
+function rsaEncryptBase64(plaintext) {
+  const modulus = BigInt(`0x${RSA_MODULUS_HEX}`);
+  const keyLength = Math.ceil(modulus.toString(2).length / 8);
+  const message2 = Buffer.from(plaintext, "utf8");
+  if (message2.length + 11 > keyLength) throw new Error("Qoder \u7B7E\u540D\u5185\u5BB9\u8FC7\u957F");
+  const psLength = keyLength - 3 - message2.length;
+  const ps = randomBytes3(psLength);
+  for (let i = 0; i < ps.length; i++) if (ps[i] === 0) ps[i] = 1;
+  const encoded = Buffer.concat([
+    Buffer.from([0, 2]),
+    ps,
+    Buffer.from([0]),
+    message2
+  ]);
+  const cipher = modPow(BigInt(`0x${encoded.toString("hex")}`), RSA_EXPONENT, modulus);
+  const hex = cipher.toString(16).padStart(keyLength * 2, "0");
+  return Buffer.from(hex, "hex").toString("base64");
+}
+function cosySignaturePath(requestUrl) {
+  const path2 = new URL(requestUrl).pathname;
+  return path2.startsWith("/algo") ? path2.slice("/algo".length) : path2;
+}
+function buildCosyHeaders(body, requestUrl, identity, now = Date.now()) {
+  if (identity.userId === "") throw new Error("Qoder \u8D26\u53F7\u7F3A\u5C11\u7528\u6237\u6807\u8BC6\uFF0C\u65E0\u6CD5\u7B7E\u540D");
+  if (identity.authToken === "") throw new Error("Qoder \u8D26\u53F7\u7F3A\u5C11\u8BBF\u95EE\u4EE4\u724C\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+  const aesKey = randomBytes3(32).toString("hex").slice(0, 16);
+  const userInfo = `{"uid":${jsonText(identity.userId)},"security_oauth_token":${jsonText(identity.authToken)},"name":${jsonText(identity.name)},"aid":"","email":${jsonText(identity.email)}}`;
+  const info = aes128CbcBase64(aesKey, Buffer.from(userInfo, "utf8"));
+  const cosyKey = rsaEncryptBase64(aesKey);
+  const requestId = randomUUID2();
+  const timestamp = String(Math.floor(now / 1e3));
+  const payloadSource = `{"version":"v1","requestId":"${requestId}","info":"${info}","cosyVersion":"${QODER_COSY_VERSION}","ideVersion":""}`;
+  const payload = Buffer.from(payloadSource, "utf8").toString("base64");
+  const sigPath = cosySignaturePath(requestUrl);
+  const bodyBytes = body ?? Buffer.alloc(0);
+  const signature = createHash3("md5").update(payload).update("\n").update(cosyKey).update("\n").update(timestamp).update("\n").update(bodyBytes).update("\n").update(sigPath).digest("hex");
+  const bodyHash = createHash3("md5").update(bodyBytes).digest("hex");
+  return {
+    Authorization: `Bearer COSY.${payload}.${signature}`,
+    "Cosy-Key": cosyKey,
+    "Cosy-User": identity.userId,
+    "Cosy-Date": timestamp,
+    "Cosy-Version": QODER_COSY_VERSION,
+    "Cosy-Machineid": identity.machineId,
+    "Cosy-Machinetoken": identity.machineId,
+    "Cosy-Machinetype": MACHINE_TYPE,
+    "Cosy-Machineos": machineOs(),
+    "Cosy-Clienttype": CLIENT_TYPE,
+    "Cosy-Clientip": CLIENT_IP,
+    "Cosy-Bodyhash": bodyHash,
+    "Cosy-Bodylength": String(bodyBytes.length),
+    "Cosy-Sigpath": sigPath,
+    "Cosy-Data-Policy": DATA_POLICY,
+    "Cosy-Organization-Id": "",
+    "Cosy-Organization-Tags": "",
+    "Login-Version": LOGIN_VERSION,
+    "X-Request-Id": requestId
+  };
 }
 
 // vendor/channel-pack/src/openai-compat.ts
@@ -42710,6 +42809,34 @@ function resolveFirstTokenTimeoutMs3() {
 function resolveChunkTimeoutMs3() {
   return Number.parseInt(process.env.DSH_QODER_SSE_CHUNK_TIMEOUT_MS ?? "", 10) || 12e4;
 }
+var QODER_CATALOG_PATH = "/algo/api/v2/model/list?Encode=1";
+var QODER_CATALOG_TTL_MS = 36e5;
+function parseQoderCatalog(payload, fallback2) {
+  if (payload === null || typeof payload !== "object") return [];
+  const chat = payload.chat;
+  if (!Array.isArray(chat)) return [];
+  const fallbackById = new Map(fallback2.map((model) => [model.id, model]));
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const raw of chat) {
+    if (raw === null || typeof raw !== "object") continue;
+    const item = raw;
+    const displayName = typeof item.display_name === "string" ? item.display_name.trim() : "";
+    if (displayName === "") continue;
+    const id = displayName.replace(/\s+/g, "");
+    if (id === "") continue;
+    const lowered = id.toLowerCase();
+    if (seen.has(lowered)) continue;
+    seen.add(lowered);
+    const known = fallbackById.get(id);
+    out.push({
+      id,
+      name: displayName,
+      supportsImage: known?.supportsImage ?? item.is_vl === true
+    });
+  }
+  return out;
+}
 var QoderAdapter = class extends LlmAdapter3 {
   constructor(options) {
     super();
@@ -42725,6 +42852,12 @@ var QoderAdapter = class extends LlmAdapter3 {
   fetchImpl;
   /** 产品级兜底模型索引（`product.fallbackModels` 的 id → 条目）。 */
   fallbackIndex;
+  /** 远端目录缓存（COSY 签名拉取）；`undefined` 表示还没成功拉到过。 */
+  remoteModels;
+  /** 上次成功拉取的时刻（配合 TTL 判断是否重拉）。 */
+  remoteModelsAt = 0;
+  /** 进行中的拉取（并发请求共用同一个 Promise，避免打爆上游）。 */
+  loadingRemote;
   /**
    * 可中止的休眠；信号中止时立即 resolve（不抛错，由调用方检查 signal）。
    *
@@ -42774,12 +42907,69 @@ var QoderAdapter = class extends LlmAdapter3 {
     return this.fallbackIndex.get(model)?.supportsImage === true ? ["text", "image"] : ["text"];
   }
   /**
-   * 模型目录。
+   * 拉取远端模型目录（COSY 签名），带 TTL 缓存。
    *
-   * **不发任何网络请求**：Qoder 的模型列表端点需要 WASM 签名
-   * （`qoder_auth_wasm`），本插件不实现，故恒用产品兜底表。
-   * 见设计文档 §2.6 与 `qoder-product.ts` 的 `fallbackModels` 说明。
+   * ## 为什么现在能拉了
+   *
+   * 此前注释写「目录端点需要 WASM 签名，本插件不实现」—— 那是个**误判**：
+   * 签名不需要 WASM，用 Node 原生 `crypto` 就能复刻（见 `qoder-cosy.ts`，
+   * 算法逐行对照上游 `providers/qoder/cosy.rs`）。2026-10-26 实测：
+   * 带 COSY 头请求 `{catalogBase}/algo/api/v2/model/list?Encode=1`，
+   * 国际版回 **14 个模型**、国内版回 **10 个** —— 而只带 Bearer 是
+   * `403 {"code":"101","message":"Signature invalid"}`。
+   *
+   * ## 失败策略
+   *
+   * 与上游一致：**失败保留现有清单**（`remoteModels` 不动），而不是清空。
+   * 清空会让「网络抖一下」变成「模型全没了」。拉不到时 `listModels` 自然
+   * 回落到产品兜底表。
    */
+  async ensureRemoteModels() {
+    if (this.remoteModels !== void 0 && Date.now() - this.remoteModelsAt < QODER_CATALOG_TTL_MS) return;
+    if (this.loadingRemote !== void 0) return this.loadingRemote;
+    this.loadingRemote = (async () => {
+      try {
+        const credential = await this.options.resolveCredential();
+        if (credential === void 0 || credential.access_token === "") return;
+        const url = `${this.product.catalogBase}${QODER_CATALOG_PATH}`;
+        const headers = buildCosyHeaders(void 0, url, {
+          userId: credential.uid ?? "",
+          authToken: credential.access_token,
+          name: credential.nickname ?? "",
+          email: "",
+          machineId: credential.machine_id
+        });
+        const response = await this.fetchImpl(url, {
+          method: "GET",
+          headers: { Accept: "application/json", ...headers }
+        });
+        if (!response.ok) return;
+        const payload = await response.json().catch(() => void 0);
+        const rows = parseQoderCatalog(payload, this.product.fallbackModels);
+        if (rows.length > 0) {
+          this.remoteModels = rows;
+          this.remoteModelsAt = Date.now();
+        }
+      } catch {
+      } finally {
+        this.loadingRemote = void 0;
+      }
+    })();
+    return this.loadingRemote;
+  }
+  /**
+   * 可用模型集合：**远端与兜底的并集**（远端优先）。
+   *
+   * 取并集而不是替换，理由与 autoclaw 相同：目录下发的集合可能**不完整**
+   * （权限、灰度、套餐档位都会影响），而兜底表里的模型实测可用。直接替换会
+   * 让用户「模型突然少了几个」。
+   */
+  modelSource() {
+    if (this.remoteModels === void 0) return this.product.fallbackModels;
+    const seen = new Set(this.remoteModels.map((model) => model.id));
+    const missing = this.product.fallbackModels.filter((model) => !seen.has(model.id));
+    return [...this.remoteModels, ...missing];
+  }
   /**
    * 完整模型目录（**不应用用户黑名单**），含最终展示名（倍率/免费标记）。
    *
@@ -42788,12 +42978,13 @@ var QoderAdapter = class extends LlmAdapter3 {
    * （用户报障：「关闭的就没有显示倍率」）。详见 `model.list` 端点的注释。
    */
   listAllModels() {
-    return this.product.fallbackModels.map((model) => ({ id: model.id, name: qoderDisplayName(model) }));
+    return this.modelSource().map((model) => ({ id: model.id, name: qoderDisplayName(model) }));
   }
   async listModels(_provider) {
     if (!await providerCatalogVisible(this.options.accountPool, this.product.id)) return [];
+    await this.ensureRemoteModels();
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id);
-    const source = this.product.fallbackModels;
+    const source = this.modelSource();
     const listed = disabled === void 0 || disabled.size === 0 ? source : source.filter((model) => !disabled.has(model.id));
     return listed.map((model) => ({
       provider: this.product.id,
@@ -43240,7 +43431,7 @@ function canonicalReasoningEffortFor(effort) {
 }
 
 // vendor/channel-pack/src/trae.ts
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash4 } from "node:crypto";
 
 // vendor/channel-pack/src/trae-product.ts
 var TRAE_AGENT_HOST = "https://trae-api-cn.mchost.guru";
@@ -43458,7 +43649,7 @@ function seededStream(seed, salt, nbytes) {
     counterBuf[1] = counter >> 16 & 255;
     counterBuf[2] = counter >> 8 & 255;
     counterBuf[3] = counter & 255;
-    const h = createHash3("sha256");
+    const h = createHash4("sha256");
     h.update(prefix, "utf8");
     h.update(counterBuf);
     for (const b of h.digest()) {
@@ -43799,7 +43990,7 @@ function generateDeviceId() {
 }
 function deriveRotatingMachineId(baseMachineId, generation) {
   if (!Number.isFinite(generation) || generation <= 0) return baseMachineId;
-  return createHash3("sha256").update(`${baseMachineId}#machine${Math.floor(generation)}`, "utf8").digest("hex").slice(0, 32);
+  return createHash4("sha256").update(`${baseMachineId}#machine${Math.floor(generation)}`, "utf8").digest("hex").slice(0, 32);
 }
 var TRAE_DEFAULT_MAX_COMPLETION_TOKENS = 64e3;
 function resolveTraeMaxCompletionTokens() {
@@ -47347,9 +47538,9 @@ function contentToText8(content) {
 }
 
 // vendor/channel-pack/src/orcaterm-auth.ts
-import { randomUUID as randomUUID3 } from "node:crypto";
+import { randomUUID as randomUUID4 } from "node:crypto";
 async function createConversation(fetcher, product, credential, signal) {
-  const id = randomUUID3();
+  const id = randomUUID4();
   const response = await fetcher(`${product.lightaiBase}${ORCATERM_CONVERSATION_PATH}`, {
     method: "POST",
     headers: {
@@ -47408,7 +47599,7 @@ async function* streamChat2(fetcher, product, credential, options) {
       input: {
         type: "start",
         input: flattenMessages2(options.messages, options.system),
-        id: randomUUID3()
+        id: randomUUID4()
       },
       stream: true
     }),
@@ -48808,7 +48999,7 @@ function registerLoomyLlm(ctx, options) {
 import { LlmAdapter as LlmAdapter14, LlmError as LlmError18, ReasoningEffortId as ReasoningEffortId8 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/raccoon.ts
-import { createCipheriv, randomBytes as randomBytes5 } from "node:crypto";
+import { createCipheriv as createCipheriv2, randomBytes as randomBytes6 } from "node:crypto";
 var RACCOON_API_BASE = "https://xiaohuanxiong.com";
 var RACCOON_POINTS_PREFIX = "/api/web/points/v1";
 var RACCOON_DESKTOP_PREFIX = "/api/web/desktop/v1";
@@ -48852,8 +49043,8 @@ function isRaccoonRefreshable(credential) {
 }
 function encryptRaccoonPhone(phone, iv) {
   const key = Buffer.from(RACCOON_PHONE_CIPHER_SECRET, "utf8");
-  const nonce = iv ?? randomBytes5(16);
-  const cipher = createCipheriv("aes-128-cfb", key, nonce);
+  const nonce = iv ?? randomBytes6(16);
+  const cipher = createCipheriv2("aes-128-cfb", key, nonce);
   cipher.setAutoPadding(false);
   const ciphertext = Buffer.concat([cipher.update(Buffer.from(phone, "utf8")), cipher.final()]);
   return Buffer.concat([nonce, ciphertext]).toString("base64");
@@ -52416,13 +52607,13 @@ import { Service as Service7 } from "@deepseek-ai/cordis";
 import { credentialRef as credentialRef7 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/loomy-oauth.ts
-import { randomUUID as randomUUID10 } from "node:crypto";
+import { randomUUID as randomUUID11 } from "node:crypto";
 
 // vendor/channel-pack/src/loomy-sign.ts
-import { createHash as createHash10, createHmac, randomUUID as randomUUID9 } from "node:crypto";
+import { createHash as createHash11, createHmac, randomUUID as randomUUID10 } from "node:crypto";
 function loomyContentMd5(body) {
   if (body.length === 0) return "";
-  return createHash10("md5").update(body, "utf8").digest("base64");
+  return createHash11("md5").update(body, "utf8").digest("base64");
 }
 function escapeRfc3986(value) {
   return encodeURIComponent(value).replace(/!/g, "%21").replace(/'/g, "%27").replace(/\(/g, "%28").replace(/\)/g, "%29").replace(/\*/g, "%2A");
@@ -52461,7 +52652,7 @@ function buildLoomySigningString(options) {
 }
 function loomyAuthHeaders(options) {
   const date = (/* @__PURE__ */ new Date()).toUTCString();
-  const nonce = randomUUID9();
+  const nonce = randomUUID10();
   const contentType = options.contentType ?? "application/json";
   const body = options.body ?? "";
   const stringToSign = buildLoomySigningString({ ...options, contentType, body, date, nonce });
@@ -52489,7 +52680,7 @@ function buildLoomyAccountBody(product, param) {
       devid: "web",
       // ⚠️ 硬编码 macOS：客户端在 Windows 上发的也是这个值，照抄不要改。
       ua: "Loomy|Desktop|Electron|macOS",
-      traceid: randomUUID10().replace(/-/g, "")
+      traceid: randomUUID11().replace(/-/g, "")
     },
     param
   };
@@ -52622,7 +52813,7 @@ async function bindLoomySkip(rcode, product, fetcher = fetch) {
 
 // vendor/channel-pack/src/loomy-wechat-login.ts
 import { createServer as createServer5 } from "node:http";
-import { randomUUID as randomUUID11 } from "node:crypto";
+import { randomUUID as randomUUID12 } from "node:crypto";
 
 // vendor/channel-pack/src/loomy-wechat.ts
 var LOOMY_WECHAT_APP_ID = "wx18d60be432287cf8";
@@ -52776,7 +52967,7 @@ async function startLoomyWechatLoginFlow(options) {
     settled = true;
     rejectResult(error);
   };
-  state.uuid = await fetchLoomyWechatUuid(randomUUID11(), fetcher);
+  state.uuid = await fetchLoomyWechatUuid(randomUUID12(), fetcher);
   const server = createServer5((request2, response) => {
     void handleRequest(request2, response, {
       state,
@@ -57212,7 +57403,7 @@ function buildCarrierPageHtml(config) {
 }
 
 // vendor/channel-pack/src/zcode-login.ts
-import { randomBytes as randomBytes8, randomUUID as randomUUID12 } from "node:crypto";
+import { randomBytes as randomBytes9, randomUUID as randomUUID13 } from "node:crypto";
 var ZCODE_ORIGIN = "https://zcode.z.ai";
 var ZCODE_OAUTH_CLI_INIT_URL = `${ZCODE_ORIGIN}/api/v1/oauth/cli/init`;
 var zcodeOauthCliPollUrl = (flowId) => `${ZCODE_ORIGIN}/api/v1/oauth/cli/poll/${encodeURIComponent(flowId)}`;
@@ -57226,10 +57417,10 @@ var ZcodeLoginError = class extends Error {
   kind;
 };
 function generateFlowSecret() {
-  return randomBytes8(32).toString("hex");
+  return randomBytes9(32).toString("hex");
 }
 function generateDeviceMid() {
-  return randomUUID12();
+  return randomUUID13();
 }
 async function startZcodeLogin(fetchImpl = fetch, options = {}) {
   const flowSecret = generateFlowSecret();
@@ -61697,7 +61888,7 @@ async function fetchMinimaxCreditBalance(credential, fetcher = fetch, product = 
 }
 
 // vendor/channel-pack/src/gemini.ts
-import { randomBytes as randomBytes9 } from "node:crypto";
+import { randomBytes as randomBytes10 } from "node:crypto";
 import { LlmError as LlmError20, ReasoningEffortId as ReasoningEffortId10 } from "@deepseek-ai/dsh-llm";
 var GEMINI_ENDPOINT_DAILY = "https://daily-cloudcode-pa.googleapis.com";
 var GEMINI_ENDPOINT_SANDBOX = "https://daily-cloudcode-pa.sandbox.googleapis.com";
@@ -61808,7 +61999,7 @@ function marshalAlphabetical(value) {
   return sortedStringify(value);
 }
 function newGeminiRequestId(nowMs = Date.now()) {
-  return `agent/${nowMs}/${randomBytes9(4).toString("hex")}`;
+  return `agent/${nowMs}/${randomBytes10(4).toString("hex")}`;
 }
 var GEMINI_UPSTREAM_FLASH = "gemini-3.8-flash";
 var GEMINI_BUDGET_LOW = 1e3;
@@ -64427,10 +64618,10 @@ async function importBackup(credentials, pool, raw) {
 
 // vendor/channel-pack/src/opencode-rpc.ts
 import { credentialRef as credentialRef11 } from "@deepseek-ai/dsh-credentials";
-import { randomBytes as randomBytes11 } from "node:crypto";
+import { randomBytes as randomBytes12 } from "node:crypto";
 
 // vendor/channel-pack/src/opencode-auth.ts
-import { randomBytes as randomBytes10 } from "node:crypto";
+import { randomBytes as randomBytes11 } from "node:crypto";
 function newAccountFingerprint(apiKey) {
   return { projectId: deriveProjectId(apiKey, 0), generation: 0 };
 }
@@ -64462,8 +64653,8 @@ function isAnonymousCredential(apiKey) {
 async function ensureDefaultAnonymousSlot(addEntry, writeCredential, listEntries, alreadyHasAnonymous) {
   try {
     if (alreadyHasAnonymous()) return "";
-    const id = `${OPENCODE.id}-anon-${randomBytes10(3).toString("hex")}`;
-    const refName = `OPENCODE_ANON_${randomBytes10(4).toString("hex").toUpperCase()}`;
+    const id = `${OPENCODE.id}-anon-${randomBytes11(3).toString("hex")}`;
+    const refName = `OPENCODE_ANON_${randomBytes11(4).toString("hex").toUpperCase()}`;
     await writeCredential(refName, JSON.stringify({
       api_key: OPENCODE.anonymousKey,
       nickname: "\u533F\u540D\u901A\u9053"
@@ -64530,8 +64721,8 @@ async function handleOpencodeRpc(ctx, pool, method, payload) {
       }
       case "opencode.addAnonymous": {
         const req = call2.payload;
-        const id = `${OPENCODE.id}-anon-${randomBytes11(3).toString("hex")}`;
-        const refName = `OPENCODE_ANON_${randomBytes11(4).toString("hex").toUpperCase()}`;
+        const id = `${OPENCODE.id}-anon-${randomBytes12(3).toString("hex")}`;
+        const refName = `OPENCODE_ANON_${randomBytes12(4).toString("hex").toUpperCase()}`;
         const count2 = pool.listAccountsByProvider(OPENCODE.id).filter((a) => a.id.startsWith(`${OPENCODE.id}-anon-`)).length;
         const nickname = typeof req?.nickname === "string" && req.nickname.trim().length > 0 ? req.nickname.trim() : `\u533F\u540D\u901A\u9053 ${count2 + 1}`;
         await ctx.credentials.set(credentialRef11(refName), JSON.stringify({
@@ -68549,13 +68740,13 @@ var ADOPTABLE_CHANNELS = {
 
 // vendor/channel-pack/src/openai-gateway/server.ts
 import { createServer as createServer10 } from "node:http";
-import { randomUUID as randomUUID16 } from "node:crypto";
+import { randomUUID as randomUUID17 } from "node:crypto";
 import { homedir as homedir4 } from "node:os";
 import { join as join10 } from "node:path";
 
 // vendor/channel-pack/src/openai-gateway/auth.ts
 import { mkdirSync as mkdirSync8, readFileSync as readFileSync10, renameSync as renameSync7, writeFileSync as writeFileSync9, existsSync as existsSync9 } from "node:fs";
-import { randomBytes as randomBytes12 } from "node:crypto";
+import { randomBytes as randomBytes13 } from "node:crypto";
 import { join as join9 } from "node:path";
 var KEY_FILE = "api-key";
 var KEY_PATTERN2 = /^[A-Za-z0-9_-]{43}$/;
@@ -68575,7 +68766,7 @@ function loadOrCreateApiKey(home, env = process.env) {
       `\u7F51\u5173\u5BC6\u94A5\u6587\u4EF6\u5185\u5BB9\u5F02\u5E38\uFF08\u4E0D\u662F\u672C\u63D2\u4EF6\u751F\u6210\u7684\u5F62\u6001\uFF09\uFF1A${path2}\u3002\u53EF\u80FD\u662F\u88AB\u624B\u5DE5\u7F16\u8F91\u6216\u88AB\u5176\u5B83\u7A0B\u5E8F\u6539\u5199\uFF1B\u672C\u63D2\u4EF6\u4E0D\u4F1A\u9759\u9ED8\u66F4\u6362\u5B83\uFF0C\u5426\u5219\u5DF2\u914D\u7F6E\u7684\u5BA2\u6237\u7AEF\u4F1A\u5168\u90E8\u5931\u6548\u3002\u5982\u9700\u66F4\u6362\uFF1A\u5220\u9664\u8BE5\u6587\u4EF6\u540E\u91CD\u542F DSH\uFF08\u4F1A\u91CD\u65B0\u751F\u6210\uFF09\uFF0C\u6216\u6539\u7528 DSH_OPENAI_GATEWAY_API_KEY \u73AF\u5883\u53D8\u91CF\u3002`
     );
   }
-  const key = randomBytes12(32).toString("base64url");
+  const key = randomBytes13(32).toString("base64url");
   mkdirSync8(directory, { recursive: true });
   const temporary = `${path2}.${process.pid}.${Date.now()}.tmp`;
   writeFileSync9(temporary, key, { encoding: "utf8", mode: 384 });
@@ -68592,7 +68783,7 @@ function loadOrCreateApiKey(home, env = process.env) {
 }
 
 // vendor/channel-pack/src/openai-gateway/messages.ts
-import { randomUUID as randomUUID13 } from "node:crypto";
+import { randomUUID as randomUUID14 } from "node:crypto";
 import { ReasoningEffortId as ReasoningEffortId12 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/openai-gateway/images.ts
@@ -68790,7 +68981,7 @@ function gatewaySource() {
   return { kind: "plugin:dsh-openai-gateway" };
 }
 function createGatewayMessage(role, content, source) {
-  return { id: randomUUID13(), role, content, source };
+  return { id: randomUUID14(), role, content, source };
 }
 function convertToolCalls(raw) {
   if (!Array.isArray(raw)) throw new OpenAiGatewayError("assistant.tool_calls must be an array");
@@ -68950,11 +69141,11 @@ function findCaseInsensitiveSuggestion(requested, catalog) {
 }
 
 // vendor/channel-pack/src/openai-gateway/responses.ts
-import { createHash as createHash11, randomUUID as randomUUID15 } from "node:crypto";
+import { createHash as createHash12, randomUUID as randomUUID16 } from "node:crypto";
 import { ReasoningEffortId as ReasoningEffortId13 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/openai-gateway/stream.ts
-import { randomUUID as randomUUID14 } from "node:crypto";
+import { randomUUID as randomUUID15 } from "node:crypto";
 
 // vendor/channel-pack/src/openai-gateway/usage.ts
 function count(value) {
@@ -69089,7 +69280,7 @@ function consumeChunk(state, chunk) {
       return void 0;
   }
 }
-async function* toOpenAiSse(chunks, requestId = `chatcmpl-${randomUUID14()}`, model, suggest) {
+async function* toOpenAiSse(chunks, requestId = `chatcmpl-${randomUUID15()}`, model, suggest) {
   const state = { content: "", reasoning: "", tools: /* @__PURE__ */ new Map() };
   try {
     for await (const chunk of chunks) {
@@ -69144,7 +69335,7 @@ async function* toOpenAiSse(chunks, requestId = `chatcmpl-${randomUUID14()}`, mo
     yield "data: [DONE]\n\n";
   }
 }
-async function collectOpenAiCompletion(chunks, requestId = `chatcmpl-${randomUUID14()}`, model, suggest) {
+async function collectOpenAiCompletion(chunks, requestId = `chatcmpl-${randomUUID15()}`, model, suggest) {
   const state = { content: "", reasoning: "", tools: /* @__PURE__ */ new Map() };
   try {
     for await (const chunk of chunks) {
@@ -69267,7 +69458,7 @@ function chatPartsFromResponses(content) {
 function flatNamespaceToolName(namespace, name2) {
   const flat = `${namespace}__${name2}`;
   if (flat.length <= 64) return flat;
-  const digest = createHash11("sha256").update(flat).digest("hex").slice(0, 8);
+  const digest = createHash12("sha256").update(flat).digest("hex").slice(0, 8);
   return `${flat.slice(0, 55)}_${digest}`;
 }
 function responsesNamespaceToolMap(body) {
@@ -69481,7 +69672,7 @@ async function toResponsesGenerateOptions(body, signal, reasoningEffortOverride,
   };
 }
 function hexId() {
-  return randomUUID15().replaceAll("-", "");
+  return randomUUID16().replaceAll("-", "");
 }
 function itemId(kind) {
   if (kind === "reasoning") return `rs_${hexId()}`;
@@ -70152,7 +70343,7 @@ function createOpenAiGateway(options) {
       });
       const stream = options.llm.stream(markGatewayChannel(generate));
       const fullId = `${route.provider}/${route.model}`;
-      const responseId = `resp_${randomUUID16().replaceAll("-", "")}`;
+      const responseId = `resp_${randomUUID17().replaceAll("-", "")}`;
       if (body.stream === true) {
         writeSseHead(response);
         for await (const event of toResponsesSse(stream, responseId, fullId, body, makeSuggestion(fullId))) {
@@ -70894,7 +71085,7 @@ import { Service as Service10 } from "@deepseek-ai/cordis";
 import { credentialRef as credentialRef13 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/minimax-oauth.ts
-import { createHash as createHash12, randomBytes as randomBytes13 } from "node:crypto";
+import { createHash as createHash13, randomBytes as randomBytes14 } from "node:crypto";
 var MinimaxLoginCancelledError = class extends Error {
   constructor(message2 = "\u7528\u6237\u53D6\u6D88\u4E86 MiniMax \u6388\u6743") {
     super(message2);
@@ -70993,8 +71184,8 @@ function parseMinimaxTokenGrant(payload, previousRefreshToken, product = MINIMAX
   };
 }
 function createMinimaxPkce() {
-  const codeVerifier = randomBytes13(32).toString("base64url");
-  const codeChallenge = createHash12("sha256").update(codeVerifier, "ascii").digest("base64url");
+  const codeVerifier = randomBytes14(32).toString("base64url");
+  const codeChallenge = createHash13("sha256").update(codeVerifier, "ascii").digest("base64url");
   return { codeVerifier, codeChallenge };
 }
 async function startMinimaxDeviceAuthorization(fetcher = fetch, product = MINIMAX) {
@@ -71980,7 +72171,7 @@ import { credentialRef as credentialRef14 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/gemini-oauth.ts
 import { createServer as createServer11 } from "node:http";
-import { randomBytes as randomBytes14 } from "node:crypto";
+import { randomBytes as randomBytes15 } from "node:crypto";
 var GEMINI_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 var GEMINI_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 var GEMINI_USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v2/userinfo";
@@ -72220,7 +72411,7 @@ async function listenCallback(handler, preferredPort) {
   return attempt(preferredPort);
 }
 async function startGeminiOAuthFlow(options = {}) {
-  const state = randomBytes14(16).toString("hex");
+  const state = randomBytes15(16).toString("hex");
   let resolveCode = () => {
   };
   let rejectCode = () => {
@@ -72624,7 +72815,7 @@ var GeminiAuth = class extends Service11 {
 };
 
 // vendor/channel-pack/src/gemini-sigstore.ts
-import { createHash as createHash13 } from "node:crypto";
+import { createHash as createHash14 } from "node:crypto";
 import { existsSync as existsSync11, mkdirSync as mkdirSync10, readFileSync as readFileSync12, renameSync as renameSync9, writeFileSync as writeFileSync11 } from "node:fs";
 import { dirname as dirname2, join as join12 } from "node:path";
 var GEMINI_SIG_FILE = "gemini-sigs.json";
@@ -72632,7 +72823,7 @@ var GEMINI_SIG_MAX_ENTRIES = 2e3;
 var SIG_KEY_BODY_LIMIT = 512;
 function geminiSigKey(role, text) {
   const body = text.length > SIG_KEY_BODY_LIMIT ? text.slice(0, SIG_KEY_BODY_LIMIT) : text;
-  return createHash13("sha256").update(`${role}\0${body}`, "utf8").digest("hex").slice(0, 16);
+  return createHash14("sha256").update(`${role}\0${body}`, "utf8").digest("hex").slice(0, 16);
 }
 function geminiToolSigKey(name2, argsJson) {
   return geminiSigKey(`tool:${name2}`, argsJson);
