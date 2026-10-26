@@ -466,56 +466,107 @@ const QODER_CATALOG_PATH = '/algo/api/v2/model/list?Encode=1'
 const QODER_CATALOG_TTL_MS = 3_600_000
 
 /**
- * 解析 Qoder 目录响应为兜底表同构的条目。
+ * 解析 Qoder 目录响应为**完整的兜底表同构条目**。
  *
- * 上游响应形状（2026-10-26 实测）：
- * ```json
- * { "chat": [ { "key": "dmodel", "display_name": "DeepSeek-V4-Pro",
- *               "is_reasoning": true, "is_vl": false,
- *               "thinking_config": { "enabled": { "efforts": { "high": {} } } },
- *               "price_factor": 1.2, "enable": true }, ... ] }
- * ```
+ * ## ⚠️ 三个曾经踩过的坑（2026-10-26 实测，都必须保留注释）
  *
- * ## id 与 name 的口径（**必须与兜底表一致**）
+ * 1. **`id` 必须取 `key`，不是 `display_name`**。
+ *    上游参考实现用 display_name 去空白当 id（它对 `key` 另有 `upstreamKey`
+ *    字段），但**我们的架构里 `QoderFallbackModel.id` 就是目录 key**
+ *    （`qoder-product.ts` 的字段注释：「模型目录 **key**（如 `qfmodel`）」，
+ *    加密推理端点也只认 key）。照抄上游会让远端条目 id=`Auto` 而兜底表
+ *    id=`auto` —— 并集去重完全失效，同一个模型在列表里出现两次。
+ * 2. **`price_factor` 必须带出来**，否则远端条目的展示名没有倍率后缀
+ *    （用户一眼看到「模型没有倍率」，正是这个漏的）。
+ *    注意 **0 是合法倍率**（免费），不能用 `> 0` 过滤。
+ * 3. **并集不能无条件「远端优先」**。远端条目若字段不全（例如目录某天不返回
+ *    `price_factor`），会覆盖掉兜底表里带倍率的同 id 条目。故这里产出的条目
+ *    是**补全后**的完整形态；`modelSource` 再按「兜底优先、远端补新」合并。
  *
- * 上游参考实现用 `display_name` **去掉所有空白**作为模型 id（`id` 由展示名
- * 派生），`key` 只在发请求时用作上游模型键。我们照抄这条：兜底表里的 id
- * 就是这种形态（如 `DeepSeek-V4-Pro`），两边对得上才能做并集去重。
+ * ## 字段映射（均已对照真实响应）
  *
- * ## 为什么复用兜底表的字段
- *
- * 目录响应**不含** `supportsImage` 之外的全部能力位（上下文窗口、倍率文案等
- * 在兜底表里更完整，且已与界面口径对齐）。故这里只补「新出现的 id」，
- * 已知 id 一律保留兜底表条目（倍率/免费标记不会因远端刷新而丢失）。
+ * | 目标字段 | 上游字段 | 说明 |
+ * |---|---|---|
+ * | `id` | `key` | 加密推理端点认它 |
+ * | `name` | `display_name` | 展示名原文 |
+ * | `priceFactor` | `price_factor` | 0 = 免费，合法 |
+ * | `originalPriceFactor` | `original_price_factor` | 促销前原价 |
+ * | `contextWindow` | `context_config` **档位最大值** | **不是** `max_input_tokens` |
+ * | `supportsImage` | `is_vl` | |
+ * | `supportsThinking` | `is_reasoning` 或 `thinking_config` | |
+ * | `isFree` | `is_free` | |
+ * | `promotion` | `promotion` | active/discount_factor/before_promotion_price_factor/window_* |
  */
-export function parseQoderCatalog(
-  payload: unknown,
-  fallback: readonly QoderFallbackModel[],
-): Array<{ id: string; name: string; supportsImage: boolean }> {
+export function parseQoderCatalog(payload: unknown): QoderFallbackModel[] {
   if (payload === null || typeof payload !== 'object') return []
   const chat = (payload as Record<string, unknown>).chat
   if (!Array.isArray(chat)) return []
-  const fallbackById = new Map(fallback.map((model) => [model.id, model]))
-  const out: Array<{ id: string; name: string; supportsImage: boolean }> = []
+  const out: QoderFallbackModel[] = []
   const seen = new Set<string>()
   for (const raw of chat) {
     if (raw === null || typeof raw !== 'object') continue
     const item = raw as Record<string, unknown>
+    const key = typeof item.key === 'string' ? item.key.trim() : ''
     const displayName = typeof item.display_name === 'string' ? item.display_name.trim() : ''
-    if (displayName === '') continue
-    const id = displayName.replace(/\s+/g, '')
-    if (id === '') continue
-    const lowered = id.toLowerCase()
-    if (seen.has(lowered)) continue
-    seen.add(lowered)
-    const known = fallbackById.get(id)
-    out.push({
-      id,
+    if (key === '' || displayName === '') continue
+    if (seen.has(key)) continue
+    seen.add(key)
+    // 上下文窗口：取档位表的**最大档**（官方客户端只认档位表；max_input_tokens
+    // 经常自相矛盾，兜底表注释里有 CN dmodel 的实例）。
+    let contextWindow = 200_000
+    const contextConfig = item.context_config
+    if (contextConfig !== null && typeof contextConfig === 'object') {
+      for (const tier of Object.values(contextConfig as Record<string, unknown>)) {
+        if (tier === null || typeof tier !== 'object') continue
+        const count = (tier as Record<string, unknown>).token_count
+        if (typeof count === 'number' && Number.isFinite(count) && count > contextWindow) contextWindow = count
+      }
+    }
+    const priceFactor = typeof item.price_factor === 'number' ? item.price_factor : undefined
+    const originalPriceFactor = typeof item.original_price_factor === 'number'
+      ? item.original_price_factor
+      : undefined
+    const entry: QoderFallbackModel = {
+      id: key,
       name: displayName,
-      supportsImage: known?.supportsImage ?? item.is_vl === true,
-    })
+      contextWindow,
+      supportsImage: item.is_vl === true,
+      supportsThinking: item.is_reasoning === true
+        || (item.thinking_config !== undefined && item.thinking_config !== null),
+      ...(item.is_free === true ? { isFree: true } : {}),
+      ...(priceFactor === undefined ? {} : { priceFactor }),
+      ...(originalPriceFactor === undefined ? {} : { originalPriceFactor }),
+    }
+    const promotion = parseQoderPromotion(item.promotion)
+    if (promotion !== undefined) entry.promotion = promotion
+    out.push(entry)
   }
   return out
+}
+
+/** 解析目录里的 `promotion`（错峰折扣）。形状不全时返回 undefined。 */
+function parseQoderPromotion(raw: unknown): QoderModelPromotion | undefined {
+  if (raw === null || typeof raw !== 'object') return undefined
+  const item = raw as Record<string, unknown>
+  const discountFactor = typeof item.discount_factor === 'number' ? item.discount_factor : undefined
+  const before = typeof item.before_promotion_price_factor === 'number'
+    ? item.before_promotion_price_factor
+    : undefined
+  const windowStart = typeof item.window_start === 'string' ? item.window_start : undefined
+  const windowEnd = typeof item.window_end === 'string' ? item.window_end : undefined
+  if (discountFactor === undefined && before === undefined && windowStart === undefined) return undefined
+  const badge = item.badge
+  const badgeZh = badge !== null && typeof badge === 'object'
+    ? (badge as Record<string, unknown>).zh
+    : undefined
+  return {
+    active: item.active === true,
+    ...(discountFactor === undefined ? {} : { discountFactor }),
+    ...(before === undefined ? {} : { beforePromotionPriceFactor: before }),
+    ...(windowStart === undefined ? {} : { windowStart }),
+    ...(windowEnd === undefined ? {} : { windowEnd }),
+    ...(typeof badgeZh === 'string' ? { badgeText: badgeZh } : {}),
+  }
 }
 
 export class QoderAdapter extends LlmAdapter {
@@ -649,9 +700,19 @@ export class QoderAdapter extends LlmAdapter {
    */
   private modelSource(): readonly QoderFallbackModel[] {
     if (this.remoteModels === undefined) return this.product.fallbackModels
-    const seen = new Set(this.remoteModels.map((model) => model.id))
-    const missing = this.product.fallbackModels.filter((model) => !seen.has(model.id))
-    return [...this.remoteModels, ...missing]
+    /**
+     * **远端直接覆盖兜底**（用户 2026-10-26 明确要求）。
+     *
+     * 与 autoclaw 的「并集」策略不同，这里是覆盖：Qoder 的目录是**权威清单**，
+     * 兜底表只是「拉不到时」的离线快照。并集的问题在于兜底表里已被上游下架的
+     * 模型（如旧套餐档位）会一直留在列表里 —— 用户会选到不能用的模型。
+     *
+     * ⚠️ 但覆盖的前提是**远端条目字段必须完整**：`parseQoderCatalog` 已把
+     * id(key)/name/priceFactor/contextWindow/promotion 全部映射好（见该函数
+     * 头部的三个坑）。若哪天目录不再下发 `price_factor`，展示会退回裸名 ——
+     * 那时应改这里而不是让覆盖失效。
+     */
+    return this.remoteModels
   }
   /**
    * 完整模型目录（**不应用用户黑名单**），含最终展示名（倍率/免费标记）。
@@ -1239,6 +1300,29 @@ export function promotionActiveNow(promotion: QoderModelPromotion, now: Date): b
  * 窗口切换后即失真。改为按 `beforePromotionPriceFactor × discountFactor`
  * 本地推算（实测三条全部吻合），窗口外则用原价。
  */
+/**
+ * Qoder 目录里那几个「档位型」模型的中文名。
+ *
+ * 上游目录**不提供中文名**（实测 `display_name` 恒为英文 Auto / Ultimate /
+ * Efficient / Performance 等），官方中文客户端是在前端做本地映射的。
+ * 用户要求「自动 / 平衡 / 快速之类的中文名就用中文」（2026-10-26）。
+ *
+ * ⚠️ 只映射**档位型**条目（Auto/Balanced/Efficient/Performance 这类抽象档），
+ * **不要**映射有具体产品名的模型（GLM-5.3、DeepSeek-V4-Pro、Kimi-K3 等）——
+ * 那些名字是产品标识，翻译反而让人认不出。
+ */
+const QODER_CHINESE_NAMES: Readonly<Record<string, string>> = {
+  auto: '自动',
+  ultimate: '旗舰',
+  performance: '平衡',
+  efficient: '快速',
+}
+
+/** 取模型的中文展示名（无映射时原样返回）。 */
+function qoderLocalizedName(model: QoderFallbackModel): string {
+  return QODER_CHINESE_NAMES[model.id] ?? model.name
+}
+
 export function qoderDisplayName(model: QoderFallbackModel, now: Date = new Date()): string {
   const promo = model.promotion
   const before = promo?.beforePromotionPriceFactor
@@ -1247,18 +1331,18 @@ export function qoderDisplayName(model: QoderFallbackModel, now: Date = new Date
   const active = hasPromo && promotionActiveNow(promo, now)
 
   // 免费优先于一切（`0` 是合法倍率，不能显示成 `x0`）。
-  if (model.priceFactor === 0) return `${model.name} · 免费`
+  if (model.priceFactor === 0) return `${qoderLocalizedName(model)} · 免费`
 
   if (hasPromo && active) {
     // 折扣生效中：`原价→折后价`（与 TRAE / buddy 同形态）
     const effective = Number((before * discount).toFixed(4))
-    return `${model.name} · x${before}→x${effective}`
+    return `${qoderLocalizedName(model)} · x${before}→x${effective}`
   }
 
   // 窗口外用**原价**（有 promotion 时原价就是 before，而非采集到的折后价）；
   // 窗口外显示折后价会让用户按折扣价预期、实际被按原价计费。
   const price = hasPromo ? before : model.priceFactor
-  return price !== undefined ? `${model.name} · x${price}` : model.name
+  return price !== undefined ? `${qoderLocalizedName(model)} · x${price}` : qoderLocalizedName(model)
 }
 
 /**

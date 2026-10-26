@@ -42811,31 +42811,65 @@ function resolveChunkTimeoutMs3() {
 }
 var QODER_CATALOG_PATH = "/algo/api/v2/model/list?Encode=1";
 var QODER_CATALOG_TTL_MS = 36e5;
-function parseQoderCatalog(payload, fallback2) {
+function parseQoderCatalog(payload) {
   if (payload === null || typeof payload !== "object") return [];
   const chat = payload.chat;
   if (!Array.isArray(chat)) return [];
-  const fallbackById = new Map(fallback2.map((model) => [model.id, model]));
   const out = [];
   const seen = /* @__PURE__ */ new Set();
   for (const raw of chat) {
     if (raw === null || typeof raw !== "object") continue;
     const item = raw;
+    const key = typeof item.key === "string" ? item.key.trim() : "";
     const displayName = typeof item.display_name === "string" ? item.display_name.trim() : "";
-    if (displayName === "") continue;
-    const id = displayName.replace(/\s+/g, "");
-    if (id === "") continue;
-    const lowered = id.toLowerCase();
-    if (seen.has(lowered)) continue;
-    seen.add(lowered);
-    const known = fallbackById.get(id);
-    out.push({
-      id,
+    if (key === "" || displayName === "") continue;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    let contextWindow = 2e5;
+    const contextConfig = item.context_config;
+    if (contextConfig !== null && typeof contextConfig === "object") {
+      for (const tier of Object.values(contextConfig)) {
+        if (tier === null || typeof tier !== "object") continue;
+        const count2 = tier.token_count;
+        if (typeof count2 === "number" && Number.isFinite(count2) && count2 > contextWindow) contextWindow = count2;
+      }
+    }
+    const priceFactor = typeof item.price_factor === "number" ? item.price_factor : void 0;
+    const originalPriceFactor = typeof item.original_price_factor === "number" ? item.original_price_factor : void 0;
+    const entry = {
+      id: key,
       name: displayName,
-      supportsImage: known?.supportsImage ?? item.is_vl === true
-    });
+      contextWindow,
+      supportsImage: item.is_vl === true,
+      supportsThinking: item.is_reasoning === true || item.thinking_config !== void 0 && item.thinking_config !== null,
+      ...item.is_free === true ? { isFree: true } : {},
+      ...priceFactor === void 0 ? {} : { priceFactor },
+      ...originalPriceFactor === void 0 ? {} : { originalPriceFactor }
+    };
+    const promotion = parseQoderPromotion(item.promotion);
+    if (promotion !== void 0) entry.promotion = promotion;
+    out.push(entry);
   }
   return out;
+}
+function parseQoderPromotion(raw) {
+  if (raw === null || typeof raw !== "object") return void 0;
+  const item = raw;
+  const discountFactor = typeof item.discount_factor === "number" ? item.discount_factor : void 0;
+  const before = typeof item.before_promotion_price_factor === "number" ? item.before_promotion_price_factor : void 0;
+  const windowStart = typeof item.window_start === "string" ? item.window_start : void 0;
+  const windowEnd = typeof item.window_end === "string" ? item.window_end : void 0;
+  if (discountFactor === void 0 && before === void 0 && windowStart === void 0) return void 0;
+  const badge = item.badge;
+  const badgeZh = badge !== null && typeof badge === "object" ? badge.zh : void 0;
+  return {
+    active: item.active === true,
+    ...discountFactor === void 0 ? {} : { discountFactor },
+    ...before === void 0 ? {} : { beforePromotionPriceFactor: before },
+    ...windowStart === void 0 ? {} : { windowStart },
+    ...windowEnd === void 0 ? {} : { windowEnd },
+    ...typeof badgeZh === "string" ? { badgeText: badgeZh } : {}
+  };
 }
 var QoderAdapter = class extends LlmAdapter3 {
   constructor(options) {
@@ -42966,9 +43000,7 @@ var QoderAdapter = class extends LlmAdapter3 {
    */
   modelSource() {
     if (this.remoteModels === void 0) return this.product.fallbackModels;
-    const seen = new Set(this.remoteModels.map((model) => model.id));
-    const missing = this.product.fallbackModels.filter((model) => !seen.has(model.id));
-    return [...this.remoteModels, ...missing];
+    return this.remoteModels;
   }
   /**
    * 完整模型目录（**不应用用户黑名单**），含最终展示名（倍率/免费标记）。
@@ -43337,19 +43369,28 @@ function promotionActiveNow2(promotion, now) {
   const minutes = utc8.getUTCHours() * 60 + utc8.getUTCMinutes();
   return start <= end ? minutes >= start && minutes < end : minutes >= start || minutes < end;
 }
+var QODER_CHINESE_NAMES = {
+  auto: "\u81EA\u52A8",
+  ultimate: "\u65D7\u8230",
+  performance: "\u5E73\u8861",
+  efficient: "\u5FEB\u901F"
+};
+function qoderLocalizedName(model) {
+  return QODER_CHINESE_NAMES[model.id] ?? model.name;
+}
 function qoderDisplayName(model, now = /* @__PURE__ */ new Date()) {
   const promo = model.promotion;
   const before = promo?.beforePromotionPriceFactor;
   const discount = promo?.discountFactor;
   const hasPromo = promo !== void 0 && before !== void 0 && discount !== void 0;
   const active = hasPromo && promotionActiveNow2(promo, now);
-  if (model.priceFactor === 0) return `${model.name} \xB7 \u514D\u8D39`;
+  if (model.priceFactor === 0) return `${qoderLocalizedName(model)} \xB7 \u514D\u8D39`;
   if (hasPromo && active) {
     const effective = Number((before * discount).toFixed(4));
-    return `${model.name} \xB7 x${before}\u2192x${effective}`;
+    return `${qoderLocalizedName(model)} \xB7 x${before}\u2192x${effective}`;
   }
   const price = hasPromo ? before : model.priceFactor;
-  return price !== void 0 ? `${model.name} \xB7 x${price}` : model.name;
+  return price !== void 0 ? `${qoderLocalizedName(model)} \xB7 x${price}` : qoderLocalizedName(model);
 }
 function registerQoderLlm(ctx, options) {
   const product = options.product ?? QODER;
