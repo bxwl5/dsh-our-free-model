@@ -29357,7 +29357,11 @@ var init_monkeycode_auth = __esm({
 var kuku_product_exports = {};
 __export(kuku_product_exports, {
   KUKU: () => KUKU,
+  KUKU_APP_ID: () => KUKU_APP_ID,
   KUKU_CHANNEL: () => KUKU_CHANNEL,
+  KUKU_CHANNEL_NAME: () => KUKU_CHANNEL_NAME,
+  KUKU_CLIENT_ADDED_CLIENT_TYPE: () => KUKU_CLIENT_ADDED_CLIENT_TYPE,
+  KUKU_CLIENT_ADDED_VERSION: () => KUKU_CLIENT_ADDED_VERSION,
   KUKU_CLIENT_TYPE: () => KUKU_CLIENT_TYPE,
   KUKU_FREEPOINT_PATH: () => KUKU_FREEPOINT_PATH2,
   KUKU_MODEL_LIST_PATH: () => KUKU_MODEL_LIST_PATH,
@@ -29375,7 +29379,7 @@ __export(kuku_product_exports, {
 function kukuProductById(id) {
   return id === KUKU.id ? KUKU : void 0;
 }
-var KUKU_FALLBACK_MODELS, KUKU, KUKU_CLIENT_TYPE, KUKU_VERSION, KUKU_CHANNEL, KUKU_PROTOCOL_V, KUKU_SENDMSG_PATH, KUKU_SSE_PATH, KUKU_FREEPOINT_PATH2, KUKU_USERREPORT_PATH, KUKU_TASK_COMPLETE_PATH, KUKU_VIP_REMAIN_PATH, KUKU_MODEL_LIST_PATH, KUKU_WEB_QUERY, KUKU_SESSION_COOKIE;
+var KUKU_FALLBACK_MODELS, KUKU, KUKU_CLIENT_TYPE, KUKU_VERSION, KUKU_CHANNEL, KUKU_PROTOCOL_V, KUKU_CLIENT_ADDED_CLIENT_TYPE, KUKU_CLIENT_ADDED_VERSION, KUKU_CHANNEL_NAME, KUKU_APP_ID, KUKU_SENDMSG_PATH, KUKU_SSE_PATH, KUKU_FREEPOINT_PATH2, KUKU_USERREPORT_PATH, KUKU_TASK_COMPLETE_PATH, KUKU_VIP_REMAIN_PATH, KUKU_MODEL_LIST_PATH, KUKU_WEB_QUERY, KUKU_SESSION_COOKIE;
 var init_kuku_product = __esm({
   "vendor/channel-pack/src/kuku-product.ts"() {
     "use strict";
@@ -29405,6 +29409,10 @@ var init_kuku_product = __esm({
     KUKU_VERSION = "1.6.5.130";
     KUKU_CHANNEL = "kuku_pc_genflowpro_v1";
     KUKU_PROTOCOL_V = "cd1755270722192e4536f605";
+    KUKU_CLIENT_ADDED_CLIENT_TYPE = 400;
+    KUKU_CLIENT_ADDED_VERSION = "1.4.4";
+    KUKU_CHANNEL_NAME = "chunlei";
+    KUKU_APP_ID = 123971023;
     KUKU_SENDMSG_PATH = "/wenchain/genflowpro/sendmsg";
     KUKU_SSE_PATH = "/wenchain/genflowpro/sse/getchatcontent";
     KUKU_FREEPOINT_PATH2 = "/api/genflowpro/freepoint/homenew";
@@ -29470,8 +29478,13 @@ function buildSendmsgBody(options) {
     type: "message",
     sub_type: "chat_create",
     client_session_id: options.clientSessionId,
-    session_id: options.sessionId,
-    reply_id: options.replyId,
+    // ⚠️ **新建会话时 session_id 必须是空串**（上游 chat.rs 的 create_session
+    // 就是 `"session_id": ""`）。传一个本地生成的 UUID 会让上游按「续写未知
+    // 会话」处理，回 `invalid session_id`（2026-10-26 实测）。
+    session_id: "",
+    // ⚠️ sendmsg 的请求体里**没有 reply_id**（上游 create_session 的 body 就没有
+    // 这个字段；reply_id 是**响应**里返回的，用于后续 SSE）。多传一个未知字段
+    // 会让上游按「续写」校验，回 `invalid reply_id`（2026-10-26 实测）。
     uk: "",
     cid: 0,
     channel: KUKU_CHANNEL,
@@ -29499,12 +29512,20 @@ function buildSendmsgBody(options) {
       memory_sign: false,
       skill_dig_sign: false,
       // ⚠️ 必须是字符串化 JSON，不是嵌套对象。
+      // ⚠️ 三件套要**内嵌**一份（上游据此做客户端形态校验，缺了回
+      // invalid session_id）；app_id / web / channel 同样照客户端形态补齐。
       client_added: JSON.stringify({
         client_session_id: options.clientSessionId,
         permission_type: 0,
         clienttype: KUKU_CLIENT_TYPE,
+        app_id: KUKU_APP_ID,
+        web: 1,
+        channel: KUKU_CHANNEL_NAME,
         version: KUKU_VERSION,
-        device_os: "windows"
+        device_os: "windows",
+        ...options.bdstoken === void 0 ? {} : { bdstoken: options.bdstoken },
+        ...options.uinfo === void 0 ? {} : { uinfo: options.uinfo },
+        ...options.uk === void 0 ? {} : { uk: options.uk }
       })
     }
   };
@@ -29523,6 +29544,21 @@ function parseSseFrame(data) {
   const code = parsed.errno ?? parsed.code;
   if (typeof code === "number" && code !== 0) {
     return { kind: "error", message: stringValue5(parsed.errmsg) ?? stringValue5(parsed.msg) ?? `errno=${code}` };
+  }
+  const type = stringValue5(parsed.type);
+  if (type !== void 0) {
+    if (type === "ERROR") {
+      const dataObj2 = isRecord6(parsed.data) ? parsed.data : void 0;
+      const detail = dataObj2 === void 0 ? void 0 : stringValue5(dataObj2.error_msg) ?? stringValue5(dataObj2.error_code);
+      return { kind: "error", message: detail ?? stringValue5(parsed.msg) ?? "\u4E0A\u6E38\u9519\u8BEF\u5E27" };
+    }
+    if (type === "TURN_DONE" || type === "REPLY_END" || type === "DIALOGUE_END") return { kind: "done" };
+    if (type === "TEXT_BLOCK_DELTA") {
+      const dataObj2 = isRecord6(parsed.data) ? parsed.data : void 0;
+      const text2 = dataObj2 === void 0 ? void 0 : stringValue5(dataObj2.delta);
+      return text2 === void 0 ? void 0 : { kind: "delta", text: text2 };
+    }
+    return void 0;
   }
   const dataObj = isRecord6(parsed.data) ? parsed.data : void 0;
   const text = stringValue5(parsed.content) ?? stringValue5(parsed.text) ?? (dataObj === void 0 ? void 0 : stringValue5(dataObj.content));
@@ -29568,6 +29604,411 @@ var init_kuku = __esm({
   }
 });
 
+// vendor/channel-pack/src/kuku-qr-login.ts
+import { createHash as createHash6, randomBytes as randomBytes4 } from "node:crypto";
+function createKukuCookieJar(initial = {}) {
+  const cookies = new Map(Object.entries(initial));
+  return {
+    get: (name2) => cookies.get(name2),
+    set: (name2, value) => {
+      cookies.set(name2, value);
+    },
+    has: (name2) => cookies.has(name2),
+    header: () => [...cookies].map(([name2, value]) => `${name2}=${value}`).join("; "),
+    names: () => [...cookies.keys()],
+    absorb: (response) => {
+      for (const raw of readSetCookie(response)) {
+        const [pair] = raw.split(";");
+        if (pair === void 0) continue;
+        const at = pair.indexOf("=");
+        if (at <= 0) continue;
+        const name2 = pair.slice(0, at).trim();
+        const value = pair.slice(at + 1).trim();
+        if (name2 === "") continue;
+        if (value === "" || /expires=.*(?:1970|Thu, 01 Jan 1970)/i.test(raw)) cookies.delete(name2);
+        else cookies.set(name2, value);
+      }
+    }
+  };
+}
+function readSetCookie(response) {
+  const headers = response.headers;
+  if (typeof headers.getSetCookie === "function") return headers.getSetCookie();
+  const joined = headers.get("set-cookie");
+  if (joined === null || joined === "") return [];
+  return joined.split(/,(?=\s*[A-Za-z0-9_\-]+=)/);
+}
+function jsonpName() {
+  return `bd__cbs__${randomBytes4(4).toString("hex")}`;
+}
+function unwrapJsonp(text) {
+  const match = /^[^(]*\(([\s\S]*)\)\s*;?\s*$/.exec(text);
+  return match?.[1] ?? text;
+}
+function parseKukuPassportBody(text) {
+  const trimmed = text.trim();
+  if (trimmed === "") return void 0;
+  const candidates = [trimmed, unwrapJsonp(trimmed)];
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+    }
+    try {
+      return JSON.parse(candidate.replace(/([,{\s])'([^']+)'\s*:/g, '$1"$2":'));
+    } catch {
+    }
+  }
+  return void 0;
+}
+function isRecord7(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function stringValue6(value) {
+  if (typeof value === "string" && value !== "") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return void 0;
+}
+function passportUrl(base, path2, params) {
+  const query = new URLSearchParams({ ...params, ...GENERIC_PARAMS, tt: String(Date.now()) });
+  return `${base}${path2}?${query.toString()}`;
+}
+function requestSignal(options, timeoutMs) {
+  const timeout = AbortSignal.timeout(options.timeoutMs ?? timeoutMs);
+  if (options.signal === void 0) return timeout;
+  return AbortSignal.any([options.signal, timeout]);
+}
+async function callPassport(url, options, init = {}) {
+  const fetcher = options.fetcher ?? fetch;
+  const jar = init.jar;
+  const cookie = jar?.header() ?? "";
+  const headers = {
+    "user-agent": KUKU_QR_USER_AGENT,
+    referer: KUKU_QR_REFERER,
+    accept: "application/json, text/plain, */*",
+    ...init.headers
+  };
+  if (cookie !== "") headers.cookie = cookie;
+  const signal = requestSignal(options, init.timeoutMs ?? KUKU_QR_REQUEST_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetcher(url, {
+      method: init.method ?? "GET",
+      headers,
+      ...init.body === void 0 ? {} : { body: init.body },
+      ...signal === void 0 ? {} : { signal }
+    });
+  } catch (error) {
+    throw new KukuQrError("network", "\u65E0\u6CD5\u8FDE\u63A5\u767E\u5EA6 passport\uFF08\u7F51\u7EDC\u6216\u8D85\u65F6\uFF09\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5", { cause: error });
+  }
+  jar?.absorb(response);
+  const text = await response.text().catch(() => "");
+  return { status: response.status, body: parseKukuPassportBody(text), text, response };
+}
+async function requestKukuQrCode(options = {}) {
+  const passportBase = options.passportBase ?? KUKU_PASSPORT_BASE;
+  const jar = createKukuCookieJar();
+  const url = passportUrl(passportBase, "/v2/api/getqrcode", {
+    lp: "pc",
+    qrloginfrom: "pc",
+    gid: "",
+    oauthLog: "",
+    callback: jsonpName()
+  });
+  const reply2 = await callPassport(url, options, { jar });
+  const body = isRecord7(reply2.body) ? reply2.body : void 0;
+  const sign2 = stringValue6(body?.sign);
+  const errno = body?.errno === void 0 ? void 0 : Number(body.errno);
+  if (sign2 === void 0 || errno !== void 0 && errno !== 0) {
+    throw new KukuQrError("qr_refused", "\u767E\u5EA6 passport \u62D2\u7EDD\u4E0B\u53D1\u767B\u5F55\u4E8C\u7EF4\u7801\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5", {
+      status: reply2.status,
+      ...errno === void 0 ? {} : { errno }
+    });
+  }
+  const imgurl = stringValue6(body?.imgurl);
+  return {
+    sign: sign2,
+    imageUrl: imgurl === void 0 ? `${passportBase}/v2/api/qrcode?sign=${encodeURIComponent(sign2)}&lp=pc&qrloginfrom=pc` : `https://${imgurl.replace(/^https?:\/\//, "")}`,
+    prompt: stringValue6(body?.prompt) ?? "",
+    jar,
+    passportBase,
+    createdAt: Date.now()
+  };
+}
+async function fetchKukuQrImage(session, options = {}) {
+  const fetcher = options.fetcher ?? fetch;
+  const url = `${session.passportBase}/v2/api/qrcode?sign=${encodeURIComponent(session.sign)}&lp=pc&qrloginfrom=pc`;
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < QR_IMAGE_ATTEMPTS; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve2) => {
+        const timer = setTimeout(resolve2, 250 * attempt);
+        timer.unref?.();
+      });
+    }
+    const cookie = session.jar.header();
+    const signal = requestSignal(options, KUKU_QR_REQUEST_TIMEOUT_MS);
+    let response;
+    try {
+      response = await fetcher(url, {
+        headers: {
+          "user-agent": KUKU_QR_USER_AGENT,
+          referer: KUKU_QR_REFERER,
+          accept: "image/png,image/*;q=0.5",
+          ...cookie === "" ? {} : { cookie }
+        },
+        ...signal === void 0 ? {} : { signal }
+      });
+    } catch (error) {
+      throw new KukuQrError("network", "\u53D6\u4E8C\u7EF4\u7801\u56FE\u7247\u5931\u8D25\uFF08\u7F51\u7EDC\u6216\u8D85\u65F6\uFF09", { cause: error });
+    }
+    lastStatus = response.status;
+    session.jar.absorb(response);
+    if (!response.ok) {
+      void response.body?.cancel().catch(() => void 0);
+      throw new KukuQrError("http", `\u53D6\u4E8C\u7EF4\u7801\u56FE\u7247\u8FD4\u56DE HTTP ${response.status}`, { status: response.status });
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length === 0) continue;
+    const contentType = response.headers.get("content-type") ?? "image/png";
+    return {
+      dataUrl: `data:${contentType.split(";")[0] ?? "image/png"};base64,${buffer.toString("base64")}`,
+      bytes: buffer.length,
+      contentType
+    };
+  }
+  throw new KukuQrError("qr_image_empty", "\u4E8C\u7EF4\u7801\u56FE\u7247\u8FDE\u7EED\u591A\u6B21\u4E3A\u7A7A\uFF0C\u8BF7\u91CD\u65B0\u7533\u8BF7\u4E8C\u7EF4\u7801", { status: lastStatus });
+}
+async function pollKukuQrStatus(session, options = {}) {
+  const url = passportUrl(session.passportBase, "/channel/unicast", {
+    channel_id: session.sign,
+    gid: "",
+    _sdkFrom: "1",
+    callback: jsonpName()
+  });
+  const reply2 = await callPassport(url, options, { jar: session.jar, timeoutMs: KUKU_QR_POLL_TIMEOUT_MS });
+  if (reply2.status < 200 || reply2.status >= 300) {
+    throw new KukuQrError("http", `\u626B\u7801\u72B6\u6001\u67E5\u8BE2\u8FD4\u56DE HTTP ${reply2.status}`, { status: reply2.status });
+  }
+  const body = isRecord7(reply2.body) ? reply2.body : void 0;
+  const errno = body?.errno === void 0 ? null : Number(body.errno);
+  const channel = typeof body?.channel_v === "string" ? parseKukuPassportBody(body.channel_v) : body?.channel_v;
+  const record = isRecord7(channel) ? channel : void 0;
+  const status = record?.status === void 0 ? null : String(record.status);
+  const probe = {
+    errno,
+    status,
+    fields: body === void 0 ? "unparsed" : Object.keys(body).join(",")
+  };
+  if (errno === 0 && status === "0") {
+    const ticket = stringValue6(record?.v);
+    if (ticket !== void 0) return { state: "confirmed", ticket, probe };
+    return { state: "unknown", probe };
+  }
+  if (errno === 0 && status === "1") return { state: "scanned", probe };
+  if (errno === 0 && status === "2") return { state: "expired", probe };
+  if (errno === 1 && record === void 0) return { state: "pending", probe };
+  return { state: "unknown", probe };
+}
+async function completeKukuQrLogin(session, ticket, options = {}) {
+  if (ticket.trim() === "") {
+    throw new KukuQrError("bduss_login_refused", "\u626B\u7801\u7ED3\u679C\u7F3A\u5C11 ticket\uFF0C\u8BF7\u91CD\u65B0\u7533\u8BF7\u4E8C\u7EF4\u7801");
+  }
+  const warnings = [];
+  const loginUrl = passportUrl(session.passportBase, "/v2/api/bdusslogin", {
+    bduss: ticket,
+    u: options.target ?? KUKU_QR_TARGET,
+    qrcode: "1",
+    callback: jsonpName()
+  });
+  const loginReply = await callPassport(loginUrl, options, { jar: session.jar });
+  const loginBody = isRecord7(loginReply.body) ? loginReply.body : void 0;
+  const loginErrno = loginBody?.errno === void 0 ? null : Number(loginBody.errno);
+  if (loginErrno !== null && loginErrno !== 0) {
+    throw new KukuQrError("bduss_login_refused", "\u767E\u5EA6\u62D2\u7EDD\u4E86\u8FD9\u6B21\u626B\u7801\u767B\u5F55\uFF0C\u8BF7\u91CD\u65B0\u626B\u7801", {
+      status: loginReply.status,
+      errno: loginErrno
+    });
+  }
+  if (loginBody === void 0) {
+    throw new KukuQrError("unparsable", "\u767E\u5EA6\u767B\u5F55\u54CD\u5E94\u65E0\u6CD5\u89E3\u6790\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5", { status: loginReply.status });
+  }
+  const bduss = session.jar.get("BDUSS") ?? session.jar.get("BDUSS_BFESS");
+  if (bduss === void 0 || bduss === "") {
+    throw new KukuQrError("no_bduss", "\u767E\u5EA6\u767B\u5F55\u5DF2\u5B8C\u6210\u4F46\u672A\u4E0B\u53D1 BDUSS\uFF0C\u8BF7\u91CD\u65B0\u626B\u7801", {
+      status: loginReply.status
+    });
+  }
+  const ptoken = session.jar.get("PTOKEN") ?? session.jar.get("PTOKEN_BFESS") ?? "";
+  let stoken;
+  if (ptoken === "") {
+    warnings.push("passport \u672A\u4E0B\u53D1 PTOKEN\uFF0C\u5DF2\u8DF3\u8FC7 STOKEN \u4EA4\u6362\uFF08\u771F\u5B9E\u8C03\u7528\u53EF\u80FD\u7F3A\u6743\u9650\uFF09");
+  } else {
+    try {
+      stoken = await exchangeKukuStoken(session, bduss, ptoken, options);
+    } catch (error) {
+      if (options.requireStoken === true) throw error;
+      warnings.push(
+        `STOKEN \u4EA4\u6362\u5931\u8D25\uFF08${error instanceof KukuQrError ? error.code : "unknown"}\uFF09\uFF0C\u5F53\u524D\u53EA\u62FF\u5230 BDUSS \u2014\u2014 \u73B0\u6709\u9002\u914D\u5668\u53EF\u7528\uFF0C\u4F46\u771F\u5B9E /wenchain \u8C03\u7528\u53EF\u80FD\u9700\u8981 STOKEN`
+      );
+    }
+  }
+  const cookie = buildCredentialCookie(session.jar);
+  const normalized = normalizeCookie3(cookie);
+  if (normalized === void 0) {
+    throw new KukuQrError(
+      "credential_invalid",
+      `\u626B\u7801\u5F97\u5230\u7684 Cookie \u4E32\u5F62\u72B6\u4E0D\u5408\u6CD5\uFF08\u542B ${session.jar.names().filter((name2) => ACCOUNT_COOKIE.test(name2)).join(",") || "\u65E0\u8D26\u53F7\u5B57\u6BB5"}\uFF09`
+    );
+  }
+  const names = normalized.split(";").map((part) => part.trim().split("=")[0] ?? "").filter((name2) => name2 !== "");
+  return {
+    credential: { access_token: normalized, created_at: Date.now() },
+    stoken,
+    cookieNames: names,
+    warnings
+  };
+}
+async function exchangeKukuStoken(session, bduss, ptoken, options) {
+  const fields = `appid=1&bduss=${bduss}&ptoken=${ptoken}&return_type=1&tpl=genflowpro&tpl_list=genflowpro|netdisk`;
+  const signed = `${fields}&sign_key=${KUKU_ENGINE_SIGN_KEY}`;
+  const sig = createHash6("md5").update(signed).digest("hex");
+  const body = `${fields}&sig=${sig}`;
+  if (session.jar.has("BAIDUID") && !session.jar.has("gfprotpl")) session.jar.set("gfprotpl", "genflowpro");
+  const url = `${session.passportBase}/v3/login/api/auth`;
+  const reply2 = await callPassport(url, options, {
+    method: "POST",
+    body,
+    headers: {
+      "user-agent": KUKU_ENGINE_USER_AGENT,
+      "content-type": "application/x-www-form-urlencoded;charset=UTF-8"
+    },
+    jar: session.jar
+  });
+  const parsed = isRecord7(reply2.body) ? reply2.body : void 0;
+  const errno = parsed?.errno === void 0 ? 0 : Number(parsed.errno);
+  const list = isRecord7(parsed?.stoken_list) ? parsed.stoken_list : void 0;
+  const stoken = stringValue6(list?.genflowpro);
+  if (parsed === void 0 || errno !== 0 || stoken === void 0) {
+    throw new KukuQrError("stoken_exchange_refused", "STOKEN \u4EA4\u6362\u88AB\u767E\u5EA6\u62D2\u7EDD\uFF0C\u8BF7\u91CD\u65B0\u626B\u7801", {
+      status: reply2.status,
+      errno
+    });
+  }
+  return stoken;
+}
+function buildCredentialCookie(jar) {
+  const names = jar.names().filter((name2) => ACCOUNT_COOKIE.test(name2));
+  const ordered = [
+    ...names.filter((name2) => name2 === "BDUSS"),
+    ...names.filter((name2) => name2 === "BDUSS_BFESS"),
+    ...names.filter((name2) => name2 !== "BDUSS" && name2 !== "BDUSS_BFESS")
+  ];
+  return ordered.map((name2) => `${name2}=${jar.get(name2) ?? ""}`).filter((pair) => !pair.endsWith("=")).join("; ");
+}
+function renderKukuQrPage(options) {
+  const reload = options.reloadPath === void 0 ? "" : `<button class="ghost" id="reload" type="button">\u4E8C\u7EF4\u7801\u8FC7\u671F\uFF1F\u70B9\u8FD9\u91CC\u5237\u65B0</button>`;
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KukuAI \u626B\u7801\u767B\u5F55</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+         background: #f5f6f8; color: #1f2329; }
+  .card { background: #fff; border-radius: 12px; padding: 28px 32px; box-shadow: 0 4px 24px rgba(0,0,0,.08);
+          text-align: center; width: 320px; }
+  h1 { font-size: 17px; margin: 0 0 4px; font-weight: 600; }
+  .sub { font-size: 13px; color: #8a9099; margin-bottom: 18px; }
+  .qr { width: 220px; height: 220px; display: block; margin: 0 auto; border: 1px solid #eceef1;
+        border-radius: 8px; background: #fff; }
+  .status { margin-top: 16px; font-size: 13px; color: #4e5969; min-height: 20px; }
+  .status[data-tone="ok"] { color: #0f9d58; font-weight: 600; }
+  .status[data-tone="err"] { color: #d93026; }
+  button { width: 100%; padding: 9px; font-size: 14px; border: 0; border-radius: 6px;
+           background: #2932e1; color: #fff; cursor: pointer; }
+  button.ghost { background: #f2f3f5; color: #1f2329; margin-top: 10px; }
+  button[hidden] { display: none; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>\u7528\u767E\u5EA6 App \u626B\u7801\u767B\u5F55 KukuAI</h1>
+    <div class="sub">\u626B\u7801\u540E\u9700\u5728\u624B\u673A\u4E0A\u70B9\u300C\u786E\u8BA4\u767B\u5F55\u300D</div>
+    <img class="qr" id="qr" alt="\u767E\u5EA6\u767B\u5F55\u4E8C\u7EF4\u7801" src="${options.qrDataUrl}">
+    <div class="status" id="status">\u7B49\u5F85\u626B\u7801\u2026</div>
+    ${reload}
+  </div>
+<script>
+(function () {
+  var statusEl = document.getElementById('status');
+  var reloadEl = document.getElementById('reload');
+  var stopped = false;
+  function setStatus(text, tone) {
+    statusEl.textContent = text;
+    if (tone) statusEl.setAttribute('data-tone', tone); else statusEl.removeAttribute('data-tone');
+  }
+  function stop(text, tone) {
+    stopped = true;
+    setStatus(text, tone);
+    if (reloadEl) reloadEl.hidden = false;
+  }
+  function poll() {
+    if (stopped) return;
+    fetch('${options.pollPath}', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res.state === 'confirmed') return stop('\u767B\u5F55\u6210\u529F\uFF0C\u53EF\u4EE5\u5173\u95ED\u6B64\u7A97\u53E3\u4E86', 'ok');
+        if (res.state === 'expired') return stop('\u4E8C\u7EF4\u7801\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u70B9\u4E0B\u65B9\u6309\u94AE\u5237\u65B0', 'err');
+        if (res.state === 'scanned') setStatus('\u5DF2\u626B\u7801\uFF0C\u8BF7\u5728\u624B\u673A\u4E0A\u786E\u8BA4');
+        else setStatus('\u7B49\u5F85\u626B\u7801\u2026');
+        setTimeout(poll, 1200);
+      })
+      .catch(function () { setTimeout(poll, 2000); });
+  }
+  if (reloadEl) reloadEl.addEventListener('click', function () { location.href = '${options.reloadPath ?? ""}'; });
+  poll();
+})();
+</script>
+</body>
+</html>`;
+}
+var KUKU_PASSPORT_BASE, KUKU_QR_REFERER, KUKU_QR_TARGET, KUKU_QR_USER_AGENT, KUKU_ENGINE_USER_AGENT, KUKU_ENGINE_SIGN_KEY, KUKU_QR_REQUEST_TIMEOUT_MS, KUKU_QR_POLL_TIMEOUT_MS, QR_IMAGE_ATTEMPTS, ACCOUNT_COOKIE, KukuQrError, GENERIC_PARAMS;
+var init_kuku_qr_login = __esm({
+  "vendor/channel-pack/src/kuku-qr-login.ts"() {
+    "use strict";
+    init_kuku();
+    KUKU_PASSPORT_BASE = "https://passport.baidu.com";
+    KUKU_QR_REFERER = "https://kuku.baidu.com/genflowpro/login";
+    KUKU_QR_TARGET = "https://kuku.baidu.com";
+    KUKU_QR_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) GenFlowPro/1.6.5.130 Chrome/120.0.0.0 Electron/28.0.0.0 Safari/537.36";
+    KUKU_ENGINE_USER_AGENT = "genflow;1.6.5;PC;PC-Windows;10.0.26200;GenFlowPro";
+    KUKU_ENGINE_SIGN_KEY = "34868b316de55815273b2616954b0286";
+    KUKU_QR_REQUEST_TIMEOUT_MS = 15e3;
+    KUKU_QR_POLL_TIMEOUT_MS = 45e3;
+    QR_IMAGE_ATTEMPTS = 3;
+    ACCOUNT_COOKIE = /^(?:BDUSS|PTOKEN|STOKEN|PASS_STOKEN)/;
+    KukuQrError = class extends Error {
+      code;
+      /** 上游 HTTP 状态（若有）。 */
+      status;
+      /** 上游 errno（若有）。 */
+      errno;
+      constructor(code, message2, extra = {}) {
+        super(message2, extra.cause === void 0 ? void 0 : { cause: extra.cause });
+        this.name = "KukuQrError";
+        this.code = code;
+        this.status = extra.status;
+        this.errno = extra.errno;
+      }
+    };
+    GENERIC_PARAMS = { apiver: "v3", tpl: "genflowpro" };
+  }
+});
+
 // vendor/channel-pack/src/kuku-auth.ts
 var kuku_auth_exports = {};
 __export(kuku_auth_exports, {
@@ -29580,7 +30021,7 @@ __export(kuku_auth_exports, {
   probeCredential: () => probeCredential2,
   streamChat: () => streamChat3
 });
-import { randomUUID as randomUUID4 } from "node:crypto";
+import { createHash as createHash7, randomUUID as randomUUID4 } from "node:crypto";
 function pickId(body, ...keys) {
   if (typeof body !== "object" || body === null) return void 0;
   const record = body;
@@ -29612,6 +30053,10 @@ async function* streamChat3(fetcher, product, credential, options) {
       replyId,
       clientSessionId,
       deviceId,
+      // 三件套必须内嵌进 client_added（只拼 query 会回 invalid session_id）。
+      bdstoken: triple.bdstoken,
+      uinfo: triple.uinfo,
+      uk: triple.uk,
       ...options.thinkMode === void 0 ? {} : { thinkMode: options.thinkMode }
     })),
     ...options.signal === void 0 ? {} : { signal: options.signal }
@@ -29792,6 +30237,37 @@ async function claimKukuDailyCheckin(fetcher, product, credential, signal) {
   if (succeeded === 0) return { claimed: 0, message: "\u4E0A\u6E38\u672A\u8FD4\u56DE\u53EF\u9886\u53D6\u7ED3\u679C\uFF08\u53EF\u80FD\u4ECA\u65E5\u65E0\u53EF\u9886\u4EFB\u52A1\uFF09" };
   return total > 0 ? { claimed: total, message: `\u5DF2\u9886\u53D6 ${total} \u79EF\u5206` } : { claimed: 0, message: "\u4ECA\u65E5\u5DF2\u9886\u53D6\u8FC7\uFF08\u4EFB\u52A1\u5E42\u7B49\uFF09" };
 }
+async function exchangeKukuStokenLive(fetcher, product, credential, signal) {
+  const value = (name2) => credential.access_token.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name2}=`))?.slice(name2.length + 1) ?? "";
+  const bduss = value("BDUSS");
+  const ptoken = value("PTOKEN");
+  if (bduss === "" || ptoken === "") return void 0;
+  const fields = `appid=1&bduss=${bduss}&ptoken=${ptoken}&return_type=1&tpl=genflowpro&tpl_list=genflowpro|netdisk`;
+  const signature = createHash7("md5").update(`${fields}&sign_key=${KUKU_ENGINE_SIGN_KEY}`).digest("hex");
+  try {
+    const response = await fetcher(`${KUKU_PASSPORT_BASE}/v3/login/api/auth`, {
+      method: "POST",
+      headers: {
+        "user-agent": KUKU_ENGINE_USER_AGENT,
+        "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+        Referer: `${product.apiBase}/genflowpro`,
+        Origin: product.apiBase,
+        Cookie: credential.access_token
+      },
+      body: `${fields}&sig=${signature}`,
+      ...signal === void 0 ? {} : { signal }
+    });
+    if (!response.ok) return void 0;
+    const body = await response.json().catch(() => void 0);
+    if (typeof body !== "object" || body === null) return void 0;
+    const list = body.stoken_list;
+    if (typeof list !== "object" || list === null) return void 0;
+    const stoken = list.genflowpro;
+    return typeof stoken === "string" && stoken !== "" ? stoken : void 0;
+  } catch {
+    return void 0;
+  }
+}
 async function ensureKukuTokenTriple(fetcher, product, credential, options = {}) {
   if (!isCredentialUsable4(credential)) throw new Error("KukuAI\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u7C98\u8D34\u542B BDUSS \u7684 Cookie");
   const bduss = credential.access_token.split(";").map((part) => part.trim()).find((part) => part.startsWith("BDUSS="))?.slice("BDUSS=".length) ?? credential.access_token;
@@ -29801,13 +30277,26 @@ async function ensureKukuTokenTriple(fetcher, product, credential, options = {})
     return cached2.triple;
   }
   const url = `${product.apiBase}${KUKU_USERREPORT_PATH}?${KUKU_WEB_QUERY}`;
-  const response = await fetcher(url, {
-    method: "GET",
-    headers: kukuHeaders(product, credential),
-    ...options.signal === void 0 ? {} : { signal: options.signal }
-  });
-  const body = await response.json().catch(() => void 0);
-  const errno = typeof body === "object" && body !== null ? body.errno : void 0;
+  const callUserreport = async (cookie) => {
+    const response = await fetcher(url, {
+      method: "GET",
+      headers: kukuHeaders(product, { ...credential, access_token: cookie }),
+      ...options.signal === void 0 ? {} : { signal: options.signal }
+    });
+    const body2 = await response.json().catch(() => void 0);
+    const errno2 = typeof body2 === "object" && body2 !== null ? body2.errno : void 0;
+    return { body: body2, errno: errno2 };
+  };
+  let { body, errno } = await callUserreport(credential.access_token);
+  if (typeof errno === "number" && errno !== 0) {
+    const freshStoken = await exchangeKukuStokenLive(fetcher, product, credential, options.signal);
+    if (freshStoken !== void 0) {
+      const replaced = credential.access_token.split(";").map((part) => part.trim()).filter((part) => part !== "" && !part.startsWith("STOKEN=")).concat(`STOKEN=${freshStoken}`).join("; ");
+      const retried = await callUserreport(replaced);
+      body = retried.body;
+      errno = retried.errno;
+    }
+  }
   const showMsg = typeof body === "object" && body !== null ? body.show_msg ?? body.errmsg : void 0;
   if (typeof errno === "number" && errno !== 0) {
     throw new Error(
@@ -29837,6 +30326,7 @@ var init_kuku_auth = __esm({
     "use strict";
     init_kuku_product();
     init_kuku();
+    init_kuku_qr_login();
     KUKU_CLAIMABLE_TASK_TYPES = ["LOGIN", "CHAT"];
     KUKU_TRIPLE_TTL_MS = 6e5;
     tripleCache = /* @__PURE__ */ new Map();
@@ -29953,7 +30443,7 @@ var init_accio_product = __esm({
 
 // vendor/channel-pack/src/accio.ts
 import { randomUUID as randomUUID5 } from "node:crypto";
-function stringValue6(value) {
+function stringValue7(value) {
   return typeof value === "string" && value !== "" ? value : void 0;
 }
 function numberValue3(value) {
@@ -29964,7 +30454,7 @@ function numberValue3(value) {
   }
   return void 0;
 }
-function isRecord7(value) {
+function isRecord8(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function isCredentialUsable5(credential) {
@@ -29992,11 +30482,11 @@ function accioHeaders(product) {
   };
 }
 function parseTokenResponse(value) {
-  if (!isRecord7(value)) return void 0;
-  const body = isRecord7(value.data) ? value.data : value;
-  const accessToken = stringValue6(body.accessToken) ?? stringValue6(body.access_token);
+  if (!isRecord8(value)) return void 0;
+  const body = isRecord8(value.data) ? value.data : value;
+  const accessToken = stringValue7(body.accessToken) ?? stringValue7(body.access_token);
   if (accessToken === void 0) return void 0;
-  const refreshToken2 = stringValue6(body.refreshToken) ?? stringValue6(body.refresh_token);
+  const refreshToken2 = stringValue7(body.refreshToken) ?? stringValue7(body.refresh_token);
   const expiresRaw = numberValue3(body.expiresAt) ?? numberValue3(body.expires_at);
   const expireTime = expiresRaw === void 0 ? void 0 : expiresRaw < 1e12 ? expiresRaw * 1e3 : expiresRaw;
   return {
@@ -30043,24 +30533,24 @@ function buildGenerateBody(options) {
   return body;
 }
 function parseAdkFrame(value) {
-  if (!isRecord7(value)) return void 0;
+  if (!isRecord8(value)) return void 0;
   const errorCode = value.error_code ?? value.errorCode;
   if (errorCode !== void 0 && errorCode !== 0 && errorCode !== "0") {
     return {
       kind: "error",
-      message: stringValue6(value.error_message) ?? stringValue6(value.errorMessage) ?? `error_code=${String(errorCode)}`
+      message: stringValue7(value.error_message) ?? stringValue7(value.errorMessage) ?? `error_code=${String(errorCode)}`
     };
   }
   if (value.turn_complete === true) {
-    return { kind: "done", ...stringValue6(value.finish_reason) === void 0 ? {} : { finishReason: stringValue6(value.finish_reason) } };
+    return { kind: "done", ...stringValue7(value.finish_reason) === void 0 ? {} : { finishReason: stringValue7(value.finish_reason) } };
   }
   const content = value.content;
-  if (!isRecord7(content) || !Array.isArray(content.parts)) return void 0;
+  if (!isRecord8(content) || !Array.isArray(content.parts)) return void 0;
   const texts = [];
   const reasonings = [];
   for (const part of content.parts) {
-    if (!isRecord7(part)) continue;
-    const text = stringValue6(part.text);
+    if (!isRecord8(part)) continue;
+    const text = stringValue7(part.text);
     if (text === void 0) continue;
     if (part.thought === true) reasonings.push(text);
     else texts.push(text);
@@ -30078,16 +30568,16 @@ function contentToText10(content) {
       parts.push(block);
       continue;
     }
-    if (!isRecord7(block)) continue;
-    const text = stringValue6(block.text);
+    if (!isRecord8(block)) continue;
+    const text = stringValue7(block.text);
     if (text !== void 0) parts.push(text);
   }
   return parts.join("\n");
 }
 async function createPkcePair() {
-  const { randomBytes: randomBytes15, createHash: createHash13 } = await import("node:crypto");
+  const { randomBytes: randomBytes15, createHash: createHash14 } = await import("node:crypto");
   const verifier = randomBytes15(32).toString("base64url");
-  const challenge = createHash13("sha256").update(verifier).digest("base64url");
+  const challenge = createHash14("sha256").update(verifier).digest("base64url");
   return { verifier, challenge };
 }
 function buildAccioAuthUrl(product, redirectUri, state, challenge) {
@@ -30262,9 +30752,9 @@ async function* streamChat4(fetcher, product, credential, options) {
   if (!isCredentialUsable5(credential)) {
     throw new Error("Accio\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
   }
-  const { createHash: createHash13, randomUUID: randomUUID17 } = await import("node:crypto");
+  const { createHash: createHash14, randomUUID: randomUUID17 } = await import("node:crypto");
   const requestId = randomUUID17();
-  const sgK = createHash13("md5").update(requestId).digest("hex");
+  const sgK = createHash14("md5").update(requestId).digest("hex");
   const response = await fetcher(`${product.llmBase}${ACCIO_GENERATE_PATH}?sg_k=${sgK}`, {
     method: "POST",
     headers: { ...accioHeaders(product), Accept: "text/event-stream" },
@@ -30683,31 +31173,31 @@ function basicAuthHeader(credential) {
   return `Basic ${btoa(binary)}`;
 }
 function parseCredential(value) {
-  if (!isRecord8(value)) return void 0;
-  const baseUrl = stringValue7(value.baseUrl) ?? stringValue7(value.base_url) ?? stringValue7(value.api_base) ?? stringValue7(value.apiBase);
-  const appKey = stringValue7(value.appKey) ?? stringValue7(value.app_key);
-  const appSecret = stringValue7(value.appSecret) ?? stringValue7(value.app_secret);
+  if (!isRecord9(value)) return void 0;
+  const baseUrl = stringValue8(value.baseUrl) ?? stringValue8(value.base_url) ?? stringValue8(value.api_base) ?? stringValue8(value.apiBase);
+  const appKey = stringValue8(value.appKey) ?? stringValue8(value.app_key);
+  const appSecret = stringValue8(value.appSecret) ?? stringValue8(value.app_secret);
   if (baseUrl === void 0 || appKey === void 0 || appSecret === void 0) return void 0;
   return {
     base_url: baseUrl,
     app_key: appKey,
     app_secret: appSecret,
-    ...stringValue7(value.access_key) === void 0 ? {} : { access_key: stringValue7(value.access_key) },
-    ...stringValue7(value.accessKey) === void 0 ? {} : { access_key: stringValue7(value.accessKey) },
-    ...stringValue7(value.secret_key) === void 0 ? {} : { secret_key: stringValue7(value.secret_key) },
-    ...stringValue7(value.secretKey) === void 0 ? {} : { secret_key: stringValue7(value.secretKey) },
-    ...stringValue7(value.security_token) === void 0 ? {} : { security_token: stringValue7(value.security_token) },
-    ...stringValue7(value.project_id) === void 0 ? {} : { project_id: stringValue7(value.project_id) },
-    ...stringValue7(value.account_id) === void 0 ? {} : { account_id: stringValue7(value.account_id) },
-    ...stringValue7(value.nickname) === void 0 ? {} : { nickname: stringValue7(value.nickname) },
-    ...stringValue7(value.refresh_token) === void 0 ? {} : { refresh_token: stringValue7(value.refresh_token) },
+    ...stringValue8(value.access_key) === void 0 ? {} : { access_key: stringValue8(value.access_key) },
+    ...stringValue8(value.accessKey) === void 0 ? {} : { access_key: stringValue8(value.accessKey) },
+    ...stringValue8(value.secret_key) === void 0 ? {} : { secret_key: stringValue8(value.secret_key) },
+    ...stringValue8(value.secretKey) === void 0 ? {} : { secret_key: stringValue8(value.secretKey) },
+    ...stringValue8(value.security_token) === void 0 ? {} : { security_token: stringValue8(value.security_token) },
+    ...stringValue8(value.project_id) === void 0 ? {} : { project_id: stringValue8(value.project_id) },
+    ...stringValue8(value.account_id) === void 0 ? {} : { account_id: stringValue8(value.account_id) },
+    ...stringValue8(value.nickname) === void 0 ? {} : { nickname: stringValue8(value.nickname) },
+    ...stringValue8(value.refresh_token) === void 0 ? {} : { refresh_token: stringValue8(value.refresh_token) },
     ...typeof value.expire_time === "number" && Number.isFinite(value.expire_time) ? { expire_time: value.expire_time } : {},
-    ...isRecord8(value.dpop) ? { dpop: value.dpop } : {},
+    ...isRecord9(value.dpop) ? { dpop: value.dpop } : {},
     ...value.model_info === void 0 ? {} : { model_info: value.model_info },
     created_at: Date.now()
   };
 }
-function stringValue7(value) {
+function stringValue8(value) {
   return typeof value === "string" && value !== "" ? value : void 0;
 }
 function numberValue4(value) {
@@ -30719,12 +31209,12 @@ function numberValue4(value) {
   return void 0;
 }
 function parseTimeValue(value) {
-  const text = stringValue7(value);
+  const text = stringValue8(value);
   if (text === void 0) return void 0;
   const ms = Date.parse(text);
   return Number.isNaN(ms) ? void 0 : ms;
 }
-function isRecord8(value) {
+function isRecord9(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function jwtClaims(token) {
@@ -30737,7 +31227,7 @@ function jwtClaims(token) {
     const binary = atob(padded);
     const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
     const parsed = JSON.parse(new TextDecoder().decode(bytes));
-    return isRecord8(parsed) ? parsed : void 0;
+    return isRecord9(parsed) ? parsed : void 0;
   } catch {
     return void 0;
   }
@@ -30753,7 +31243,7 @@ function decodeUserProfile(value) {
       const binary = atob(padded);
       const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
       const parsed = JSON.parse(new TextDecoder().decode(bytes));
-      if (isRecord8(parsed)) return parsed;
+      if (isRecord9(parsed)) return parsed;
     } catch {
     }
   }
@@ -30763,11 +31253,11 @@ function tokenDisplayName(token) {
   const claims = jwtClaims(token);
   if (claims === void 0) return void 0;
   for (const field of ["preferred_username", "name"]) {
-    const value = stringValue7(claims[field]);
+    const value = stringValue8(claims[field]);
     if (value !== void 0) return value;
   }
   const profile = decodeUserProfile(claims.user_profile);
-  return profile === void 0 ? void 0 : stringValue7(profile.account_name);
+  return profile === void 0 ? void 0 : stringValue8(profile.account_name);
 }
 function isCredentialUsable6(credential) {
   if (credential === void 0) return false;
@@ -30789,8 +31279,8 @@ async function fetchState(fetcher, product, signal) {
   });
   if (!response.ok) throw new Error(`OfficeAce\uFF1A\u53D6 state \u8FD4\u56DE HTTP ${response.status}`);
   const body = await response.json().catch(() => void 0);
-  const record = isRecord8(body) ? isRecord8(body.data) ? body.data : body : void 0;
-  const state = record === void 0 ? void 0 : stringValue7(record.state);
+  const record = isRecord9(body) ? isRecord9(body.data) ? body.data : body : void 0;
+  const state = record === void 0 ? void 0 : stringValue8(record.state);
   if (state === void 0) throw new Error("OfficeAce\uFF1A\u53D6 state \u54CD\u5E94\u7F3A\u5C11 state");
   return state;
 }
@@ -30826,8 +31316,8 @@ async function pollAuthCode(fetcher, product, state, options = {}) {
     }
     if (!response.ok) throw new Error(`OfficeAce\uFF1A\u53D6\u6388\u6743\u7801\u8FD4\u56DE HTTP ${response.status}`);
     const body = await response.json().catch(() => void 0);
-    const record = isRecord8(body) ? isRecord8(body.data) ? body.data : body : void 0;
-    const code = record === void 0 ? void 0 : stringValue7(record.code);
+    const record = isRecord9(body) ? isRecord9(body.data) ? body.data : body : void 0;
+    const code = record === void 0 ? void 0 : stringValue8(record.code);
     if (code === void 0) throw new Error("OfficeAce\uFF1A\u53D6\u6388\u6743\u7801\u54CD\u5E94\u7F3A\u5C11 code");
     return code;
   }
@@ -30856,16 +31346,16 @@ async function exchangeCodeForSts(fetcher, product, code, verifier, dpopKey, sig
     throw new Error(`OfficeAce\uFF1A\u6362\u4E34\u65F6\u51ED\u636E\u8FD4\u56DE HTTP ${response.status}${text === "" ? "" : `\uFF1A${text.slice(0, 200)}`}`);
   }
   const body = await response.json().catch(() => void 0);
-  if (!isRecord8(body)) throw new Error("OfficeAce\uFF1A\u6362\u4E34\u65F6\u51ED\u636E\u54CD\u5E94\u4E0D\u662F\u5BF9\u8C61");
-  const credentials = isRecord8(body.credentials) ? body.credentials : body;
-  const accessKey = stringValue7(credentials.access_key_id) ?? stringValue7(credentials.accessKeyId) ?? stringValue7(credentials.access_key) ?? stringValue7(credentials.accessKey);
-  const secretKey = stringValue7(credentials.secret_access_key) ?? stringValue7(credentials.secretAccessKey) ?? stringValue7(credentials.secret_key) ?? stringValue7(credentials.secretKey);
+  if (!isRecord9(body)) throw new Error("OfficeAce\uFF1A\u6362\u4E34\u65F6\u51ED\u636E\u54CD\u5E94\u4E0D\u662F\u5BF9\u8C61");
+  const credentials = isRecord9(body.credentials) ? body.credentials : body;
+  const accessKey = stringValue8(credentials.access_key_id) ?? stringValue8(credentials.accessKeyId) ?? stringValue8(credentials.access_key) ?? stringValue8(credentials.accessKey);
+  const secretKey = stringValue8(credentials.secret_access_key) ?? stringValue8(credentials.secretAccessKey) ?? stringValue8(credentials.secret_key) ?? stringValue8(credentials.secretKey);
   if (accessKey === void 0 || secretKey === void 0) {
     throw new Error("OfficeAce\uFF1A\u6362\u4E34\u65F6\u51ED\u636E\u54CD\u5E94\u7F3A\u5C11 AK/SK");
   }
-  const refreshToken2 = stringValue7(body.refresh_token);
-  const nickname = tokenDisplayName(stringValue7(body.id_token)) ?? (refreshToken2 === void 0 ? void 0 : tokenDisplayName(refreshToken2));
-  const expiration = stringValue7(credentials.expiration);
+  const refreshToken2 = stringValue8(body.refresh_token);
+  const nickname = tokenDisplayName(stringValue8(body.id_token)) ?? (refreshToken2 === void 0 ? void 0 : tokenDisplayName(refreshToken2));
+  const expiration = stringValue8(credentials.expiration);
   const expireTime = expiration === void 0 || Number.isNaN(Date.parse(expiration)) ? void 0 : Date.parse(expiration);
   return {
     base_url: "",
@@ -30873,8 +31363,8 @@ async function exchangeCodeForSts(fetcher, product, code, verifier, dpopKey, sig
     app_secret: "",
     access_key: accessKey,
     secret_key: secretKey,
-    ...stringValue7(credentials.security_token) === void 0 ? {} : { security_token: stringValue7(credentials.security_token) },
-    ...stringValue7(credentials.project_id) === void 0 ? {} : { project_id: stringValue7(credentials.project_id) },
+    ...stringValue8(credentials.security_token) === void 0 ? {} : { security_token: stringValue8(credentials.security_token) },
+    ...stringValue8(credentials.project_id) === void 0 ? {} : { project_id: stringValue8(credentials.project_id) },
     ...refreshToken2 === void 0 ? {} : { refresh_token: refreshToken2 },
     ...expireTime === void 0 ? {} : { expire_time: expireTime },
     ...nickname === void 0 ? {} : { nickname },
@@ -30913,31 +31403,31 @@ async function refreshOfficeAceCredential(fetcher, product, credential, options 
   } catch {
     body = void 0;
   }
-  if (!isRecord8(body)) throw new Error("OfficeAce\uFF1A\u7EED\u671F\u54CD\u5E94\u4E0D\u662F\u5BF9\u8C61");
-  const credentials = isRecord8(body.credentials) ? body.credentials : body;
-  const accessKey = stringValue7(credentials.access_key_id) ?? stringValue7(credentials.accessKey);
-  const secretKey = stringValue7(credentials.secret_access_key) ?? stringValue7(credentials.secretAccessKey);
+  if (!isRecord9(body)) throw new Error("OfficeAce\uFF1A\u7EED\u671F\u54CD\u5E94\u4E0D\u662F\u5BF9\u8C61");
+  const credentials = isRecord9(body.credentials) ? body.credentials : body;
+  const accessKey = stringValue8(credentials.access_key_id) ?? stringValue8(credentials.accessKey);
+  const secretKey = stringValue8(credentials.secret_access_key) ?? stringValue8(credentials.secretAccessKey);
   if (accessKey === void 0 || secretKey === void 0) {
     throw new Error("OfficeAce\uFF1A\u7EED\u671F\u54CD\u5E94\u7F3A\u5C11 AK/SK");
   }
-  const rotated = stringValue7(body.refresh_token);
-  const expiration = stringValue7(credentials.expiration);
+  const rotated = stringValue8(body.refresh_token);
+  const expiration = stringValue8(credentials.expiration);
   const expireTime = expiration === void 0 || Number.isNaN(Date.parse(expiration)) ? void 0 : Date.parse(expiration);
   return {
     ...credential,
     access_key: accessKey,
     secret_key: secretKey,
-    ...stringValue7(credentials.security_token) === void 0 ? {} : { security_token: stringValue7(credentials.security_token) },
-    ...stringValue7(credentials.project_id) === void 0 ? {} : { project_id: stringValue7(credentials.project_id) },
+    ...stringValue8(credentials.security_token) === void 0 ? {} : { security_token: stringValue8(credentials.security_token) },
+    ...stringValue8(credentials.project_id) === void 0 ? {} : { project_id: stringValue8(credentials.project_id) },
     // 轮换出的新 token 必须带着（丢了链子就断）；上游没给就沿用旧的。
     refresh_token: rotated ?? refreshToken2,
     ...expireTime === void 0 ? {} : { expire_time: expireTime }
   };
 }
 function parseSubscriptionSnapshot(body, nowMs = Date.now()) {
-  if (!isRecord8(body)) throw new Error("OfficeAce\uFF1A\u8BA2\u9605\u54CD\u5E94\u4E0D\u662F\u5BF9\u8C61");
-  const skus = Array.isArray(body.skus) ? body.skus.filter(isRecord8) : [];
-  const bonusSkus = Array.isArray(body.bonus_skus) ? body.bonus_skus.filter(isRecord8) : [];
+  if (!isRecord9(body)) throw new Error("OfficeAce\uFF1A\u8BA2\u9605\u54CD\u5E94\u4E0D\u662F\u5BF9\u8C61");
+  const skus = Array.isArray(body.skus) ? body.skus.filter(isRecord9) : [];
+  const bonusSkus = Array.isArray(body.bonus_skus) ? body.bonus_skus.filter(isRecord9) : [];
   const packages = [];
   let pointsTotal = 0;
   let pointsUsed = 0;
@@ -30945,17 +31435,17 @@ function parseSubscriptionSnapshot(body, nowMs = Date.now()) {
   let planName = "";
   let planExpiresAt = 0;
   for (const sku of skus) {
-    const name2 = stringValue7(sku.sku_name) ?? stringValue7(sku.sku_code) ?? "";
+    const name2 = stringValue8(sku.sku_name) ?? stringValue8(sku.sku_code) ?? "";
     const skuExp = parseTimeValue(sku.expired_time);
     if (planName === "") planName = name2;
     if (planExpiresAt === 0 && skuExp !== void 0) planExpiresAt = skuExp;
-    const quotas = Array.isArray(sku.quotas) ? sku.quotas.filter(isRecord8) : [];
+    const quotas = Array.isArray(sku.quotas) ? sku.quotas.filter(isRecord9) : [];
     let ptsTotal = 0;
     let ptsUsed = 0;
     for (const quota of quotas) {
       const quotaExp = parseTimeValue(quota.expired_time);
       if (quotaExp !== void 0 && quotaExp <= nowMs) continue;
-      const code = stringValue7(quota.sku_attr_code);
+      const code = stringValue8(quota.sku_attr_code);
       const total = numberValue4(quota.sku_value) ?? 0;
       const used = numberValue4(quota.current_value) ?? 0;
       if (code === "officeace_points") {
@@ -30974,7 +31464,7 @@ function parseSubscriptionSnapshot(body, nowMs = Date.now()) {
   for (const bonus of bonusSkus) {
     const exp = parseTimeValue(bonus.expired_time);
     if (exp !== void 0 && exp <= nowMs) continue;
-    const name2 = stringValue7(bonus.activity_name) ?? stringValue7(bonus.activity_id) ?? "\u5956\u52B1\u79EF\u5206";
+    const name2 = stringValue8(bonus.activity_name) ?? stringValue8(bonus.activity_id) ?? "\u5956\u52B1\u79EF\u5206";
     const total = numberValue4(bonus.points) ?? 0;
     const used = numberValue4(bonus.current_value) ?? 0;
     packages.push({ name: name2, total, used, remaining: Math.max(0, total - used), expiresAt: exp ?? 0 });
@@ -30992,7 +31482,7 @@ function parseSubscriptionSnapshot(body, nowMs = Date.now()) {
   };
 }
 async function fetchSubscriptionSnapshot(fetcher, product, credential, options = {}) {
-  const rawBase = credential.model_info !== void 0 && isRecord8(credential.model_info) ? stringValue7(credential.model_info.model_api_url_base) : void 0;
+  const rawBase = credential.model_info !== void 0 && isRecord9(credential.model_info) ? stringValue8(credential.model_info.model_api_url_base) : void 0;
   if (rawBase === void 0 || rawBase === "") {
     throw new Error("OfficeAce\uFF1A\u51ED\u636E\u7F3A\u5C11 model_info.model_api_url_base\uFF08\u91CD\u65B0\u767B\u5F55\u53EF\u91CD\u5EFA\uFF09");
   }
@@ -31005,7 +31495,7 @@ async function fetchSubscriptionSnapshot(fetcher, product, credential, options =
   const host = new URL(url).host;
   const timestampMs = Date.now();
   const sdkDate = formatSdkDate(timestampMs);
-  const projectId = stringValue7(credential.project_id);
+  const projectId = stringValue8(credential.project_id);
   const signHeaders = [
     ["host", host],
     ["x-sdk-date", sdkDate],
@@ -31063,7 +31553,7 @@ async function claimBonus(fetcher, product, credential, options = {}) {
   } catch {
     before = void 0;
   }
-  const rawBase = credential.model_info !== void 0 && isRecord8(credential.model_info) ? stringValue7(credential.model_info.model_api_url_base) : void 0;
+  const rawBase = credential.model_info !== void 0 && isRecord9(credential.model_info) ? stringValue8(credential.model_info.model_api_url_base) : void 0;
   if (rawBase === void 0 || rawBase === "") {
     throw new Error("OfficeAce\uFF1A\u51ED\u636E\u7F3A\u5C11 model_info.model_api_url_base\uFF08\u91CD\u65B0\u767B\u5F55\u53EF\u91CD\u5EFA\uFF09");
   }
@@ -31073,7 +31563,7 @@ async function claimBonus(fetcher, product, credential, options = {}) {
   const host = new URL(url).host;
   const timestampMs = Date.now();
   const sdkDate = formatSdkDate(timestampMs);
-  const projectId = stringValue7(credential.project_id);
+  const projectId = stringValue8(credential.project_id);
   const signHeaders = [
     ["host", host],
     ["x-sdk-date", sdkDate],
@@ -31139,7 +31629,7 @@ async function validatePermission(fetcher, product, credential, signal) {
   const payloadHash = await sha256Hex2("");
   const timestampMs = Date.now();
   const sdkDate = formatSdkDate(timestampMs);
-  const projectId = stringValue7(credential.project_id);
+  const projectId = stringValue8(credential.project_id);
   const signHeaders = [["host", host], ["x-sdk-date", sdkDate]];
   if (credential.security_token !== void 0 && credential.security_token !== "") {
     signHeaders.push(["x-security-token", credential.security_token]);
@@ -31175,20 +31665,20 @@ async function validatePermission(fetcher, product, credential, signal) {
   });
   if (!response.ok) throw new Error(`OfficeAce\uFF1A\u8EAB\u4EFD\u6821\u9A8C\u8FD4\u56DE HTTP ${response.status}`);
   const body = await response.json().catch(() => void 0);
-  if (!isRecord8(body)) return {};
+  if (!isRecord9(body)) return {};
   const modelInfoRaw = [
-    isRecord8(body.model_info) ? body.model_info : void 0,
-    isRecord8(body.subscription) && isRecord8(body.subscription.model_info) ? body.subscription.model_info : void 0,
-    isRecord8(body.modelInfo) ? body.modelInfo : void 0
+    isRecord9(body.model_info) ? body.model_info : void 0,
+    isRecord9(body.subscription) && isRecord9(body.subscription.model_info) ? body.subscription.model_info : void 0,
+    isRecord9(body.modelInfo) ? body.modelInfo : void 0
   ].find((value) => value !== void 0);
   let baseUrl;
   let appKey;
   let appSecret;
   if (modelInfoRaw !== void 0) {
-    const authInfo = isRecord8(modelInfoRaw.model_auth_info) ? modelInfoRaw.model_auth_info : void 0;
-    const rawKey = authInfo === void 0 ? void 0 : stringValue7(authInfo.model_app_key);
-    const rawSecret = authInfo === void 0 ? void 0 : stringValue7(authInfo.model_app_secret);
-    const rawBase = stringValue7(modelInfoRaw.model_api_url_base);
+    const authInfo = isRecord9(modelInfoRaw.model_auth_info) ? modelInfoRaw.model_auth_info : void 0;
+    const rawKey = authInfo === void 0 ? void 0 : stringValue8(authInfo.model_app_key);
+    const rawSecret = authInfo === void 0 ? void 0 : stringValue8(authInfo.model_app_secret);
+    const rawBase = stringValue8(modelInfoRaw.model_api_url_base);
     if (rawKey !== void 0 && rawKey !== "") appKey = rawKey;
     if (rawSecret !== void 0 && rawSecret !== "") appSecret = rawSecret;
     if (rawBase !== void 0 && rawBase !== "") {
@@ -31197,10 +31687,10 @@ async function validatePermission(fetcher, product, credential, signal) {
     }
   }
   return {
-    ...stringValue7(body.account_id) === void 0 ? {} : { accountId: stringValue7(body.account_id) },
-    ...stringValue7(body.principal_id) === void 0 ? {} : { principalId: stringValue7(body.principal_id) },
-    ...stringValue7(body.nickname) === void 0 ? {} : { nickname: stringValue7(body.nickname) },
-    ...stringValue7(body.project_id) === void 0 ? {} : { projectId: stringValue7(body.project_id) },
+    ...stringValue8(body.account_id) === void 0 ? {} : { accountId: stringValue8(body.account_id) },
+    ...stringValue8(body.principal_id) === void 0 ? {} : { principalId: stringValue8(body.principal_id) },
+    ...stringValue8(body.nickname) === void 0 ? {} : { nickname: stringValue8(body.nickname) },
+    ...stringValue8(body.project_id) === void 0 ? {} : { projectId: stringValue8(body.project_id) },
     ...modelInfoRaw === void 0 ? {} : { modelInfo: modelInfoRaw },
     ...baseUrl === void 0 ? {} : { baseUrl },
     ...appKey === void 0 ? {} : { appKey },
@@ -31287,11 +31777,11 @@ __export(autoclaw_sms_exports, {
   stripAutoClawRoutePrefix: () => stripAutoClawRoutePrefix,
   toAutoclawCredential: () => toAutoclawCredential
 });
-import { createHash as createHash6, randomUUID as randomUUID7 } from "node:crypto";
+import { createHash as createHash8, randomUUID as randomUUID7 } from "node:crypto";
 import { mkdirSync as mkdirSync5, readFileSync as readFileSync6, writeFileSync as writeFileSync5 } from "node:fs";
 import { join as join4 } from "node:path";
 function autoclawSign(appId, timestamp, appKey) {
-  return createHash6("md5").update(`${appId}&${timestamp}&${appKey}`).digest("hex");
+  return createHash8("md5").update(`${appId}&${timestamp}&${appKey}`).digest("hex");
 }
 function autoclawAuthHeaders(timestamp = Math.floor(Date.now() / 1e3), appId = AUTOCLAW_SMS_APP_ID, appKey = AUTOCLAW_SMS_APP_KEY) {
   return {
@@ -33021,10 +33511,10 @@ var init_webapi = __esm({
 });
 
 // vendor/channel-pack/src/oauth.ts
-import { createHash as createHash7, randomBytes as randomBytes5 } from "node:crypto";
+import { createHash as createHash9, randomBytes as randomBytes6 } from "node:crypto";
 function generatePkcePair() {
-  const codeVerifier = randomBytes5(48).toString("base64url");
-  const codeChallenge = createHash7("sha256").update(codeVerifier).digest("base64url");
+  const codeVerifier = randomBytes6(48).toString("base64url");
+  const codeChallenge = createHash9("sha256").update(codeVerifier).digest("base64url");
   return { codeVerifier, codeChallenge };
 }
 async function generateDpopKeyPair() {
@@ -33040,7 +33530,7 @@ async function signDpopJws(keyPair, htm, htu) {
     htm,
     htu,
     iat: Math.floor(Date.now() / 1e3),
-    jti: randomBytes5(32).toString("hex")
+    jti: randomBytes6(32).toString("hex")
   };
   return new SignJWT(payload).setProtectedHeader({ alg: "ES256", typ: "dpop+jwt", jwk: keyPair.publicKeyJwk }).sign(key);
 }
@@ -33159,7 +33649,7 @@ __export(login_exports, {
 });
 import { createServer as createServer3 } from "node:http";
 import { spawn } from "node:child_process";
-import { getRandomValues, randomUUID as randomUUID8, randomBytes as randomBytes6 } from "node:crypto";
+import { getRandomValues, randomUUID as randomUUID8, randomBytes as randomBytes7 } from "node:crypto";
 function generateRandomSecret() {
   const bytes = getRandomValues(new Uint8Array(32));
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -33421,7 +33911,7 @@ function listenOnCallbackPort(server) {
   });
 }
 async function startOAuthFlow(options = {}) {
-  const ticketId = randomBytes6(32).toString("hex");
+  const ticketId = randomBytes7(32).toString("hex");
   const pkce = generatePkcePair();
   const keyPair = await generateDpopKeyPair();
   const { port, server, result } = await startOAuthCallbackServer(ticketId, pkce, keyPair, options);
@@ -47400,10 +47890,10 @@ import { LlmAdapter as LlmAdapter12, LlmError as LlmError16 } from "@deepseek-ai
 
 // vendor/channel-pack/src/autoclaw.ts
 init_autoclaw_sms();
-function stringValue8(value) {
+function stringValue9(value) {
   return typeof value === "string" && value !== "" ? value : void 0;
 }
-function isRecord9(value) {
+function isRecord10(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function isCredentialUsable7(credential) {
@@ -47455,15 +47945,15 @@ function chatEndpoint(product) {
   return `${product.apiBase}${product.proxyPrefix}/chat/completions`;
 }
 function parseModelConfig(value) {
-  const list = Array.isArray(value) ? value : isRecord9(value) && Array.isArray(value.models) ? value.models : isRecord9(value) && Array.isArray(value.data) ? value.data : void 0;
+  const list = Array.isArray(value) ? value : isRecord10(value) && Array.isArray(value.models) ? value.models : isRecord10(value) && Array.isArray(value.data) ? value.data : void 0;
   if (list === void 0) return [];
   const rows = [];
   for (const raw of list) {
     if (typeof raw !== "object" || raw === null) continue;
     const item = raw;
-    const id = stringValue8(item.id) ?? stringValue8(item.model) ?? stringValue8(item.name);
+    const id = stringValue9(item.id) ?? stringValue9(item.model) ?? stringValue9(item.name);
     if (id === void 0) continue;
-    const name2 = stringValue8(item.name) ?? stringValue8(item.displayName) ?? id;
+    const name2 = stringValue9(item.name) ?? stringValue9(item.displayName) ?? id;
     const contextRaw = item.contextWindow ?? item.context_length ?? item.maxInputTokens;
     const contextWindow = typeof contextRaw === "number" && contextRaw > 0 ? contextRaw : 128e3;
     const maxRaw = item.maxTokens ?? item.max_output_tokens;
@@ -48122,7 +48612,7 @@ function registerLoomyLlm(ctx, options) {
 import { LlmAdapter as LlmAdapter14, LlmError as LlmError18, ReasoningEffortId as ReasoningEffortId8 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/raccoon.ts
-import { createCipheriv, randomBytes as randomBytes4 } from "node:crypto";
+import { createCipheriv, randomBytes as randomBytes5 } from "node:crypto";
 var RACCOON_API_BASE = "https://xiaohuanxiong.com";
 var RACCOON_POINTS_PREFIX = "/api/web/points/v1";
 var RACCOON_DESKTOP_PREFIX = "/api/web/desktop/v1";
@@ -48166,7 +48656,7 @@ function isRaccoonRefreshable(credential) {
 }
 function encryptRaccoonPhone(phone, iv) {
   const key = Buffer.from(RACCOON_PHONE_CIPHER_SECRET, "utf8");
-  const nonce = iv ?? randomBytes4(16);
+  const nonce = iv ?? randomBytes5(16);
   const cipher = createCipheriv("aes-128-cfb", key, nonce);
   cipher.setAutoPadding(false);
   const ciphertext = Buffer.concat([cipher.update(Buffer.from(phone, "utf8")), cipher.final()]);
@@ -51887,10 +52377,10 @@ import { credentialRef as credentialRef7 } from "@deepseek-ai/dsh-credentials";
 import { randomUUID as randomUUID10 } from "node:crypto";
 
 // vendor/channel-pack/src/loomy-sign.ts
-import { createHash as createHash8, createHmac, randomUUID as randomUUID9 } from "node:crypto";
+import { createHash as createHash10, createHmac, randomUUID as randomUUID9 } from "node:crypto";
 function loomyContentMd5(body) {
   if (body.length === 0) return "";
-  return createHash8("md5").update(body, "utf8").digest("base64");
+  return createHash10("md5").update(body, "utf8").digest("base64");
 }
 function escapeRfc3986(value) {
   return encodeURIComponent(value).replace(/!/g, "%21").replace(/'/g, "%27").replace(/\(/g, "%28").replace(/\)/g, "%29").replace(/\*/g, "%2A");
@@ -56678,7 +57168,7 @@ function buildCarrierPageHtml(config) {
 }
 
 // vendor/channel-pack/src/zcode-login.ts
-import { randomBytes as randomBytes7, randomUUID as randomUUID12 } from "node:crypto";
+import { randomBytes as randomBytes8, randomUUID as randomUUID12 } from "node:crypto";
 var ZCODE_ORIGIN = "https://zcode.z.ai";
 var ZCODE_OAUTH_CLI_INIT_URL = `${ZCODE_ORIGIN}/api/v1/oauth/cli/init`;
 var zcodeOauthCliPollUrl = (flowId) => `${ZCODE_ORIGIN}/api/v1/oauth/cli/poll/${encodeURIComponent(flowId)}`;
@@ -56692,7 +57182,7 @@ var ZcodeLoginError = class extends Error {
   kind;
 };
 function generateFlowSecret() {
-  return randomBytes7(32).toString("hex");
+  return randomBytes8(32).toString("hex");
 }
 function generateDeviceMid() {
   return randomUUID12();
@@ -60147,408 +60637,8 @@ init_monkeycode();
 init_kuku_product();
 
 // vendor/channel-pack/src/kuku-qr-login-page.ts
+init_kuku_qr_login();
 import { createServer as createServer8 } from "node:http";
-
-// vendor/channel-pack/src/kuku-qr-login.ts
-init_kuku();
-import { createHash as createHash9, randomBytes as randomBytes8 } from "node:crypto";
-var KUKU_PASSPORT_BASE = "https://passport.baidu.com";
-var KUKU_QR_REFERER = "https://kuku.baidu.com/genflowpro/login";
-var KUKU_QR_TARGET = "https://kuku.baidu.com";
-var KUKU_QR_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) GenFlowPro/1.6.5.130 Chrome/120.0.0.0 Electron/28.0.0.0 Safari/537.36";
-var KUKU_ENGINE_USER_AGENT = "genflow;1.6.5;PC;PC-Windows;10.0.26200;GenFlowPro";
-var KUKU_ENGINE_SIGN_KEY = "34868b316de55815273b2616954b0286";
-var KUKU_QR_REQUEST_TIMEOUT_MS = 15e3;
-var KUKU_QR_POLL_TIMEOUT_MS = 45e3;
-var QR_IMAGE_ATTEMPTS = 3;
-var ACCOUNT_COOKIE = /^(?:BDUSS|PTOKEN|STOKEN|PASS_STOKEN)/;
-var KukuQrError = class extends Error {
-  code;
-  /** 上游 HTTP 状态（若有）。 */
-  status;
-  /** 上游 errno（若有）。 */
-  errno;
-  constructor(code, message2, extra = {}) {
-    super(message2, extra.cause === void 0 ? void 0 : { cause: extra.cause });
-    this.name = "KukuQrError";
-    this.code = code;
-    this.status = extra.status;
-    this.errno = extra.errno;
-  }
-};
-function createKukuCookieJar(initial = {}) {
-  const cookies = new Map(Object.entries(initial));
-  return {
-    get: (name2) => cookies.get(name2),
-    set: (name2, value) => {
-      cookies.set(name2, value);
-    },
-    has: (name2) => cookies.has(name2),
-    header: () => [...cookies].map(([name2, value]) => `${name2}=${value}`).join("; "),
-    names: () => [...cookies.keys()],
-    absorb: (response) => {
-      for (const raw of readSetCookie(response)) {
-        const [pair] = raw.split(";");
-        if (pair === void 0) continue;
-        const at = pair.indexOf("=");
-        if (at <= 0) continue;
-        const name2 = pair.slice(0, at).trim();
-        const value = pair.slice(at + 1).trim();
-        if (name2 === "") continue;
-        if (value === "" || /expires=.*(?:1970|Thu, 01 Jan 1970)/i.test(raw)) cookies.delete(name2);
-        else cookies.set(name2, value);
-      }
-    }
-  };
-}
-function readSetCookie(response) {
-  const headers = response.headers;
-  if (typeof headers.getSetCookie === "function") return headers.getSetCookie();
-  const joined = headers.get("set-cookie");
-  if (joined === null || joined === "") return [];
-  return joined.split(/,(?=\s*[A-Za-z0-9_\-]+=)/);
-}
-function jsonpName() {
-  return `bd__cbs__${randomBytes8(4).toString("hex")}`;
-}
-function unwrapJsonp(text) {
-  const match = /^[^(]*\(([\s\S]*)\)\s*;?\s*$/.exec(text);
-  return match?.[1] ?? text;
-}
-function parseKukuPassportBody(text) {
-  const trimmed = text.trim();
-  if (trimmed === "") return void 0;
-  const candidates = [trimmed, unwrapJsonp(trimmed)];
-  for (const candidate of candidates) {
-    try {
-      return JSON.parse(candidate);
-    } catch {
-    }
-    try {
-      return JSON.parse(candidate.replace(/([,{\s])'([^']+)'\s*:/g, '$1"$2":'));
-    } catch {
-    }
-  }
-  return void 0;
-}
-function isRecord10(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function stringValue9(value) {
-  if (typeof value === "string" && value !== "") return value;
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return void 0;
-}
-var GENERIC_PARAMS = { apiver: "v3", tpl: "genflowpro" };
-function passportUrl(base, path2, params) {
-  const query = new URLSearchParams({ ...params, ...GENERIC_PARAMS, tt: String(Date.now()) });
-  return `${base}${path2}?${query.toString()}`;
-}
-function requestSignal(options, timeoutMs) {
-  const timeout = AbortSignal.timeout(options.timeoutMs ?? timeoutMs);
-  if (options.signal === void 0) return timeout;
-  return AbortSignal.any([options.signal, timeout]);
-}
-async function callPassport(url, options, init = {}) {
-  const fetcher = options.fetcher ?? fetch;
-  const jar = init.jar;
-  const cookie = jar?.header() ?? "";
-  const headers = {
-    "user-agent": KUKU_QR_USER_AGENT,
-    referer: KUKU_QR_REFERER,
-    accept: "application/json, text/plain, */*",
-    ...init.headers
-  };
-  if (cookie !== "") headers.cookie = cookie;
-  const signal = requestSignal(options, init.timeoutMs ?? KUKU_QR_REQUEST_TIMEOUT_MS);
-  let response;
-  try {
-    response = await fetcher(url, {
-      method: init.method ?? "GET",
-      headers,
-      ...init.body === void 0 ? {} : { body: init.body },
-      ...signal === void 0 ? {} : { signal }
-    });
-  } catch (error) {
-    throw new KukuQrError("network", "\u65E0\u6CD5\u8FDE\u63A5\u767E\u5EA6 passport\uFF08\u7F51\u7EDC\u6216\u8D85\u65F6\uFF09\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5", { cause: error });
-  }
-  jar?.absorb(response);
-  const text = await response.text().catch(() => "");
-  return { status: response.status, body: parseKukuPassportBody(text), text, response };
-}
-async function requestKukuQrCode(options = {}) {
-  const passportBase = options.passportBase ?? KUKU_PASSPORT_BASE;
-  const jar = createKukuCookieJar();
-  const url = passportUrl(passportBase, "/v2/api/getqrcode", {
-    lp: "pc",
-    qrloginfrom: "pc",
-    gid: "",
-    oauthLog: "",
-    callback: jsonpName()
-  });
-  const reply2 = await callPassport(url, options, { jar });
-  const body = isRecord10(reply2.body) ? reply2.body : void 0;
-  const sign2 = stringValue9(body?.sign);
-  const errno = body?.errno === void 0 ? void 0 : Number(body.errno);
-  if (sign2 === void 0 || errno !== void 0 && errno !== 0) {
-    throw new KukuQrError("qr_refused", "\u767E\u5EA6 passport \u62D2\u7EDD\u4E0B\u53D1\u767B\u5F55\u4E8C\u7EF4\u7801\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5", {
-      status: reply2.status,
-      ...errno === void 0 ? {} : { errno }
-    });
-  }
-  const imgurl = stringValue9(body?.imgurl);
-  return {
-    sign: sign2,
-    imageUrl: imgurl === void 0 ? `${passportBase}/v2/api/qrcode?sign=${encodeURIComponent(sign2)}&lp=pc&qrloginfrom=pc` : `https://${imgurl.replace(/^https?:\/\//, "")}`,
-    prompt: stringValue9(body?.prompt) ?? "",
-    jar,
-    passportBase,
-    createdAt: Date.now()
-  };
-}
-async function fetchKukuQrImage(session, options = {}) {
-  const fetcher = options.fetcher ?? fetch;
-  const url = `${session.passportBase}/v2/api/qrcode?sign=${encodeURIComponent(session.sign)}&lp=pc&qrloginfrom=pc`;
-  let lastStatus = 0;
-  for (let attempt = 0; attempt < QR_IMAGE_ATTEMPTS; attempt++) {
-    if (attempt > 0) {
-      await new Promise((resolve2) => {
-        const timer = setTimeout(resolve2, 250 * attempt);
-        timer.unref?.();
-      });
-    }
-    const cookie = session.jar.header();
-    const signal = requestSignal(options, KUKU_QR_REQUEST_TIMEOUT_MS);
-    let response;
-    try {
-      response = await fetcher(url, {
-        headers: {
-          "user-agent": KUKU_QR_USER_AGENT,
-          referer: KUKU_QR_REFERER,
-          accept: "image/png,image/*;q=0.5",
-          ...cookie === "" ? {} : { cookie }
-        },
-        ...signal === void 0 ? {} : { signal }
-      });
-    } catch (error) {
-      throw new KukuQrError("network", "\u53D6\u4E8C\u7EF4\u7801\u56FE\u7247\u5931\u8D25\uFF08\u7F51\u7EDC\u6216\u8D85\u65F6\uFF09", { cause: error });
-    }
-    lastStatus = response.status;
-    session.jar.absorb(response);
-    if (!response.ok) {
-      void response.body?.cancel().catch(() => void 0);
-      throw new KukuQrError("http", `\u53D6\u4E8C\u7EF4\u7801\u56FE\u7247\u8FD4\u56DE HTTP ${response.status}`, { status: response.status });
-    }
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.length === 0) continue;
-    const contentType = response.headers.get("content-type") ?? "image/png";
-    return {
-      dataUrl: `data:${contentType.split(";")[0] ?? "image/png"};base64,${buffer.toString("base64")}`,
-      bytes: buffer.length,
-      contentType
-    };
-  }
-  throw new KukuQrError("qr_image_empty", "\u4E8C\u7EF4\u7801\u56FE\u7247\u8FDE\u7EED\u591A\u6B21\u4E3A\u7A7A\uFF0C\u8BF7\u91CD\u65B0\u7533\u8BF7\u4E8C\u7EF4\u7801", { status: lastStatus });
-}
-async function pollKukuQrStatus(session, options = {}) {
-  const url = passportUrl(session.passportBase, "/channel/unicast", {
-    channel_id: session.sign,
-    gid: "",
-    _sdkFrom: "1",
-    callback: jsonpName()
-  });
-  const reply2 = await callPassport(url, options, { jar: session.jar, timeoutMs: KUKU_QR_POLL_TIMEOUT_MS });
-  if (reply2.status < 200 || reply2.status >= 300) {
-    throw new KukuQrError("http", `\u626B\u7801\u72B6\u6001\u67E5\u8BE2\u8FD4\u56DE HTTP ${reply2.status}`, { status: reply2.status });
-  }
-  const body = isRecord10(reply2.body) ? reply2.body : void 0;
-  const errno = body?.errno === void 0 ? null : Number(body.errno);
-  const channel = typeof body?.channel_v === "string" ? parseKukuPassportBody(body.channel_v) : body?.channel_v;
-  const record = isRecord10(channel) ? channel : void 0;
-  const status = record?.status === void 0 ? null : String(record.status);
-  const probe = {
-    errno,
-    status,
-    fields: body === void 0 ? "unparsed" : Object.keys(body).join(",")
-  };
-  if (errno === 0 && status === "0") {
-    const ticket = stringValue9(record?.v);
-    if (ticket !== void 0) return { state: "confirmed", ticket, probe };
-    return { state: "unknown", probe };
-  }
-  if (errno === 0 && status === "1") return { state: "scanned", probe };
-  if (errno === 0 && status === "2") return { state: "expired", probe };
-  if (errno === 1 && record === void 0) return { state: "pending", probe };
-  return { state: "unknown", probe };
-}
-async function completeKukuQrLogin(session, ticket, options = {}) {
-  if (ticket.trim() === "") {
-    throw new KukuQrError("bduss_login_refused", "\u626B\u7801\u7ED3\u679C\u7F3A\u5C11 ticket\uFF0C\u8BF7\u91CD\u65B0\u7533\u8BF7\u4E8C\u7EF4\u7801");
-  }
-  const warnings = [];
-  const loginUrl = passportUrl(session.passportBase, "/v2/api/bdusslogin", {
-    bduss: ticket,
-    u: options.target ?? KUKU_QR_TARGET,
-    qrcode: "1",
-    callback: jsonpName()
-  });
-  const loginReply = await callPassport(loginUrl, options, { jar: session.jar });
-  const loginBody = isRecord10(loginReply.body) ? loginReply.body : void 0;
-  const loginErrno = loginBody?.errno === void 0 ? null : Number(loginBody.errno);
-  if (loginErrno !== null && loginErrno !== 0) {
-    throw new KukuQrError("bduss_login_refused", "\u767E\u5EA6\u62D2\u7EDD\u4E86\u8FD9\u6B21\u626B\u7801\u767B\u5F55\uFF0C\u8BF7\u91CD\u65B0\u626B\u7801", {
-      status: loginReply.status,
-      errno: loginErrno
-    });
-  }
-  if (loginBody === void 0) {
-    throw new KukuQrError("unparsable", "\u767E\u5EA6\u767B\u5F55\u54CD\u5E94\u65E0\u6CD5\u89E3\u6790\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5", { status: loginReply.status });
-  }
-  const bduss = session.jar.get("BDUSS") ?? session.jar.get("BDUSS_BFESS");
-  if (bduss === void 0 || bduss === "") {
-    throw new KukuQrError("no_bduss", "\u767E\u5EA6\u767B\u5F55\u5DF2\u5B8C\u6210\u4F46\u672A\u4E0B\u53D1 BDUSS\uFF0C\u8BF7\u91CD\u65B0\u626B\u7801", {
-      status: loginReply.status
-    });
-  }
-  const ptoken = session.jar.get("PTOKEN") ?? session.jar.get("PTOKEN_BFESS") ?? "";
-  let stoken;
-  if (ptoken === "") {
-    warnings.push("passport \u672A\u4E0B\u53D1 PTOKEN\uFF0C\u5DF2\u8DF3\u8FC7 STOKEN \u4EA4\u6362\uFF08\u771F\u5B9E\u8C03\u7528\u53EF\u80FD\u7F3A\u6743\u9650\uFF09");
-  } else {
-    try {
-      stoken = await exchangeKukuStoken(session, bduss, ptoken, options);
-    } catch (error) {
-      if (options.requireStoken === true) throw error;
-      warnings.push(
-        `STOKEN \u4EA4\u6362\u5931\u8D25\uFF08${error instanceof KukuQrError ? error.code : "unknown"}\uFF09\uFF0C\u5F53\u524D\u53EA\u62FF\u5230 BDUSS \u2014\u2014 \u73B0\u6709\u9002\u914D\u5668\u53EF\u7528\uFF0C\u4F46\u771F\u5B9E /wenchain \u8C03\u7528\u53EF\u80FD\u9700\u8981 STOKEN`
-      );
-    }
-  }
-  const cookie = buildCredentialCookie(session.jar);
-  const normalized = normalizeCookie3(cookie);
-  if (normalized === void 0) {
-    throw new KukuQrError(
-      "credential_invalid",
-      `\u626B\u7801\u5F97\u5230\u7684 Cookie \u4E32\u5F62\u72B6\u4E0D\u5408\u6CD5\uFF08\u542B ${session.jar.names().filter((name2) => ACCOUNT_COOKIE.test(name2)).join(",") || "\u65E0\u8D26\u53F7\u5B57\u6BB5"}\uFF09`
-    );
-  }
-  const names = normalized.split(";").map((part) => part.trim().split("=")[0] ?? "").filter((name2) => name2 !== "");
-  return {
-    credential: { access_token: normalized, created_at: Date.now() },
-    stoken,
-    cookieNames: names,
-    warnings
-  };
-}
-async function exchangeKukuStoken(session, bduss, ptoken, options) {
-  const fields = `appid=1&bduss=${bduss}&ptoken=${ptoken}&return_type=1&tpl=genflowpro&tpl_list=genflowpro|netdisk`;
-  const signed = `${fields}&sign_key=${KUKU_ENGINE_SIGN_KEY}`;
-  const sig = createHash9("md5").update(signed).digest("hex");
-  const body = `${fields}&sig=${sig}`;
-  if (session.jar.has("BAIDUID") && !session.jar.has("gfprotpl")) session.jar.set("gfprotpl", "genflowpro");
-  const url = `${session.passportBase}/v3/login/api/auth`;
-  const reply2 = await callPassport(url, options, {
-    method: "POST",
-    body,
-    headers: {
-      "user-agent": KUKU_ENGINE_USER_AGENT,
-      "content-type": "application/x-www-form-urlencoded;charset=UTF-8"
-    },
-    jar: session.jar
-  });
-  const parsed = isRecord10(reply2.body) ? reply2.body : void 0;
-  const errno = parsed?.errno === void 0 ? 0 : Number(parsed.errno);
-  const list = isRecord10(parsed?.stoken_list) ? parsed.stoken_list : void 0;
-  const stoken = stringValue9(list?.genflowpro);
-  if (parsed === void 0 || errno !== 0 || stoken === void 0) {
-    throw new KukuQrError("stoken_exchange_refused", "STOKEN \u4EA4\u6362\u88AB\u767E\u5EA6\u62D2\u7EDD\uFF0C\u8BF7\u91CD\u65B0\u626B\u7801", {
-      status: reply2.status,
-      errno
-    });
-  }
-  return stoken;
-}
-function buildCredentialCookie(jar) {
-  const names = jar.names().filter((name2) => ACCOUNT_COOKIE.test(name2));
-  const ordered = [
-    ...names.filter((name2) => name2 === "BDUSS"),
-    ...names.filter((name2) => name2 === "BDUSS_BFESS"),
-    ...names.filter((name2) => name2 !== "BDUSS" && name2 !== "BDUSS_BFESS")
-  ];
-  return ordered.map((name2) => `${name2}=${jar.get(name2) ?? ""}`).filter((pair) => !pair.endsWith("=")).join("; ");
-}
-function renderKukuQrPage(options) {
-  const reload = options.reloadPath === void 0 ? "" : `<button class="ghost" id="reload" type="button">\u4E8C\u7EF4\u7801\u8FC7\u671F\uFF1F\u70B9\u8FD9\u91CC\u5237\u65B0</button>`;
-  return `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>KukuAI \u626B\u7801\u767B\u5F55</title>
-<style>
-  :root { color-scheme: light dark; }
-  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
-         background: #f5f6f8; color: #1f2329; }
-  .card { background: #fff; border-radius: 12px; padding: 28px 32px; box-shadow: 0 4px 24px rgba(0,0,0,.08);
-          text-align: center; width: 320px; }
-  h1 { font-size: 17px; margin: 0 0 4px; font-weight: 600; }
-  .sub { font-size: 13px; color: #8a9099; margin-bottom: 18px; }
-  .qr { width: 220px; height: 220px; display: block; margin: 0 auto; border: 1px solid #eceef1;
-        border-radius: 8px; background: #fff; }
-  .status { margin-top: 16px; font-size: 13px; color: #4e5969; min-height: 20px; }
-  .status[data-tone="ok"] { color: #0f9d58; font-weight: 600; }
-  .status[data-tone="err"] { color: #d93026; }
-  button { width: 100%; padding: 9px; font-size: 14px; border: 0; border-radius: 6px;
-           background: #2932e1; color: #fff; cursor: pointer; }
-  button.ghost { background: #f2f3f5; color: #1f2329; margin-top: 10px; }
-  button[hidden] { display: none; }
-</style>
-</head>
-<body>
-  <div class="card">
-    <h1>\u7528\u767E\u5EA6 App \u626B\u7801\u767B\u5F55 KukuAI</h1>
-    <div class="sub">\u626B\u7801\u540E\u9700\u5728\u624B\u673A\u4E0A\u70B9\u300C\u786E\u8BA4\u767B\u5F55\u300D</div>
-    <img class="qr" id="qr" alt="\u767E\u5EA6\u767B\u5F55\u4E8C\u7EF4\u7801" src="${options.qrDataUrl}">
-    <div class="status" id="status">\u7B49\u5F85\u626B\u7801\u2026</div>
-    ${reload}
-  </div>
-<script>
-(function () {
-  var statusEl = document.getElementById('status');
-  var reloadEl = document.getElementById('reload');
-  var stopped = false;
-  function setStatus(text, tone) {
-    statusEl.textContent = text;
-    if (tone) statusEl.setAttribute('data-tone', tone); else statusEl.removeAttribute('data-tone');
-  }
-  function stop(text, tone) {
-    stopped = true;
-    setStatus(text, tone);
-    if (reloadEl) reloadEl.hidden = false;
-  }
-  function poll() {
-    if (stopped) return;
-    fetch('${options.pollPath}', { cache: 'no-store' })
-      .then(function (r) { return r.json(); })
-      .then(function (res) {
-        if (res.state === 'confirmed') return stop('\u767B\u5F55\u6210\u529F\uFF0C\u53EF\u4EE5\u5173\u95ED\u6B64\u7A97\u53E3\u4E86', 'ok');
-        if (res.state === 'expired') return stop('\u4E8C\u7EF4\u7801\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u70B9\u4E0B\u65B9\u6309\u94AE\u5237\u65B0', 'err');
-        if (res.state === 'scanned') setStatus('\u5DF2\u626B\u7801\uFF0C\u8BF7\u5728\u624B\u673A\u4E0A\u786E\u8BA4');
-        else setStatus('\u7B49\u5F85\u626B\u7801\u2026');
-        setTimeout(poll, 1200);
-      })
-      .catch(function () { setTimeout(poll, 2000); });
-  }
-  if (reloadEl) reloadEl.addEventListener('click', function () { location.href = '${options.reloadPath ?? ""}'; });
-  poll();
-})();
-</script>
-</body>
-</html>`;
-}
-
-// vendor/channel-pack/src/kuku-qr-login-page.ts
 var KUKU_LOGIN_PAGE_PATHS = {
   login: "/kuku/login",
   poll: "/kuku/poll",
@@ -68623,7 +68713,7 @@ function findCaseInsensitiveSuggestion(requested, catalog) {
 }
 
 // vendor/channel-pack/src/openai-gateway/responses.ts
-import { createHash as createHash10, randomUUID as randomUUID15 } from "node:crypto";
+import { createHash as createHash11, randomUUID as randomUUID15 } from "node:crypto";
 import { ReasoningEffortId as ReasoningEffortId13 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/openai-gateway/stream.ts
@@ -68940,7 +69030,7 @@ function chatPartsFromResponses(content) {
 function flatNamespaceToolName(namespace, name2) {
   const flat = `${namespace}__${name2}`;
   if (flat.length <= 64) return flat;
-  const digest = createHash10("sha256").update(flat).digest("hex").slice(0, 8);
+  const digest = createHash11("sha256").update(flat).digest("hex").slice(0, 8);
   return `${flat.slice(0, 55)}_${digest}`;
 }
 function responsesNamespaceToolMap(body) {
@@ -70565,7 +70655,7 @@ import { Service as Service10 } from "@deepseek-ai/cordis";
 import { credentialRef as credentialRef13 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/minimax-oauth.ts
-import { createHash as createHash11, randomBytes as randomBytes13 } from "node:crypto";
+import { createHash as createHash12, randomBytes as randomBytes13 } from "node:crypto";
 var MinimaxLoginCancelledError = class extends Error {
   constructor(message2 = "\u7528\u6237\u53D6\u6D88\u4E86 MiniMax \u6388\u6743") {
     super(message2);
@@ -70665,7 +70755,7 @@ function parseMinimaxTokenGrant(payload, previousRefreshToken, product = MINIMAX
 }
 function createMinimaxPkce() {
   const codeVerifier = randomBytes13(32).toString("base64url");
-  const codeChallenge = createHash11("sha256").update(codeVerifier, "ascii").digest("base64url");
+  const codeChallenge = createHash12("sha256").update(codeVerifier, "ascii").digest("base64url");
   return { codeVerifier, codeChallenge };
 }
 async function startMinimaxDeviceAuthorization(fetcher = fetch, product = MINIMAX) {
@@ -72295,7 +72385,7 @@ var GeminiAuth = class extends Service11 {
 };
 
 // vendor/channel-pack/src/gemini-sigstore.ts
-import { createHash as createHash12 } from "node:crypto";
+import { createHash as createHash13 } from "node:crypto";
 import { existsSync as existsSync11, mkdirSync as mkdirSync10, readFileSync as readFileSync12, renameSync as renameSync9, writeFileSync as writeFileSync11 } from "node:fs";
 import { dirname as dirname2, join as join12 } from "node:path";
 var GEMINI_SIG_FILE = "gemini-sigs.json";
@@ -72303,7 +72393,7 @@ var GEMINI_SIG_MAX_ENTRIES = 2e3;
 var SIG_KEY_BODY_LIMIT = 512;
 function geminiSigKey(role, text) {
   const body = text.length > SIG_KEY_BODY_LIMIT ? text.slice(0, SIG_KEY_BODY_LIMIT) : text;
-  return createHash12("sha256").update(`${role}\0${body}`, "utf8").digest("hex").slice(0, 16);
+  return createHash13("sha256").update(`${role}\0${body}`, "utf8").digest("hex").slice(0, 16);
 }
 function geminiToolSigKey(name2, argsJson) {
   return geminiSigKey(`tool:${name2}`, argsJson);

@@ -11,7 +11,7 @@
  * 全量 messages。复用会话会让历史翻倍，故每轮新建。
  */
 
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 
 import {
   KUKU_SENDMSG_PATH,
@@ -30,6 +30,11 @@ import {
   parseSseFrame,
   type KukuCredential,
 } from './kuku.js'
+import {
+  KUKU_ENGINE_SIGN_KEY,
+  KUKU_ENGINE_USER_AGENT,
+  KUKU_PASSPORT_BASE,
+} from './kuku-qr-login.js'
 
 /** 对话选项。 */
 export interface ChatOptions {
@@ -88,6 +93,10 @@ export async function* streamChat(
       replyId,
       clientSessionId,
       deviceId,
+      // 三件套必须内嵌进 client_added（只拼 query 会回 invalid session_id）。
+      bdstoken: triple.bdstoken,
+      uinfo: triple.uinfo,
+      uk: triple.uk,
       ...(options.thinkMode === undefined ? {} : { thinkMode: options.thinkMode }),
     })),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
@@ -415,6 +424,62 @@ const tripleCache = new Map<string, { triple: KukuTokenTriple; at: number }>()
  * （退出登录 / 换号）或上游临时风控限流（上游注释：换发业务令牌后仍失败
  * 即这种情况，等 1-2 分钟再试）。
  */
+/**
+ * 用 BDUSS + PTOKEN 向 passport **换发** genflowpro STOKEN。
+ *
+ * ## 为什么必须现场换（2026-10-26 实测根因）
+ *
+ * 扫码登录时换到的 STOKEN 会过期，而 `userreport` 只认**当前有效**的 STOKEN。
+ * 实测同一份 Cookie：`bizapi`（余额）与 `wenchain`（模型目录）照常 200，
+ * 但 `userreport` 回 `errno:-6 未登录` —— 这就是「凭据一直失效、重新登录也不行」
+ * 的真相：**不是 Cookie 坏了，是 STOKEN 过期了**。
+ *
+ * 现场用 BDUSS+PTOKEN 换发后，`userreport` 立刻 `errno:0` 并给出完整三件套。
+ * 上游（aimod-cc/Agent2API 的 kuku/session.rs）正是这么做的：
+ * `errno != 0` 时换发一次再重试。
+ *
+ * 签名口径照 `kuku-qr-login.ts` 的 `exchangeKukuStoken`（同一把客户端内置密钥）。
+ */
+async function exchangeKukuStokenLive(
+  fetcher: typeof fetch,
+  product: KukuProduct,
+  credential: KukuCredential,
+  signal?: AbortSignal,
+): Promise<string | undefined> {
+  const value = (name: string): string =>
+    credential.access_token.split(';').map(part => part.trim())
+      .find(part => part.startsWith(`${name}=`))?.slice(name.length + 1) ?? ''
+  const bduss = value('BDUSS')
+  const ptoken = value('PTOKEN')
+  if (bduss === '' || ptoken === '') return undefined
+  const fields = `appid=1&bduss=${bduss}&ptoken=${ptoken}&return_type=1&tpl=genflowpro`
+    + '&tpl_list=genflowpro|netdisk'
+  const signature = createHash('md5').update(`${fields}&sign_key=${KUKU_ENGINE_SIGN_KEY}`).digest('hex')
+  try {
+    const response = await fetcher(`${KUKU_PASSPORT_BASE}/v3/login/api/auth`, {
+      method: 'POST',
+      headers: {
+        'user-agent': KUKU_ENGINE_USER_AGENT,
+        'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        Referer: `${product.apiBase}/genflowpro`,
+        Origin: product.apiBase,
+        Cookie: credential.access_token,
+      },
+      body: `${fields}&sig=${signature}`,
+      ...(signal === undefined ? {} : { signal }),
+    })
+    if (!response.ok) return undefined
+    const body: unknown = await response.json().catch(() => undefined)
+    if (typeof body !== 'object' || body === null) return undefined
+    const list = (body as Record<string, unknown>).stoken_list
+    if (typeof list !== 'object' || list === null) return undefined
+    const stoken = (list as Record<string, unknown>).genflowpro
+    return typeof stoken === 'string' && stoken !== '' ? stoken : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export async function ensureKukuTokenTriple(
   fetcher: typeof fetch,
   product: KukuProduct,
@@ -430,15 +495,43 @@ export async function ensureKukuTokenTriple(
     return cached.triple
   }
   const url = `${product.apiBase}${KUKU_USERREPORT_PATH}?${KUKU_WEB_QUERY}`
-  const response = await fetcher(url, {
-    method: 'GET',
-    headers: kukuHeaders(product, credential),
-    ...(options.signal === undefined ? {} : { signal: options.signal }),
-  })
-  const body: unknown = await response.json().catch(() => undefined)
-  const errno = typeof body === 'object' && body !== null
-    ? (body as Record<string, unknown>).errno
-    : undefined
+  /**
+   * 打一次 userreport。`errno !== 0` 时**先换发新 STOKEN 再重试一次**。
+   *
+   * 这是「凭据一直失效、重新登录也不行」的真正修法（2026-10-26 实测）：
+   * 扫码换到的 STOKEN 会过期，而 userreport 只认当前有效的那个；此时
+   * bizapi（余额）与 wenchain（模型目录）照常 200，只有 userreport 回
+   * `errno:-6 未登录`。现场用 BDUSS+PTOKEN 换发后立刻 errno:0。
+   * 上游 kuku/session.rs 正是这个流程。
+   */
+  const callUserreport = async (cookie: string): Promise<{ body: unknown; errno: number | undefined }> => {
+    const response = await fetcher(url, {
+      method: 'GET',
+      headers: kukuHeaders(product, { ...credential, access_token: cookie }),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    })
+    const body: unknown = await response.json().catch(() => undefined)
+    const errno = typeof body === 'object' && body !== null
+      ? (body as Record<string, unknown>).errno as number | undefined
+      : undefined
+    return { body, errno }
+  }
+  let { body, errno } = await callUserreport(credential.access_token)
+  if (typeof errno === 'number' && errno !== 0) {
+    const freshStoken = await exchangeKukuStokenLive(fetcher, product, credential, options.signal)
+    if (freshStoken !== undefined) {
+      // 用新 STOKEN 覆盖凭据里的旧值（保留其余 cookie）后重试一次。
+      const replaced = credential.access_token
+        .split(';')
+        .map(part => part.trim())
+        .filter(part => part !== '' && !part.startsWith('STOKEN='))
+        .concat(`STOKEN=${freshStoken}`)
+        .join('; ')
+      const retried = await callUserreport(replaced)
+      body = retried.body
+      errno = retried.errno
+    }
+  }
   const showMsg = typeof body === 'object' && body !== null
     ? (body as Record<string, unknown>).show_msg ?? (body as Record<string, unknown>).errmsg
     : undefined

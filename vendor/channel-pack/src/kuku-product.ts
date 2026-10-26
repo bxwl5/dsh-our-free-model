@@ -103,6 +103,20 @@ export const KUKU_CHANNEL = 'kuku_pc_genflowpro_v1'
 /** 协议版本。 */
 export const KUKU_PROTOCOL_V = 'cd1755270722192e4536f605'
 
+/**
+ * `client_added` 里内嵌的客户端形态字段（上游 kuku/chat.rs 的 create_session）。
+ *
+ * ⚠️ 这几个与上面 `KUKU_CLIENT_TYPE` / `KUKU_VERSION` / `KUKU_CHANNEL` **不是同一套**
+ * ——后者是请求体的 `device_type` / `v` / `channel` 字段（Web 版形态），
+ * 而 `client_added` 里要的是**桌面客户端形态**（clienttype 400 / version 1.4.4 /
+ * channel chunlei / app_id 123971023）。两处都要各自正确，否则上游按形态不符
+ * 回 `invalid session_id`（2026-10-26 实测）。
+ */
+export const KUKU_CLIENT_ADDED_CLIENT_TYPE = 400
+export const KUKU_CLIENT_ADDED_VERSION = '1.4.4'
+export const KUKU_CHANNEL_NAME = 'chunlei'
+export const KUKU_APP_ID = 123971023
+
 // ── 端点路径 ──
 
 /** 建消息。 */

@@ -13,7 +13,9 @@
  */
 
 import {
+  KUKU_APP_ID,
   KUKU_CHANNEL,
+  KUKU_CHANNEL_NAME,
   KUKU_CLIENT_TYPE,
   KUKU_PROTOCOL_V,
   KUKU_SESSION_COOKIE,
@@ -127,14 +129,31 @@ export function buildSendmsgBody(options: {
   clientSessionId: string
   deviceId: string
   thinkMode?: number
+  /**
+   * 会话三件套 —— **必须同时进 query 与 `client_added`**。
+   *
+   * 上游 `aimod-cc/Agent2API` 的 kuku/chat.rs 注释写明：「triple 是会话三件套：
+   * query 里拼一份、`client_added` 里嵌一份（参考实现两处都带真实值，上游据此
+   * 做客户端形态校验）」。只放 query 会让 `sendmsg` 回
+   * `{"status":{"code":200002,"msg":"invalid session_id"}}`
+   * —— 这正是「三件套都换到了、对话还是失败」的原因（2026-10-26 实测）。
+   */
+  bdstoken?: string
+  uinfo?: string
+  uk?: string
 }): Record<string, unknown> {
   const textBlock = { id: 'textId', version: '1.0', type: 'text', text: options.text, data: { content: options.text } }
   return {
     type: 'message',
     sub_type: 'chat_create',
     client_session_id: options.clientSessionId,
-    session_id: options.sessionId,
-    reply_id: options.replyId,
+    // ⚠️ **新建会话时 session_id 必须是空串**（上游 chat.rs 的 create_session
+    // 就是 `"session_id": ""`）。传一个本地生成的 UUID 会让上游按「续写未知
+    // 会话」处理，回 `invalid session_id`（2026-10-26 实测）。
+    session_id: '',
+    // ⚠️ sendmsg 的请求体里**没有 reply_id**（上游 create_session 的 body 就没有
+    // 这个字段；reply_id 是**响应**里返回的，用于后续 SSE）。多传一个未知字段
+    // 会让上游按「续写」校验，回 `invalid reply_id`（2026-10-26 实测）。
     uk: '',
     cid: 0,
     channel: KUKU_CHANNEL,
@@ -162,12 +181,20 @@ export function buildSendmsgBody(options: {
       memory_sign: false,
       skill_dig_sign: false,
       // ⚠️ 必须是字符串化 JSON，不是嵌套对象。
+      // ⚠️ 三件套要**内嵌**一份（上游据此做客户端形态校验，缺了回
+      // invalid session_id）；app_id / web / channel 同样照客户端形态补齐。
       client_added: JSON.stringify({
         client_session_id: options.clientSessionId,
         permission_type: 0,
         clienttype: KUKU_CLIENT_TYPE,
+        app_id: KUKU_APP_ID,
+        web: 1,
+        channel: KUKU_CHANNEL_NAME,
         version: KUKU_VERSION,
         device_os: 'windows',
+        ...(options.bdstoken === undefined ? {} : { bdstoken: options.bdstoken }),
+        ...(options.uinfo === undefined ? {} : { uinfo: options.uinfo }),
+        ...(options.uk === undefined ? {} : { uk: options.uk }),
       }),
     },
   }
@@ -199,7 +226,39 @@ export function parseSseFrame(
   if (typeof code === 'number' && code !== 0) {
     return { kind: 'error', message: stringValue(parsed.errmsg) ?? stringValue(parsed.msg) ?? `errno=${code}` }
   }
-  // 正文可能在 content / text / data.content 里。
+  /**
+   * ⚠️ 上游 SSE 是**按 `type` 分派的命名事件**，正文只在 `TEXT_BLOCK_DELTA`
+   * 的 `data.delta` 里（2026-10-26 实测帧序列）：
+   *
+   * ```text
+   * USER_QUERY → REPLY_START → HINT_BLOCK → MODEL_CALL_START →
+   * TEXT_BLOCK_START → TEXT_BLOCK_DELTA*（正文）→ TEXT_BLOCK_END →
+   * MODEL_CALL_END → REPLY_END → ACTUAL_POINT → TURN_DONE
+   * ```
+   *
+   * 此前的实现只认 `content` / `text` / `data.content` —— 上游一个都没有，
+   * 于是「三件套换到了、sendmsg 也成功、但正文永远是空」。
+   */
+  const type = stringValue(parsed.type)
+  if (type !== undefined) {
+    if (type === 'ERROR') {
+      const dataObj = isRecord(parsed.data) ? parsed.data : undefined
+      const detail = dataObj === undefined
+        ? undefined
+        : stringValue(dataObj.error_msg) ?? stringValue(dataObj.error_code)
+      return { kind: 'error', message: detail ?? stringValue(parsed.msg) ?? '上游错误帧' }
+    }
+    if (type === 'TURN_DONE' || type === 'REPLY_END' || type === 'DIALOGUE_END') return { kind: 'done' }
+    if (type === 'TEXT_BLOCK_DELTA') {
+      const dataObj = isRecord(parsed.data) ? parsed.data : undefined
+      const text = dataObj === undefined ? undefined : stringValue(dataObj.delta)
+      return text === undefined ? undefined : { kind: 'delta', text }
+    }
+    // 其余命名事件（USER_QUERY / REPLY_START / HINT_BLOCK / MODEL_CALL_* /
+    // TEXT_BLOCK_START|END / ACTUAL_POINT）不携带正文，忽略。
+    return undefined
+  }
+  // 无 type 的旧形态兜底（正文可能在 content / text / data.content 里）。
   const dataObj = isRecord(parsed.data) ? parsed.data : undefined
   const text = stringValue(parsed.content) ?? stringValue(parsed.text) ?? (dataObj === undefined ? undefined : stringValue(dataObj.content))
   const reasoning = stringValue(parsed.reasoning_content) ?? stringValue(parsed.reasoningContent)

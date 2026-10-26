@@ -563,3 +563,51 @@ export async function verifyBaizhiBridge() {
     upstream.close()
   }
 }
+
+/**
+ * KukuAI 官方 SSE 协议回归（2026-10-26 实测帧序列）。
+ *
+ * 上游是按 `type` 分派的命名事件，正文只在 `TEXT_BLOCK_DELTA` 的 `data.delta`：
+ * `USER_QUERY → REPLY_START → HINT_BLOCK → MODEL_CALL_START →
+ *  TEXT_BLOCK_START → TEXT_BLOCK_DELTA* → TEXT_BLOCK_END →
+ *  MODEL_CALL_END → REPLY_END → ACTUAL_POINT → TURN_DONE`
+ *
+ * 此前只认 content/text/data.content，上游一个都没有 ⇒ 正文永远空。
+ */
+export async function verifyKukuSseProtocol() {
+  const { parseSseFrame, buildSendmsgBody } = await import('../vendor/channel-pack/src/kuku.ts')
+
+  // 1) 正文只在 TEXT_BLOCK_DELTA 的 data.delta
+  const delta = parseSseFrame(JSON.stringify({ type: 'TEXT_BLOCK_DELTA', data: { delta: '你好' } }))
+  assert.deepEqual(delta, { kind: 'delta', text: '你好' })
+
+  // 2) 结束事件
+  for (const type of ['REPLY_END', 'TURN_DONE', 'DIALOGUE_END']) {
+    assert.deepEqual(parseSseFrame(JSON.stringify({ type })), { kind: 'done' }, `${type} 是结束`)
+  }
+
+  // 3) 错误帧带明细
+  const err = parseSseFrame(JSON.stringify({ type: 'ERROR', data: { error_code: 2800001, error_msg: 'task not found' } }))
+  assert.equal(err.kind, 'error'); assert.match(err.message, /task not found/)
+
+  // 4) 不携带正文的命名事件必须忽略（否则会把元数据当正文吐出去）
+  for (const type of ['USER_QUERY', 'REPLY_START', 'HINT_BLOCK', 'MODEL_CALL_START', 'TEXT_BLOCK_START', 'TEXT_BLOCK_END', 'MODEL_CALL_END', 'ACTUAL_POINT']) {
+    assert.equal(parseSseFrame(JSON.stringify({ type, data: { id: 'x' } })), undefined, `${type} 不携带正文`)
+  }
+
+  // 5) sendmsg：session_id 必须空串、且不得带 reply_id（实测报 invalid reply_id）
+  const body = buildSendmsgBody({
+    text: 'hi', model: 'auto', sessionId: 'ignored', replyId: 'ignored',
+    clientSessionId: 'csi', deviceId: 'd', bdstoken: 'bt', uinfo: 'ui', uk: '42',
+  })
+  assert.equal(body.session_id, '', '新建会话 session_id 必须是空串')
+  assert.equal('reply_id' in body, false, 'sendmsg 不得带 reply_id')
+  const clientAdded = JSON.parse(body.data.client_added)
+  assert.equal(clientAdded.bdstoken, 'bt', '三件套要内嵌进 client_added')
+  assert.equal(clientAdded.uinfo, 'ui')
+  assert.equal(clientAdded.uk, '42')
+  assert.equal(clientAdded.app_id, 123971023, '客户端形态字段 app_id')
+  assert.equal(clientAdded.channel, 'chunlei')
+
+  console.log('kuku-sse: 5 组断言通过（TEXT_BLOCK_DELTA / 结束事件 / 错误帧 / 忽略元数据 / sendmsg 形态）')
+}

@@ -80,7 +80,7 @@ export const KUKU_ENGINE_USER_AGENT = 'genflow;1.6.5;PC;PC-Windows;10.0.26200;Ge
  * 二进制里逆出来的，上游 `genflow_engine_get_login_auth_param` 用同一把。
  * 没有它 passport 对**合法**的 BDUSS/PTOKEN 也回 errno 110003。
  */
-const KUKU_ENGINE_SIGN_KEY = '34868b316de55815273b2616954b0286'
+export const KUKU_ENGINE_SIGN_KEY = '34868b316de55815273b2616954b0286'
 
 /** 单次请求默认超时（毫秒）。适用于取码 / 取图 / bdusslogin / STOKEN 交换。 */
 export const KUKU_QR_REQUEST_TIMEOUT_MS = 15_000
