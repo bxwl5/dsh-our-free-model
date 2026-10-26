@@ -38283,6 +38283,33 @@ var CodeArtsAdapter = class extends LlmAdapter {
     const source = this.remoteModels ?? DEFAULT_MODELS.map((id) => ({ id, name: id }));
     return source.filter((m) => !/-VL-/i.test(m.id) && !/-VL$/i.test(m.id)).map((m) => ({ id: m.id, name: m.name }));
   }
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * CodeArts 的目录端点会下发可读的 `name`，用它解析历史 id，避免设置页把
+   * `deepseek-v4-flash` 这类裸 id 当成展示名（用户 2026-10-26 报障的同类问题）。
+   */
+  displayNameFor(modelId) {
+    return this.remoteModels?.find((model) => model.id === modelId)?.name;
+  }
+  /**
+   * **强制**重新拉取远端目录（「重新获取模型」按钮）。
+   *
+   * `ensureRemoteModels()` 是「有值即返回」的一次性懒加载，按钮必须直连
+   * `fetchRemoteModels()`；失败保留上次目录。
+   */
+  async refreshCatalog() {
+    const fetchRemote = this.options.fetchRemoteModels;
+    if (fetchRemote === void 0) return false;
+    try {
+      const models = await fetchRemote();
+      if (models.length === 0) return false;
+      this.remoteModels = models;
+      return true;
+    } catch {
+      return false;
+    }
+  }
   async listModels(_provider) {
     if (!await providerCatalogVisible(this.options.accountPool, PROVIDER)) return [];
     await this.ensureRemoteModels();
@@ -40451,6 +40478,42 @@ var BuddyAdapter = class _BuddyAdapter extends LlmAdapter2 {
   listAllModels() {
     const source = this.remoteModels ?? this.staticFallbackModels();
     return source.map((model) => ({ id: model.id, name: displayNameFor(model, source) }));
+  }
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 同一个类同时服务 `buddy` 与 `workbuddy`（国内版/国际版只差 product 配置），
+   * 故这条逻辑对两个 provider 都生效。远端目录里没有时退回静态兜底表，
+   * 避免那些 id 以裸内部编码出现在界面上（用户 2026-10-26 报障）。
+   */
+  displayNameFor(modelId) {
+    const source = this.remoteModels ?? this.staticFallbackModels();
+    const model = source.find((item) => item.id === modelId);
+    return model === void 0 ? void 0 : displayNameFor(model, source);
+  }
+  /**
+   * **强制**重新拉取远端目录（「重新获取模型」按钮）。
+   *
+   * 与 `ensureRemoteModels()` 的区别：那条路径是「有值即返回」的一次性懒加载。
+   * 用户点按钮时目录早就在内存里了，必须直接调 `fetchRemoteModels()`，
+   * 且**只有成功才替换**（失败保留上次的目录）。
+   */
+  async refreshCatalog() {
+    const fetchRemote = this.options.fetchRemoteModels;
+    if (fetchRemote === void 0) return false;
+    try {
+      const models = await fetchRemote();
+      if (models.length === 0) return false;
+      const reconciled = this.reconcileWithFallback(models);
+      this.remoteModels = reconciled;
+      this.remoteMeta = new Map(reconciled.map((model) => [model.id, model]));
+      this.remoteContextWindows = new Map(
+        reconciled.filter((model) => model.contextWindow !== void 0).map((model) => [model.id, model.contextWindow])
+      );
+      return true;
+    } catch {
+      return false;
+    }
   }
   async listModels(_provider) {
     if (!await providerCatalogVisible(this.options.accountPool, this.product.id)) return [];
@@ -44838,6 +44901,37 @@ var TraeAdapter = class extends LlmAdapter4 {
     const source = this.remoteModels === void 0 ? this.staticFallbackModels() : this.remoteModels.filter((model) => isTraeModelCallable(model) && model.isHidden !== true);
     return source.map((model) => ({ id: model.id, name: traeDisplayName(model) }));
   }
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 兜底表里的旧 id 没有倍率字段，只给名字 —— 那也比把内部 id 直接摊在界面上
+   * 好（用户报障：「模型列表出现 qmodel 等字段」）。
+   */
+  displayNameFor(modelId) {
+    const remote = this.remoteModels?.find((model) => model.id === modelId);
+    if (remote !== void 0) return traeDisplayName(remote);
+    return this.product.fallbackModels.find((model) => model.id === modelId)?.name;
+  }
+  /**
+   * **强制**重新拉取远端模型目录（「重新获取模型」按钮）。
+   *
+   * ⚠️ 不能走 `ensureRemoteModels()`：它是一次性懒加载（`remoteModels` 有值即
+   * 短路），用户点按钮时目录早就在内存里了，走那条路径等于什么都不做。
+   * 这里直接调 `fetchRemoteModels()`，**只有成功才替换**，失败保留旧目录。
+   */
+  async refreshCatalog() {
+    const fetchRemote = this.options.fetchRemoteModels;
+    if (fetchRemote === void 0) return false;
+    try {
+      const models = await fetchRemote();
+      if (models.length === 0) return false;
+      this.remoteModels = models;
+      this.remoteMeta = new Map(models.map((model) => [model.id, model]));
+      return true;
+    } catch {
+      return false;
+    }
+  }
   async listModels(_provider) {
     if (!await providerCatalogVisible(this.options.accountPool, this.product.id)) return [];
     await this.ensureRemoteModels();
@@ -46255,6 +46349,34 @@ var ClineAdapter = class extends LlmAdapter5 {
     if (this.remoteModels === void 0) void this.ensureRemoteModels();
     return source.map((model) => ({ id: model.id, name: clineDisplayName(model), isFree: model.isFree }));
   }
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 远端目录里没有时退回兜底表 —— 否则那些 id 只能以裸 id 出现，界面上就是
+   * 「模型列表出现 qmodel 等字段」那一类问题（用户 2026-10-26 报障）。
+   */
+  displayNameFor(modelId) {
+    const fallback2 = this.fallbackCatalog();
+    const model = this.remoteModels?.find((item) => item.id === modelId) ?? fallback2.find((item) => item.id === modelId);
+    return model === void 0 ? void 0 : clineDisplayName(model);
+  }
+  /**
+   * **强制**重新拉取远端目录（「重新获取模型」按钮）。
+   *
+   * ⚠️ 必须先把 `remoteModels` 清空：`ensureRemoteModels()` 是「有值即返回」的
+   * 一次性懒加载，不清空等于什么都没做。失败时在 `finally` 里还原旧值，
+   * 保证「拉不到就显示上次的」。
+   */
+  async refreshCatalog() {
+    const previous = this.remoteModels;
+    this.remoteModels = void 0;
+    try {
+      await this.ensureRemoteModels();
+    } finally {
+      if (this.remoteModels === void 0) this.remoteModels = previous;
+    }
+    return this.remoteModels !== void 0 && this.remoteModels !== previous;
+  }
   async listModels(_provider) {
     if (!await providerCatalogVisible(this.options.accountPool, this.product.id)) return [];
     const loggedIn = await providerHasLoggedInAccount(this.options.accountPool, this.product.id);
@@ -47075,6 +47197,34 @@ var CommandCodeAdapter = class extends LlmAdapter6 {
     const source = this.remoteModels ?? fallbackRows(this.product);
     return source.map((model) => ({ id: model.id, name: model.name }));
   }
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 没有它，被关闭的历史 id 只能以裸内部编码出现在界面上 —— 用户 2026-10-26
+   * 报障的「模型列表出现 qmodel 等字段」正是这一类。
+   */
+  displayNameFor(modelId) {
+    const source = this.remoteModels ?? fallbackRows(this.product);
+    return source.find((model) => model.id === modelId)?.name;
+  }
+  /**
+   * **强制**重新拉取远端目录（「重新获取模型」按钮），绕过 TTL。
+   *
+   * `ensureRemoteModels()` 在 TTL 内直接返回，必须让短路条件失效，否则按钮
+   * 点了没反应。失败还原旧值，保证「拉不到就显示上次的目录」。
+   */
+  async refreshCatalog() {
+    const previous = this.remoteModels;
+    const previousAt = this.remoteModelsAt;
+    this.remoteModelsAt = 0;
+    await this.ensureRemoteModels();
+    const refreshed = this.remoteModelsAt !== 0 && this.remoteModelsAt !== previousAt && this.remoteModels !== void 0;
+    if (!refreshed) {
+      this.remoteModels = previous;
+      this.remoteModelsAt = previousAt;
+    }
+    return refreshed;
+  }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
     const source = this.remoteModels ?? fallbackRows(this.product);
@@ -47453,6 +47603,34 @@ var MonkeyCodeAdapter = class extends LlmAdapter7 {
   listAllModels() {
     const all = this.remoteModels ?? this.product.fallbackModels.map((model) => ({ ...model }));
     return all.filter((model) => model.isHidden !== true).map((model) => ({ id: model.id, name: model.name }));
+  }
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 缺了它，被关闭的历史 id 只能以裸内部编码出现在设置页（用户 2026-10-26
+   * 报障的「模型列表出现 qmodel 等字段」）。
+   */
+  displayNameFor(modelId) {
+    const source = this.remoteModels ?? this.product.fallbackModels;
+    return source.find((model) => model.id === modelId)?.name;
+  }
+  /**
+   * **强制**重新拉取远端目录（「重新获取模型」按钮），绕过 TTL。
+   *
+   * `ensureRemoteModels()` 在 TTL 内直接返回，必须让短路条件失效，否则按钮
+   * 点了没反应。失败还原旧值，保证「拉不到就显示上次的目录」。
+   */
+  async refreshCatalog() {
+    const previous = this.remoteModels;
+    const previousAt = this.remoteModelsAt;
+    this.remoteModelsAt = 0;
+    await this.ensureRemoteModels();
+    const refreshed = this.remoteModelsAt !== 0 && this.remoteModelsAt !== previousAt && this.remoteModels !== void 0;
+    if (!refreshed) {
+      this.remoteModels = previous;
+      this.remoteModelsAt = previousAt;
+    }
+    return refreshed;
   }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
@@ -47853,6 +48031,15 @@ var OrcaTermAdapter = class extends LlmAdapter8 {
   listAllModels() {
     return this.product.fallbackModels.map((model) => ({ id: model.id, name: model.name }));
   }
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 本渠道没有远端目录端点（`refreshCatalog` 不实现，按钮会如实报「暂不支持」），
+   * 但本地兜底表里有可读名 —— 用它避免设置页把裸 id 当展示名。
+   */
+  displayNameFor(modelId) {
+    return this.product.fallbackModels.find((model) => model.id === modelId)?.name;
+  }
   async resolveModel(provider, model, _signal) {
     const entry = this.product.fallbackModels.find((candidate) => candidate.id === model);
     const resolved = {
@@ -47989,6 +48176,34 @@ var KukuAdapter = class extends LlmAdapter9 {
   listAllModels() {
     const source = this.remoteModels ?? this.product.fallbackModels;
     return source.map((model) => ({ id: model.id, name: model.name }));
+  }
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 缺了它，被关闭的历史 id 只能以裸内部编码出现在设置页（用户 2026-10-26
+   * 报障的「模型列表出现 qmodel 等字段」）。
+   */
+  displayNameFor(modelId) {
+    const source = this.remoteModels ?? this.product.fallbackModels;
+    return source.find((model) => model.id === modelId)?.name;
+  }
+  /**
+   * **强制**重新拉取远端目录（「重新获取模型」按钮），绕过 TTL。
+   *
+   * `ensureRemoteModels()` 在 TTL 内直接返回，必须让短路条件失效，否则按钮
+   * 点了没反应。失败还原旧值，保证「拉不到就显示上次的目录」。
+   */
+  async refreshCatalog() {
+    const previous = this.remoteModels;
+    const previousAt = this.remoteModelsAt;
+    this.remoteModelsAt = 0;
+    await this.ensureRemoteModels();
+    const refreshed = this.remoteModelsAt !== 0 && this.remoteModelsAt !== previousAt && this.remoteModels !== void 0;
+    if (!refreshed) {
+      this.remoteModels = previous;
+      this.remoteModelsAt = previousAt;
+    }
+    return refreshed;
   }
   /** 拉远端模型目录（`GET /wenchain/genflowpro/model/list`）。失败静默回落静态表。 */
   async ensureRemoteModels() {
@@ -48143,6 +48358,34 @@ var AccioAdapter = class extends LlmAdapter10 {
   listAllModels() {
     const source = this.remoteModels ?? this.product.fallbackModels;
     return source.map((model) => ({ id: model.id, name: model.name }));
+  }
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 缺了它，被关闭的历史 id 只能以裸内部编码出现在设置页（用户 2026-10-26
+   * 报障的「模型列表出现 qmodel 等字段」）。
+   */
+  displayNameFor(modelId) {
+    const source = this.remoteModels ?? this.product.fallbackModels;
+    return source.find((model) => model.id === modelId)?.name;
+  }
+  /**
+   * **强制**重新拉取远端目录（「重新获取模型」按钮），绕过 TTL。
+   *
+   * `ensureRemoteModels()` 在 TTL 内直接返回，必须让短路条件失效，否则按钮
+   * 点了没反应。失败还原旧值，保证「拉不到就显示上次的目录」。
+   */
+  async refreshCatalog() {
+    const previous = this.remoteModels;
+    const previousAt = this.remoteModelsAt;
+    this.remoteModelsAt = 0;
+    await this.ensureRemoteModels();
+    const refreshed = this.remoteModelsAt !== 0 && this.remoteModelsAt !== previousAt && this.remoteModels !== void 0;
+    if (!refreshed) {
+      this.remoteModels = previous;
+      this.remoteModelsAt = previousAt;
+    }
+    return refreshed;
   }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
@@ -48319,6 +48562,34 @@ var OfficeAceAdapter = class extends LlmAdapter11 {
   listAllModels() {
     const source = this.remoteModels ?? this.product.fallbackModels;
     return source.map((model) => ({ id: model.id, name: model.name }));
+  }
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 缺了它，被关闭的历史 id 只能以裸内部编码出现在设置页（用户 2026-10-26
+   * 报障的「模型列表出现 qmodel 等字段」）。
+   */
+  displayNameFor(modelId) {
+    const source = this.remoteModels ?? this.product.fallbackModels;
+    return source.find((model) => model.id === modelId)?.name;
+  }
+  /**
+   * **强制**重新拉取远端目录（「重新获取模型」按钮），绕过 TTL。
+   *
+   * `ensureRemoteModels()` 在 TTL 内直接返回，必须让短路条件失效，否则按钮
+   * 点了没反应。失败还原旧值，保证「拉不到就显示上次的目录」。
+   */
+  async refreshCatalog() {
+    const previous = this.remoteModels;
+    const previousAt = this.remoteModelsAt;
+    this.remoteModelsAt = 0;
+    await this.ensureRemoteModels();
+    const refreshed = this.remoteModelsAt !== 0 && this.remoteModelsAt !== previousAt && this.remoteModels !== void 0;
+    if (!refreshed) {
+      this.remoteModels = previous;
+      this.remoteModelsAt = previousAt;
+    }
+    return refreshed;
   }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
@@ -48600,6 +48871,34 @@ var AutoClawAdapter = class extends LlmAdapter12 {
   listAllModels() {
     const source = this.remoteModels ?? this.product.fallbackModels;
     return source.map((model) => ({ id: model.id, name: model.name }));
+  }
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 远端目录是**并集**（见 `ensureRemoteModels`），兜底表里的老 id 也在其中；
+   * 真找不到时才让调用方退回裸 id。
+   */
+  displayNameFor(modelId) {
+    const source = this.remoteModels ?? this.product.fallbackModels;
+    return source.find((model) => model.id === modelId)?.name;
+  }
+  /**
+   * **强制**重新拉取远端目录（「重新获取模型」按钮），绕过 TTL。
+   *
+   * `ensureRemoteModels()` 在 TTL 内直接返回，用户点按钮时必须让短路条件失效，
+   * 否则「点了没反应」。失败还原旧值 —— 拉不到就继续显示上次的目录。
+   */
+  async refreshCatalog() {
+    const previous = this.remoteModels;
+    const previousAt = this.remoteModelsAt;
+    this.remoteModelsAt = 0;
+    await this.ensureRemoteModels();
+    const refreshed = this.remoteModelsAt !== 0 && this.remoteModelsAt !== previousAt && this.remoteModels !== void 0;
+    if (!refreshed) {
+      this.remoteModels = previous;
+      this.remoteModelsAt = previousAt;
+    }
+    return refreshed;
   }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
@@ -48913,6 +49212,34 @@ var LoomyAdapter = class extends LlmAdapter13 {
   listAllModels() {
     const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote);
     return source.map((model) => ({ id: model.id, name: model.name }));
+  }
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 缺了它，被关闭的历史 id 只能以裸内部编码出现在设置页（用户 2026-10-26
+   * 报障的「模型列表出现 qmodel 等字段」）。
+   */
+  displayNameFor(modelId) {
+    const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote);
+    return source.find((model) => model.id === modelId)?.name;
+  }
+  /**
+   * **强制**重新拉取远端目录（「重新获取模型」按钮）。
+   *
+   * `loadModels()` 有值即返回、失败还会被闸门冷却；按钮要绕开这两层，
+   * 直接调 `fetchRemoteModels()`，失败保留上次目录。
+   */
+  async refreshCatalog() {
+    const fetchRemote = this.options.fetchRemoteModels;
+    if (fetchRemote === void 0) return false;
+    try {
+      const fetched = await fetchRemote();
+      if (fetched.length === 0) return false;
+      this.remoteModels = fetched;
+      return true;
+    } catch {
+      return false;
+    }
   }
   /**
    * 取远端模型目录；**失败时不把兜底表写进缓存**。
@@ -49412,6 +49739,34 @@ var RaccoonAdapter = class extends LlmAdapter14 {
   listAllModels() {
     const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote2);
     return source.map((model) => ({ id: model.id, name: model.name }));
+  }
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 没有它，被关闭的历史 id 只能以裸内部编码出现（用户 2026-10-26 报障的
+   * 「模型列表出现 qmodel 等字段」）。
+   */
+  displayNameFor(modelId) {
+    const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote2);
+    return source.find((model) => model.id === modelId)?.name;
+  }
+  /**
+   * **强制**重新拉取远端目录（「重新获取模型」按钮）。
+   *
+   * `loadModels()` 有值即返回、失败还会被闸门冷却，按钮必须绕开这两层：
+   * 直接调 `fetchRemoteModels()`，**只有成功才替换**（失败保留上次目录）。
+   */
+  async refreshCatalog() {
+    const fetchRemote = this.options.fetchRemoteModels;
+    if (fetchRemote === void 0) return false;
+    try {
+      const fetched = await fetchRemote();
+      if (fetched.length === 0) return false;
+      this.remoteModels = fetched;
+      return true;
+    } catch {
+      return false;
+    }
   }
   /**
    * 取远端模型目录；**失败时不把兜底表写进缓存**。
@@ -60080,6 +60435,34 @@ var ZcodeAdapter = class extends LlmAdapter15 {
     return source.map((model) => ({ id: model.id, name: model.name }));
   }
   /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * ⚠️ ZCode 是**按量计费**（不是倍率套餐），所以名字里**不带**任何倍率后缀；
+   * 这里只负责别把内部 id 直接摊到界面上（用户 2026-10-26 报障）。
+   */
+  displayNameFor(modelId) {
+    const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote3);
+    return source.find((model) => model.id === modelId)?.name;
+  }
+  /**
+   * **强制**重新拉取远端目录（「重新获取模型」按钮）。
+   *
+   * 与 `loadModels()` 不同：它「有值即返回」且失败会被闸门冷却。按钮要的是
+   * 「现在就重新拉一次」，故直接调 `fetchRemoteModels()`，失败保留上次目录。
+   */
+  async refreshCatalog() {
+    const fetchRemote = this.options.fetchRemoteModels;
+    if (fetchRemote === void 0) return false;
+    try {
+      const fetched = await fetchRemote();
+      if (fetched.length === 0) return false;
+      this.remoteModels = fetched;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /**
    * 取远端模型目录；**失败时不把兜底表写进缓存**。
    *
    * ⚠ 原实现是 `this.remoteModels = fallback; return fallback` —— 把兜底表当成
@@ -64099,6 +64482,15 @@ var GeminiAdapter = class extends LlmAdapter16 {
    */
   listAllModels() {
     return this.loadModels().map((model) => ({ id: model.id, name: model.name }));
+  }
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 本渠道的目录是本地推导的（没有远端端点），但名字可读 —— 用它避免设置页
+   * 把裸 id 当展示名（用户 2026-10-26 报障的同类问题）。
+   */
+  displayNameFor(modelId) {
+    return this.loadModels().find((model) => model.id === modelId)?.name;
   }
   inputModalitiesFor(entry) {
     return entry?.supportsImage === true ? ["text", "image"] : ["text"];
@@ -72235,6 +72627,34 @@ var MinimaxAdapter = class extends LlmAdapter17 {
     const source = this.remoteModels ?? minimaxFallbackEntries(this.product);
     return source.map((model) => ({ id: model.id, name: model.name }));
   }
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 缺了它，被关闭的历史 id 只能以裸内部编码出现（用户 2026-10-26 报障的
+   * 「模型列表出现 qmodel 等字段」）。
+   */
+  displayNameFor(modelId) {
+    const source = this.remoteModels ?? minimaxFallbackEntries(this.product);
+    return source.find((model) => model.id === modelId)?.name;
+  }
+  /**
+   * **强制**重新拉取远端目录（「重新获取模型」按钮）。
+   *
+   * `loadModels()` 有值即返回、失败还会被闸门冷却；按钮必须绕开这两层，
+   * 直接调 `fetchRemoteModels()`，失败保留上次目录。
+   */
+  async refreshCatalog() {
+    const fetchRemote = this.options.fetchRemoteModels;
+    if (fetchRemote === void 0) return false;
+    try {
+      const fetched = await fetchRemote();
+      if (fetched.length === 0) return false;
+      this.remoteModels = fetched;
+      return true;
+    } catch {
+      return false;
+    }
+  }
   inputModalitiesFor(entry) {
     return entry?.supportsImage === true ? ["text", "image"] : ["text"];
   }
@@ -73652,6 +74072,15 @@ var OpencodeAdapter = class extends LlmAdapter18 {
    */
   listAllModels() {
     return OPENCODE_FALLBACK_MODELS.map((m) => ({ id: m.id, name: m.name, isFree: m.isFree }));
+  }
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 本渠道没有远端目录端点（`refreshCatalog` 不实现，按钮会如实报「暂不支持」），
+   * 但本地兜底表里有可读名 —— 用它避免设置页把裸 id 当展示名。
+   */
+  displayNameFor(modelId) {
+    return OPENCODE_FALLBACK_MODELS.find((model) => model.id === modelId)?.name;
   }
   async listModels(_provider) {
     const slots = await this.options.identitySlots();

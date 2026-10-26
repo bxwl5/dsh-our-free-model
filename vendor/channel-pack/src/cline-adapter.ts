@@ -426,6 +426,37 @@ export class ClineAdapter extends LlmAdapter {
     return source.map((model) => ({ id: model.id, name: clineDisplayName(model), isFree: model.isFree }))
   }
 
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 远端目录里没有时退回兜底表 —— 否则那些 id 只能以裸 id 出现，界面上就是
+   * 「模型列表出现 qmodel 等字段」那一类问题（用户 2026-10-26 报障）。
+   */
+  displayNameFor(modelId: string): string | undefined {
+    const fallback = this.fallbackCatalog()
+    const model = this.remoteModels?.find((item) => item.id === modelId)
+      ?? fallback.find((item) => item.id === modelId)
+    return model === undefined ? undefined : clineDisplayName(model)
+  }
+
+  /**
+   * **强制**重新拉取远端目录（「重新获取模型」按钮）。
+   *
+   * ⚠️ 必须先把 `remoteModels` 清空：`ensureRemoteModels()` 是「有值即返回」的
+   * 一次性懒加载，不清空等于什么都没做。失败时在 `finally` 里还原旧值，
+   * 保证「拉不到就显示上次的」。
+   */
+  async refreshCatalog(): Promise<boolean> {
+    const previous = this.remoteModels
+    this.remoteModels = undefined
+    try {
+      await this.ensureRemoteModels()
+    } finally {
+      if (this.remoteModels === undefined) this.remoteModels = previous
+    }
+    return this.remoteModels !== undefined && this.remoteModels !== previous
+  }
+
   async listModels(_provider: string): Promise<readonly LlmModelInfo[]> {
     // ⚠️ 没有任何已登录账号时返回空数组 → DSH 的 `buildModelCatalog` 把整个
     // provider 分组隐藏（它显式 `.filter(group => group.models.length > 0)`）。

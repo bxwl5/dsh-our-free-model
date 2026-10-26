@@ -1147,6 +1147,47 @@ export class BuddyAdapter extends LlmAdapter {
     return source.map((model) => ({ id: model.id, name: displayNameFor(model, source) }))
   }
 
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 同一个类同时服务 `buddy` 与 `workbuddy`（国内版/国际版只差 product 配置），
+   * 故这条逻辑对两个 provider 都生效。远端目录里没有时退回静态兜底表，
+   * 避免那些 id 以裸内部编码出现在界面上（用户 2026-10-26 报障）。
+   */
+  displayNameFor(modelId: string): string | undefined {
+    const source = this.remoteModels ?? this.staticFallbackModels()
+    const model = source.find((item) => item.id === modelId)
+    return model === undefined ? undefined : displayNameFor(model, source)
+  }
+
+  /**
+   * **强制**重新拉取远端目录（「重新获取模型」按钮）。
+   *
+   * 与 `ensureRemoteModels()` 的区别：那条路径是「有值即返回」的一次性懒加载。
+   * 用户点按钮时目录早就在内存里了，必须直接调 `fetchRemoteModels()`，
+   * 且**只有成功才替换**（失败保留上次的目录）。
+   */
+  async refreshCatalog(): Promise<boolean> {
+    const fetchRemote = this.options.fetchRemoteModels
+    if (fetchRemote === undefined) return false
+    try {
+      const models = await fetchRemote()
+      if (models.length === 0) return false
+      const reconciled = this.reconcileWithFallback(models)
+      this.remoteModels = reconciled
+      this.remoteMeta = new Map(reconciled.map((model) => [model.id, model]))
+      this.remoteContextWindows = new Map(
+        reconciled
+          .filter((model) => model.contextWindow !== undefined)
+          .map((model) => [model.id, model.contextWindow as number]),
+      )
+      return true
+    } catch {
+      // 网络抖动 / 凭据失效：保留上一次的目录。
+      return false
+    }
+  }
+
   async listModels(_provider: string): Promise<readonly LlmModelInfo[]> {
     // ⚠️ 门控放在 `ensureRemoteModels()` **之前**：没有已登录账号时连远端目录都
     // 不必拉。返回空数组 → DSH 的 `buildModelCatalog` 把整个 provider 分组隐藏。

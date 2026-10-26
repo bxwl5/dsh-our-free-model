@@ -391,6 +391,36 @@ export class ZcodeAdapter extends LlmAdapter {
   }
 
   /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * ⚠️ ZCode 是**按量计费**（不是倍率套餐），所以名字里**不带**任何倍率后缀；
+   * 这里只负责别把内部 id 直接摊到界面上（用户 2026-10-26 报障）。
+   */
+  displayNameFor(modelId: string): string | undefined {
+    const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote)
+    return source.find((model) => model.id === modelId)?.name
+  }
+
+  /**
+   * **强制**重新拉取远端目录（「重新获取模型」按钮）。
+   *
+   * 与 `loadModels()` 不同：它「有值即返回」且失败会被闸门冷却。按钮要的是
+   * 「现在就重新拉一次」，故直接调 `fetchRemoteModels()`，失败保留上次目录。
+   */
+  async refreshCatalog(): Promise<boolean> {
+    const fetchRemote = this.options.fetchRemoteModels
+    if (fetchRemote === undefined) return false
+    try {
+      const fetched = await fetchRemote()
+      if (fetched.length === 0) return false
+      this.remoteModels = fetched
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * 取远端模型目录；**失败时不把兜底表写进缓存**。
    *
    * ⚠ 原实现是 `this.remoteModels = fallback; return fallback` —— 把兜底表当成

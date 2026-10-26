@@ -114,6 +114,37 @@ export class KukuAdapter extends LlmAdapter {
     return source.map((model) => ({ id: model.id, name: model.name }))
   }
 
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 缺了它，被关闭的历史 id 只能以裸内部编码出现在设置页（用户 2026-10-26
+   * 报障的「模型列表出现 qmodel 等字段」）。
+   */
+  displayNameFor(modelId: string): string | undefined {
+    const source = this.remoteModels ?? this.product.fallbackModels
+    return source.find((model) => model.id === modelId)?.name
+  }
+
+  /**
+   * **强制**重新拉取远端目录（「重新获取模型」按钮），绕过 TTL。
+   *
+   * `ensureRemoteModels()` 在 TTL 内直接返回，必须让短路条件失效，否则按钮
+   * 点了没反应。失败还原旧值，保证「拉不到就显示上次的目录」。
+   */
+  async refreshCatalog(): Promise<boolean> {
+    const previous = this.remoteModels
+    const previousAt = this.remoteModelsAt
+    this.remoteModelsAt = 0
+    await this.ensureRemoteModels()
+    const refreshed = this.remoteModelsAt !== 0 && this.remoteModelsAt !== previousAt
+      && this.remoteModels !== undefined
+    if (!refreshed) {
+      this.remoteModels = previous
+      this.remoteModelsAt = previousAt
+    }
+    return refreshed
+  }
+
   /** 拉远端模型目录（`GET /wenchain/genflowpro/model/list`）。失败静默回落静态表。 */
   private async ensureRemoteModels(): Promise<void> {
     if (this.remoteModels !== undefined && Date.now() - this.remoteModelsAt < REMOTE_MODELS_TTL_MS) return

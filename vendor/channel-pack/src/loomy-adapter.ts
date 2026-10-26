@@ -267,6 +267,36 @@ export class LoomyAdapter extends LlmAdapter {
   }
 
   /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 缺了它，被关闭的历史 id 只能以裸内部编码出现在设置页（用户 2026-10-26
+   * 报障的「模型列表出现 qmodel 等字段」）。
+   */
+  displayNameFor(modelId: string): string | undefined {
+    const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote)
+    return source.find((model) => model.id === modelId)?.name
+  }
+
+  /**
+   * **强制**重新拉取远端目录（「重新获取模型」按钮）。
+   *
+   * `loadModels()` 有值即返回、失败还会被闸门冷却；按钮要绕开这两层，
+   * 直接调 `fetchRemoteModels()`，失败保留上次目录。
+   */
+  async refreshCatalog(): Promise<boolean> {
+    const fetchRemote = this.options.fetchRemoteModels
+    if (fetchRemote === undefined) return false
+    try {
+      const fetched = await fetchRemote()
+      if (fetched.length === 0) return false
+      this.remoteModels = fetched
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * 取远端模型目录；**失败时不把兜底表写进缓存**。
    *
    * ⚠ 原实现是 `this.remoteModels = fallback; return fallback` —— 把兜底表当成

@@ -294,6 +294,16 @@ export class GeminiAdapter extends LlmAdapter {
     return this.loadModels().map((model) => ({ id: model.id, name: model.name }))
   }
 
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 本渠道的目录是本地推导的（没有远端端点），但名字可读 —— 用它避免设置页
+   * 把裸 id 当展示名（用户 2026-10-26 报障的同类问题）。
+   */
+  displayNameFor(modelId: string): string | undefined {
+    return this.loadModels().find((model) => model.id === modelId)?.name
+  }
+
   private inputModalitiesFor(
     entry: GeminiModelEntry | undefined,
   ): readonly ('text' | 'image')[] {

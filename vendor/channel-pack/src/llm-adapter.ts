@@ -963,6 +963,35 @@ export class CodeArtsAdapter extends LlmAdapter {
       .map((m) => ({ id: m.id, name: m.name }))
   }
 
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * CodeArts 的目录端点会下发可读的 `name`，用它解析历史 id，避免设置页把
+   * `deepseek-v4-flash` 这类裸 id 当成展示名（用户 2026-10-26 报障的同类问题）。
+   */
+  displayNameFor(modelId: string): string | undefined {
+    return this.remoteModels?.find((model) => model.id === modelId)?.name
+  }
+
+  /**
+   * **强制**重新拉取远端目录（「重新获取模型」按钮）。
+   *
+   * `ensureRemoteModels()` 是「有值即返回」的一次性懒加载，按钮必须直连
+   * `fetchRemoteModels()`；失败保留上次目录。
+   */
+  async refreshCatalog(): Promise<boolean> {
+    const fetchRemote = this.options.fetchRemoteModels
+    if (fetchRemote === undefined) return false
+    try {
+      const models = await fetchRemote()
+      if (models.length === 0) return false
+      this.remoteModels = models
+      return true
+    } catch {
+      return false
+    }
+  }
+
   async listModels(_provider: string): Promise<readonly LlmModelInfo[]> {
     // ⚠️ 没有任何已登录账号时返回空数组 → DSH 的 `buildModelCatalog` 把整个
     // provider 分组隐藏（它显式 `.filter(group => group.models.length > 0)`）。

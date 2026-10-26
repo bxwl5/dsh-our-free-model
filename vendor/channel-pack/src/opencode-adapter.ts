@@ -282,6 +282,16 @@ export class OpencodeAdapter extends LlmAdapter {
     return OPENCODE_FALLBACK_MODELS.map((m) => ({ id: m.id, name: m.name, isFree: m.isFree }))
   }
 
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 本渠道没有远端目录端点（`refreshCatalog` 不实现，按钮会如实报「暂不支持」），
+   * 但本地兜底表里有可读名 —— 用它避免设置页把裸 id 当展示名。
+   */
+  displayNameFor(modelId: string): string | undefined {
+    return OPENCODE_FALLBACK_MODELS.find((model) => model.id === modelId)?.name
+  }
+
   async listModels(_provider: string): Promise<readonly LlmModelInfo[]> {
     const slots = await this.options.identitySlots()
     // 无任何槽 = 连匿名槽都没了（异常态）：返回空数组隐藏 provider 分组，

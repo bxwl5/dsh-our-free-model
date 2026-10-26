@@ -169,6 +169,37 @@ export class AutoClawAdapter extends LlmAdapter {
     return source.map((model) => ({ id: model.id, name: model.name }))
   }
 
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 远端目录是**并集**（见 `ensureRemoteModels`），兜底表里的老 id 也在其中；
+   * 真找不到时才让调用方退回裸 id。
+   */
+  displayNameFor(modelId: string): string | undefined {
+    const source = this.remoteModels ?? this.product.fallbackModels
+    return source.find((model) => model.id === modelId)?.name
+  }
+
+  /**
+   * **强制**重新拉取远端目录（「重新获取模型」按钮），绕过 TTL。
+   *
+   * `ensureRemoteModels()` 在 TTL 内直接返回，用户点按钮时必须让短路条件失效，
+   * 否则「点了没反应」。失败还原旧值 —— 拉不到就继续显示上次的目录。
+   */
+  async refreshCatalog(): Promise<boolean> {
+    const previous = this.remoteModels
+    const previousAt = this.remoteModelsAt
+    this.remoteModelsAt = 0
+    await this.ensureRemoteModels()
+    const refreshed = this.remoteModelsAt !== 0 && this.remoteModelsAt !== previousAt
+      && this.remoteModels !== undefined
+    if (!refreshed) {
+      this.remoteModels = previous
+      this.remoteModelsAt = previousAt
+    }
+    return refreshed
+  }
+
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
     await this.ensureRemoteModels()
     const source = this.remoteModels ?? this.product.fallbackModels

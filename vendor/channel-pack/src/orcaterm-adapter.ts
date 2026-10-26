@@ -78,6 +78,16 @@ export class OrcaTermAdapter extends LlmAdapter {
     return this.product.fallbackModels.map((model) => ({ id: model.id, name: model.name }))
   }
 
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 本渠道没有远端目录端点（`refreshCatalog` 不实现，按钮会如实报「暂不支持」），
+   * 但本地兜底表里有可读名 —— 用它避免设置页把裸 id 当展示名。
+   */
+  displayNameFor(modelId: string): string | undefined {
+    return this.product.fallbackModels.find((model) => model.id === modelId)?.name
+  }
+
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
     const entry = this.product.fallbackModels.find((candidate) => candidate.id === model)
     const resolved: LlmResolvedModelInfo = {

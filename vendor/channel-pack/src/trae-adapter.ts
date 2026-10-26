@@ -828,6 +828,40 @@ export class TraeAdapter extends LlmAdapter {
     return source.map((model) => ({ id: model.id, name: traeDisplayName(model) }))
   }
 
+  /**
+   * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
+   *
+   * 兜底表里的旧 id 没有倍率字段，只给名字 —— 那也比把内部 id 直接摊在界面上
+   * 好（用户报障：「模型列表出现 qmodel 等字段」）。
+   */
+  displayNameFor(modelId: string): string | undefined {
+    const remote = this.remoteModels?.find((model) => model.id === modelId)
+    if (remote !== undefined) return traeDisplayName(remote)
+    return this.product.fallbackModels.find((model) => model.id === modelId)?.name
+  }
+
+  /**
+   * **强制**重新拉取远端模型目录（「重新获取模型」按钮）。
+   *
+   * ⚠️ 不能走 `ensureRemoteModels()`：它是一次性懒加载（`remoteModels` 有值即
+   * 短路），用户点按钮时目录早就在内存里了，走那条路径等于什么都不做。
+   * 这里直接调 `fetchRemoteModels()`，**只有成功才替换**，失败保留旧目录。
+   */
+  async refreshCatalog(): Promise<boolean> {
+    const fetchRemote = this.options.fetchRemoteModels
+    if (fetchRemote === undefined) return false
+    try {
+      const models = await fetchRemote()
+      if (models.length === 0) return false
+      this.remoteModels = models
+      this.remoteMeta = new Map(models.map((model) => [model.id, model]))
+      return true
+    } catch {
+      // 网络抖动 / 凭据失效：保留上一次的目录（用户要求「拉不到就显示上次的」）。
+      return false
+    }
+  }
+
   async listModels(_provider: string): Promise<readonly LlmModelInfo[]> {
     // ⚠️ 门控放在 `ensureRemoteModels()` **之前**：没有已登录账号时连远端目录都
     // 不必拉（省掉一次无谓的 HTTP 请求）。没有任何已登录账号时返回空数组，让
