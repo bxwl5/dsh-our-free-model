@@ -1018,45 +1018,50 @@ export class BuddyAdapter extends LlmAdapter {
    */
   private reconcileWithFallback(models: readonly BuddyRemoteModel[]): BuddyRemoteModel[] {
     const fallback = this.product.fallbackModels
-    /**
-     * ⚠️ **语义已反转**（2026-10-26 用户明确要求「获取到了后直接覆盖本地，
-     * 连兜底表也覆盖掉」）。
-     *
-     * 原实现是「兜底表为准、远端补位」：只保留兜底表声明的 id，远端多出来的
-     * 一律丢弃。它的出发点是「CLI token 拿到的集合残缺甚至含不可用别名」。
-     *
-     * 但那是**旧结论**：远端目录才是上游真实的可用清单，兜底表只是编译期
-     * 快照。按兜底表裁剪会让①上游新上架的模型永远看不见②已下架的模型
-     * 一直留着。现在改为**远端为准**，兜底表只用来给远端**补充缺失的元信息**
-     * （上下文窗口/图片能力等），不再决定 id 集合。
-     *
-     * 兜底表剩余作用：`remoteModels === undefined`（从未拉到过）时的冷启动样本。
-     */
     if (fallback === undefined || fallback.length === 0) return [...models]
-    const fallbackById = new Map(fallback.map((entry) => [entry.id, entry]))
-    // 远端全部保留（顺序照远端下发顺序），缺失字段用兜底表补。
-    const reconciled = models.map((remote) => {
-      const entry = fallbackById.get(remote.id)
-      // 远端没给的能力字段用兜底表补；两边都没有就留空（不编造）。
+    const remoteById = new Map(models.map((model) => [model.id, model]))
+    const reconciled = fallback.map((entry) => {
+      const remote = remoteById.get(entry.id)
+      // 远端元数据优先（更权威），缺失的字段用兜底表补齐
       return {
-        ...remote,
-        ...remote.contextWindow === undefined && entry?.contextWindow !== undefined
-          ? { contextWindow: entry.contextWindow }
+        id: entry.id,
+        name: remote?.name ?? entry.name,
+        ...entry.contextWindow !== undefined || remote?.contextWindow !== undefined
+          ? { contextWindow: remote?.contextWindow ?? entry.contextWindow }
           : {},
-        ...remote.maxOutputTokens === undefined && entry?.maxOutputTokens !== undefined
-          ? { maxOutputTokens: entry.maxOutputTokens }
+        // 输出上限同样「远端优先、兜底补位」：远端不下发时兜底表给保守值，
+        // 两边都没有则留 undefined（不编造，见 resolveModel 的说明）。
+        ...entry.maxOutputTokens !== undefined || remote?.maxOutputTokens !== undefined
+          ? { maxOutputTokens: remote?.maxOutputTokens ?? entry.maxOutputTokens }
           : {},
-        ...remote.supportsImages === undefined && entry?.supportsImages !== undefined
-          ? { supportsImages: entry.supportsImages }
+        ...entry.supportsImages !== undefined || remote?.supportsImages !== undefined
+          ? { supportsImages: remote?.supportsImages ?? entry.supportsImages }
           : {},
-        ...remote.reasoningEfforts === undefined && entry?.reasoningEfforts !== undefined
-          ? { reasoningEfforts: [...entry.reasoningEfforts] }
+        ...entry.reasoningEfforts !== undefined || remote?.reasoningEfforts !== undefined
+          ? { reasoningEfforts: [...(remote?.reasoningEfforts ?? entry.reasoningEfforts ?? [])] }
           : {},
-        ...remote.defaultReasoningEffort === undefined && entry?.defaultReasoningEffort !== undefined
-          ? { defaultReasoningEffort: entry.defaultReasoningEffort }
+        ...entry.defaultReasoningEffort !== undefined || remote?.defaultReasoningEffort !== undefined
+          ? { defaultReasoningEffort: remote?.defaultReasoningEffort ?? entry.defaultReasoningEffort }
+          : {},
+        // 计费倍率只可能来自远端（兜底表是编译期快照，价格会变，不写死）。
+        // 注意本函数是**白名单式重建**：不在这里显式搬运的字段会被静默丢弃，
+        // 新增远端字段时必须同步加一行，否则 listModels 看不到它。
+        ...remote?.creditsRate !== undefined ? { creditsRate: remote.creditsRate } : {},
+        ...remote?.discountedCreditsRate !== undefined
+          ? { discountedCreditsRate: remote.discountedCreditsRate }
           : {},
       }
     })
+    // ⚠️ 追加「被 agent 引用但不在兜底表」的模型（见本方法注释的例外说明）。
+    //
+    // 放在**末尾**：兜底表里的模型保持原有顺序与权威性，补充的变体排在后面，
+    // 不打乱用户已熟悉的列表顺序。
+    const known = new Set(reconciled.map((model) => model.id))
+    for (const model of models) {
+      if (model.agentReferenced !== true || known.has(model.id)) continue
+      known.add(model.id)
+      reconciled.push({ ...model })
+    }
     return reconciled
   }
 

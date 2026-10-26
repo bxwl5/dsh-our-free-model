@@ -216,8 +216,7 @@ export class OfficeAceAdapter extends LlmAdapter {
     } catch (error) {
       if (options.signal?.aborted === true) throw new LlmError('OfficeAce：请求已取消', 'ABORTED')
       if (isTransportError(error)) throw new LlmError(`OfficeAce：连接失败（${errorMessage(error)}）`, 'TRANSPORT')
-      // ⚠️ 同上：非传输层错误标 SERVER_ERROR，避免内核重试携带不可序列化载荷。
-      throw new LlmError(`OfficeAce：请求失败（${errorMessage(error)}）`, 'SERVER_ERROR')
+      throw new LlmError(`OfficeAce：请求失败（${errorMessage(error)}）`, 'TRANSPORT')
     }
 
     if (!response.ok) {

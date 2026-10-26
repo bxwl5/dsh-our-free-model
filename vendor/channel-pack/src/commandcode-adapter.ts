@@ -272,9 +272,7 @@ export class CommandCodeAdapter extends LlmAdapter {
     } catch (error) {
       if (options.signal?.aborted === true) throw new LlmError('commandcode: 请求已取消', 'ABORTED')
       if (isTransportError(error)) throw new LlmError(`commandcode: 连接失败（${errorMessage(error)}）`, 'TRANSPORT')
-      // ⚠️ 非传输层错误不标 TRANSPORT（可重试）：内核重试会把原生 Error 塞进
-      // llm/retry 事件载荷，序列化失败后用户只看到 non-JSON-serializable data。
-      throw new LlmError(`commandcode: 请求失败（${errorMessage(error)}）`, 'SERVER_ERROR')
+      throw new LlmError(`commandcode: 请求失败（${errorMessage(error)}）`, 'TRANSPORT')
     }
 
     if (!response.ok) {

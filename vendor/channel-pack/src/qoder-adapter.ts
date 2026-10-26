@@ -1366,25 +1366,58 @@ function qoderLocalizedName(model: QoderFallbackModel): string {
 }
 
 export function qoderDisplayName(model: QoderFallbackModel, now: Date = new Date()): string {
+  const name = qoderLocalizedName(model)
+  /**
+   * ## 倍率口径（2026-10-26 对照 magpie 的 @magpie-community/opencode-qoder-auth 修正）
+   *
+   * magpie 的 `rateOf()` / `freeOf()` 是从真实使用中总结出来的，两条关键规则：
+   *
+   * 1. **`price_factor` 本身就是「当前生效价」，不要再拿 `before × discount`
+   *    去重算**。旧实现只要促销 active 就用 `before × discount` 覆盖，
+   *    若目录恰在**窗口内**采集（此时 `price_factor` 已是折后价），就会
+   *    **重复打折**，显示出比实际更低的价。
+   * 2. **`price_factor === 0` 不一定是免费**：促销 active 且有原价时，
+   *    那个 0 是「折扣到 0」的占位，真实价是 `before × discount`。
+   *    只有「0 且无进行中的促销」才是真免费（Qwen3.8-Flash 那种长期 0×）。
+   *
+   * 划线价只在**确实高于当前价**时显示（`rateWas > rate`），否则不显示 ——
+   * 避免 `x0.5→x0.5` 这种噪声。
+   */
   const promo = model.promotion
   const before = promo?.beforePromotionPriceFactor
   const discount = promo?.discountFactor
-  const hasPromo = promo !== undefined && before !== undefined && discount !== undefined
-  const active = hasPromo && promotionActiveNow(promo, now)
+  const active = promo !== undefined && promotionActiveNow(promo, now)
 
-  // 免费优先于一切（`0` 是合法倍率，不能显示成 `x0`）。
-  if (model.priceFactor === 0) return `${qoderLocalizedName(model)} · 免费`
+  let rate = model.priceFactor
+  // 无倍率字段 → **只显示名字**，不编造 x1（用户明确要求）。
+  if (typeof rate !== 'number') return name
 
-  if (hasPromo && active) {
-    // 折扣生效中：`原价→折后价`（与 TRAE / buddy 同形态）
-    const effective = Number((before * discount).toFixed(4))
-    return `${qoderLocalizedName(model)} · x${before}→x${effective}`
+  let rateWas = model.originalPriceFactor
+  const hasBefore = typeof before === 'number' && before > 0
+  if (active && hasBefore) {
+    // 窗口内：当前价用 `price_factor`（它已是折后生效价），划线价是原价。
+    rateWas = before
+    // 促销到 0 但真实不免费：用 before × discount 还原真实价。
+    if (rate === 0 && typeof discount === 'number' && discount > 0) {
+      rate = Number((before * discount).toFixed(4))
+    }
+  } else if (hasBefore) {
+    /**
+     * **窗口外：按原价计费，显示原价**。
+     *
+     * `price_factor` 是「目录下发那一刻」的快照 —— 若恰好在窗口内采集，它是
+     * 折后价；到了窗口外实际按原价扣费。直接显示折后价会让用户按低价预期、
+     * 实际被按原价计费（旧实现这里就是显示 `before`，是对的，必须保留）。
+     * 此时不打折，故**不显示划线**（rateWas 置空）。
+     */
+    rate = before
+    rateWas = undefined
   }
 
-  // 窗口外用**原价**（有 promotion 时原价就是 before，而非采集到的折后价）；
-  // 窗口外显示折后价会让用户按折扣价预期、实际被按原价计费。
-  const price = hasPromo ? before : model.priceFactor
-  return price !== undefined ? `${qoderLocalizedName(model)} · x${price}` : qoderLocalizedName(model)
+  if (rate === 0) return `${name} · 免费`
+  // 只在原价确实更高时显示「原价→现价」。
+  if (typeof rateWas === 'number' && rateWas > rate) return `${name} · x${rateWas}→x${rate}`
+  return `${name} · x${rate}`
 }
 
 /**

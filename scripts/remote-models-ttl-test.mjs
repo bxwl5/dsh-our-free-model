@@ -844,6 +844,58 @@ export async function verifyQoderCatalog() {
   assert.equal(qoderDisplayName({ id: 'performance', name: 'Performance', contextWindow: 1, priceFactor: 1.1 }), '平衡 · x1.1')
   assert.equal(qoderDisplayName({ id: 'gfmodel', name: 'GLM-5.3-Flash', contextWindow: 1, priceFactor: 0.1 }), 'GLM-5.3-Flash · x0.1', '产品名不翻译')
   assert.equal(qoderDisplayName({ id: 'x', name: 'X', contextWindow: 1, priceFactor: 0 }), 'X · 免费', '0 倍率显示免费')
+  // 无倍率字段 → 只显示名字，不编造 x1（用户明确要求）
+  assert.equal(qoderDisplayName({ id: 'n', name: 'NoPrice', contextWindow: 1 }), 'NoPrice', '无倍率只显示名字')
+
+  // ── 4b. 促销口径（对照 magpie @magpie-community/opencode-qoder-auth 的 rateOf/freeOf）──
+  // 规则 1：`price_factor` 已是生效价，促销 active 时**不得**再拿 before×discount 重算
+  //        （旧实现会重复打折，显示比实际更低的价）。
+  // 窗口 22:00-08:00（UTC+8）；用固定「窗口内」时间验证。
+  const inWindow = new Date('2026-10-26T23:30:00+08:00')
+  const outWindow = new Date('2026-10-26T12:00:00+08:00')
+  const promoModel = {
+    id: 'promo', name: 'Promo', contextWindow: 1,
+    priceFactor: 0.4, // 目录已在窗口内采集 → 折后价
+    originalPriceFactor: 2,
+    promotion: {
+      active: true, beforePromotionPriceFactor: 2, discountFactor: 0.2,
+      windowStart: '22:00', windowEnd: '08:00',
+    },
+  }
+  assert.equal(
+    qoderDisplayName(promoModel, inWindow), 'Promo · x2→x0.4',
+    '窗口内：当前价用 price_factor(0.4)，不得重算成 before×discount(0.4 巧合相同，故用另一组验证)',
+  )
+  // 关键反例：price_factor 已是 0.4，若重算 before×discount 会得到 2×0.2=0.4 —— 巧合。
+  // 用 discount=0.1 构造可区分的场景：price_factor=0.2（已折），重算会得 0.2 之外的值。
+  const distinguish = { ...promoModel, priceFactor: 0.15, promotion: { ...promoModel.promotion, discountFactor: 0.1 } }
+  assert.equal(
+    qoderDisplayName(distinguish, inWindow), 'Promo · x2→x0.15',
+    '⚠️ 防重复打折：必须用 price_factor(0.15)，不能用 before×discount(0.2)',
+  )
+
+  // 规则 2：`price_factor === 0` 且促销 active 且有原价 → **不是免费**，还原为 before×discount
+  const zeroPromo = {
+    id: 'zp', name: 'ZeroPromo', contextWindow: 1,
+    priceFactor: 0,
+    promotion: {
+      active: true, beforePromotionPriceFactor: 2, discountFactor: 0.2,
+      windowStart: '22:00', windowEnd: '08:00',
+    },
+  }
+  assert.equal(
+    qoderDisplayName(zeroPromo, inWindow), 'ZeroPromo · x2→x0.4',
+    '⚠️ 促销中的 0 不是免费，真实价是 before×discount(0.4)',
+  )
+  // 规则 3：`price_factor === 0` 且无进行中促销 → 真免费
+  const trueFree = { id: 'tf', name: 'TrueFree', contextWindow: 1, priceFactor: 0, originalPriceFactor: 0.1 }
+  assert.equal(qoderDisplayName(trueFree, inWindow), 'TrueFree · 免费', '无促销的 0 才是真免费')
+  // 规则 4：窗口外按**原价**计费并显示原价，不显示划线
+  //（price_factor 若在窗口内采集则是折后快照，窗口外直接用会误导用户按低价预期）
+  assert.equal(
+    qoderDisplayName(promoModel, outWindow), 'Promo · x2',
+    '窗口外：必须显示原价 x2，不能显示折后快照 x0.4',
+  )
 
   // ── 5. 倍率必须以**远端**为准（兜底表是采集时快照，会过期）──
   // 实测差异：qmodel_38max 远端 0.5/兜底 0.2、kmodel_latest 1/1.4、

@@ -61,8 +61,6 @@ import { refreshOfficeAceCredential } from './officeace.js'
 import { refreshAutoclawCredential } from './autoclaw-sms.js'
 import { AUTOCLAW } from './autoclaw-product.js'
 import { configureDeadModelStore, withDeadModelPruning } from './dead-model-store.js'
-import { configureModelCatalogStore } from './model-catalog-store.js'
-import { startCatalogRefresher, type CatalogRefreshTarget } from './catalog-refresher.js'
 import type { CodeArtsCredential, BuddyCredential } from './types.js'
 import type { QoderCredential } from './qoder.js'
 import type { TraeCredential } from './trae.js'
@@ -329,11 +327,6 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
   // 解析。必须在任何 `registerXxxLlm` 之前调用 —— 各适配器经
   // `registerAdapterIdempotent` 注册时就会包装上剔除逻辑（见该函数注释）。
   configureDeadModelStore(ctx)
-
-  // 「模型目录持久化缓存」：注入 ctx（日志 + home 解析），与失效模型剔除同款范式。
-  // 必须在任何 `registerXxxLlm` 之前：适配器的 `resolveCatalog` 冷启动就要读它
-  // （凭据失效/未登录时显示上一次的模型列表，数据源就是这里落盘的文档）。
-  configureModelCatalogStore(ctx)
 
   // ===== Token 账本持久化（第 2 期 · 日聚合落盘）=====
   //
@@ -1979,37 +1972,7 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
     void refreshAllCredentials()
     const refreshTimer = setInterval(() => void refreshAllCredentials(), REFRESH_INTERVAL_MS)
     refreshTimer.unref?.()
-
-    /**
-     * **模型目录定时刷新**（2026-10-26 用户要求「定时刷新（重新获取）」）。
-     *
-     * 与上面的凭据续期**分开**：目录刷新失败无害（保留上次结果），续期失败
-     * 需要用户介入，两者混在一起会让日志互相淹没（见 catalog-refresher.ts 头部）。
-     *
-     * 只对**已登录的渠道**建目标：未登录时拉取必然失败，白打请求。
-     */
-    const catalogRefresher = startCatalogRefresher(
-      (): readonly CatalogRefreshTarget[] => {
-        const targets: CatalogRefreshTarget[] = []
-        for (const [provider, adapter] of Object.entries(modelAdapters)) {
-          const refresh = (adapter as { refreshCatalog?: () => Promise<boolean> }).refreshCatalog
-          if (typeof refresh !== 'function') continue
-          targets.push({
-            provider,
-            refresh: async () => {
-              const account = await pool.selectAccount(provider).catch(() => undefined)
-              if (account === undefined) return false
-              return await refresh()
-            },
-          })
-        }
-        return targets
-      },
-      { logger: ctx.logger },
-    )
-
     ctx.effect(() => () => {
-      catalogRefresher.stop()
       clearInterval(refreshTimer)
       service.stop()
       buddy.stop()
@@ -2033,7 +1996,6 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
       + `${error instanceof Error ? error.message : String(error)}`,
     )
   })
-
 
   // 保留旧的 stop scheduler（兼容旧命令）
   ctx.effect(() => () => {

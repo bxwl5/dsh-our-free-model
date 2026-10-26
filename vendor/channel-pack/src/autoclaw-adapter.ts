@@ -265,20 +265,8 @@ export class AutoClawAdapter extends LlmAdapter {
       })
     } catch (error) {
       if (options.signal?.aborted === true) throw new LlmError('AutoClaw：请求已取消', 'ABORTED')
-      /**
-       * ⚠️ **只有真正的传输层失败才标 TRANSPORT**（2026-10-26 实测缺陷）。
-       *
-       * 原实现两条分支都写 TRANSPORT，而 TRANSPORT 是**可重试**的
-       * （`retryableCodes` 含它）。内核重试时会把**原生 Error** 塞进
-       * `llm/retry` 事件载荷 —— 那个对象序列化不了，于是用户看到的是
-       * 「session event "llm/retry" carries non-JSON-serializable data」
-       * 而不是真实原因（与 kuku / monkeycode 踩过的是同一个坑）。
-       *
-       * 非传输层错误（参数非法、响应解析失败等）标 SERVER_ERROR：
-       * 重试不会改变结果，且能让真实原因透出。
-       */
       if (isTransportError(error)) throw new LlmError(`AutoClaw：连接失败（${errorMessage(error)}）`, 'TRANSPORT')
-      throw new LlmError(`AutoClaw：请求失败（${errorMessage(error)}）`, 'SERVER_ERROR')
+      throw new LlmError(`AutoClaw：请求失败（${errorMessage(error)}）`, 'TRANSPORT')
     }
 
     if (!response.ok) {
