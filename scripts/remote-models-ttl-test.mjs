@@ -477,3 +477,89 @@ export async function verifyMonkeyCodeOfficialProtocol() {
 
   console.log('monkeycode-protocol: 5 组断言通过（base64 正文 / 非正文忽略 / task-ended / 心跳 / 明文兼容）')
 }
+
+/**
+ * MonkeyCode 百智云桥接登录回归（对照 chaitin/MonkeyCode 的
+ * desktop/src/baizhi/monkeycode.rs `login_monkeycode`）。
+ *
+ * 关键技巧：授权**页面** URL 改写成授权 **API** URL，纯 HTTP 走完 OIDC 链路。
+ * 用本地假上游复现 4 跳：login → authorize(页面) → authorize(API) → callback。
+ */
+export async function verifyBaizhiBridge() {
+  const http = await import('node:http')
+  const { fetch: realFetch } = await import('undici')
+  const { loginWithBaizhiSession } = await import('../vendor/channel-pack/src/monkeycode-auth.ts')
+  const { MONKEYCODE } = await import('../vendor/channel-pack/src/monkeycode-product.ts')
+
+  const seen = []
+  let sawPageRewrite = false
+  const upstream = http.createServer((req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    seen.push({ path: url.pathname, cookie: req.headers.cookie ?? '' })
+    const send = (status, headers = {}) => {
+      res.writeHead(status, { Connection: 'close', ...headers }).end('')
+    }
+    // 1) 起手：云端 /users/login → 302 到百智授权**页面**
+    if (url.pathname === '/api/v1/users/login') {
+      const target = `http://127.0.0.1:${port}/oauth/authorize?client_id=monkeycode-ai`
+        + `&redirect_uri=${encodeURIComponent(`http://127.0.0.1:${port}/api/v1/users/baizhi/callback`)}`
+        + '&response_type=code&scope=user+phone&state=test-state'
+      send(302, { Location: target })
+      return
+    }
+    // 2) 授权**页面**：真实链路里由页面 JS 改写成 API —— 我们期望客户端
+    //    直接跳过它打 /api/v1/oauth/authorize，故这里若被请求说明改写没生效。
+    if (url.pathname === '/oauth/authorize') {
+      send(500)
+      return
+    }
+    // 3) 授权 API：校验百智 cookie 后 302 回 callback
+    if (url.pathname === '/api/v1/oauth/authorize') {
+      if (!/baizhi_session=/.test(req.headers.cookie ?? '')) { send(401); return }
+      sawPageRewrite = true
+      send(302, { Location: `http://127.0.0.1:${port}/api/v1/users/baizhi/callback?code=tmp-code` })
+      return
+    }
+    // 4) callback：种下 monkeycode_ai_session
+    if (url.pathname === '/api/v1/users/baizhi/callback') {
+      send(302, {
+        Location: `http://127.0.0.1:${port}/`,
+        'Set-Cookie': 'monkeycode_ai_session=3a47cb66-4a25-4e37-8d20-2eea2069c923; Path=/; HttpOnly',
+      })
+      return
+    }
+    // 4b) 授权完成后浏览器会停在根路径（真实链路 302 → mc 首页）
+    if (url.pathname === '/') { send(200); return }
+    // 5) 探活（loginWithCookie 会打钱包端点）
+    if (url.pathname === '/api/v1/users/wallet') {
+      res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' })
+        .end(JSON.stringify({ code: 0, data: { id: '00000000-0000-0000-0000-000000000000', balance: 100 } }))
+      return
+    }
+    send(404)
+  })
+  await new Promise(r => upstream.listen(0, '127.0.0.1', r))
+  const port = upstream.address().port
+  const product = { ...MONKEYCODE, apiBase: `http://127.0.0.1:${port}` }
+  try {
+    // ── 1. 缺 baizhi_session 时明确报错 ──
+    await assert.rejects(
+      () => loginWithBaizhiSession(realFetch, product, 'monkeycode_ai_session=xxx'),
+      /百智云.*baizhi_session/,
+      '粘贴非百智云 cookie 要明确提示',
+    )
+    // ── 2. 完整链路走通 ──
+    const credential = await loginWithBaizhiSession(
+      realFetch, product, 'baizhi_session=ok-123; sl-session=s', undefined,
+      { baizhiBase: `http://127.0.0.1:${port}` },
+    )
+    assert.ok(sawPageRewrite, '授权页面必须被改写成 API（这是纯 HTTP 走通的关键）')
+    assert.match(credential.access_token, /monkeycode_ai_session=3a47cb66/, '最终凭据带桥接得到的会话')
+    assert.ok(typeof credential.account_id === 'string' && credential.account_id.length > 0, '身份从会话值派生')
+    // ── 3. 页面那一跳不能被真的请求（改写生效的直接证据）──
+    assert.equal(seen.some(row => row.path === '/oauth/authorize'), false, '不得请求授权页面本身')
+    console.log('baizhi-bridge: 3 组断言通过（缺 cookie 报错 / 链路走通 / 页面改写生效）')
+  } finally {
+    upstream.close()
+  }
+}

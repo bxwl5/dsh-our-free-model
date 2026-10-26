@@ -606,3 +606,139 @@ export async function stopMonkeyCodeTask(options: {
     return false
   }
 }
+
+// ── 百智云（baizhi.cloud）会话桥接 ─────────────────────────────────────────
+//
+// 官方站点的登录其实是**百智云 OIDC 授权**（不是 GitHub）：
+// `https://baizhi.cloud/oauth/authorize?client_id=monkeycode-ai&redirect_uri=
+//  https://monkeycode-ai.com/api/v1/users/baizhi/callback&response_type=code&
+//  scope=user+phone&state=<uuid>`。
+//
+// 官方桌面端（chaitin/MonkeyCode 的 desktop/src/baizhi/monkeycode.rs
+// `login_monkeycode`）把这条链**纯 HTTP 走完**，关键技巧是：
+// 授权**页面** URL 改写成授权 **API** URL（`authorize_page_to_api`）——
+// WebView 里这一跳由页面 JS 完成，纯 HTTP 则由我们手动改写：
+//
+// ```text
+// GET {mc}/api/v1/users/login            → 302 → {baizhi}/oauth/authorize?…（页面）
+// 【改写】{baizhi}/api/v1/oauth/authorize?…（API，带百智 cookie）
+//                                        → 302 → {mc}/…/baizhi/callback?code=…
+//                                        → Set-Cookie: monkeycode_ai_session
+// ```
+//
+// 前置条件：**必须已持有百智云会话 cookie**（`baizhi_session` / `sl-session`）。
+// 官方源码同样要求（`if svc.store.is_empty() { return Err("请先登录百智云账号") }`）。
+// 拿到 `monkeycode_ai_session` 之后的凭据形态与 Cookie 粘贴**完全一致**，
+// 因此适配器、签到、对话全都不用改。
+
+/** 百智云账号域（授权与 API 都在这）。 */
+export const MONKEYCODE_BAIZHI_BASE = 'https://baizhi.cloud'
+/** 桥接重定向链上限（上游实测 4~6 跳，留余量防环）。 */
+const BRIDGE_MAX_HOPS = 12
+
+/** 从 cookie 串里取某个名字的值。 */
+function cookieValue(raw: string, name: string): string | undefined {
+  for (const part of raw.split(';')) {
+    const trimmed = part.trim()
+    const eq = trimmed.indexOf('=')
+    if (eq <= 0) continue
+    if (trimmed.slice(0, eq).trim() === name) return trimmed.slice(eq + 1).trim()
+  }
+  return undefined
+}
+
+/**
+ * 用百智云会话桥接出 MonkeyCode 会话（纯 HTTP，无需浏览器）。
+ *
+ * @param baizhiCookie 用户在 baizhi.cloud 登录后的完整 Cookie 串
+ *        （至少含 `baizhi_session`）。
+ * @returns 可直接落盘的 MonkeyCode 凭据（`access_token` 是
+ *          `monkeycode_ai_session=…`）。
+ */
+export async function loginWithBaizhiSession(
+  fetcher: typeof fetch,
+  product: MonkeyCodeProduct,
+  baizhiCookie: string,
+  signal?: AbortSignal,
+  options: { baizhiBase?: string } = {},
+): Promise<MonkeyCodeCredential> {
+  const baizhiBase = (options.baizhiBase ?? MONKEYCODE_BAIZHI_BASE).replace(/\/+$/, '')
+  const baizhiHost = new URL(baizhiBase).hostname
+  const cookie = baizhiCookie.trim()
+  if (cookieValue(cookie, 'baizhi_session') === undefined) {
+    throw new Error('MonkeyCode：请粘贴**百智云**（baizhi.cloud）的 Cookie，且必须包含 baizhi_session=…')
+  }
+  const mcCookies = new Map<string, string>()
+  const absorb = (response: Response): void => {
+    const list = typeof response.headers.getSetCookie === 'function' ? response.headers.getSetCookie() : []
+    for (const raw of list) {
+      const pair = raw.split(';')[0] ?? ''
+      const eq = pair.indexOf('=')
+      if (eq <= 0) continue
+      const name = pair.slice(0, eq).trim()
+      const value = pair.slice(eq + 1).trim()
+      // 只收会话相关的（_ga/_pk_* 是分析 cookie，收了只是噪声）。
+      if (name === 'monkeycode_ai_session' || name === 'monkeycode_ai_team_session' || name === 'nebula_session') {
+        mcCookies.set(name, value)
+      }
+    }
+  }
+  const mcCookieHeader = (): string =>
+    [...mcCookies.entries()].map(([k, v]) => `${k}=${v}`).join('; ')
+
+  let current = `${product.apiBase}/api/v1/users/login?redirect=&inviter_id=`
+  for (let hop = 0; hop < BRIDGE_MAX_HOPS; hop++) {
+    const url = new URL(current)
+    const onBaizhi = url.hostname === baizhiHost
+    // 授权**页面** → 授权 **API**（WebView 里这一跳由页面 JS 做，纯 HTTP 由我们改写）。
+    if (onBaizhi && url.pathname === '/oauth/authorize') {
+      const api = new URL(`${baizhiBase}/api/v1/oauth/authorize`)
+      const clientId = url.searchParams.get('client_id') ?? ''
+      const redirectUri = url.searchParams.get('redirect_uri') ?? url.searchParams.get('redirect_url') ?? ''
+      const scope = url.searchParams.get('scope') ?? ''
+      const state = url.searchParams.get('state') ?? ''
+      if (clientId === '' || redirectUri === '' || scope === '' || state === '') {
+        throw new Error('MonkeyCode：桥接失败，授权参数不完整')
+      }
+      api.searchParams.set('client_id', clientId)
+      api.searchParams.set('redirect_uri', redirectUri)
+      api.searchParams.set('scope', scope)
+      api.searchParams.set('state', state)
+      api.searchParams.set('response_type', url.searchParams.get('response_type') ?? 'code')
+      current = api.toString()
+      continue
+    }
+    const headers: Record<string, string> = { Accept: '*/*' }
+    if (onBaizhi) headers.Cookie = cookie
+    else if (mcCookies.size > 0) headers.Cookie = mcCookieHeader()
+    const response = await fetcher(current, {
+      method: 'GET',
+      headers,
+      redirect: 'manual',
+      ...(signal === undefined ? {} : { signal }),
+    })
+    absorb(response)
+    const location = response.headers.get('location')
+    if (response.status >= 300 && response.status < 400) {
+      if (location === null || location === '') throw new Error('MonkeyCode：桥接失败，重定向缺少目标地址')
+      current = new URL(location, current).toString()
+      continue
+    }
+    if (response.status === 401 || response.status === 403) {
+      if (onBaizhi) throw new Error('MonkeyCode：百智云会话已失效，请重新登录 baizhi.cloud 后重试')
+      throw new Error(`MonkeyCode：桥接失败（HTTP ${response.status}）`)
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`MonkeyCode：桥接失败（HTTP ${response.status}）`)
+    }
+    // 链路走完：必须已经拿到会话，否则说明授权被拒。
+    const session = mcCookies.get('monkeycode_ai_session') ?? mcCookies.get('nebula_session')
+    if (session === undefined || session === '') {
+      throw new Error('MonkeyCode：桥接完成但未拿到 monkeycode_ai_session（百智云账号可能未开通 MonkeyCode）')
+    }
+    const finalCookie = mcCookieHeader()
+    // 与 Cookie 粘贴同一条校验路径：探活 + 派生身份。
+    return loginWithCookie(fetcher, product, finalCookie, signal)
+  }
+  throw new Error('MonkeyCode：桥接重定向次数过多')
+}

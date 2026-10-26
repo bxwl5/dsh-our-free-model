@@ -2732,7 +2732,7 @@ window.__ModuleLoader__.load({
       { id: 'zcode', name: 'ZCode', org: '智谱', accent: '#3B6EF6', note: '浏览器登录（需本机可开浏览器）', login: 'browser' },
       { id: 'gemini', name: 'Gemini', org: 'Google Code Assist', accent: '#4285F4', note: '本地回调 OAuth 免费线', login: 'browser' },
       { id: 'commandcode', name: 'Command Code', org: 'Command Code', accent: '#111827', note: '浏览器授权，自动回调', login: 'browser' },
-      { id: 'monkeycode', name: 'MonkeyCode', org: '长亭科技', accent: '#F97316', note: '粘贴 Cookie；每日签到 100 积分', login: 'cookie', loginPage: 'https://monkeycode-ai.com', cookieName: 'monkeycode_ai_session（旧版叫 nebula_session，两个都收）' },
+      { id: 'monkeycode', name: 'MonkeyCode', org: '长亭科技', accent: '#F97316', note: '粘贴 Cookie；每日签到 100 积分', login: 'cookie', loginPage: 'https://monkeycode-ai.com', cookieName: 'baizhi_session（百智云，推荐·自动换出 MonkeyCode 会话）或 monkeycode_ai_session（旧版 nebula_session 也收）' },
       { id: 'orcaterm', name: 'OrcaTerm', org: '腾讯云', accent: '#00A4FF', note: '粘贴 Cookie，支持完整对话', login: 'cookie', loginPage: 'https://orcaterm.cloud.tencent.com', cookieName: 'ot_sid（旧版叫 ot_session，两个都收）' },
       { id: 'kuku', name: 'KukuAI', org: '百度文库', accent: '#2932E1', note: '百度 App 扫码登录', login: 'browser' },
       { id: 'accio', name: 'Accio', org: '阿里系', accent: '#FF6A00', note: '浏览器授权，国际站', login: 'browser' },

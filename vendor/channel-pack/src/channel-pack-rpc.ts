@@ -1440,7 +1440,26 @@ function registerChannelPackEndpoints(
         if (text.trim() === '') {
           return { ok: false, error: { code: 'bad-request', message: 'credential is empty' } }
         }
-        const parsed = channel.parse(text)
+        let parsed = channel.parse(text)
+        // MonkeyCode 特例：粘贴的是**百智云** cookie 时，先走 OIDC 桥接换出
+        // `monkeycode_ai_session`（异步，故放在通用同步 parse 之外）。
+        // 官方桌面端同款链路（desktop/src/baizhi/monkeycode.rs 的
+        // login_monkeycode），纯 HTTP 完成、无需浏览器。
+        if (provider === MONKEYCODE.id && /(?:^|;\s*)baizhi_session\s*=/.test(text)) {
+          try {
+            const { loginWithBaizhiSession } = await import('./monkeycode-auth.js')
+            const credential = await loginWithBaizhiSession(codeartsFetcher, MONKEYCODE, text)
+            parsed = { ...credential, created_at: Date.now() }
+          } catch (error) {
+            return {
+              ok: false,
+              error: {
+                code: 'bad-request',
+                message: `百智云桥接失败：${error instanceof Error ? error.message : String(error)}`,
+              },
+            }
+          }
+        }
         if (parsed === undefined) {
           return { ok: false, error: { code: 'bad-request', message: `凭据形状不合法，应为：${channel.hint}` } }
         }
@@ -4912,7 +4931,13 @@ interface AdoptableChannel {
 /** 粘贴型渠道表。键是 provider id。 */
 const ADOPTABLE_CHANNELS: Readonly<Record<string, AdoptableChannel>> = {
   monkeycode: {
-    hint: '浏览器 Cookie（必须含 nebula_session=…）',
+    // ⚠️ 两种 cookie 都收，自动识别：
+    // - **百智云**（baizhi.cloud，含 `baizhi_session`）→ 走 OIDC 桥接换出
+    //   `monkeycode_ai_session`（官方桌面端同款链路，纯 HTTP，见
+    //   monkeycode-auth.ts 的 loginWithBaizhiSession）。这是**推荐**方式：
+    //   百智云会话长期有效，过期后重新桥接即可，不必再翻 DevTools。
+    // - **MonkeyCode**（含 `monkeycode_ai_session`）→ 原样收下（老路径兜底）。
+    hint: '百智云 Cookie（含 baizhi_session=…，推荐）或 MonkeyCode Cookie（含 monkeycode_ai_session=…）',
     parse: (text) => {
       const cookie = normalizeMonkeyCodeCookie(text)
       return cookie === undefined ? undefined : { access_token: cookie, created_at: Date.now() }
