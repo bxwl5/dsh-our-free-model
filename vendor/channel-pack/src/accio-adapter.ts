@@ -25,6 +25,8 @@ import { fetchModels, refreshCredential, streamChat } from './accio-auth.js'
 import { providerCatalogVisible } from './account-pool.js'
 import { registerAdapterIdempotent } from './llm-register-compat.js'
 import { emitDeltaBlocks } from './delta-blocks.js'
+import { resolveCatalog, catalogDisplayName, type ResolvedCatalog } from './catalog-resolver.js'
+import type { CatalogModel } from './model-catalog-store.js'
 
 /** 适配器依赖。 */
 export interface AccioAdapterOptions {
@@ -47,13 +49,21 @@ export interface AccioAdapterOptions {
  */
 const REMOTE_MODELS_TTL_MS = 300_000
 
+/** 兜底表条目 → 统一目录条目（兜底表无倍率字段，故不带 priceFactor）。 */
+function toCatalogModel(model: AccioFallbackModel): CatalogModel {
+  return {
+    id: model.id,
+    name: model.name,
+    ...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
+  }
+}
+
 export class AccioAdapter extends LlmAdapter {
   private readonly product: AccioProduct
   private readonly fetchImpl: typeof fetch
-  private remoteModels: Array<{ id: string; name: string; contextWindow: number; maxTokens?: number }> | undefined
+  /** 解析结果（三层回退），由 ensureRemoteModels 填充。 */
+  private catalog: ResolvedCatalog | undefined
   /** 上次成功拉取的时刻；配合 REMOTE_MODELS_TTL_MS 判断是否重拉。 */
-  private remoteModelsAt = 0
-  private loading: Promise<void> | undefined
 
   constructor(private readonly options: AccioAdapterOptions) {
     super()
@@ -66,23 +76,40 @@ export class AccioAdapter extends LlmAdapter {
     return { id, name: this.product.displayName }
   }
 
-  private async ensureRemoteModels(): Promise<void> {
-    // 带 TTL：成功即永久缓存会让上游改目录后永远跟不上（同 opencode 目录 TTL）。
-    if (this.remoteModels !== undefined && Date.now() - this.remoteModelsAt < REMOTE_MODELS_TTL_MS) return
-    if (this.loading !== undefined) return this.loading
-    this.loading = (async () => {
-      try {
+  /**
+   * 解析模型目录：**远端 → 落盘缓存 → 兜底表**（2026-10-26 统一改造）。
+   *
+   * 原先自己实现 TTL + `remoteModels ?? fallbackModels`，有两个缺陷：
+   * ①进程重启就丢（回落兜底表的过期数据）②凭据失效时同样回落兜底表，
+   * 而用户要求「登录失效/删除凭证显示上一次的模型列表」。现交给共享的
+   * `resolveCatalog`，本方法只负责「怎么拉、怎么解析」。
+   */
+  private async ensureRemoteModels(force = false): Promise<ResolvedCatalog> {
+    const resolved = await resolveCatalog({
+      provider: this.product.id,
+      fallback: this.product.fallbackModels.map(toCatalogModel),
+      force,
+      fetchRemote: async () => {
         const credential = await this.options.resolveCredential()
-        if (!isCredentialUsable(credential)) return
-        this.remoteModels = await fetchModels(this.fetchImpl, this.product, credential)
-        this.remoteModelsAt = Date.now()
-      } catch {
-        // 兜底表接管。
-      } finally {
-        this.loading = undefined
-      }
-    })()
-    return this.loading
+        if (!isCredentialUsable(credential)) return undefined
+        const rows = await fetchModels(this.fetchImpl, this.product, credential)
+        // ⚠️ Accio 上游目录**不含倍率字段**，故 priceFactor 留空
+        //（展示层会因此只显示名字，不编造 x1）。
+        return rows.map(row => ({
+          id: row.id,
+          name: row.name,
+          ...(row.contextWindow === undefined ? {} : { contextWindow: row.contextWindow }),
+        }))
+      },
+    })
+    this.catalog = resolved
+    return resolved
+  }
+
+  /** 定时刷新入口（供 catalog-refresher 调用）。 */
+  async refreshCatalog(): Promise<boolean> {
+    const resolved = await this.ensureRemoteModels(true)
+    return resolved.source === 'remote'
   }
 
   async listModels(_provider: string): Promise<readonly LlmModelInfo[]> {
@@ -90,8 +117,8 @@ export class AccioAdapter extends LlmAdapter {
       && !await providerCatalogVisible(this.options.accountPool, this.product.id)) {
       return []
     }
-    await this.ensureRemoteModels()
-    const source = this.remoteModels ?? this.product.fallbackModels
+    const resolved = await this.ensureRemoteModels()
+    const source = resolved.models
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id)
     const listed = disabled === undefined || disabled.size === 0
       ? source
@@ -106,18 +133,20 @@ export class AccioAdapter extends LlmAdapter {
 
   /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数显示「—」。 */
   listAllModels(): readonly { id: string; name: string }[] {
-    const source = this.remoteModels ?? this.product.fallbackModels
-    return source.map((model) => ({ id: model.id, name: model.name }))
+    // 同步契约：只读**已缓存**的解析结果；未预热时用兜底表。
+    const source = this.catalog?.models ?? this.product.fallbackModels.map(toCatalogModel)
+    // 展示名带倍率（无倍率则只有名字，见 catalogDisplayName）。
+    return source.map((model) => ({ id: model.id, name: catalogDisplayName(model) }))
   }
 
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
-    await this.ensureRemoteModels()
-    const source = this.remoteModels ?? this.product.fallbackModels
-    const entry = source.find((candidate) => candidate.id === model)
+    const catalog = await this.ensureRemoteModels()
+    const entry = catalog.models.find((candidate) => candidate.id === model)
     const resolved: LlmResolvedModelInfo = {
       provider,
       id: model,
-      name: entry?.name ?? model,
+      // 展示名带倍率（composer / /model 弹窗读它），与选择器口径一致。
+      name: entry === undefined ? model : catalogDisplayName(entry),
       inputModalities: ['text'],
     }
     if (entry?.contextWindow !== undefined) resolved.context = { contextWindow: entry.contextWindow }
