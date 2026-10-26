@@ -82,6 +82,9 @@ const suites = [
   ['retry-safety', 'retry-safety-test.mjs', []],
   ['usage-sanitize', 'usage-sanitize-test.mjs', []],
   ['channel-usage', 'channel-usage-test.mjs', []],
+  // 看板「今日」必须回读落盘日聚合：锁住「DSH 重启后两张表变暂无数据」
+  // （2026-10-26 用户报障）。渲染真实 client.js 的 LedgerPage，不靠重启真实宿主。
+  ['dashboard-today-history', 'dashboard-today-history-test.mjs', []],
   ['speed-stat', 'speed-stat-test.mjs', []],
   ['picker', 'picker-test.mjs', []],
   ['tui', 'tui-test.mjs', []],

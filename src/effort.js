@@ -206,8 +206,8 @@ export function eacDefaultLevel(model) {
 }
 
 /**
- * The request-body patch a co-paid-lane level turns into, or null when the
- * model declares no thinking menu at all.
+ * The request-body patch a declared thinking-menu level turns into, or null
+ * when the model declares no thinking menu at all.
  *
  * @param {string|undefined} level - the effort id the harness selected
  * @param {object} model - catalog entry
@@ -252,9 +252,9 @@ export function hasDeclaredEffortMenu(model) {
 /**
  * The effort id the harness should treat as this model's default.
  *
- * The free lane's ladder always has `balanced`; the co-paid lane's menu is
- * the model's own declaration, whose default is not `balanced` — reporting the
- * free lane's id for a sealed model made the harness reject the whole roster
+ * The free lane's ladder always has `balanced`; a model that declares its own
+ * menu has a default that need not be `balanced` — reporting the free lane's id
+ * for such a model made the harness reject the whole roster
  * ("adapter returned an unknown default reasoning effort").
  */
 export function defaultEffortFor(model) {

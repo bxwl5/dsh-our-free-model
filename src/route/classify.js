@@ -151,8 +151,8 @@ const ERROR_RULES = Object.freeze([
  * provider codes FCC recognizes. A caller that already classified the failure
  * (`UpstreamError.code`) is more specific than the raw status: the project
  * separates a WAF's 403 from a credential 403 (`CLIENT_ERROR` vs
- * `INVALID_CREDENTIAL`), a region refusal from auth (`REGION_BLOCKED`), and the
- * co-paid lane's per-user gate from both (`AUTHORIZATION_REQUIRED`). Flattening
+ * `INVALID_CREDENTIAL`), a region refusal from auth (`REGION_BLOCKED`), and a
+ * per-user authorization gate from both (`AUTHORIZATION_REQUIRED`). Flattening
  * those back onto the status rules would re-merge exactly what http.js took
  * care to distinguish, and would bench accounts for a front-proxy refusal.
  *

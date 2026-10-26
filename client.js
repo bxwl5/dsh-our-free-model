@@ -436,7 +436,7 @@ window.__ModuleLoader__.load({
         'routing.emptyHint': '一条链就是一个虚拟模型：在模型选择器里选它，请求按顺序尝试链上的每个真实模型。用来兜住某个车道临时不可用的时段。',
         'routing.newChain': '新建链路',
         'routing.name': '名称',
-        'routing.namePlaceholder': '例如：先免费后协付',
+        'routing.namePlaceholder': '例如：主力线路',
         'routing.strategy': '策略',
         'routing.strategy.fallback': '顺序降级',
         'routing.strategy.roundRobin': '轮询',
@@ -880,7 +880,7 @@ window.__ModuleLoader__.load({
         'routing.emptyHint': 'A chain is a virtual model: pick it in the model picker and the request tries each real model on the chain in order. Use one to cover the hours when a lane is down.',
         'routing.newChain': 'New chain',
         'routing.name': 'Name',
-        'routing.namePlaceholder': 'e.g. free first, co-paid second',
+        'routing.namePlaceholder': 'e.g. primary lane',
         'routing.strategy': 'Strategy',
         'routing.strategy.fallback': 'Fallback',
         'routing.strategy.roundRobin': 'Round-robin',
@@ -2236,9 +2236,9 @@ window.__ModuleLoader__.load({
 
     function Roster(props) {
       const { summary, t, onBench, benches = {}, onApply, busy } = props
-      // shows the co-paid entries, the free page everything else. Filtering
-      // here (rather than in each page) keeps one definition of what a route
-      // group means.
+      // shows the region-limited entries, the free page everything else.
+      // Filtering here (rather than in each page) keeps one definition of what
+      // a route group means.
       const roster = summary.catalog
       // Featured rows lead their group: the pinned flag rides the catalog row, so
       // the order is the same on every page, and a row that is not featured keeps
@@ -2271,16 +2271,12 @@ window.__ModuleLoader__.load({
     }
 
     // ── dashboard ─────────────────────────────────────────────────────────────
-    // ── pool panel (co-paid lane capacity & live pressure) ────────────────────
-    // Numbers come from the gateway through the plugin backend (/pool), which
-    // is the only place the sealed gateway URL exists. All of them are real:
-    // capacity is the operator's actual provisioning rule (stars × 1.5, or a
-    // configured count), and the load verdict — 畅通 / 繁忙 / 过载 — is computed
-    // by the gateway process itself from its in-flight streams and event-loop
-    // saturation, so the panel and the server can never disagree about the
-    // color. The panel renders nothing at all when the host has no lane or the
-    // gateway is dark — a gauge that lies would be worse than no gauge.
-    const POOL_REPO_URL = 'https://github.com/Ebony-Vinyl/dsh-our-free-model'
+    // ── free-lane tank (how much of the roster is reachable) ──────────────────
+    // The tank is a *pure visual*: it renders whatever percentage the caller
+    // computes and assigns no meaning of its own. The free page feeds it the
+    // share of catalog models currently available (see FreePage), so the water
+    // level and the counters beside it are the same number. It renders nothing
+    // when the share is unknown — a gauge that lies is worse than no gauge.
     const FISH_PATH = 'M1 7c2.5-3.5 7-5 11-3.2L18.5 1v12L12 10.2C8 12 3.5 10.5 1 7zm16.4 0l5.1-3.4v6.8L17.4 7zM8.4 5.6a1 1 0 11-2 0 1 1 0 012 0z'
 
     /**
@@ -3596,9 +3592,17 @@ window.__ModuleLoader__.load({
       return [...map.values()]
     }
 
+    /**
+     * 台账的「今天」日键（`YYYY-MM-DD`，**UTC+8**）。
+     *
+     * ⚠️ 必须按 UTC+8 用算术换算（+8h 后取 UTC 日期），与落盘日聚合的日键
+     * （`token-ledger.ts` 的 `utc8DayKey`）**同一口径**。早先这里用本机时区
+     * 的 `getFullYear/getMonth/getDate`：机器时区不是 UTC+8 时会取到「昨天」
+     * 或「明天」的键，日聚合里就永远找不到今天那一格 —— 表格静默空掉。
+     */
     function todayKey() {
-      const now = new Date()
-      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+      const shifted = new Date(Date.now() + 8 * 60 * 60 * 1000)
+      return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(shifted.getUTCDate()).padStart(2, '0')}`
     }
 
     const fmtInt = value => Number.isFinite(value) ? value.toLocaleString() : '—'
@@ -3652,23 +3656,31 @@ window.__ModuleLoader__.load({
       const ledger = useLedger(props)
       const [scope, setScope] = useState('today')
       const loaded = ledger.status === 'ready'
-      // 今日 = the pack's live snapshot (its in-memory day tree); 全部 = the
-      // persisted day aggregation, merged back into one tree. The grand
-      // cumulative number always reads the history total — even on 今日 —
-      // because "累计" that resets at midnight is a lie.
+      // 「今日」的数据源必须与「全部历史」同源 —— 日聚合表里今天的那个桶。
+      // 原先读 `snapshot.channels`（**进程内内存环形缓冲的聚合树**，重启即空），
+      // 于是 DSH 一重启，「各账号用量透视」与「模型性能指标与用量一览」两张表
+      // 就整块变成「暂无数据」，而日聚合里当天数据明明还在盘上（2026-10-26
+      // 用户报障）。
+      //
+      // ⚠️ 日聚合**不是**「只到上次落盘为止」：`FileLedgerStore.append()` 先
+      // `mergeDayEntry` 进内存表再排防抖落盘，而 `load()` 返回的就是那张内存表
+      // （见 `token-ledger-store.ts` 的接口注释「纯内存读，不碰磁盘」）。所以
+      // 历史视图与本进程的内存快照**同样新**，且额外带上启动时从盘上灌进来的
+      // 历史 —— 没有「今天最新几笔读不到」的代价。
+      //
+      // 回落 `snapshot` 只服务一种情况：日聚合后端没挂上（headless / 无 home），
+      // 那时 `readTokenLedgerDayMap()` 恒为空表，内存快照是唯一的数据源。
+      const today = todayKey()
+      const todayDay = (ledger.history ?? []).find(day => day.day === today)
       const channels = scope === 'today'
-        ? (ledger.snapshot?.channels ?? [])
+        ? (todayDay !== undefined ? todayDay.channels ?? [] : ledger.snapshot?.channels ?? [])
         : mergedHistoryChannels(ledger.history)
-      // 「今日」必须读**日聚合表**（`history` 里今天的那个桶），不能读
-      // `snapshot.totals` —— 后者由内存环形缓冲（`TOKEN_LEDGER_LIMIT = 500` 条）
-      // 现算，请求一多就把最旧的挤掉，今日数字会越用越小（2026-10-25 实测：
-      // 1247 个请求只剩 500 条在算，少了 60%）。日聚合是落盘的权威累计。
-      const todayKeyForTotals = (() => {
-        const now = new Date(Date.now() + 8 * 60 * 60 * 1000) // UTC+8，与台账日键一致
-        return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`
-      })()
+      // 合计同理：日聚合是权威累计，不能读 `snapshot.totals` —— 后者由内存
+      // 环形缓冲（`TOKEN_LEDGER_LIMIT = 500` 条）现算，请求一多就把最旧的挤掉，
+      // 今日数字会越用越小（2026-10-25 实测：1247 个请求只剩 500 条在算，少了
+      // 60%），且重启后直接归零。
       const totals = scope === 'today'
-        ? mergeLedgerRows([(ledger.history ?? []).find(day => day.day === todayKeyForTotals)?.totals ?? ledger.snapshot?.totals ?? {}])
+        ? mergeLedgerRows([todayDay?.totals ?? ledger.snapshot?.totals ?? {}])
         : mergeLedgerRows((ledger.history ?? []).map(day => day.totals ?? {}))
       const cumulative = ledger.totals ?? ledger.snapshot?.totals ?? {}
       const accounts = ledgerAccountRows(channels)

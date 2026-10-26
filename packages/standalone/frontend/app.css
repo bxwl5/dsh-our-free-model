@@ -272,7 +272,7 @@ main { flex: 1; min-width: 0; }
 .ofm_root .ofm_hero { margin-top: 20px; }
 .ofm_root .ofm_row { flex-wrap: wrap; gap: 10px; margin: 12px 0; }
 .ofm_root .ofm_row label { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.ofm_root .ofm_sub, .ofm_root .ofm_note { font-size: 12px; }
+.ofm_root .ofm_note { font-size: 12px; }
 .ofm_root .ofm_btn { border-radius: 6px; font-size: 12px; transition: all 200ms var(--ease-out-expo); }
 .ofm_root .ofm_btn:active { transform: scale(0.97); }
 .ofm_root table { font-size: 12px; }
@@ -1289,7 +1289,6 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f2ede4; borde
 [data-theme="dark"] .ofm_cell.l4 { background: #00d0c0; }
 [data-theme="dark"] .ofm_scale { color: var(--dsw-alias-label-tertiary); }
 [data-theme="dark"] .ofm_skel::after { background: linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, 0.045) 50%, transparent 80%); }
-[data-theme="dark"] .ofm_prog i { background: var(--green); box-shadow: 0 0 6px rgba(0, 208, 192, 0.15); }
 
 [data-theme="dark"] .ofm_switch i { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.07); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2); transition: background 250ms cubic-bezier(.32,.72,0,1); }
 [data-theme="dark"] .ofm_switch i::after { background: var(--dsw-alias-label-secondary); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1); transition: transform 250ms cubic-bezier(.32,.72,0,1); }
@@ -1306,27 +1305,16 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f2ede4; borde
 [data-theme="dark"] .ofm_toast.err, [data-theme="dark"] .ofm_toast.error { border-color: rgba(227, 106, 106, 0.35); }
 [data-theme="dark"] .ofm_toast.ok, [data-theme="dark"] .ofm_toast.success { border-color: rgba(62, 207, 160, 0.3); }
 [data-theme="dark"] .ofm_modal { background: #101119; border-color: rgba(255, 255, 255, 0.07); border-radius: 15px; box-shadow: 0 24px 64px -16px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.04); }
-[data-theme="dark"] .ofm_ann { background: #101119; border-color: rgba(255, 255, 255, 0.07); border-radius: 15px; }
-[data-theme="dark"] .ofm_annhead { background: rgba(255, 255, 255, 0.02); border-bottom-color: rgba(255, 255, 255, 0.045); }
 [data-theme="dark"] .ofm_scrim { background: rgba(0, 0, 0, 0.55); }
 [data-theme="dark"] .ofm_glass { background: rgba(19, 22, 29, 0.92); border-color: rgba(255, 255, 255, 0.07); }
-[data-theme="dark"] .ofm_newsitem { background: #101119; border-color: rgba(255, 255, 255, 0.07); }
-[data-theme="dark"] .ofm_newsitem.unread { border-color: rgba(0, 208, 192, 0.18); }
 [data-theme="dark"] .ofm_stat { background: #101119; border-color: rgba(255, 255, 255, 0.07); }
-[data-theme="dark"] .ofm_step { border-color: rgba(255, 255, 255, 0.07); }
-[data-theme="dark"] .ofm_step[data-on="true"] { border-color: rgba(0, 208, 192, 0.18); }
 [data-theme="dark"] .ofm_poolbadge { border-color: rgba(255, 255, 255, 0.07); }
-[data-theme="dark"] .ofm_level.urgent { border-color: rgba(227, 106, 106, 0.28); }
 [data-theme="dark"] .ofm_tank { border-color: rgba(255, 255, 255, 0.07); }
 [data-theme="dark"] .ofm_tankglass { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), inset 0 16px 30px rgba(255, 255, 255, 0.04), inset 0 -10px 22px rgba(0, 0, 0, 0.08); }
 [data-theme="dark"] .ofm_tankdeep { background: linear-gradient(180deg, transparent, rgba(3, 4, 6, 0.45)); }
 [data-theme="dark"] .ofm_tankshine { background: linear-gradient(196deg, rgba(255, 255, 255, 0.05) 0%, transparent 28%); }
 [data-theme="dark"] .ofm_bubble { background: rgba(255, 255, 255, 0.3); }
 [data-theme="dark"] .ofm_fish svg { fill: rgba(255, 255, 255, 0.6); }
-[data-theme="dark"] .ofm_starbtn { border-radius: 7px !important; background: rgba(0, 208, 192, 0.07) !important; border-color: rgba(0, 208, 192, 0.28) !important; color: #9db6ff !important; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05) !important; }
-[data-theme="dark"] .ofm_starbtn:hover { background: #00d0c0 !important; color: #0a0f1e !important; box-shadow: 0 0 14px rgba(0, 208, 192, 0.15) !important; }
-[data-theme="dark"] .ofm_starbtn::after { display: none !important; }
-[data-theme="dark"] .ofm_newsdot { background: var(--green); box-shadow: 0 0 5px rgba(0, 208, 192, 0.28); }
 [data-theme="dark"] .ofm_pooldot { background: var(--dsw-alias-state-success-primary); }
 [data-theme="dark"] .ofm_poolbadge.busy .ofm_pooldot { background: #f2a65a; }
 [data-theme="dark"] .ofm_poolbadge.over .ofm_pooldot { background: var(--dsw-alias-state-error-primary); }
@@ -2085,9 +2073,7 @@ input::placeholder, textarea::placeholder { color: #757064; opacity: 1; }
   border-color: rgba(255, 255, 255, 0.065);
 }
 [data-theme="dark"] .ofm_modal,
-[data-theme="dark"] .ofm_ann,
 [data-theme="dark"] .ofm_toast,
-[data-theme="dark"] .ofm_newsitem,
 [data-theme="dark"] .ofm_stat {
   background: #11161f;
   border-color: rgba(255, 255, 255, 0.075);
@@ -4179,8 +4165,6 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
 [data-theme="dark"] .ui-switch.on { background: rgba(0, 208, 192, 0.55) !important; border-color: rgba(0, 208, 192, 0.75) !important; }
 [data-theme="dark"] .settings-toggle:checked { background: rgba(0, 208, 192, 0.55) !important; border-color: rgba(0, 208, 192, 0.75) !important; }
 [data-theme="dark"] .settings-toggle:checked:hover { background: rgba(0, 208, 192, 0.72) !important; }
-/* 插件面板里唯一一处硬编码蓝（.ofm_starbtn）顺手归位；若归铸器师管，我一行撤回 */
-[data-theme="dark"] .ofm_starbtn { color: #7ff5ea !important; }
 
 /* ---------- 14. 降级：prefers-reduced-motion（新增选择器） ---------- */
 @media (prefers-reduced-motion: reduce) {
@@ -4977,34 +4961,28 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
 }
 
 /* ==== V5 NIGHT · 第三轮深度打磨 END ==== */
-/* ==== V5 NIGHT · 第四轮深度打磨（EAC 协付渠道 + 登录页残留） ==== */
+/* ==== V5 NIGHT · 第四轮深度打磨（切角语言 + 登录页） ==== */
 
-/* 1. EAC 状态徽章（ofm_pill）：999px 药丸 → 切角 4px */
+/* 1. 状态徽章（ofm_pill）：999px 药丸 → 切角 4px */
 [data-theme="dark"] .ofm_pill {
   border-radius: 0 !important;
   clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px) !important;
 }
 
-/* 2. EAC 状态点（ofm_dot）：50% 圆形 → 方形 */
+/* 2. 状态点（ofm_dot）：50% 圆形 → 方形 */
 [data-theme="dark"] .ofm_dot {
   border-radius: 0 !important;
   width: 5px !important;
   height: 5px !important;
 }
 
-/* 3. EAC "点个 Star" 按钮（ofm_starbtn）：7px 圆角 → 切角 8px */
-[data-theme="dark"] .ofm_starbtn {
-  border-radius: 0 !important;
-  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px) !important;
-}
-
-/* 4. EAC 信息卡（ofm_hero）：12px/20px 圆角 → 对角切 18px */
+/* 3. 信息卡（ofm_hero）：12px/20px 圆角 → 对角切 18px */
 [data-theme="dark"] .ofm_hero {
   border-radius: 0 !important;
   clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px) !important;
 }
 
-/* 5. 登录页代码块（code）：6px 圆角 → 切角 4px */
+/* 4. 登录页代码块（code）：6px 圆角 → 切角 4px */
 [data-theme="dark"] code {
   border-radius: 0 !important;
   clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px) !important;

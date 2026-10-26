@@ -30,11 +30,10 @@ export const CODE = {
   region: 'REGION_BLOCKED',
   quota: 'RATE_LIMIT',
   credential: 'INVALID_CREDENTIAL',
-  // The co-paid lane's per-user gate (GitHub login + star): the credential
-  // store is fine and the endpoint is reachable — this install just has not
-  // been authorized yet. Its own code keeps it out of INVALID_CREDENTIAL, so
-  // a refusal neither wipes the cached roster nor sends anyone chasing a
-  // re-install; the settings page answers it with a login prompt instead.
+  // A per-user authorization gate at the upstream: the credential store is
+  // fine and the endpoint is reachable — this install just has not been
+  // authorized yet. It keeps itself out of INVALID_CREDENTIAL, so a refusal
+  // neither wipes the cached roster nor sends anyone chasing a re-install.
   authorization: 'AUTHORIZATION_REQUIRED',
   // The free lane's client gate: the gateway judged *this client* and refused
   // the whole lane (403 FreeTierError). Not a credential, not a model, not
@@ -92,7 +91,7 @@ export function classifyFailure(status, payload, retryAfterMs) {
   const error = payload?.error ?? payload ?? {}
   const type = typeof error.type === 'string' ? error.type : ''
   const raw = typeof error.message === 'string' ? error.message : `upstream HTTP ${status}`
-  // A front proxy (the free lane's CDN, the co-paid lane's WAF) answers hard
+  // A front proxy (the free lane's CDN or its WAF) answers hard
   // failures with a whole HTML error page. The status alone misfiles it — a
   // WAF's 403 is not a bad credential, its 413 is not a request the user can
   // fix by re-sending — and the markup buries the one useful fact. Callers may
@@ -124,12 +123,12 @@ export function classifyFailure(status, payload, retryAfterMs) {
       'the gateway rejected the request signature — the request body was modified in transit; if a local proxy plugin (e.g. billion-context) is installed, disable it for this lane or enable its passthrough for signed requests',
       CODE.transport, { status, type, signatureRejected: true })
   }
-  // The co-paid lane's per-user gate speaks before any credential is judged:
-  // the gateway refuses a turn because this install has not completed GitHub
-  // login + star (or the star is gone), not because the lane's own material
-  // is wrong. Reading it as INVALID_CREDENTIAL would wipe the cached roster
-  // and send users chasing a re-install; it is a user-actionable state, so it
-  // gets its own code and the settings page answers with a login prompt.
+  // A per-user gate at the upstream speaks before any credential is judged:
+  // the gateway refuses a turn because this install has not completed the
+  // upstream's own authorization step, not because the lane's material is
+  // wrong. Reading it as INVALID_CREDENTIAL would wipe the cached roster and
+  // send users chasing a re-install; it is a user-actionable state, so it
+  // gets its own code.
   if (type === 'AuthorizationRequired' || /需要 GitHub 授权|GitHub 授权无效/.test(raw)) {
     return new UpstreamError(message, CODE.authorization, { status, type, reason: typeof error.reason === 'string' ? error.reason : '' })
   }
@@ -302,7 +301,7 @@ async function headRead(reader, signal, deadline) {
 
 /**
  * Turn a head that was already read, plus the reader that follows it, back into
- * one byte stream. Shared with the co-paid lane's poster (`src/eac.js`).
+ * one byte stream. Used by the free lane's retry/continuation path.
  */
 export function replayStream(head) {
   const stream = (async function* () {
@@ -412,7 +411,7 @@ export async function postStreamed({ path, body, session, attributionUserAgent, 
 
   const text = head.done ? head.text : await readRemainder(head, signal)
   if (shape !== 'json') {
-    // Same front-proxy trap as the co-paid lane's poster (issue #63): a 200
+    // Front-proxy trap (issue #63): a 200
     // body of markup is a WAF/CDN page, and replaying the identical request
     // draws it again — one readable line, outside the retryable set.
     if (/^\s*<(!doctype|html[\s>])/i.test(text)) {

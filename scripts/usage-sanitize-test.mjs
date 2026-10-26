@@ -108,7 +108,6 @@ const kiloEntries = buildKiloCatalog([
   { id: 'openrouter/free', isFree: true, context_length: window },
 ])
 const freeEntry = { ...buildCatalog(['mimo-v2.6-flash-free'])[0], contextWindow: window }
-const sealedEntry = { ...freeEntry, id: 'eac:fixture', channel: 'eac', wire: 'chat' }
 
 async function drive(entry, bodies, { abort = false } = {}) {
   responses = [...bodies]
@@ -198,7 +197,6 @@ try {
   })
   for (const [name, entry] of [
     ['other Kilo model', kiloEntries[1]], ['free lane', freeEntry],
-    ['EAC lane', sealedEntry],
   ]) {
     for (const error of [false, true]) {
       await test(`non-target usage preserved: ${name}, ${error ? 'failure' : 'success'}`, async () => {

@@ -85,7 +85,7 @@ try {
   while (summaryReads === previousReads && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 250))
   assert.ok(summaryReads > previousReads, '15 秒自动轮询应执行')
   assert.equal(await page.getByRole('tab', { name: '请求日志', exact: true }).getAttribute('aria-selected'), 'true', '刷新不得重置渠道子页')
-  await nav('EAC 协付渠道'); await page.getByRole('heading', { name: 'EAC 协付渠道', exact: true }).waitFor()
+  await nav('免费账号渠道'); await page.getByLabel('搜索渠道').waitFor()
   await nav('API 接入')
   const imageDir = process.env.OFM_UI_SCREENSHOT_DIR
   if (imageDir) fs.mkdirSync(imageDir, { recursive: true })
