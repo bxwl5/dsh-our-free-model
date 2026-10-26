@@ -31726,7 +31726,23 @@ var init_autoclaw_product = __esm({
       //（原来只有 1 条 `autoglm-air` 实验模型，用来验证「能否显示」；现已全量覆盖）。
       { id: "zai_auto", name: "Auto", contextWindow: 1048576 },
       { id: "zai_auto-fast", name: "Auto-Fast", contextWindow: 1048576 },
-      { id: "zaicoding_glm-5.3", name: "GLM-5.3", contextWindow: 1048576 }
+      { id: "zaicoding_glm-5.3", name: "GLM-5.3", contextWindow: 1048576 },
+      /**
+       * ⚠️ **目录接口不下发这一条，但它是真实可用的第 4 个模型**
+       *（2026-10-26 用户对照官方客户端发现「客户端有 4 个，插件只有 3 个」）。
+       *
+       * 依据与实测：
+       * - 上游静态表 `providers/autoclaw/models.rs` 的 `MODELS` 明确有
+       *   `glm-5.3-flash` → route `zai_glm-5.3-flash`；
+       * - 真实调用实测：`glm-5.3-flash` / `zai_glm-5.3-flash` / `GLM-5.3-Flash`
+       *   三种写法都能正常返回内容；
+       * - 目录接口本身**时有时无**（同一天实测过一次返回 4 个含它、多次只返回 3 个），
+       *   说明它不在稳定下发集合里 —— 但模型确实存在且可调用。
+       *
+       * 故写进兜底表：目录拉到 3 个时它仍可选（`ensureRemoteModels` 只在远端
+       * **非空**时替换兜底，这里要保证它不被远端覆盖掉，见 adapter 的合并逻辑）。
+       */
+      { id: "zai_glm-5.3-flash", name: "GLM-5.3-Flash", contextWindow: 1048576 }
     ];
     AUTOCLAW = {
       id: "autoclaw",
@@ -47937,6 +47953,18 @@ function autoClawCatalogHeaders(product, credential, timestamp = Math.floor(Date
     "X-Auth-Appid": AUTOCLAW_SMS_APP_ID,
     "X-Auth-TimeStamp": String(timestamp),
     "X-Auth-Sign": autoclawSign(AUTOCLAW_SMS_APP_ID, timestamp, AUTOCLAW_SMS_APP_KEY),
+    /**
+     * ⚠️ **版本门控**：目录下发的模型集合按它分档（2026-10-26 实测）。
+     *
+     * 同一账号、同一凭据，只改这一个头：
+     * - `1.18.5` → **4 个**（含 `zai_glm-5.3-flash`）
+     * - `1.12.1` / `1.12.0` / `1.13.0` / `1.6.5` → 3 个（缺 flash）
+     *
+     * 这正是「官方客户端显示 4 个、插件只有 3 个」的直接原因 —— 此前本函数
+     * **完全没发这个头**，上游按最低档下发。上游注释也写明它是客户端版本门控
+     * （`CLIENT_VERSION`：「模型目录等 userapi 接口按它决定下发哪一档清单」）。
+     */
+    "X-Version": AUTOCLAW_DESKTOP_VERSION,
     Origin: product.apiBase,
     Referer: `${product.apiBase}/`
   };
@@ -48002,7 +48030,9 @@ var AutoClawAdapter = class extends LlmAdapter12 {
         if (!response.ok) return;
         const rows = parseModelConfig(await response.json().catch(() => void 0));
         if (rows.length > 0) {
-          this.remoteModels = rows;
+          const seen = new Set(rows.map((row) => row.id));
+          const missing = this.product.fallbackModels.filter((model) => !seen.has(model.id));
+          this.remoteModels = [...rows, ...missing.map((model) => ({ ...model }))];
           this.remoteModelsAt = Date.now();
         }
       } catch {

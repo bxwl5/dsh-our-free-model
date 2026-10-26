@@ -62,6 +62,22 @@ const AUTOCLAW_FALLBACK_MODELS: readonly AutoClawFallbackModel[] = [
   { id: 'zai_auto', name: 'Auto', contextWindow: 1048576 },
   { id: 'zai_auto-fast', name: 'Auto-Fast', contextWindow: 1048576 },
   { id: 'zaicoding_glm-5.3', name: 'GLM-5.3', contextWindow: 1048576 },
+  /**
+   * ⚠️ **目录接口不下发这一条，但它是真实可用的第 4 个模型**
+   *（2026-10-26 用户对照官方客户端发现「客户端有 4 个，插件只有 3 个」）。
+   *
+   * 依据与实测：
+   * - 上游静态表 `providers/autoclaw/models.rs` 的 `MODELS` 明确有
+   *   `glm-5.3-flash` → route `zai_glm-5.3-flash`；
+   * - 真实调用实测：`glm-5.3-flash` / `zai_glm-5.3-flash` / `GLM-5.3-Flash`
+   *   三种写法都能正常返回内容；
+   * - 目录接口本身**时有时无**（同一天实测过一次返回 4 个含它、多次只返回 3 个），
+   *   说明它不在稳定下发集合里 —— 但模型确实存在且可调用。
+   *
+   * 故写进兜底表：目录拉到 3 个时它仍可选（`ensureRemoteModels` 只在远端
+   * **非空**时替换兜底，这里要保证它不被远端覆盖掉，见 adapter 的合并逻辑）。
+   */
+  { id: 'zai_glm-5.3-flash', name: 'GLM-5.3-Flash', contextWindow: 1048576 },
 ]
 
 /** 国内版。 */

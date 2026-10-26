@@ -117,6 +117,18 @@ export function autoClawCatalogHeaders(
     'X-Auth-Appid': AUTOCLAW_SMS_APP_ID,
     'X-Auth-TimeStamp': String(timestamp),
     'X-Auth-Sign': autoclawSign(AUTOCLAW_SMS_APP_ID, timestamp, AUTOCLAW_SMS_APP_KEY),
+    /**
+     * ⚠️ **版本门控**：目录下发的模型集合按它分档（2026-10-26 实测）。
+     *
+     * 同一账号、同一凭据，只改这一个头：
+     * - `1.18.5` → **4 个**（含 `zai_glm-5.3-flash`）
+     * - `1.12.1` / `1.12.0` / `1.13.0` / `1.6.5` → 3 个（缺 flash）
+     *
+     * 这正是「官方客户端显示 4 个、插件只有 3 个」的直接原因 —— 此前本函数
+     * **完全没发这个头**，上游按最低档下发。上游注释也写明它是客户端版本门控
+     * （`CLIENT_VERSION`：「模型目录等 userapi 接口按它决定下发哪一档清单」）。
+     */
+    'X-Version': AUTOCLAW_DESKTOP_VERSION,
     Origin: product.apiBase,
     Referer: `${product.apiBase}/`,
   }

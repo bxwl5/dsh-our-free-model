@@ -103,7 +103,19 @@ export class AutoClawAdapter extends LlmAdapter {
         })
         if (!response.ok) return
         const rows = parseModelConfig(await response.json().catch(() => undefined))
-        if (rows.length > 0) { this.remoteModels = rows; this.remoteModelsAt = Date.now() }
+        if (rows.length > 0) {
+          /**
+           * ⚠️ **并集**，不是替换：目录接口下发的集合**不完整**
+           *（2026-10-26 用户对照官方客户端发现「客户端 4 个、插件 3 个」）。
+           * 缺失的 `zai_glm-5.3-flash` 在上游静态表里存在且实测可调用，
+           * 只存在于兜底表 —— 直接 `= rows` 会把它吞掉。
+           * 远端优先（含其最新 contextWindow 等），兜底补齐缺的 id。
+           */
+          const seen = new Set(rows.map(row => row.id))
+          const missing = this.product.fallbackModels.filter(model => !seen.has(model.id))
+          this.remoteModels = [...rows, ...missing.map(model => ({ ...model }))]
+          this.remoteModelsAt = Date.now()
+        }
       } catch {
         // 兜底表接管。
       } finally {

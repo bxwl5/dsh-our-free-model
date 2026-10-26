@@ -611,3 +611,52 @@ export async function verifyKukuSseProtocol() {
 
   console.log('kuku-sse: 5 组断言通过（TEXT_BLOCK_DELTA / 结束事件 / 错误帧 / 忽略元数据 / sendmsg 形态）')
 }
+
+/**
+ * AutoClaw 目录并集回归（2026-10-26）。
+ *
+ * 上游目录接口下发的集合**不完整**：官方客户端有 4 个模型，目录只回 3 个，
+ * 缺 `zai_glm-5.3-flash`（它在上游静态表 models.rs 里存在且实测可调用）。
+ * 故 adapter 必须把远端与兜底表做**并集**，直接替换会吞掉第 4 个。
+ */
+export async function verifyAutoClawCatalogUnion() {
+  const http = await import('node:http')
+  const { fetch: realFetch } = await import('undici')
+  const { AutoClawAdapter } = await import('../vendor/channel-pack/src/autoclaw-adapter.ts')
+  const { AUTOCLAW } = await import('../vendor/channel-pack/src/autoclaw-product.ts')
+
+  // 上游目录只回 3 个（模拟真实下发集合）
+  const upstream = http.createServer((req, res) => {
+    const send = (body) => res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' }).end(JSON.stringify(body))
+    if (req.url.startsWith('/autoclaw-proxy/proxy/autoclaw-model-config')) {
+      send({ models: [
+        { id: 'zai_auto', name: 'Auto', contextWindow: 1048576 },
+        { id: 'zai_auto-fast', name: 'Auto-Fast', contextWindow: 1048576 },
+        { id: 'zaicoding_glm-5.3', name: 'GLM-5.3', contextWindow: 1048576 },
+      ] })
+      return
+    }
+    res.writeHead(404, { Connection: 'close' }).end('{}')
+  })
+  await new Promise(r => upstream.listen(0, '127.0.0.1', r))
+  const product = { ...AUTOCLAW, apiBase: `http://127.0.0.1:${upstream.address().port}` }
+  const adapter = new AutoClawAdapter({
+    product,
+    fetchImpl: realFetch,
+    resolveCredential: async () => ({
+      access_token: 'Bearer jwt-1234567890', refresh_token: 'r', expire_time: 0,
+      account_id: 'a', nickname: 'n', created_at: 0, device_id: 'd',
+    }),
+  })
+  try {
+    const models = await adapter.listModels('autoclaw')
+    const ids = models.map(m => m.id)
+    assert.equal(ids.length, 4, `应合并出 4 个模型（远端 3 + 兜底补齐 1），实得 ${ids.length}：${ids.join(',')}`)
+    assert.ok(ids.includes('zai_glm-5.3-flash'), '第 4 个模型 zai_glm-5.3-flash 必须保留（目录不下发但真实可用）')
+    assert.ok(ids.includes('zai_auto'), '远端模型也要在')
+    assert.equal(new Set(ids).size, ids.length, '不得有重复 id')
+    console.log('autoclaw-catalog-union: 3 组断言通过（并集 4 个 / 补齐第 4 个 / 无重复）')
+  } finally {
+    upstream.close()
+  }
+}
