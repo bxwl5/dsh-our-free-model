@@ -19,8 +19,8 @@
     },
     {
       "path": "client.js",
-      "size": 375250,
-      "sha256": "ba315a35027d94c4b0fe5f8ddf5d193e4c66e1d8585ee6b06a0a57f0a4324a92"
+      "size": 375313,
+      "sha256": "457dea09698f087b80edf1a3cfad4d316c0f068f35f66f7e4509b3b5483e84d1"
     },
     {
       "path": "cordis.patch.yml",
@@ -324,8 +324,8 @@
     },
     {
       "path": "vendor/channel-pack/pack.js",
-      "size": 3132766,
-      "sha256": "5e61dcea33cee966c6a56761f1673218b12582bcd59d3e7c24963fff4372ba27"
+      "size": 3138733,
+      "sha256": "d0a700392bbb6c186a93e2e94f084ff250efd9bae3814b832d5e90430bac3e8d"
     },
     {
       "path": "vendor/channel-pack/qoder-auth-wasm.wasm",
