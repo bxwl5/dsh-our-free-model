@@ -660,3 +660,67 @@ export async function verifyAutoClawCatalogUnion() {
     upstream.close()
   }
 }
+
+/**
+ * 自动签到的三处 P0 回归（2026-10-26 审计发现，均会静默失败）。
+ *
+ * 1) monkeycode：runCheckinWithCaptcha 收**单个 options 对象**，
+ *    写成 (fetcher, product, credential) 会抛 TypeError —— 只有状态预检
+ *    短路成 already-claimed 时才看不出来，于是「今天没签到时才炸」。
+ * 2) kuku：签到必须用**自愈后的** Cookie（STOKEN 会过期），
+ *    否则 taskComplete 回 errno:-6 未登录。
+ * 3) officeace/autoclaw：必须进 refreshTargets，否则定时器永不续期
+ *    （OfficeAce 的 STS 过期后所有请求 400）。
+ */
+export async function verifyCheckinP0Fixes() {
+  const fs = await import('node:fs')
+  const rpc = fs.readFileSync(new URL('../vendor/channel-pack/src/channel-pack-rpc.ts', import.meta.url), 'utf8')
+  const kukuAuth = fs.readFileSync(new URL('../vendor/channel-pack/src/kuku-auth.ts', import.meta.url), 'utf8')
+  const indexTs = fs.readFileSync(new URL('../vendor/channel-pack/src/index.ts', import.meta.url), 'utf8')
+
+  // 1) monkeycode：必须用对象参数调用
+  assert.match(
+    rpc,
+    /runMonkeyCodeCheckinWithCaptcha\(\s*\{\s*fetcher:/,
+    'monkeycode 签到必须用单个 options 对象调用（位置参数会抛 TypeError）',
+  )
+  assert.equal(
+    /runMonkeyCodeCheckinWithCaptcha\(codeartsFetcher,/.test(rpc),
+    false,
+    '不得再用位置参数调用',
+  )
+  assert.equal(
+    /result\.status\?\./.test(rpc),
+    false,
+    '返回体只有 {ok,checkedIn}，不得读 result.status（TS2339）',
+  )
+
+  // 2) kuku：签到前必须先换发 STOKEN
+  const claimBody = kukuAuth.slice(
+    kukuAuth.indexOf('export async function claimKukuDailyCheckin'),
+    kukuAuth.indexOf('export async function claimKukuDailyCheckin') + 3000,
+  )
+  assert.match(
+    claimBody,
+    /exchangeKukuStokenLive/,
+    'kuku 签到必须先换发自愈后的 STOKEN（否则 errno:-6 未登录）',
+  )
+  assert.match(
+    claimBody,
+    /kukuHeaders\(product, working\)/,
+    'kuku 签到请求要用换发后的凭据（working），不是原始 credential',
+  )
+
+  // 3) officeace / autoclaw 必须进续期表
+  const targets = indexTs.slice(indexTs.indexOf('const refreshTargets'), indexTs.indexOf('async function refreshAllCredentials'))
+  assert.match(targets, /\['officeace',/, 'officeace 必须进 refreshTargets（否则 STS 过期永不续期）')
+  assert.match(targets, /\['autoclaw',/, 'autoclaw 必须进 refreshTargets')
+  // 无 expires_at 时不能跳过续期（OfficeAce 实测无该字段）
+  assert.match(
+    indexTs,
+    /expiresAt !== undefined && !shouldRefreshNow\(expiresAt\)\) continue/,
+    '无 expires_at 的凭据必须照常续期，不能跳过',
+  )
+
+  console.log('checkin-p0: 7 组断言通过（monkeycode 对象参数 / 禁 result.status / kuku 自愈 / officeace+autoclaw 进续期表 / 无 expires_at 兜底）')
+}

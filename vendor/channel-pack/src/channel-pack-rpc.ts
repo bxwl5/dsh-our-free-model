@@ -3377,17 +3377,18 @@ function registerChannelPackEndpoints(
               // `captcha_token`（官方 frontend 的 DomainCheckInReq），不带则回
               // `code:10701 兑换验证码失败`，这就是「签到实际失效」的根因。
               // POW 可编程求解（challenge→solve→redeem），无需浏览器。
-              const result = await runMonkeyCodeCheckinWithCaptcha(codeartsFetcher, MONKEYCODE, credential)
+              // ⚠️ 签名是**单个 options 对象**，不是位置参数（2026-10-26 审计发现：
+              // 写成 (fetcher, product, credential) 会抛 TypeError，只有状态预检
+              // 短路成 already-claimed 时才看不出来）。
+              const result = await runMonkeyCodeCheckinWithCaptcha({
+                fetcher: codeartsFetcher,
+                product: MONKEYCODE,
+                credential,
+              })
               if (!result.ok) return { kind: 'failed', code: 0, message: result.reason ?? '签到失败' }
-              // `reward` 缺失时如实报 0 并在 summary 里体现为「已领取但积分为 0」，
-              // 不编造「每次 100 积分」（该数字未获实测支持）。
-              return {
-                kind: 'claimed',
-                credit: result.status?.reward ?? 0,
-                streakDays: result.status?.streak ?? 0,
-                // 上游不区分「连续奖励日」，如实置 false（不编造加成）。
-                isStreakDay: false,
-              }
+              // 返回体只有 { ok, checkedIn }（没有 reward/streak，别编造）。
+              // 上游按天幂等：本次调用能成功就说明今天已处理（coversToday）。
+              return { kind: 'claimed', credit: 0, streakDays: 0, isStreakDay: false }
             },
             precheckStatus: false,
             warn: (msg) => ctx.logger?.warn?.(msg),

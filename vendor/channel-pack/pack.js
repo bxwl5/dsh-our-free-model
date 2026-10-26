@@ -30211,13 +30211,23 @@ async function fetchKukuCheckinTasks(fetcher, product, credential, signal) {
 }
 async function claimKukuDailyCheckin(fetcher, product, credential, signal) {
   if (!isCredentialUsable4(credential)) return { claimed: 0, message: "\u51ED\u636E\u4E0D\u53EF\u7528" };
+  let working = credential;
+  try {
+    const live = await exchangeKukuStokenLive(fetcher, product, credential, signal);
+    if (live !== void 0) {
+      const replaced = credential.access_token.split(";").map((part) => part.trim()).filter((part) => part !== "" && !part.startsWith("STOKEN="));
+      replaced.push(`STOKEN=${live}`);
+      working = { ...credential, access_token: replaced.join("; ") };
+    }
+  } catch {
+  }
   let total = 0;
   let succeeded = 0;
   for (const taskType of KUKU_CLAIMABLE_TASK_TYPES) {
     try {
       const response = await fetcher(`${product.apiBase}${KUKU_TASK_COMPLETE_PATH}?${KUKU_WEB_QUERY}`, {
         method: "POST",
-        headers: { ...kukuHeaders(product, credential), "Content-Type": "application/x-www-form-urlencoded" },
+        headers: { ...kukuHeaders(product, working), "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({ task_type: taskType }).toString(),
         ...signal === void 0 ? {} : { signal }
       });
@@ -33990,6 +34000,162 @@ var init_login = __esm({
 
 // vendor/channel-pack/src/index.ts
 import { credentialRef as credentialRef15 } from "@deepseek-ai/dsh-credentials";
+
+// vendor/channel-pack/src/refresh.ts
+var REFRESH_LEAD_MS = 36e5;
+var REFRESH_RETRY_MS = 6e5;
+var REFRESH_ABNORMAL_NETWORK_RETRY_MS = 6e4;
+function isAbnormalNetworkError(error) {
+  const message2 = error instanceof Error ? error.message : String(error);
+  return /fetch failed|ENOTFOUND|ECONNREFUSED|proxy|unresolved host|getaddrinfo/i.test(message2);
+}
+function isRefreshTokenExpired(error) {
+  if (!(error instanceof Error)) return false;
+  if (error.name === "RefreshTokenExpiredError") return true;
+  return /refresh[_ ]?token/i.test(error.message);
+}
+function computeFirstRefreshDelayMs(expiresAtMs, nowMs = Date.now()) {
+  if (!Number.isFinite(expiresAtMs)) return 0;
+  const leadTrigger = nowMs + REFRESH_LEAD_MS;
+  if (leadTrigger >= expiresAtMs) return 0;
+  const trigger = new Date(leadTrigger);
+  trigger.setSeconds(Math.floor(60 * Math.random()));
+  const delay2 = trigger.getTime() - nowMs;
+  return delay2 > 0 ? delay2 : 0;
+}
+var RefreshScheduler = class {
+  constructor(refresh, onError = () => {
+  }) {
+    this.refresh = refresh;
+    this.onError = onError;
+  }
+  refresh;
+  onError;
+  timer;
+  pending = false;
+  /** 调度代号：stop()/arm() 都会推进它，用于让在途 run() 放弃失败后的重试武装。 */
+  generation = 0;
+  /** 为在 `expiresAtMs` 过期的凭据安排下次刷新；`nowMs` 仅供测试注入。 */
+  arm(expiresAtMs, nowMs = Date.now()) {
+    this.generation++;
+    if (this.timer !== void 0) {
+      clearTimeout(this.timer);
+      this.timer = void 0;
+    }
+    const delay2 = computeFirstRefreshDelayMs(expiresAtMs, nowMs);
+    this.timer = setTimeout(() => {
+      void this.run();
+    }, delay2);
+    this.timer.unref?.();
+  }
+  /** 取消任何待处理的刷新（并让在途 run() 失败后不再重试）。 */
+  stop() {
+    this.generation++;
+    if (this.timer !== void 0) {
+      clearTimeout(this.timer);
+      this.timer = void 0;
+    }
+  }
+  /** 立即执行一次刷新（供启动时已处于到期窗口内的凭据使用）。 */
+  async refreshOnce() {
+    this.stop();
+    await this.run();
+  }
+  async run() {
+    if (this.pending) return;
+    this.pending = true;
+    const generation = this.generation;
+    try {
+      await this.refresh();
+    } catch (error) {
+      this.onError(error);
+      if (generation !== this.generation) {
+        return;
+      }
+      if (isRefreshTokenExpired(error)) {
+        return;
+      }
+      if (this.timer !== void 0) {
+        clearTimeout(this.timer);
+      }
+      const retry = isAbnormalNetworkError(error) ? REFRESH_ABNORMAL_NETWORK_RETRY_MS : REFRESH_RETRY_MS;
+      this.timer = setTimeout(() => {
+        void this.run();
+      }, retry);
+      this.timer.unref?.();
+    } finally {
+      this.pending = false;
+    }
+  }
+};
+
+// vendor/channel-pack/src/expiry-sync.ts
+var EXPIRY_TOLERANCE_MS = 1e3;
+function shouldRefreshNow(expiresAtMs, nowMs = Date.now()) {
+  if (expiresAtMs === void 0 || !Number.isFinite(expiresAtMs)) return true;
+  return expiresAtMs - nowMs <= REFRESH_LEAD_MS;
+}
+async function syncAccountExpiry(params) {
+  const { pool, provider, credential, accessors, accountId, current, tag: tag2 } = params;
+  if (pool === void 0) return;
+  try {
+    let id = accountId;
+    if (id === void 0 || id.length === 0) {
+      id = await pool.findAccountIdByCredential(provider, accessors.identityOf(credential));
+    }
+    if (id === void 0 || id.length === 0) return;
+    const expiresAt = accessors.expiresAtOf(credential);
+    const refreshable = accessors.refreshableOf?.(credential);
+    if (expiresAt === void 0 && refreshable === void 0) return;
+    const expiryChanged = expiresAt !== void 0 && (current?.expiresAt === void 0 || Math.abs(current.expiresAt - expiresAt) > EXPIRY_TOLERANCE_MS);
+    const refreshableChanged = refreshable !== void 0 && (current === void 0 || current.refreshable !== refreshable);
+    if (!expiryChanged && !refreshableChanged) return;
+    await pool.updateAccount(id, {
+      ...expiresAt === void 0 ? {} : { expiresAt },
+      ...refreshable === void 0 ? {} : { refreshable }
+    });
+  } catch (error) {
+    params.warn?.(
+      `${tag2} \u51ED\u636E\u5904\u7406\u6210\u529F\u4F46\u56DE\u5199\u8D26\u53F7\u6C60\u7684\u6709\u6548\u671F\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u4F7F\u7528\uFF09\uFF1A${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+async function refreshAccountWithReconcile(params) {
+  const { pool, provider, tag: tag2, accountId, credential, accessors, current, refresh, save } = params;
+  const expiresAt = accessors.expiresAtOf(credential);
+  if (!shouldRefreshNow(expiresAt)) {
+    await syncAccountExpiry({
+      pool,
+      provider,
+      credential,
+      accessors,
+      accountId,
+      current,
+      tag: tag2,
+      warn: params.warn
+    });
+    return false;
+  }
+  const refreshed = await refresh(credential);
+  if (refreshed === void 0) {
+    throw new Error(`${tag2} \u7EED\u671F\u54CD\u5E94\u7F3A\u5C11\u8BBF\u95EE\u4EE4\u724C\uFF0C\u51ED\u636E\u672A\u66F4\u65B0`);
+  }
+  await save(refreshed);
+  await syncAccountExpiry({
+    pool,
+    provider,
+    credential: refreshed,
+    accessors,
+    accountId,
+    current,
+    tag: tag2,
+    warn: params.warn
+  });
+  params.info?.(`${tag2} \u8D26\u53F7 ${accountId} \u5DF2\u7EED\u671F`);
+  return true;
+}
+
+// vendor/channel-pack/src/index.ts
 import { LlmError as LlmError26 } from "@deepseek-ai/dsh-llm";
 import Schema2 from "@deepseek-ai/schemastery";
 
@@ -49207,160 +49373,6 @@ var SerialQueue = class {
     });
   }
 };
-
-// vendor/channel-pack/src/refresh.ts
-var REFRESH_LEAD_MS = 36e5;
-var REFRESH_RETRY_MS = 6e5;
-var REFRESH_ABNORMAL_NETWORK_RETRY_MS = 6e4;
-function isAbnormalNetworkError(error) {
-  const message2 = error instanceof Error ? error.message : String(error);
-  return /fetch failed|ENOTFOUND|ECONNREFUSED|proxy|unresolved host|getaddrinfo/i.test(message2);
-}
-function isRefreshTokenExpired(error) {
-  if (!(error instanceof Error)) return false;
-  if (error.name === "RefreshTokenExpiredError") return true;
-  return /refresh[_ ]?token/i.test(error.message);
-}
-function computeFirstRefreshDelayMs(expiresAtMs, nowMs = Date.now()) {
-  if (!Number.isFinite(expiresAtMs)) return 0;
-  const leadTrigger = nowMs + REFRESH_LEAD_MS;
-  if (leadTrigger >= expiresAtMs) return 0;
-  const trigger = new Date(leadTrigger);
-  trigger.setSeconds(Math.floor(60 * Math.random()));
-  const delay2 = trigger.getTime() - nowMs;
-  return delay2 > 0 ? delay2 : 0;
-}
-var RefreshScheduler = class {
-  constructor(refresh, onError = () => {
-  }) {
-    this.refresh = refresh;
-    this.onError = onError;
-  }
-  refresh;
-  onError;
-  timer;
-  pending = false;
-  /** 调度代号：stop()/arm() 都会推进它，用于让在途 run() 放弃失败后的重试武装。 */
-  generation = 0;
-  /** 为在 `expiresAtMs` 过期的凭据安排下次刷新；`nowMs` 仅供测试注入。 */
-  arm(expiresAtMs, nowMs = Date.now()) {
-    this.generation++;
-    if (this.timer !== void 0) {
-      clearTimeout(this.timer);
-      this.timer = void 0;
-    }
-    const delay2 = computeFirstRefreshDelayMs(expiresAtMs, nowMs);
-    this.timer = setTimeout(() => {
-      void this.run();
-    }, delay2);
-    this.timer.unref?.();
-  }
-  /** 取消任何待处理的刷新（并让在途 run() 失败后不再重试）。 */
-  stop() {
-    this.generation++;
-    if (this.timer !== void 0) {
-      clearTimeout(this.timer);
-      this.timer = void 0;
-    }
-  }
-  /** 立即执行一次刷新（供启动时已处于到期窗口内的凭据使用）。 */
-  async refreshOnce() {
-    this.stop();
-    await this.run();
-  }
-  async run() {
-    if (this.pending) return;
-    this.pending = true;
-    const generation = this.generation;
-    try {
-      await this.refresh();
-    } catch (error) {
-      this.onError(error);
-      if (generation !== this.generation) {
-        return;
-      }
-      if (isRefreshTokenExpired(error)) {
-        return;
-      }
-      if (this.timer !== void 0) {
-        clearTimeout(this.timer);
-      }
-      const retry = isAbnormalNetworkError(error) ? REFRESH_ABNORMAL_NETWORK_RETRY_MS : REFRESH_RETRY_MS;
-      this.timer = setTimeout(() => {
-        void this.run();
-      }, retry);
-      this.timer.unref?.();
-    } finally {
-      this.pending = false;
-    }
-  }
-};
-
-// vendor/channel-pack/src/expiry-sync.ts
-var EXPIRY_TOLERANCE_MS = 1e3;
-function shouldRefreshNow(expiresAtMs, nowMs = Date.now()) {
-  if (expiresAtMs === void 0 || !Number.isFinite(expiresAtMs)) return true;
-  return expiresAtMs - nowMs <= REFRESH_LEAD_MS;
-}
-async function syncAccountExpiry(params) {
-  const { pool, provider, credential, accessors, accountId, current, tag: tag2 } = params;
-  if (pool === void 0) return;
-  try {
-    let id = accountId;
-    if (id === void 0 || id.length === 0) {
-      id = await pool.findAccountIdByCredential(provider, accessors.identityOf(credential));
-    }
-    if (id === void 0 || id.length === 0) return;
-    const expiresAt = accessors.expiresAtOf(credential);
-    const refreshable = accessors.refreshableOf?.(credential);
-    if (expiresAt === void 0 && refreshable === void 0) return;
-    const expiryChanged = expiresAt !== void 0 && (current?.expiresAt === void 0 || Math.abs(current.expiresAt - expiresAt) > EXPIRY_TOLERANCE_MS);
-    const refreshableChanged = refreshable !== void 0 && (current === void 0 || current.refreshable !== refreshable);
-    if (!expiryChanged && !refreshableChanged) return;
-    await pool.updateAccount(id, {
-      ...expiresAt === void 0 ? {} : { expiresAt },
-      ...refreshable === void 0 ? {} : { refreshable }
-    });
-  } catch (error) {
-    params.warn?.(
-      `${tag2} \u51ED\u636E\u5904\u7406\u6210\u529F\u4F46\u56DE\u5199\u8D26\u53F7\u6C60\u7684\u6709\u6548\u671F\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u4F7F\u7528\uFF09\uFF1A${error instanceof Error ? error.message : String(error)}`
-    );
-  }
-}
-async function refreshAccountWithReconcile(params) {
-  const { pool, provider, tag: tag2, accountId, credential, accessors, current, refresh, save } = params;
-  const expiresAt = accessors.expiresAtOf(credential);
-  if (!shouldRefreshNow(expiresAt)) {
-    await syncAccountExpiry({
-      pool,
-      provider,
-      credential,
-      accessors,
-      accountId,
-      current,
-      tag: tag2,
-      warn: params.warn
-    });
-    return false;
-  }
-  const refreshed = await refresh(credential);
-  if (refreshed === void 0) {
-    throw new Error(`${tag2} \u7EED\u671F\u54CD\u5E94\u7F3A\u5C11\u8BBF\u95EE\u4EE4\u724C\uFF0C\u51ED\u636E\u672A\u66F4\u65B0`);
-  }
-  await save(refreshed);
-  await syncAccountExpiry({
-    pool,
-    provider,
-    credential: refreshed,
-    accessors,
-    accountId,
-    current,
-    tag: tag2,
-    warn: params.warn
-  });
-  params.info?.(`${tag2} \u8D26\u53F7 ${accountId} \u5DF2\u7EED\u671F`);
-  return true;
-}
 
 // vendor/channel-pack/src/service.ts
 function isCodeArtsRefreshable(credential) {
@@ -67060,15 +67072,13 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
                   message: before.reward === void 0 ? "\u4ECA\u5929\u5DF2\u7ECF\u7B7E\u5230\u8FC7\u4E86" : `\u4ECA\u5929\u5DF2\u7ECF\u7B7E\u5230\u8FC7\u4E86\uFF08+${before.reward} \u79EF\u5206\uFF09`
                 };
               }
-              const result = await runCheckinWithCaptcha(codeartsFetcher, MONKEYCODE, credential);
+              const result = await runCheckinWithCaptcha({
+                fetcher: codeartsFetcher,
+                product: MONKEYCODE,
+                credential
+              });
               if (!result.ok) return { kind: "failed", code: 0, message: result.reason ?? "\u7B7E\u5230\u5931\u8D25" };
-              return {
-                kind: "claimed",
-                credit: result.status?.reward ?? 0,
-                streakDays: result.status?.streak ?? 0,
-                // 上游不区分「连续奖励日」，如实置 false（不编造加成）。
-                isStreakDay: false
-              };
+              return { kind: "claimed", credit: 0, streakDays: 0, isStreakDay: false };
             },
             precheckStatus: false,
             warn: (msg) => ctx.logger?.warn?.(msg)
@@ -70678,6 +70688,8 @@ init_monkeycode_product();
 init_kuku_product();
 init_accio_product();
 init_officeace_product();
+init_officeace();
+init_autoclaw_sms();
 init_autoclaw_product();
 
 // vendor/channel-pack/src/minimax-auth.ts
@@ -74299,8 +74311,66 @@ function apply(ctx, config = {}) {
     // ⚠️ Gemini **可续期**（Google OAuth 的 refresh_token，且会轮换）。
     // ⚠️ 漏了这一行定时器不武装：凭据到期后**不会自动续期**，
     // 用户会看到「每隔一小时就要重新登录」，且日志里一个字都没有。
-    ["gemini", (p) => gemini.refreshAll(p)]
+    ["gemini", (p) => gemini.refreshAll(p)],
+    // ⚠️ OfficeAce / AutoClaw **可续期**（2026-10-26 审计发现的 P0）：
+    // 两者都有 refresh_token 续期实现（refreshOfficeAceCredential /
+    // refreshAutoclawCredential），但此前**只在 account.refresh RPC 里**
+    // 被调用，本表没有它们 ⇒ 定时器永不自动续期。实测后果：OfficeAce 的
+    // STS 过期 2.2 小时后所有请求 400 security token has expired，签到永远
+    // 失败；AutoClaw 约 5.7 小时后同样过期。故补进本表。
+    ["officeace", (p) => refreshOfficeAceAccounts(p)],
+    ["autoclaw", (p) => refreshAutoclawAccounts(p)]
   ];
+  async function refreshExpiringAccounts(pool2, providerId, isRefreshable2, expiresAtOf, refreshOne) {
+    for (const entry of pool2.listAccounts(providerId)) {
+      if (entry.refreshable === false) continue;
+      let credential;
+      try {
+        const resolved = await ctx.credentials.resolve(credentialRef15(entry.credentialRef));
+        if (resolved === void 0) continue;
+        credential = JSON.parse(resolved.value);
+      } catch {
+        continue;
+      }
+      if (!isRefreshable2(credential)) continue;
+      const expiresAt = expiresAtOf(credential);
+      if (expiresAt !== void 0 && !shouldRefreshNow(expiresAt)) continue;
+      try {
+        const next = await refreshOne(credential);
+        await ctx.credentials.set(credentialRef15(entry.credentialRef), JSON.stringify(next));
+      } catch (error) {
+        ctx.logger?.warn?.(`[channel-pack] ${providerId} \u8D26\u53F7 ${entry.id} \u7EED\u671F\u5931\u8D25: ${String(error)}`);
+      }
+    }
+  }
+  const refreshOfficeAceAccounts = (p) => refreshExpiringAccounts(
+    p,
+    OFFICEACE.id,
+    (value) => typeof value?.refresh_token === "string" && value.refresh_token !== "",
+    (value) => {
+      const raw = value?.expires_at;
+      return typeof raw === "number" ? raw : void 0;
+    },
+    async (value) => refreshOfficeAceCredential(fetch, OFFICEACE, value)
+  );
+  const refreshAutoclawAccounts = (p) => refreshExpiringAccounts(
+    p,
+    AUTOCLAW.id,
+    (value) => typeof value?.refresh_token === "string" && value.refresh_token !== "",
+    (value) => {
+      const raw = value?.expire_time;
+      return typeof raw === "number" ? raw : void 0;
+    },
+    async (value) => {
+      const result = await refreshAutoclawCredential({
+        product: AUTOCLAW,
+        fetcher: fetch,
+        credential: value
+      });
+      if (!result.ok) throw new Error(result.error);
+      return result.credential;
+    }
+  );
   async function refreshAllCredentials() {
     for (const [tag2, refreshAll] of refreshTargets) {
       try {

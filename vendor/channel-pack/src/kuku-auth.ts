@@ -358,13 +358,33 @@ export async function claimKukuDailyCheckin(
   signal?: AbortSignal,
 ): Promise<KukuCheckinOutcome> {
   if (!isCredentialUsable(credential)) return { claimed: 0, message: '凭据不可用' }
+  /**
+   * ⚠️ 必须先用**自愈后的** Cookie（2026-10-26 审计发现的 P0）：
+   * 凭据里的 STOKEN 会过期，而 taskComplete 与 userreport 一样只认当前有效的
+   * 那个。原先直接用旧 Cookie，实测回 `errno:-6 未登录`，于是「kuku 签到永远
+   * 失败」。自愈函数已在对话链路验证可用（换发后 errno:0）。
+   */
+  let working = credential
+  try {
+    const live = await exchangeKukuStokenLive(fetcher, product, credential, signal)
+    if (live !== undefined) {
+      const replaced = credential.access_token
+        .split(';')
+        .map(part => part.trim())
+        .filter(part => part !== '' && !part.startsWith('STOKEN='))
+      replaced.push(`STOKEN=${live}`)
+      working = { ...credential, access_token: replaced.join('; ') }
+    }
+  } catch {
+    // 换发失败就用原凭据试一次（可能本来就没过期）。
+  }
   let total = 0
   let succeeded = 0
   for (const taskType of KUKU_CLAIMABLE_TASK_TYPES) {
     try {
       const response = await fetcher(`${product.apiBase}${KUKU_TASK_COMPLETE_PATH}?${KUKU_WEB_QUERY}`, {
         method: 'POST',
-        headers: { ...kukuHeaders(product, credential), 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: { ...kukuHeaders(product, working), 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ task_type: taskType }).toString(),
         ...(signal === undefined ? {} : { signal }),
       })

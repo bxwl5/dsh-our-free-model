@@ -1,5 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import { shouldRefreshNow } from './expiry-sync.js'
 import { LlmError } from '@deepseek-ai/dsh-llm'
 import Schema from '@deepseek-ai/schemastery'
 import { registerCodeArtsLlm, PROVIDER as CODEARTS_PROVIDER } from './llm-adapter.js'
@@ -56,6 +57,8 @@ import { ORCATERM } from './orcaterm-product.js'
 import { KUKU } from './kuku-product.js'
 import { ACCIO, ACCIO_CN } from './accio-product.js'
 import { OFFICEACE } from './officeace-product.js'
+import { refreshOfficeAceCredential } from './officeace.js'
+import { refreshAutoclawCredential } from './autoclaw-sms.js'
 import { AUTOCLAW } from './autoclaw-product.js'
 import { configureDeadModelStore, withDeadModelPruning } from './dead-model-store.js'
 import type { CodeArtsCredential, BuddyCredential } from './types.js'
@@ -1847,7 +1850,86 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
     // ⚠️ 漏了这一行定时器不武装：凭据到期后**不会自动续期**，
     // 用户会看到「每隔一小时就要重新登录」，且日志里一个字都没有。
     ['gemini', (p) => gemini.refreshAll(p)],
+    // ⚠️ OfficeAce / AutoClaw **可续期**（2026-10-26 审计发现的 P0）：
+    // 两者都有 refresh_token 续期实现（refreshOfficeAceCredential /
+    // refreshAutoclawCredential），但此前**只在 account.refresh RPC 里**
+    // 被调用，本表没有它们 ⇒ 定时器永不自动续期。实测后果：OfficeAce 的
+    // STS 过期 2.2 小时后所有请求 400 security token has expired，签到永远
+    // 失败；AutoClaw 约 5.7 小时后同样过期。故补进本表。
+    ['officeace', (p) => refreshOfficeAceAccounts(p)],
+    ['autoclaw', (p) => refreshAutoclawAccounts(p)],
   ]
+
+  /**
+   * 续期 OfficeAce / AutoClaw 的**即将过期**账号。
+   *
+   * 与其余渠道的 `refreshAll` 同口径：**只按 refreshable 过滤、不看 enabled**
+   * （AGENTS.md 的既有约定），且只在进入 lead 窗口时才真发请求（用
+   * `shouldRefreshNow`），避免每轮都打上游。
+   */
+  async function refreshExpiringAccounts(
+    pool: AccountPool,
+    providerId: string,
+    isRefreshable: (value: unknown) => boolean,
+    expiresAtOf: (value: unknown) => number | undefined,
+    refreshOne: (value: unknown) => Promise<unknown>,
+  ): Promise<void> {
+    for (const entry of pool.listAccounts(providerId)) {
+      if (entry.refreshable === false) continue
+      let credential: unknown
+      try {
+        const resolved = await ctx.credentials.resolve(credentialRef(entry.credentialRef))
+        if (resolved === undefined) continue
+        credential = JSON.parse(resolved.value)
+      } catch {
+        continue
+      }
+      if (!isRefreshable(credential)) continue
+      const expiresAt = expiresAtOf(credential)
+      // ⚠️ 凭据里**没有** expires_at 时不能直接 continue（否则永不续期）——
+      // OfficeAce 的凭据实测就没有该字段，此时按「可能已过期」处理、照常续期，
+      // 由上游返回决定成败（续期是幂等的）。
+      if (expiresAt !== undefined && !shouldRefreshNow(expiresAt)) continue
+      try {
+        const next = await refreshOne(credential)
+        await ctx.credentials.set(credentialRef(entry.credentialRef), JSON.stringify(next))
+      } catch (error) {
+        ctx.logger?.warn?.(`[channel-pack] ${providerId} 账号 ${entry.id} 续期失败: ${String(error)}`)
+      }
+    }
+  }
+
+  const refreshOfficeAceAccounts = (p: AccountPool) => refreshExpiringAccounts(
+    p,
+    OFFICEACE.id,
+    (value) => typeof (value as OfficeAceCredential | undefined)?.refresh_token === 'string'
+      && (value as OfficeAceCredential).refresh_token !== '',
+    (value) => {
+      const raw = (value as OfficeAceCredential | undefined)?.expires_at
+      return typeof raw === 'number' ? raw : undefined
+    },
+    async (value) => refreshOfficeAceCredential(fetch, OFFICEACE, value as OfficeAceCredential),
+  )
+
+  const refreshAutoclawAccounts = (p: AccountPool) => refreshExpiringAccounts(
+    p,
+    AUTOCLAW.id,
+    (value) => typeof (value as AutoClawCredential | undefined)?.refresh_token === 'string'
+      && (value as AutoClawCredential).refresh_token !== '',
+    (value) => {
+      const raw = (value as AutoClawCredential | undefined)?.expire_time
+      return typeof raw === 'number' ? raw : undefined
+    },
+    async (value) => {
+      const result = await refreshAutoclawCredential({
+        product: AUTOCLAW,
+        fetcher: fetch,
+        credential: value as AutoClawCredential,
+      })
+      if (!result.ok) throw new Error(result.error)
+      return result.credential
+    },
+  )
 
   async function refreshAllCredentials(): Promise<void> {
     for (const [tag, refreshAll] of refreshTargets) {
