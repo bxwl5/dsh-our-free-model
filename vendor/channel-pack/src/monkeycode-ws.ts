@@ -487,9 +487,35 @@ export type TaskStreamEvent =
   | { kind: 'ignore' }
 
 /** 结束类事件名。 */
-const TERMINAL_TYPES = new Set(['done', 'finish', 'completed', 'error', 'abort'])
-/** 可能携带正文的事件名。 */
-const TEXT_TYPES = new Set(['round', 'message', 'assistant', 'delta', 'text', 'content', 'delta_text'])
+/**
+ * 事件类型与字段名**逐字来自官方开源实现**（chaitin/MonkeyCode 的
+ * `backend/consts/task.go` 与 `biz/task/handler/v1/task.go`，2026-10-26 对照）。
+ *
+ * 此前的 `done/finish/completed/round/message/delta…` 全是猜测值 —— 官方
+ * 根本没有这些事件名，于是「对话收不到消息、任务完成不终止」两个真实缺陷
+ * （用户 2026-10-26 实测报告）。官方协议：
+ *
+ * | type           | 含义                                             |
+ * |----------------|--------------------------------------------------|
+ * | task-started   | 本轮任务启动                                     |
+ * | task-ended     | **本轮结束（服务端收到即 cancel，见 task.go:621）** |
+ * | task-error     | 本轮发生错误                                     |
+ * | task-running   | 运行中；data 里带增量（见下）                     |
+ * | task-event     | 临时事件（不持久化）                             |
+ * | user-input     | 用户输入（含历史回放）                           |
+ * | ping / cursor  | 心跳 / 翻页游标（忽略）                          |
+ *
+ * **正文增量**只在 `task-running` 里：
+ * `data` 是**字符串化的 JSON**（官方 `decodeJSONPayload` 传 []byte 解析）：
+ * `{"sessionId":"…","update":{"sessionUpdate":"agent_message_chunk","content":{"text":"…"}}}`
+ * —— 判据 `sessionUpdate === 'agent_message_chunk'`，正文在 `content.text`
+ * （`biz/task/service/types.go` 的 wsData/wsUpdate/wsContent）。
+ */
+const TERMINAL_TYPES = new Set(['task-ended', 'done', 'finish', 'completed'])
+/** 上行错误事件（官方 task-error；error/abort 是兼容旧猜法的兜底）。 */
+const ERROR_TYPES = new Set(['task-error', 'error', 'abort'])
+/** 可能携带正文的事件名（官方只有 task-running 一个正文通道）。 */
+const TEXT_TYPES = new Set(['task-running', 'task-event', 'round', 'message', 'assistant', 'delta', 'text', 'content', 'delta_text'])
 /** 正文可能落在这些字段里（值是字符串，或再套一层对象）。 */
 const TEXT_FIELDS = ['content', 'text', 'delta', 'message'] as const
 /** 嵌套对象里再找这些字段。 */
@@ -516,6 +542,42 @@ function textFromValue(value: unknown): string | undefined {
 }
 
 /** 从事件对象里按优先级抽正文。 */
+/**
+ * 按官方协议提取正文增量（`task-running` 的 data 通道）。
+ *
+ * `data` 是**字符串化的 JSON**（官方 `decodeJSONPayload` 的输入是 []byte），
+ * 形状：`{"sessionId":"…","update":{"sessionUpdate":"agent_message_chunk",
+ * "content":{"text":"…"}}}`。判据 `sessionUpdate === 'agent_message_chunk'`
+ * —— 其余 sessionUpdate（如 tool_call 等）不是正文，必须忽略。
+ * 兼容 `data` 直接是对象（防上游某天不再字符串化）。
+ */
+function extractOfficialText(record: Record<string, unknown>): string | undefined {
+  let payload: unknown = record.data
+  if (typeof payload === 'string' && payload.trim() !== '') {
+    // ⚠️ 官方 data 是 **base64 编码**的 JSON（2026-10-26 实测抓帧：
+    // `eyJzZXNzaW9uSWQiOi…` 解码后才是 `{"sessionId":…,"update":…}`）。
+    // 先按明文 JSON 试，失败再 base64 解码（两种形态都收，防上游切换）。
+    const text = payload
+    try {
+      payload = JSON.parse(text)
+    } catch {
+      try {
+        payload = JSON.parse(Buffer.from(text, 'base64').toString('utf8'))
+      } catch { return undefined }
+    }
+  }
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return undefined
+  const update = (payload as Record<string, unknown>).update ?? payload
+  if (update === null || typeof update !== 'object' || Array.isArray(update)) return undefined
+  const updateRecord = update as Record<string, unknown>
+  if (updateRecord.sessionUpdate !== undefined && updateRecord.sessionUpdate !== 'agent_message_chunk') return undefined
+  const content = updateRecord.content
+  if (content === null || typeof content !== 'object' || Array.isArray(content)) return undefined
+  const contentRecord = content as Record<string, unknown>
+  const text = contentRecord.text ?? contentRecord.content
+  return typeof text === 'string' && text !== '' ? text : undefined
+}
+
 function extractText(record: Record<string, unknown>): string | undefined {
   for (const field of TEXT_FIELDS) {
     if (!(field in record)) continue
@@ -572,12 +634,12 @@ export function parseTaskStreamEvent(raw: string | Buffer): TaskStreamEvent {
     return loose === undefined ? { kind: 'ignore' } : { kind: 'text', text: loose }
   }
   const normalized = type.toLowerCase()
-  if (normalized === 'error' || normalized === 'abort') {
+  if (ERROR_TYPES.has(normalized)) {
     return { kind: 'error', message: extractErrorMessage(parsed, normalized) }
   }
   if (TERMINAL_TYPES.has(normalized)) return { kind: 'done' }
   if (TEXT_TYPES.has(normalized)) {
-    const body = extractText(parsed)
+    const body = extractOfficialText(parsed) ?? extractText(parsed)
     return body === undefined ? { kind: 'ignore' } : { kind: 'text', text: body }
   }
   return { kind: 'ignore' }

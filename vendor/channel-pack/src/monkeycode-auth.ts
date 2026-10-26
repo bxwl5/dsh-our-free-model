@@ -18,6 +18,8 @@
  * 这比给一个静默失败的假实现更诚实。
  */
 
+import { createHash } from 'node:crypto'
+
 import {
   openWebSocket,
   parseTaskStreamEvent,
@@ -350,10 +352,36 @@ export async function* streamChat(
   credential: MonkeyCodeCredential,
   options: { content: string; modelId: string; signal?: AbortSignal },
 ): AsyncGenerator<{ text: string }, void, undefined> {
-  const taskId = await createTask(fetcher, product, credential, options)
+  // 10811 自愈（必须**先查后建**：createTask 撞 10811 会直接抛，自愈代码
+  // 得放在它前面）。官方有 `PUT /tasks/stop`（此前照 a2a 参考误判没有）——
+  // 建任务前先停掉同账号卡住的旧任务（多半是之前会话的遗留，用户无从处理；
+  // 2026-10-26 用户实测连续多轮 10811，只能干等）。
+  const existing = await listMonkeyCodeTasks(fetcher, product, credential, options.signal)
+  const running = existing.filter(task => task.status !== 'completed' && task.status !== 'finished' && task.status !== 'error')
+  if (running.length > 0) {
+    for (const task of running) {
+      await stopMonkeyCodeTask({ fetcher, product, credential, taskId: task.id, ...(options.signal === undefined ? {} : { signal: options.signal }) })
+    }
+    // 停止是异步生效的，稍等上游切换状态。
+    await new Promise(resolve => setTimeout(resolve, 1500))
+  }
+  let taskId = ''
+  try {
+    taskId = await createTask(fetcher, product, credential, options)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (/code 10811/.test(message)) {
+      throw new Error('MonkeyCode：已尝试停止旧任务但仍被占用（code 10811），请到 monkeycode 网页端手动处理后再试')
+    }
+    throw error
+  }
+  // mode 官方只有两个值（chaitin/MonkeyCode 的 biz/task/handler/v1/task.go:382）：
+  //   new（等待用户输入）/ attach（回放当前轮次 + 订阅实时流）。
+  // 我们建完任务即连流取本轮回答 —— 正是 attach 的语义。此前发的
+  // `develop` 是发明值，上游行为未定义。
   const url = toWebSocketUrl(product.apiBase, MONKEYCODE_STREAM_PATH, {
     id: taskId,
-    mode: 'develop',
+    mode: 'attach',
   })
   const client = await openWebSocket(url, {
     headers: monkeyCodeHeaders(product, credential),
@@ -420,5 +448,161 @@ export async function listMonkeyCodeTasks(
     return rows
   } catch {
     return []
+  }
+}
+
+// ── cap.js POW 验证码（官方 chaitin/MonkeyCode 的签到门槛）──────────────────
+//
+// 官方签到 `POST /api/v1/users/wallet/checkin` 需要 `captcha_token`
+//（frontend/src/api/Api.ts 的 DomainCheckInReq）。不带 token 实测回
+// `{"code":10701,"message":"兑换验证码失败"}` —— 这正是「签到实际失效」的根因。
+//
+// 验证码是 **cap.js 工作量证明**（github.com/ackcoder/go-cap），可编程求解、
+// 无需浏览器：`POST /api/v1/public/captcha/challenge` 取题 → 本地算 nonce →
+// `POST /api/v1/public/captcha/redeem` 换 token。求解算法逐字对照
+// go-cap v1.1.3 的 cap.go：
+//
+// ```go
+// b := token + strconv(i+1) + "d"     // target 种子
+// target := prng(b, difficulty)        // 前缀目标
+// salt := prng(b[:len-1], size)        // 即 token+strconv(i+1)
+// hash := sha256(salt + nonce)         // 找 nonce 使 hash 前缀 === target
+// ```
+//
+// prng = FNV-1a(seed) 做 32 位状态 + xorshift32 出十六进制流（cap.go:234）。
+
+/** go-cap 的 prng：FNV-1a 种子 + xorshift32，产出 length 个十六进制字符。 */
+function capPrng(seed: string, length: number): string {
+  // FNV-1a 32 位
+  let state = 0x811c9dc5
+  for (let i = 0; i < seed.length; i++) {
+    state ^= seed.charCodeAt(i)
+    // 乘以 0x01000193（用乘法 + 加法避免 32 位溢出丢失精度）
+    state = Math.imul(state, 0x01000193) >>> 0
+  }
+  let out = ''
+  while (out.length < length) {
+    // xorshift32（与 go-cap 的三步一致）
+    state ^= (state << 13) >>> 0; state = state >>> 0
+    state ^= state >>> 17
+    state ^= (state << 5) >>> 0; state = state >>> 0
+    out += state.toString(16).padStart(8, '0')
+  }
+  return out.slice(0, length)
+}
+
+const capSha256Hex = (input: string): string => {
+  return createHash('sha256').update(input).digest('hex')
+}
+
+/** 解单个 challenge：找 nonce 使 sha256(salt+nonce) 以 target 开头。 */
+function solveCapChallenge(salt: string, target: string): number {
+  for (let nonce = 0; nonce < 100_000_000; nonce++) {
+    if (capSha256Hex(`${salt}${nonce}`).startsWith(target)) return nonce
+  }
+  throw new Error(`MonkeyCode：POW 挑战无解（target=${target}）`)
+}
+
+/**
+ * 完整签到流程：取挑战 → 算 POW → 换 token → 签到。
+ *
+ * 官方参数 WithChallenge(50, 32, 3)：50 题、salt 32 字符、难度 3（哈希前缀
+ * 3 个十六进制字符 ≈ 每题平均 4096 次 sha256，50 题约 20 万次 —— Node
+ * 同步算毫秒级）。挑战 2 分钟过期、token 5 分钟过期，故必须一口气做完。
+ */
+export async function runCheckinWithCaptchaImpl(options: {
+  fetcher: typeof fetch
+  product: MonkeyCodeProduct
+  credential: MonkeyCodeCredential
+  signal?: AbortSignal
+}): Promise<{ ok: boolean; reason?: string; checkedIn?: boolean }> {
+  const { fetcher, product, credential } = options
+  const base = product.apiBase
+  const headers = { Accept: 'application/json', 'Content-Type': 'application/json', ...monkeyCodeHeaders(product, credential) }
+  // 1) 取挑战
+  const challengeRes = await fetcher(`${base}/api/v1/public/captcha/challenge`, {
+    method: 'POST', headers, ...(options.signal === undefined ? {} : { signal: options.signal }),
+  })
+  if (!challengeRes.ok) return { ok: false, reason: `验证码挑战返回 HTTP ${challengeRes.status}` }
+  const challenge = await challengeRes.json().catch(() => undefined) as
+    { token?: string; challenge?: { c?: number; s?: number; d?: number } } | undefined
+  const token = challenge?.token
+  const c = challenge?.challenge?.c
+  const s = challenge?.challenge?.s
+  const d = challenge?.challenge?.d
+  if (typeof token !== 'string' || typeof c !== 'number' || typeof s !== 'number' || typeof d !== 'number') {
+    return { ok: false, reason: '验证码挑战响应缺字段' }
+  }
+  // 2) 逐题求解（种子构造与 go-cap 逐字一致）
+  const solutions: number[] = []
+  for (let i = 1; i <= c; i++) {
+    const target = capPrng(`${token}${i}d`, d)
+    const salt = capPrng(`${token}${i}`, s)
+    solutions.push(solveCapChallenge(salt, target))
+  }
+  // 3) redeem 换 captcha_token
+  const redeemRes = await fetcher(`${base}/api/v1/public/captcha/redeem`, {
+    method: 'POST', headers, body: JSON.stringify({ token, solutions }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  })
+  if (!redeemRes.ok) return { ok: false, reason: `验证码兑换返回 HTTP ${redeemRes.status}` }
+  const redeem = await redeemRes.json().catch(() => undefined) as
+    { success?: boolean; tokenData?: string; token?: string; message?: string } | undefined
+  const captchaToken = redeem?.tokenData ?? redeem?.token
+  if (redeem?.success !== true || typeof captchaToken !== 'string') {
+    return { ok: false, reason: `验证码兑换失败：${redeem?.message ?? '未返回 token'}` }
+  }
+  // 4) 带 token 签到
+  const checkinRes = await fetcher(`${base}${MONKEYCODE_CHECKIN_PATH}`, {
+    method: 'POST', headers, body: JSON.stringify({ captcha_token: captchaToken }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  })
+  const body = await checkinRes.json().catch(() => undefined) as
+    { code?: number; message?: string; data?: { checked_in?: boolean } } | undefined
+  if (body?.code !== undefined && body.code !== 0) {
+    return { ok: false, reason: body.message ?? `业务错误 code=${body.code}` }
+  }
+  return { ok: true, checkedIn: body?.data?.checked_in === true }
+}
+
+/** 兼容旧名（RPC 侧用这个名）。 */
+export async function runCheckinWithCaptcha(
+  options: Parameters<typeof runCheckinWithCaptchaImpl>[0],
+) {
+  return runCheckinWithCaptchaImpl(options)
+}
+
+/**
+ * 停止一个任务（官方 `PUT /api/v1/users/tasks/stop`，body `{id}`）。
+ *
+ * ⚠️ 此前（照 aimod-cc/Agent2API 的实现）以为上游没有取消端点 —— 那只是
+ * 该参考项目**没实现**。官方开源版（chaitin/MonkeyCode 的
+ * `biz/task/handler/v1/task.go:183`）明确有 `PUT /tasks/stop`。
+ * 用于 10811（同账号已有运行中任务）的自愈：停掉卡住的旧任务再重试建新任务。
+ */
+export async function stopMonkeyCodeTask(options: {
+  fetcher: typeof fetch
+  product: MonkeyCodeProduct
+  credential: MonkeyCodeCredential
+  taskId: string
+  signal?: AbortSignal
+}): Promise<boolean> {
+  if (!isCredentialUsable(options.credential)) return false
+  try {
+    const response = await options.fetcher(`${options.product.apiBase}${MONKEYCODE_TASKS_PATH}/stop`, {
+      method: 'PUT',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...monkeyCodeHeaders(options.product, options.credential) },
+      body: JSON.stringify({ id: options.taskId }),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    })
+    if (!response.ok) return false
+    const body: unknown = await response.json().catch(() => undefined)
+    if (typeof body === 'object' && body !== null) {
+      const code = (body as Record<string, unknown>).code
+      if (typeof code === 'number' && code !== 0) return false
+    }
+    return true
+  } catch {
+    return false
   }
 }

@@ -437,3 +437,43 @@ export async function verifyClaimOutcomeShape() {
 
   console.log('claim-outcome-shape: 5 组断言通过（kind 分类 / credit / 幂等 / coversToday / 旧形状反证）')
 }
+
+/**
+ * MonkeyCode 官方流协议回归（对照 chaitin/MonkeyCode 开源实现，2026-10-26）。
+ *
+ * 官方帧：`{type, data, kind, seq, timestamp}`，其中 `data` 是 **base64 编码**
+ * 的 JSON（实测抓帧证实）。正文只在 `task-running` 且解码后
+ * `update.sessionUpdate === 'agent_message_chunk'` 的 `content.text`；
+ * 终止事件是 `task-ended`。此前的 `done/round/message/delta` 全是猜测值。
+ */
+export async function verifyMonkeyCodeOfficialProtocol() {
+  const { parseTaskStreamEvent } = await import('../vendor/channel-pack/src/monkeycode-ws.ts')
+  const b64 = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64')
+
+  // 帧一律 JSON.stringify 构造 —— 模板串嵌套引号会构造出非法帧（实测踩过）。
+  const frame = (data, extra = {}) => JSON.stringify({ type: 'task-running', data, ...extra })
+
+  // 1) 正文：base64 data + agent_message_chunk
+  const text = parseTaskStreamEvent(frame(b64({ sessionId: 's', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '你好' } } }), { kind: 'agent_message_chunk' }))
+  assert.equal(text.kind, 'text'); assert.equal(text.text, '你好', 'base64 data 解码出正文')
+
+  // 2) 同是 task-running 但非正文类 sessionUpdate → 忽略
+  for (const update of ['agent_thought_chunk', 'usage_update', 'available_commands_update']) {
+    assert.equal(parseTaskStreamEvent(frame(b64({ update: { sessionUpdate: update, content: {} } }))).kind, 'ignore', `${update} 不是正文`)
+  }
+
+  // 3) 终止与错误（官方事件名）
+  assert.equal(parseTaskStreamEvent('{"type":"task-ended"}').kind, 'done')
+  const err = parseTaskStreamEvent('{"type":"task-error","data":"boom"}')
+  assert.equal(err.kind, 'error')
+
+  // 4) 心跳/游标忽略
+  assert.equal(parseTaskStreamEvent('{"type":"ping"}').kind, 'ignore')
+  assert.equal(parseTaskStreamEvent('{"type":"cursor","data":"{\\"cursor\\":\\"x\\"}"}').kind, 'ignore')
+
+  // 5) 明文 JSON data 也收（防上游去编码）
+  const plain = parseTaskStreamEvent(frame(JSON.stringify({ update: { sessionUpdate: 'agent_message_chunk', content: { text: 'OK' } } })))
+  assert.equal(plain.kind, 'text'); assert.equal(plain.text, 'OK', '明文 JSON data 兼容')
+
+  console.log('monkeycode-protocol: 5 组断言通过（base64 正文 / 非正文忽略 / task-ended / 心跳 / 明文兼容）')
+}

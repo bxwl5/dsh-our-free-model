@@ -52,7 +52,7 @@ import {
   fetchCheckinStatus as fetchMonkeyCodeCheckinStatus,
   fetchWallet as fetchMonkeyCodeWallet,
   fetchCheckinStatus as fetchMonkeyCodeCheckinStatus,
-  runCheckin as runMonkeyCodeCheckin,
+  runCheckinWithCaptcha as runMonkeyCodeCheckinWithCaptcha,
 } from './monkeycode-auth.js'
 import type { MonkeyCodeCredential } from './monkeycode.js'
 import { MONKEYCODE } from './monkeycode-product.js'
@@ -3354,7 +3354,11 @@ function registerChannelPackEndpoints(
                     : `今天已经签到过了（+${before.reward} 积分）`,
                 }
               }
-              const result = await runMonkeyCodeCheckin(codeartsFetcher, MONKEYCODE, credential)
+              // 2026-10-26：改用带 cap.js POW 的完整流程 —— 上游签到需要
+              // `captcha_token`（官方 frontend 的 DomainCheckInReq），不带则回
+              // `code:10701 兑换验证码失败`，这就是「签到实际失效」的根因。
+              // POW 可编程求解（challenge→solve→redeem），无需浏览器。
+              const result = await runMonkeyCodeCheckinWithCaptcha(codeartsFetcher, MONKEYCODE, credential)
               if (!result.ok) return { kind: 'failed', code: 0, message: result.reason ?? '签到失败' }
               // `reward` 缺失时如实报 0 并在 summary 里体现为「已领取但积分为 0」，
               // 不编造「每次 100 积分」（该数字未获实测支持）。
