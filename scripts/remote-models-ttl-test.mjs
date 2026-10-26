@@ -845,7 +845,27 @@ export async function verifyQoderCatalog() {
   assert.equal(qoderDisplayName({ id: 'gfmodel', name: 'GLM-5.3-Flash', contextWindow: 1, priceFactor: 0.1 }), 'GLM-5.3-Flash · x0.1', '产品名不翻译')
   assert.equal(qoderDisplayName({ id: 'x', name: 'X', contextWindow: 1, priceFactor: 0 }), 'X · 免费', '0 倍率显示免费')
 
-  // ── 5. 远端直接覆盖兜底（不是并集）──
+  // ── 5. 倍率必须以**远端**为准（兜底表是采集时快照，会过期）──
+  // 实测差异：qmodel_38max 远端 0.5/兜底 0.2、kmodel_latest 1/1.4、
+  // dfmodel 0(免费)/0.1、mmodel 0.1/0.2。
+  const ad2 = new QoderAdapter({
+    product: { ...QODER, fallbackModels: [
+      { id: 'dfmodel', name: 'DeepSeek-Flash', contextWindow: 1000, priceFactor: 0.1 },
+    ] },
+    fetchImpl: async () => new Response(JSON.stringify({ chat: [
+      { key: 'dfmodel', display_name: 'DeepSeek-Flash', price_factor: 0 },
+    ] }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    resolveCredential: async () => ({ security_oauth_token: 's', access_token: 't', machine_id: 'm', uid: 'u' }),
+    refresh: async () => {},
+  })
+  await ad2.warmCatalog()
+  const all2 = ad2.listAllModels()
+  assert.equal(all2.length, 1)
+  assert.match(all2[0].name, /免费/, '⚠️ 倍率必须用远端的 0（免费），不是兜底的 0.1')
+  const resolved2 = await ad2.resolveModel('qoder', 'dfmodel')
+  assert.match(resolved2.name, /免费/, 'resolveModel 也必须带远端倍率（否则会话内看不到倍率）')
+
+  // ── 6. 远端直接覆盖兜底（不是并集）──
   const upstream = http.createServer((req, res) => {
     const send = (body) => res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' }).end(JSON.stringify(body))
     if (req.url.startsWith('/algo/api/v2/model/list')) {

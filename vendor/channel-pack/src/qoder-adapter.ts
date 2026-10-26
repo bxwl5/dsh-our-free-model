@@ -635,7 +635,7 @@ export class QoderAdapter extends LlmAdapter {
    * ⚠️ 兜底表是本地估计值，不是远端权威数据 —— 见 `qoder-product.ts` 的说明。
    */
   private inputModalitiesFor(model: string): readonly ('text' | 'image')[] {
-    return this.fallbackIndex.get(model)?.supportsImage === true ? ['text', 'image'] : ['text']
+    return this.entryFor(model)?.supportsImage === true ? ['text', 'image'] : ['text']
   }
 
   /**
@@ -698,6 +698,29 @@ export class QoderAdapter extends LlmAdapter {
    * （权限、灰度、套餐档位都会影响），而兜底表里的模型实测可用。直接替换会
    * 让用户「模型突然少了几个」。
    */
+  /**
+   * 按 id 取模型条目：**远端优先，兜底补缺**。
+   *
+   * ⚠️ **倍率必须以远端为准**（用户 2026-10-26 指出「本地兜底表的倍率都是
+   * 过期的」）。实测差异（qoder 14 个里 4 个不一致）：
+   *
+   * | id | 远端 | 兜底 |
+   * |---|---|---|
+   * | `qmodel_38max` | 0.5 | 0.2 |
+   * | `kmodel_latest` | 1 | 1.4 |
+   * | `dfmodel` | **0（免费）** | 0.1 |
+   * | `mmodel` | 0.1 | 0.2 |
+   *
+   * 兜底表是**采集时刻的快照**，上游随时会调价 —— 拿它当权威会让用户按错误
+   * 倍率预期计费。故所有展示/解析路径都走这里，而不是裸 `fallbackIndex`。
+   *
+   * 远端未就绪（还没拉到 / 拉取失败）时才退回兜底，这是唯一的数据源。
+   */
+  private entryFor(modelId: string): QoderFallbackModel | undefined {
+    const remote = this.remoteModels?.find((model) => model.id === modelId)
+    return remote ?? this.fallbackIndex.get(modelId)
+  }
+
   private modelSource(): readonly QoderFallbackModel[] {
     if (this.remoteModels === undefined) return this.product.fallbackModels
     /**
@@ -721,11 +744,23 @@ export class QoderAdapter extends LlmAdapter {
    * 黑名单过滤掉它们 —— RPC 层只能凭裸 id 补回，展示名与倍率随之丢失
    * （用户报障：「关闭的就没有显示倍率」）。详见 `model.list` 端点的注释。
    */
+  /**
+   * 预热远端目录（供 `provider.status` 这类**异步**入口调用）。
+   *
+   * `listAllModels()` 是同步契约（多处依赖它不触发网络），所以设置页的模型名
+   * 只能读已缓存的 `remoteModels`。首次打开设置页时远端还没拉过，就会显示
+   * 兜底表的**过期倍率**（用户 2026-10-26 指出「本地兜底表的倍率都是过期的」）。
+   * 这里让异步调用方先等一次远端，再把同一份数据交给同步读取。
+   *
+   * 失败静默（兜底表接管），与 `ensureRemoteModels` 同语义。
+   */
+  async warmCatalog(): Promise<void> {
+    await this.ensureRemoteModels()
+  }
+
   listAllModels(): readonly { id: string; name: string }[] {
-    // 用 `modelSource()`（远端+兜底并集）而不是裸兜底表：设置页必须能显示
-    // 远端新出现的模型，否则用户在那里看不到、也无法开关它们。
-    // ⚠️ 该方法不 await 远端拉取（设置页同步渲染）；远端未就绪时就是兜底表，
-    // 下次渲染会带上（TTL 内已缓存）。
+    // ⚠️ 同步方法：只能读**已缓存**的远端目录；未预热时退回兜底表。
+    // 倍率以远端为准（见 `entryFor` 的对比表），故异步入口应先 `warmCatalog()`。
     return this.modelSource().map((model) => ({ id: model.id, name: qoderDisplayName(model) }))
   }
 
@@ -763,11 +798,17 @@ export class QoderAdapter extends LlmAdapter {
    * 我们应该按照他的设置给出可设置的档位选择」）。
    */
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
-    const entry = this.fallbackIndex.get(model)
+    // 异步入口：先预热远端目录，避免用兜底表的过期倍率/上下文。
+    await this.ensureRemoteModels()
+    // 远端优先：兜底表的 name/contextWindow 都是采集时快照（倍率尤其会过期）。
+    const entry = this.entryFor(model)
     const resolved: LlmResolvedModelInfo = {
       provider,
       id: model,
-      name: entry?.name ?? model,
+      // ⚠️ 用 `qoderDisplayName`（带倍率后缀 + 中文档位名），不是裸 `entry.name`。
+      // composer 与 /model 弹窗都读这个 name —— 裸名会让「倍率」在会话内消失，
+      // 只有选择器里有（用户会以为两处不一致）。
+      name: entry === undefined ? model : qoderDisplayName(entry),
       inputModalities: this.inputModalitiesFor(model),
     }
     // 上下文窗口：兜底表是**本地估计值**。未知模型不编造 context
@@ -899,7 +940,8 @@ export class QoderAdapter extends LlmAdapter {
     // （用户报障「qwen3.8-flash 执行任务出现任务调用 xml 泄露任务终止」）。
     const tools = buildQoderTools(options.tools)
 
-    const fallback = this.fallbackIndex.get(options.model)
+    // 远端优先（倍率/上下文以目录为准，兜底只是离线快照）。
+    const fallback = this.entryFor(options.model)
 
     /** 用给定凭据构造一次加密请求（首次与 401 重试共用，避免两处漂移）。 */
     const buildRequest = async (c: QoderCredential): Promise<QoderInferRequest> => {
