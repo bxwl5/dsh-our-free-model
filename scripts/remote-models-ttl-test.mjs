@@ -1000,16 +1000,32 @@ export async function verifyRemoteCatalogFields() {
   // ── autoclaw：按量计费分档，不是数字倍率 ──
   const ac = parseModelConfig([
     { id: 'zai_auto', name: 'Auto', reasoning: true, contextWindow: 1048576, maxTokens: 393216,
-      creditConsumptionLevel: '低', reasoningLevel: ['low', 'high', 'max'], tooltip: '自动选模型' },
-    { id: 'zai_glm', name: 'GLM-5.3', contextWindow: 200000, creditConsumptionLevel: '高' },
+      creditConsumptionLevel: '低', reasoningLevel: ['low', 'high', 'max'], tooltip: '自动选模型',
+      metadata: { timeout: '7200' } },
+    { id: 'zai_auto-fast', name: 'Auto-Fast', creditConsumptionLevel: '中',
+      metadata: { forbiddenNotice: { title: '限时权益已用完', desc: '免费额度已用完，24 小时后重置' } } },
+    { id: 'zaicoding_glm-5.3', name: 'GLM-5.3', creditConsumptionLevel: '高',
+      metadata: {
+        __pricingPromotion: { badge: '限时半价', enabled: true, scope: ['autoLegal'] },
+        forbiddenNotice: { title: '限时权益已用完', desc: 'GLM5.3 免费额度已用完' },
+      } },
+    { id: 'zai_glm-5.3-flash', name: 'GLM-5.3-Flash', creditConsumptionLevel: '低' },
   ])
-  assert.equal(ac.length, 2)
+  assert.equal(ac.length, 4)
   assert.equal(ac[0].creditLevel, '低', 'creditConsumptionLevel 是分档标签')
   assert.deepEqual(ac[0].efforts, ['low', 'high', 'max'], 'reasoningLevel 解析成思考档位')
   assert.equal(ac[0].supportsThinking, true)
   assert.equal(ac[0].tooltip, '自动选模型')
-  assert.equal(autoClawDisplayName(ac[0]), 'Auto · 积分低', '按量计费显示积分分档，不是 x 倍率')
-  assert.equal(autoClawDisplayName(ac[1]), 'GLM-5.3 · 积分高')
+  // ⚠️ 上游只给「低/中/高」标签，无数字倍率 —— 展示层不得换算成 x0.5。
+  assert.equal(autoClawDisplayName(ac[0]), 'Auto · 低')
+  assert.equal(autoClawDisplayName(ac[1]), 'Auto-Fast · 中 · 额度用完', 'forbiddenNotice 存在 = 该模型额度用完')
+  assert.equal(ac[1].quotaExhausted, true)
+  assert.equal(ac[1].quotaNotice, '免费额度已用完，24 小时后重置')
+  assert.equal(autoClawDisplayName(ac[2]), 'GLM-5.3 · 高 · 限时半价 · 额度用完',
+    '促销用上游文案，不推断成 x0.5')
+  assert.equal(ac[2].promotion, '限时半价')
+  assert.equal(autoClawDisplayName(ac[3]), 'GLM-5.3-Flash · 低', '无促销无告警时只有两段')
+  assert.equal(ac[3].quotaExhausted, undefined, '缺失 forbiddenNotice → 不是用完状态')
 
   // ── monkeycode：input_price 是单价，绝不能当倍率 ──
   assert.equal(monkeyCodeDisplayName({ name: 'glm-5', isFree: false }), 'glm-5', '⚠️ 按量计费不显示倍率')

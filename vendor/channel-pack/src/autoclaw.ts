@@ -216,6 +216,24 @@ export interface AutoClawModelRow {
   supportsThinking?: boolean
   /** 上游中文说明（`tooltip`）。 */
   tooltip?: string
+  /**
+   * 促销徽标（上游 `metadata.__pricingPromotion.badge`，实测 `"限时半价"`）。
+   *
+   * ⚠️ 上游**只给文案，不给数字倍率**（`{badge, enabled, scope:['autoLegal']}`）。
+   * 故展示时原样用文案，不要自己换算成 `x0.5` —— 那属于推断。
+   */
+  promotion?: string
+  /**
+   * 免费额度是否已用完（上游 `metadata.forbiddenNotice` 存在即表示用完）。
+   *
+   * ⚠️ 这是**按模型**的额度状态，正是用户真正关心的「哪个模型现在用不了」。
+   * 上游的积分钱包（`/agent-assetmgr/.../wallets`）是**按来源**分账
+   * （活动奖励 / 每日签到 / 订阅 …），**无法拆到模型维度**，故不能用它算
+   * 「每个模型剩多少」—— 那会是一个编造的数字。
+   */
+  quotaExhausted?: boolean
+  /** 额度用完时上游给的说明（`forbiddenNotice.desc`，含「24 小时后重置」等）。 */
+  quotaNotice?: string
 }
 
 export function parseModelConfig(value: unknown): AutoClawModelRow[] {
@@ -242,6 +260,15 @@ export function parseModelConfig(value: unknown): AutoClawModelRow[] {
       : undefined
     const creditLevel = stringValue(item.creditConsumptionLevel)
     const tooltip = stringValue(item.tooltip)
+    // 促销徽标：`metadata.__pricingPromotion`，只在 `enabled !== false` 时采用。
+    const meta = isRecord(item.metadata) ? item.metadata : undefined
+    const promoRaw = meta !== undefined && isRecord(meta.__pricingPromotion)
+      ? meta.__pricingPromotion : undefined
+    const promoBadge = promoRaw !== undefined && promoRaw.enabled !== false
+      ? stringValue(promoRaw.badge) : undefined
+    // 额度用完：`metadata.forbiddenNotice` 存在即表示该模型当前不可用。
+    const notice = meta !== undefined && isRecord(meta.forbiddenNotice) ? meta.forbiddenNotice : undefined
+    const noticeDesc = notice === undefined ? undefined : stringValue(notice.desc)
     rows.push({
       id,
       name,
@@ -251,6 +278,9 @@ export function parseModelConfig(value: unknown): AutoClawModelRow[] {
       ...(efforts === undefined || efforts.length === 0 ? {} : { efforts }),
       ...(item.reasoning === true ? { supportsThinking: true } : {}),
       ...(tooltip === undefined ? {} : { tooltip }),
+      ...(promoBadge === undefined ? {} : { promotion: promoBadge }),
+      ...(notice === undefined ? {} : { quotaExhausted: true }),
+      ...(noticeDesc === undefined ? {} : { quotaNotice: noticeDesc }),
     })
   }
   return rows

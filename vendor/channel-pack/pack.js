@@ -48925,6 +48925,11 @@ function parseModelConfig(value) {
     const efforts = Array.isArray(levelsRaw) ? levelsRaw.filter((level) => typeof level === "string" && level !== "") : void 0;
     const creditLevel = stringValue9(item.creditConsumptionLevel);
     const tooltip = stringValue9(item.tooltip);
+    const meta = isRecord10(item.metadata) ? item.metadata : void 0;
+    const promoRaw = meta !== void 0 && isRecord10(meta.__pricingPromotion) ? meta.__pricingPromotion : void 0;
+    const promoBadge = promoRaw !== void 0 && promoRaw.enabled !== false ? stringValue9(promoRaw.badge) : void 0;
+    const notice = meta !== void 0 && isRecord10(meta.forbiddenNotice) ? meta.forbiddenNotice : void 0;
+    const noticeDesc = notice === void 0 ? void 0 : stringValue9(notice.desc);
     rows.push({
       id,
       name: name2,
@@ -48933,7 +48938,10 @@ function parseModelConfig(value) {
       ...creditLevel === void 0 ? {} : { creditLevel },
       ...efforts === void 0 || efforts.length === 0 ? {} : { efforts },
       ...item.reasoning === true ? { supportsThinking: true } : {},
-      ...tooltip === void 0 ? {} : { tooltip }
+      ...tooltip === void 0 ? {} : { tooltip },
+      ...promoBadge === void 0 ? {} : { promotion: promoBadge },
+      ...notice === void 0 ? {} : { quotaExhausted: true },
+      ...noticeDesc === void 0 ? {} : { quotaNotice: noticeDesc }
     });
   }
   return rows;
@@ -48953,8 +48961,15 @@ var AUTO_CLAW_EFFORT_NAMES = {
   xhigh: "\u6781\u9AD8"
 };
 function autoClawDisplayName(model) {
-  if (model.creditLevel === void 0 || model.creditLevel === "") return model.name;
-  return `${model.name} \xB7 \u79EF\u5206${model.creditLevel}`;
+  const parts = [model.name];
+  if (model.creditLevel !== void 0 && model.creditLevel !== "") parts.push(model.creditLevel);
+  if (model.promotion !== void 0 && model.promotion !== "") parts.push(model.promotion);
+  if (model.quotaExhausted === true) parts.push("\u989D\u5EA6\u7528\u5B8C");
+  return parts.join(" \xB7 ");
+}
+function autoClawQuotaNotice(model) {
+  if (model.quotaExhausted !== true) return void 0;
+  return model.quotaNotice;
 }
 var AutoClawAdapter = class extends LlmAdapter12 {
   constructor(options) {
@@ -49015,7 +49030,13 @@ var AutoClawAdapter = class extends LlmAdapter12 {
       id: model.id,
       // 按量计费：名字带「积分·低/中/高」分档标签，不带倍率后缀。
       name: autoClawDisplayName(model),
-      ...model.tooltip === void 0 ? {} : { description: model.tooltip },
+      // 描述：优先把「额度用完」的具体原因（含恢复时间/替代建议）透出，
+      // 没有才用上游的 tooltip（模型能力介绍）。
+      ...(() => {
+        const notice = autoClawQuotaNotice(model);
+        if (notice !== void 0) return { description: notice };
+        return model.tooltip === void 0 ? {} : { description: model.tooltip };
+      })(),
       inputModalities: ["text"]
     }));
   }

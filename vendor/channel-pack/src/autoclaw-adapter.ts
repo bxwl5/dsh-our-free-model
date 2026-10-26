@@ -80,16 +80,53 @@ const AUTO_CLAW_EFFORT_NAMES: Readonly<Record<string, string>> = {
 }
 
 /**
- * 模型展示名。
+ * 模型展示名（用户 2026-10-27 指定的格式）。
  *
- * ⚠️ **AutoClaw 是按量计费**（用户 2026-10-26 明确说明，与 zcode 同类），
- * 所以名字里**不带** `x0.5` 这种倍率后缀 —— 那是 Qoder 那种倍率套餐的口径。
- * 但上游确实下发了积分消耗档 `creditConsumptionLevel`（`低`/`中`/`高`），
- * 它是**分档标签**而非数字倍率，如实显示成「积分·低」帮助用户预期消耗。
+ * 形态：`名称 · 消耗档 [· 促销] [· 额度用完]`
+ *
+ * 例：
+ * ```
+ * Auto · 低
+ * Auto-Fast · 中 · 额度用完
+ * GLM-5.3 · 高 · 限时半价 · 额度用完
+ * GLM-5.3-Flash · 低
+ * ```
+ *
+ * ## 三段各自的来源与口径
+ *
+ * 1. **消耗档**（`creditConsumptionLevel`）：上游只给 `低`/`中`/`高` 三个
+ *    中文标签，**没有任何数字倍率**。故原样显示，不换算成 `x0.5`。
+ *    AutoClaw 是按量计费，与 Qoder 那种倍率套餐不同。
+ * 2. **促销**（`metadata.__pricingPromotion.badge`）：上游给的是**文案**
+ *    （实测 `"限时半价"`），不是数字。原样显示，不推断成 `x0.5`
+ *    —— `scope` 是 `['autoLegal']`，无法保证等价于「所有场景都 5 折」。
+ * 3. **额度用完**（`metadata.forbiddenNotice`）：这是**按模型**的状态，
+ *    也就是用户真正关心的「这个模型现在还能不能使」。
+ *
+ * ⚠️ **不显示「剩多少 M」**：上游的积分钱包（`/agent-assetmgr/.../wallets`）
+ * 按来源分账（活动奖励 / 每日签到 / 订阅 / 加油包），**没有模型维度**，
+ * 拆到每个模型只能是编造。真实的是「用完 vs 能用」这个二值状态。
  */
 export function autoClawDisplayName(model: AutoClawModelRow): string {
-  if (model.creditLevel === undefined || model.creditLevel === '') return model.name
-  return `${model.name} · 积分${model.creditLevel}`
+  const parts: string[] = [model.name]
+  // 1. 消耗档：只显示标签本身（`低`/`中`/`高`）。
+  if (model.creditLevel !== undefined && model.creditLevel !== '') parts.push(model.creditLevel)
+  // 2. 促销徽标（上游原文）。
+  if (model.promotion !== undefined && model.promotion !== '') parts.push(model.promotion)
+  // 3. 按模型的额度状态。
+  if (model.quotaExhausted === true) parts.push('额度用完')
+  return parts.join(' · ')
+}
+
+/**
+ * 额度用完时的提示文案（放到 `description`，比 name 里塞长句干净）。
+ *
+ * 上游原文含具体恢复时间（如「24 小时后会进行重置」）与替代建议
+ * （「推荐切换至 Auto 模型」），对用户是可执行信息，值得原样透出。
+ */
+export function autoClawQuotaNotice(model: AutoClawModelRow): string | undefined {
+  if (model.quotaExhausted !== true) return undefined
+  return model.quotaNotice
 }
 
 export class AutoClawAdapter extends LlmAdapter {
@@ -165,7 +202,13 @@ export class AutoClawAdapter extends LlmAdapter {
       id: model.id,
       // 按量计费：名字带「积分·低/中/高」分档标签，不带倍率后缀。
       name: autoClawDisplayName(model),
-      ...(model.tooltip === undefined ? {} : { description: model.tooltip }),
+      // 描述：优先把「额度用完」的具体原因（含恢复时间/替代建议）透出，
+      // 没有才用上游的 tooltip（模型能力介绍）。
+      ...(() => {
+        const notice = autoClawQuotaNotice(model)
+        if (notice !== undefined) return { description: notice }
+        return model.tooltip === undefined ? {} : { description: model.tooltip }
+      })(),
       inputModalities: ['text'],
     }))
   }
