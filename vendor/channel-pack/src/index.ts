@@ -63,7 +63,6 @@ import { AUTOCLAW } from './autoclaw-product.js'
 import { configureDeadModelStore, withDeadModelPruning } from './dead-model-store.js'
 import { configureModelCatalogStore } from './model-catalog-store.js'
 import { startCatalogRefresher, type CatalogRefreshTarget } from './catalog-refresher.js'
-import { ModelCatalogRefreshScheduler } from './model-catalog-refresh.js'
 import type { CodeArtsCredential, BuddyCredential } from './types.js'
 import type { QoderCredential } from './qoder.js'
 import type { TraeCredential } from './trae.js'
@@ -2035,21 +2034,6 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
     )
   })
 
-  // ===== 模型目录定时刷新调度（独立于上面的凭据续期）=====
-  //
-  // ⚠️ **失败语义不同，绝不混进 `refreshAllCredentials`**：续期失败 = 账号马上不可用，
-  // 目录刷新失败 = 继续显示上一次的目录（落盘缓存兜底），频率也低一个数量级
-  // （默认 6 小时，`DSH_MODEL_CATALOG_REFRESH_MS` 可覆盖；策略与理由见
-  // `model-catalog-refresh.ts` 文件头）。
-  //
-  // 这里只武装调度器；各渠道把自己的 fetch/parse 注册进来
-  // （`registerCatalogRefresh({ provider, fetch })`，由各渠道接线处各加一行）。
-  // 尚无注册任务时每轮是空转 no-op，不产生任何上游请求。
-  //
-  // ⚠️ 串行 + 逐渠道 try/catch 在调度器内部保证：一个渠道失败不中断其余渠道。
-  const modelCatalogScheduler = new ModelCatalogRefreshScheduler({ logger: ctx.logger })
-  modelCatalogScheduler.start()
-  ctx.effect(() => () => { modelCatalogScheduler.stop() }, 'channel-pack: model catalog refresh scheduler')
 
   // 保留旧的 stop scheduler（兼容旧命令）
   ctx.effect(() => () => {
