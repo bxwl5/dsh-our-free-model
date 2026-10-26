@@ -22,9 +22,10 @@
  *    （见 `index.ts` 的注释：短寿命 provider 的凭据在关机期间早就过期）。
  *    若抢在续期之前签到，过期凭据会让整轮变成失败。
  * 即便如此仍可能抢在续期完成前（多账号时续期本身就要几秒到几十秒），故**再加
- * 一道保险**：整轮跑完**没有任何一条能证明「今天已被处理」**时**不记日期**，
- * 下次启动会重试（见 `shouldMarkToday`）。延迟可用
- * `DSH_CHANNEL_PACK_AUTO_CHECKIN_DELAY_MS` 覆盖，`0` 合法（表示立刻跑，单测用它）。
+ * 一道保险**：**逐渠道**记账 —— 只有能证明「今天这一轮已被处理」的渠道才记完成，
+ * 其余渠道下次启动（或当日稍后的一次补跑）再来（见下文「per-provider 记账」）。
+ * 延迟可用 `DSH_CHANNEL_PACK_AUTO_CHECKIN_DELAY_MS` 覆盖，`0` 合法（表示立刻跑，
+ * 单测用它）。
  *
  * ## 什么算「今天已被处理」
  *
@@ -32,6 +33,58 @@
  * `ClaimOutcome.coversToday` 声明出来的 `summary.coversToday`
  * （真实缺陷，2026-10-02 审查 PR !33 定位：Qoder 活动每日 10:00（UTC+8）才刷新，
  * 上午那轮看到的 `CLAIMED` 属于**昨天**，拿它记账会让当天额度**整天漏领**）。
+ *
+ * ## ★ per-provider 记账（2026-10-26，两个真实缺陷）
+ *
+ * 本模块原先只有**一个全局日期**（`lastDate`）：一轮跑完就写「今天已处理」，
+ * 当天再也不触发。两个后果都是用户能直接看到的：
+ *
+ * - **A：失败渠道当天不重试。** kuku / officeace 这类当天因凭据过期或上游抖动
+ *   失败的渠道，整天再也不会被自动补救（而失败往往是**暂时的**）；
+ * - **B：Qoder 的 10:00 窗口漏领。** 自动签到若在 10:00（UTC+8）刷新前跑，看到的是
+ *   「昨天已领」⇒ `coversToday=false`（机制已存在，见 `credits.ts` 的字段说明），
+ *   但**记账逻辑照样写全局日期** ⇒ 10:00 后刷新出来的新轮次当天整天没人领。
+ *
+ * 现在记账粒度是**逐渠道**（`AutoCheckinDoc.providers`），判据仍是
+ * `summary.coversToday`（与 `shouldMarkToday` 同一口径，不另立判据）：
+ *
+ * | 本轮该渠道的结局 | 记账 | 会不会再跑 |
+ * |---|---|---|
+ * | `coversToday > 0` | `done` | 今天不再跑（已完成） |
+ * | `coversToday === 0`（渠道说「这不是今天的轮次」） | `stale++` | 隔 {@link AUTO_CHECKIN_STALE_RETRY_MS} 再试 |
+ * | 调用异常 / `failed` / 上游错误 | `failed++` | 隔 {@link AUTO_CHECKIN_MIN_RETRY_MS} 再试 |
+ * | 不支持签到 / 排除表摘掉 | `skipped` | 今天不再跑（重试没有意义） |
+ *
+ * 上限（防无限重跑）：同一渠道当天**总共**跑满
+ * {@link AUTO_CHECKIN_MAX_ATTEMPTS_PER_DAY} 次即置 `given-up`（**今日已放弃**），
+ * 并把最后一次的短结果（失败原因）留在账本里给面板展示 —— 面板文字会带上
+ * 「今日已放弃」，用户能看出今天不会再有自动补救。
+ *
+ * 两次尝试之间的**最小间隔**按结局分两档（见 {@link nextAttemptAt}）：
+ * 真失败隔 {@link AUTO_CHECKIN_MIN_RETRY_MS}（30 分钟）；「还没到今天的轮次」
+ * （`stale` / `none`）则**直接等到当日刷新时刻**（{@link AUTO_CHECKIN_REFRESH_HOUR_UTC8}
+ * 点），刷新前不再烧额度 —— 这一条是缺陷 B 的正面修法。
+ *
+ * ## 补跑时机：不引入「渠道刷新时刻表」，只靠两次机会
+ *
+ * 1. **下次 DSH 启动**：`runIfDue()` 不再看全局日期，而是逐渠道问
+ *    `providerNeedsRun()`，所以「当天还有没处理完的渠道」就会补跑；
+ * 2. **当日稍后的一次补跑**：一轮结束后若仍有渠道待跑（或启动时发现「还没到
+ *    可再试的时刻」），用**已有的** `deps.schedule`（与启动延迟同一个注入点，
+ *    `unref` 过）排一次；时刻取「最早可以再试的那一刻」，且不跨 UTC+8 日界
+ *    （跨日后的账本按空处理，次日由下一次启动决定 —— 不引入常驻的每日定时器）。
+ *    这样 Qoder 在 10:00 后能自己补上，而**不需要**在记账层写任何「哪个渠道
+ *    几点刷新」的表（那必然漂移 —— 判据只能由看得见刷新语义的渠道自己给，
+ *    见 `credits.ts`）。定时器由 `stop()`（宿主卸载）与 `setEnabled(false)`
+ *    （用户关掉开关）取消。
+ *
+ * ## 向后兼容（旧格式 → 新格式）
+ *
+ * 旧文档只有 `lastDate` 等全局字段、没有 `providers`。读的时候**照常读出来**
+ * （`sanitizeAutoCheckin` 不认 schema 版本），语义是「今天已跑过一轮」——
+ * 也就是 `ranToday` 仍为真、面板文字不变；但**不阻止补跑**：per-provider 账本
+ * 缺失 ⇒ 每个渠道都算「今天还没处理」⇒ 下一次启动会把它们各跑一遍（签到本身
+ * 幂等）。写回时自动升级成 v2（带 `providers`），旧字段继续写、继续被读。
  *
  * ## 为什么单独一份文档，而不是塞进 ui-preferences.json
  *
@@ -74,15 +127,51 @@ import type { RpcCreditsClaimAllResponse, RpcUsageAutoCheckinState } from './typ
 /** 独立文档的文件名（与 state.json / ui-preferences.json 同目录）。 */
 export const AUTO_CHECKIN_FILE = 'auto-checkin.json'
 
-const SCHEMA = 'dsh-codearts-auth/auto-checkin/v1'
+/**
+ * 文档 schema 版本。
+ *
+ * - `v1`：只有全局 `lastDate`（**只读兼容**，见文件头「向后兼容」）；
+ * - `v2`（2026-10-26）：追加逐渠道账本 `providers`。
+ *
+ * ⚠️ 版本号**不参与判据**：`sanitizeAutoCheckin` 不按 schema 分支（旧文档缺字段
+ * 一律按默认值补齐），故读到 v1 文档的行为是确定的，不需要额外的迁移代码路径。
+ */
+const SCHEMA = 'dsh-codearts-auth/auto-checkin/v2'
+
+/**
+ * 单个渠道的当日账本条目。
+ *
+ * ⚠️ 这里的 `status` 是**记账结论**，不是 `ClaimOutcome.kind`：判据只有一条
+ * 「这个渠道今天是否已被真正处理过」（`coversToday > 0`），见文件头那张表。
+ */
+export interface AutoCheckinProviderLedger {
+  /** 账本所属的 UTC+8 日期（`YYYY-MM-DD`）；与 `day` 不等即视为空账本。 */
+  day: string
+  /**
+   * - `done`：今天已真正处理（`coversToday > 0`）⇒ 今天不再跑；
+   * - `pending`：还没跑过 / 该再跑（`attempts` 里有上次的结局）；
+   * - `given-up`：达到重跑上限，**今日已放弃**（`lastText` 保留最后一次的短结果）；
+   * - `skipped`：不支持签到或被排除表摘掉 ⇒ 重试没有意义，今天不再跑。
+   */
+  status: 'done' | 'pending' | 'given-up' | 'skipped'
+  /** 今天这个渠道**真跑过** `claimAll` 的次数（跳过不计）。 */
+  attempts: number
+  /** 最后一次尝试的时刻（毫秒）；0 = 今天还没跑过。 */
+  lastAt: number
+  /** 最后一次尝试的结局（供「下次为什么还要跑」与面板展示）。 */
+  lastOutcome: 'claimed' | 'already-claimed' | 'stale' | 'failed' | 'skipped' | 'error' | 'none'
+  /** 最后一次尝试的短结果（如 `2 个 +200积分` / `出错` / `非今日轮次`）。 */
+  lastText: string
+}
 
 /**
  * 文档内容。
  *
- * `lastDate` / `lastResult` 既是「当天不重复触发」的判据，也是状态灯提示的来源
- * （用户要求「记录签到状态，不多次重复触发」）。`channels` 是**逐渠道**结果，
- * 供面板上那行常驻的自动签到状态文字使用（用户 2026-10-02：「自动签到状态下，
- * 下方应该也显示文字状态，这样才能够知道各个渠道的签到状态」）。
+ * `lastDate` / `lastResult` 是**上一轮**的全局摘要（状态灯与面板文字用它，语义
+ * 与旧版逐字一致）；「今天还要不要再跑」的判据在 `providers` 里逐渠道给出。
+ * `channels` 是**逐渠道**结果，供面板上那行常驻的自动签到状态文字使用
+ * （用户 2026-10-02：「自动签到状态下，下方应该也显示文字状态，这样才能够知道
+ * 各个渠道的签到状态」）。
  */
 export interface AutoCheckinDoc {
   /**
@@ -97,6 +186,15 @@ export interface AutoCheckinDoc {
   lastResult: string
   /** 上次跑完的时刻（毫秒）；0 = 从未跑过。 */
   lastAt: number
+  /**
+   * ★ **逐渠道当日账本**（2026-10-26）：`provider → 今天处理到哪一步`。
+   *
+   * 「今天还要不要再跑」的判据**只**看这里（`providerNeedsRun`）。空对象 =
+   * 今天还没跑过任何渠道（**包括从旧文档升级上来的情形**，见文件头「向后兼容」）。
+   * ⚠️ 只在 `day` 等于今天时有效；跨日后整份账本按空处理（不需要定时清理，
+   * 判据里比一次日期即可，见 `ledgerFor`）。
+   */
+  providers: Record<string, AutoCheckinProviderLedger>
   /** 逐渠道结果（顺序即遍历顺序）；空数组 = 没有可展示的逐渠道信息。 */
   channels: Array<{ provider: string; text: string }>
   /**
@@ -114,6 +212,7 @@ export const DEFAULT_AUTO_CHECKIN: AutoCheckinDoc = {
   lastDate: '',
   lastResult: '',
   lastAt: 0,
+  providers: {},
   channels: [],
   dismissedRunAt: 0,
 }
@@ -138,14 +237,59 @@ function sanitizeChannels(raw: unknown): Array<{ provider: string; text: string 
   return out
 }
 
+/** 账本 `status` 的合法值（脏数据一律回落到 `pending`，见 `sanitizeProviders`）。 */
+const LEDGER_STATUSES: ReadonlyArray<AutoCheckinProviderLedger['status']> = ['done', 'pending', 'given-up', 'skipped']
+/** 账本 `lastOutcome` 的合法值。 */
+const LEDGER_OUTCOMES: ReadonlyArray<AutoCheckinProviderLedger['lastOutcome']> = ['claimed', 'already-claimed', 'stale', 'failed', 'skipped', 'error', 'none']
+
+/**
+ * 归一化逐渠道账本（丢非法项、钳计数、截断文本）。
+ *
+ * ⚠️ 未知 `status` 回落到 `pending`（= 今天还会再跑）：账本是「谁还没处理完」的
+ * 判据，脏值往「已放弃」那边回落会让渠道**整天漏签**，往 `pending` 回落最多多发
+ * 一轮请求（幂等）。判据口径与 `sanitizeAutoCheckin` 的「回落比不可用更合理」一致。
+ */
+function sanitizeProviders(raw: unknown): Record<string, AutoCheckinProviderLedger> {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {}
+  const out: Record<string, AutoCheckinProviderLedger> = {}
+  let count = 0
+  for (const [provider, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (provider.length === 0 || provider.length > 64) continue
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
+    const record = value as Record<string, unknown>
+    const day = typeof record.day === 'string' && DATE_RE.test(record.day) ? record.day : ''
+    const attemptsRaw = Number(record.attempts)
+    const status = LEDGER_STATUSES.includes(record.status as AutoCheckinProviderLedger['status'])
+      ? record.status as AutoCheckinProviderLedger['status']
+      : 'pending'
+    const lastOutcome = LEDGER_OUTCOMES.includes(record.lastOutcome as AutoCheckinProviderLedger['lastOutcome'])
+      ? record.lastOutcome as AutoCheckinProviderLedger['lastOutcome']
+      : 'none'
+    const lastAtRaw = Number(record.lastAt)
+    out[provider] = {
+      day,
+      status,
+      attempts: Number.isFinite(attemptsRaw) && attemptsRaw > 0 ? Math.min(Math.floor(attemptsRaw), 99) : 0,
+      lastAt: Number.isFinite(lastAtRaw) && lastAtRaw > 0 ? lastAtRaw : 0,
+      lastOutcome,
+      lastText: typeof record.lastText === 'string' ? record.lastText.slice(0, 120) : '',
+    }
+    count += 1
+    if (count >= MAX_CHANNEL_ENTRIES) break
+  }
+  return out
+}
+
 /**
  * 归一化文档：非法值一律回落默认值（**不抛错**）。
  *
  * ⚠️ 与 RPC 写入路径的严格校验**不冲突**：那条路径面对用户输入，要拒绝非法值；
  * 这条路径面对**磁盘上的脏数据**（手工编辑过、被旧版本写坏），回落比整机不可用
  * 更合理 —— 判据口径与 `sanitizeBadgePreference` 一致。
- * ⚠️ 缺新字段的**旧文档**（没有 `channels` / `lastAt` / `enabled`）必须照常读出来：
- * 前两个是本功能上线后追加的，而 `enabled` 缺失要按**默认打开**处理（不是关闭）。
+ * ⚠️ 缺新字段的**旧文档**（没有 `channels` / `lastAt` / `enabled` / `providers`）
+ * 必须照常读出来：前三个是本功能上线后追加的，而 `enabled` 缺失要按**默认打开**
+ * 处理（不是关闭）；`providers` 缺失要按**空账本**处理（= 今天还没处理任何渠道，
+ * 下一次启动会补跑，见文件头「向后兼容」）。
  */
 export function sanitizeAutoCheckin(raw: unknown): AutoCheckinDoc {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ...DEFAULT_AUTO_CHECKIN }
@@ -160,6 +304,7 @@ export function sanitizeAutoCheckin(raw: unknown): AutoCheckinDoc {
     lastDate: typeof record.lastDate === 'string' && DATE_RE.test(record.lastDate) ? record.lastDate : '',
     lastResult: typeof record.lastResult === 'string' ? record.lastResult : '',
     lastAt: ms(record.lastAt),
+    providers: sanitizeProviders(record.providers),
     channels: sanitizeChannels(record.channels),
     dismissedRunAt: ms(record.dismissedRunAt),
   }
@@ -182,6 +327,158 @@ export const DSH_CHANNEL_PACK_AUTO_CHECKIN_DELAY_MS = 'DSH_CHANNEL_PACK_AUTO_CHE
 
 /** 默认延迟（毫秒）。理由见文件头「为什么延迟 30 秒」。 */
 export const AUTO_CHECKIN_DELAY_MS = 30_000
+
+/**
+ * 同一渠道**当天**最多跑几次 `claimAll`（含第一次）。
+ *
+ * ## 为什么需要上限
+ *
+ * per-provider 记账的代价是「没处理完就再跑」。若不设上限，一个**真的**坏掉的
+ * 渠道（凭据被吊销 / 上游永久 4xx）会跟着「每次启动 + 每次补跑」反复打上游，
+ * 而它的失败率是 100% —— 白耗请求、还可能触发风控。
+ *
+ * 取 3：够覆盖「凭据还没续上（启动竞态）/ 上游抖动 / 刷新窗口」这三类**暂时**
+ * 失败，又不会让一个坏渠道整天打上游。达到上限即置 `given-up`（今日已放弃），
+ * 失败原因留在账本的 `lastText` 里给面板展示。
+ */
+export const AUTO_CHECKIN_MAX_ATTEMPTS_PER_DAY = 3
+
+/**
+ * 真失败（调用异常 / 上游报错 / `failed`）后的最小重试间隔。
+ *
+ * 30 分钟的理由：与「启动后 30 秒跑一轮」同一量级地避免**重启风暴**（用户一天开
+ * 十次 DSH 不该打十轮上游），又能在同一小时内给「续期刚完成」留一次机会。
+ */
+export const AUTO_CHECKIN_MIN_RETRY_MS = 30 * 60_000
+
+/**
+ * 「今天这一轮还没到」（渠道说 `coversToday === false`，或干脆**什么都没发生**）
+ * 之后的重试间隔 —— **仅当当日的刷新时刻已经过去**时使用；刷新时刻之前一律等到
+ * 刷新时刻（见 {@link nextAttemptAt}）。
+ */
+export const AUTO_CHECKIN_STALE_RETRY_MS = 30 * 60_000
+
+/**
+ * 「日刷新时刻」（UTC+8 的小时）：渠道报「这不是今天的轮次」时，最早什么时候
+ * 再问一次。
+ *
+ * ⚠️ **这不是「哪个渠道几点刷新」的表** —— 那种表必然漂移，本仓库已有先例
+ * （见 `credits.ts` 的 `coversToday` 说明：刷新语义只能由看得见它的渠道自己给）。
+ * 这里只是一个**保守的下一次提问时刻**：已知上游里唯一的日刷新时刻是 Qoder 的
+ * 10:00（UTC+8），与 `qoder-credits.ts` 的 `QODER_CAMPAIGN_REFRESH_HOUR_UTC8`
+ * **必须同值**（`scripts/auto-checkin-ledger-test.mjs` 有漂移守卫用例）。
+ * 不直接 import 那个模块：它经 `qoder-machine.ts` 拖进子进程/机器指纹依赖，
+ * 而记账层只该依赖 `credits.ts` 的语义。
+ */
+export const AUTO_CHECKIN_REFRESH_HOUR_UTC8 = 10
+
+const DAY_MS = 86_400_000
+
+/**
+ * 「UTC+8 当天 00:00」的绝对毫秒。
+ *
+ * ⚠️ 与 `utc8DateString` 同一口径（算术平移，不看本机时区）：用 `Date` 的本地
+ * 时间 API 会在用户出差 / 改系统时区时把「今天」算错。
+ */
+export function utc8DayStartMs(nowMs: number = Date.now()): number {
+  const shifted = nowMs + QODER_BILLING_UTC_OFFSET_MS
+  return Math.floor(shifted / DAY_MS) * DAY_MS - QODER_BILLING_UTC_OFFSET_MS
+}
+
+/** 「UTC+8 当天 10:00」（日刷新时刻）的绝对毫秒。 */
+export function utc8RefreshBoundaryMs(nowMs: number = Date.now()): number {
+  return utc8DayStartMs(nowMs) + AUTO_CHECKIN_REFRESH_HOUR_UTC8 * 3_600_000
+}
+
+/**
+ * 某个渠道**最早**什么时候可以再跑；`null` = 今天不用再跑。
+ *
+ * 纯函数（只吃账本条目与时刻）⇒ 单测零等待、零文件系统、零网络。
+ *
+ * 判据顺序：
+ * 1. 没有今天的条目（含旧文档升级上来的空账本）⇒ **立刻可跑**（今天还没处理）；
+ * 2. `done` / `given-up` / `skipped` ⇒ 今天不再跑；
+ * 3. `pending`：`attempts` 已达上限 ⇒ 不再跑（应由调用方置 `given-up`）；
+ * 4. `pending` 且上次结局是 `stale` / `none`（渠道说「不是今天的轮次」/ 干脆什么
+ *    都没发生）⇒ 等到**当日刷新时刻**（还没到）或 `lastAt + STALE_RETRY_MS`（已过）；
+ * 5. 其余（`failed` / `error`）⇒ `lastAt + MIN_RETRY_MS`。
+ *
+ * ⚠️⚠️ **第 4 条里的「等到刷新时刻」不能省**（2026-10-26 实现时发现）：Qoder 在
+ * 10:00 之前返回的是 `inactive`（`NOT_REFRESHED_YET_HINT`，**没有**任何
+ * `claimed/alreadyClaimed` 痕迹），此时 `coversToday === 0` 且 `failed === 0`
+ * —— 若按「30 分钟后重试」算，08:00 那次启动会在 08:30 / 09:00 / 09:30 把
+ * {@link AUTO_CHECKIN_MAX_ATTEMPTS_PER_DAY} 次额度**在刷新之前**全部烧完，
+ * 10:00 之后再也不跑 ⇒ 缺陷 B 原样复发（甚至更糟：连旧行为都不如）。
+ * 故「什么都没发生」与「非今日轮次」共用同一条时刻判据。
+ */
+export function nextAttemptAt(
+  entry: AutoCheckinProviderLedger | undefined,
+  nowMs: number = Date.now(),
+): number | null {
+  if (entry === undefined || entry.day !== utc8DateString(nowMs)) return nowMs
+  if (entry.status !== 'pending') return null
+  if (entry.attempts >= AUTO_CHECKIN_MAX_ATTEMPTS_PER_DAY) return null
+  const last = entry.lastAt > 0 ? entry.lastAt : nowMs
+  if (entry.lastOutcome === 'stale' || entry.lastOutcome === 'none') {
+    const boundary = utc8RefreshBoundaryMs(nowMs)
+    return nowMs < boundary ? boundary : last + AUTO_CHECKIN_STALE_RETRY_MS
+  }
+  return last + AUTO_CHECKIN_MIN_RETRY_MS
+}
+
+/** 这个渠道现在该不该跑（`nextAttemptAt` 的可读封装）。 */
+export function providerNeedsRun(
+  entry: AutoCheckinProviderLedger | undefined,
+  nowMs: number = Date.now(),
+): boolean {
+  const at = nextAttemptAt(entry, nowMs)
+  return at !== null && at <= nowMs
+}
+
+/**
+ * 今天还有几个渠道**待补跑**（`pending`；`given-up` 不算）。
+ *
+ * ⚠️ `only` 是**必须**给的（可选只为兼容纯函数单测）：账本里可能留着**已经不在
+ * 账号池里**的渠道条目（账号被删 / 渠道关闭）。不过滤会让「待补跑数」永远大于 0
+ * ⇒ `scheduleFollowUp` 反复排一个 0ms 的补跑（真实死循环，2026-10-26 实现时踩到）。
+ */
+export function pendingProviderCount(
+  providers: Record<string, AutoCheckinProviderLedger>,
+  nowMs: number = Date.now(),
+  only?: readonly string[],
+): number {
+  const day = utc8DateString(nowMs)
+  const keys = only ?? Object.keys(providers)
+  let count = 0
+  for (const provider of keys) {
+    const entry = providers[provider]
+    if (entry !== undefined && entry.day === day && entry.status === 'pending') count += 1
+  }
+  return count
+}
+
+/**
+ * 下一轮补跑该在什么时刻（所有待跑渠道里最早的那个）；`null` = 今天没有待跑的。
+ *
+ * ⚠️ 越过 UTC+8 日界的时刻一律丢弃：跨日后的账本按空处理（`nextAttemptAt` 的
+ * 第 1 条），而**次日是否再跑由下一次启动决定** —— 本模块刻意不引入「常驻的每日
+ * 定时器」（那是 `index.ts` 的续期调度器那类设施的事，不在本缺陷范围内）。
+ */
+export function nextPendingAttemptAt(
+  providers: Record<string, AutoCheckinProviderLedger>,
+  nowMs: number = Date.now(),
+  only?: readonly string[],
+): number | null {
+  const endOfDay = utc8DayStartMs(nowMs) + DAY_MS
+  const keys = only ?? Object.keys(providers)
+  let best: number | null = null
+  for (const provider of keys) {
+    const at = nextAttemptAt(providers[provider], nowMs)
+    if (at === null || at >= endOfDay) continue
+    if (best === null || at < best) best = at
+  }
+  return best
+}
 
 /**
  * 读延迟配置。
@@ -253,6 +550,9 @@ class FileAutoCheckinStore implements AutoCheckinStore {
       lastDate: doc.lastDate,
       lastResult: doc.lastResult,
       lastAt: doc.lastAt,
+      // ★ v2 逐渠道账本（2026-10-26）。旧版本插件读这份文档时只会看到
+      //   它认识的字段（旧字段全部保留），故升级不会让另一条工作区的旧版本崩。
+      providers: doc.providers,
       channels: doc.channels,
       dismissedRunAt: doc.dismissedRunAt,
     }, null, 2), 'utf-8')
@@ -300,10 +600,17 @@ interface RunTotals {
   skipped: number
   /** 渠道级：其它错误（凭据、网络……）。 */
   errors: number
+  /**
+   * 渠道级：本轮达到重跑上限、**今日已放弃**的渠道数（2026-10-26）。
+   *
+   * 与 `errors` 分开：`errors` 是「这一轮出错」，`givenUp` 是「今天不再自动试了」
+   * —— 后者必须让用户看见（否则「今日已放弃」只躺在文档里，用户以为还在自动补救）。
+   */
+  givenUp: number
 }
 
 function emptyTotals(): RunTotals {
-  return { providers: 0, claimed: 0, totalCredit: 0, totalByUnit: { token: 0, credit: 0 }, alreadyClaimed: 0, inactive: 0, failed: 0, coversToday: 0, skipped: 0, errors: 0 }
+  return { providers: 0, claimed: 0, totalCredit: 0, totalByUnit: { token: 0, credit: 0 }, alreadyClaimed: 0, inactive: 0, failed: 0, coversToday: 0, skipped: 0, errors: 0, givenUp: 0 }
 }
 
 /**
@@ -361,17 +668,29 @@ export function describeRun(totals: RunTotals): string {
     parts.push(`${totals.claimed} 个账号领取成功${amounts === null ? '' : `（${amounts}）`}`)
   }
   if (totals.alreadyClaimed > 0) parts.push(`${totals.alreadyClaimed} 个今天已领`)
+  // ⚠️ 声称「领取成功 / 今天已领」之前先自问一句：这些痕迹是不是**今天这一轮**的？
+  // Qoder 在 10:00（UTC+8）刷新前领到的是**昨天那条**的补领 —— 报「领取成功」没错，
+  // 但**不能**让用户以为今天的事办完了（那正是缺陷 B 的界面表现）。故这里显式标注，
+  // 与 `describeChannel` 的「非今日轮次」同一口径（coversToday）。
+  const traces = totals.claimed + totals.alreadyClaimed
+  if (traces > 0 && totals.coversToday === 0) parts.push('均非今日轮次（未到刷新时刻）')
   if (totals.failed > 0) parts.push(`${totals.failed} 个失败`)
   if (totals.errors > 0) parts.push(`${totals.errors} 个渠道出错`)
   if (totals.skipped > 0) parts.push(`${totals.skipped} 个渠道不支持签到`)
+  // ★ 「今日已放弃」（2026-10-26）：达到重跑上限的渠道必须让用户看见 ——
+  //   否则面板只说「N 个失败」，用户不知道今天**不会**再自动补救了。
+  if (totals.givenUp > 0) parts.push(`${totals.givenUp} 个渠道今日已放弃`)
   if (parts.length === 0) return `${totals.providers} 个渠道：没有需要领取的账号`
   return `${totals.providers} 个渠道：${parts.join('，')}`
 }
 
 /**
- * 这一轮该不该把「今天」记为已跑。
+ * 「这一轮有没有渠道能证明今天已被处理」—— 保留为**口径参考**与单测判据。
  *
- * 判据：**至少有一个账号能证明「今天这一轮已被处理」**（`coversToday > 0`）才记。
+ * ★ 2026-10-26 起它**不再决定记账**：记账已改为逐渠道（见文件头「per-provider
+ * 记账」），每个渠道各自按同一口径（`summary.coversToday > 0`）判「今天完成没
+ * 完成」。这个函数留着是因为「整轮有没有任何进展」仍是日志与排障要看的一句话，
+ * 而且它的注释就是那条判据的出处（新增渠道时别自己发明第三种口径）。
  *
  * ⚠️⚠️ **为什么不能看 `claimed + alreadyClaimed`**（真实缺陷，2026-10-02 审查
  * PR !33 定位）：那两项里混着「**刷新前那一轮**」的痕迹。Qoder 的活动每日
@@ -380,14 +699,13 @@ export function describeRun(totals: RunTotals): string {
  * 而且界面还显示「1 个今天已领」，用户毫无提示。渠道自己用
  * `ClaimOutcome.coversToday` 标出「这条不算今天」，本函数只负责数。
  *
- * 反例（不记、下次启动重试）：
- * - 整轮零成功零已领（凭据全过期 / 网络不通 / 启动太早抢在续期之前）——
- *   若记了，用户当天就再也不会自动签到，且界面只说「上次：N 个失败」；
- * - 跑完但**没有一条能证明今天**（例如只有 Qoder 且赶在 10:00 之前）——
- *   同理不记，当天稍后还有机会；
- * - 一个渠道都没跑（全被跳过）：没有意义，不记。
- * 反之「有成功也有失败」要记：否则一个坏账号会让插件每次启动都把好账号再领一遍
- * （虽然幂等，但白白多发请求）。
+ * 反例（旧行为是「不记、下次启动重试」；新行为是**该渠道留在 pending**）：
+ * - 整轮零成功零已领（凭据全过期 / 网络不通 / 启动太早抢在续期之前）；
+ * - 跑完但**没有一条能证明今天**（例如只有 Qoder 且赶在 10:00 之前）；
+ * - 一个渠道都没跑（全被跳过）：没有意义。
+ * 反之「有成功也有失败」时旧行为是整轮记账（否则一个坏账号会让每次启动都重领
+ * 好账号）；新行为只把成功的那些记 `done`、失败的留 `pending` —— 幂等请求只发给
+ * 真正需要的渠道，这正是本缺陷的修法。
  */
 export function shouldMarkToday(totals: RunTotals): boolean {
   return totals.coversToday > 0
@@ -490,7 +808,16 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
   let running = false
   /** 在飞去重：`setEnabled(true)` 与启动排定可能同时想跑。 */
   let inflight: Promise<void> | null = null
+  /** 启动延迟那一枪（`start()`）。 */
   let pending: { cancel(): void } | null = null
+  /**
+   * 当日补跑那一枪（`scheduleFollowUp()`）。
+   *
+   * ⚠️ 与 {@link pending} **分开两个槽**：启动延迟与补跑是两件不同的事，共用一个
+   * 槽会让「补跑已排定」把「启动延迟」当成已排（或反之）—— 表现为启动那轮被
+   * 静默吞掉。两者都由 `stop()` 取消。
+   */
+  let followUp: { cancel(): void } | null = null
 
   const today = (): string => utc8DateString(now())
 
@@ -498,6 +825,9 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
     return {
       enabled: doc.enabled,
       lastDate: doc.lastDate,
+      // ⚠️ `ranToday` 的语义**保持旧版**（「今天跑过一轮」）：面板那句「今日已
+      // 自动签到」是给用户看的上一次结果，不是「所有渠道都完成了」。真正的
+      // 完成度由 `channels` 逐条给出，补跑判据看 `doc.providers`（见 `runIfDue`）。
       ranToday: doc.lastDate !== '' && doc.lastDate === today(),
       running,
       lastResult: doc.lastResult,
@@ -508,51 +838,120 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
     }
   }
 
-  async function performRun(): Promise<void> {
+  /** 今天这个渠道的账本条目（跨日的条目一律视为不存在，见 `nextAttemptAt`）。 */
+  function ledgerEntry(provider: string): AutoCheckinProviderLedger | undefined {
+    const entry = doc.providers[provider]
+    return entry !== undefined && entry.day === today() ? entry : undefined
+  }
+
+  /** 本轮要不要跑这个渠道（跳过 = 今天已完成 / 已放弃 / 还没到重试时刻）。 */
+  function shouldRunProvider(provider: string): boolean {
+    return providerNeedsRun(ledgerEntry(provider), now())
+  }
+
+  /** 把一条账本写回（返回新文档对象，不改 `doc` 里的旧账本）。 */
+  function withLedger(
+    providers: Record<string, AutoCheckinProviderLedger>,
+    provider: string,
+    entry: AutoCheckinProviderLedger,
+  ): Record<string, AutoCheckinProviderLedger> {
+    return { ...providers, [provider]: entry }
+  }
+
+  async function performRun(providerIds: readonly string[]): Promise<void> {
     const totals = emptyTotals()
-    let providers: string[] = []
-    try {
-      providers = [...new Set(await deps.listProviderIds())].sort()
-    } catch (error) {
-      // 账号池读不出来：不记日期，下次启动重试。
-      deps.warn?.(`[channel-pack] 自动签到：读取账号池失败，本次跳过: ${String(error)}`)
+    const day = today()
+    const runAt = now()
+    const providers = [...providerIds]
+    // ★ 本轮要跑的渠道 = 今天还没处理完的那些（per-provider 判据）。
+    //   ⚠️ 被跳过的（已完成 / 已放弃 / 未到重试时刻）连 `claimAll` 都不调：
+    //   「失败渠道当天重试」不等于「每次启动都把所有渠道再打一遍」。
+    const due = new Set(providers.filter((provider) => shouldRunProvider(provider)))
+    if (due.size === 0) {
+      deps.warn?.(`[channel-pack] 自动签到：今日各渠道均已处理完（${providers.length} 个渠道），本轮无事可做`)
       return
     }
-    const channels: Array<{ provider: string; text: string }> = []
+    let ledgers: Record<string, AutoCheckinProviderLedger> = { ...doc.providers }
+    /** 本轮各渠道的短状态（按 provider 顺序收集，最后统一排序成 `channels`）。 */
+    const texts = new Map<string, string>()
+    // 今日已完成的渠道沿用上一次的短结果（面板仍要逐渠道显示），本轮不重跑。
+    for (const entry of doc.channels) {
+      if (providers.includes(entry.provider) && !due.has(entry.provider)) texts.set(entry.provider, entry.text)
+    }
+
     for (const provider of providers) {
+      if (!due.has(provider)) continue
+      const previous = ledgerEntry(provider)
+      const attempts = (previous?.attempts ?? 0) + 1
+      // 记录一次「真跑过 claimAll」的尝试（跳过不计）。先落盘尝试次数，再打上游：
+      // 万一这一轮把宿主拖崩，下次启动也不会把「没记过的重试」变成无限重试。
+      const base: AutoCheckinProviderLedger = {
+        day,
+        status: 'pending',
+        attempts,
+        lastAt: runAt,
+        lastOutcome: previous?.lastOutcome ?? 'none',
+        lastText: previous?.lastText ?? '',
+      }
       // ⚠️ 排除表先于**任何**上游请求生效（见 isAutoCheckinExcluded 的说明）：
       // zcode 的代价发生在**调用期间**（拉起浏览器产 captcha），事后再判断已经
       // 太晚 —— 必须在调 `claim` 之前就把它摘掉。
       if (isAutoCheckinExcluded(provider)) {
         totals.skipped += 1
-        channels.push({ provider, text: '需手动签到' })
+        texts.set(provider, '需手动签到')
+        // 排除的渠道今天不再跑（重试没有意义，且每次都有代价）。
+        ledgers = withLedger(ledgers, provider, { ...base, attempts: 0, lastOutcome: 'skipped', status: 'skipped', lastText: '需手动签到' })
         continue
+      }
+      /**
+       * 记一次未完成的尝试。
+       *
+       * ⚠️ 达到上限（`given-up`）时**改面板文字**：只写「出错」会让用户以为今天还在
+       * 自动补救，而实际上已经放弃了 —— 用户要求「超限后记入今日已放弃并保留失败
+       * 原因供 UI 展示」，故文字里带出原因与「今日已放弃」。
+       */
+      const settle = (outcome: AutoCheckinProviderLedger['lastOutcome'], text: string): void => {
+        const entry = giveUpOrRetry(base, outcome, text)
+        if (entry.status === 'given-up') {
+          totals.givenUp += 1
+          // 账本与面板文字都带上「今日已放弃」：用户要能看出**今天不会**再自动补救了，
+          // 而不是只看到一句「出错」以为还在后台重试。
+          entry.lastText = `${text}·今日已放弃`
+          texts.set(provider, entry.lastText)
+        }
+        ledgers = withLedger(ledgers, provider, entry)
       }
       let result: BadgeRpcResult<RpcCreditsClaimAllResponse>
       try {
         result = await deps.claim(provider)
       } catch (error) {
         totals.errors += 1
-        channels.push({ provider, text: '出错' })
+        texts.set(provider, '出错')
         deps.warn?.(`[channel-pack] 自动签到：${provider} 调用异常: ${String(error)}`)
+        settle('error', '出错')
         continue
       }
       if (!result.ok) {
         const message = typeof result.error?.message === 'string' ? result.error.message : ''
         if (isUnsupportedCheckin(message)) {
           totals.skipped += 1
-          channels.push({ provider, text: '无签到接口' })
+          texts.set(provider, '无签到接口')
+          // 不支持签到的渠道今天不再跑（与旧行为一致：既不记失败也不重试）。
+          ledgers = withLedger(ledgers, provider, { ...base, attempts: 0, lastOutcome: 'skipped', status: 'skipped', lastText: '无签到接口' })
           continue
         }
         totals.errors += 1
-        channels.push({ provider, text: '出错' })
+        texts.set(provider, '出错')
         deps.warn?.(`[channel-pack] 自动签到：${provider} 失败: ${message || '未知错误'}`)
+        settle('error', '出错')
         continue
       }
       totals.providers += 1
       const summary = result.value?.summary
       if (summary === undefined) {
-        channels.push({ provider, text: '无可领' })
+        // 信封成功但没给 summary：上游没回可判定的东西 ⇒ 与失败同处置（重试有限次）。
+        texts.set(provider, '无可领')
+        settle('error', '无可领')
         continue
       }
       totals.claimed += summary.claimed
@@ -568,25 +967,50 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
       // ⚠️ 记账口径**只认**这一项：渠道用 `coversToday` 自己声明「这条痕迹是不是
       // 今天这一轮的」。缺省回落到 `claimed + alreadyClaimed`，是为了兼容尚未
       // 上报该字段的旧响应（缺字段 ≠ 0，否则整轮会被判成「什么都没证明」）。
-      totals.coversToday += summary.coversToday ?? (summary.claimed + summary.alreadyClaimed)
-      channels.push({ provider, text: describeChannel(summary) })
+      const coversToday = summary.coversToday ?? (summary.claimed + summary.alreadyClaimed)
+      totals.coversToday += coversToday
+      const text = describeChannel(summary)
+      texts.set(provider, text)
+      // ★ per-provider 记账（2026-10-26）：**只有 coversToday 为真**才算今天完成。
+      //   失败与「非今日轮次」都留在 `pending`，下次启动（或当日补跑）再来。
+      if (coversToday > 0) {
+        ledgers = withLedger(ledgers, provider, {
+          ...base,
+          status: 'done',
+          lastOutcome: summary.claimed > 0 ? 'claimed' : 'already-claimed',
+          lastText: text,
+        })
+        continue
+      }
+      if (summary.failed > 0) {
+        settle('failed', text)
+        continue
+      }
+      // 到这儿只剩「有痕迹但渠道说不是今天的轮次」（Qoder 10:00 前那一轮）或
+      // 什么都没发生（inactive）。前者必须**等到刷新时刻**再问，后者按普通重试。
+      settle(summary.claimed + summary.alreadyClaimed > 0 ? 'stale' : 'none', text)
     }
 
-    if (!shouldMarkToday(totals)) {
-      // ⚠️ 刻意**不写** lastDate：让「凭据还没续上 / 网络不通 / 赶在渠道刷新前
-      // 跑的那一轮」能在下次启动重试，而不是当天就此放弃（判据见 shouldMarkToday）。
-      deps.warn?.(
-        `[channel-pack] 自动签到未记入今日（下次启动会重试）：${describeRun(totals)}`,
-      )
-      return
+    const result = describeRun(totals)
+    // 账本只保留**当前账号池里**的渠道：账号删掉/渠道关闭后留下的旧条目会让
+    // 「待补跑数」永远大于 0（见 `pendingProviderCount` 的说明）。
+    const pruned: Record<string, AutoCheckinProviderLedger> = {}
+    for (const provider of providers) {
+      const entry = ledgers[provider]
+      if (entry !== undefined) pruned[provider] = entry
     }
-
     doc = {
       ...doc,
-      lastDate: today(),
-      lastResult: describeRun(totals),
-      lastAt: now(),
-      channels,
+      // ⚠️ `lastDate` 保留**旧语义**：只有「今天确实有渠道被处理过」才写成今天。
+      // 面板那句「今日已自动签到」读的就是它 —— 若整轮全失败也写成今天，界面会
+      // 说「今日已签到」而用户一分没领到（方向不可逆的误报）。「今天还要不要再跑」
+      // 完全看 `providers`，与这个展示字段无关。
+      lastDate: totals.coversToday > 0 ? day : doc.lastDate,
+      lastResult: result,
+      lastAt: runAt,
+      providers: pruned,
+      // 逐渠道文字按 provider 顺序（与遍历顺序一致，面板按它渲染）
+      channels: providers.filter((provider) => texts.has(provider)).map((provider) => ({ provider, text: texts.get(provider) ?? '' })),
       // ⚠️ 新一轮跑完要**清掉上一次的「已关闭」标记**：否则用户关过一次后，
       // 明天的新结果会被旧标记静默藏住（`dismissed` 的判据是 lastAt 相等）。
       dismissedRunAt: 0,
@@ -594,18 +1018,90 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
     try {
       await deps.store.save(doc)
     } catch (error) {
-      // 写盘失败 ⇒ 今天可能再跑一次（幂等，代价是多发一轮请求），如实告警。
+      // 写盘失败 ⇒ 账本丢了，今天可能再跑一次（幂等，代价是多发一轮请求），如实告警。
       deps.warn?.(`[channel-pack] 自动签到结果写入失败（今天可能重复触发一次）: ${String(error)}`)
     }
-    deps.warn?.(`[channel-pack] 自动签到完成（${today()}）：${doc.lastResult}`)
+    const left = pendingProviderCount(pruned, runAt, providers)
+    deps.warn?.(
+      left === 0
+        ? `[channel-pack] 自动签到完成（${day}）：${result}`
+        : `[channel-pack] 自动签到本轮结束（${day}），${left} 个渠道待补跑：${result}`,
+    )
+  }
+
+  /**
+   * 一次失败/未完成的尝试之后该记什么：达到上限就 `given-up`，否则留 `pending`
+   * （由 `nextAttemptAt` 算出下次可跑时刻）。
+   */
+  function giveUpOrRetry(
+    base: AutoCheckinProviderLedger,
+    outcome: AutoCheckinProviderLedger['lastOutcome'],
+    text: string,
+  ): AutoCheckinProviderLedger {
+    const exhausted = base.attempts >= AUTO_CHECKIN_MAX_ATTEMPTS_PER_DAY
+    return {
+      ...base,
+      status: exhausted ? 'given-up' : 'pending',
+      lastOutcome: outcome,
+      lastText: text,
+    }
+  }
+
+  /** 排一次「当日补跑」（不引入新定时器：复用 `deps.schedule`，`unref` 过）。 */
+  function scheduleFollowUp(providerIds: readonly string[]): void {
+    if (followUp !== null) return
+    const at = nextPendingAttemptAt(doc.providers, now(), providerIds)
+    if (at === null) return
+    const ms = Math.max(0, at - now())
+    const fire = (): void => {
+      followUp = null
+      // 到点时再判一次（中途可能被用户关掉开关 / 账本已变）。
+      if (!doc.enabled) return
+      void runIfDue()
+    }
+    followUp = (deps.schedule ?? defaultSchedule)(fire, ms)
+    deps.warn?.(`[channel-pack] 自动签到：${Math.round(ms / 60_000)} 分钟后补跑未完成的渠道`)
   }
 
   function runIfDue(): Promise<void> {
     if (inflight !== null) return inflight
     if (!doc.enabled) return Promise.resolve()
-    if (doc.lastDate !== '' && doc.lastDate === today()) return Promise.resolve()
-    running = true
-    const task = performRun().catch((error: unknown) => {
+    // ★ 判据换成 per-provider（2026-10-26）：只有**所有**渠道今天都已有结论
+    //   （done / given-up / skipped）才什么都不做。旧的全局日期判据会把
+    //   「今天跑过一轮但有渠道失败」当成已完成 ⇒ 那些渠道整天不再补救（缺陷 A），
+    //   也会让 10:00 前跑的那一轮挡住 10:00 后的 Qoder 新轮次（缺陷 B）。
+    // ⚠️ `running` 要**同步**置真：`setEnabled(true)` 返回的 state 得立刻显示
+    // 「进行中」，否则用户点了开关看不到任何反应（见那里的注释）。判据只用**同步
+    // 可得**的账本：今天还没有任何条目（= 全新的一天）或有待补跑的渠道 ⇒ 一定会
+    // 干活；只有「今天的账本已全部有结论」才不置真（那时确实可能无事可做，由下面的
+    // 账号池检查兜底 —— 新增渠道会被它发现并补跑）。
+    const todayEntries = Object.values(doc.providers).filter((entry) => entry.day === today())
+    if (todayEntries.length === 0 || todayEntries.some((entry) => entry.status === 'pending')) running = true
+    const task = (async () => {
+      let providerIds: string[] = []
+      try {
+        providerIds = [...new Set(await deps.listProviderIds())].sort()
+      } catch (error) {
+        deps.warn?.(`[channel-pack] 自动签到：读取账号池失败，本次跳过: ${String(error)}`)
+        return
+      }
+      if (!providerIds.some((provider) => shouldRunProvider(provider))) {
+        // 今天还有待补跑的渠道，但都还没到「可以再试」的时刻（例如 20 分钟前刚
+        // 失败过）⇒ 把补跑排到最早那一刻，别让用户非等到下次启动。
+        // ⚠️ `scheduleFollowUp` 取的是**未来**时刻，故不会自旋（见那里的说明）。
+        if (pendingProviderCount(doc.providers, now(), providerIds) > 0) scheduleFollowUp(providerIds)
+        return
+      }
+      running = true
+      await performRun(providerIds)
+      // 还有待补跑的渠道 ⇒ 排一次当日补跑（到点自己再判一次）；都处理完了就把
+      // 之前排定的补跑撤掉（否则会留一个到点空转的定时器）。
+      if (pendingProviderCount(doc.providers, now(), providerIds) > 0) scheduleFollowUp(providerIds)
+      else {
+        followUp?.cancel()
+        followUp = null
+      }
+    })().catch((error: unknown) => {
       deps.warn?.(`[channel-pack] 自动签到异常: ${String(error)}`)
     }).finally(() => {
       running = false
@@ -620,6 +1116,11 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
     async setEnabled(enabled) {
       doc = { ...doc, enabled }
       await deps.store.save(doc)
+      // 关掉开关时撤掉已排定的当日补跑：用户关掉后不该再被后台打一轮上游。
+      if (!enabled) {
+        followUp?.cancel()
+        followUp = null
+      }
       // 打开开关时立刻尝试一轮（今天已跑过则由 runIfDue 内部拦住）。
       // ⚠️ 不 await：一轮要串行打十几个上游，让按钮等它会让界面像卡死；
       // `state()` 里的 `running` 会立刻变成 true，界面据此显示「进行中」。
@@ -655,6 +1156,8 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
     stop() {
       pending?.cancel()
       pending = null
+      followUp?.cancel()
+      followUp = null
     },
   }
 }

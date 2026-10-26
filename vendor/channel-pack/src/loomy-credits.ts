@@ -44,6 +44,7 @@ import {
   parseLoomyEnvelope,
   type LoomyCredential,
 } from './loomy.js'
+import { utc8DayKey } from './token-ledger.js'
 import type { LoomyProduct } from './loomy-product.js'
 
 /** 「一键签到」的语义说明（供 UI 提示用，避免写成「+5000 积分」）。 */
@@ -223,8 +224,15 @@ export async function claimLoomyDailyQuota(
   const dailyQuota = readNumber(result.data?.dailyQuota)
   const dailyBalance = readNumber(result.data?.dailyBalance)
   const alreadyProcessed = result.data?.alreadyProcessed === true
+  // `dailyCycleDate` 是服务端给出的本次额度所属业务日（YYYY-MM-DD），
+  // 与账本日键（UTC+8）对齐。缺少时退化为「不跨天」假设（保持旧行为），
+  // 但只要有就**必须**校验它等于今天，否则会把「昨天已签」误判成「今日已签」。
+  const dailyCycleDate = typeof result.data?.dailyCycleDate === 'string'
+    ? result.data.dailyCycleDate
+    : undefined
+  const isToday = dailyCycleDate === utc8DayKey(Date.now())
 
-  if (alreadyProcessed) {
+  if (alreadyProcessed && isToday) {
     return {
       kind: 'already-claimed',
       message: dailyQuota === undefined
@@ -233,8 +241,10 @@ export async function claimLoomyDailyQuota(
     }
   }
 
-  // 首次处理：`credit` 表示**本次新发放的额度**。服务端不直接给这个差值，
-  // 故用 dailyQuota - dailyConsumed 推算；两者都缺时回 0（不编造）。
+  // 非今日周期或首次处理：`credit` 表示**本次新发放的额度**。服务端不直接给
+  // 这个差值，故用 dailyQuota - dailyConsumed 推算；两者都缺时回 0（不编造）。
+  // ⚠️ 注意：若 alreadyProcessed 为真但周期日不是今天（跨天残留），此处按
+  // claimed 处理，避免在账本新的一天把它错记成 already-claimed（漏掉当日额度）。
   const dailyConsumed = readNumber(result.data?.dailyConsumed)
   const granted = dailyQuota !== undefined && dailyConsumed !== undefined
     ? Math.max(0, dailyQuota - dailyConsumed)

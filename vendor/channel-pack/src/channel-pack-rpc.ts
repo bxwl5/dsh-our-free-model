@@ -3074,9 +3074,14 @@ function registerChannelPackEndpoints(
               // 因此永不满足，每次启动都重跑一轮（2026-10-26 实测发现）。
               return outcome.claimed > 0
                 ? { kind: 'claimed', credit: outcome.claimed, streakDays: 1, isStreakDay: true, message: outcome.message }
-                : /已签到|已领/.test(outcome.message)
-                  ? { kind: 'already-claimed', message: outcome.message }
-                  : { kind: 'failed', code: -1, message: outcome.message }
+                // ⚠️ 上游「签到成功但没有积分数」返回 success=true 且 reward=0
+                // （如当日已通过客户端完成任务），这是**真签到**，必须记成
+                // claimed（credit 0），否则会被错判成 failed → 自动签到永远重跑。
+                : /签到成功/.test(outcome.message)
+                  ? { kind: 'claimed', credit: 0, streakDays: 1, isStreakDay: true, message: outcome.message }
+                  : /已签到|已领/.test(outcome.message)
+                    ? { kind: 'already-claimed', message: outcome.message }
+                    : { kind: 'failed', code: -1, message: outcome.message }
             },
             precheckStatus: false,
             warn: (msg) => ctx.logger?.warn?.(msg),
@@ -3097,11 +3102,17 @@ function registerChannelPackEndpoints(
             claim: async (credential) => {
               const outcome = await claimBonus(codeartsFetcher, OFFICEACE, credential)
               // 同 autoclaw：返回 ClaimOutcome（computeClaimSummary 按 kind 分类）。
-              return (outcome.gained ?? 0) > 0
-                ? { kind: 'claimed', credit: outcome.gained ?? 0, streakDays: 1, isStreakDay: true, message: outcome.message }
-                : /已领|没有可领/.test(outcome.message)
-                  ? { kind: 'already-claimed', message: outcome.message }
-                  : { kind: 'failed', code: -1, message: outcome.message }
+              // ⚠️ `gained === undefined` 表示领前/领后余额读数没拿到（上游幂等、
+              // 重复领不报错），claimBonus 如实回「已签到」—— 这是**已签过**，
+              // 必须记成 already-claimed，而不是 failed（否则自动签到当天不重试、
+              // 却又因为 coversToday=0 每次启动都重跑，2026-10-26 实测形态）。
+              return outcome.gained === undefined
+                ? { kind: 'already-claimed', message: outcome.message }
+                : (outcome.gained ?? 0) > 0
+                  ? { kind: 'claimed', credit: outcome.gained ?? 0, streakDays: 1, isStreakDay: true, message: outcome.message }
+                  : /已领|没有可领/.test(outcome.message)
+                    ? { kind: 'already-claimed', message: outcome.message }
+                    : { kind: 'failed', code: -1, message: outcome.message }
             },
             precheckStatus: false,
             warn: (msg) => ctx.logger?.warn?.(msg),
@@ -3125,7 +3136,11 @@ function registerChannelPackEndpoints(
               // 返回 SUCCESS + reward 0）对应 already-claimed。
               return outcome.claimed > 0
                 ? { kind: 'claimed', credit: outcome.claimed, streakDays: 1, isStreakDay: true, message: outcome.message }
-                : /已领取过|已领/.test(outcome.message)
+                // ⚠️ 「上游未返回可领取结果（可能今日无可领任务）」是**今天没得领**，
+                // 不是失败：kuku 的任务每日刷新，当天任务都领完/未刷新时上游就
+                // 不回可领结果。判成 failed 会让自动签到当天反复重跑（2026-10-26
+                // 实测形态）。
+                : /今日无可领|未返回可领取结果|已领取过|已领/.test(outcome.message)
                   ? { kind: 'already-claimed', message: outcome.message }
                   : { kind: 'failed', code: -1, message: outcome.message }
             },

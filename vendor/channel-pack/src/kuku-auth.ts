@@ -400,7 +400,10 @@ export async function claimKukuDailyCheckin(
         ? record.reward_point
         : Number(record.reward_point ?? 0)
       if (Number.isFinite(reward) && reward > 0) total += reward
-      if (status === 'SUCCESS' || status === 'BADGE_ALREADY_RECEIVED' || reward >= 0) succeeded += 1
+      // ⚠️ 只能凭**显式**的 complete_status 判定成功；`reward >= 0` 对
+      // complete_status=FAIL（reward 缺省按 0）恒为真，会把「失败」误算成
+      // succeeded，进而把真实失败包装成「今日已领取过」—— 删掉它（2026-10-26 修）。
+      if (status === 'SUCCESS' || status === 'BADGE_ALREADY_RECEIVED') succeeded += 1
     } catch {
       // 单个任务失败不影响另一个。
     }

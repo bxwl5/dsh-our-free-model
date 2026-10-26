@@ -724,3 +724,69 @@ export async function verifyCheckinP0Fixes() {
 
   console.log('checkin-p0: 7 组断言通过（monkeycode 对象参数 / 禁 result.status / kuku 自愈 / officeace+autoclaw 进续期表 / 无 expires_at 兜底）')
 }
+
+/**
+ * 签到结果三态分类回归（2026-10-26 审计发现的误分类）。
+ *
+ * 判据总原则：**claimed**（真领到，含 credit 0 但上游明确成功）/
+ * **already-claimed**（今天已经领过，幂等）/ **failed**（真的出错）。
+ * 三类错判在自动签到这里都有真实后果：
+ * - 把成功判成 failed → coversToday=0 → 每次启动都重跑；
+ * - 把失败判成 already-claimed → 当天不再补救，用户以为领到了。
+ */
+export async function verifyClaimClassification() {
+  const fs = await import('node:fs')
+  const read = (name) => fs.readFileSync(new URL(`../vendor/channel-pack/src/${name}`, import.meta.url), 'utf8')
+  const rpc = read('channel-pack-rpc.ts')
+
+  // officeace：gained===undefined（余额读数没拿到，上游幂等回「已签到」）
+  // 必须判 already-claimed，不能判 failed。
+  const oaStart = rpc.indexOf('await claimBonus(codeartsFetcher')
+  assert.ok(oaStart > 0, 'rpc 里必须有 claimBonus 的调用点')
+  const oaBlock = rpc.slice(oaStart, oaStart + 1200)
+  assert.match(oaBlock, /outcome\.gained === undefined[\s\S]{0,120}already-claimed/,
+    'officeace gained=undefined 必须判 already-claimed')
+
+  // autoclaw：「签到成功但无积分数」必须判 claimed（credit 0），不能判 failed。
+  // ⚠️ 用「调用点」定位而不是 indexOf(函数名)：后者会命中注释里的提及
+  // （实测第一个命中是说明文字，导致断言在空片段上失败）。
+  const acStart = rpc.indexOf('await claimAutoclawDailyCheckin(')
+  assert.ok(acStart > 0, 'rpc 里必须有 claimAutoclawDailyCheckin 的调用点')
+  const acBlock = rpc.slice(acStart, acStart + 1400)
+  assert.match(acBlock, /签到成功/,
+    'autoclaw 必须识别「签到成功但无积分」这条文案')
+  assert.match(acBlock, /kind: 'claimed', credit: 0/,
+    'autoclaw「签到成功无积分」必须判 claimed(credit 0)，不能判 failed')
+
+  // kuku：不得再用 reward >= 0 当成功判据（对 complete_status=FAIL 恒真）。
+  const kukuAuth = read('kuku-auth.ts')
+  // ⚠️ 只看**代码行**（去掉注释再判断）：`reward >= 0` 在注释里出现是正常的
+  // （那正是说明为什么删掉它），不能因此判失败。
+  const kukuCode = kukuAuth
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('//') && !line.trim().startsWith('*'))
+    .join('\n')
+  assert.equal(
+    /reward >= 0/.test(kukuCode), false,
+    'kuku 代码里不得再用 reward >= 0 判定成功（会把 complete_status=FAIL 误算成已领）',
+  )
+  assert.match(kukuAuth, /status === 'SUCCESS' \|\| status === 'BADGE_ALREADY_RECEIVED'\) succeeded \+= 1/,
+    'kuku 只能凭显式 complete_status 判定成功')
+  // kuku 的「今日无可领」也是今天没得领，不是失败（否则自动签到当天反复重跑）。
+  assert.match(rpc, /今日无可领\|未返回可领取结果/,
+    'kuku「上游未返回可领取结果」必须判 already-claimed，不能判 failed')
+
+  // minimax / loomy：必须按 UTC+8 日界判断「今日」，不能依赖本机时区。
+  const minimaxCredits = read('minimax-credits.ts')
+  const loomyCredits = read('loomy-credits.ts')
+  assert.match(minimaxCredits, /8 \* 60 \* 60 \* 1000|8 \* 3600 \* 1000|utc8|UTC\+8/i,
+    'minimax 必须按 UTC+8 日界判断今日')
+  // 字段名是 dailyCycleDate（服务端给的业务日），不是 dailyQuotaDate
+  // ——任务描述里我写错了名字，t2 查证后用了正确字段。
+  assert.match(loomyCredits, /dailyCycleDate/,
+    'loomy 必须校验 dailyCycleDate（业务日），不能只看数值')
+  assert.match(loomyCredits, /utc8DayKey/,
+    'loomy 的日键必须按 UTC+8 换算，与账本口径一致')
+
+  console.log('claim-classification: 6 组断言通过（officeace already-claimed / autoclaw claimed / kuku 显式 status / minimax UTC+8 / loomy dailyQuotaDate）')
+}

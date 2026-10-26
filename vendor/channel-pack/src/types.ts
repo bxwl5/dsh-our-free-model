@@ -1483,7 +1483,11 @@ export interface RpcUsageTokenLedgerHistoryResponse {
  * 自动签到，并记录签到状态，不多次重复触发」）：
  * - 开关是**全局**的（不分渠道），作用范围是**全部有账号的渠道**；
  * - 「今天」按 **UTC+8** 日界算（各渠道的每日额度都按 UTC+8 结算）；
- * - `lastDate` 就是「不多次重复触发」的凭据：等于今天 ⇒ 当天不再自动跑。
+ * - ★ 2026-10-26 起「不多次重复触发」的凭据是**逐渠道账本**
+ *   （`auto-checkin.ts` 的 `providers`），**不是** `lastDate`：`lastDate` 只表示
+ *   「今天有一轮跑过」，而失败或「非今日轮次」的渠道当天仍会被补跑（见该文件的
+ *   文件头「per-provider 记账」）。`ranToday` 因此只用于面板文字，**不可**当作
+ *   「今天已经全部完成」的判据。
  */
 export interface RpcUsageAutoCheckinState {
   /**
@@ -1493,9 +1497,14 @@ export interface RpcUsageAutoCheckinState {
    * 与实现分家（那正是本 PR 审查发现的一处矛盾）。
    */
   enabled: boolean
-  /** 上次**完成**自动签到的 UTC+8 日期（`YYYY-MM-DD`）；空串 = 从未跑过。 */
+  /**
+   * 上次**有渠道被处理过**的 UTC+8 日期（`YYYY-MM-DD`）；空串 = 从未跑过。
+   *
+   * ⚠️ 保留旧语义（整轮一个渠道都没成功时不写今天，免得面板误报「今日已签到」）；
+   * 但它**不再**是「当天不再触发」的凭据 —— 那个判据在宿主的逐渠道账本里。
+   */
   lastDate: string
-  /** 今天是否已经自动签到过（`lastDate` 等于今天）。 */
+  /** 今天是否已经自动签到过（`lastDate` 等于今天）。**仅供展示**，见上。 */
   ranToday: boolean
   /** 正在执行中（刚打开开关会立刻跑一轮，此时为 true）。 */
   running: boolean
@@ -1527,8 +1536,8 @@ export interface RpcUsageAutoCheckinState {
  * `bad-request`，**不做**静默回落（与本仓库 `usage.badgePreference` 同口径：
  * 回落会让「设置没生效」看起来像「保存成功」）。磁盘脏数据的容错在
  * `sanitizeAutoCheckin`。
- * ⚠️ 打开开关时宿主会**立刻尝试一轮**（今天已跑过则内部拦住）：否则用户今天点了
- * 开关要等到明天才有动作，看起来像没生效。
+ * ⚠️ 打开开关时宿主会**立刻尝试一轮**（今天各渠道都已处理完则内部拦住）：否则用户
+ * 今天点了开关要等到明天才有动作，看起来像没生效。
  * ⚠️ `dismiss: true` 只关掉**当前这一轮**的状态文字（下一轮结果会重新出现）——
  * 手动签到的结果提示是按时自动消失的，两者语义不同，别合并。
  */

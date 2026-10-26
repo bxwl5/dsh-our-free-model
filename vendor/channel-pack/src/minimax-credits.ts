@@ -104,6 +104,22 @@ export function resolveMinimaxTimezoneId(
   }
 }
 
+/**
+ * 签到查询 / 领取所用的**账本时区**：固定 UTC+8（Asia/Shanghai）。
+ *
+ * ⚠️ 为什么不用 `resolveMinimaxTimezoneId()`（本机 local tz）：
+ * 自动签到按 UTC+8 日键（`token-ledger.ts` 的 `utc8DayKey`）记账。若把本机
+ * 时区塞进 `timezone_id`，当机器不在 Asia/Shanghai 时，服务端「今日」与账本
+ * 「今日」会错一天 —— 要么把重复领取误判成首次（多领），要么把首次误判成已领
+ * （漏领）。钉死 UTC+8 让日界与服务端 UTC+8 结算口径对齐，与账本一致。
+ *
+ * ⚠️ 残留风险：若真实 MiniMax 服务端**严格按每个客户端各自上报的时区**结算
+ * 且用户实际身处非 Asia/Shanghai 时区，钉死 UTC+8 会让「服务端今日」与
+ * 「账本 UTC+8 今日」错位（晚/早于当地一天）。当前按「服务端用固定 UTC+8 日界」
+ * 假设钉死；如日后证实为按客户端时区，需改为按账号属地动态 tz（届时本常量失效）。
+ */
+export const MINIMAX_LEDGER_TIMEZONE_ID = 'Asia/Shanghai'
+
 /** 读有限数字；非法返回 undefined。 */
 function finiteNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
@@ -347,7 +363,12 @@ export async function fetchMinimaxSigninStatus(
   const url = withTimezone(
     product.apiHost,
     MINIMAX_SIGNIN_STATUS_PATH,
-    resolveMinimaxTimezoneId(),
+    // ⚠️ 钉死 UTC+8（Asia/Shanghai）而不是本机时区：自动签到按 UTC+8 的日键
+    // （token-ledger.ts 的 `utc8DayKey`）记账，若用本机时区，机器不在
+    // Asia/Shanghai 时服务端的「今日」与账本的「今日」会错一天，导致重复领取
+    // 判成首次、或首次判成已领。与 resolveMinimaxTimezoneId 的「客户端上报时区」
+    // 口径不同——这里刻意不套用本机 local tz（见模块头警告 93-94 行）。
+    MINIMAX_LEDGER_TIMEZONE_ID,
   )
   const result = await requestEnvelope(url, credential, { method: 'GET' }, fetcher)
   if (!result.ok) return null
@@ -371,7 +392,7 @@ export async function claimMinimaxDailyCheckin(
   const url = withTimezone(
     product.apiHost,
     MINIMAX_SIGNIN_CLAIM_PATH,
-    resolveMinimaxTimezoneId(),
+    MINIMAX_LEDGER_TIMEZONE_ID,
   )
   const result = await requestEnvelope(url, credential, { method: 'POST', body: '{}' }, fetcher)
   if (!result.ok) {
