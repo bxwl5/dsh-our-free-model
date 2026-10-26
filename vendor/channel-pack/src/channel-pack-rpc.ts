@@ -917,6 +917,18 @@ export function registerChannelPackRpc(
  */
 export interface ModelCatalogSource {
   listAllModels(): readonly { id: string; name: string; isFree?: boolean }[]
+  /**
+   * 单个 id 的友好展示名（可选）。用于「补回被关闭 / 已失效的模型」——
+   * 那些 id 不在当前目录里，没有它就只能拿裸 id 当名字，界面会出现
+   * `qmodel_38max` 这类内部编码（2026-10-26 用户报障：「模型列表出现
+   * qmodel 等字段，国内版和国际版都这样」）。
+   */
+  displayNameFor?(modelId: string): string | undefined
+  /**
+   * 强制重新拉取远端目录（可选）。供「重新获取模型」按钮使用：
+   * 拉成功返回 `true`，失败或该渠道不支持远端目录返回 `false`（不抛错）。
+   */
+  refreshCatalog?(): Promise<boolean>
 }
 
 /**
@@ -4137,13 +4149,24 @@ function registerChannelPackEndpoints(
         // 对话框模型选择器读的仍是过滤后的 `listModels`，可见性行为完全不变。
         const catalogSource = modelAdapters?.[req.provider]
         const all = catalogSource?.listAllModels()
+        /**
+         * 补回条目时的展示名：**先问适配器**（`displayNameFor` 能给出本地化名 +
+         * 倍率），拿不到才退回裸 id。
+         *
+         * ⚠️ 这一行是「模型列表出现 qmodel 等字段」的修复点（2026-10-26 用户报障，
+         * 国内版 qoder 与国际版同时出现）：用户把某渠道模型**全部关闭**后，
+         * 被关闭的 id 已不在远端目录里（上游下架了 `performance`/`qmodel`/
+         * `qmodel_latest` 等旧条目），补回分支原先写死 `name: id`，于是界面上
+         * 直接显示内部编码。兜底表对这些旧 id 仍有本地化名，故问它即可。
+         */
+        const nameOf = (id: string): string => catalogSource?.displayNameFor?.(id) ?? id
         let catalog: Array<{ id: string; name: string; isFree?: boolean }>
         if (all !== undefined) {
           catalog = [...all]
           // 全量目录里若仍有黑名单命中却缺失者，一并补上（保底，正常不会发生）。
           const known = new Set(catalog.map((model) => model.id))
           for (const id of Object.keys(disabledMap)) {
-            if (disabledMap[id] === true && !known.has(id)) catalog.push({ id, name: id })
+            if (disabledMap[id] === true && !known.has(id)) catalog.push({ id, name: nameOf(id) })
           }
         } else {
           const listedIds = new Set(models.map((model) => model.id))
@@ -4151,8 +4174,8 @@ function registerChannelPackEndpoints(
             .filter((id) => disabledMap[id] === true && !listedIds.has(id))
           catalog = [
             ...models.map((model) => ({ id: model.id, name: model.name })),
-            // 这些模型已被适配器过滤掉，拿不到原始 name，回退为 id。
-            ...filteredOut.map((id) => ({ id, name: id })),
+            // 这些模型已被适配器过滤掉，拿不到原始 name，尽力用适配器的友好名补齐。
+            ...filteredOut.map((id) => ({ id, name: nameOf(id) })),
           ]
         }
         // ⚠️⚠️ 「已失效模型」必须**显式列出且可恢复**（2026-10-06 复审 !66 实测）。
@@ -4170,7 +4193,7 @@ function registerChannelPackEndpoints(
         if (dead.size > 0) {
           const known = new Set(catalog.map((model) => model.id))
           for (const id of dead) {
-            if (!known.has(id)) catalog.push({ id, name: id })
+            if (!known.has(id)) catalog.push({ id, name: nameOf(id) })
           }
         }
         const value: RpcModelListResponse = {
@@ -4188,6 +4211,46 @@ function registerChannelPackEndpoints(
           })),
         }
         return { ok: true, value }
+      }
+
+      /**
+       * **强制重新拉取远端模型目录**（Channel Pack 模型列表里的「重新获取模型」）。
+       *
+       * 用户 2026-10-26 的要求：模型列表 / 倍率 / 思考档位都应以**远端**为准，
+       * 而不是本地兜底表；定时刷新之外还要有一个「现在就要」的入口。
+       *
+       * 语义：
+       * - 拉成功 → `refreshed: true`，并广播目录变更让界面立即重取；
+       * - 拉失败 / 该渠道没有远端目录 → `refreshed: false`，**保留原有列表**
+       *   （与定时刷新同一失败策略：网络抖一下不该让模型全没了）。
+       */
+      case 'model.refresh': {
+        const req = payload as { provider?: unknown }
+        if (typeof req.provider !== 'string' || req.provider.length === 0) {
+          return { ok: false, error: { code: 'bad-request', message: 'provider 必填' } }
+        }
+        const source = modelAdapters?.[req.provider]
+        if (source?.refreshCatalog === undefined) {
+          return {
+            ok: false,
+            error: {
+              code: 'bad-request',
+              message: `渠道 ${req.provider} 暂不支持从远端获取模型列表`,
+            },
+          }
+        }
+        let refreshed = false
+        try {
+          refreshed = await source.refreshCatalog()
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error)
+          return { ok: false, error: { code: 'bad-request', message: `获取模型列表失败：${reason}` } }
+        }
+        if (refreshed) broadcastCatalogChanged(ctx)
+        ctx.logger.info(
+          `[channel-pack] 重新获取模型目录：${req.provider} ${refreshed ? '成功' : '未获得新数据（保留原列表）'}`,
+        )
+        return { ok: true, value: { provider: req.provider, refreshed } }
       }
 
       // 打开/关闭某个模型。写入后**不重建适配器**：适配器的 listModels 每次

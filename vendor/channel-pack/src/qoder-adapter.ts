@@ -497,10 +497,14 @@ const QODER_CATALOG_TTL_MS = 3_600_000
  * | `isFree` | `is_free` | |
  * | `promotion` | `promotion` | active/discount_factor/before_promotion_price_factor/window_* |
  */
-export function parseQoderCatalog(payload: unknown): QoderFallbackModel[] {
+export function parseQoderCatalog(
+  payload: unknown,
+  fallbackModels: readonly QoderFallbackModel[] = [],
+): QoderFallbackModel[] {
   if (payload === null || typeof payload !== 'object') return []
   const chat = (payload as Record<string, unknown>).chat
   if (!Array.isArray(chat)) return []
+  const local = new Map(fallbackModels.map((model) => [model.id, model]))
   const out: QoderFallbackModel[] = []
   const seen = new Set<string>()
   for (const raw of chat) {
@@ -508,9 +512,17 @@ export function parseQoderCatalog(payload: unknown): QoderFallbackModel[] {
     const item = raw as Record<string, unknown>
     const key = typeof item.key === 'string' ? item.key.trim() : ''
     const displayName = typeof item.display_name === 'string' ? item.display_name.trim() : ''
+    // ⚠️ 只有 key 是必需的。`display_name` 缺失的条目按既有约定**跳过**（无法
+    // 给出可读名）；但 `display_name` **等于内部编码**时不能原样显示 —— 那会让
+    // 模型列表出现 `qmodel_38max` 这类字段（用户 2026-10-26 报障）。此时退回
+    // 兜底表的本地化名，再不行才用原始 key。
     if (key === '' || displayName === '') continue
     if (seen.has(key)) continue
     seen.add(key)
+    const localName = local.get(key)?.name
+    const name = displayName === key && localName !== undefined && localName !== key
+      ? localName
+      : displayName
     // 上下文窗口：取档位表的**最大档**（官方客户端只认档位表；max_input_tokens
     // 经常自相矛盾，兜底表注释里有 CN dmodel 的实例）。
     let contextWindow = 200_000
@@ -526,9 +538,36 @@ export function parseQoderCatalog(payload: unknown): QoderFallbackModel[] {
     const originalPriceFactor = typeof item.original_price_factor === 'number'
       ? item.original_price_factor
       : undefined
+    // 思考档位：`thinking_config.enabled.efforts` 的**键名**即档位 id，
+    // 其中 `is_default: true` 的那一项是默认档；`thinking_config.disabled`
+    // 存在表示官方允许「关闭思考」（对应 `supportsDisable`，由适配器追加 `none`）。
+    //
+    // ⚠️ 不解析它就会退化成「远端覆盖兜底表 + 档位字段全丢」——
+    // 用户报障「更新上游模型后没法选思考程度了」正是此因（2026-10-26）。
+    const thinking = item.thinking_config
+    let efforts: string[] | undefined
+    let defaultEffort: string | undefined
+    let supportsDisable: boolean | undefined
+    if (thinking !== null && typeof thinking === 'object') {
+      const config = thinking as Record<string, unknown>
+      if (config.disabled !== undefined && config.disabled !== null) supportsDisable = true
+      const enabled = config.enabled
+      if (enabled !== null && typeof enabled === 'object') {
+        const menu = (enabled as Record<string, unknown>).efforts
+        if (menu !== null && typeof menu === 'object') {
+          const levels = Object.keys(menu as Record<string, unknown>)
+          if (levels.length > 0) efforts = levels
+          for (const level of levels) {
+            const detail = (menu as Record<string, unknown>)[level]
+            if (detail !== null && typeof detail === 'object'
+              && (detail as Record<string, unknown>).is_default === true) defaultEffort = level
+          }
+        }
+      }
+    }
     const entry: QoderFallbackModel = {
       id: key,
-      name: displayName,
+      name,
       contextWindow,
       supportsImage: item.is_vl === true,
       supportsThinking: item.is_reasoning === true
@@ -536,6 +575,9 @@ export function parseQoderCatalog(payload: unknown): QoderFallbackModel[] {
       ...(item.is_free === true ? { isFree: true } : {}),
       ...(priceFactor === undefined ? {} : { priceFactor }),
       ...(originalPriceFactor === undefined ? {} : { originalPriceFactor }),
+      ...(efforts === undefined ? {} : { efforts }),
+      ...(defaultEffort === undefined ? {} : { defaultEffort }),
+      ...(supportsDisable === undefined ? {} : { supportsDisable }),
     }
     const promotion = parseQoderPromotion(item.promotion)
     if (promotion !== undefined) entry.promotion = promotion
@@ -574,8 +616,15 @@ export class QoderAdapter extends LlmAdapter {
   private readonly fetchImpl: typeof fetch
   /** 产品级兜底模型索引（`product.fallbackModels` 的 id → 条目）。 */
   private readonly fallbackIndex: ReadonlyMap<string, QoderFallbackModel>
-  /** 远端目录缓存（COSY 签名拉取）；`undefined` 表示还没成功拉到过。 */
-  private remoteModels: Array<{ id: string; name: string; supportsImage: boolean }> | undefined
+  /**
+   * 远端目录缓存（COSY 签名拉取）；`undefined` 表示还没成功拉到过。
+   *
+   * ⚠️ 类型必须是完整的 `QoderFallbackModel`，**不能**收窄成
+   * `{ id, name, supportsImage }`：思考档位（`efforts`/`defaultEffort`/
+   * `supportsDisable`）与上下文窗口都要从这里流到 `resolveModel`，
+   * 收窄会让「更新上游后没法选思考程度」复发（2026-10-26 用户报障）。
+   */
+  private remoteModels: QoderFallbackModel[] | undefined
   /** 上次成功拉取的时刻（配合 TTL 判断是否重拉）。 */
   private remoteModelsAt = 0
   /** 进行中的拉取（并发请求共用同一个 Promise，避免打爆上游）。 */
@@ -731,11 +780,30 @@ export class QoderAdapter extends LlmAdapter {
      * 模型（如旧套餐档位）会一直留在列表里 —— 用户会选到不能用的模型。
      *
      * ⚠️ 但覆盖的前提是**远端条目字段必须完整**：`parseQoderCatalog` 已把
-     * id(key)/name/priceFactor/contextWindow/promotion 全部映射好（见该函数
-     * 头部的三个坑）。若哪天目录不再下发 `price_factor`，展示会退回裸名 ——
-     * 那时应改这里而不是让覆盖失效。
+     * id(key)/name/priceFactor/contextWindow/promotion **以及思考档位**（
+     * `thinking_config` → `efforts`/`defaultEffort`/`supportsDisable`）全部映射好。
+     *
+     * ⚠️ 能力字段（思考档位 / 上下文 / 视觉）再做一层**兜底补齐**：远端若某次
+     * 没有下发 `thinking_config`，就用兜底表同 id 的值顶上 —— 否则那些字段会
+     * 整体消失，表现是「模型还在，但思考程度选不了」（2026-10-26 用户报障）。
+     * 注意补齐**只补缺失项**，远端一旦给了就以远端为准（它才是权威清单）。
      */
-    return this.remoteModels
+    return this.remoteModels.map((model) => {
+      const local = this.fallbackIndex.get(model.id)
+      if (local === undefined) return model
+      return {
+        ...model,
+        ...(model.efforts === undefined && local.efforts !== undefined
+          ? { efforts: local.efforts }
+          : {}),
+        ...(model.defaultEffort === undefined && local.defaultEffort !== undefined
+          ? { defaultEffort: local.defaultEffort }
+          : {}),
+        ...(model.supportsDisable === undefined && local.supportsDisable !== undefined
+          ? { supportsDisable: local.supportsDisable }
+          : {}),
+      }
+    })
   }
   /**
    * 完整模型目录（**不应用用户黑名单**），含最终展示名（倍率/免费标记）。
@@ -758,10 +826,47 @@ export class QoderAdapter extends LlmAdapter {
     await this.ensureRemoteModels()
   }
 
+  /**
+   * **强制**重新拉取远端目录（忽略 TTL），供界面的「重新获取模型」按钮使用。
+   *
+   * 与 {@link warmCatalog} 的区别：后者只保证「有一份数据」，TTL 内直接返回缓存；
+   * 用户点按钮时意图是「上游刚改了目录，现在就要拿最新的」，必须绕过 TTL。
+   *
+   * 返回 `true` 表示这次真的拿到了新目录；`false`（网络失败 / 凭据失效 /
+   * 该渠道无远端目录）时**保留旧数据**且不抛错 —— 调用方据此提示用户即可。
+   */
+  async refreshCatalog(): Promise<boolean> {
+    const previous = this.remoteModelsAt
+    // 清零 TTL 标记，让 `ensureRemoteModels` 的短路条件失效。
+    this.remoteModelsAt = 0
+    await this.ensureRemoteModels()
+    const refreshed = this.remoteModelsAt !== 0 && this.remoteModelsAt !== previous
+    // 失败时恢复原标记，避免下一次 `warmCatalog` 做无谓的重拉。
+    if (!refreshed) this.remoteModelsAt = previous
+    return refreshed
+  }
+
   listAllModels(): readonly { id: string; name: string }[] {
     // ⚠️ 同步方法：只能读**已缓存**的远端目录；未预热时退回兜底表。
     // 倍率以远端为准（见 `entryFor` 的对比表），故异步入口应先 `warmCatalog()`。
     return this.modelSource().map((model) => ({ id: model.id, name: qoderDisplayName(model) }))
+  }
+
+  /**
+   * 单个 id 的**友好展示名**（找不到返回 undefined）。
+   *
+   * 供 `model.list` 在「补回被关闭/已失效的模型」时使用：那些 id 不在当前
+   * 目录里，RPC 层原本只能拿裸 id 当名字 —— 而 Qoder 的 id 是内部编码
+   * （`qmodel_38max`），界面就会出现「qmodel 等字段」（2026-10-26 用户报障）。
+   *
+   * 查表顺序：**兜底表优先**（本地化名最稳，且不依赖远端是否下架该模型），
+   * 再退回远端目录。两者都没有才由调用方用裸 id。
+   */
+  displayNameFor(modelId: string): string | undefined {
+    const local = this.fallbackIndex.get(modelId)
+    if (local !== undefined) return qoderDisplayName(local)
+    const remote = this.remoteModels?.find((model) => model.id === modelId)
+    return remote === undefined ? undefined : qoderDisplayName(remote)
   }
 
   async listModels(_provider: string): Promise<readonly LlmModelInfo[]> {

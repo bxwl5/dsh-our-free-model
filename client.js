@@ -265,6 +265,11 @@ window.__ModuleLoader__.load({
         'chan.model.on': '开启',
         'chan.model.enableAll': '全部开启',
         'chan.model.disableAll': '全部关闭',
+        'chan.model.refetch': '重新获取模型',
+        'chan.model.refetching': '获取中…',
+        'chan.model.refetchHint': '从渠道远端重新拉取模型列表、倍率与思考档位',
+        'chan.model.refetchDone': '模型列表已更新',
+        'chan.model.refetchNoChange': '远端暂无新数据，已保留原列表',
         'chan.model.enabledCount': '已开启 {enabled}/{total}',
         'chan.model.allScope': '仅操作当前渠道的全部模型',
         'chan.error': '操作失败：{reason}',
@@ -709,6 +714,11 @@ window.__ModuleLoader__.load({
         'chan.model.on': 'Show',
         'chan.model.enableAll': 'Show all',
         'chan.model.disableAll': 'Hide all',
+        'chan.model.refetch': 'Refetch models',
+        'chan.model.refetching': 'Fetching…',
+        'chan.model.refetchHint': 'Pull the model list, rates and reasoning levels from the channel again',
+        'chan.model.refetchDone': 'Model list updated',
+        'chan.model.refetchNoChange': 'Upstream returned no new data; kept the current list',
         'chan.model.enabledCount': 'Shown {enabled}/{total}',
         'chan.model.allScope': 'Apply to all models in this channel only',
         'chan.error': 'Action failed: {reason}',
@@ -3139,6 +3149,28 @@ window.__ModuleLoader__.load({
         } finally { modelBatchPending.current = false }
       }
 
+      /**
+       * 「重新获取模型」：强制让渠道适配器去**远端**重拉目录（模型列表 + 倍率 +
+       * 思考档位），然后重画本卡片。
+       *
+       * 与上面的全开/全关共用一个 pending 锁：两者都改模型目录，并发点会让
+       * 两次 `loadModels` 的结果互相覆盖。
+       */
+      const refetchModels = async () => {
+        if (busy !== '' || modelBatchPending.current || !rpc) return
+        modelBatchPending.current = true
+        try {
+          await accountAction('models:refetch', '', async () => {
+            const value = await rpc('model.refresh', { provider: channel.id }, 60_000)
+            await loadModels()
+            onChanged()
+            setNotice(value?.refreshed === false
+              ? t('chan.model.refetchNoChange')
+              : t('chan.model.refetchDone'))
+          })
+        } finally { modelBatchPending.current = false }
+      }
+
       const removeAccount = async accountId => {
         const entry = (accounts ?? []).find(row => row.id === accountId)
         if (typeof window !== 'undefined' && typeof window.confirm === 'function'
@@ -3347,7 +3379,13 @@ window.__ModuleLoader__.load({
                     type: 'button', className: 'ofm_btn ghost', disabled: busy !== '' || !rpc,
                     title: t('chan.model.allScope'), 'aria-busy': busy === 'models:hide' ? 'true' : undefined,
                     onClick: () => void setAllModels(true),
-                  }, t('chan.model.disableAll'))),
+                  }, t('chan.model.disableAll')),
+                  h('button', {
+                    type: 'button', className: 'ofm_btn', disabled: busy !== '' || !rpc,
+                    title: t('chan.model.refetchHint'),
+                    'aria-busy': busy === 'models:refetch' ? 'true' : undefined,
+                    onClick: () => void refetchModels(),
+                  }, busy === 'models:refetch' ? t('chan.model.refetching') : t('chan.model.refetch'))),
                 h('div', { className: 'ofm_modellist' }, models.map(model => h('div', {
                 className: 'ofm_modelrow' + (model.disabled === true ? ' off' : ''),
                 key: model.id,

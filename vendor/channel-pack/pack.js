@@ -42811,10 +42811,11 @@ function resolveChunkTimeoutMs3() {
 }
 var QODER_CATALOG_PATH = "/algo/api/v2/model/list?Encode=1";
 var QODER_CATALOG_TTL_MS = 36e5;
-function parseQoderCatalog(payload) {
+function parseQoderCatalog(payload, fallbackModels = []) {
   if (payload === null || typeof payload !== "object") return [];
   const chat = payload.chat;
   if (!Array.isArray(chat)) return [];
+  const local = new Map(fallbackModels.map((model) => [model.id, model]));
   const out = [];
   const seen = /* @__PURE__ */ new Set();
   for (const raw of chat) {
@@ -42825,6 +42826,8 @@ function parseQoderCatalog(payload) {
     if (key === "" || displayName === "") continue;
     if (seen.has(key)) continue;
     seen.add(key);
+    const localName = local.get(key)?.name;
+    const name2 = displayName === key && localName !== void 0 && localName !== key ? localName : displayName;
     let contextWindow = 2e5;
     const contextConfig = item.context_config;
     if (contextConfig !== null && typeof contextConfig === "object") {
@@ -42836,15 +42839,38 @@ function parseQoderCatalog(payload) {
     }
     const priceFactor = typeof item.price_factor === "number" ? item.price_factor : void 0;
     const originalPriceFactor = typeof item.original_price_factor === "number" ? item.original_price_factor : void 0;
+    const thinking = item.thinking_config;
+    let efforts;
+    let defaultEffort;
+    let supportsDisable;
+    if (thinking !== null && typeof thinking === "object") {
+      const config = thinking;
+      if (config.disabled !== void 0 && config.disabled !== null) supportsDisable = true;
+      const enabled = config.enabled;
+      if (enabled !== null && typeof enabled === "object") {
+        const menu = enabled.efforts;
+        if (menu !== null && typeof menu === "object") {
+          const levels = Object.keys(menu);
+          if (levels.length > 0) efforts = levels;
+          for (const level of levels) {
+            const detail = menu[level];
+            if (detail !== null && typeof detail === "object" && detail.is_default === true) defaultEffort = level;
+          }
+        }
+      }
+    }
     const entry = {
       id: key,
-      name: displayName,
+      name: name2,
       contextWindow,
       supportsImage: item.is_vl === true,
       supportsThinking: item.is_reasoning === true || item.thinking_config !== void 0 && item.thinking_config !== null,
       ...item.is_free === true ? { isFree: true } : {},
       ...priceFactor === void 0 ? {} : { priceFactor },
-      ...originalPriceFactor === void 0 ? {} : { originalPriceFactor }
+      ...originalPriceFactor === void 0 ? {} : { originalPriceFactor },
+      ...efforts === void 0 ? {} : { efforts },
+      ...defaultEffort === void 0 ? {} : { defaultEffort },
+      ...supportsDisable === void 0 ? {} : { supportsDisable }
     };
     const promotion = parseQoderPromotion(item.promotion);
     if (promotion !== void 0) entry.promotion = promotion;
@@ -42886,7 +42912,14 @@ var QoderAdapter = class extends LlmAdapter3 {
   fetchImpl;
   /** 产品级兜底模型索引（`product.fallbackModels` 的 id → 条目）。 */
   fallbackIndex;
-  /** 远端目录缓存（COSY 签名拉取）；`undefined` 表示还没成功拉到过。 */
+  /**
+   * 远端目录缓存（COSY 签名拉取）；`undefined` 表示还没成功拉到过。
+   *
+   * ⚠️ 类型必须是完整的 `QoderFallbackModel`，**不能**收窄成
+   * `{ id, name, supportsImage }`：思考档位（`efforts`/`defaultEffort`/
+   * `supportsDisable`）与上下文窗口都要从这里流到 `resolveModel`，
+   * 收窄会让「更新上游后没法选思考程度」复发（2026-10-26 用户报障）。
+   */
   remoteModels;
   /** 上次成功拉取的时刻（配合 TTL 判断是否重拉）。 */
   remoteModelsAt = 0;
@@ -43022,7 +43055,16 @@ var QoderAdapter = class extends LlmAdapter3 {
   }
   modelSource() {
     if (this.remoteModels === void 0) return this.product.fallbackModels;
-    return this.remoteModels;
+    return this.remoteModels.map((model) => {
+      const local = this.fallbackIndex.get(model.id);
+      if (local === void 0) return model;
+      return {
+        ...model,
+        ...model.efforts === void 0 && local.efforts !== void 0 ? { efforts: local.efforts } : {},
+        ...model.defaultEffort === void 0 && local.defaultEffort !== void 0 ? { defaultEffort: local.defaultEffort } : {},
+        ...model.supportsDisable === void 0 && local.supportsDisable !== void 0 ? { supportsDisable: local.supportsDisable } : {}
+      };
+    });
   }
   /**
    * 完整模型目录（**不应用用户黑名单**），含最终展示名（倍率/免费标记）。
@@ -43044,8 +43086,41 @@ var QoderAdapter = class extends LlmAdapter3 {
   async warmCatalog() {
     await this.ensureRemoteModels();
   }
+  /**
+   * **强制**重新拉取远端目录（忽略 TTL），供界面的「重新获取模型」按钮使用。
+   *
+   * 与 {@link warmCatalog} 的区别：后者只保证「有一份数据」，TTL 内直接返回缓存；
+   * 用户点按钮时意图是「上游刚改了目录，现在就要拿最新的」，必须绕过 TTL。
+   *
+   * 返回 `true` 表示这次真的拿到了新目录；`false`（网络失败 / 凭据失效 /
+   * 该渠道无远端目录）时**保留旧数据**且不抛错 —— 调用方据此提示用户即可。
+   */
+  async refreshCatalog() {
+    const previous = this.remoteModelsAt;
+    this.remoteModelsAt = 0;
+    await this.ensureRemoteModels();
+    const refreshed = this.remoteModelsAt !== 0 && this.remoteModelsAt !== previous;
+    if (!refreshed) this.remoteModelsAt = previous;
+    return refreshed;
+  }
   listAllModels() {
     return this.modelSource().map((model) => ({ id: model.id, name: qoderDisplayName(model) }));
+  }
+  /**
+   * 单个 id 的**友好展示名**（找不到返回 undefined）。
+   *
+   * 供 `model.list` 在「补回被关闭/已失效的模型」时使用：那些 id 不在当前
+   * 目录里，RPC 层原本只能拿裸 id 当名字 —— 而 Qoder 的 id 是内部编码
+   * （`qmodel_38max`），界面就会出现「qmodel 等字段」（2026-10-26 用户报障）。
+   *
+   * 查表顺序：**兜底表优先**（本地化名最稳，且不依赖远端是否下架该模型），
+   * 再退回远端目录。两者都没有才由调用方用裸 id。
+   */
+  displayNameFor(modelId) {
+    const local = this.fallbackIndex.get(modelId);
+    if (local !== void 0) return qoderDisplayName(local);
+    const remote = this.remoteModels?.find((model) => model.id === modelId);
+    return remote === void 0 ? void 0 : qoderDisplayName(remote);
   }
   async listModels(_provider) {
     if (!await providerCatalogVisible(this.options.accountPool, this.product.id)) return [];
@@ -68157,27 +68232,28 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         const disabledMap = pool.listDisabledModels(req.provider);
         const catalogSource = modelAdapters?.[req.provider];
         const all = catalogSource?.listAllModels();
+        const nameOf = (id) => catalogSource?.displayNameFor?.(id) ?? id;
         let catalog;
         if (all !== void 0) {
           catalog = [...all];
           const known = new Set(catalog.map((model) => model.id));
           for (const id of Object.keys(disabledMap)) {
-            if (disabledMap[id] === true && !known.has(id)) catalog.push({ id, name: id });
+            if (disabledMap[id] === true && !known.has(id)) catalog.push({ id, name: nameOf(id) });
           }
         } else {
           const listedIds = new Set(models.map((model) => model.id));
           const filteredOut = Object.keys(disabledMap).filter((id) => disabledMap[id] === true && !listedIds.has(id));
           catalog = [
             ...models.map((model) => ({ id: model.id, name: model.name })),
-            // 这些模型已被适配器过滤掉，拿不到原始 name，回退为 id。
-            ...filteredOut.map((id) => ({ id, name: id }))
+            // 这些模型已被适配器过滤掉，拿不到原始 name，尽力用适配器的友好名补齐。
+            ...filteredOut.map((id) => ({ id, name: nameOf(id) }))
           ];
         }
         const dead = deadModelIdsFor(req.provider);
         if (dead.size > 0) {
           const known = new Set(catalog.map((model) => model.id));
           for (const id of dead) {
-            if (!known.has(id)) catalog.push({ id, name: id });
+            if (!known.has(id)) catalog.push({ id, name: nameOf(id) });
           }
         }
         const value = {
@@ -68195,6 +68271,45 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           }))
         };
         return { ok: true, value };
+      }
+      /**
+       * **强制重新拉取远端模型目录**（Channel Pack 模型列表里的「重新获取模型」）。
+       *
+       * 用户 2026-10-26 的要求：模型列表 / 倍率 / 思考档位都应以**远端**为准，
+       * 而不是本地兜底表；定时刷新之外还要有一个「现在就要」的入口。
+       *
+       * 语义：
+       * - 拉成功 → `refreshed: true`，并广播目录变更让界面立即重取；
+       * - 拉失败 / 该渠道没有远端目录 → `refreshed: false`，**保留原有列表**
+       *   （与定时刷新同一失败策略：网络抖一下不该让模型全没了）。
+       */
+      case "model.refresh": {
+        const req = payload;
+        if (typeof req.provider !== "string" || req.provider.length === 0) {
+          return { ok: false, error: { code: "bad-request", message: "provider \u5FC5\u586B" } };
+        }
+        const source = modelAdapters?.[req.provider];
+        if (source?.refreshCatalog === void 0) {
+          return {
+            ok: false,
+            error: {
+              code: "bad-request",
+              message: `\u6E20\u9053 ${req.provider} \u6682\u4E0D\u652F\u6301\u4ECE\u8FDC\u7AEF\u83B7\u53D6\u6A21\u578B\u5217\u8868`
+            }
+          };
+        }
+        let refreshed = false;
+        try {
+          refreshed = await source.refreshCatalog();
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          return { ok: false, error: { code: "bad-request", message: `\u83B7\u53D6\u6A21\u578B\u5217\u8868\u5931\u8D25\uFF1A${reason}` } };
+        }
+        if (refreshed) broadcastCatalogChanged(ctx);
+        ctx.logger.info(
+          `[channel-pack] \u91CD\u65B0\u83B7\u53D6\u6A21\u578B\u76EE\u5F55\uFF1A${req.provider} ${refreshed ? "\u6210\u529F" : "\u672A\u83B7\u5F97\u65B0\u6570\u636E\uFF08\u4FDD\u7559\u539F\u5217\u8868\uFF09"}`
+        );
+        return { ok: true, value: { provider: req.provider, refreshed } };
       }
       // 打开/关闭某个模型。写入后**不重建适配器**：适配器的 listModels 每次
       // 都直接读账号池的黑名单，因此下一次调用即返回新目录。
