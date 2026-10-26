@@ -238,12 +238,36 @@ export async function fetchModels(
   product: MonkeyCodeProduct,
   credential: MonkeyCodeCredential,
   signal?: AbortSignal,
-): Promise<Array<{ id: string; name: string; contextWindow: number; maxTokens?: number; isHidden?: boolean }>> {
+): Promise<Array<{
+  id: string
+  name: string
+  contextWindow: number
+  maxTokens?: number
+  isHidden?: boolean
+  /** 上游 `is_free`：免费额度模型。 */
+  isFree?: boolean
+  /** 上游 `input_price`：按量计费**单价**（不是倍率）。 */
+  inputPrice?: number
+  /** 上游 `access_level`（`basic` 等）：访问等级。 */
+  accessLevel?: string
+  /** 上游 `support_image`。 */
+  supportsImage?: boolean
+}>> {
   const result = await call(fetcher, product, credential, MONKEYCODE_MODELS_PATH, { signal })
   if (!result.ok) throw new Error(`MonkeyCode：模型目录返回 HTTP ${result.status}`)
   const body = unwrapData(result.body)
   if (!Array.isArray(body)) throw new Error('MonkeyCode：模型目录不是数组')
-  const rows: Array<{ id: string; name: string; contextWindow: number; maxTokens?: number; isHidden?: boolean }> = []
+  const rows: Array<{
+    id: string
+    name: string
+    contextWindow: number
+    maxTokens?: number
+    isHidden?: boolean
+    isFree?: boolean
+    inputPrice?: number
+    accessLevel?: string
+    supportsImage?: boolean
+  }> = []
   for (const raw of body) {
     if (typeof raw !== 'object' || raw === null) continue
     const item = raw as Record<string, unknown>
@@ -256,10 +280,24 @@ export async function fetchModels(
     const maxTokens = typeof maxRaw === 'number' && Number.isFinite(maxRaw) && maxRaw > 0
       ? Math.min(maxRaw, contextWindow)
       : undefined
+    /**
+     * ⚠️ **MonkeyCode 是按量计费**（用户 2026-10-26 说明）：`input_price` 是
+     * **单价**（实测 `400`），不是 Qoder 那种「倍率」。故本函数不产出
+     * `priceFactor`，只如实带出 `isFree` / `inputPrice` / `accessLevel`，
+     * 由展示层决定怎么说（免费的直接标「免费」，其余不编造倍率）。
+     */
+    const inputPrice = typeof item.input_price === 'number' && Number.isFinite(item.input_price) && item.input_price >= 0
+      ? item.input_price : undefined
+    const accessLevel = typeof item.access_level === 'string' && item.access_level !== ''
+      ? item.access_level : undefined
     rows.push({
       id, name, contextWindow,
       ...(maxTokens === undefined ? {} : { maxTokens }),
       ...(item.is_hidden === true ? { isHidden: true } : {}),
+      ...(item.is_free === true ? { isFree: true } : {}),
+      ...(inputPrice === undefined ? {} : { inputPrice }),
+      ...(accessLevel === undefined ? {} : { accessLevel }),
+      ...(item.support_image === true ? { supportsImage: true } : {}),
     })
   }
   if (rows.length === 0) throw new Error('MonkeyCode：模型目录为空')

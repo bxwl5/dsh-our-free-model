@@ -8,7 +8,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions,
   LlmModelInfo,
@@ -29,6 +29,7 @@ import {
   isCredentialUsable,
   parseModelConfig,
   type AutoClawCredential,
+  type AutoClawModelRow,
 } from './autoclaw.js'
 import {
   normalizeAutoClawMaxTokens,
@@ -68,10 +69,33 @@ export interface AutoClawAdapterOptions {
  */
 const REMOTE_MODELS_TTL_MS = 300_000
 
+/** 思考档位的中文名（上游 `reasoningLevel` 的键）。 */
+const AUTO_CLAW_EFFORT_NAMES: Readonly<Record<string, string>> = {
+  low: '低',
+  medium: '中',
+  high: '高',
+  max: '极高',
+  minimal: '最少',
+  xhigh: '极高',
+}
+
+/**
+ * 模型展示名。
+ *
+ * ⚠️ **AutoClaw 是按量计费**（用户 2026-10-26 明确说明，与 zcode 同类），
+ * 所以名字里**不带** `x0.5` 这种倍率后缀 —— 那是 Qoder 那种倍率套餐的口径。
+ * 但上游确实下发了积分消耗档 `creditConsumptionLevel`（`低`/`中`/`高`），
+ * 它是**分档标签**而非数字倍率，如实显示成「积分·低」帮助用户预期消耗。
+ */
+export function autoClawDisplayName(model: AutoClawModelRow): string {
+  if (model.creditLevel === undefined || model.creditLevel === '') return model.name
+  return `${model.name} · 积分${model.creditLevel}`
+}
+
 export class AutoClawAdapter extends LlmAdapter {
   private readonly product: AutoClawProduct
   private readonly fetchImpl: typeof fetch
-  private remoteModels: Array<{ id: string; name: string; contextWindow: number; maxTokens?: number }> | undefined
+  private remoteModels: AutoClawModelRow[] | undefined
   /** 上次成功拉取的时刻；配合 REMOTE_MODELS_TTL_MS 判断是否重拉。 */
   private remoteModelsAt = 0
   private loading: Promise<void> | undefined
@@ -139,7 +163,9 @@ export class AutoClawAdapter extends LlmAdapter {
     return listed.map((model) => ({
       provider: this.product.id,
       id: model.id,
-      name: model.name,
+      // 按量计费：名字带「积分·低/中/高」分档标签，不带倍率后缀。
+      name: autoClawDisplayName(model),
+      ...(model.tooltip === undefined ? {} : { description: model.tooltip }),
       inputModalities: ['text'],
     }))
   }
@@ -166,7 +192,7 @@ export class AutoClawAdapter extends LlmAdapter {
 
   listAllModels(): readonly { id: string; name: string }[] {
     const source = this.remoteModels ?? this.product.fallbackModels
-    return source.map((model) => ({ id: model.id, name: model.name }))
+    return source.map((model) => ({ id: model.id, name: autoClawDisplayName(model) }))
   }
 
   /**
@@ -177,7 +203,8 @@ export class AutoClawAdapter extends LlmAdapter {
    */
   displayNameFor(modelId: string): string | undefined {
     const source = this.remoteModels ?? this.product.fallbackModels
-    return source.find((model) => model.id === modelId)?.name
+    const model = source.find((item) => item.id === modelId)
+    return model === undefined ? undefined : autoClawDisplayName(model)
   }
 
   /**
@@ -207,11 +234,27 @@ export class AutoClawAdapter extends LlmAdapter {
     const resolved: LlmResolvedModelInfo = {
       provider,
       id: model,
-      name: entry?.name ?? model,
+      name: entry === undefined ? model : autoClawDisplayName(entry),
       inputModalities: ['text'],
     }
     if (entry?.contextWindow !== undefined) resolved.context = { contextWindow: entry.contextWindow }
     if (entry?.maxTokens !== undefined && entry.maxTokens > 0) resolved.defaultMaxTokens = entry.maxTokens
+    /**
+     * 思考档位：来自远端 `reasoningLevel`（实测 `['low','high','max']`）。
+     *
+     * ⚠️ 之前**完全没有** `reasoning`，所以界面上选不到思考程度
+     * （用户 2026-10-26 报障）。AutoClaw 的档位名是英文 id，直接用。
+     */
+    if (entry?.efforts !== undefined && entry.efforts.length > 0) {
+      resolved.reasoning = {
+        efforts: entry.efforts.map((id) => ({
+          id: ReasoningEffortId(id),
+          name: AUTO_CLAW_EFFORT_NAMES[id] ?? id,
+        })),
+        // 默认取**最高档**（与上游「默认用最强」的语义一致；档位表末项通常最强）。
+        defaultEffort: ReasoningEffortId(entry.efforts.includes('high') ? 'high' : entry.efforts[entry.efforts.length - 1]),
+      }
+    }
     return resolved
   }
 

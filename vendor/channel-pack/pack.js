@@ -29033,12 +29033,18 @@ async function fetchModels(fetcher, product, credential, signal) {
     const contextWindow = typeof contextRaw === "number" && Number.isFinite(contextRaw) && contextRaw > 0 ? contextRaw : 128e3;
     const maxRaw = item.max_tokens ?? item.maxTokens;
     const maxTokens = typeof maxRaw === "number" && Number.isFinite(maxRaw) && maxRaw > 0 ? Math.min(maxRaw, contextWindow) : void 0;
+    const inputPrice = typeof item.input_price === "number" && Number.isFinite(item.input_price) && item.input_price >= 0 ? item.input_price : void 0;
+    const accessLevel = typeof item.access_level === "string" && item.access_level !== "" ? item.access_level : void 0;
     rows.push({
       id,
       name: name2,
       contextWindow,
       ...maxTokens === void 0 ? {} : { maxTokens },
-      ...item.is_hidden === true ? { isHidden: true } : {}
+      ...item.is_hidden === true ? { isHidden: true } : {},
+      ...item.is_free === true ? { isFree: true } : {},
+      ...inputPrice === void 0 ? {} : { inputPrice },
+      ...accessLevel === void 0 ? {} : { accessLevel },
+      ...item.support_image === true ? { supportsImage: true } : {}
     });
   }
   if (rows.length === 0) throw new Error("MonkeyCode\uFF1A\u6A21\u578B\u76EE\u5F55\u4E3A\u7A7A");
@@ -30753,10 +30759,67 @@ async function fetchModels2(fetcher, product, credential, signal) {
     const contextWindow = typeof contextRaw === "number" && contextRaw > 0 ? contextRaw : 128e3;
     const maxRaw = item.maxTokens ?? item.max_output_tokens;
     const maxTokens = typeof maxRaw === "number" && maxRaw > 0 ? Math.min(maxRaw, contextWindow) : void 0;
-    rows.push({ id, name: name2, contextWindow, ...maxTokens === void 0 ? {} : { maxTokens } });
+    const usageMultiple = typeof item.usageMultiple === "number" && Number.isFinite(item.usageMultiple) ? item.usageMultiple : void 0;
+    let priceFactor = usageMultiple;
+    const discount = pickAccioDiscount(item.discountRuleList);
+    if (discount !== void 0 && priceFactor !== void 0 && discount < priceFactor) {
+      priceFactor = discount;
+    }
+    const nameCn = typeof item.modelDisplayNameCn === "string" && item.modelDisplayNameCn.trim() !== "" ? item.modelDisplayNameCn.trim() : void 0;
+    const usageDescRaw = typeof item.usageDescCn === "string" && item.usageDescCn.trim() !== "" ? item.usageDescCn.trim() : typeof item.usageDesc === "string" && item.usageDesc.trim() !== "" ? item.usageDesc.trim() : void 0;
+    rows.push({
+      id,
+      name: name2,
+      contextWindow,
+      ...maxTokens === void 0 ? {} : { maxTokens },
+      ...priceFactor === void 0 ? {} : { priceFactor },
+      ...item.freeUse === true ? { isFree: true } : {},
+      ...nameCn === void 0 ? {} : { nameCn },
+      ...typeof item.enableThinking === "boolean" ? { supportsThinking: item.enableThinking } : {},
+      ...usageDescRaw === void 0 ? {} : { usageDesc: usageDescRaw }
+    });
   }
   if (rows.length === 0) throw new Error("Accio\uFF1A\u6A21\u578B\u76EE\u5F55\u4E3A\u7A7A");
   return rows;
+}
+function pickAccioDiscount(raw, now = /* @__PURE__ */ new Date()) {
+  if (!Array.isArray(raw)) return void 0;
+  let best;
+  for (const entry of raw) {
+    if (entry === null || typeof entry !== "object") continue;
+    const rule = entry;
+    const value = typeof rule.discountedMultiple === "number" && Number.isFinite(rule.discountedMultiple) ? rule.discountedMultiple : void 0;
+    if (value === void 0) continue;
+    if (!accioRuleActive(rule, now)) continue;
+    if (best === void 0 || value < best) best = value;
+  }
+  return best;
+}
+function accioRuleActive(rule, now) {
+  const start = typeof rule.effectiveStart === "string" ? Date.parse(rule.effectiveStart) : Number.NaN;
+  const end = typeof rule.effectiveEnd === "string" ? Date.parse(rule.effectiveEnd) : Number.NaN;
+  if (Number.isFinite(start) && now.getTime() < start) return false;
+  if (Number.isFinite(end) && now.getTime() > end) return false;
+  const windows = rule.dailyWindowList;
+  if (!Array.isArray(windows) || windows.length === 0) return true;
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  return windows.some((w) => {
+    if (w === null || typeof w !== "object") return false;
+    const item = w;
+    const from = parseClockMinutes(item.startTime);
+    const to = parseClockMinutes(item.endTime);
+    if (from === void 0 || to === void 0) return true;
+    return from <= to ? minutes >= from && minutes < to : minutes >= from || minutes < to;
+  });
+}
+function parseClockMinutes(value) {
+  if (typeof value !== "string") return void 0;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (m === null) return void 0;
+  const h = Number.parseInt(m[1], 10);
+  const min = Number.parseInt(m[2], 10);
+  if (!Number.isFinite(h) || !Number.isFinite(min) || h > 23 || min > 59) return void 0;
+  return h * 60 + min;
 }
 async function* streamChat4(fetcher, product, credential, options) {
   if (!isCredentialUsable5(credential)) {
@@ -47546,6 +47609,9 @@ async function* emitDeltaBlocks(deltas, options = {}) {
 
 // vendor/channel-pack/src/monkeycode-adapter.ts
 var REMOTE_MODELS_TTL_MS2 = 3e5;
+function monkeyCodeDisplayName(model) {
+  return model.isFree === true ? `${model.name} \xB7 \u514D\u8D39` : model.name;
+}
 var MonkeyCodeAdapter = class extends LlmAdapter7 {
   constructor(options) {
     super();
@@ -47602,7 +47668,7 @@ var MonkeyCodeAdapter = class extends LlmAdapter7 {
   /** 「显示列表」用的完整目录（不套用户黑名单；上游标 is_hidden 的仍排除）。 */
   listAllModels() {
     const all = this.remoteModels ?? this.product.fallbackModels.map((model) => ({ ...model }));
-    return all.filter((model) => model.isHidden !== true).map((model) => ({ id: model.id, name: model.name }));
+    return all.filter((model) => model.isHidden !== true).map((model) => ({ id: model.id, name: monkeyCodeDisplayName(model) }));
   }
   /**
    * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
@@ -47612,7 +47678,8 @@ var MonkeyCodeAdapter = class extends LlmAdapter7 {
    */
   displayNameFor(modelId) {
     const source = this.remoteModels ?? this.product.fallbackModels;
-    return source.find((model) => model.id === modelId)?.name;
+    const model = source.find((item) => item.id === modelId);
+    return model === void 0 ? void 0 : monkeyCodeDisplayName(model);
   }
   /**
    * **强制**重新拉取远端目录（「重新获取模型」按钮），绕过 TTL。
@@ -47621,16 +47688,17 @@ var MonkeyCodeAdapter = class extends LlmAdapter7 {
    * 点了没反应。失败还原旧值，保证「拉不到就显示上次的目录」。
    */
   async refreshCatalog() {
-    const previous = this.remoteModels;
-    const previousAt = this.remoteModelsAt;
-    this.remoteModelsAt = 0;
-    await this.ensureRemoteModels();
-    const refreshed = this.remoteModelsAt !== 0 && this.remoteModelsAt !== previousAt && this.remoteModels !== void 0;
-    if (!refreshed) {
-      this.remoteModels = previous;
-      this.remoteModelsAt = previousAt;
+    const credential = await this.options.resolveCredential();
+    if (!isCredentialUsable2(credential)) return false;
+    try {
+      const rows = await fetchModels(this.fetchImpl, this.product, credential);
+      if (rows.length === 0) return false;
+      this.remoteModels = rows;
+      this.remoteModelsAt = Date.now();
+      return true;
+    } catch {
+      return false;
     }
-    return refreshed;
   }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
@@ -48116,27 +48184,53 @@ function registerOrcaTermLlm(ctx, options) {
 init_kuku_product();
 init_kuku();
 init_kuku_auth();
-import { LlmAdapter as LlmAdapter9, LlmError as LlmError13 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter9, LlmError as LlmError13, ReasoningEffortId as ReasoningEffortId7 } from "@deepseek-ai/dsh-llm";
 var REMOTE_MODELS_TTL_MS3 = 6e5;
-function extractKukuModels(value) {
-  const out = /* @__PURE__ */ new Map();
-  const walk = (node) => {
-    if (Array.isArray(node)) {
-      for (const item of node) walk(item);
-      return;
+function parseKukuCatalog(value) {
+  const data = value !== null && typeof value === "object" && "data" in value ? value.data : value;
+  const root = data !== null && typeof data === "object" ? data : {};
+  const models = [];
+  const seen = /* @__PURE__ */ new Set();
+  const list = Array.isArray(root.model_list) ? root.model_list : [];
+  for (const raw of list) {
+    if (raw === null || typeof raw !== "object") continue;
+    const item = raw;
+    const id = typeof item.model_name === "string" ? item.model_name.trim() : typeof item.modelName === "string" ? item.modelName.trim() : typeof item.modelId === "string" ? item.modelId.trim() : "";
+    if (id === "" || seen.has(id)) continue;
+    seen.add(id);
+    const display = typeof item.display_name === "string" && item.display_name.trim() !== "" ? item.display_name.trim() : id;
+    const entry = { id, name: display };
+    const ratio = typeof item.cost_ratio === "string" ? item.cost_ratio.trim() : "";
+    const parsed = ratio === "" ? Number.NaN : Number.parseFloat(ratio.replace(/x$/i, ""));
+    if (Number.isFinite(parsed) && parsed >= 0) entry.priceFactor = parsed;
+    if (typeof item.description === "string" && item.description.trim() !== "") {
+      entry.description = item.description.trim();
     }
-    if (typeof node !== "object" || node === null) return;
-    const record = node;
-    const id = typeof record.model_name === "string" ? record.model_name.trim() : typeof record.modelName === "string" ? record.modelName.trim() : typeof record.modelId === "string" ? record.modelId.trim() : void 0;
-    if (id !== void 0 && id !== "") {
-      const display = typeof record.display_name === "string" && record.display_name.trim() !== "" ? record.display_name.trim() : id;
-      if (!out.has(id)) out.set(id, display);
-      return;
-    }
-    for (const child of Object.values(record)) walk(child);
-  };
-  walk(value);
-  return [...out.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([id, name2]) => ({ id, name: name2 }));
+    if (item.vip_type === 1) entry.vipOnly = true;
+    models.push(entry);
+  }
+  const thinkLevels = [];
+  const thinkSeen = /* @__PURE__ */ new Set();
+  const thinkList = Array.isArray(root.think_list) ? root.think_list : [];
+  for (const raw of thinkList) {
+    if (raw === null || typeof raw !== "object") continue;
+    const item = raw;
+    const id = typeof item.id === "string" ? item.id.trim() : String(item.id ?? "").trim();
+    const name2 = typeof item.think_name === "string" ? item.think_name.trim() : "";
+    if (id === "" || name2 === "" || thinkSeen.has(id)) continue;
+    thinkSeen.add(id);
+    thinkLevels.push({
+      id,
+      name: name2,
+      ...typeof item.description === "string" && item.description.trim() !== "" ? { description: item.description.trim() } : {}
+    });
+  }
+  const defaultThinkId = typeof root.default_think_id === "string" ? root.default_think_id.trim() : void 0;
+  return { models, thinkLevels, ...defaultThinkId === void 0 ? {} : { defaultThinkId } };
+}
+function kukuDisplayName(model) {
+  if (model.priceFactor === void 0) return model.name;
+  return `${model.name} \xB7 ${model.priceFactor === 0 ? "\u514D\u8D39" : `x${model.priceFactor}`}`;
 }
 var KukuAdapter = class extends LlmAdapter9 {
   constructor(options) {
@@ -48150,6 +48244,10 @@ var KukuAdapter = class extends LlmAdapter9 {
   fetchImpl;
   /** 远端模型目录（拉到后用；拉不到回落到 `product.fallbackModels`）。 */
   remoteModels;
+  /** 远端思考档位表（`data.think_list`）；`undefined` 表示还没拉到。 */
+  remoteThinkLevels;
+  /** 上游默认档位 id（`default_think_id`）。 */
+  remoteDefaultThinkId;
   /** 上次成功拉取的时刻；配合 REMOTE_MODELS_TTL_MS 判断是否重拉。 */
   remoteModelsAt = 0;
   loading;
@@ -48168,14 +48266,16 @@ var KukuAdapter = class extends LlmAdapter9 {
     return listed.map((model) => ({
       provider: this.product.id,
       id: model.id,
-      name: model.name,
+      // 倍率拼进 name（不是 description）：composer 的模型切换菜单只渲染 name。
+      name: kukuDisplayName(model),
+      ...model.description === void 0 ? {} : { description: model.description },
       inputModalities: ["text"]
     }));
   }
   /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数会显示「—」。 */
   listAllModels() {
     const source = this.remoteModels ?? this.product.fallbackModels;
-    return source.map((model) => ({ id: model.id, name: model.name }));
+    return source.map((model) => ({ id: model.id, name: kukuDisplayName(model) }));
   }
   /**
    * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
@@ -48185,7 +48285,8 @@ var KukuAdapter = class extends LlmAdapter9 {
    */
   displayNameFor(modelId) {
     const source = this.remoteModels ?? this.product.fallbackModels;
-    return source.find((model) => model.id === modelId)?.name;
+    const model = source.find((item) => item.id === modelId);
+    return model === void 0 ? void 0 : kukuDisplayName(model);
   }
   /**
    * **强制**重新拉取远端目录（「重新获取模型」按钮），绕过 TTL。
@@ -48226,9 +48327,11 @@ var KukuAdapter = class extends LlmAdapter9 {
           const code = status.code;
           if (typeof code === "number" && code !== 0) return;
         }
-        const parsed = extractKukuModels(record.data);
-        if (parsed.length > 0) {
-          this.remoteModels = parsed;
+        const catalog = parseKukuCatalog(record.data);
+        if (catalog.models.length > 0) {
+          this.remoteModels = catalog.models;
+          this.remoteThinkLevels = catalog.thinkLevels;
+          this.remoteDefaultThinkId = catalog.defaultThinkId;
           this.remoteModelsAt = Date.now();
         }
       } catch {
@@ -48239,15 +48342,34 @@ var KukuAdapter = class extends LlmAdapter9 {
     return this.loading;
   }
   async resolveModel(provider, model, _signal) {
-    const entry = this.product.fallbackModels.find((candidate) => candidate.id === model);
+    await this.ensureRemoteModels();
+    const remote = this.remoteModels?.find((candidate) => candidate.id === model);
+    const fallback2 = this.product.fallbackModels.find((candidate) => candidate.id === model);
     const resolved = {
       provider,
       id: model,
-      name: entry?.name ?? model,
+      // 远端优先（含倍率），拉不到才回落兜底表。
+      name: remote !== void 0 ? kukuDisplayName(remote) : fallback2?.name ?? model,
       inputModalities: ["text"]
     };
-    if (entry?.contextWindow !== void 0) resolved.context = { contextWindow: entry.contextWindow };
-    if (entry?.maxTokens !== void 0 && entry.maxTokens > 0) resolved.defaultMaxTokens = entry.maxTokens;
+    const contextWindow = fallback2?.contextWindow;
+    if (contextWindow !== void 0) resolved.context = { contextWindow };
+    if (fallback2?.maxTokens !== void 0 && fallback2.maxTokens > 0) {
+      resolved.defaultMaxTokens = fallback2.maxTokens;
+    }
+    const levels = this.remoteThinkLevels;
+    if (levels !== void 0 && levels.length > 0) {
+      const preferred = this.remoteDefaultThinkId;
+      const fallbackDefault = levels[levels.length - 1].id;
+      const defaultId = preferred !== void 0 && levels.some((level) => level.id === preferred) ? preferred : fallbackDefault;
+      resolved.reasoning = {
+        efforts: levels.map((level) => ({
+          id: ReasoningEffortId7(level.id),
+          name: level.name
+        })),
+        defaultEffort: ReasoningEffortId7(defaultId)
+      };
+    }
     return resolved;
   }
   async prepareCall(provider, model, signal) {
@@ -48261,12 +48383,23 @@ var KukuAdapter = class extends LlmAdapter9 {
     if (!isCredentialUsable4(credential)) {
       throw new LlmError13("KukuAI\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u5728\u6E20\u9053\u9762\u677F\u7C98\u8D34\u542B BDUSS \u7684 Cookie", "MISSING_CREDENTIAL");
     }
+    const requested = options.reasoningEffort;
+    const thinkMode = requested === void 0 ? void 0 : (() => {
+      const text = String(requested);
+      const known = this.remoteThinkLevels?.some((level) => level.id === text) ?? false;
+      const numeric = Number.parseInt(text, 10);
+      return known && Number.isFinite(numeric) ? numeric : void 0;
+    })();
     try {
       yield* emitDeltaBlocks(streamChat3(this.fetchImpl, this.product, credential, {
         model: options.model,
         messages: options.messages,
         ...options.system === void 0 ? {} : { system: options.system },
-        ...options.signal === void 0 ? {} : { signal: options.signal }
+        ...options.signal === void 0 ? {} : { signal: options.signal },
+        // 思考档位：上游按 `think_mode`（档位 id）选择强度。
+        // ⚠️ 缺省时**不传**，让上游用自己声明的默认档（`default_think_id`）；
+        // 硬写 0 会变成「关闭思考」，与用户选的默认档不符。
+        ...thinkMode === void 0 ? {} : { thinkMode }
       }));
     } catch (error) {
       if (options.signal?.aborted === true) throw new LlmError13("KukuAI\uFF1A\u8BF7\u6C42\u5DF2\u53D6\u6D88", "ABORTED");
@@ -48305,6 +48438,12 @@ init_accio();
 init_accio_auth();
 import { LlmAdapter as LlmAdapter10, LlmError as LlmError14 } from "@deepseek-ai/dsh-llm";
 var REMOTE_MODELS_TTL_MS4 = 3e5;
+function accioDisplayName(model) {
+  const base = model.nameCn !== void 0 && model.nameCn !== "" ? model.nameCn : model.name;
+  if (model.priceFactor === void 0) return base;
+  if (model.priceFactor === 0) return `${base} \xB7 \u514D\u8D39`;
+  return `${base} \xB7 x${model.priceFactor}`;
+}
 var AccioAdapter = class extends LlmAdapter10 {
   constructor(options) {
     super();
@@ -48350,14 +48489,16 @@ var AccioAdapter = class extends LlmAdapter10 {
     return listed.map((model) => ({
       provider: this.product.id,
       id: model.id,
-      name: model.name,
-      inputModalities: ["text"]
+      // 倍率拼进 name（不是 description）：composer 的模型切换菜单只渲染 name。
+      name: accioDisplayName(model),
+      ...model.usageDesc === void 0 ? {} : { description: model.usageDesc },
+      inputModalities: model.supportsThinking === true ? ["text"] : ["text"]
     }));
   }
   /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数显示「—」。 */
   listAllModels() {
     const source = this.remoteModels ?? this.product.fallbackModels;
-    return source.map((model) => ({ id: model.id, name: model.name }));
+    return source.map((model) => ({ id: model.id, name: accioDisplayName(model) }));
   }
   /**
    * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
@@ -48367,7 +48508,8 @@ var AccioAdapter = class extends LlmAdapter10 {
    */
   displayNameFor(modelId) {
     const source = this.remoteModels ?? this.product.fallbackModels;
-    return source.find((model) => model.id === modelId)?.name;
+    const model = source.find((item) => item.id === modelId);
+    return model === void 0 ? void 0 : accioDisplayName(model);
   }
   /**
    * **强制**重新拉取远端目录（「重新获取模型」按钮），绕过 TTL。
@@ -48394,7 +48536,8 @@ var AccioAdapter = class extends LlmAdapter10 {
     const resolved = {
       provider,
       id: model,
-      name: entry?.name ?? model,
+      // 远端优先（含倍率），拉不到才回落兜底表。
+      name: entry === void 0 ? model : accioDisplayName(entry),
       inputModalities: ["text"]
     };
     if (entry?.contextWindow !== void 0) resolved.context = { contextWindow: entry.contextWindow };
@@ -48694,7 +48837,7 @@ function registerOfficeAceLlm(ctx, options) {
 
 // vendor/channel-pack/src/autoclaw-adapter.ts
 init_autoclaw_product();
-import { LlmAdapter as LlmAdapter12, LlmError as LlmError16 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter12, LlmError as LlmError16, ReasoningEffortId as ReasoningEffortId8 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/autoclaw.ts
 init_autoclaw_sms();
@@ -48778,7 +48921,20 @@ function parseModelConfig(value) {
     const contextWindow = typeof contextRaw === "number" && contextRaw > 0 ? contextRaw : 128e3;
     const maxRaw = item.maxTokens ?? item.max_output_tokens;
     const maxTokens = typeof maxRaw === "number" && maxRaw > 0 ? Math.min(maxRaw, contextWindow) : void 0;
-    rows.push({ id, name: name2, contextWindow, ...maxTokens === void 0 ? {} : { maxTokens } });
+    const levelsRaw = item.reasoningLevel;
+    const efforts = Array.isArray(levelsRaw) ? levelsRaw.filter((level) => typeof level === "string" && level !== "") : void 0;
+    const creditLevel = stringValue9(item.creditConsumptionLevel);
+    const tooltip = stringValue9(item.tooltip);
+    rows.push({
+      id,
+      name: name2,
+      contextWindow,
+      ...maxTokens === void 0 ? {} : { maxTokens },
+      ...creditLevel === void 0 ? {} : { creditLevel },
+      ...efforts === void 0 || efforts.length === 0 ? {} : { efforts },
+      ...item.reasoning === true ? { supportsThinking: true } : {},
+      ...tooltip === void 0 ? {} : { tooltip }
+    });
   }
   return rows;
 }
@@ -48788,6 +48944,18 @@ init_autoclaw_sms();
 var FIRST_TOKEN_TIMEOUT_MS3 = 3e5;
 var CHUNK_TIMEOUT_MS3 = 3e5;
 var REMOTE_MODELS_TTL_MS6 = 3e5;
+var AUTO_CLAW_EFFORT_NAMES = {
+  low: "\u4F4E",
+  medium: "\u4E2D",
+  high: "\u9AD8",
+  max: "\u6781\u9AD8",
+  minimal: "\u6700\u5C11",
+  xhigh: "\u6781\u9AD8"
+};
+function autoClawDisplayName(model) {
+  if (model.creditLevel === void 0 || model.creditLevel === "") return model.name;
+  return `${model.name} \xB7 \u79EF\u5206${model.creditLevel}`;
+}
 var AutoClawAdapter = class extends LlmAdapter12 {
   constructor(options) {
     super();
@@ -48845,7 +49013,9 @@ var AutoClawAdapter = class extends LlmAdapter12 {
     return listed.map((model) => ({
       provider: this.product.id,
       id: model.id,
-      name: model.name,
+      // 按量计费：名字带「积分·低/中/高」分档标签，不带倍率后缀。
+      name: autoClawDisplayName(model),
+      ...model.tooltip === void 0 ? {} : { description: model.tooltip },
       inputModalities: ["text"]
     }));
   }
@@ -48870,7 +49040,7 @@ var AutoClawAdapter = class extends LlmAdapter12 {
   }
   listAllModels() {
     const source = this.remoteModels ?? this.product.fallbackModels;
-    return source.map((model) => ({ id: model.id, name: model.name }));
+    return source.map((model) => ({ id: model.id, name: autoClawDisplayName(model) }));
   }
   /**
    * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
@@ -48880,7 +49050,8 @@ var AutoClawAdapter = class extends LlmAdapter12 {
    */
   displayNameFor(modelId) {
     const source = this.remoteModels ?? this.product.fallbackModels;
-    return source.find((model) => model.id === modelId)?.name;
+    const model = source.find((item) => item.id === modelId);
+    return model === void 0 ? void 0 : autoClawDisplayName(model);
   }
   /**
    * **强制**重新拉取远端目录（「重新获取模型」按钮），绕过 TTL。
@@ -48907,11 +49078,21 @@ var AutoClawAdapter = class extends LlmAdapter12 {
     const resolved = {
       provider,
       id: model,
-      name: entry?.name ?? model,
+      name: entry === void 0 ? model : autoClawDisplayName(entry),
       inputModalities: ["text"]
     };
     if (entry?.contextWindow !== void 0) resolved.context = { contextWindow: entry.contextWindow };
     if (entry?.maxTokens !== void 0 && entry.maxTokens > 0) resolved.defaultMaxTokens = entry.maxTokens;
+    if (entry?.efforts !== void 0 && entry.efforts.length > 0) {
+      resolved.reasoning = {
+        efforts: entry.efforts.map((id) => ({
+          id: ReasoningEffortId8(id),
+          name: AUTO_CLAW_EFFORT_NAMES[id] ?? id
+        })),
+        // 默认取**最高档**（与上游「默认用最强」的语义一致；档位表末项通常最强）。
+        defaultEffort: ReasoningEffortId8(entry.efforts.includes("high") ? "high" : entry.efforts[entry.efforts.length - 1])
+      };
+    }
     return resolved;
   }
   async prepareCall(provider, model, signal) {
@@ -49011,7 +49192,7 @@ function registerAutoClawLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/loomy-adapter.ts
-import { LlmAdapter as LlmAdapter13, LlmError as LlmError17, ReasoningEffortId as ReasoningEffortId7 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter13, LlmError as LlmError17, ReasoningEffortId as ReasoningEffortId9 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/loomy.ts
 var LOOMY_API_BASE = "https://loomyad.xunfei.cn/api/v1";
@@ -49320,11 +49501,11 @@ var LoomyAdapter = class extends LlmAdapter13 {
     const hasDefault = efforts.includes(defaultEffort);
     return {
       efforts: efforts.map((id) => ({
-        id: ReasoningEffortId7(id),
+        id: ReasoningEffortId9(id),
         // 未登记的中文名回退到 id 本身（新档位上线时不至于空白）。
         name: LOOMY_EFFORT_NAMES[id] ?? id
       })),
-      ...hasDefault ? { defaultEffort: ReasoningEffortId7(defaultEffort) } : {}
+      ...hasDefault ? { defaultEffort: ReasoningEffortId9(defaultEffort) } : {}
     };
   }
   /**
@@ -49487,7 +49668,7 @@ function registerLoomyLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/raccoon-adapter.ts
-import { LlmAdapter as LlmAdapter14, LlmError as LlmError18, ReasoningEffortId as ReasoningEffortId8 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter14, LlmError as LlmError18, ReasoningEffortId as ReasoningEffortId10 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/raccoon.ts
 import { createCipheriv as createCipheriv2, randomBytes as randomBytes6 } from "node:crypto";
@@ -49683,10 +49864,10 @@ function raccoonThinkingExtraBody(effort) {
 }
 function raccoonReasoningInfo() {
   const efforts = RACCOON_REASONING_EFFORTS.map((id) => ({
-    id: ReasoningEffortId8(id),
+    id: ReasoningEffortId10(id),
     name: RACCOON_EFFORT_NAMES[id] ?? id
   }));
-  const defaultEffort = RACCOON_REASONING_EFFORTS.includes(RACCOON_DEFAULT_EFFORT) ? ReasoningEffortId8(RACCOON_DEFAULT_EFFORT) : ReasoningEffortId8(RACCOON_REASONING_EFFORTS[0] ?? RACCOON_EFFORT_ON);
+  const defaultEffort = RACCOON_REASONING_EFFORTS.includes(RACCOON_DEFAULT_EFFORT) ? ReasoningEffortId10(RACCOON_DEFAULT_EFFORT) : ReasoningEffortId10(RACCOON_REASONING_EFFORTS[0] ?? RACCOON_EFFORT_ON);
   return { efforts, defaultEffort };
 }
 function positiveMaxTokens2(value) {
@@ -60128,7 +60309,7 @@ function emptyCheckinStatus(active, actionRequired = false) {
 }
 
 // vendor/channel-pack/src/zcode-adapter.ts
-import { EMPTY_RESPONSE_CODE as EMPTY_RESPONSE_CODE2, LlmAdapter as LlmAdapter15, LlmError as LlmError19, ReasoningEffortId as ReasoningEffortId9 } from "@deepseek-ai/dsh-llm";
+import { EMPTY_RESPONSE_CODE as EMPTY_RESPONSE_CODE2, LlmAdapter as LlmAdapter15, LlmError as LlmError19, ReasoningEffortId as ReasoningEffortId11 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/zcode-identity.ts
 var OFFICIAL_CLI_PREFIX = "You are ZCode, an interactive coding agent";
@@ -60546,8 +60727,8 @@ var ZcodeAdapter = class extends LlmAdapter15 {
          *
          * ⚠ `ReasoningEffortId` 是 branded 类型，必须用构造函数（同 qoder 的写法）。
          */
-        efforts: levels.map((id) => ({ id: ReasoningEffortId9(id), name: reasoningEffortLabel(id) })),
-        ...defaultLevel !== void 0 && levels.includes(defaultLevel) ? { defaultEffort: ReasoningEffortId9(defaultLevel) } : {}
+        efforts: levels.map((id) => ({ id: ReasoningEffortId11(id), name: reasoningEffortLabel(id) })),
+        ...defaultLevel !== void 0 && levels.includes(defaultLevel) ? { defaultEffort: ReasoningEffortId11(defaultLevel) } : {}
       };
     }
     return resolved;
@@ -62436,7 +62617,7 @@ async function fetchMinimaxCreditBalance(credential, fetcher = fetch, product = 
 
 // vendor/channel-pack/src/gemini.ts
 import { randomBytes as randomBytes10 } from "node:crypto";
-import { LlmError as LlmError20, ReasoningEffortId as ReasoningEffortId10 } from "@deepseek-ai/dsh-llm";
+import { LlmError as LlmError20, ReasoningEffortId as ReasoningEffortId12 } from "@deepseek-ai/dsh-llm";
 var GEMINI_ENDPOINT_DAILY = "https://daily-cloudcode-pa.googleapis.com";
 var GEMINI_ENDPOINT_SANDBOX = "https://daily-cloudcode-pa.sandbox.googleapis.com";
 var GEMINI_ENDPOINTS = [GEMINI_ENDPOINT_DAILY, GEMINI_ENDPOINT_SANDBOX];
@@ -62616,8 +62797,8 @@ function geminiModelSpec(modelId, effort) {
 function geminiReasoningInfo(entry) {
   const options = entry.effortOptions;
   if (options === void 0 || options.length === 0) return void 0;
-  const efforts = options.map((id) => ({ id: ReasoningEffortId10(id), name: geminiEffortLabel(id) }));
-  const defaultEffort = entry.defaultEffort !== void 0 && options.includes(entry.defaultEffort) ? ReasoningEffortId10(entry.defaultEffort) : void 0;
+  const efforts = options.map((id) => ({ id: ReasoningEffortId12(id), name: geminiEffortLabel(id) }));
+  const defaultEffort = entry.defaultEffort !== void 0 && options.includes(entry.defaultEffort) ? ReasoningEffortId12(entry.defaultEffort) : void 0;
   return { efforts, ...defaultEffort === void 0 ? {} : { defaultEffort } };
 }
 var GEMINI_SCHEMA_KEYS = /* @__PURE__ */ new Set([
@@ -63976,7 +64157,7 @@ import {
   isContextWindowExceededError as isContextWindowExceededError3,
   LlmAdapter as LlmAdapter16,
   LlmError as LlmError21,
-  ReasoningEffortId as ReasoningEffortId11
+  ReasoningEffortId as ReasoningEffortId13
 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/gemini-messages.ts
@@ -69380,7 +69561,7 @@ function loadOrCreateApiKey(home, env = process.env) {
 
 // vendor/channel-pack/src/openai-gateway/messages.ts
 import { randomUUID as randomUUID14 } from "node:crypto";
-import { ReasoningEffortId as ReasoningEffortId12 } from "@deepseek-ai/dsh-llm";
+import { ReasoningEffortId as ReasoningEffortId14 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/openai-gateway/images.ts
 var DEFAULT_IMAGE_LIMITS = {
@@ -69693,7 +69874,7 @@ async function toGenerateOptions(body, signal, reasoningEffortOverride, maxToken
     // ⚠️ 判据是 `== null`（同时排除 undefined 与 null）：`null` = 明确不下发，
     // 两者都不能写进请求。写成 `=== undefined` 会把 null 塞进
     // `ReasoningEffortId(null)`，等于又发了一个非法档位。
-    ...reasoningEffort == null ? {} : { reasoningEffort: ReasoningEffortId12(reasoningEffort) },
+    ...reasoningEffort == null ? {} : { reasoningEffort: ReasoningEffortId14(reasoningEffort) },
     signal
   };
 }
@@ -69738,7 +69919,7 @@ function findCaseInsensitiveSuggestion(requested, catalog) {
 
 // vendor/channel-pack/src/openai-gateway/responses.ts
 import { createHash as createHash12, randomUUID as randomUUID16 } from "node:crypto";
-import { ReasoningEffortId as ReasoningEffortId13 } from "@deepseek-ai/dsh-llm";
+import { ReasoningEffortId as ReasoningEffortId15 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/openai-gateway/stream.ts
 import { randomUUID as randomUUID15 } from "node:crypto";
@@ -70263,7 +70444,7 @@ async function toResponsesGenerateOptions(body, signal, reasoningEffortOverride,
     ...tools === void 0 ? {} : { tools },
     ...maxTokens === void 0 ? {} : { maxTokens },
     ...temperature === void 0 ? {} : { temperature },
-    ...reasoningEffort == null ? {} : { reasoningEffort: ReasoningEffortId13(reasoningEffort) },
+    ...reasoningEffort == null ? {} : { reasoningEffort: ReasoningEffortId15(reasoningEffort) },
     signal
   };
 }
@@ -72208,7 +72389,7 @@ function parseMinimaxModelsPayload(payload) {
 }
 
 // vendor/channel-pack/src/minimax-adapter.ts
-import { LlmAdapter as LlmAdapter17, LlmError as LlmError24, ReasoningEffortId as ReasoningEffortId14 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter17, LlmError as LlmError24, ReasoningEffortId as ReasoningEffortId16 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/minimax-messages.ts
 import { ToolCallId as ToolCallId7 } from "@deepseek-ai/dsh-llm";
@@ -72553,11 +72734,11 @@ function minimaxReasoningInfo(entry) {
     if (!ids.includes("none")) ids.push("none");
   }
   const efforts = ids.map((id) => {
-    if (id === "none") return { id: ReasoningEffortId14(id), name: "\u5173\u95ED\u601D\u8003" };
-    if (id === "on") return { id: ReasoningEffortId14(id), name: "\u5F00\u542F\u601D\u8003" };
-    return { id: ReasoningEffortId14(id), name: id };
+    if (id === "none") return { id: ReasoningEffortId16(id), name: "\u5173\u95ED\u601D\u8003" };
+    if (id === "on") return { id: ReasoningEffortId16(id), name: "\u5F00\u542F\u601D\u8003" };
+    return { id: ReasoningEffortId16(id), name: id };
   });
-  const defaultEffort = entry.defaultEffort !== void 0 && ids.includes(entry.defaultEffort) ? ReasoningEffortId14(entry.defaultEffort) : void 0;
+  const defaultEffort = entry.defaultEffort !== void 0 && ids.includes(entry.defaultEffort) ? ReasoningEffortId16(entry.defaultEffort) : void 0;
   return { efforts, ...defaultEffort === void 0 ? {} : { defaultEffort } };
 }
 var MinimaxAdapter = class extends LlmAdapter17 {
@@ -73594,7 +73775,7 @@ function createGeminiSigStore(ctx) {
 }
 
 // vendor/channel-pack/src/opencode-adapter.ts
-import { LlmAdapter as LlmAdapter18, LlmError as LlmError25, ReasoningEffortId as ReasoningEffortId15 } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter as LlmAdapter18, LlmError as LlmError25, ReasoningEffortId as ReasoningEffortId17 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/opencode-messages.ts
 var FREE_LANE_GATE_TOOLS = ["read", "shell"];
@@ -74122,7 +74303,7 @@ var OpencodeAdapter = class extends LlmAdapter18 {
         efforts: capability.efforts.map((effort) => ({
           // ⚠️ `id` 是**品牌类型**（`ReasoningEffortId`），必须经它的构造函数 ——
           // 与 Qoder 同款（`src/qoder-adapter.ts:581`）。
-          id: ReasoningEffortId15(effort),
+          id: ReasoningEffortId17(effort),
           // ⚠️ 没有官方中文的档位（models.dev 会下发 `minimal` / `xhigh` 等
           // Qoder 那份表里没有的值）**回退到 id 本身** —— 宁可显示英文原值，
           // 也不猜一个可能错译的中文。

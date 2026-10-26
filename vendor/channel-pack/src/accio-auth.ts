@@ -177,7 +177,22 @@ export async function fetchModels(
   product: AccioProduct,
   credential: AccioCredential,
   signal?: AbortSignal,
-): Promise<Array<{ id: string; name: string; contextWindow: number; maxTokens?: number }>> {
+): Promise<Array<{
+  id: string
+  name: string
+  contextWindow: number
+  maxTokens?: number
+  /** 计费倍率（上游 `usageMultiple`）；`null` 表示上游未下发，展示时不写后缀。 */
+  priceFactor?: number
+  /** 上游 `freeUse: true` —— 免费额度模型。 */
+  isFree?: boolean
+  /** 中文展示名（上游 `modelDisplayNameCn`）。 */
+  nameCn?: string
+  /** 上游是否支持思考（`enableThinking`）。 */
+  supportsThinking?: boolean
+  /** 成本说明（上游 `usageDescCn` / `usageDesc`）。 */
+  usageDesc?: string
+}>> {
   const response = await fetcher(`${product.gatewayBase}${ACCIO_LLM_CONFIG_PATH}`, {
     method: 'POST',
     headers: accioHeaders(product),
@@ -212,7 +227,17 @@ export async function fetchModels(
     }
   }
   if (list.length === 0) throw new Error('Accio：模型目录为空')
-  const rows: Array<{ id: string; name: string; contextWindow: number; maxTokens?: number }> = []
+  const rows: Array<{
+    id: string
+    name: string
+    contextWindow: number
+    maxTokens?: number
+    priceFactor?: number
+    isFree?: boolean
+    nameCn?: string
+    supportsThinking?: boolean
+    usageDesc?: string
+  }> = []
   const seenIds = new Set<string>()
   for (const raw of list) {
     if (typeof raw !== 'object' || raw === null) continue
@@ -237,10 +262,99 @@ export async function fetchModels(
     const contextWindow = typeof contextRaw === 'number' && contextRaw > 0 ? contextRaw : 128_000
     const maxRaw = item.maxTokens ?? item.max_output_tokens
     const maxTokens = typeof maxRaw === 'number' && maxRaw > 0 ? Math.min(maxRaw, contextWindow) : undefined
-    rows.push({ id, name, contextWindow, ...(maxTokens === undefined ? {} : { maxTokens }) })
+    /**
+     * 倍率（用户 2026-10-26 要求「倍率从远端取、没有就不显示」）。
+     *
+     * 上游 `usageMultiple` 是**数字**或 `null`：
+     * - `3.5` / `0.09` … → 直接用；
+     * - `null`（实测 `auto` 这类路由项就是 null）→ **不带倍率**，不编造 x1。
+     *
+     * `discountRuleList` 是限时折扣：`discountedMultiple` 是折后价。
+     * 只有当它确实低于 `usageMultiple` 时才算「当前生效的折扣」。
+     */
+    const usageMultiple = typeof item.usageMultiple === 'number' && Number.isFinite(item.usageMultiple)
+      ? item.usageMultiple : undefined
+    let priceFactor = usageMultiple
+    const discount = pickAccioDiscount(item.discountRuleList)
+    if (discount !== undefined && priceFactor !== undefined && discount < priceFactor) {
+      priceFactor = discount
+    }
+    const nameCn = typeof item.modelDisplayNameCn === 'string' && item.modelDisplayNameCn.trim() !== ''
+      ? item.modelDisplayNameCn.trim() : undefined
+    const usageDescRaw = typeof item.usageDescCn === 'string' && item.usageDescCn.trim() !== ''
+      ? item.usageDescCn.trim()
+      : typeof item.usageDesc === 'string' && item.usageDesc.trim() !== '' ? item.usageDesc.trim() : undefined
+    rows.push({
+      id,
+      name,
+      contextWindow,
+      ...(maxTokens === undefined ? {} : { maxTokens }),
+      ...(priceFactor === undefined ? {} : { priceFactor }),
+      ...(item.freeUse === true ? { isFree: true } : {}),
+      ...(nameCn === undefined ? {} : { nameCn }),
+      ...(typeof item.enableThinking === 'boolean' ? { supportsThinking: item.enableThinking } : {}),
+      ...(usageDescRaw === undefined ? {} : { usageDesc: usageDescRaw }),
+    })
   }
   if (rows.length === 0) throw new Error('Accio：模型目录为空')
   return rows
+}
+
+/**
+ * 从 `discountRuleList` 里取**当前生效**的最低折扣倍率。
+ *
+ * 规则形状（2026-10-27 实测）：
+ * ```
+ * { ruleId, ruleType: 'LIMITED_TIME', regionList, discountedMultiple,
+ *   effectiveStart, effectiveEnd, dailyWindowList, timezone }
+ * ```
+ * `effectiveStart/End` 为 `null` 表示不限期；有值时只在该区间内生效。
+ * 任一规则无法判定就跳过 —— 宁可少打折，也不要把过期折扣一直显示出来。
+ */
+function pickAccioDiscount(raw: unknown, now: Date = new Date()): number | undefined {
+  if (!Array.isArray(raw)) return undefined
+  let best: number | undefined
+  for (const entry of raw) {
+    if (entry === null || typeof entry !== 'object') continue
+    const rule = entry as Record<string, unknown>
+    const value = typeof rule.discountedMultiple === 'number' && Number.isFinite(rule.discountedMultiple)
+      ? rule.discountedMultiple : undefined
+    if (value === undefined) continue
+    if (!accioRuleActive(rule, now)) continue
+    if (best === undefined || value < best) best = value
+  }
+  return best
+}
+
+/** 判断一条折扣规则此刻是否生效（区间 + 每日时段）。 */
+function accioRuleActive(rule: Record<string, unknown>, now: Date): boolean {
+  const start = typeof rule.effectiveStart === 'string' ? Date.parse(rule.effectiveStart) : Number.NaN
+  const end = typeof rule.effectiveEnd === 'string' ? Date.parse(rule.effectiveEnd) : Number.NaN
+  if (Number.isFinite(start) && now.getTime() < start) return false
+  if (Number.isFinite(end) && now.getTime() > end) return false
+  const windows = rule.dailyWindowList
+  if (!Array.isArray(windows) || windows.length === 0) return true
+  // 每日时段：`{ startTime: 'HH:mm', endTime: 'HH:mm' }`（时区取 rule.timezone）。
+  const minutes = now.getHours() * 60 + now.getMinutes()
+  return windows.some((w) => {
+    if (w === null || typeof w !== 'object') return false
+    const item = w as Record<string, unknown>
+    const from = parseClockMinutes(item.startTime)
+    const to = parseClockMinutes(item.endTime)
+    if (from === undefined || to === undefined) return true
+    // 跨零点窗口（如 22:00→08:00）。
+    return from <= to ? minutes >= from && minutes < to : minutes >= from || minutes < to
+  })
+}
+
+function parseClockMinutes(value: unknown): number | undefined {
+  if (typeof value !== 'string') return undefined
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim())
+  if (m === null) return undefined
+  const h = Number.parseInt(m[1], 10)
+  const min = Number.parseInt(m[2], 10)
+  if (!Number.isFinite(h) || !Number.isFinite(min) || h > 23 || min > 59) return undefined
+  return h * 60 + min
 }
 
 /** 对话选项。 */

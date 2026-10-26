@@ -47,10 +47,41 @@ export interface AccioAdapterOptions {
  */
 const REMOTE_MODELS_TTL_MS = 300_000
 
+/**
+ * 模型展示名：远端倍率拼在名字后（**无倍率就只显示名字**）。
+ *
+ * 用户 2026-10-26 明确要求：
+ * - 倍率以**远端** `usageMultiple` 为准（本地兜底表会过期）；
+ * - 上游没给倍率（`null`，实测 `auto` 这类路由项）时**不要编造 x1**；
+ * - `freeUse: true` 且倍率为 0 → 显示「免费」。
+ */
+export function accioDisplayName(model: {
+  name: string
+  nameCn?: string
+  priceFactor?: number
+  isFree?: boolean
+}): string {
+  // 中文名优先（用户在国内版看到的应是中文），没有就退英文名。
+  const base = model.nameCn !== undefined && model.nameCn !== '' ? model.nameCn : model.name
+  if (model.priceFactor === undefined) return base
+  if (model.priceFactor === 0) return `${base} · 免费`
+  return `${base} · x${model.priceFactor}`
+}
+
 export class AccioAdapter extends LlmAdapter {
   private readonly product: AccioProduct
   private readonly fetchImpl: typeof fetch
-  private remoteModels: Array<{ id: string; name: string; contextWindow: number; maxTokens?: number }> | undefined
+  private remoteModels: Array<{
+    id: string
+    name: string
+    contextWindow: number
+    maxTokens?: number
+    priceFactor?: number
+    isFree?: boolean
+    nameCn?: string
+    supportsThinking?: boolean
+    usageDesc?: string
+  }> | undefined
   /** 上次成功拉取的时刻；配合 REMOTE_MODELS_TTL_MS 判断是否重拉。 */
   private remoteModelsAt = 0
   private loading: Promise<void> | undefined
@@ -99,15 +130,17 @@ export class AccioAdapter extends LlmAdapter {
     return listed.map((model) => ({
       provider: this.product.id,
       id: model.id,
-      name: model.name,
-      inputModalities: ['text'],
+      // 倍率拼进 name（不是 description）：composer 的模型切换菜单只渲染 name。
+      name: accioDisplayName(model),
+      ...(model.usageDesc === undefined ? {} : { description: model.usageDesc }),
+      inputModalities: model.supportsThinking === true ? ['text'] : ['text'],
     }))
   }
 
   /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数显示「—」。 */
   listAllModels(): readonly { id: string; name: string }[] {
     const source = this.remoteModels ?? this.product.fallbackModels
-    return source.map((model) => ({ id: model.id, name: model.name }))
+    return source.map((model) => ({ id: model.id, name: accioDisplayName(model) }))
   }
 
   /**
@@ -118,7 +151,8 @@ export class AccioAdapter extends LlmAdapter {
    */
   displayNameFor(modelId: string): string | undefined {
     const source = this.remoteModels ?? this.product.fallbackModels
-    return source.find((model) => model.id === modelId)?.name
+    const model = source.find((item) => item.id === modelId)
+    return model === undefined ? undefined : accioDisplayName(model)
   }
 
   /**
@@ -148,7 +182,8 @@ export class AccioAdapter extends LlmAdapter {
     const resolved: LlmResolvedModelInfo = {
       provider,
       id: model,
-      name: entry?.name ?? model,
+      // 远端优先（含倍率），拉不到才回落兜底表。
+      name: entry === undefined ? model : accioDisplayName(entry),
       inputModalities: ['text'],
     }
     if (entry?.contextWindow !== undefined) resolved.context = { contextWindow: entry.contextWindow }

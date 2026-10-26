@@ -5,7 +5,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions,
   LlmModelInfo,
@@ -39,41 +39,117 @@ export interface KukuAdapterOptions {
 const REMOTE_MODELS_TTL_MS = 600_000
 
 /**
- * 从上游目录响应里提取 `{ id, name }`。
+ * kuku 的一个目录条目（远端 `data.model_list[]`）。
  *
- * 上游响应（实测 2026-10-25）：`data.model_list[]` 每项含
- * `model_name`（真实 id，如 `gateway-deepseek-v4.1-flash-volcengine`）、
- * `display_name`（展示名，如 `DeepSeek-V4.1-Flash`）、`cost_ratio`、`vip_type`。
- * 结构未公开（上游 `models.rs` 也做宽松提取），故递归找，缺 display_name 时用 id 兜底。
+ * 上游响应（2026-10-27 实测 `?clienttype=400&app_id=…`）：
+ * ```
+ * { status: {...}, data: {
+ *     model_list: [{ id, model_name, display_name, description, cost_ratio, vip_type }],
+ *     think_list: [{ id, think_name, description }],
+ *     default_model_id, default_think_id } }
+ * ```
+ * - `model_name` 是**真实 id**（`gateway-deepseek-v4.1-flash-volcengine`），
+ *   `display_name` 才是展示名（`DeepSeek-V4.1-Flash`）；
+ * - `cost_ratio` 是**倍率字符串**（`"0.16x"`、`"3.60x"`），`""` 表示无倍率
+ *   （`auto` 这种路由项就是空串）—— **不能当成 1 处理**，用户明确要求
+ *   「没有倍率的直接不显示倍率」；
+ * - `think_list` 是**全局思考档位表**（`低/中/高/极高`），不是每模型字段，
+ *   请求时按 `think_mode` 传档位 id。
  */
-function extractKukuModels(value: unknown): Array<{ id: string; name: string }> {
-  const out = new Map<string, string>()
-  const walk = (node: unknown): void => {
-    if (Array.isArray(node)) { for (const item of node) walk(item); return }
-    if (typeof node !== 'object' || node === null) return
-    const record = node as Record<string, unknown>
-    const id = typeof record.model_name === 'string' ? record.model_name.trim()
-      : typeof record.modelName === 'string' ? record.modelName.trim()
-        : typeof record.modelId === 'string' ? record.modelId.trim()
-          : undefined
-    if (id !== undefined && id !== '') {
-      const display = typeof record.display_name === 'string' && record.display_name.trim() !== ''
-        ? record.display_name.trim()
-        : id
-      if (!out.has(id)) out.set(id, display)
-      return
+export interface KukuModelEntry {
+  id: string
+  name: string
+  /** 倍率（已从 `"0.16x"` 解析成数字）；缺失表示上游没给，展示时不写后缀。 */
+  priceFactor?: number
+  /** 上游给的原文描述（`description`），用作模型说明。 */
+  description?: string
+  /** 会员专属（`vip_type: 1`）。 */
+  vipOnly?: boolean
+}
+
+/** 思考档位（`data.think_list[]`）。 */
+export interface KukuThinkLevel {
+  id: string
+  name: string
+  description?: string
+}
+
+/**
+ * 解析远端目录：模型列表 + 思考档位表。
+ *
+ * ⚠️ 之前只提取 `{id, name}`，把 `cost_ratio`（倍率）、`description`、
+ * `think_list`（思考强度）全丢了 —— 用户报障「从远端拉取但倍率和推理强度
+ * 没有」。这里一并解析出来。
+ */
+export function parseKukuCatalog(value: unknown): {
+  models: KukuModelEntry[]
+  thinkLevels: KukuThinkLevel[]
+  defaultThinkId?: string
+} {
+  const data = (value !== null && typeof value === 'object' && 'data' in value)
+    ? (value as Record<string, unknown>).data
+    : value
+  const root = (data !== null && typeof data === 'object') ? data as Record<string, unknown> : {}
+  const models: KukuModelEntry[] = []
+  const seen = new Set<string>()
+  const list = Array.isArray(root.model_list) ? root.model_list : []
+  for (const raw of list) {
+    if (raw === null || typeof raw !== 'object') continue
+    const item = raw as Record<string, unknown>
+    const id = typeof item.model_name === 'string' ? item.model_name.trim()
+      : typeof item.modelName === 'string' ? item.modelName.trim()
+        : typeof item.modelId === 'string' ? item.modelId.trim() : ''
+    if (id === '' || seen.has(id)) continue
+    seen.add(id)
+    const display = typeof item.display_name === 'string' && item.display_name.trim() !== ''
+      ? item.display_name.trim() : id
+    const entry: KukuModelEntry = { id, name: display }
+    // `"0.16x"` → 0.16；`""` / 非法 → 不带倍率（不编造 x1）。
+    const ratio = typeof item.cost_ratio === 'string' ? item.cost_ratio.trim() : ''
+    const parsed = ratio === '' ? Number.NaN : Number.parseFloat(ratio.replace(/x$/i, ''))
+    if (Number.isFinite(parsed) && parsed >= 0) entry.priceFactor = parsed
+    if (typeof item.description === 'string' && item.description.trim() !== '') {
+      entry.description = item.description.trim()
     }
-    for (const child of Object.values(record)) walk(child)
+    if (item.vip_type === 1) entry.vipOnly = true
+    models.push(entry)
   }
-  walk(value)
-  return [...out.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([id, name]) => ({ id, name }))
+  const thinkLevels: KukuThinkLevel[] = []
+  const thinkSeen = new Set<string>()
+  const thinkList = Array.isArray(root.think_list) ? root.think_list : []
+  for (const raw of thinkList) {
+    if (raw === null || typeof raw !== 'object') continue
+    const item = raw as Record<string, unknown>
+    const id = typeof item.id === 'string' ? item.id.trim() : String(item.id ?? '').trim()
+    const name = typeof item.think_name === 'string' ? item.think_name.trim() : ''
+    if (id === '' || name === '' || thinkSeen.has(id)) continue
+    thinkSeen.add(id)
+    thinkLevels.push({
+      id,
+      name,
+      ...(typeof item.description === 'string' && item.description.trim() !== ''
+        ? { description: item.description.trim() } : {}),
+    })
+  }
+  const defaultThinkId = typeof root.default_think_id === 'string' ? root.default_think_id.trim() : undefined
+  return { models, thinkLevels, ...(defaultThinkId === undefined ? {} : { defaultThinkId }) }
+}
+
+/** 模型展示名：把倍率拼上去（无倍率就只显示名字，用户明确要求）。 */
+export function kukuDisplayName(model: { name: string; priceFactor?: number }): string {
+  if (model.priceFactor === undefined) return model.name
+  return `${model.name} · ${model.priceFactor === 0 ? '免费' : `x${model.priceFactor}`}`
 }
 
 export class KukuAdapter extends LlmAdapter {
   private readonly product: KukuProduct
   private readonly fetchImpl: typeof fetch
   /** 远端模型目录（拉到后用；拉不到回落到 `product.fallbackModels`）。 */
-  private remoteModels: Array<{ id: string; name: string }> | undefined
+  private remoteModels: KukuModelEntry[] | undefined
+  /** 远端思考档位表（`data.think_list`）；`undefined` 表示还没拉到。 */
+  private remoteThinkLevels: KukuThinkLevel[] | undefined
+  /** 上游默认档位 id（`default_think_id`）。 */
+  private remoteDefaultThinkId: string | undefined
   /** 上次成功拉取的时刻；配合 REMOTE_MODELS_TTL_MS 判断是否重拉。 */
   private remoteModelsAt = 0
   private loading: Promise<void> | undefined
@@ -103,7 +179,9 @@ export class KukuAdapter extends LlmAdapter {
     return listed.map((model) => ({
       provider: this.product.id,
       id: model.id,
-      name: model.name,
+      // 倍率拼进 name（不是 description）：composer 的模型切换菜单只渲染 name。
+      name: kukuDisplayName(model),
+      ...(model.description === undefined ? {} : { description: model.description }),
       inputModalities: ['text'],
     }))
   }
@@ -111,7 +189,7 @@ export class KukuAdapter extends LlmAdapter {
   /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数会显示「—」。 */
   listAllModels(): readonly { id: string; name: string }[] {
     const source = this.remoteModels ?? this.product.fallbackModels
-    return source.map((model) => ({ id: model.id, name: model.name }))
+    return source.map((model) => ({ id: model.id, name: kukuDisplayName(model) }))
   }
 
   /**
@@ -122,7 +200,8 @@ export class KukuAdapter extends LlmAdapter {
    */
   displayNameFor(modelId: string): string | undefined {
     const source = this.remoteModels ?? this.product.fallbackModels
-    return source.find((model) => model.id === modelId)?.name
+    const model = source.find((item) => item.id === modelId)
+    return model === undefined ? undefined : kukuDisplayName(model)
   }
 
   /**
@@ -166,9 +245,11 @@ export class KukuAdapter extends LlmAdapter {
           const code = (status as Record<string, unknown>).code
           if (typeof code === 'number' && code !== 0) return
         }
-        const parsed = extractKukuModels(record.data)
-        if (parsed.length > 0) {
-          this.remoteModels = parsed
+        const catalog = parseKukuCatalog(record.data)
+        if (catalog.models.length > 0) {
+          this.remoteModels = catalog.models
+          this.remoteThinkLevels = catalog.thinkLevels
+          this.remoteDefaultThinkId = catalog.defaultThinkId
           this.remoteModelsAt = Date.now()
         }
       } catch {
@@ -181,15 +262,44 @@ export class KukuAdapter extends LlmAdapter {
   }
 
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
-    const entry = this.product.fallbackModels.find((candidate) => candidate.id === model)
+    await this.ensureRemoteModels()
+    const remote = this.remoteModels?.find((candidate) => candidate.id === model)
+    const fallback = this.product.fallbackModels.find((candidate) => candidate.id === model)
     const resolved: LlmResolvedModelInfo = {
       provider,
       id: model,
-      name: entry?.name ?? model,
+      // 远端优先（含倍率），拉不到才回落兜底表。
+      name: remote !== undefined ? kukuDisplayName(remote) : fallback?.name ?? model,
       inputModalities: ['text'],
     }
-    if (entry?.contextWindow !== undefined) resolved.context = { contextWindow: entry.contextWindow }
-    if (entry?.maxTokens !== undefined && entry.maxTokens > 0) resolved.defaultMaxTokens = entry.maxTokens
+    const contextWindow = fallback?.contextWindow
+    if (contextWindow !== undefined) resolved.context = { contextWindow }
+    if (fallback?.maxTokens !== undefined && fallback.maxTokens > 0) {
+      resolved.defaultMaxTokens = fallback.maxTokens
+    }
+    /**
+     * 思考强度：档位来自远端 `data.think_list`（`低/中/高/极高`），
+     * 请求时按 `think_mode` 传档位 id。
+     *
+     * ⚠️ 之前**完全没有** `reasoning`，所以界面上根本选不到思考程度
+     * （用户 2026-10-26 报障）。档位 id 是上游的**数字字符串**，交给
+     * `ReasoningEffortId` 保证类型契约。
+     */
+    const levels = this.remoteThinkLevels
+    if (levels !== undefined && levels.length > 0) {
+      const preferred = this.remoteDefaultThinkId
+      const fallbackDefault = levels[levels.length - 1].id
+      const defaultId = preferred !== undefined && levels.some((level) => level.id === preferred)
+        ? preferred
+        : fallbackDefault
+      resolved.reasoning = {
+        efforts: levels.map((level) => ({
+          id: ReasoningEffortId(level.id),
+          name: level.name,
+        })),
+        defaultEffort: ReasoningEffortId(defaultId),
+      }
+    }
     return resolved
   }
 
@@ -209,6 +319,22 @@ export class KukuAdapter extends LlmAdapter {
     if (!isCredentialUsable(credential)) {
       throw new LlmError('KukuAI：没有可用凭据，请先在渠道面板粘贴含 BDUSS 的 Cookie', 'MISSING_CREDENTIAL')
     }
+    /**
+     * 把内核传来的档位 id 映射成上游的 `think_mode` 数值。
+     *
+     * 上游 `think_list[].id` 是数字字符串（`"1"`…`"4"`），而 DSH 传下来的是
+     * `ReasoningEffortId`（同样是字符串）。非数字 / 未知档位一律不传，
+     * 交给上游默认档 —— 传错值会让上游按「无效档位」处理。
+     */
+    const requested = options.reasoningEffort
+    const thinkMode = requested === undefined
+      ? undefined
+      : (() => {
+        const text = String(requested)
+        const known = this.remoteThinkLevels?.some((level) => level.id === text) ?? false
+        const numeric = Number.parseInt(text, 10)
+        return known && Number.isFinite(numeric) ? numeric : undefined
+      })()
     try {
       // 内核契约：delta 必须带 index 且以 block-start/block-end 成对包裹。
       yield* emitDeltaBlocks(streamChat(this.fetchImpl, this.product, credential, {
@@ -216,6 +342,10 @@ export class KukuAdapter extends LlmAdapter {
         messages: options.messages,
         ...(options.system === undefined ? {} : { system: options.system }),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
+        // 思考档位：上游按 `think_mode`（档位 id）选择强度。
+        // ⚠️ 缺省时**不传**，让上游用自己声明的默认档（`default_think_id`）；
+        // 硬写 0 会变成「关闭思考」，与用户选的默认档不符。
+        ...thinkMode === undefined ? {} : { thinkMode },
       }))
     } catch (error) {
       if (options.signal?.aborted === true) throw new LlmError('KukuAI：请求已取消', 'ABORTED')

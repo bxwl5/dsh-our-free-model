@@ -190,13 +190,41 @@ export function parseCredential(value: unknown): AutoClawCredential | undefined 
  * 上游形态未完全确定（参考实现只记录路径），故做宽松归一：
  * 依次尝试 `models` / `data` / 顶层数组三种形态。
  */
-export function parseModelConfig(value: unknown): Array<{ id: string; name: string; contextWindow: number; maxTokens?: number }> {
+/**
+ * 解析 AutoClaw 的模型目录（`/autoclaw-proxy/proxy/autoclaw-model-config`）。
+ *
+ * ⚠️ **AutoClaw 是「按量计费」，不是倍率套餐**（用户 2026-10-26 明确说明，
+ * 与 zcode 同类）。故本函数**不产出倍率**，只如实取：
+ * - `creditConsumptionLevel`（积分消耗档：`低`/`中`/`高`）—— 这是**分档标签**，
+ *   不是数字倍率，展示成「积分·低」而不是 `x0.5`；
+ * - `reasoningLevel`（思考档位表，如 `['low','high','max']`）+ `reasoning`；
+ * - `tooltip`（上游给的中文说明，用作 description）。
+ *
+ * 早期实现只取 `{id, name, contextWindow, maxTokens}`，把档位与说明全丢了
+ * （用户报障「从远端拉取但推理强度没了」）。
+ */
+export interface AutoClawModelRow {
+  id: string
+  name: string
+  contextWindow: number
+  maxTokens?: number
+  /** 积分消耗档（上游 `creditConsumptionLevel`，中文分档）。 */
+  creditLevel?: string
+  /** 思考档位 id 表（上游 `reasoningLevel`）。 */
+  efforts?: string[]
+  /** 上游是否支持思考（`reasoning`）。 */
+  supportsThinking?: boolean
+  /** 上游中文说明（`tooltip`）。 */
+  tooltip?: string
+}
+
+export function parseModelConfig(value: unknown): AutoClawModelRow[] {
   const list = Array.isArray(value) ? value
     : isRecord(value) && Array.isArray(value.models) ? value.models
     : isRecord(value) && Array.isArray(value.data) ? value.data
     : undefined
   if (list === undefined) return []
-  const rows: Array<{ id: string; name: string; contextWindow: number; maxTokens?: number }> = []
+  const rows: AutoClawModelRow[] = []
   for (const raw of list) {
     if (typeof raw !== 'object' || raw === null) continue
     const item = raw as Record<string, unknown>
@@ -207,7 +235,23 @@ export function parseModelConfig(value: unknown): Array<{ id: string; name: stri
     const contextWindow = typeof contextRaw === 'number' && contextRaw > 0 ? contextRaw : 128_000
     const maxRaw = item.maxTokens ?? item.max_output_tokens
     const maxTokens = typeof maxRaw === 'number' && maxRaw > 0 ? Math.min(maxRaw, contextWindow) : undefined
-    rows.push({ id, name, contextWindow, ...(maxTokens === undefined ? {} : { maxTokens }) })
+    // 思考档位：`reasoningLevel` 是**字符串数组**（实测 `['low','high','max']`）。
+    const levelsRaw = item.reasoningLevel
+    const efforts = Array.isArray(levelsRaw)
+      ? levelsRaw.filter((level): level is string => typeof level === 'string' && level !== '')
+      : undefined
+    const creditLevel = stringValue(item.creditConsumptionLevel)
+    const tooltip = stringValue(item.tooltip)
+    rows.push({
+      id,
+      name,
+      contextWindow,
+      ...(maxTokens === undefined ? {} : { maxTokens }),
+      ...(creditLevel === undefined ? {} : { creditLevel }),
+      ...(efforts === undefined || efforts.length === 0 ? {} : { efforts }),
+      ...(item.reasoning === true ? { supportsThinking: true } : {}),
+      ...(tooltip === undefined ? {} : { tooltip }),
+    })
   }
   return rows
 }

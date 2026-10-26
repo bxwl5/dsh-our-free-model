@@ -89,11 +89,33 @@ export interface MonkeyCodeAdapterOptions {
  */
 const REMOTE_MODELS_TTL_MS = 300_000
 
+/**
+ * 模型展示名。
+ *
+ * ⚠️ **MonkeyCode 是按量计费**（用户 2026-10-26 说明）：上游只给单价
+ * `input_price`（实测 `400`），没有倍率概念。故这里**只在免费时**标注，
+ * 其余保持裸名 —— 符合用户「没有倍率的直接不显示倍率」的要求，
+ * 也避免把单价误当成倍率（`x400` 会严重误导）。
+ */
+export function monkeyCodeDisplayName(model: { name: string; isFree?: boolean }): string {
+  return model.isFree === true ? `${model.name} · 免费` : model.name
+}
+
 export class MonkeyCodeAdapter extends LlmAdapter {
   private readonly product: MonkeyCodeProduct
   private readonly fetchImpl: typeof fetch
   /** 远端模型目录缓存。 */
-  private remoteModels: Array<{ id: string; name: string; contextWindow: number; maxTokens?: number; isHidden?: boolean }> | undefined
+  private remoteModels: Array<{
+    id: string
+    name: string
+    contextWindow: number
+    maxTokens?: number
+    isHidden?: boolean
+    isFree?: boolean
+    inputPrice?: number
+    accessLevel?: string
+    supportsImage?: boolean
+  }> | undefined
   /** 上次成功拉取的时刻；配合 REMOTE_MODELS_TTL_MS 判断是否重拉。 */
   private remoteModelsAt = 0
   private loading: Promise<void> | undefined
@@ -155,9 +177,10 @@ export class MonkeyCodeAdapter extends LlmAdapter {
 
   /** 「显示列表」用的完整目录（不套用户黑名单；上游标 is_hidden 的仍排除）。 */
   listAllModels(): readonly { id: string; name: string }[] {
-    const all: Array<{ id: string; name: string; isHidden?: boolean }> =
+    const all: Array<{ id: string; name: string; isHidden?: boolean; isFree?: boolean }> =
       this.remoteModels ?? this.product.fallbackModels.map((model) => ({ ...model }))
-    return all.filter((model) => model.isHidden !== true).map((model) => ({ id: model.id, name: model.name }))
+    return all.filter((model) => model.isHidden !== true)
+      .map((model) => ({ id: model.id, name: monkeyCodeDisplayName(model) }))
   }
 
   /**
@@ -168,7 +191,8 @@ export class MonkeyCodeAdapter extends LlmAdapter {
    */
   displayNameFor(modelId: string): string | undefined {
     const source = this.remoteModels ?? this.product.fallbackModels
-    return source.find((model) => model.id === modelId)?.name
+    const model = source.find((item) => item.id === modelId)
+    return model === undefined ? undefined : monkeyCodeDisplayName(model)
   }
 
   /**
@@ -178,17 +202,18 @@ export class MonkeyCodeAdapter extends LlmAdapter {
    * 点了没反应。失败还原旧值，保证「拉不到就显示上次的目录」。
    */
   async refreshCatalog(): Promise<boolean> {
-    const previous = this.remoteModels
-    const previousAt = this.remoteModelsAt
-    this.remoteModelsAt = 0
-    await this.ensureRemoteModels()
-    const refreshed = this.remoteModelsAt !== 0 && this.remoteModelsAt !== previousAt
-      && this.remoteModels !== undefined
-    if (!refreshed) {
-      this.remoteModels = previous
-      this.remoteModelsAt = previousAt
+    const credential = await this.options.resolveCredential()
+    if (!isCredentialUsable(credential)) return false
+    try {
+      const rows = await fetchModels(this.fetchImpl, this.product, credential)
+      if (rows.length === 0) return false
+      this.remoteModels = rows
+      this.remoteModelsAt = Date.now()
+      return true
+    } catch {
+      // 拉不到就保留上一次的目录（用户要求）。
+      return false
     }
-    return refreshed
   }
 
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {

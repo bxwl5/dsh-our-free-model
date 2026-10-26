@@ -943,3 +943,77 @@ export async function verifyQoderCatalog() {
     upstream.close()
   }
 }
+
+/**
+ * 远端目录**字段完整性**回归（2026-10-27）。
+ *
+ * 用户报障：「从远端拉取，但倍率、推理强度没有」。根因不是没拉，而是
+ * 各渠道的解析器只提取 `{id, name}`，把上游确实下发的字段丢了。
+ *
+ * 本套件用**真实上游响应形状**（逐字取自实测抓包）校验四个渠道：
+ * - kuku：`cost_ratio`（倍率）+ `think_list`（思考档位）
+ * - accio：`usageMultiple`（倍率，`null` 表示无）+ `modelDisplayNameCn`
+ * - autoclaw：`creditConsumptionLevel`（按量计费分档）+ `reasoningLevel`
+ * - monkeycode：`input_price`（按量计费单价）+ `is_free`
+ *
+ * ⚠️ 断言的是「不编造」：没有倍率字段时**不能**显示 `x1`，
+ * 按量计费的单价**不能**当成倍率。
+ */
+export async function verifyRemoteCatalogFields() {
+  const assert = (await import('node:assert/strict')).default
+  const { parseKukuCatalog, kukuDisplayName } = await import('../vendor/channel-pack/src/kuku-adapter.ts')
+  const { accioDisplayName } = await import('../vendor/channel-pack/src/accio-adapter.ts')
+  const { parseModelConfig } = await import('../vendor/channel-pack/src/autoclaw.ts')
+  const { autoClawDisplayName } = await import('../vendor/channel-pack/src/autoclaw-adapter.ts')
+  const { monkeyCodeDisplayName } = await import('../vendor/channel-pack/src/monkeycode-adapter.ts')
+
+  // ── kuku：cost_ratio 是倍率字符串，think_list 是全局档位表 ──
+  const kuku = parseKukuCatalog({
+    model_list: [
+      { id: '1', model_name: 'auto', display_name: 'Auto', description: '', cost_ratio: '', vip_type: 0 },
+      { id: '2', model_name: 'gw-deepseek', display_name: 'DeepSeek-V4.1-Flash', description: '快', cost_ratio: '0.16x', vip_type: 0 },
+      { id: '10', model_name: 'ms-kimi-k3', display_name: 'Kimi-K3', description: '', cost_ratio: '3.60x', vip_type: 1 },
+    ],
+    think_list: [
+      { id: '1', think_name: '低', description: '快速问答' },
+      { id: '3', think_name: '高', description: '专业办公场景（默认）' },
+    ],
+    default_think_id: '3',
+  })
+  assert.equal(kuku.models.length, 3, 'kuku 按 model_name 取 id')
+  assert.equal(kuku.models[0].id, 'auto', 'kuku id 用 model_name 不是数字 id')
+  assert.equal(kuku.models[0].priceFactor, undefined, '⚠️ cost_ratio 为空 → 无倍率（不编造 x1）')
+  assert.equal(kukuDisplayName(kuku.models[0]), 'Auto', '无倍率只显示名字')
+  assert.equal(kuku.models[1].priceFactor, 0.16, 'cost_ratio "0.16x" 解析成 0.16')
+  assert.equal(kukuDisplayName(kuku.models[1]), 'DeepSeek-V4.1-Flash · x0.16')
+  assert.equal(kuku.models[2].vipOnly, true, 'vip_type=1 标记会员专属')
+  assert.equal(kuku.thinkLevels.length, 2, 'think_list 解析成档位表')
+  assert.deepEqual(kuku.thinkLevels.map(l => l.name), ['低', '高'])
+  assert.equal(kuku.defaultThinkId, '3', '默认档来自 default_think_id')
+
+  // ── accio：usageMultiple 是倍率，null 表示上游未下发 ──
+  assert.equal(accioDisplayName({ name: 'GPT 6 Astra', priceFactor: 3.5 }), 'GPT 6 Astra · x3.5')
+  assert.equal(accioDisplayName({ name: 'auto', nameCn: '自动' }), '自动', '中文名优先')
+  assert.equal(accioDisplayName({ name: 'x', priceFactor: 0 }), 'x · 免费', '0 倍率是免费')
+  assert.equal(accioDisplayName({ name: 'y' }), 'y', '⚠️ 无倍率不显示 x1')
+
+  // ── autoclaw：按量计费分档，不是数字倍率 ──
+  const ac = parseModelConfig([
+    { id: 'zai_auto', name: 'Auto', reasoning: true, contextWindow: 1048576, maxTokens: 393216,
+      creditConsumptionLevel: '低', reasoningLevel: ['low', 'high', 'max'], tooltip: '自动选模型' },
+    { id: 'zai_glm', name: 'GLM-5.3', contextWindow: 200000, creditConsumptionLevel: '高' },
+  ])
+  assert.equal(ac.length, 2)
+  assert.equal(ac[0].creditLevel, '低', 'creditConsumptionLevel 是分档标签')
+  assert.deepEqual(ac[0].efforts, ['low', 'high', 'max'], 'reasoningLevel 解析成思考档位')
+  assert.equal(ac[0].supportsThinking, true)
+  assert.equal(ac[0].tooltip, '自动选模型')
+  assert.equal(autoClawDisplayName(ac[0]), 'Auto · 积分低', '按量计费显示积分分档，不是 x 倍率')
+  assert.equal(autoClawDisplayName(ac[1]), 'GLM-5.3 · 积分高')
+
+  // ── monkeycode：input_price 是单价，绝不能当倍率 ──
+  assert.equal(monkeyCodeDisplayName({ name: 'glm-5', isFree: false }), 'glm-5', '⚠️ 按量计费不显示倍率')
+  assert.equal(monkeyCodeDisplayName({ name: 'free-one', isFree: true }), 'free-one · 免费')
+
+  console.log('remote-catalog-fields: 4 渠道断言通过（kuku 倍率+档位 / accio 倍率+中文名 / autoclaw 积分分档+档位 / monkeycode 不掉价）')
+}
