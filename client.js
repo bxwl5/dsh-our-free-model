@@ -265,8 +265,8 @@ window.__ModuleLoader__.load({
         'chan.model.on': '开启',
         'chan.model.enableAll': '全部开启',
         'chan.model.disableAll': '全部关闭',
-        'chan.model.refetch': '重新获取模型',
-        'chan.model.refetching': '获取中…',
+        'chan.model.refetch': '刷新模型',
+        'chan.model.refetching': '刷新中…',
         'chan.model.refetchHint': '从渠道远端重新拉取模型列表、倍率与思考档位',
         'chan.model.refetchDone': '模型列表已更新',
         'chan.model.refetchNoChange': '远端暂无新数据，已保留原列表',
@@ -715,8 +715,8 @@ window.__ModuleLoader__.load({
         'chan.model.on': 'Show',
         'chan.model.enableAll': 'Show all',
         'chan.model.disableAll': 'Hide all',
-        'chan.model.refetch': 'Refetch models',
-        'chan.model.refetching': 'Fetching…',
+        'chan.model.refetch': 'Refresh models',
+        'chan.model.refetching': 'Refreshing…',
         'chan.model.refetchHint': 'Pull the model list, rates and reasoning levels from the channel again',
         'chan.model.refetchDone': 'Model list updated',
         'chan.model.refetchNoChange': 'Upstream returned no new data; kept the current list',
@@ -1016,6 +1016,23 @@ window.__ModuleLoader__.load({
 .ofm_paneltitle{font-size:12px;font-weight:680;letter-spacing:.2px;color:var(--dsw-alias-label-secondary);display:flex;align-items:center;gap:8px}
 .ofm_paneltitle .ofm_sec_hint{font-weight:400;letter-spacing:0}
 .ofm_row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+/*
+ * 模型列表的三个批量按钮：「全部开启 / 全部关闭 / 刷新模型」并列等宽。
+ *
+ * 用户 2026-10-27 要求三者并列且大小一致 —— 此前刷新按钮是实心主按钮
+ * （无 ghost 类），在视觉上比另外两个重、也比它们宽，看起来像「太大了」。
+ * 现在统一为 ghost，并用 flex 均分宽度、固定最小宽度防换行挤压。
+ */
+.ofm_modelactions{width:100%;flex-wrap:nowrap;gap:8px}
+.ofm_modelactions_count{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ofm_modelactions .ofm_actionbtn{flex:0 0 auto;min-width:84px;padding:6px 12px;font-size:12px;
+  text-align:center;white-space:nowrap}
+@media (max-width: 420px) {
+  /* 窄屏放不下三个时允许换行，但保持等宽观感。 */
+  .ofm_modelactions{flex-wrap:wrap}
+  .ofm_modelactions_count{flex:1 1 100%}
+  .ofm_modelactions .ofm_actionbtn{flex:1 1 0;min-width:0}
+}
 /* ══ 请求热度图 ════════════════════════════════════════════════════════ */
 .ofm_heat{display:grid;grid-auto-flow:column;grid-auto-columns:12px;grid-template-rows:repeat(7,12px);justify-content:start;gap:2px;overflow-x:auto;padding:2px 0 6px}
 .ofm_cell{width:12px;height:12px;border-radius:3.5px;background:var(--dsw-alias-bg-layer-1);outline:1px solid var(--dsw-alias-border-l1);outline-offset:-1px;transition:transform .14s ease,background .3s ease}
@@ -3368,22 +3385,24 @@ window.__ModuleLoader__.load({
           models === undefined ? h('div', { className: 'ofm_skel', style: { minHeight: 44 } })
             : models.length === 0 ? h('p', { className: 'ofm_note' }, '—')
               : h(Fragment, null,
-                h('div', { className: 'ofm_row' },
-                  h('span', { className: 'ofm_note' }, t('chan.model.enabledCount')
+                h('div', { className: 'ofm_row ofm_modelactions' },
+                  h('span', { className: 'ofm_note ofm_modelactions_count' }, t('chan.model.enabledCount')
                     .replace('{enabled}', String(models.filter(model => model.disabled !== true).length))
                     .replace('{total}', String(models.length))),
+                  // 三个按钮**并列、等宽等高**（用户 2026-10-27 要求）。
+                  // 统一 ghost 样式：刷新按钮此前是实心主按钮，视觉上比另外两个大。
                   h('button', {
-                    type: 'button', className: 'ofm_btn ghost', disabled: busy !== '' || !rpc,
+                    type: 'button', className: 'ofm_btn ghost ofm_actionbtn', disabled: busy !== '' || !rpc,
                     title: t('chan.model.allScope'), 'aria-busy': busy === 'models:show' ? 'true' : undefined,
                     onClick: () => void setAllModels(false),
                   }, t('chan.model.enableAll')),
                   h('button', {
-                    type: 'button', className: 'ofm_btn ghost', disabled: busy !== '' || !rpc,
+                    type: 'button', className: 'ofm_btn ghost ofm_actionbtn', disabled: busy !== '' || !rpc,
                     title: t('chan.model.allScope'), 'aria-busy': busy === 'models:hide' ? 'true' : undefined,
                     onClick: () => void setAllModels(true),
                   }, t('chan.model.disableAll')),
                   h('button', {
-                    type: 'button', className: 'ofm_btn', disabled: busy !== '' || !rpc,
+                    type: 'button', className: 'ofm_btn ghost ofm_actionbtn', disabled: busy !== '' || !rpc,
                     title: t('chan.model.refetchHint'),
                     'aria-busy': busy === 'models:refetch' ? 'true' : undefined,
                     onClick: () => void refetchModels(),
