@@ -48986,8 +48986,8 @@ function autoClawDisplayName(model) {
   if (model.promotion !== void 0 && model.promotion !== "") parts.push(model.promotion);
   return parts.join(" \xB7 ");
 }
-function autoClawQuotaLabel(model) {
-  return model.quotaExhausted === true ? "\u989D\u5EA6\u7528\u5C3D" : void 0;
+function autoClawQuota(model) {
+  return model.quotaExhausted === true ? { kind: "exhausted" } : void 0;
 }
 function autoClawQuotaNotice(model) {
   if (model.quotaExhausted !== true) return void 0;
@@ -49106,11 +49106,7 @@ var AutoClawAdapter = class extends LlmAdapter12 {
   quotaFor(modelId) {
     const source = this.remoteModels ?? this.product.fallbackModels;
     const model = source.find((item) => item.id === modelId);
-    return model === void 0 ? void 0 : autoClawQuotaLabel(model);
-  }
-  /** AutoClaw 的额度标签恒为「已用尽」语义 → 红色框。 */
-  quotaKind() {
-    return "exhausted";
+    return model === void 0 ? void 0 : autoClawQuota(model);
   }
   /**
    * **强制**重新拉取远端目录（「重新获取模型」按钮），绕过 TTL。
@@ -59933,15 +59929,8 @@ function zcodeDisplayName(model, remaining) {
   void remaining;
   return model.name;
 }
-function zcodeQuotaLabel(units) {
-  return `\u5269 ${formatZcodeUnits(units)}`;
-}
-function formatZcodeUnits(units) {
-  if (!Number.isFinite(units) || units < 0) return "\u2014";
-  if (units >= 1e9) return `${(units / 1e9).toFixed(1)}B`;
-  if (units >= 1e6) return `${(units / 1e6).toFixed(1)}M`;
-  if (units >= 1e3) return `${(units / 1e3).toFixed(1)}K`;
-  return String(Math.trunc(units));
+function zcodeQuota(units) {
+  return { kind: "remaining", amount: units, unit: "tokens" };
 }
 var ZcodeAdapter = class extends LlmAdapter15 {
   constructor(options) {
@@ -60059,7 +60048,7 @@ var ZcodeAdapter = class extends LlmAdapter15 {
    */
   quotaFor(modelId) {
     const remaining = this.remainingFor(modelId);
-    return remaining === void 0 ? void 0 : zcodeQuotaLabel(remaining.units);
+    return remaining === void 0 ? void 0 : zcodeQuota(remaining.units);
   }
   listAllModels() {
     const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote3);
@@ -68316,11 +68305,10 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             ...model.isFree === void 0 ? {} : { isFree: model.isFree },
             // 余量标签（用户 2026-10-27 要求用绿色标签显示各模型剩余额度）。
             // 同样**缺失不写**：不按模型分账的渠道不该有这项。
+            // 额度状态：结构化透传，文案由前端 i18n 渲染。
             ...(() => {
               const quota = catalogSource?.quotaFor?.(model.id);
-              if (quota === void 0) return {};
-              const kind = catalogSource?.quotaKind?.() ?? "remaining";
-              return { quota, quotaKind: kind };
+              return quota === void 0 ? {} : { quota };
             })()
           }))
         };

@@ -9,6 +9,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import type { ModelQuota } from './types.js'
 import type {
   GenerateOptions,
   LlmModelInfo,
@@ -104,8 +105,9 @@ const AUTO_CLAW_EFFORT_NAMES: Readonly<Record<string, string>> = {
  * ## 「额度用尽」为什么不在名字里
  *
  * 用户 2026-10-27 要求：额度状态改用**红色标签**单独显示（与 ZCode 的
- * 绿色余量标签同一套机制）。故它由 {@link autoClawQuotaLabel} 产出，
- * 经 `model.list` 的 `quota` 字段交给前端渲染。
+ * 红色标签单独显示，与 ZCode 的绿色余量标签同一套机制）。故它由
+ * {@link autoClawQuota} 产出（结构化 `{kind:'exhausted'}`），
+ * 经 `model.list` 的 `quota` 字段交给前端渲染文案。
  *
  * ⚠️ **不显示「剩多少 M」**：上游的积分钱包（`/agent-assetmgr/.../wallets`）
  * 按来源分账（活动奖励 / 每日签到 / 订阅 / 加油包），**没有模型维度**，
@@ -121,13 +123,14 @@ export function autoClawDisplayName(model: AutoClawModelRow): string {
 }
 
 /**
- * 额度状态的**标签文本**（红色框用，用户 2026-10-27 指定）。
+ * 额度状态（红色框用，用户 2026-10-27 指定）。
  *
- * 上游只给二值（`metadata.forbiddenNotice` 存在即用尽），故只有
- * 「额度用尽」这一种文本；没用到 → `undefined`，前端就不渲染标签。
+ * 上游只给二值（`metadata.forbiddenNotice` 存在即用尽），故没有数量 ——
+ * 判别联合里 `exhausted` 分支天然不带 `amount`。
+ * 文案由前端 i18n 渲染（后端不拼中文）。
  */
-export function autoClawQuotaLabel(model: AutoClawModelRow): string | undefined {
-  return model.quotaExhausted === true ? '额度用尽' : undefined
+export function autoClawQuota(model: AutoClawModelRow): ModelQuota | undefined {
+  return model.quotaExhausted === true ? { kind: 'exhausted' } : undefined
 }
 
 /**
@@ -269,15 +272,10 @@ export class AutoClawAdapter extends LlmAdapter {
    * 上游只给二值（`metadata.forbiddenNotice`），故没有「剩余量」可示 ——
    * 积分钱包按来源分账（活动/签到/订阅/加油包），没有模型维度。
    */
-  quotaFor(modelId: string): string | undefined {
+  quotaFor(modelId: string): ModelQuota | undefined {
     const source = this.remoteModels ?? this.product.fallbackModels
     const model = source.find((item) => item.id === modelId)
-    return model === undefined ? undefined : autoClawQuotaLabel(model)
-  }
-
-  /** AutoClaw 的额度标签恒为「已用尽」语义 → 红色框。 */
-  quotaKind(): 'remaining' | 'exhausted' {
-    return 'exhausted'
+    return model === undefined ? undefined : autoClawQuota(model)
   }
 
   /**

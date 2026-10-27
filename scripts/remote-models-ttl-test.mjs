@@ -964,7 +964,7 @@ export async function verifyRemoteCatalogFields() {
   const { parseKukuCatalog, kukuDisplayName } = await import('../vendor/channel-pack/src/kuku-adapter.ts')
   const { accioDisplayName } = await import('../vendor/channel-pack/src/accio-adapter.ts')
   const { parseModelConfig } = await import('../vendor/channel-pack/src/autoclaw.ts')
-  const { autoClawDisplayName, autoClawQuotaLabel } = await import('../vendor/channel-pack/src/autoclaw-adapter.ts')
+  const { autoClawDisplayName, autoClawQuota } = await import('../vendor/channel-pack/src/autoclaw-adapter.ts')
   const { monkeyCodeDisplayName } = await import('../vendor/channel-pack/src/monkeycode-adapter.ts')
 
   // ── kuku：cost_ratio 是倍率字符串，think_list 是全局档位表 ──
@@ -1029,13 +1029,16 @@ export async function verifyRemoteCatalogFields() {
   assert.equal(autoClawDisplayName(ac[0]), 'Auto · 低')
   // ⚠️ 额度状态**不进名字**（用户 2026-10-27：改用红色标签单独显示）。
   assert.equal(autoClawDisplayName(ac[1]), 'Auto-Fast · 中', '名字里不含额度状态')
-  assert.equal(autoClawQuotaLabel(ac[1]), '额度用尽', '额度状态走独立标签（红色框）')
+  assert.deepEqual(autoClawQuota(ac[1]), { kind: 'exhausted' },
+    '⚠️ 额度状态走**结构化**标签（前端按 kind 上红色），后端不拼中文文案')
   assert.equal(ac[1].quotaExhausted, true)
   assert.equal(ac[1].quotaNotice, '免费额度已用完，24 小时后重置')
   assert.equal(autoClawDisplayName(ac[2]), 'GLM-5.3 · 高 · 限时半价',
     '促销用上游文案，不推断成 x0.5')
-  assert.equal(autoClawQuotaLabel(ac[2]), '额度用尽')
-  assert.equal(autoClawQuotaLabel(ac[0]), undefined, '没用尽 → 不渲染标签（不是空字符串）')
+  assert.deepEqual(autoClawQuota(ac[2]), { kind: 'exhausted' })
+  assert.equal(autoClawQuota(ac[0]), undefined, '没用尽 → 不渲染标签（不是空对象）')
+  // 判别联合：exhausted 分支**不带 amount**（上游只给二值，没有数量）。
+  assert.equal('amount' in autoClawQuota(ac[1]), false, '⚠️ exhausted 不得携带数量')
   assert.equal(ac[2].promotion, '限时半价')
   assert.equal(autoClawDisplayName(ac[3]), 'GLM-5.3-Flash · 低', '无促销无告警时只有两段')
   assert.equal(ac[3].quotaExhausted, undefined, '缺失 forbiddenNotice → 不是用完状态')
@@ -1046,7 +1049,7 @@ export async function verifyRemoteCatalogFields() {
   // 曾短暂合并过 `builtin_provider_config_json` 里的 GLM-5.2 / GLM-5-Turbo，
   // 但那两条只有 id、无任何能力字段（套 provider config 的正则兜底反而错），
   // 用户要求撤掉，保持与上游同步。
-  const { zcodeDisplayName, zcodeQuotaLabel, formatZcodeUnits } = await import('../vendor/channel-pack/src/zcode-adapter.ts')
+  const { zcodeDisplayName, zcodeQuota, formatZcodeUnits } = await import('../vendor/channel-pack/src/zcode-adapter.ts')
   assert.equal(formatZcodeUnits(3_000_000), '3.0M', 'token 数格式化')
   assert.equal(formatZcodeUnits(5_000_000), '5.0M')
   assert.equal(formatZcodeUnits(0), '0')
@@ -1069,9 +1072,12 @@ export async function verifyRemoteCatalogFields() {
   )
   // 无档位的模型不该凭空长出档位 —— 这正是撤掉硬编码补齐的动因之一。
   // 余量走独立的绿色标签（quota 字段）
-  assert.equal(zcodeQuotaLabel(3_000_000), '剩 3.0M')
-  assert.equal(zcodeQuotaLabel(5_000_000), '剩 5.0M')
-  assert.equal(zcodeQuotaLabel(0), '剩 0', '0 余量如实显示（与「查不到」不同）')
+  // 余量走**结构化**数据（前端拼「剩 {n}」文案并格式化数字）。
+  assert.deepEqual(zcodeQuota(3_000_000), { kind: 'remaining', amount: 3_000_000, unit: 'tokens' })
+  assert.deepEqual(zcodeQuota(0), { kind: 'remaining', amount: 0, unit: 'tokens' },
+    '0 余量如实传出（与「查不到」不同：那时是 undefined）')
+  // formatZcodeUnits 现在只服务后端内部，不再是展示契约 —— 保留断言防回归。
+  assert.equal(formatZcodeUnits(3_000_000), '3.0M')
   assert.ok(!/x\d/.test(zcodeDisplayName({ id: 'Y', name: 'Y' })), '⚠️ 额度制不得出现 x倍数')
 
   // ── monkeycode：input_price 换算成**相对倍率**（1000 = x1）──

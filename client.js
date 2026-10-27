@@ -273,6 +273,9 @@ window.__ModuleLoader__.load({
         'chan.model.enabledCount': '已开启 {enabled}/{total}',
         'chan.model.quotaHint': '该模型的剩余额度',
         'chan.model.quotaExhaustedHint': '该模型的免费额度已用尽',
+        // 额度标签的**文案模板**（后端只传结构化数据，见 ModelQuota）。
+        'chan.model.quotaRemaining': '剩 {n}',
+        'chan.model.quotaExhausted': '额度用尽',
         'chan.model.allScope': '仅操作当前渠道的全部模型',
         'chan.error': '操作失败：{reason}',
         'chan.confirm.delete': '移除账号 {name}？该账号的凭据会一并删除。',
@@ -724,6 +727,8 @@ window.__ModuleLoader__.load({
         'chan.model.enabledCount': 'Shown {enabled}/{total}',
         'chan.model.quotaHint': 'Remaining quota for this model',
         'chan.model.quotaExhaustedHint': 'Free quota for this model is used up',
+        'chan.model.quotaRemaining': '{n} left',
+        'chan.model.quotaExhausted': 'Quota used up',
         'chan.model.allScope': 'Apply to all models in this channel only',
         'chan.error': 'Action failed: {reason}',
         'chan.confirm.delete': 'Remove account {name}? Its credential is deleted with it.',
@@ -3185,6 +3190,39 @@ window.__ModuleLoader__.load({
        * 与上面的全开/全关共用一个 pending 锁：两者都改模型目录，并发点会让
        * 两次 `loadModels` 的结果互相覆盖。
        */
+      /**
+       * 把 token 数格式化成人读缩写（`3000000` → `3.0M`）。
+       *
+       * ⚠️ 放在**前端**而不是后端：精度与缩写属于展示决定，
+       * 不同屏宽/语言可能想要不同形态。后端只传原始 `amount` + `unit`。
+       */
+      const formatTokens = amount => {
+        const n = typeof amount === 'number' && Number.isFinite(amount) ? amount : 0
+        if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`
+        if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+        if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+        return String(Math.trunc(n))
+      }
+
+      /**
+       * 渲染一个模型的额度标签（绿=还剩多少 / 红=已用尽）。
+       *
+       * 后端传的是 `{ kind: 'remaining', amount, unit }` 这类结构化数据，
+       * 文案与数值格式都在这里决定 —— 换语言或改措辞只动 i18n，不动后端。
+       */
+      const quotaBadge = model => {
+        const quota = model?.quota
+        if (!quota || typeof quota !== 'object') return null
+        const exhausted = quota.kind === 'exhausted'
+        const template = exhausted ? t('chan.model.quotaExhausted') : t('chan.model.quotaRemaining')
+        const text = exhausted ? template : template.replace('{n}', formatTokens(quota.amount))
+        if (text === '') return null
+        return h('span', {
+          className: 'ofm_creditbadge strong ofm_quotabadge' + (exhausted ? ' exhausted' : ''),
+          title: exhausted ? t('chan.model.quotaExhaustedHint') : t('chan.model.quotaHint'),
+        }, text)
+      }
+
       const refetchModels = async () => {
         if (busy !== '' || modelBatchPending.current || !rpc) return
         modelBatchPending.current = true
@@ -3425,17 +3463,10 @@ window.__ModuleLoader__.load({
                 key: model.id,
               },
                 h('span', { className: 'ofm_id', title: model.id }, model.name ?? model.id),
-                // 余量绿色标签（用户 2026-10-27：用 accio 账号列表那种绿色框）。
-                // 只有 adapter 报了 quota 才渲染 —— 不按模型分账的渠道没有这项。
-                typeof model.quota === 'string' && model.quota !== ''
-                  ? h('span', {
-                    className: 'ofm_creditbadge strong ofm_quotabadge'
-                      + (model.quotaKind === 'exhausted' ? ' exhausted' : ''),
-                    title: model.quotaKind === 'exhausted'
-                      ? t('chan.model.quotaExhaustedHint')
-                      : t('chan.model.quotaHint'),
-                  }, model.quota)
-                  : null,
+                // 额度标签：绿=还剩多少 / 红=已用尽（用户 2026-10-27）。
+                // 后端只给结构化数据（kind/amount/unit），**文案与格式在这里**，
+                // 这样英文界面不漏中文「剩」，精度也由前端决定（见 types.ts ModelQuota）。
+                quotaBadge(model),
                 model.isFree === true ? h('span', { className: 'ofm_tagpill free' }, t('chan.model.free')) : null,
                 model.dead === true ? h('span', { className: 'ofm_tagpill dead' }, t('chan.model.dead')) : null,
                 model.disabled === true ? h('span', { className: 'ofm_tagpill' }, t('chan.model.hidden')) : null,

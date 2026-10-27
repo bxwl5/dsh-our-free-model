@@ -67,6 +67,7 @@ import { RemoteCatalogGate } from './remote-catalog-gate.js'
 import { settingsNamespaceFor } from './settings-compat.js'
 import { collectImages, serializeMessages } from './openai-compat.js'
 import { projectRequestImage, type ImageRequestTarget } from './image-budget.js'
+import type { ModelQuota } from './types.js'
 import type { ZcodeCredential } from './zcode.js'
 import { ZCODE, type ZcodeFallbackModel, type ZcodeProduct, type ZcodeRemoteModelLike } from './zcode-product.js'
 import {
@@ -369,9 +370,9 @@ export function zcodeDisplayName(
   return model.name
 }
 
-/** 余量的展示文本（绿色标签用），如 `剩 3.0M`。 */
-export function zcodeQuotaLabel(units: number): string {
-  return `剩 ${formatZcodeUnits(units)}`
+/** 把 token 数格式化成前端可用的额度对象（不再拼中文文案）。 */
+export function zcodeQuota(units: number): ModelQuota {
+  return { kind: 'remaining', amount: units, unit: 'tokens' }
 }
 
 /** 档位 id 的中文名（上游 `reasoning.levels` 的键）。 */
@@ -515,9 +516,9 @@ export class ZcodeAdapter extends LlmAdapter {
    * 没有对应桶（不按模型分账 / 查不到）→ `undefined`，客户端就不渲染标签，
    * 不编造 0。
    */
-  quotaFor(modelId: string): string | undefined {
+  quotaFor(modelId: string): ModelQuota | undefined {
     const remaining = this.remainingFor(modelId)
-    return remaining === undefined ? undefined : zcodeQuotaLabel(remaining.units)
+    return remaining === undefined ? undefined : zcodeQuota(remaining.units)
   }
 
   listAllModels(): readonly { id: string; name: string }[] {

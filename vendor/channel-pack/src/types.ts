@@ -798,6 +798,19 @@ export interface RpcModelListRequest {
  * 两者都取自**权威来源**（适配器的 listModels），而不是前端自己再拼一份
  * 模型清单，否则远端模型池变化时设置页与对话框会显示两套不同的列表。
  */
+/**
+ * 一个模型的额度状态（`RpcModelListEntry.quota`）。
+ *
+ * 判别联合而不是「字符串 + 语义字段」：`amount` 只在 `remaining` 分支
+ * 存在，类型层面就不可能出现「已用尽还带着剩余量」这种矛盾状态。
+ *
+ * - `remaining` → 绿色框，显示「还剩多少」；
+ * - `exhausted` → 红色框，显示「已用尽」（上游只给二值，没有数量）。
+ */
+export type ModelQuota =
+  | { kind: 'remaining'; amount: number; unit: 'tokens' }
+  | { kind: 'exhausted' }
+
 export interface RpcModelListEntry {
   id: string
   name: string
@@ -812,23 +825,20 @@ export interface RpcModelListEntry {
    */
   isFree?: boolean
   /**
-   * 该模型的额度标签文案（如 `剩 3.0M` / `额度用尽`）。
-   *
-   * 用户 2026-10-27 要求：模型名后面用标签显示额度状态。
+   * 该模型的额度状态（用户 2026-10-27 要求：模型名后面用标签显示）。
    *
    * ⚠️ **缺失 = 该渠道没有可示信息**（不按模型分账 / 查不到），客户端就不
    * 渲染标签 —— 不编造 0（0 是「已用光」，与「不知道」语义相反）。
-   */
-  quota?: string
-  /**
-   * 额度标签的**语义**，决定前端配色：
    *
-   * - `'remaining'`（默认）→ 绿色框，表示「还剩多少」（ZCode 的 `剩 3.0M`）；
-   * - `'exhausted'` → 红色框，表示「已用尽」（AutoClaw 的 `额度用尽`）。
-   *
-   * 用字段而不是让前端猜文案：文案是给人看的、会改，语义不能靠字符串匹配。
+   * ⚠️ 传**结构化数据**而不是拼好的字符串（改动理由）：
+   * 早先的实现让后端拼 `剩 3.0M` / `额度用尽` 再交给前端，有三个问题 ——
+   * 1. 中文字面量硬编码在后端，英文界面会直接漏出中文；
+   * 2. 精度与缩写（`3.0M` vs `3,000,000`）被后端定死，前端改不了；
+   * 3. 配色语义靠另一个字段 `quotaKind` 表达，同一件事拆成两处。
+   * 现在改成判别联合：`kind` 定语义与配色，`amount`/`unit` 是原始数据，
+   * 文案与格式**全部由前端 i18n 决定**。
    */
-  quotaKind?: 'remaining' | 'exhausted'
+  quota?: ModelQuota
   /**
    * 该模型是否已被判定为**上游下架**（`dead-models.json` 命中）。
    *

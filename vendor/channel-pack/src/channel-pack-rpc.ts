@@ -30,7 +30,7 @@ import {
   setGatewayDesiredEnabled,
 } from './openai-gateway/runtime.js'
 import type { CodeArtsAuth } from './service.js'
-import type { CodeArtsCredential } from './types.js'
+import type { CodeArtsCredential, ModelQuota } from './types.js'
 import type { BuddyAuth } from './buddy-auth.js'
 import type { QoderAuth } from './qoder-auth.js'
 import type { TraeAuth } from './trae-auth.js'
@@ -935,14 +935,13 @@ export interface ModelCatalogSource {
    * 只有按模型分账的渠道实现（目前 ZCode）。返回 `undefined` 表示该渠道
    * 不按模型分账或查不到 —— 客户端据此不渲染绿色标签。
    */
-  quotaFor?(modelId: string): string | undefined
   /**
-   * 额度标签的语义（可选，默认 `remaining`）。
+   * 单个模型的**额度状态**（可选）。
    *
-   * `'exhausted'` → 前端用红色框（如 AutoClaw 的「额度用尽」）；
-   * 其余 → 绿色框（如 ZCode 的「剩 3.0M」）。
+   * 返回结构化数据而非拼好的文案：文案与格式由前端 i18n 决定
+   * （`kind` 定配色，`amount`/`unit` 是原始数据）。
    */
-  quotaKind?(): 'remaining' | 'exhausted'
+  quotaFor?(modelId: string): ModelQuota | undefined
 }
 
 /**
@@ -4224,13 +4223,10 @@ function registerChannelPackEndpoints(
             ...model.isFree === undefined ? {} : { isFree: model.isFree },
             // 余量标签（用户 2026-10-27 要求用绿色标签显示各模型剩余额度）。
             // 同样**缺失不写**：不按模型分账的渠道不该有这项。
+            // 额度状态：结构化透传，文案由前端 i18n 渲染。
             ...(() => {
               const quota = catalogSource?.quotaFor?.(model.id)
-              if (quota === undefined) return {}
-              // 带上语义，让前端按 quotaKind 选配色（绿=剩多少 / 红=已用尽），
-              // 而不是靠字符串匹配猜。
-              const kind = catalogSource?.quotaKind?.() ?? 'remaining'
-              return { quota, quotaKind: kind }
+              return quota === undefined ? {} : { quota }
             })(),
           })),
         }
