@@ -1043,6 +1043,28 @@ export async function verifyRemoteCatalogFields() {
   assert.equal(autoClawDisplayName(ac[3]), 'GLM-5.3-Flash · 低', '无促销无告警时只有两段')
   assert.equal(ac[3].quotaExhausted, undefined, '缺失 forbiddenNotice → 不是用完状态')
 
+  // ── 内部 id → 展示名（2026-10-27 用户报障：界面出现 dfmodel）──
+  //
+  // `modelRateLimits` 的 key 与台账的 model 字段都是**内部 id**
+  // （Qoder 的 `dfmodel` / `qmodel_38max`），直接展示会漏出编码。
+  // 两处都必须走适配器的 `displayNameFor()` 映射。
+  {
+    const { QoderAdapter } = await import('../vendor/channel-pack/src/qoder-adapter.ts')
+    const { QODER } = await import('../vendor/channel-pack/src/qoder-product.ts')
+    const adapter = new QoderAdapter({
+      product: QODER,
+      fetchImpl: async () => new Response('{}', { status: 500 }),
+      resolveCredential: async () => undefined,
+      refresh: async () => {},
+    })
+    // 未拉到远端时走兜底表 —— 兜底表同样必须给出展示名而不是裸 id。
+    assert.equal(adapter.displayNameFor('dfmodel'), 'DeepSeek-Flash · x0.1',
+      '⚠️ 内部 id 必须映射成展示名（含倍率），不能直接显示 dfmodel')
+    assert.equal(adapter.displayNameFor('qmodel_38max'), 'Qwen3.8-Max · x0.5')
+    assert.equal(adapter.displayNameFor('__nope__'), undefined,
+      '未知 id 返回 undefined，由调用方决定退回 id')
+  }
+
   // ── zcode：模型清单要合并两个来源，余量按模型显示（2026-10-27）──
   //
   // 模型清单**只取上游 `builtinModels`**（用户 2026-10-27 决定：不做硬编码补齐）。

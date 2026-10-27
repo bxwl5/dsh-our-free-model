@@ -1560,16 +1560,26 @@ function registerChannelPackEndpoints(
             // 单渠道读失败不能拖垮整个汇总（它是"看一眼"的辅助板块）。
             continue
           }
-          // 该渠道当前**可用**的模型名，用来判定"是否全部模型都被限"。
-          const modelNames = (modelAdapters?.[provider]?.listAllModels() ?? [])
-            .map((model) => model.name)
+          /**
+           * 该渠道的目录：**id 与展示名都要**。
+           *
+           * ⚠️ `modelRateLimits` 的 key 是**模型 id**（Qoder 的 `dfmodel`、
+           * `qmodel_38max` 这类内部编码），**不是**展示名。直接拿 key 当名字
+           * 显示，界面就会出现 `dfmodel`（用户 2026-10-27 报障）。
+           *
+           * ⚠️ 「是否全部模型都被限」必须用 **id** 比较（key 就是 id），
+           * 早期版本拿 `name` 和 id 比，永远不相等 → 该分支是死代码。
+           */
+          const catalog = modelAdapters?.[provider]?.listAllModels() ?? []
+          const idToName = new Map(catalog.map((model) => [model.id, model.name]))
+          const knownIds = catalog.map((model) => model.id)
           for (const account of accounts) {
             const limits = Object.entries(account.modelRateLimits ?? {})
               .filter(([, resetAt]) => Number(resetAt) > now)
             if (limits.length === 0) continue
             // 该账号在**所有已知模型**上都被限 → 收敛成一条"全部模型"。
-            const everyModel = modelNames.length > 0
-              && modelNames.every((name) => limits.some(([id]) => id === name))
+            const everyModel = knownIds.length > 0
+              && knownIds.every((id) => limits.some(([key]) => key === id))
             if (everyModel) {
               // 全部限流时报**最晚**解禁时刻（最后一个模型恢复的时间）。
               const resetAtMs = limits.reduce((max, [, at]) => Math.max(max, Number(at) || 0), 0)
@@ -1586,7 +1596,8 @@ function registerChannelPackEndpoints(
                 provider,
                 accountId: account.id,
                 accountName: account.nickname || account.id,
-                modelName: modelId,
+                // 展示名优先；查不到（模型已下架）才退回 id —— 有名字总比编码好。
+                modelName: idToName.get(modelId) ?? modelId,
                 resetAtMs: Number(resetAt) || 0,
               })
             }
@@ -4987,7 +4998,48 @@ function registerChannelPackEndpoints(
           ? Math.min(Math.max(Math.trunc(raw), 1), TOKEN_LEDGER_HISTORY_MAX_DAYS)
           : undefined
         const result = readTokenLedgerHistory(readTokenLedgerDayMap(), { sinceDays })
-        const value: RpcUsageTokenLedgerHistoryResponse = { history: result.days, totals: result.totals }
+        /**
+         * 把 `provider/modelId` 里的**模型 id 换成人读展示名**。
+         *
+         * ⚠️ 台账记的是请求里的 `model` 字段（Qoder 的 `dfmodel`、
+         * `qmodel_38max` 这类内部编码），直接显示会出现 `dfmodel`
+         * （用户 2026-10-27 报障：数据看板与异常汇总都出现这个）。
+         *
+         * 查不到时**原样保留 id** —— 模型可能已下架，但「有编码可看」
+         * 仍好过把这一行藏起来（用量数据本身是真实的）。
+         */
+        const modelLabel = (raw: string): string => {
+          const slash = raw.indexOf('/')
+          if (slash <= 0) return raw
+          const provider = raw.slice(0, slash)
+          const modelId = raw.slice(slash + 1)
+          const named = modelAdapters?.[provider]?.displayNameFor?.(modelId)
+            ?? modelAdapters?.[provider]?.listAllModels().find((m) => m.id === modelId)?.name
+          return named === undefined || named === '' ? raw : `${provider}/${named}`
+        }
+        /**
+         * 逐层重写模型名。树是 day → channels → providers → accounts → models
+         * 四层，只有最内层带 `model` 字段，故只改那一层、其余原样透传
+         * （改结构反而容易漏字段，前端按原形消费）。
+         */
+        const renameModels = (accounts: readonly { models: readonly { model: string }[] }[]) =>
+          accounts.map((account) => ({
+            ...account,
+            models: account.models.map((row) => ({ ...row, model: modelLabel(row.model) })),
+          }))
+        const value: RpcUsageTokenLedgerHistoryResponse = {
+          history: result.days.map((day) => ({
+            ...day,
+            channels: day.channels.map((channel) => ({
+              ...channel,
+              providers: channel.providers.map((provider) => ({
+                ...provider,
+                accounts: renameModels(provider.accounts),
+              })),
+            })),
+          })),
+          totals: result.totals,
+        }
         return { ok: true, value }
       }
 

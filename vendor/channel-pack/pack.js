@@ -66321,11 +66321,13 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           } catch {
             continue;
           }
-          const modelNames = (modelAdapters?.[provider]?.listAllModels() ?? []).map((model) => model.name);
+          const catalog = modelAdapters?.[provider]?.listAllModels() ?? [];
+          const idToName = new Map(catalog.map((model) => [model.id, model.name]));
+          const knownIds = catalog.map((model) => model.id);
           for (const account of accounts) {
             const limits = Object.entries(account.modelRateLimits ?? {}).filter(([, resetAt]) => Number(resetAt) > now);
             if (limits.length === 0) continue;
-            const everyModel = modelNames.length > 0 && modelNames.every((name2) => limits.some(([id]) => id === name2));
+            const everyModel = knownIds.length > 0 && knownIds.every((id) => limits.some(([key]) => key === id));
             if (everyModel) {
               const resetAtMs = limits.reduce((max, [, at]) => Math.max(max, Number(at) || 0), 0);
               anomalies.push({
@@ -66341,7 +66343,8 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
                 provider,
                 accountId: account.id,
                 accountName: account.nickname || account.id,
-                modelName: modelId,
+                // 展示名优先；查不到（模型已下架）才退回 id —— 有名字总比编码好。
+                modelName: idToName.get(modelId) ?? modelId,
                 resetAtMs: Number(resetAt) || 0
               });
             }
@@ -68935,7 +68938,31 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         const raw = req?.sinceDays;
         const sinceDays = typeof raw === "number" && Number.isFinite(raw) ? Math.min(Math.max(Math.trunc(raw), 1), TOKEN_LEDGER_HISTORY_MAX_DAYS) : void 0;
         const result = readTokenLedgerHistory(readTokenLedgerDayMap(), { sinceDays });
-        const value = { history: result.days, totals: result.totals };
+        const modelLabel = (raw2) => {
+          const slash = raw2.indexOf("/");
+          if (slash <= 0) return raw2;
+          const provider = raw2.slice(0, slash);
+          const modelId = raw2.slice(slash + 1);
+          const named = modelAdapters?.[provider]?.displayNameFor?.(modelId) ?? modelAdapters?.[provider]?.listAllModels().find((m) => m.id === modelId)?.name;
+          return named === void 0 || named === "" ? raw2 : `${provider}/${named}`;
+        };
+        const renameModels = (accounts) => accounts.map((account) => ({
+          ...account,
+          models: account.models.map((row) => ({ ...row, model: modelLabel(row.model) }))
+        }));
+        const value = {
+          history: result.days.map((day2) => ({
+            ...day2,
+            channels: day2.channels.map((channel) => ({
+              ...channel,
+              providers: channel.providers.map((provider) => ({
+                ...provider,
+                accounts: renameModels(provider.accounts)
+              }))
+            }))
+          })),
+          totals: result.totals
+        };
         return { ok: true, value };
       }
       /**
