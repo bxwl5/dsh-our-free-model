@@ -247,15 +247,29 @@ export interface AutoCheckinDoc {
    * 账号时，渠道级文案看不出是哪个账号领了、哪个失败了。`claimAll` 的响应里
    * 本来就有逐账号的 `results[]`，只是此前被 `describeChannel` 拍平丢了。
    *
-   * ## 口径
+   * ## 口径：**全天累计**，不是「上一轮」
    *
-   * - 只收**今天这一轮**产生的行（与 `providers` 的 `coversToday` 同口径）；
+   * 用户 2026-10-27 明确要求：「这个签到表显示的是全天的，而不是上一次的结果」。
+   * 故本数组按**账号**累积当天所有轮次（自动签到可能跑多次、用户也可能手动点
+   * 「一键领取」），同一账号再次出现时按 {@link mergeAccountResult} 合并 ——
+   * 例如第一轮领到 `+200`、第二轮返回「今天已领」，表里必须仍是 `+200`，
+   * 而不是被后来的「已领」覆盖掉。
+   *
    * - `outcome` 是归一化的四态，不是上游原文 —— 前端据此选颜色/文案，
    *   不要去 `includes('失败')` 这类字符串判断（改措辞就失效）；
    * - `amount` 只在 `outcome === 'claimed'` 时有意义，且**可能为 0**
    *   （上游「领取成功但 +0 分」是真实存在的形态，不能当失败）。
    */
   results: AutoCheckinAccountResult[]
+  /**
+   * `results` 归属的 UTC+8 日期（`YYYY-MM-DD`）；空串 = 还没有任何明细。
+   *
+   * ⚠️ 必须**独立于 `lastDate`**：`lastDate` 的语义是「最近一次有渠道被处理过的
+   * 日子」，而明细要回答的是「这份表格是哪天的数据」。手动领取不会动 `lastDate`
+   * （它只由自动签到那一轮写），若共用会让「今天手动领了，但表格说数据是昨天的」
+   * —— 于是 `state()` 把它当跨日清空，用户手动领完看不到自己刚领的那一条。
+   */
+  resultsDay: string
   /**
    * 用户点过「关闭」的那一轮（存的是那一刻的 `lastAt`）。
    *
@@ -274,6 +288,7 @@ export const DEFAULT_AUTO_CHECKIN: AutoCheckinDoc = {
   providers: {},
   channels: [],
   results: [],
+  resultsDay: '',
   dismissedRunAt: 0,
 }
 
@@ -413,6 +428,7 @@ export function sanitizeAutoCheckin(raw: unknown): AutoCheckinDoc {
     channels: sanitizeChannels(record.channels),
     // 旧文档没有该字段 ⇒ 空数组（面板不渲染表格，与「今天没跑过」一致）。
     results: sanitizeResults(record.results),
+    resultsDay: typeof record.resultsDay === 'string' && DATE_RE.test(record.resultsDay) ? record.resultsDay : '',
     dismissedRunAt: ms(record.dismissedRunAt),
   }
 }
@@ -664,6 +680,7 @@ class FileAutoCheckinStore implements AutoCheckinStore {
       // ★ v2 逐账号明细（2026-10-27）。旧版本插件只读它认识的字段，多一个数组
       //   不会让另一条工作区的旧版本崩。
       results: doc.results,
+      resultsDay: doc.resultsDay,
       dismissedRunAt: doc.dismissedRunAt,
     }, null, 2), 'utf-8')
     renameSync(tmp, this.path)
@@ -841,6 +858,54 @@ export function shouldMarkToday(totals: RunTotals): boolean {
  * （由同一渠道产出），跨单位相加才是真错误 —— 而那是 `totalCredit` 的历史问题，
  * 本函数不做跨账号/跨渠道求和，故不涉及。
  */
+/**
+ * 把「本轮的一条账号结果」合并进**当天已有**的结果里（全天累计）。
+ *
+ * ## 为什么不能直接覆盖
+ *
+ * 用户 2026-10-27：「这个签到表显示的是全天的，而不是上一次的结果」。
+ * 而 `claimAll` 每次只返回**这一轮**的 outcome —— 早上自动签到领到 `+200`，
+ * 晚上手动再点一次会返回「今天已领」，直接覆盖就会把 `+200` 抹掉，
+ * 表格变成「今天什么都没领到」，与事实相反。
+ *
+ * ## 合并规则
+ *
+ * 按 `outcome` 的**信息量**取高的，而不是「后写的赢」：
+ *
+ * | 已有 | 新来 | 结果 | 理由 |
+ * |---|---|---|---|
+ * | `claimed` | `already-claimed` / `failed` / `skipped` | **保留 claimed** | 已经领到的事实不会因为再点一次而消失 |
+ * | `claimed` | `claimed` | 金额**相加** | 同一天多个 plan / 多次可领的都算真实收益 |
+ * | `already-claimed` | `claimed` | 换成 `claimed` | 说明这一轮真领到了 |
+ * | `failed` / `skipped` | `claimed` | 换成 `claimed` | 失败后补领成功 |
+ * | `failed` | `failed` | 保留**新**的 | 失败原因更新为最近一次的（更贴近现状） |
+ * | `skipped` | `failed` | 换成 `failed` | 有结论比「无可领」信息更足 |
+ *
+ * ⚠️ 金额只在 `claimed + claimed` 时相加：其余情形要么不是收益，要么是
+ * 同一笔的重复上报（如「已领」不带金额），相加会虚增。
+ */
+export function mergeAccountResult(
+  previous: AutoCheckinAccountResult | undefined,
+  incoming: AutoCheckinAccountResult,
+): AutoCheckinAccountResult {
+  if (previous === undefined) return incoming
+  const rank = (value: AutoCheckinResultOutcome): number =>
+    value === 'claimed' ? 3 : value === 'already-claimed' ? 2 : value === 'failed' ? 1 : 0
+  const before = rank(previous.outcome)
+  const after = rank(incoming.outcome)
+  // 新来的更强 ⇒ 换掉（但金额不叠加：这是「同一笔的另一种说法」，不是新增收益）。
+  if (after > before) return { ...incoming }
+  // 完全同级：claimed + claimed 是真收益，金额相加；其余保留新的（原因/文案更新）。
+  if (after === before) {
+    if (incoming.outcome === 'claimed') {
+      return { ...incoming, amount: (Number(previous.amount) || 0) + (Number(incoming.amount) || 0) }
+    }
+    return { ...incoming }
+  }
+  // 新来的更弱（如 claimed 之后又点了「已领」）⇒ 保留已有的事实。
+  return previous
+}
+
 export function aggregateAccountRows(
   provider: string,
   results: ReadonlyArray<{ accountId: string; nickname?: string; outcome: import('./credits.js').ClaimOutcome }>,
@@ -976,6 +1041,22 @@ export interface AutoCheckin {
   start(): void
   /** 立刻按判据跑一轮（供「刚打开开关」与单测用）。 */
   runIfDue(): Promise<void>
+  /**
+   * ★ 记录一次 `credits.claimAll` 的逐账号结果（**手动与自动共用**）。
+   *
+   * ## 为什么由调用方（RPC 层）驱动，而不是在这里自己取
+   *
+   * 用户 2026-10-27：「这个签到表显示的是全天的，而不是上一次的结果」。
+   * 而**手动点「一键领取」和自动签到走的是同一个 `credits.claimAll`** ——
+   * 若只在自动签到那一轮里记录，手动领到的就永远进不了表格。
+   *
+   * 故记录点放在两者的共同出口（`handleMethod`），本方法只负责
+   * 「把这一轮的结果并进当天」（合并规则见 `mergeAccountResult`）。
+   *
+   * ⚠️ 跨日自动归零：`resultsDay` 不是今天就把旧明细丢掉重来 ——
+   * 「今日领取」不该包含昨天的记录。
+   */
+  recordClaimResult(provider: string, value: RpcCreditsClaimAllResponse | undefined): Promise<void>
   /** 取消尚未执行的延迟任务（不打断已开始的一轮）。 */
   stop(): void
 }
@@ -1015,10 +1096,13 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
       /**
        * 逐账号明细（签到结果表格的数据源）。
        *
-       * ⚠️ 只返回**今天**的行：跨日后旧行留在磁盘上无妨（下次跑会被覆盖），
-       * 但界面上「今日领取」不能显示昨天的记录。判据与 `ranToday` 同源。
+       * ⚠️ 只返回**今天**的行：跨日后旧行留在磁盘上无妨（下次写会归零），
+       * 但界面上「今日领取」不能显示昨天的记录。
+       *
+       * ⚠️ 判据是 `resultsDay` 而**不是** `lastDate`：后者只由自动签到那一轮写，
+       * 手动领取不会动它 —— 用 `lastDate` 会把手动领到的行判成"昨天的"而清空。
        */
-      results: doc.lastDate === today() ? doc.results.map((row) => ({ ...row })) : [],
+      results: doc.resultsDay === today() ? doc.results.map((row) => ({ ...row })) : [],
       // 面板据它决定要不要渲染那行常驻状态文字
       dismissed: doc.lastAt > 0 && doc.dismissedRunAt === doc.lastAt,
     }
@@ -1060,18 +1144,6 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
     let ledgers: Record<string, AutoCheckinProviderLedger> = { ...doc.providers }
     /** 本轮各渠道的短状态（按 provider 顺序收集，最后统一排序成 `channels`）。 */
     const texts = new Map<string, string>()
-    /**
-     * 本轮逐账号明细（表格数据）。
-     *
-     * ⚠️ 今日已完成的渠道要**沿用上一轮的行**：本轮不重跑它们（`due` 里没有），
-     * 若这里从空开始，表格会在第二次启动后突然只剩今天新跑的那几个渠道 ——
-     * 用户会以为之前领到的没了。故先灌入旧行，再被本轮的新行覆盖同键。
-     */
-    const results = new Map<string, AutoCheckinAccountResult>()
-    const resultKey = (provider: string, accountId: string): string => `${provider}\u0000${accountId}`
-    for (const row of doc.results) {
-      if (providers.includes(row.provider) && !due.has(row.provider)) results.set(resultKey(row.provider, row.accountId), row)
-    }
     // 今日已完成的渠道沿用上一次的短结果（面板仍要逐渠道显示），本轮不重跑。
     for (const entry of doc.channels) {
       if (providers.includes(entry.provider) && !due.has(entry.provider)) texts.set(entry.provider, entry.text)
@@ -1169,21 +1241,9 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
       totals.coversToday += coversToday
       const text = describeChannel(summary)
       texts.set(provider, text)
-      /**
-       * ★ 逐账号明细（表格数据，2026-10-27）。
-       *
-       * ⚠️ 只收 **`coversToday` 为真**的行：Qoder 在 10:00 刷新前那一轮看到的
-       * 是**昨天**的痕迹，把它铺进「今日领取」表格会让用户以为今天领过了。
-       * 这一条与 `providers` 的记账判据同源（同一份 `coversToday`），不另立口径。
-       *
-       * ⚠️ 一个账号可能有多条 outcome（ZCode 多个 plan）⇒ 这里**按账号聚合**
-       * 成一行（数量相加），否则表格里会出现同一个账号好几行、看着像重复。
-       */
-      if (coversToday > 0) {
-        for (const row of aggregateAccountRows(provider, result.value?.results ?? [])) {
-          results.set(resultKey(provider, row.accountId), row)
-        }
-      }
+      // ⚠️ 逐账号明细**不在这里记**：手动「一键领取」走的是同一个
+      // `credits.claimAll`，但不会经过本函数 —— 记录点统一放在 RPC 层的
+      // 共同出口（`AutoCheckin.recordClaimResult`），否则手动领取永远进不了表格。
       // ★ per-provider 记账（2026-10-26）：**只有 coversToday 为真**才算今天完成。
       //   失败与「非今日轮次」都留在 `pending`，下次启动（或当日补跑）再来。
       if (coversToday > 0) {
@@ -1225,16 +1285,17 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
       // 逐渠道文字按 provider 顺序（与遍历顺序一致，面板按它渲染）
       channels: providers.filter((provider) => texts.has(provider)).map((provider) => ({ provider, text: texts.get(provider) ?? '' })),
       /**
-       * 逐账号明细按 provider 顺序输出（与 `channels` 同一排序，前端可据此
-       * 按渠道横向铺开）。
+       * 逐账号明细：**沿用 `doc.results`**，本函数不再重建它。
        *
-       * ⚠️ 只保留**当前账号池里**的渠道，与 `pruned` 同口径：账号删掉/渠道关闭
+       * ⚠️ 明细由 `recordClaimResult` 在**每次 claim 返回时**合并落盘（手动与自动
+       * 共用那条路）。若这里用本轮的局部变量覆盖，会把本轮期间刚写入的行冲掉 ——
+       * 更糟的是会把**手动领取**记下的行一起抹掉，因为本函数根本不知道它们。
+       *
+       * ⚠️ 只保留**当前账号池里**的渠道（与 `pruned` 同口径）：账号删掉/渠道关闭
        * 后留下的旧行会让表格里出现查无此账号的记录。
        */
-      results: providers.flatMap((provider) =>
-        [...results.entries()]
-          .filter(([key]) => key.startsWith(`${provider}\u0000`))
-          .map(([, row]) => row)),
+      results: doc.results.filter((row) => providers.includes(row.provider)),
+      resultsDay: doc.resultsDay,
       // ⚠️ 新一轮跑完要**清掉上一次的「已关闭」标记**：否则用户关过一次后，
       // 明天的新结果会被旧标记静默藏住（`dismissed` 的判据是 lastAt 相等）。
       dismissedRunAt: 0,
@@ -1366,6 +1427,32 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
       pending = (deps.schedule ?? defaultSchedule)(fire, ms)
     },
     runIfDue,
+    async recordClaimResult(provider, value) {
+      if (value === undefined) return
+      const day = today()
+      const summary = value.summary
+      if (summary === undefined) return
+      // 与 `providers` 的记账判据同源：只收**覆盖今天**的结果。
+      // 「刷新前那一轮」（Qoder 10:00 前看到昨天那条）不能进今日表格。
+      const coversToday = summary.coversToday ?? (summary.claimed + summary.alreadyClaimed)
+      if (coversToday <= 0) return
+      const incoming = aggregateAccountRows(provider, value.results ?? [])
+      if (incoming.length === 0) return
+      // 跨日归零：昨天的明细不能混进「今日领取」。
+      const base = doc.resultsDay === day ? doc.results : []
+      const merged = new Map(base.map((row) => [`${row.provider}\u0000${row.accountId}`, row]))
+      for (const row of incoming) {
+        const key = `${row.provider}\u0000${row.accountId}`
+        merged.set(key, mergeAccountResult(merged.get(key), row))
+      }
+      doc = { ...doc, results: [...merged.values()], resultsDay: day }
+      try {
+        await deps.store.save(doc)
+      } catch (error) {
+        // 写盘失败只影响表格展示，不能把领取本身判成失败（积分已经到账了）。
+        deps.warn?.(`[channel-pack] 签到明细写入失败（不影响已领取的积分）: ${String(error)}`)
+      }
+    },
     async dismiss() {
       // 记「关闭的是哪一轮」（当前的 lastAt）：下一轮跑完 lastAt 会变，文字自动回来。
       doc = { ...doc, dismissedRunAt: doc.lastAt }

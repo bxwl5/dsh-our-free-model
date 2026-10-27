@@ -1430,7 +1430,13 @@ function registerChannelPackEndpoints(
    * 的方法返回 `undefined` —— 否则 opencode 的方法名永远落不到这里，
    * 反过来（switch 先匹配）又会被别的 provider 的 case 误吞。
    */
-  async function handleMethod(method: string, payload: unknown, signal?: AbortSignal): Promise<unknown> {
+  /**
+   * 真实的 RPC 分派（内部实现）。
+   *
+   * ⚠️ 不要直接调它 —— 外部一律走下面的 `handleMethod` 包装，那里负责
+   * 「签到明细记录」这件跨切面的事（见 `handleMethod` 的说明）。
+   */
+  async function dispatchMethod(method: string, payload: unknown, signal?: AbortSignal): Promise<unknown> {
     // 每个 RPC 独立绑定传输与取消信号，避免使用最后挂载上下文的默认出口。
     // 合并上游自行设置的超时，既保留超时也响应客户端断开；后台调用可省略 signal。
     const codeartsFetcher: typeof fetch = (input, init) => {
@@ -5244,6 +5250,41 @@ function registerChannelPackEndpoints(
       default:
         return { ok: false, error: { code: 'bad-request', message: `unknown method: ${method}` } }
     }
+  }
+
+  /**
+   * RPC 统一出口（**所有**调用方都走这里：前端面板与自动签到）。
+   *
+   * ## 为什么要包一层
+   *
+   * 用户 2026-10-27：「这个签到表显示的是全天的，而不是上一次的结果」。
+   * 而**手动点「一键领取」与自动签到调的是同一个 `credits.claimAll`** ——
+   * 若把明细记录写进自动签到那一轮（原先的实现），手动领到的永远进不了表格，
+   * 且同一天重跑会覆盖掉之前领到的金额。
+   *
+   * 故记录点放在这个**共同出口**：只对 `credits.claimAll` 生效，把这一轮的
+   * 逐账号结果并进当天（合并规则见 `mergeAccountResult`）。
+   *
+   * ⚠️ 记录失败**不能**影响领取结果：积分已经到账了，表格缺一行是小事。
+   *    故这里 try/catch 吞掉并只告警。
+   */
+  async function handleMethod(method: string, payload: unknown, signal?: AbortSignal): Promise<unknown> {
+    const result = await dispatchMethod(method, payload, signal)
+    if (method === 'credits.claimAll') {
+      try {
+        const provider = (payload as { provider?: unknown }).provider
+        const envelope = result as { ok?: boolean; value?: RpcCreditsClaimAllResponse } | undefined
+        if (typeof provider === 'string' && provider !== '' && envelope?.ok === true) {
+          await autoCheckin.recordClaimResult(provider, envelope.value)
+        }
+      } catch (error) {
+        ctx.logger?.warn?.(
+          `[channel-pack] 签到明细记录失败（不影响本次领取）: `
+          + `${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+    }
+    return result
   }
 }
 

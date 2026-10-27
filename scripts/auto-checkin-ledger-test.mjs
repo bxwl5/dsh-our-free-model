@@ -495,64 +495,99 @@ try {
     assert.equal(noName.results[0].accountName, 'acc-9', '没有昵称时用 accountId 填，避免表格出现空白格')
   })
 
-  // ── 12. 端到端：claimAll 的逐账号结果必须真的落进 doc.results 并能被 state() 读到 ──
-  await check('端到端：逐账号明细落盘并在 state() 暴露（表格数据源）', async () => {
+  // ── 12. 逐账号明细：全天累计（手动 + 自动都进表，同一天不互相覆盖）──
+  await check('逐账号明细全天累计：手动与自动共用入口，重复上报不覆盖已领到的金额', async () => {
     /*
-     * 为什么必须有这条：`summary()` 夹具的 `results` 恒为空数组，前面所有用例
-     * 都只验了渠道级文案，**从未验证过逐账号明细真的写进文档**。
-     * 如果这一步断了，用户要等到第二天自动签到跑完才发现表格是空的。
+     * 用户 2026-10-27：「这个签到表显示的是全天的，而不是上一次的结果」。
+     *
+     * 关键语义（旧实现全错）：
+     * ① 手动「一键领取」和自动签到走同一个 `credits.claimAll`，两条都必须进表；
+     * ② 同一天重跑不能把之前领到的金额抹掉（第二轮通常返回「今天已领」）。
      */
-    const withRows = (providerRows, over = {}) => ({
-      ok: true,
-      value: {
-        results: providerRows,
-        summary: {
-          claimed: providerRows.filter(r => r.outcome.kind === 'claimed').length,
-          totalCredit: providerRows.reduce((n, r) => n + (r.outcome.kind === 'claimed' ? r.outcome.credit : 0), 0),
-          alreadyClaimed: 0, inactive: 0, failed: 0,
-          coversToday: providerRows.length,
-          totalByUnit: { credit: providerRows.reduce((n, r) => n + (r.outcome.kind === 'claimed' ? r.outcome.credit : 0), 0), token: 0 },
-          ...over,
-        },
+    /** 造一份 claimAll 响应：`rows` 是逐账号结果，`over` 覆盖 summary 字段。 */
+    const rowsOf = (rows, over = {}) => ({
+      results: rows,
+      summary: {
+        claimed: 0, totalCredit: 0, alreadyClaimed: 0, inactive: 0, failed: 0, coversToday: 0,
+        totalByUnit: { credit: 0, token: 0 }, ...over,
       },
     })
-    const h = harness({
-      providers: ['codearts', 'qoder'],
-      responses: {
-        codearts: [withRows([
-          { accountId: 'acc-1', nickname: '主号', outcome: { kind: 'claimed', credit: 1000, streakDays: 3, isStreakDay: true } },
-          { accountId: 'acc-2', nickname: '小号', outcome: { kind: 'already-claimed', message: '今天已经领过了' } },
-        ])],
-        qoder: [withRows([
-          { accountId: 'q-1', nickname: 'q1', outcome: { kind: 'failed', code: 500, message: '未开启活动' } },
-        ], { claimed: 0, failed: 0, coversToday: 1 })],
-      },
-      now: at0900,
-    })
-    await h.engine.runIfDue()
+    const one = (accountId, nickname, outcome) => ({ accountId, nickname, outcome })
+    const h = harness({ providers: ['codearts'], responses: { codearts: [claimed()] }, now: at0900 })
 
-    const doc = h.store.peek()
-    assert.equal(doc.results.length, 3, '三个账号的明细都必须落盘（含 already-claimed 与 failed）')
-    const byAccount = new Map(doc.results.map(r => [r.accountId, r]))
-    assert.equal(byAccount.get('acc-1').outcome, 'claimed')
-    assert.equal(byAccount.get('acc-1').amount, 1000)
-    assert.equal(byAccount.get('acc-1').accountName, '主号', '昵称要带上（表格「账号」列）')
-    assert.equal(byAccount.get('acc-2').outcome, 'already-claimed')
-    assert.equal(byAccount.get('acc-2').message, '今天已经领过了')
-    assert.equal(byAccount.get('q-1').outcome, 'failed')
-    assert.equal(byAccount.get('q-1').message, '未开启活动')
+    // 第一轮（自动签到）：领到 +1000
+    await h.engine.recordClaimResult('codearts', rowsOf(
+      [one('acc-1', '主号', { kind: 'claimed', credit: 1000, streakDays: 1, isStreakDay: true })],
+      { claimed: 1, totalCredit: 1000, coversToday: 1, totalByUnit: { credit: 1000, token: 0 } },
+    ))
+    assert.equal(h.store.peek().results.length, 1, '第一轮明细必须落盘')
+    assert.equal(h.store.peek().results[0].amount, 1000)
+    assert.equal(h.store.peek().resultsDay, ac.utc8DateString(at0900), 'resultsDay 必须记今天')
 
-    // state() 是 RPC 的数据源，必须能读到同一份明细
-    const state = h.engine.state()
-    assert.equal(state.results.length, 3, 'state() 必须暴露 results（前端表格读它）')
-    assert.ok(state.results.every(r => typeof r.provider === 'string' && r.provider.length > 0), '每行都要带 provider')
+    // 第二轮（用户手动点「一键领取」）：上游返回「今天已领」——不能把 +1000 抹掉
+    await h.engine.recordClaimResult('codearts', rowsOf(
+      [one('acc-1', '主号', { kind: 'already-claimed', message: '今天已经领过了' })],
+      { alreadyClaimed: 1, coversToday: 1 },
+    ))
+    const afterManual = h.store.peek().results
+    assert.equal(afterManual.length, 1, '同一账号合并成一行，不能变成两行')
+    assert.equal(afterManual[0].outcome, 'claimed', '⚠️ 已领到的事实不能被后来的「今天已领」覆盖')
+    assert.equal(afterManual[0].amount, 1000, '⚠️ 金额必须保留')
 
-    // 跨日：昨天的明细不能在「今日领取」里出现
+    // 第三轮：同账号又领到 +200（多 plan）⇒ 金额相加
+    await h.engine.recordClaimResult('codearts', rowsOf(
+      [one('acc-1', '主号', { kind: 'claimed', credit: 200, streakDays: 1, isStreakDay: true })],
+      { claimed: 1, totalCredit: 200, coversToday: 1, totalByUnit: { credit: 200, token: 0 } },
+    ))
+    assert.equal(h.store.peek().results[0].amount, 1200, 'claimed + claimed 必须相加（真实收益）')
+
+    // 第四个账号失败 ⇒ 进表，但不影响已有的成功行
+    await h.engine.recordClaimResult('codearts', rowsOf(
+      [one('acc-9', '坏号', { kind: 'failed', code: 500, message: '凭据失效' })],
+      { failed: 1, coversToday: 1 },
+    ))
+    const finalRows = h.store.peek().results
+    assert.equal(finalRows.length, 2, '另一个账号独立成行')
+    assert.equal(finalRows.find(r => r.accountId === 'acc-1').amount, 1200, '已有成功行不受影响')
+    assert.equal(finalRows.find(r => r.accountId === 'acc-9').outcome, 'failed')
+
+    // state() 是 RPC 数据源，必须能读到同一份（且不含跨日数据）
+    assert.equal(h.engine.state().results.length, 2, 'state() 必须暴露全天明细')
+
+    // 跨日：新的一天再记录 ⇒ 旧行归零，不会混进「今日领取」
     h.clock.ms = at0900 + 24 * 60 * MIN
-    assert.deepEqual(h.engine.state().results, [], '跨日后 results 必须为空（不该显示昨天的记录）')
+    await h.engine.recordClaimResult('codearts', rowsOf(
+      [one('acc-1', '主号', { kind: 'claimed', credit: 50, streakDays: 1, isStreakDay: true })],
+      { claimed: 1, totalCredit: 50, coversToday: 1, totalByUnit: { credit: 50, token: 0 } },
+    ))
+    assert.equal(h.store.peek().results.length, 1, '跨日必须归零，只留新一天的行')
+    assert.equal(h.store.peek().results[0].amount, 50, '新一天的金额从 0 起算，不累加昨天')
+
+    // coversToday=0（Qoder 10:00 前那一轮看到的是昨天痕迹）⇒ 不入表
+    const before = h.store.peek().results.length
+    await h.engine.recordClaimResult('qoder', rowsOf(
+      [one('q-1', 'q1', { kind: 'already-claimed', message: '非今日轮次' })],
+      { alreadyClaimed: 1, coversToday: 0 },
+    ))
+    assert.equal(h.store.peek().results.length, before, '⚠️ coversToday=0 不得写入今日表格')
   })
 
-  console.log(`auto-checkin-ledger: ${checks} 组断言通过（失败渠道补跑 / 非今日轮次 / 刷新前 inactive 不烧额度 / 重跑上限 / 旧格式兼容 / 全失败不记日 / 跳过不重试 / 补跑排定 / 纯函数边界 / running 反馈 / 常量漂移 / 计数过滤 / 逐账号明细聚合 / 明细容错 / 明细端到端落盘）`)
+  await check('mergeAccountResult 合并规则：claimed 不被降级、同级 claimed 相加', async () => {
+    const base = { provider: 'kuku', accountId: 'a', accountName: 'a', unit: 'credit' }
+    const claimedRow = { ...base, outcome: 'claimed', amount: 200 }
+    const alreadyRow = { ...base, outcome: 'already-claimed', amount: 0 }
+    const failedRow = { ...base, outcome: 'failed', amount: 0, message: 'x' }
+
+    assert.equal(ac.mergeAccountResult(undefined, claimedRow).amount, 200, '空 + claimed ⇒ 原样')
+    assert.equal(ac.mergeAccountResult(claimedRow, alreadyRow).outcome, 'claimed', '⚠️ claimed 不被 already-claimed 降级')
+    assert.equal(ac.mergeAccountResult(claimedRow, failedRow).outcome, 'claimed', '⚠️ claimed 不被 failed 降级')
+    assert.equal(ac.mergeAccountResult(claimedRow, { ...claimedRow, amount: 300 }).amount, 500, 'claimed + claimed 相加')
+    assert.equal(ac.mergeAccountResult(failedRow, claimedRow).outcome, 'claimed', '失败后补领成功 ⇒ 换成 claimed')
+    assert.equal(ac.mergeAccountResult(alreadyRow, claimedRow).outcome, 'claimed', '已领后再领到 ⇒ claimed')
+    assert.equal(ac.mergeAccountResult(failedRow, { ...failedRow, message: '新原因' }).message, '新原因', '失败原因取最近一次')
+  })
+
+  console.log(`auto-checkin-ledger: ${checks} 组断言通过（失败渠道补跑 / 非今日轮次 / 刷新前 inactive 不烧额度 / 重跑上限 / 旧格式兼容 / 全失败不记日 / 跳过不重试 / 补跑排定 / 纯函数边界 / running 反馈 / 常量漂移 / 计数过滤 / 逐账号明细聚合 / 明细容错 / 全天累计 / 合并规则）`)
 } finally {
   hooks.deregister()
   fs.rmSync(scratch, { recursive: true, force: true })
