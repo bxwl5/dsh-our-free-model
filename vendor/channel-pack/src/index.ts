@@ -2220,6 +2220,9 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
   registerChannelPackRpc(ctx, pool, service, buddy, workbuddy, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, {
     ...config,
     codeartsFetcher: signedNetwork.fetch,
+    // 「异常汇总」扫描**全部已注册渠道**：`modelAdapters` 的键恰好就是它们
+    // （20 个 provider），不必再维护第二份清单 —— 两份必然漂移。
+    anomalyProviders: Object.keys(modelAdapters),
   })
   // 网关是旁路功能：这里传 `pool` 只为读设置页里的开关，其内部任何失败都已
   // 自行降级为日志，绝不会让插件 apply() 失败。

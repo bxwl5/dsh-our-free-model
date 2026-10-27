@@ -948,6 +948,40 @@ export type RpcModelSetDisabledManyResponse = RpcModelSetDisabledResponse
  * `account.list` + `model.list`，8 个供应商就是 16 次往返，且每次都要走
  * 异步的凭据解析。这里一次返回，且服务端全程只用**同步的内存副本**。
  */
+/**
+ * 一条「异常」记录（模型限流），供「异常汇总」板块使用。
+ *
+ * ## 为什么是跨渠道汇总而不是塞进账号界面
+ *
+ * 用户的实际困扰：4 个账号、2 个模型交叉限流（a 缺 hy3、b 缺 ds、c 缺 hy3、
+ * d 缺 ds）。放进**账号界面**（一维）或**模型界面**（一维）都会丢信息，
+ * 而且 20 个渠道要逐个卡片点开才能发现有谁被限。
+ *
+ * 故单独汇总成一个板块，按**渠道 + 账号 + 模型**三维列出。
+ */
+export interface AccountAnomaly {
+  /**
+   * 渠道 id（如 `workbuddy`）。
+   *
+   * ⚠️ 不给显示名：渠道名称表在前端 `CHANNEL_PROVIDERS` 里，后端再存一份
+   * 会两边漂移（改名时必漏一处）。前端按 id 查表即可。
+   */
+  provider: string
+  /** 账号 id。 */
+  accountId: string
+  /** 账号昵称（用户认得出的那个）。 */
+  accountName: string
+  /**
+   * 被限的模型名；`undefined` 表示**该账号的全部模型**都被限。
+   *
+   * 为什么用 undefined 而不是把所有模型名铺开：全部限流是用户最关心的
+   * 一种状态（「这个账号现在整个用不了」），铺开成 N 行反而看不出这个结论。
+   */
+  modelName?: string
+  /** 解禁时刻（毫秒时间戳）。 */
+  resetAtMs: number
+}
+
 export interface ProviderStatus {
   /** 模型计数：total 为**不套黑名单**的全量目录条数，disabled 为其中已关闭的条数。 */
   models: { total: number; disabled: number }

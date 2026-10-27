@@ -858,6 +858,13 @@ export interface ChannelPackRpcConfig {
   disableOpencode?: boolean
   /** 本插件实例的 CodeArts 签名传输；旧调用省略时沿用 directFetch。 */
   codeartsFetcher?: typeof fetch
+  /**
+   * 「异常汇总」要扫描的渠道 id 列表（`account.anomalies` 用）。
+   *
+   * 省略 = 不返回任何异常（该端点退化为空结果），这样旧调用点无需改动。
+   * 由 `index.ts` 传入全部已注册的 provider。
+   */
+  anomalyProviders?: readonly string[]
 }
 
 /**
@@ -1520,6 +1527,74 @@ function registerChannelPackEndpoints(
           refreshable: typeof parsed.refresh_token === 'string' && parsed.refresh_token !== '',
         })
         return { ok: true, value: { accountId: id } }
+      }
+
+      /**
+       * 「异常汇总」：跨**全部渠道**列出当前仍在生效的模型限流。
+       *
+       * ## 为什么单独一个端点
+       *
+       * 用户的实际场景：4 个账号、2 个模型交叉限流（a 缺 hy3、b 缺 ds、
+       * c 缺 hy3、d 缺 ds）。这种"账号 × 模型"的二维状态放进账号界面或
+       * 模型界面都会丢信息，而 20 个渠道又需要逐个卡片点开才能发现 ——
+       * 故单独汇总成一个板块，列在渠道列表下方。
+       *
+       * ## 两类语义
+       *
+       * - `modelName === undefined` → **该账号全部模型都被限**（"整个用不了"，
+       *   是用户最关心的结论，铺开成 N 行反而看不出来）；
+       * - 有 `modelName` → 只有该模型被限。
+       *
+       * 只返回**尚未到期**的记录（`resetAtMs > now`）；已过期的由
+       * `sweepExpiredRateLimits` 清，不该出现在"异常"里。
+       */
+      case 'account.anomalies': {
+        const now = Date.now()
+        const anomalies: AccountAnomaly[] = []
+        for (const provider of config.anomalyProviders ?? []) {
+          if (typeof provider !== 'string' || provider.length === 0) continue
+          let accounts
+          try {
+            accounts = await pool.listAccounts(provider)
+          } catch {
+            // 单渠道读失败不能拖垮整个汇总（它是"看一眼"的辅助板块）。
+            continue
+          }
+          // 该渠道当前**可用**的模型名，用来判定"是否全部模型都被限"。
+          const modelNames = (modelAdapters?.[provider]?.listAllModels() ?? [])
+            .map((model) => model.name)
+          for (const account of accounts) {
+            const limits = Object.entries(account.modelRateLimits ?? {})
+              .filter(([, resetAt]) => Number(resetAt) > now)
+            if (limits.length === 0) continue
+            // 该账号在**所有已知模型**上都被限 → 收敛成一条"全部模型"。
+            const everyModel = modelNames.length > 0
+              && modelNames.every((name) => limits.some(([id]) => id === name))
+            if (everyModel) {
+              // 全部限流时报**最晚**解禁时刻（最后一个模型恢复的时间）。
+              const resetAtMs = limits.reduce((max, [, at]) => Math.max(max, Number(at) || 0), 0)
+              anomalies.push({
+                provider,
+                accountId: account.id,
+                accountName: account.nickname || account.id,
+                resetAtMs,
+              })
+              continue
+            }
+            for (const [modelId, resetAt] of limits) {
+              anomalies.push({
+                provider,
+                accountId: account.id,
+                accountName: account.nickname || account.id,
+                modelName: modelId,
+                resetAtMs: Number(resetAt) || 0,
+              })
+            }
+          }
+        }
+        // 先按解禁时间升序：最早解禁的排前面（用户最可能关心"哪个快好了"）。
+        anomalies.sort((a, b) => a.resetAtMs - b.resetAtMs)
+        return { ok: true, value: { anomalies } }
       }
 
       case 'account.list': {

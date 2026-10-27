@@ -276,6 +276,11 @@ window.__ModuleLoader__.load({
         // 额度标签的**文案模板**（后端只传结构化数据，见 ModelQuota）。
         'chan.model.quotaRemaining': '剩 {n}',
         'chan.model.quotaExhausted': '额度用尽',
+        // 「异常汇总」板块（渠道列表下方，仅在有模型限流时出现）
+        'chan.anomaly.title': '异常汇总',
+        'chan.anomaly.rateLimit': '限流',
+        'chan.anomaly.allModels': '全部模型',
+        'chan.anomaly.tomorrow': '明天',
         'chan.model.allScope': '仅操作当前渠道的全部模型',
         'chan.error': '操作失败：{reason}',
         'chan.confirm.delete': '移除账号 {name}？该账号的凭据会一并删除。',
@@ -729,6 +734,10 @@ window.__ModuleLoader__.load({
         'chan.model.quotaExhaustedHint': 'Free quota for this model is used up',
         'chan.model.quotaRemaining': '{n} left',
         'chan.model.quotaExhausted': 'Quota used up',
+        'chan.anomaly.title': 'Limits',
+        'chan.anomaly.rateLimit': 'Rate limited',
+        'chan.anomaly.allModels': 'All models',
+        'chan.anomaly.tomorrow': 'Tomorrow',
         'chan.model.allScope': 'Apply to all models in this channel only',
         'chan.error': 'Action failed: {reason}',
         'chan.confirm.delete': 'Remove account {name}? Its credential is deleted with it.',
@@ -1220,6 +1229,30 @@ window.__ModuleLoader__.load({
 .ofm_tank.xl{width:264px;height:148px;border-radius:20px;box-shadow:inset 0 0 0 1px rgb(255 255 255 / 12%),0 16px 40px rgb(0 0 0 / 14%)}
 .ofm_tank.xl .ofm_tankglass{border-radius:20px}
 /* ══ 渠道接入页 ════════════════════════════════════════════════════════ */
+/* 「异常汇总」板块（放在 20 个渠道卡片下方，仅在有限流时出现） */
+.ofm_anomaly{margin-top:14px;border:1px solid color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 40%,transparent);
+  border-radius:12px;background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 6%,transparent);overflow:hidden}
+.ofm_anomalyhead{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
+  padding:10px 14px;font:inherit;font-size:12.5px;font-weight:600;color:inherit;background:none;border:0;
+  cursor:pointer;text-align:left}
+.ofm_anomalytitle{display:inline-flex;align-items:center;gap:8px}
+.ofm_anomalydot{width:7px;height:7px;border-radius:50%;background:var(--dsw-alias-state-warning-primary,#f0a441);flex:0 0 auto}
+.ofm_anomalycount{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;
+  color:var(--dsw-alias-state-warning-primary,#f0a441);
+  background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 14%,transparent)}
+.ofm_anomalychev{font-size:11px;opacity:.6}
+.ofm_anomalylist{display:flex;flex-direction:column;border-top:1px solid color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 22%,transparent)}
+.ofm_anomalyrow{display:flex;align-items:center;gap:10px;padding:7px 14px;font-size:12px}
+.ofm_anomalyrow+.ofm_anomalyrow{border-top:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 60%,transparent)}
+.ofm_anomalykind{flex:0 0 auto;font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:999px;white-space:nowrap;
+  color:var(--dsw-alias-state-warning-primary,#f0a441);
+  background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 14%,transparent)}
+.ofm_anomalywho{display:flex;align-items:center;gap:6px;flex:1 1 auto;min-width:0;overflow:hidden}
+.ofm_anomalychannel{flex:0 0 auto;color:var(--dsw-alias-label-secondary);font-size:11.5px}
+.ofm_anomalyaccount{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:580}
+.ofm_anomalymodel{flex:0 0 auto;font-size:11px;padding:1px 6px;border-radius:6px;white-space:nowrap;
+  background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 88%,transparent);color:var(--dsw-alias-label-secondary)}
+.ofm_anomalyuntil{flex:0 0 auto;font-size:11.5px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}
 .ofm_chanwrap{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
 .ofm_chan{position:relative;display:flex;flex-direction:column;gap:12px;padding:16px 17px 15px;border-radius:16px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 78%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 5%),0 1px 2px rgb(0 0 0 / 5%);overflow:hidden;transition:transform .22s cubic-bezier(.32,.72,0,1),box-shadow .24s ease,border-color .2s ease}
 .ofm_chan::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,var(--chan-accent,var(--dsw-alias-state-business-primary)),transparent 78%);opacity:.95}
@@ -3576,6 +3609,29 @@ window.__ModuleLoader__.load({
       const connected = statuses === undefined ? 0 : CHANNEL_PROVIDERS.filter(row => (statuses[row.id]?.accounts?.enabled ?? 0) > 0).length
       const failed = !ready && pack.state === 'failed'
 
+      /**
+       * 「异常汇总」：跨渠道拉当前仍在生效的模型限流。
+       *
+       * 用户的实际场景是 4 账号 × 2 模型交叉限流（a 缺 hy3、b 缺 ds、
+       * c 缺 hy3、d 缺 ds）—— 这种二维状态放进账号界面或模型界面都会丢信息，
+       * 而 20 个渠道要逐个点开才能发现有谁被限。故单独汇总成一个板块，
+       * 放在渠道列表下方。
+       */
+      const [anomalies, setAnomalies] = useState([])
+      const loadAnomalies = useCallback(async () => {
+        if (!available) return
+        try {
+          const value = await rpc('account.anomalies', {}, 30_000)
+          setAnomalies(Array.isArray(value?.anomalies) ? value.anomalies : [])
+        } catch { setAnomalies([]) }
+      }, [available, rpc])
+      useEffect(() => {
+        void loadAnomalies()
+        // 与状态轮询同节奏（45 秒），限流解禁后板块自动收缩。
+        const timer = setInterval(() => { void loadAnomalies() }, 45_000)
+        return () => clearInterval(timer)
+      }, [loadAnomalies])
+
       return h('div', { className: 'ofm_page' },
         h('header', { className: 'ofm_hero ofm_glass' },
           h('div', { className: 'ofm_pagehead' },
@@ -3605,7 +3661,68 @@ window.__ModuleLoader__.load({
           onError,
           onChanged,
         }))) : null,
+        anomalies.length === 0 ? null : h(AnomalyPanel, {
+          anomalies,
+          channelName: id => CHANNEL_PROVIDERS.find(row => row.id === id)?.name ?? id,
+          t,
+        }),
         error !== '' && !failed ? h('p', { className: 'ofm_note' }, `${t('chan.error').replace('{reason}', error)}`) : null)
+    }
+
+    /**
+     * 「异常汇总」板块（用户 2026-10-27 要求，放在 20 个渠道卡片下方）。
+     *
+     * ## 只列**限流**，不列「账号封禁」
+     *
+     * 数据层没有账号级封禁：`pool.permanentLocked(provider)` 是**渠道级**开关
+     * （Loomy 的「锁定永久积分」，防误烧），语义与「账号被封」不同。故本板块
+     * 只汇总真实存在的两类状态（用户已确认跳过封禁）：
+     *
+     * - `modelName === undefined` → 该账号**全部模型**都被限（"整个用不了"）；
+     * - 有 `modelName` → 只有该模型被限。
+     *
+     * ## 时间格式
+     *
+     * 显示 `15:30`（用户指定）。跨天时补「明天」/日期，否则用户会误以为是今天。
+     */
+    function AnomalyPanel(props) {
+      const { anomalies, channelName, t } = props
+      const [open, setOpen] = useState(true)
+      const clock = ms => {
+        const at = new Date(ms)
+        const hhmm = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
+        const today = new Date()
+        const sameDay = at.getFullYear() === today.getFullYear()
+          && at.getMonth() === today.getMonth() && at.getDate() === today.getDate()
+        if (sameDay) return hhmm
+        const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
+        const isTomorrow = at.getFullYear() === tomorrow.getFullYear()
+          && at.getMonth() === tomorrow.getMonth() && at.getDate() === tomorrow.getDate()
+        if (isTomorrow) return `${t('chan.anomaly.tomorrow')} ${hhmm}`
+        return `${at.getMonth() + 1}/${at.getDate()} ${hhmm}`
+      }
+      return h('section', { className: 'ofm_anomaly' },
+        h('button', {
+          type: 'button', className: 'ofm_anomalyhead',
+          'aria-expanded': open ? 'true' : 'false',
+          onClick: () => setOpen(!open),
+        },
+          h('span', { className: 'ofm_anomalytitle' },
+            h('span', { className: 'ofm_anomalydot', 'aria-hidden': 'true' }),
+            t('chan.anomaly.title'),
+            h('span', { className: 'ofm_anomalycount' }, String(anomalies.length))),
+          h('span', { className: 'ofm_anomalychev', 'aria-hidden': 'true' }, open ? '▾' : '▸')),
+        open ? h('div', { className: 'ofm_anomalylist' }, anomalies.map((row, index) => h('div', {
+          className: 'ofm_anomalyrow',
+          key: `${row.provider}:${row.accountId}:${row.modelName ?? '*'}:${index}`,
+        },
+          h('span', { className: 'ofm_anomalykind' }, t('chan.anomaly.rateLimit')),
+          h('span', { className: 'ofm_anomalywho' },
+            h('span', { className: 'ofm_anomalychannel' }, channelName(row.provider)),
+            h('span', { className: 'ofm_anomalyaccount', title: row.accountId }, row.accountName),
+            h('span', { className: 'ofm_anomalymodel' },
+              row.modelName === undefined ? t('chan.anomaly.allModels') : row.modelName)),
+          h('span', { className: 'ofm_anomalyuntil' }, clock(row.resetAtMs))))) : null)
     }
 
     // ── 数据看板 / 运行日志 / 网关设置 ────────────────────────────────────────
