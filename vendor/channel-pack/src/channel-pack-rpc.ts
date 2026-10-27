@@ -103,7 +103,7 @@ import type { TraeCredential } from './trae.js'
 import { fetchClineCreditBalance } from './cline-credits.js'
 import { fetchClineUsageLimits } from './cline-quota.js'
 import { clineUpstreamOf, readClineRequestHistory } from './cline-request-log.js'
-import { readTokenLedger, readTokenLedgerDayMap, readTokenLedgerHistory, TOKEN_LEDGER_HISTORY_MAX_DAYS } from './token-ledger.js'
+import { readTokenLedger, readTokenLedgerDayMap, readTokenLedgerHistory, TOKEN_LEDGER_HISTORY_MAX_DAYS, type TokenLedgerModelRow } from './token-ledger.js'
 import {
   clineCredentialExpiresAtMs,
   isClineRefreshable,
@@ -4977,7 +4977,115 @@ function registerChannelPackEndpoints(
             ? { limit: Math.trunc(req.limit) }
             : {},
         )
-        const value: RpcUsageTokenLedgerResponse = { snapshot }
+        /**
+         * 模型 id → 展示名（与 `usage.tokenLedgerHistory` 同一口径）。
+         *
+         * ⚠️ **这里此前漏了映射**（真实缺陷，2026-10-27 用户报障「插件内多出
+         * qfmodel / dfmodel」）：数据看板的主表读的是本端点，而台账的
+         * `model` 字段是请求里的 `model` 参数 —— Qoder 的历史记录里既有
+         * `dfmodel`（内部 id）也有 `DeepSeek-Flash`（展示名），不映射就会
+         * 把内部编码直接摊在界面上。
+         *
+         * 同一模型的两种 key 各自成行是**台账本来的语义**（它们确实是
+         * 两次不同写法的请求），这里只负责把 id 翻译成人读名。
+         */
+        /**
+         * 归一化到**纯模型名**（去掉倍率后缀）再合并。
+         *
+         * ⚠️ 这是合并能生效的关键：台账里的历史值有两种形态 ——
+         * 内部 id（`dfmodel`）与旧展示名（`DeepSeek-Flash`，不带倍率）。
+         * 若直接用 `displayNameFor` 的结果（`DeepSeek-Flash · x0.1`）做 key，
+         * 两者仍然对不上，等于没合并。
+         *
+         * 故先把映射结果里的 ` · …` 后缀剥掉，只留模型名做归并键；
+         * 展示时用**当前**展示名（含倍率），信息不丢。
+         */
+        const baseName = (value: string): string => value.split(' · ')[0].trim()
+        const labelOf = (raw: string): string => {
+          const slash = raw.indexOf('/')
+          if (slash <= 0) return raw
+          const provider = raw.slice(0, slash)
+          const modelId = raw.slice(slash + 1)
+          const named = modelAdapters?.[provider]?.displayNameFor?.(modelId)
+            ?? modelAdapters?.[provider]?.listAllModels().find((m) => m.id === modelId)?.name
+            ?? modelAdapters?.[provider]?.listAllModels().find((m) => baseName(m.name) === modelId)?.name
+          return named === undefined || named === '' ? raw : `${provider}/${named}`
+        }
+        /** 归并键：`provider/纯模型名`（不含倍率），用于判定「是否同一模型」。 */
+        const mergeKeyOf = (raw: string): string => {
+          const label = labelOf(raw)
+          const slash = label.indexOf('/')
+          if (slash <= 0) return label
+          return `${label.slice(0, slash)}/${baseName(label.slice(slash + 1))}`
+        }
+        /**
+         * 把同一模型的两种写法**合并成一行**。
+         *
+         * 台账里 `dfmodel` 与 `DeepSeek-Flash` 是同一模型的两条历史记录
+         * （写入侧不同时期用了不同写法）。只做重命名会得到两行同名数据，
+         * 统计被拆散、看着像重复项 —— 故按展示名合并。
+         *
+         * ⚠️ 平均值不能相加：`avgTtftMs` / `avgTps` 是「每笔请求的算术平均」，
+         * 合并后必须按**有实测值的请求数**重新加权，否则 1 笔 5000ms 与
+         * 100 笔 100ms 会被平均成 2550ms。
+         */
+        const mergeModels = (rows: readonly TokenLedgerModelRow[]): TokenLedgerModelRow[] => {
+          const merged = new Map<string, { row: TokenLedgerModelRow; ttftN: number; tpsN: number }>()
+          for (const row of rows) {
+            const label = labelOf(row.model)
+            // 用「纯模型名」做归并键：id 与旧展示名才会落到同一桶。
+            const key = mergeKeyOf(row.model)
+            const bucket = merged.get(key)
+            if (bucket === undefined) {
+              merged.set(key, {
+                row: { ...row, model: label },
+                // 该行有实测值才计入权重（缺省 = 该模型没有可测请求）。
+                ttftN: row.avgTtftMs === undefined ? 0 : row.requests,
+                tpsN: row.avgTps === undefined ? 0 : row.requests,
+              })
+              continue
+            }
+            const into = bucket.row
+            into.requests += row.requests
+            into.reportedRequests += row.reportedRequests
+            into.inputTokens += row.inputTokens
+            into.outputTokens += row.outputTokens
+            into.cacheReadTokens += row.cacheReadTokens
+            into.cacheWriteTokens += row.cacheWriteTokens
+            into.reasoningTokens += row.reasoningTokens
+            into.errors += row.errors
+            // 加权平均：权重 = 有实测值的请求数。
+            if (row.avgTtftMs !== undefined) {
+              const prevN = bucket.ttftN
+              const nextN = prevN + row.requests
+              into.avgTtftMs = nextN === 0 ? row.avgTtftMs
+                : ((into.avgTtftMs ?? 0) * prevN + row.avgTtftMs * row.requests) / nextN
+              bucket.ttftN = nextN
+            }
+            if (row.avgTps !== undefined) {
+              const prevN = bucket.tpsN
+              const nextN = prevN + row.requests
+              into.avgTps = nextN === 0 ? row.avgTps
+                : ((into.avgTps ?? 0) * prevN + row.avgTps * row.requests) / nextN
+              bucket.tpsN = nextN
+            }
+          }
+          return [...merged.values()].map((entry) => entry.row)
+        }
+        const renameModels = (accounts: readonly { models: readonly TokenLedgerModelRow[] }[]) =>
+          accounts.map((account) => ({ ...account, models: mergeModels(account.models) }))
+        const value: RpcUsageTokenLedgerResponse = {
+          snapshot: {
+            ...snapshot,
+            channels: snapshot.channels.map((channel) => ({
+              ...channel,
+              providers: channel.providers.map((provider) => ({
+                ...provider,
+                accounts: renameModels(provider.accounts),
+              })),
+            })),
+          },
+        }
         return { ok: true, value }
       }
 

@@ -1065,6 +1065,33 @@ export async function verifyRemoteCatalogFields() {
       '未知 id 返回 undefined，由调用方决定退回 id')
   }
 
+  // ── 台账模型名归一化（2026-10-27 用户报障「插件内多出 qfmodel / dfmodel」）──
+  //
+  // 台账的 `model` 字段是请求参数，历史上有两种写法：内部 id（dfmodel）
+  // 与旧展示名（DeepSeek-Flash）。展示时必须映射成当前展示名，
+  // 且**按纯模型名归并**，否则同一模型会占两行、统计被拆散。
+  {
+    const baseName = (value) => value.split(' · ')[0].trim()
+    const MAP = { dfmodel: 'DeepSeek-Flash · x0.1', qfmodel: 'Qwen3.8-Flash · 免费' }
+    const labelOf = (raw) => {
+      const slash = raw.indexOf('/')
+      if (slash <= 0) return raw
+      const named = MAP[raw.slice(slash + 1)]
+      return named === undefined ? raw : `${raw.slice(0, slash)}/${named}`
+    }
+    const mergeKeyOf = (raw) => {
+      const label = labelOf(raw)
+      const slash = label.indexOf('/')
+      return slash <= 0 ? label : `${label.slice(0, slash)}/${baseName(label.slice(slash + 1))}`
+    }
+    assert.equal(labelOf('qodercn/dfmodel'), 'qodercn/DeepSeek-Flash · x0.1',
+      '⚠️ 内部 id 必须映射成展示名')
+    assert.equal(mergeKeyOf('qodercn/dfmodel'), mergeKeyOf('qodercn/DeepSeek-Flash'),
+      '⚠️ id 与旧展示名必须归并到同一桶（否则同一模型占两行）')
+    assert.notEqual(mergeKeyOf('qodercn/dfmodel'), mergeKeyOf('qodercn/qfmodel'),
+      '不同模型不能被误合并')
+  }
+
   // ── zcode：模型清单要合并两个来源，余量按模型显示（2026-10-27）──
   //
   // 模型清单**只取上游 `builtinModels`**（用户 2026-10-27 决定：不做硬编码补齐）。

@@ -68920,7 +68920,73 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         const snapshot = readTokenLedger(
           typeof req?.limit === "number" && Number.isFinite(req.limit) && req.limit > 0 ? { limit: Math.trunc(req.limit) } : {}
         );
-        const value = { snapshot };
+        const baseName = (value2) => value2.split(" \xB7 ")[0].trim();
+        const labelOf = (raw) => {
+          const slash = raw.indexOf("/");
+          if (slash <= 0) return raw;
+          const provider = raw.slice(0, slash);
+          const modelId = raw.slice(slash + 1);
+          const named = modelAdapters?.[provider]?.displayNameFor?.(modelId) ?? modelAdapters?.[provider]?.listAllModels().find((m) => m.id === modelId)?.name ?? modelAdapters?.[provider]?.listAllModels().find((m) => baseName(m.name) === modelId)?.name;
+          return named === void 0 || named === "" ? raw : `${provider}/${named}`;
+        };
+        const mergeKeyOf = (raw) => {
+          const label = labelOf(raw);
+          const slash = label.indexOf("/");
+          if (slash <= 0) return label;
+          return `${label.slice(0, slash)}/${baseName(label.slice(slash + 1))}`;
+        };
+        const mergeModels = (rows) => {
+          const merged = /* @__PURE__ */ new Map();
+          for (const row of rows) {
+            const label = labelOf(row.model);
+            const key = mergeKeyOf(row.model);
+            const bucket = merged.get(key);
+            if (bucket === void 0) {
+              merged.set(key, {
+                row: { ...row, model: label },
+                // 该行有实测值才计入权重（缺省 = 该模型没有可测请求）。
+                ttftN: row.avgTtftMs === void 0 ? 0 : row.requests,
+                tpsN: row.avgTps === void 0 ? 0 : row.requests
+              });
+              continue;
+            }
+            const into = bucket.row;
+            into.requests += row.requests;
+            into.reportedRequests += row.reportedRequests;
+            into.inputTokens += row.inputTokens;
+            into.outputTokens += row.outputTokens;
+            into.cacheReadTokens += row.cacheReadTokens;
+            into.cacheWriteTokens += row.cacheWriteTokens;
+            into.reasoningTokens += row.reasoningTokens;
+            into.errors += row.errors;
+            if (row.avgTtftMs !== void 0) {
+              const prevN = bucket.ttftN;
+              const nextN = prevN + row.requests;
+              into.avgTtftMs = nextN === 0 ? row.avgTtftMs : ((into.avgTtftMs ?? 0) * prevN + row.avgTtftMs * row.requests) / nextN;
+              bucket.ttftN = nextN;
+            }
+            if (row.avgTps !== void 0) {
+              const prevN = bucket.tpsN;
+              const nextN = prevN + row.requests;
+              into.avgTps = nextN === 0 ? row.avgTps : ((into.avgTps ?? 0) * prevN + row.avgTps * row.requests) / nextN;
+              bucket.tpsN = nextN;
+            }
+          }
+          return [...merged.values()].map((entry) => entry.row);
+        };
+        const renameModels = (accounts) => accounts.map((account) => ({ ...account, models: mergeModels(account.models) }));
+        const value = {
+          snapshot: {
+            ...snapshot,
+            channels: snapshot.channels.map((channel) => ({
+              ...channel,
+              providers: channel.providers.map((provider) => ({
+                ...provider,
+                accounts: renameModels(provider.accounts)
+              }))
+            }))
+          }
+        };
         return { ok: true, value };
       }
       /**
