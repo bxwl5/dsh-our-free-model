@@ -87,8 +87,20 @@ try {
     let doc = ac.sanitizeAutoCheckin(initial ?? {})
     return {
       kind: 'memory',
-      load: () => ({ ...doc, providers: { ...doc.providers }, channels: doc.channels.map((c) => ({ ...c })) }),
-      save: async (next) => { doc = { ...next, providers: { ...next.providers }, channels: next.channels.map((c) => ({ ...c })) } },
+      load: () => ({
+        ...doc,
+        providers: { ...doc.providers },
+        channels: doc.channels.map((c) => ({ ...c })),
+        results: doc.results.map((r) => ({ ...r })),
+      }),
+      save: async (next) => {
+        doc = {
+          ...next,
+          providers: { ...next.providers },
+          channels: next.channels.map((c) => ({ ...c })),
+          results: next.results.map((r) => ({ ...r })),
+        }
+      },
       peek: () => doc,
     }
   }
@@ -422,7 +434,68 @@ try {
     assert.equal(ac.pendingProviderCount(providers, at0900, []), 0, '账号池为空 ⇒ 没有待补跑')
   })
 
-  console.log(`auto-checkin-ledger: ${checks} 组断言通过（失败渠道补跑 / 非今日轮次 / 刷新前 inactive 不烧额度 / 重跑上限 / 旧格式兼容 / 全失败不记日 / 跳过不重试 / 补跑排定 / 纯函数边界 / running 反馈 / 常量漂移 / 计数过滤）`)
+  // ── 11. 逐账号明细（签到结果表格，2026-10-27）──
+  await check('逐账号明细：按账号聚合、ZCode 多 plan 相加、优先级与四态映射', async () => {
+    const row = (accountId, outcome, nickname) => ({ accountId, nickname, outcome })
+    // ① 同一账号多个 plan 都 claimed ⇒ 金额相加成一行
+    const zcode = ac.aggregateAccountRows('zcode', [
+      row('acc1', { kind: 'claimed', credit: 50_000_000, unit: 'token', streakDays: 0, isStreakDay: false }, '主号'),
+      row('acc1', { kind: 'claimed', credit: 50_000_000, unit: 'token', streakDays: 0, isStreakDay: false }, '主号'),
+    ])
+    assert.equal(zcode.length, 1, '同一账号的多条 outcome 必须聚合成一行')
+    assert.equal(zcode[0].outcome, 'claimed')
+    assert.equal(zcode[0].amount, 100_000_000, '多个 plan 的收益必须相加')
+    assert.equal(zcode[0].unit, 'token', '单位取渠道上报的 token')
+    assert.equal(zcode[0].accountName, '主号')
+
+    // ② 优先级：claimed > already-claimed > failed > skipped
+    const mixed = ac.aggregateAccountRows('kuku', [
+      row('a', { kind: 'inactive', message: '今天没有可领的' }),
+      row('a', { kind: 'claimed', credit: 100, streakDays: 1, isStreakDay: true }),
+    ])
+    assert.equal(mixed[0].outcome, 'claimed', 'claimed 必须压过 inactive')
+    assert.equal(mixed[0].amount, 100)
+
+    // ③ inactive 归到 skipped（不是 failed —— 今天没东西可领不算异常）
+    const idle = ac.aggregateAccountRows('officeace', [row('b', { kind: 'inactive', message: '今日无可领' })])
+    assert.equal(idle[0].outcome, 'skipped', 'inactive 必须映射成 skipped 而不是 failed')
+
+    // ④ failed 带原因
+    const bad = ac.aggregateAccountRows('trae', [row('c', { kind: 'failed', code: 500, message: 'HTTP 502' })])
+    assert.equal(bad[0].outcome, 'failed')
+    assert.equal(bad[0].message, 'HTTP 502', '失败原因必须透传（表格的「说明」列）')
+
+    // ⑤ 「领取成功但 +0 分」是合法形态，不能因为 0 就改判失败
+    const zero = ac.aggregateAccountRows('monkeycode', [row('d', { kind: 'claimed', credit: 0, streakDays: 0, isStreakDay: false })])
+    assert.equal(zero[0].outcome, 'claimed')
+    assert.equal(zero[0].amount, 0, '+0 分是合法的「领取成功」')
+  })
+
+  await check('逐账号明细：脏数据丢整行、跨日不展示、旧文档无 results 照常读', async () => {
+    // ① 未知 outcome 丢整行（不能回落成 failed 凭空制造告警）
+    const dirty = ac.sanitizeAutoCheckin({
+      results: [
+        { provider: 'kuku', accountId: 'a', outcome: 'claimed', amount: 100 },
+        { provider: 'kuku', accountId: 'b', outcome: '没这个状态' },
+        { provider: '', accountId: 'c', outcome: 'claimed' },
+        { provider: 'kuku', accountId: '', outcome: 'claimed' },
+      ],
+    })
+    assert.equal(dirty.results.length, 1, '只有第一行合法，其余丢弃')
+    assert.equal(dirty.results[0].accountId, 'a')
+
+    // ② 旧文档（完全没有 results 字段）必须照常读出空数组
+    const legacy = ac.sanitizeAutoCheckin({ lastDate: '2026-10-26', lastResult: '旧' })
+    assert.deepEqual(legacy.results, [], '旧文档缺 results ⇒ 空数组，不是 undefined')
+
+    // ③ accountName 缺失时回落 accountId（前端不再二次回落）
+    const noName = ac.sanitizeAutoCheckin({
+      results: [{ provider: 'kuku', accountId: 'acc-9', outcome: 'claimed', amount: 5 }],
+    })
+    assert.equal(noName.results[0].accountName, 'acc-9', '没有昵称时用 accountId 填，避免表格出现空白格')
+  })
+
+  console.log(`auto-checkin-ledger: ${checks} 组断言通过（失败渠道补跑 / 非今日轮次 / 刷新前 inactive 不烧额度 / 重跑上限 / 旧格式兼容 / 全失败不记日 / 跳过不重试 / 补跑排定 / 纯函数边界 / running 反馈 / 常量漂移 / 计数过滤 / 逐账号明细聚合 / 明细容错）`)
 } finally {
   hooks.deregister()
   fs.rmSync(scratch, { recursive: true, force: true })

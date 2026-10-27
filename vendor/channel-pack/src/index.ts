@@ -1984,8 +1984,35 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
     void refreshAllCredentials()
     const refreshTimer = setInterval(() => void refreshAllCredentials(), REFRESH_INTERVAL_MS)
     refreshTimer.unref?.()
+
+    // ===== 过期限流标记清理（用户 2026-10-27：「定时 7 天删除」）=====
+    //
+    // 过期标记对选号没有任何影响（判据是 `now >= resetAt` 即不受限），但会一直
+    // 堆在 state.json 里 —— 此前 `sweepExpiredRateLimits` 在生产代码里**没有任何
+    // 调用方**（只有测试在调），过期记录只会越积越多。
+    //
+    // ⚠️ 不挂在 `account.anomalies` 上：那会把一次「看一眼」的读操作变成一次
+    //    写盘，而看板每 45 秒就会轮询一次。定时器频率取 6 小时 —— 清理只是
+    //    卫生工作，不必与续期同频（30 分钟一次纯属浪费 IO）。
+    // ⚠️ 启动时先跑一次：宿主关闭期间攒下的过期记录能立刻被清掉，而不是再等
+    //    6 小时。
+    const SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000
+    const sweep = (): void => {
+      void pool.sweepExpiredRateLimits().catch((error: unknown) => {
+        // 清理失败不能影响续期与选号：过期标记本来就不参与判据，留着只是难看。
+        ctx.logger?.warn?.(
+          `[channel-pack] 过期限流标记清理失败（不影响选号）：`
+          + `${error instanceof Error ? error.message : String(error)}`,
+        )
+      })
+    }
+    sweep()
+    const sweepTimer = setInterval(sweep, SWEEP_INTERVAL_MS)
+    sweepTimer.unref?.()
+
     ctx.effect(() => () => {
       clearInterval(refreshTimer)
+      clearInterval(sweepTimer)
       service.stop()
       buddy.stop()
       workbuddy.stop()

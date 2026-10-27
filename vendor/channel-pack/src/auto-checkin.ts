@@ -139,6 +139,46 @@ export const AUTO_CHECKIN_FILE = 'auto-checkin.json'
 const SCHEMA = 'dsh-codearts-auth/auto-checkin/v2'
 
 /**
+ * 逐账号签到结果的**归一化四态**。
+ *
+ * 刻意不复用 `ClaimOutcome.kind` 的字面量：那一组是**渠道产出侧**的语义
+ * （`inactive` 还带 `actionRequired`），而这里要的是**展示侧**只需要区分的
+ * 四类。多一个 `skipped`：该渠道今天压根没跑（无签到接口 / 排除表摘掉），
+ * 与「跑了但没领到」不是一回事。
+ */
+export type AutoCheckinResultOutcome = 'claimed' | 'already-claimed' | 'failed' | 'skipped'
+
+/**
+ * 一条**逐账号**签到明细（表格的一行）。
+ *
+ * 用户 2026-10-27 给的表格形态：
+ * ```
+ * 领取成功 | xx渠道绿 +200 | xx渠道 +1000 | xx渠道 +100
+ * 领取异常 | xx渠道        | xx渠道        | xx渠道
+ * ```
+ * 即「按渠道横向铺开、按结果纵向分组」。故这里必须保留 `provider` + `accountId`
+ * 两个维度，前端才能自己决定怎么排版。
+ */
+export interface AutoCheckinAccountResult {
+  provider: string
+  accountId: string
+  /** 账号昵称（上游可能没给 ⇒ 回落 `accountId`；**不要**在前端二次回落）。 */
+  accountName: string
+  outcome: AutoCheckinResultOutcome
+  /**
+   * 本次领取到的数量；只有 `claimed` 有意义。
+   *
+   * ⚠️ `0` 是**合法值**（「领取成功但 +0 分」，实测 officeace 等渠道存在）。
+   * 展示侧不能把 0 当成「没领到」而改判失败。
+   */
+  amount: number
+  /** 数量的单位；缺省按积分（与 `ClaimOutcome.unit` 同口径）。 */
+  unit: 'token' | 'credit'
+  /** 异常原因 / 提示文案（`failed` 与 `already-claimed` 时给出）。 */
+  message?: string
+}
+
+/**
  * 单个渠道的当日账本条目。
  *
  * ⚠️ 这里的 `status` 是**记账结论**，不是 `ClaimOutcome.kind`：判据只有一条
@@ -198,6 +238,25 @@ export interface AutoCheckinDoc {
   /** 逐渠道结果（顺序即遍历顺序）；空数组 = 没有可展示的逐渠道信息。 */
   channels: Array<{ provider: string; text: string }>
   /**
+   * ★ **逐账号**签到明细（2026-10-27，用户要求做成表格）。
+   *
+   * ## 为什么不能复用 `channels`
+   *
+   * `channels` 是**渠道级**的一句话（`2 个 +200积分`），而用户要的表格是
+   * 「领取成功 / 领取异常 × 渠道 × 账号 × 积分」的逐账号行 —— 一个渠道有多个
+   * 账号时，渠道级文案看不出是哪个账号领了、哪个失败了。`claimAll` 的响应里
+   * 本来就有逐账号的 `results[]`，只是此前被 `describeChannel` 拍平丢了。
+   *
+   * ## 口径
+   *
+   * - 只收**今天这一轮**产生的行（与 `providers` 的 `coversToday` 同口径）；
+   * - `outcome` 是归一化的四态，不是上游原文 —— 前端据此选颜色/文案，
+   *   不要去 `includes('失败')` 这类字符串判断（改措辞就失效）；
+   * - `amount` 只在 `outcome === 'claimed'` 时有意义，且**可能为 0**
+   *   （上游「领取成功但 +0 分」是真实存在的形态，不能当失败）。
+   */
+  results: AutoCheckinAccountResult[]
+  /**
    * 用户点过「关闭」的那一轮（存的是那一刻的 `lastAt`）。
    *
    * ⚠️ 存 `lastAt` 而不是布尔：新一轮跑出来 `lastAt` 变了，状态文字就会**重新出现**
@@ -214,6 +273,7 @@ export const DEFAULT_AUTO_CHECKIN: AutoCheckinDoc = {
   lastAt: 0,
   providers: {},
   channels: [],
+  results: [],
   dismissedRunAt: 0,
 }
 
@@ -233,6 +293,51 @@ function sanitizeChannels(raw: unknown): Array<{ provider: string; text: string 
     if (typeof record.text !== 'string') continue
     out.push({ provider: record.provider, text: record.text.slice(0, 120) })
     if (out.length >= MAX_CHANNEL_ENTRIES) break
+  }
+  return out
+}
+
+/** 逐账号明细的合法 `outcome`（脏值一律丢弃整行，见 `sanitizeResults`）。 */
+const RESULT_OUTCOMES: ReadonlyArray<AutoCheckinResultOutcome> = ['claimed', 'already-claimed', 'failed', 'skipped']
+
+/** 逐账号明细的条数上限（20 渠道 × 少量账号，留余量；脏数据不该撑大文档）。 */
+const MAX_RESULT_ENTRIES = 120
+
+/**
+ * 归一化逐账号签到明细。
+ *
+ * ⚠️ 未知 `outcome` **丢整行**而不是回落到 `failed`：这张表是给用户看
+ * 「今天领到了什么」的，把一条看不懂的记录标成「领取异常」会凭空制造告警。
+ * 与 `sanitizeProviders` 的「回落比不可用更合理」取向相反 —— 那边的判据影响
+ * 行为（要不要再跑），这边只影响展示。
+ */
+function sanitizeResults(raw: unknown): AutoCheckinAccountResult[] {
+  if (!Array.isArray(raw)) return []
+  const out: AutoCheckinAccountResult[] = []
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) continue
+    const record = item as Record<string, unknown>
+    if (typeof record.provider !== 'string' || record.provider.length === 0) continue
+    if (typeof record.accountId !== 'string' || record.accountId.length === 0) continue
+    const outcome = RESULT_OUTCOMES.includes(record.outcome as AutoCheckinResultOutcome)
+      ? record.outcome as AutoCheckinResultOutcome
+      : undefined
+    if (outcome === undefined) continue
+    const amountRaw = Number(record.amount)
+    const unit = record.unit === 'token' ? 'token' : 'credit'
+    const message = typeof record.message === 'string' && record.message !== '' ? record.message.slice(0, 200) : undefined
+    out.push({
+      provider: record.provider,
+      accountId: record.accountId,
+      accountName: typeof record.accountName === 'string' && record.accountName !== ''
+        ? record.accountName.slice(0, 120)
+        : record.accountId,
+      outcome,
+      amount: Number.isFinite(amountRaw) && amountRaw > 0 ? amountRaw : 0,
+      unit,
+      ...(message === undefined ? {} : { message }),
+    })
+    if (out.length >= MAX_RESULT_ENTRIES) break
   }
   return out
 }
@@ -306,6 +411,8 @@ export function sanitizeAutoCheckin(raw: unknown): AutoCheckinDoc {
     lastAt: ms(record.lastAt),
     providers: sanitizeProviders(record.providers),
     channels: sanitizeChannels(record.channels),
+    // 旧文档没有该字段 ⇒ 空数组（面板不渲染表格，与「今天没跑过」一致）。
+    results: sanitizeResults(record.results),
     dismissedRunAt: ms(record.dismissedRunAt),
   }
 }
@@ -554,6 +661,9 @@ class FileAutoCheckinStore implements AutoCheckinStore {
       //   它认识的字段（旧字段全部保留），故升级不会让另一条工作区的旧版本崩。
       providers: doc.providers,
       channels: doc.channels,
+      // ★ v2 逐账号明细（2026-10-27）。旧版本插件只读它认识的字段，多一个数组
+      //   不会让另一条工作区的旧版本崩。
+      results: doc.results,
       dismissedRunAt: doc.dismissedRunAt,
     }, null, 2), 'utf-8')
     renameSync(tmp, this.path)
@@ -712,6 +822,75 @@ export function shouldMarkToday(totals: RunTotals): boolean {
 }
 
 /**
+ * 把 `claimAll` 的逐账号结果**按账号聚合**成表格行。
+ *
+ * ## 为什么需要聚合
+ *
+ * `results[]` 是**逐 outcome** 的：ZCode 一个账号有多个 plan 时会展开成多条
+ * （见 `channel-pack-rpc.ts` 的「一个账号可能有多条 outcome」）。直接铺成表格
+ * 会出现同一账号好几行，看起来像重复上报。
+ *
+ * ## 聚合规则
+ *
+ * - 有 `claimed` ⇒ 该账号记 `claimed`，数量**相加**（多个 plan 的收益都是真领到的）；
+ * - 否则有 `already-claimed` ⇒ `already-claimed`；
+ * - 否则有 `failed` ⇒ `failed`（带上第一条失败原因）；
+ * - 都没有 ⇒ `skipped`（`inactive` 落这里：今天没东西可领，不是异常）。
+ *
+ * ⚠️ 单位取**第一条有金额的** outcome 的 `unit`：同一账号的多个 plan 单位必然相同
+ * （由同一渠道产出），跨单位相加才是真错误 —— 而那是 `totalCredit` 的历史问题，
+ * 本函数不做跨账号/跨渠道求和，故不涉及。
+ */
+export function aggregateAccountRows(
+  provider: string,
+  results: ReadonlyArray<{ accountId: string; nickname?: string; outcome: import('./credits.js').ClaimOutcome }>,
+): AutoCheckinAccountResult[] {
+  const byAccount = new Map<string, AutoCheckinAccountResult>()
+  for (const row of results) {
+    const outcome = row.outcome
+    const key = row.accountId
+    const name = typeof row.nickname === 'string' && row.nickname !== '' ? row.nickname : row.accountId
+    const previous = byAccount.get(key)
+    const kind = outcome.kind
+    // 每条 outcome 归一到四态；`inactive` 不算异常（今天没东西可领）。
+    const mapped: AutoCheckinResultOutcome = kind === 'claimed' ? 'claimed'
+      : kind === 'already-claimed' ? 'already-claimed'
+        : kind === 'failed' ? 'failed'
+          : 'skipped'
+    const amount = kind === 'claimed' ? (Number.isFinite(outcome.credit) ? outcome.credit : 0) : 0
+    const unit = kind === 'claimed' && outcome.unit === 'token' ? 'token' : 'credit'
+    const message = kind === 'claimed' ? undefined
+      : typeof (outcome as { message?: unknown }).message === 'string' && (outcome as { message?: string }).message !== ''
+        ? (outcome as { message?: string }).message
+        : undefined
+    if (previous === undefined) {
+      byAccount.set(key, {
+        provider, accountId: key, accountName: name, outcome: mapped, amount, unit,
+        ...(message === undefined ? {} : { message }),
+      })
+      continue
+    }
+    // 优先级：claimed > already-claimed > failed > skipped
+    const rank = (value: AutoCheckinResultOutcome): number =>
+      value === 'claimed' ? 3 : value === 'already-claimed' ? 2 : value === 'failed' ? 1 : 0
+    if (rank(mapped) > rank(previous.outcome)) {
+      byAccount.set(key, {
+        ...previous,
+        outcome: mapped,
+        // 换成更高的结局时，金额取这一条（而不是累加另一条 plan 的）——
+        // 只有同为 claimed 时才相加，见下。
+        amount,
+        unit,
+        ...(message === undefined ? {} : { message }),
+      })
+    } else if (mapped === previous.outcome && mapped === 'claimed') {
+      byAccount.set(key, { ...previous, amount: previous.amount + amount })
+    }
+  }
+  return [...byAccount.values()]
+}
+
+/**
  * 单个渠道的短状态（面板上那行常驻文字用它逐渠道列出，用户要求「这样才能够知道
  * **各个渠道**的签到状态」）。
  *
@@ -833,6 +1012,13 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
       lastResult: doc.lastResult,
       lastAt: doc.lastAt,
       channels: doc.channels.map((entry) => ({ ...entry })),
+      /**
+       * 逐账号明细（签到结果表格的数据源）。
+       *
+       * ⚠️ 只返回**今天**的行：跨日后旧行留在磁盘上无妨（下次跑会被覆盖），
+       * 但界面上「今日领取」不能显示昨天的记录。判据与 `ranToday` 同源。
+       */
+      results: doc.lastDate === today() ? doc.results.map((row) => ({ ...row })) : [],
       // 面板据它决定要不要渲染那行常驻状态文字
       dismissed: doc.lastAt > 0 && doc.dismissedRunAt === doc.lastAt,
     }
@@ -874,6 +1060,18 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
     let ledgers: Record<string, AutoCheckinProviderLedger> = { ...doc.providers }
     /** 本轮各渠道的短状态（按 provider 顺序收集，最后统一排序成 `channels`）。 */
     const texts = new Map<string, string>()
+    /**
+     * 本轮逐账号明细（表格数据）。
+     *
+     * ⚠️ 今日已完成的渠道要**沿用上一轮的行**：本轮不重跑它们（`due` 里没有），
+     * 若这里从空开始，表格会在第二次启动后突然只剩今天新跑的那几个渠道 ——
+     * 用户会以为之前领到的没了。故先灌入旧行，再被本轮的新行覆盖同键。
+     */
+    const results = new Map<string, AutoCheckinAccountResult>()
+    const resultKey = (provider: string, accountId: string): string => `${provider}\u0000${accountId}`
+    for (const row of doc.results) {
+      if (providers.includes(row.provider) && !due.has(row.provider)) results.set(resultKey(row.provider, row.accountId), row)
+    }
     // 今日已完成的渠道沿用上一次的短结果（面板仍要逐渠道显示），本轮不重跑。
     for (const entry of doc.channels) {
       if (providers.includes(entry.provider) && !due.has(entry.provider)) texts.set(entry.provider, entry.text)
@@ -971,6 +1169,21 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
       totals.coversToday += coversToday
       const text = describeChannel(summary)
       texts.set(provider, text)
+      /**
+       * ★ 逐账号明细（表格数据，2026-10-27）。
+       *
+       * ⚠️ 只收 **`coversToday` 为真**的行：Qoder 在 10:00 刷新前那一轮看到的
+       * 是**昨天**的痕迹，把它铺进「今日领取」表格会让用户以为今天领过了。
+       * 这一条与 `providers` 的记账判据同源（同一份 `coversToday`），不另立口径。
+       *
+       * ⚠️ 一个账号可能有多条 outcome（ZCode 多个 plan）⇒ 这里**按账号聚合**
+       * 成一行（数量相加），否则表格里会出现同一个账号好几行、看着像重复。
+       */
+      if (coversToday > 0) {
+        for (const row of aggregateAccountRows(provider, result.value?.results ?? [])) {
+          results.set(resultKey(provider, row.accountId), row)
+        }
+      }
       // ★ per-provider 记账（2026-10-26）：**只有 coversToday 为真**才算今天完成。
       //   失败与「非今日轮次」都留在 `pending`，下次启动（或当日补跑）再来。
       if (coversToday > 0) {
@@ -1011,6 +1224,17 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
       providers: pruned,
       // 逐渠道文字按 provider 顺序（与遍历顺序一致，面板按它渲染）
       channels: providers.filter((provider) => texts.has(provider)).map((provider) => ({ provider, text: texts.get(provider) ?? '' })),
+      /**
+       * 逐账号明细按 provider 顺序输出（与 `channels` 同一排序，前端可据此
+       * 按渠道横向铺开）。
+       *
+       * ⚠️ 只保留**当前账号池里**的渠道，与 `pruned` 同口径：账号删掉/渠道关闭
+       * 后留下的旧行会让表格里出现查无此账号的记录。
+       */
+      results: providers.flatMap((provider) =>
+        [...results.entries()]
+          .filter(([key]) => key.startsWith(`${provider}\u0000`))
+          .map(([, row]) => row)),
       // ⚠️ 新一轮跑完要**清掉上一次的「已关闭」标记**：否则用户关过一次后，
       // 明天的新结果会被旧标记静默藏住（`dismissed` 的判据是 lastAt 相等）。
       dismissedRunAt: 0,

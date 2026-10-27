@@ -34634,6 +34634,7 @@ function createPermanentLockStore(ctx) {
 
 // vendor/channel-pack/src/account-pool.ts
 var EMPTY_MODEL_SET = /* @__PURE__ */ new Set();
+var RATE_LIMIT_KEEP_MS = 7 * 24 * 60 * 60 * 1e3;
 function availableModelsForChannel(accounts, models, excludedModelId, now = Date.now()) {
   const usable = [];
   for (const model of models) {
@@ -35563,18 +35564,42 @@ var AccountPool = class {
       `[channel-pack] \u5DF2\u8BB0\u5F55\u9650\u6D41: \u8D26\u53F7 ${accountId} \u6A21\u578B ${modelId} \u91CD\u7F6E\u4E8E ${new Date(resetAtMs).toISOString()}`
     );
   }
-  /** 清理已过期的重置时间记录 */
-  async sweepExpiredRateLimits() {
+  /**
+   * 清理**早已过期**的重置时间记录。
+   *
+   * ## 为什么保留期而不是「一过期就删」（用户 2026-10-27 定：定时 7 天删除）
+   *
+   * 过期的标记对选号**没有任何影响** —— 所有判据都是 `now >= resetAt` 即视为
+   * 不受限（见 `getAvailableAccount` / `allAccountsRateLimitedForModel`）。
+   * 但直接删掉会丢失排障线索：用户报「某模型今早是不是被限过」时，账本里
+   * 留着 `resetAtMs` 才能回答。故按「过期后再留 {@link RATE_LIMIT_KEEP_MS}」
+   * 清理，兼顾可查与不无限堆积。
+   *
+   * ⚠️ 调用方是 `index.ts` 的定时器（启动一次 + 每 6 小时一次），**不是**每个
+   * RPC 都顺手调一次 —— 那会把一次读操作变成一次写盘。
+   */
+  async sweepExpiredRateLimits(keepMs = RATE_LIMIT_KEEP_MS) {
+    const now = Date.now();
     const accounts = this.readAccounts();
     let changed = false;
     const next = accounts.map((entry) => {
       if (!entry.modelRateLimits) return entry;
       const limits = { ...entry.modelRateLimits };
       for (const [modelId, resetAtMs] of Object.entries(limits)) {
-        if (resetAtMs > 0 && Date.now() >= resetAtMs) {
+        if (!Number.isFinite(resetAtMs) || resetAtMs <= 0) {
+          delete limits[modelId];
+          changed = true;
+          continue;
+        }
+        if (now - resetAtMs > keepMs) {
           delete limits[modelId];
           changed = true;
         }
+      }
+      if (Object.keys(limits).length === 0 && entry.modelRateLimits !== void 0) {
+        const { modelRateLimits: _dropped, ...rest } = entry;
+        changed = true;
+        return rest;
       }
       return { ...entry, modelRateLimits: limits };
     });
@@ -65260,6 +65285,7 @@ var DEFAULT_AUTO_CHECKIN = {
   lastAt: 0,
   providers: {},
   channels: [],
+  results: [],
   dismissedRunAt: 0
 };
 var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -65274,6 +65300,34 @@ function sanitizeChannels(raw) {
     if (typeof record.text !== "string") continue;
     out.push({ provider: record.provider, text: record.text.slice(0, 120) });
     if (out.length >= MAX_CHANNEL_ENTRIES) break;
+  }
+  return out;
+}
+var RESULT_OUTCOMES = ["claimed", "already-claimed", "failed", "skipped"];
+var MAX_RESULT_ENTRIES = 120;
+function sanitizeResults(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+    const record = item;
+    if (typeof record.provider !== "string" || record.provider.length === 0) continue;
+    if (typeof record.accountId !== "string" || record.accountId.length === 0) continue;
+    const outcome = RESULT_OUTCOMES.includes(record.outcome) ? record.outcome : void 0;
+    if (outcome === void 0) continue;
+    const amountRaw = Number(record.amount);
+    const unit = record.unit === "token" ? "token" : "credit";
+    const message2 = typeof record.message === "string" && record.message !== "" ? record.message.slice(0, 200) : void 0;
+    out.push({
+      provider: record.provider,
+      accountId: record.accountId,
+      accountName: typeof record.accountName === "string" && record.accountName !== "" ? record.accountName.slice(0, 120) : record.accountId,
+      outcome,
+      amount: Number.isFinite(amountRaw) && amountRaw > 0 ? amountRaw : 0,
+      unit,
+      ...message2 === void 0 ? {} : { message: message2 }
+    });
+    if (out.length >= MAX_RESULT_ENTRIES) break;
   }
   return out;
 }
@@ -65320,6 +65374,8 @@ function sanitizeAutoCheckin(raw) {
     lastAt: ms(record.lastAt),
     providers: sanitizeProviders(record.providers),
     channels: sanitizeChannels(record.channels),
+    // 旧文档没有该字段 ⇒ 空数组（面板不渲染表格，与「今天没跑过」一致）。
+    results: sanitizeResults(record.results),
     dismissedRunAt: ms(record.dismissedRunAt)
   };
 }
@@ -65422,6 +65478,9 @@ var FileAutoCheckinStore = class {
       //   它认识的字段（旧字段全部保留），故升级不会让另一条工作区的旧版本崩。
       providers: doc.providers,
       channels: doc.channels,
+      // ★ v2 逐账号明细（2026-10-27）。旧版本插件只读它认识的字段，多一个数组
+      //   不会让另一条工作区的旧版本崩。
+      results: doc.results,
       dismissedRunAt: doc.dismissedRunAt
     }, null, 2), "utf-8");
     renameSync6(tmp, this.path);
@@ -65460,6 +65519,47 @@ function describeRun(totals) {
   if (parts.length === 0) return `${totals.providers} \u4E2A\u6E20\u9053\uFF1A\u6CA1\u6709\u9700\u8981\u9886\u53D6\u7684\u8D26\u53F7`;
   return `${totals.providers} \u4E2A\u6E20\u9053\uFF1A${parts.join("\uFF0C")}`;
 }
+function aggregateAccountRows(provider, results) {
+  const byAccount = /* @__PURE__ */ new Map();
+  for (const row of results) {
+    const outcome = row.outcome;
+    const key = row.accountId;
+    const name2 = typeof row.nickname === "string" && row.nickname !== "" ? row.nickname : row.accountId;
+    const previous = byAccount.get(key);
+    const kind = outcome.kind;
+    const mapped = kind === "claimed" ? "claimed" : kind === "already-claimed" ? "already-claimed" : kind === "failed" ? "failed" : "skipped";
+    const amount = kind === "claimed" ? Number.isFinite(outcome.credit) ? outcome.credit : 0 : 0;
+    const unit = kind === "claimed" && outcome.unit === "token" ? "token" : "credit";
+    const message2 = kind === "claimed" ? void 0 : typeof outcome.message === "string" && outcome.message !== "" ? outcome.message : void 0;
+    if (previous === void 0) {
+      byAccount.set(key, {
+        provider,
+        accountId: key,
+        accountName: name2,
+        outcome: mapped,
+        amount,
+        unit,
+        ...message2 === void 0 ? {} : { message: message2 }
+      });
+      continue;
+    }
+    const rank = (value) => value === "claimed" ? 3 : value === "already-claimed" ? 2 : value === "failed" ? 1 : 0;
+    if (rank(mapped) > rank(previous.outcome)) {
+      byAccount.set(key, {
+        ...previous,
+        outcome: mapped,
+        // 换成更高的结局时，金额取这一条（而不是累加另一条 plan 的）——
+        // 只有同为 claimed 时才相加，见下。
+        amount,
+        unit,
+        ...message2 === void 0 ? {} : { message: message2 }
+      });
+    } else if (mapped === previous.outcome && mapped === "claimed") {
+      byAccount.set(key, { ...previous, amount: previous.amount + amount });
+    }
+  }
+  return [...byAccount.values()];
+}
 function describeChannel(summary) {
   const parts = [];
   if (summary.claimed > 0) {
@@ -65496,6 +65596,13 @@ function createAutoCheckin(deps) {
       lastResult: doc.lastResult,
       lastAt: doc.lastAt,
       channels: doc.channels.map((entry) => ({ ...entry })),
+      /**
+       * 逐账号明细（签到结果表格的数据源）。
+       *
+       * ⚠️ 只返回**今天**的行：跨日后旧行留在磁盘上无妨（下次跑会被覆盖），
+       * 但界面上「今日领取」不能显示昨天的记录。判据与 `ranToday` 同源。
+       */
+      results: doc.lastDate === today() ? doc.results.map((row) => ({ ...row })) : [],
       // 面板据它决定要不要渲染那行常驻状态文字
       dismissed: doc.lastAt > 0 && doc.dismissedRunAt === doc.lastAt
     };
@@ -65522,6 +65629,11 @@ function createAutoCheckin(deps) {
     }
     let ledgers = { ...doc.providers };
     const texts = /* @__PURE__ */ new Map();
+    const results = /* @__PURE__ */ new Map();
+    const resultKey = (provider, accountId) => `${provider}\0${accountId}`;
+    for (const row of doc.results) {
+      if (providers.includes(row.provider) && !due.has(row.provider)) results.set(resultKey(row.provider, row.accountId), row);
+    }
     for (const entry of doc.channels) {
       if (providers.includes(entry.provider) && !due.has(entry.provider)) texts.set(entry.provider, entry.text);
     }
@@ -65596,6 +65708,11 @@ function createAutoCheckin(deps) {
       const text = describeChannel(summary);
       texts.set(provider, text);
       if (coversToday > 0) {
+        for (const row of aggregateAccountRows(provider, result2.value?.results ?? [])) {
+          results.set(resultKey(provider, row.accountId), row);
+        }
+      }
+      if (coversToday > 0) {
         ledgers = withLedger(ledgers, provider, {
           ...base,
           status: "done",
@@ -65628,6 +65745,14 @@ function createAutoCheckin(deps) {
       providers: pruned,
       // 逐渠道文字按 provider 顺序（与遍历顺序一致，面板按它渲染）
       channels: providers.filter((provider) => texts.has(provider)).map((provider) => ({ provider, text: texts.get(provider) ?? "" })),
+      /**
+       * 逐账号明细按 provider 顺序输出（与 `channels` 同一排序，前端可据此
+       * 按渠道横向铺开）。
+       *
+       * ⚠️ 只保留**当前账号池里**的渠道，与 `pruned` 同口径：账号删掉/渠道关闭
+       * 后留下的旧行会让表格里出现查无此账号的记录。
+       */
+      results: providers.flatMap((provider) => [...results.entries()].filter(([key]) => key.startsWith(`${provider}\0`)).map(([, row]) => row)),
       // ⚠️ 新一轮跑完要**清掉上一次的「已关闭」标记**：否则用户关过一次后，
       // 明天的新结果会被旧标记静默藏住（`dismissed` 的判据是 lastAt 相等）。
       dismissedRunAt: 0
@@ -75234,8 +75359,20 @@ function apply(ctx, config = {}) {
     void refreshAllCredentials();
     const refreshTimer = setInterval(() => void refreshAllCredentials(), REFRESH_INTERVAL_MS);
     refreshTimer.unref?.();
+    const SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1e3;
+    const sweep = () => {
+      void pool.sweepExpiredRateLimits().catch((error) => {
+        ctx.logger?.warn?.(
+          `[channel-pack] \u8FC7\u671F\u9650\u6D41\u6807\u8BB0\u6E05\u7406\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u9009\u53F7\uFF09\uFF1A${error instanceof Error ? error.message : String(error)}`
+        );
+      });
+    };
+    sweep();
+    const sweepTimer = setInterval(sweep, SWEEP_INTERVAL_MS);
+    sweepTimer.unref?.();
     ctx.effect(() => () => {
       clearInterval(refreshTimer);
+      clearInterval(sweepTimer);
       service.stop();
       buddy.stop();
       workbuddy.stop();

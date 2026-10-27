@@ -200,7 +200,11 @@ export function createManagement({ stores, runtime, channels, info, onSettingsCh
     } else if (method === 'GET' && pathname === `${PREFIX}/summary`) {
       json(res, 200, summary())
     } else if (method === 'GET' && pathname === `${PREFIX}/stats`) {
-      json(res, 200, buildStats(stores.stats.get(), runtime.catalog))
+      // ⚠️ `includeCacheRead` 必须与插件设置页同口径（用户 2026-10-25 要求
+      // 「今日消耗 / 累计消耗 / 消耗分布 / 用量一览的总 token 都算上缓存」）。
+      // 缺了这个选项，独立端与插件看板的总量会系统性差一截 —— 缓存读同样是
+      // 模型真实处理过的 token，只是计费打折。口径来源见 src/core/stats.js。
+      json(res, 200, buildStats(stores.stats.get(), runtime.catalog, { includeCacheRead: true }))
     } else if (method === 'POST' && pathname === `${PREFIX}/channels/rpc` && channels) {
       // 渠道备份导入包含多账号凭据，仍限制总大小，但不能套设置表单的 16KB。
       const body = await readBody(req, 8 * 1024 * 1024)

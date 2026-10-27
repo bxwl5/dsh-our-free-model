@@ -1583,6 +1583,15 @@ export interface RpcUsageAutoCheckinState {
    */
   channels: Array<{ provider: string; text: string }>
   /**
+   * ★ **逐账号**签到明细（2026-10-27，签到结果表格的数据源）。
+   *
+   * 与 `channels` 的分工：`channels` 是渠道级一句话（面板那行常驻文字用），
+   * 这里是逐账号的表格行（用户要的「领取成功 / 领取异常 × 渠道 × 账号 × 积分」）。
+   *
+   * ⚠️ 只含**今天**的行；跨日后为空数组（「今日领取」不该显示昨天的记录）。
+   */
+  results: import('./auto-checkin.js').AutoCheckinAccountResult[]
+  /**
    * 用户是否已手动关闭那行**常驻**的自动签到状态文字。
    *
    * ⚠️ 判据是「关闭的是当前这一轮」：新一轮跑出结果后自动变回 `false`

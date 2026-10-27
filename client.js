@@ -400,6 +400,20 @@ window.__ModuleLoader__.load({
         'chan.auto.ran': '今日已自动签到',
         'chan.auto.off': '今日尚未签到',
         'chan.auto.last': '上次结果：{result}',
+        // 签到汇总（用户 2026-10-27）：不再只看上一句结果，改为
+        // 「今日 N 个渠道 M 个账号领取 xxx分」。
+        'chan.auto.summary': '今日 {channels} 个渠道 {accounts} 个账号领取 {amounts}',
+        'chan.auto.summaryNone': '今日 {channels} 个渠道签到，未领到积分',
+        // 签到结果表格
+        'chan.checkin.title': '签到结果',
+        'chan.checkin.col.channel': '渠道',
+        'chan.checkin.col.account': '账号',
+        'chan.checkin.col.amount': '领取',
+        'chan.checkin.col.detail': '说明',
+        'chan.checkin.claimed': '领取成功',
+        'chan.checkin.already': '今日已领',
+        'chan.checkin.failed': '领取异常',
+        'chan.checkin.skipped': '无可领',
         'nav.tab.saver': '省 Token',
         'nav.tab.routing': '路由',
         'agg.enabled': '启用',
@@ -867,6 +881,17 @@ window.__ModuleLoader__.load({
         'chan.auto.ran': 'Checked in today',
         'chan.auto.off': 'Not checked in today',
         'chan.auto.last': 'Last result: {result}',
+        'chan.auto.summary': 'Today: {channels} channels, {accounts} accounts claimed {amounts}',
+        'chan.auto.summaryNone': 'Today: {channels} channels checked in, nothing claimed',
+        'chan.checkin.title': 'Check-in results',
+        'chan.checkin.col.channel': 'Channel',
+        'chan.checkin.col.account': 'Account',
+        'chan.checkin.col.amount': 'Claimed',
+        'chan.checkin.col.detail': 'Detail',
+        'chan.checkin.claimed': 'Claimed',
+        'chan.checkin.already': 'Already claimed',
+        'chan.checkin.failed': 'Failed',
+        'chan.checkin.skipped': 'Nothing to claim',
         'nav.tab.saver': 'Token savers',
         'nav.tab.routing': 'Routing',
         'agg.enabled': 'Enabled',
@@ -1310,6 +1335,58 @@ window.__ModuleLoader__.load({
 .ofm_anomalykind{display:inline-block;font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:999px;white-space:nowrap;
   color:var(--dsw-alias-state-warning-primary,#f0a441);
   background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 14%,transparent)}
+/*
+ * 签到结果表格（用户 2026-10-27）。与异常汇总共用同一套视觉语言：白底、
+ * 灰框、可折叠、表头内高光 —— 它俩在页面上紧挨着，样式必须同源。
+ *
+ * 列布局用 grid + minmax(fr) 而不是 table + 百分比：table 的列宽会被内容
+ * 撑开（账号昵称长短不一），grid 的 fr 只受声明控制。这是异常汇总那轮
+ * 用户对比截图后得出的同一条教训。
+ */
+.ofm_checkin{margin-top:14px;border:1px solid var(--dsw-alias-border-l2);
+  border-radius:12px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}
+.ofm_checkinhead{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
+  padding:10px 14px;font:inherit;font-size:12.5px;font-weight:600;color:inherit;background:none;border:0;
+  cursor:pointer;text-align:left}
+.ofm_checkintitle{display:inline-flex;align-items:center;gap:8px}
+.ofm_checkindot{width:7px;height:7px;border-radius:50%;background:var(--dsw-alias-state-success-primary,#22a06b);flex:0 0 auto}
+.ofm_checkincount{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;
+  color:var(--dsw-alias-state-success-primary,#22a06b);
+  background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#22a06b) 14%,transparent)}
+.ofm_checkinchev{font-size:11px;opacity:.6}
+.ofm_checkinscroll{overflow-x:auto;border-top:1px solid var(--dsw-alias-border-l2)}
+.ofm_checkinheadrow,.ofm_checkinrow{
+  display:grid;
+  grid-template-columns:
+    minmax(76px,.9fr)    /* 结果分组标签 */
+    minmax(100px,1.2fr)  /* 渠道 */
+    minmax(130px,1.6fr)  /* 账号 */
+    minmax(96px,1.1fr)   /* 领取数量 */
+    minmax(120px,1.5fr); /* 说明 */
+  gap:16px;padding:9px 16px;align-items:center}
+.ofm_checkinheadrow{position:sticky;top:0;z-index:2;
+  font-size:11px;font-weight:600;letter-spacing:.045em;
+  color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);
+  border-bottom:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 78%,transparent);
+  box-shadow:inset 0 1px 0 rgb(255 255 255 / 55%)}
+.ofm_checkinbody .ofm_checkinrow{
+  font-size:12px;font-variant-numeric:tabular-nums;
+  border-bottom:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 30%,transparent)}
+.ofm_checkinbody .ofm_checkinrow:last-child{border-bottom:0}
+.ofm_checkinbody .ofm_checkinrow:hover{background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 45%,transparent)}
+.ofm_checkincell{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.6}
+.ofm_checkincell.channel{color:var(--dsw-alias-label-secondary);font-size:11.5px}
+.ofm_checkincell.account{font-weight:580}
+.ofm_checkincell.detail{font-size:11.5px;color:var(--dsw-alias-label-secondary)}
+.ofm_checkinkind{display:inline-block;font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:999px;white-space:nowrap}
+.ofm_checkinkind.claimed{color:var(--dsw-alias-state-success-primary,#22a06b);
+  background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#22a06b) 14%,transparent)}
+.ofm_checkinkind.already{color:var(--dsw-alias-label-secondary);
+  background:color-mix(in srgb,var(--dsw-alias-border-l2) 55%,transparent)}
+.ofm_checkinkind.failed{color:var(--dsw-alias-state-danger-primary,#d93025);
+  background:color-mix(in srgb,var(--dsw-alias-state-danger-primary,#d93025) 12%,transparent)}
+.ofm_checkinkind.skipped{color:var(--dsw-alias-label-secondary);opacity:.75;
+  background:color-mix(in srgb,var(--dsw-alias-border-l2) 40%,transparent)}
 .ofm_chanwrap{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
 .ofm_chan{position:relative;display:flex;flex-direction:column;gap:12px;padding:16px 17px 15px;border-radius:16px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 78%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 5%),0 1px 2px rgb(0 0 0 / 5%);overflow:hidden;transition:transform .22s cubic-bezier(.32,.72,0,1),box-shadow .24s ease,border-color .2s ease}
 .ofm_chan::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,var(--chan-accent,var(--dsw-alias-state-business-primary)),transparent 78%);opacity:.95}
@@ -2981,6 +3058,23 @@ window.__ModuleLoader__.load({
       return ago(entry.expiresAt, t.locale)
     }
 
+    /**
+     * 把 token 数格式化成人读缩写（`3000000` → `3.0M`）。
+     *
+     * ⚠️ 放在**前端**而不是后端：精度与缩写属于展示决定，
+     * 不同屏宽/语言可能想要不同形态。后端只传原始 `amount` + `unit`。
+     *
+     * ⚠️ 提到 `ChannelCard` **外面**：签到汇总与签到表格也要用它
+     * （用户 2026-10-27 加的两处），留在组件内会变成两处重复实现。
+     */
+    function formatTokens(amount) {
+      const n = typeof amount === 'number' && Number.isFinite(amount) ? amount : 0
+      if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`
+      if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+      if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+      return String(Math.trunc(n))
+    }
+
     function ChannelCard(props) {
       const { channel, status, rpc, t, onError, onChanged } = props
       const [open, setOpen] = useState(null)
@@ -3280,20 +3374,6 @@ window.__ModuleLoader__.load({
        * 与上面的全开/全关共用一个 pending 锁：两者都改模型目录，并发点会让
        * 两次 `loadModels` 的结果互相覆盖。
        */
-      /**
-       * 把 token 数格式化成人读缩写（`3000000` → `3.0M`）。
-       *
-       * ⚠️ 放在**前端**而不是后端：精度与缩写属于展示决定，
-       * 不同屏宽/语言可能想要不同形态。后端只传原始 `amount` + `unit`。
-       */
-      const formatTokens = amount => {
-        const n = typeof amount === 'number' && Number.isFinite(amount) ? amount : 0
-        if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`
-        if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-        if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
-        return String(Math.trunc(n))
-      }
-
       /**
        * 渲染一个模型的额度标签（绿=还剩多少 / 红=已用尽）。
        *
@@ -3703,7 +3783,44 @@ window.__ModuleLoader__.load({
             h(Switch, { checked: auto.enabled === true, label: t('chan.auto.title'), onChange: () => void toggleAuto() }),
             h(Pill, { tone: auto.running === true ? 'warn' : auto.ranToday === true ? 'ok' : '' },
               auto.running === true ? t('chan.auto.running') : auto.ranToday === true ? t('chan.auto.ran') : t('chan.auto.off')),
-            typeof auto.lastResult === 'string' && auto.lastResult !== '' ? h('span', { className: 'ofm_note', title: auto.lastResult }, t('chan.auto.last').replace('{result}', auto.lastResult.length > 60 ? `${auto.lastResult.slice(0, 60)}…` : auto.lastResult)) : null)),
+            /*
+             * 汇总改为「今日 N 个渠道 M 个账号领取 xxx分」（用户 2026-10-27：
+             * 「自动卡片不再只看上次结果」）。
+             *
+             * ⚠️ 数据取自逐账号明细（auto.results），**不再**解析 lastResult 那句
+             * 自然语言 —— 那是上一轮的历史字符串，措辞一变就解析不出来，而且它
+             * 不含「哪些账号」。明细里两样都有。
+             */
+            (() => {
+              const rows = Array.isArray(auto.results) ? auto.results : []
+              if (rows.length === 0) {
+                // 没有明细（今天没跑过 / 旧文档）时退回上一轮那句结果，
+                // 至少还能看到发生了什么。
+                return typeof auto.lastResult === 'string' && auto.lastResult !== ''
+                  ? h('span', { className: 'ofm_note', title: auto.lastResult }, t('chan.auto.last').replace('{result}', auto.lastResult.length > 60 ? `${auto.lastResult.slice(0, 60)}…` : auto.lastResult))
+                  : null
+              }
+              const claimedRows = rows.filter(row => row.outcome === 'claimed')
+              const channelCount = new Set(claimedRows.map(row => row.provider)).size
+              // 按单位分别累加：token 与积分不能相加（见 credits.ts 的 totalByUnit 说明）。
+              let credit = 0; let token = 0
+              for (const row of claimedRows) {
+                const amount = Number(row.amount)
+                if (!Number.isFinite(amount) || amount <= 0) continue
+                if (row.unit === 'token') token += amount; else credit += amount
+              }
+              const amounts = [
+                credit > 0 ? `${credit.toLocaleString()}分` : '',
+                token > 0 ? `${formatTokens(token)}token` : '',
+              ].filter(Boolean).join(' ')
+              const text = amounts === ''
+                ? t('chan.auto.summaryNone').replace('{channels}', String(channelCount))
+                : t('chan.auto.summary')
+                  .replace('{channels}', String(channelCount))
+                  .replace('{accounts}', String(claimedRows.length))
+                  .replace('{amounts}', amounts)
+              return h('span', { className: 'ofm_note' }, text)
+            })())),
         failed ? h('div', { className: 'ofm_callout ofm_error' },
           h('div', null, t('chan.pack.failed').replace('{reason}', pack.error ?? ''), h('div', { className: 'ofm_note' }, t('chan.pack.hint')))) : null,
         !available ? h('div', { className: 'ofm_callout' }, h('div', null, t('chan.rpc.unavailable'))) : null,
@@ -3720,6 +3837,16 @@ window.__ModuleLoader__.load({
         }))) : null,
         anomalies.length === 0 ? null : h(AnomalyPanel, {
           anomalies,
+          channelName: id => CHANNEL_PROVIDERS.find(row => row.id === id)?.name ?? id,
+          t,
+        }),
+        /*
+         * 签到结果表格（用户 2026-10-27）：排在异常汇总之后，两者都是
+         * 「20 个渠道下方」的汇总板块，视觉同源。
+         * ⚠️ 组件内部在没有行时自己返回 null，这里不用再判一次。
+         */
+        h(CheckinPanel, {
+          results: Array.isArray(auto?.results) ? auto.results : [],
           channelName: id => CHANNEL_PROVIDERS.find(row => row.id === id)?.name ?? id,
           t,
         }),
@@ -3819,6 +3946,84 @@ window.__ModuleLoader__.load({
               }, row.modelName === undefined ? t('chan.anomaly.allModels') : row.modelName),
               h('span', { className: 'ofm_anomalycell until', role: 'cell' }, absolute(row.resetAtMs)),
               h('span', { className: 'ofm_anomalycell remaining', role: 'cell' }, remaining(row.resetAtMs)))))) : null)
+    }
+
+    /**
+     * 签到结果表格（用户 2026-10-27）。
+     *
+     * 形态按用户给的截图：「领取成功 / 领取异常 × 渠道 × 账号 × 积分」。
+     * 与 `AnomalyPanel` 同一套视觉语言（白底灰框、可折叠、表头内高光），
+     * 因为它就排在渠道卡片下方、紧挨着异常汇总。
+     *
+     * ⚠️ 分组而不是按渠道横向铺开：渠道数量会变（20 个里今天跑了 11 个），
+     * 横向铺开会随渠道增减而抖动列宽；按「结果分组 + 每行一个账号」纵向排，
+     * 列宽只受声明控制（与 AnomalyPanel 同样的教训）。
+     */
+    function CheckinPanel(props) {
+      const { results, channelName, t } = props
+      const [open, setOpen] = useState(true)
+
+      /** 金额格式：token 走 M/K 缩写，积分走千分位（与渠道卡片同一口径）。 */
+      const formatAmount = row => {
+        const value = Number(row.amount)
+        if (!Number.isFinite(value) || value <= 0) return ''
+        if (row.unit === 'token') return `+${formatTokens(value)}token`
+        return `+${value.toLocaleString()}`
+      }
+
+      const claimed = results.filter(row => row.outcome === 'claimed')
+      const abnormal = results.filter(row => row.outcome === 'failed')
+      // 「今日已领」既不是收益也不是异常：单独一组，避免用户以为今天白跑了。
+      const already = results.filter(row => row.outcome === 'already-claimed')
+      const skipped = results.filter(row => row.outcome === 'skipped')
+
+      const group = (rows, label, className) => rows.length === 0 ? null : [
+        h('div', { className: 'ofm_checkinheadrow', role: 'row', key: `${className}-head` },
+          h('span', { className: 'ofm_checkincell', role: 'columnheader' }, ''),
+          h('span', { className: 'ofm_checkincell', role: 'columnheader' }, t('chan.checkin.col.channel')),
+          h('span', { className: 'ofm_checkincell', role: 'columnheader' }, t('chan.checkin.col.account')),
+          h('span', { className: 'ofm_checkincell', role: 'columnheader' }, t('chan.checkin.col.amount')),
+          h('span', { className: 'ofm_checkincell', role: 'columnheader' }, t('chan.checkin.col.detail'))),
+        ...rows.map((row, index) => h('div', {
+          className: 'ofm_checkinrow', role: 'row',
+          key: `${className}:${row.provider}:${row.accountId}:${index}`,
+        },
+          h('span', { className: 'ofm_checkincell', role: 'cell' },
+            h('span', { className: `ofm_checkinkind ${className}` }, label)),
+          h('span', { className: 'ofm_checkincell channel', role: 'cell' }, channelName(row.provider)),
+          h('span', { className: 'ofm_checkincell account', role: 'cell', title: row.accountId }, row.accountName),
+          h('span', { className: 'ofm_checkincell amount', role: 'cell' },
+            className === 'claimed'
+              // ★ 绿色底徽章（用户 2026-10-27：「+100 +1000 这些都用绿色的底色，
+              //   如 zcode 的额度显示效果一样」）。复用 `ofm_creditbadge strong`
+              //   与 `ofm_quotabadge` —— zcode 余量用的就是这两个类，视觉一致。
+              ? h('span', { className: 'ofm_creditbadge strong ofm_quotabadge' }, formatAmount(row))
+              : null),
+          h('span', { className: 'ofm_checkincell detail', role: 'cell', title: row.message ?? '' },
+            row.message ?? ''))),
+      ]
+
+      const rows = [
+        ...group(claimed, t('chan.checkin.claimed'), 'claimed'),
+        ...group(already, t('chan.checkin.already'), 'already'),
+        ...group(abnormal, t('chan.checkin.failed'), 'failed'),
+        ...group(skipped, t('chan.checkin.skipped'), 'skipped'),
+      ]
+
+      if (rows.length === 0) return null
+      return h('section', { className: 'ofm_checkin' },
+        h('button', {
+          type: 'button', className: 'ofm_checkinhead',
+          'aria-expanded': open ? 'true' : 'false',
+          onClick: () => setOpen(!open),
+        },
+          h('span', { className: 'ofm_checkintitle' },
+            h('span', { className: 'ofm_checkindot', 'aria-hidden': 'true' }),
+            t('chan.checkin.title'),
+            h('span', { className: 'ofm_checkincount' }, String(results.length))),
+          h('span', { className: 'ofm_checkinchev', 'aria-hidden': 'true' }, open ? '▾' : '▸')),
+        open ? h('div', { className: 'ofm_checkinscroll' },
+          h('div', { className: 'ofm_checkinbody', role: 'rowgroup' }, rows)) : null)
     }
 
     // ── 数据看板 / 运行日志 / 网关设置 ────────────────────────────────────────
@@ -5146,7 +5351,7 @@ window.__ModuleLoader__.load({
     exports.inject = inject
     exports.name = 'our-free-model'
     // Headless test seams use the same stub React as scripts/client-lint.mjs.
-    exports.__test = { parseSafeHtml, safeUrl, sanitizeStyle, htmlToDom, buildHeatCells, Heatmap, ChannelsPage, AnomalyPanel, DICT, useChannelRpc, Shell, CSS }
+    exports.__test = { parseSafeHtml, safeUrl, sanitizeStyle, htmlToDom, buildHeatCells, Heatmap, ChannelsPage, AnomalyPanel, CheckinPanel, DICT, useChannelRpc, Shell, CSS }
     return module.exports
   },
 })

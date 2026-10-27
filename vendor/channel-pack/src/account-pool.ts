@@ -31,6 +31,15 @@ declare module '@deepseek-ai/cordis' {
 const EMPTY_MODEL_SET: ReadonlySet<string> = new Set<string>()
 
 /**
+ * 限流标记在**过期之后**再保留多久才真正删除（默认 7 天，用户 2026-10-27 定）。
+ *
+ * 过期标记对选号毫无影响（判据都是 `now >= resetAt` 即不受限），保留它纯粹是
+ * 为了排障可查；留 7 天足以覆盖「今早是不是被限过」这类追问，又不会无限堆积。
+ * 见 `AccountPool.sweepExpiredRateLimits`。
+ */
+export const RATE_LIMIT_KEEP_MS = 7 * 24 * 60 * 60 * 1000
+
+/**
  * 判定「某 provider 的启用账号是否**全部**因目标模型处于限流期」。
  *
  * ## 为什么需要它
@@ -1161,18 +1170,45 @@ export class AccountPool {
     )
   }
 
-  /** 清理已过期的重置时间记录 */
-  async sweepExpiredRateLimits(): Promise<void> {
+  /**
+   * 清理**早已过期**的重置时间记录。
+   *
+   * ## 为什么保留期而不是「一过期就删」（用户 2026-10-27 定：定时 7 天删除）
+   *
+   * 过期的标记对选号**没有任何影响** —— 所有判据都是 `now >= resetAt` 即视为
+   * 不受限（见 `getAvailableAccount` / `allAccountsRateLimitedForModel`）。
+   * 但直接删掉会丢失排障线索：用户报「某模型今早是不是被限过」时，账本里
+   * 留着 `resetAtMs` 才能回答。故按「过期后再留 {@link RATE_LIMIT_KEEP_MS}」
+   * 清理，兼顾可查与不无限堆积。
+   *
+   * ⚠️ 调用方是 `index.ts` 的定时器（启动一次 + 每 6 小时一次），**不是**每个
+   * RPC 都顺手调一次 —— 那会把一次读操作变成一次写盘。
+   */
+  async sweepExpiredRateLimits(keepMs: number = RATE_LIMIT_KEEP_MS): Promise<void> {
+    const now = Date.now()
     const accounts = this.readAccounts()
     let changed = false
     const next = accounts.map((entry) => {
       if (!entry.modelRateLimits) return entry
       const limits = { ...entry.modelRateLimits }
       for (const [modelId, resetAtMs] of Object.entries(limits)) {
-        if (resetAtMs > 0 && Date.now() >= resetAtMs) {
+        // ⚠️ 非有限/非正数一律视为脏数据清掉：它们永远满足不了任何判据，
+        // 留着只会让「已记录限流」的日志与实际行为对不上。
+        if (!Number.isFinite(resetAtMs) || resetAtMs <= 0) {
+          delete limits[modelId]
+          changed = true
+          continue
+        }
+        if (now - resetAtMs > keepMs) {
           delete limits[modelId]
           changed = true
         }
+      }
+      // 与 `clearModelRateLimits` 同款：清空后删掉整个键，不留 `{}` 空壳。
+      if (Object.keys(limits).length === 0 && entry.modelRateLimits !== undefined) {
+        const { modelRateLimits: _dropped, ...rest } = entry
+        changed = true
+        return rest
       }
       return { ...entry, modelRateLimits: limits }
     })
