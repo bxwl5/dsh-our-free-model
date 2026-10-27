@@ -1275,7 +1275,15 @@ window.__ModuleLoader__.load({
 .ofm_tank.xl .ofm_tankglass{border-radius:20px}
 /* ══ 渠道接入页 ════════════════════════════════════════════════════════ */
 /* 「异常汇总」表格（放在 20 个渠道卡片下方，仅在有限流时出现） */
-.ofm_anomaly{margin-top:14px;border:1px solid var(--dsw-alias-border-l2);
+/*
+ * 渠道卡片 → 异常汇总 → 签到结果：三者间距统一 14px（用户 2026-10-28）。
+ *
+ * 做法是给这三块套一个 ofm_chanstack（flex + gap:14px），并把面板自身的
+ * margin-top 归零。此前面板带 margin-top:14px、父级 ofm_page 又是 flex + gap:20px，
+ * 两者相加变成 34px —— 比卡片之间的 14px 宽了一倍多，看起来「隔得太远」。
+ */
+.ofm_chanstack{display:flex;flex-direction:column;gap:14px}
+.ofm_anomaly{margin-top:0;border:1px solid var(--dsw-alias-border-l2);
   border-radius:12px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}
 .ofm_anomalyhead{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
   padding:10px 14px;font:inherit;font-size:12.5px;font-weight:600;color:inherit;background:none;border:0;
@@ -1343,7 +1351,7 @@ window.__ModuleLoader__.load({
  * 撑开（账号昵称长短不一），grid 的 fr 只受声明控制。这是异常汇总那轮
  * 用户对比截图后得出的同一条教训。
  */
-.ofm_checkin{margin-top:14px;border:1px solid var(--dsw-alias-border-l2);
+.ofm_checkin{margin-top:0;border:1px solid var(--dsw-alias-border-l2);
   border-radius:12px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}
 .ofm_checkinhead{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
   padding:10px 14px;font:inherit;font-size:12.5px;font-weight:600;color:inherit;background:none;border:0;
@@ -3879,32 +3887,41 @@ window.__ModuleLoader__.load({
         failed ? h('div', { className: 'ofm_callout ofm_error' },
           h('div', null, t('chan.pack.failed').replace('{reason}', pack.error ?? ''), h('div', { className: 'ofm_note' }, t('chan.pack.hint')))) : null,
         !available ? h('div', { className: 'ofm_callout' }, h('div', null, t('chan.rpc.unavailable'))) : null,
-        !ready ? h('div', { className: 'ofm_chanwrap' },
-          [0, 1, 2].map(index => h('div', { className: 'ofm_skel', key: index, style: { minHeight: 168 } }))) : null,
-        ready ? h('div', { className: 'ofm_chanwrap' }, CHANNEL_PROVIDERS.map(channel => h(ChannelCard, {
-          key: channel.id,
-          channel,
-          status: statuses?.[channel.id],
-          rpc: available ? rpc : null,
-          t,
-          onError,
-          onChanged,
-        }))) : null,
-        anomalies.length === 0 ? null : h(AnomalyPanel, {
-          anomalies,
-          channelName: id => CHANNEL_PROVIDERS.find(row => row.id === id)?.name ?? id,
-          t,
-        }),
         /*
-         * 签到结果表格（用户 2026-10-27）：排在异常汇总之后，两者都是
-         * 「20 个渠道下方」的汇总板块，视觉同源。
-         * ⚠️ 组件内部在没有行时自己返回 null，这里不用再判一次。
+         * 卡片网格 + 两张汇总表统一装进 ofm_chanstack（flex + gap:14px）。
+         *
+         * 用户 2026-10-28：「能不能像两个渠道卡片之间的间隙一样，渠道离异常汇总、
+         * 签到结果离异常汇总距离一样」—— 卡片之间是 14px，而 ofm_page 的 flex gap
+         * 是 20px、面板自身又有 margin-top:14px，于是「卡片→汇总」20px、
+         * 「汇总→汇总」34px，都比 14px 大，看起来疏远。装进本容器后三者统一 14px。
          */
-        h(CheckinPanel, {
-          results: Array.isArray(auto?.results) ? auto.results : [],
-          channelName: id => CHANNEL_PROVIDERS.find(row => row.id === id)?.name ?? id,
-          t,
-        }),
+        h('div', { className: 'ofm_chanstack' },
+          !ready ? h('div', { className: 'ofm_chanwrap' },
+            [0, 1, 2].map(index => h('div', { className: 'ofm_skel', key: index, style: { minHeight: 168 } }))) : null,
+          ready ? h('div', { className: 'ofm_chanwrap' }, CHANNEL_PROVIDERS.map(channel => h(ChannelCard, {
+            key: channel.id,
+            channel,
+            status: statuses?.[channel.id],
+            rpc: available ? rpc : null,
+            t,
+            onError,
+            onChanged,
+          }))) : null,
+          anomalies.length === 0 ? null : h(AnomalyPanel, {
+            anomalies,
+            channelName: id => CHANNEL_PROVIDERS.find(row => row.id === id)?.name ?? id,
+            t,
+          }),
+          /*
+           * 签到结果表格（用户 2026-10-27）：排在异常汇总之后，两者都是
+           * 「20 个渠道下方」的汇总板块，视觉同源。
+           * ⚠️ 组件内部在没有行时自己返回 null，这里不用再判一次。
+           */
+          h(CheckinPanel, {
+            results: Array.isArray(auto?.results) ? auto.results : [],
+            channelName: id => CHANNEL_PROVIDERS.find(row => row.id === id)?.name ?? id,
+            t,
+          })),
         error !== '' && !failed ? h('p', { className: 'ofm_note' }, `${t('chan.error').replace('{reason}', error)}`) : null)
     }
 
@@ -3935,7 +3952,10 @@ window.__ModuleLoader__.load({
      */
     function AnomalyPanel(props) {
       const { anomalies, channelName, t } = props
-      const [open, setOpen] = useState(true)
+      // 默认**折叠**（用户 2026-10-28 要求）：这个板块只在限流/异常时才出现，
+      // 但它排在 20 张渠道卡片下方，展开的表格会把版面拉得很长。标题行本来就
+      // 带着条目数徽标，折叠时也能一眼看出「有几条」。
+      const [open, setOpen] = useState(false)
 
       /** 解封时刻：`10月30日09:18`（跨年时补年份，避免歧义）。 */
       const absolute = ms => {
@@ -4016,7 +4036,10 @@ window.__ModuleLoader__.load({
      */
     function CheckinPanel(props) {
       const { results, channelName, t } = props
-      const [open, setOpen] = useState(true)
+      // 默认**折叠**（用户 2026-10-28 要求）：签到明细是「事后核对」用的，
+      // 平时不需要占版面；摘要（今日 N 个渠道 / M 个账号 / 领取总额）在渠道卡片
+      // 的自动签到板块里已经有了，这里折叠不丢信息。
+      const [open, setOpen] = useState(false)
 
       /** 金额格式：token 走 M/K 缩写，积分走千分位（与渠道卡片同一口径）。 */
       const formatAmount = row => {

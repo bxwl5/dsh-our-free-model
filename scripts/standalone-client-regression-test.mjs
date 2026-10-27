@@ -220,31 +220,50 @@ console.log('ok  combo picker capacities, saved card and live server intersectio
    */
   cells.length = 0
 
+  /**
+   * 渲染 → 断言「默认折叠」→ 点开标题行 → 返回展开后的树。
+   *
+   * ⚠️ 两个板块自 2026-10-28 起**默认折叠**（用户要求），明细行在展开前根本
+   * 不在树里。原来的断言直接读第一次渲染的文本，改完默认值就全部假红 ——
+   * 这里显式把「折叠时不渲染明细」也变成一条断言，避免以后有人把默认值改
+   * 回去而没人发现。
+   */
+  const expand = (Component, componentProps) => {
+    cells.length = 0
+    const collapsed = render(Component, componentProps)
+    const head = nodes(collapsed).find(node => /ofm_(checkin|anomaly)head\b/.test(String(node.props.className ?? '')))
+    assert.ok(head !== undefined, '折叠标题行必须存在（否则用户没法展开）')
+    assert.equal(head.props['aria-expanded'], 'false', '默认必须是折叠态')
+    head.props.onClick()
+    return { collapsed, tree: render(Component, componentProps) }
+  }
+
   // ① 只有 claimed（其余三组为空）—— 当初崩溃的分支
-  const onlyClaimed = render(CheckinPanel, {
+  const onlyClaimed = expand(CheckinPanel, {
     results: [{ provider: 'codearts', accountId: 'a1', accountName: '主号', outcome: 'claimed', amount: 1000, unit: 'credit' }],
     channelName, t,
   })
-  assert.ok(onlyClaimed, '只有 claimed 时表格必须渲染出来，而不是 null/崩溃')
-  assert.equal(onlyClaimed.type, 'section')
-  assert.ok(texts(onlyClaimed).includes('+1,000'), 'claimed 行必须显示带千分位的金额')
+  assert.ok(onlyClaimed.collapsed, '只有 claimed 时表格必须渲染出来，而不是 null/崩溃')
+  assert.equal(onlyClaimed.collapsed.type, 'section')
+  assert.ok(!texts(onlyClaimed.collapsed).includes('+1,000'), '默认折叠时明细行不应渲染')
+  assert.ok(texts(onlyClaimed.tree).includes('+1,000'), 'claimed 行必须显示带千分位的金额')
   // 绿色底徽章：复用 zcode 余量那两个类
-  assert.ok(nodes(onlyClaimed).some(node => String(node.props.className ?? '').includes('ofm_quotabadge')),
+  assert.ok(nodes(onlyClaimed.tree).some(node => String(node.props.className ?? '').includes('ofm_quotabadge')),
     '领取金额必须用绿色底徽章（与 zcode 余量同一个类）')
 
   // ② 只有 failed
-  const onlyFailed = render(CheckinPanel, {
+  const onlyFailed = expand(CheckinPanel, {
     results: [{ provider: 'qoder', accountId: 'q1', accountName: 'q1', outcome: 'failed', amount: 0, unit: 'credit', message: '未开启活动' }],
     channelName, t,
   })
-  assert.ok(onlyFailed, '只有 failed 时同样不能崩')
-  assert.ok(texts(onlyFailed).includes('未开启活动'), '失败原因必须出现在「说明」列')
+  assert.ok(onlyFailed.collapsed, '只有 failed 时同样不能崩')
+  assert.ok(texts(onlyFailed.tree).includes('未开启活动'), '失败原因必须出现在「说明」列')
 
   // ③ 空数组 ⇒ 整块不渲染（不是白屏）
   assert.equal(render(CheckinPanel, { results: [], channelName, t }), null, '没有明细时整块不渲染')
 
   // ④ 四组齐全
-  const all = render(CheckinPanel, {
+  const all = expand(CheckinPanel, {
     results: [
       { provider: 'a', accountId: '1', accountName: '1', outcome: 'claimed', amount: 200, unit: 'credit' },
       { provider: 'b', accountId: '2', accountName: '2', outcome: 'already-claimed', amount: 0, unit: 'credit' },
@@ -253,22 +272,24 @@ console.log('ok  combo picker capacities, saved card and live server intersectio
     ],
     channelName, t,
   })
-  assert.equal(nodes(all).filter(node => String(node.props.className ?? '').includes('ofm_checkinrow')).length, 4,
+  assert.equal(nodes(all.tree).filter(node => String(node.props.className ?? '').includes('ofm_checkinrow')).length, 4,
     '四个分组各一行')
 
   // ⑤ token 单位走 M/K 缩写，积分走千分位（两者量纲不同，不能混用一种格式）
-  const tokenRow = render(CheckinPanel, {
+  const tokenRow = expand(CheckinPanel, {
     results: [{ provider: 'zcode', accountId: 'z', accountName: 'z', outcome: 'claimed', amount: 100_000_000, unit: 'token' }],
     channelName, t,
   })
-  assert.ok(texts(tokenRow).includes('+100.0Mtoken'), 'token 必须用 M 缩写')
+  assert.ok(texts(tokenRow.tree).includes('+100.0Mtoken'), 'token 必须用 M 缩写')
 
   // ⑥ 异常汇总同样要能渲染（同批改动，同一类风险）
-  const anomaly = render(AnomalyPanel, {
+  const anomaly = expand(AnomalyPanel, {
     anomalies: [{ provider: 'workbuddy', accountId: 'w', accountName: 'w', modelName: 'hy3', resetAtMs: Date.now() + 3_600_000 }],
     channelName, t,
   })
-  assert.ok(anomaly && anomaly.type === 'section', '异常汇总必须渲染出 section')
+  assert.ok(anomaly.collapsed && anomaly.collapsed.type === 'section', '异常汇总必须渲染出 section')
+  assert.ok(!texts(anomaly.collapsed).includes('hy3'), '默认折叠时异常明细不应渲染')
+  assert.ok(texts(anomaly.tree).includes('hy3'), '展开后必须能看到被限流的模型名')
 }
 console.log('ok  check-in result table and anomaly panel render without crashing on partial groups')
 
