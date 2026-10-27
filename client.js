@@ -3127,7 +3127,7 @@ window.__ModuleLoader__.load({
     }
 
     function ChannelCard(props) {
-      const { channel, status, rpc, t, onError, onChanged } = props
+      const { channel, status, rpc, t, onError, onChanged, auto, onAutoRefresh } = props
       const [open, setOpen] = useState(null)
       const [accounts, setAccounts] = useState(undefined)
       const [models, setModels] = useState(undefined)
@@ -3483,11 +3483,50 @@ window.__ModuleLoader__.load({
           const failureText = t('chan.claim.failed').replace('{reason}', failed.map(row => row.outcome.message).join('；'))
           setNotice(failed.length > 0 ? claimed > 0 ? `${successText}；${failureText}` : failureText
             : claimed > 0 ? successText : t('chan.claim.none'))
-          void loadCredits(); void loadBalances(true)
+          // 台账是「今日已领」徽标的唯一来源，领完必须立刻重读，否则徽标要等
+          // 下一次 45 秒轮询才出现。
+          void loadCredits(); void loadBalances(true); void onAutoRefresh?.()
         } catch (error) { onError(channel, error) } finally { claimPending.current = false; setBusy('') }
       }
 
       const creditFor = accountId => (credits ?? []).find(row => row.accountId === accountId)?.status ?? null
+
+      /**
+       * 某账号「今日已领」徽标（用户 2026-10-28 要求）。
+       *
+       * 原话：「像 WorkBuddy 国内版一样，在账号列表界面，显示今日已领 xxx 积分，
+       * 所有支持签到的渠道都这样改」。
+       *
+       * ⚠️ 数据源是**自动签到的逐账号台账**（`usage.autoCheckin().results`），
+       * 不是各渠道自己的 credits API —— 后者只有 `buddy` / `minimax` 会回
+       * `today_credit`，其余渠道恒为 0，于是以前只有这两个渠道有徽标。
+       * 台账写在 `credits.claimAll` 的统一出口，**手动「一键领取」与自动签到都写它**
+       * （见 `auto-checkin.ts` 的 `recordClaimResult`），所以能覆盖全部可签到渠道。
+       *
+       * 顺序：台账优先（它记录的是**本插件今天真的领到的**），没有台账行时才回落到
+       * 上游自己报的 `todayCredit`（比如领完了才打开插件、或积分是在官网领的）。
+       */
+      const todayClaimed = accountId => {
+        const rows = Array.isArray(auto?.results) ? auto.results : []
+        const row = rows.find(entry => entry.provider === channel.id
+          && entry.accountId === accountId
+          && entry.outcome === 'claimed')
+        let amount
+        let unit
+        if (row !== undefined) {
+          amount = Number(row.amount)
+          unit = row.unit
+        } else {
+          const upstream = creditFor(accountId)
+          if (upstream?.todayCheckedIn !== true) return null
+          amount = Number(upstream.todayCredit)
+          unit = 'credit'
+        }
+        if (!Number.isFinite(amount) || amount <= 0) return null
+        // token 与积分量纲不同（见 credits.ts 的 totalByUnit 说明），不能混写。
+        const text = unit === 'token' ? `${formatTokens(amount)}token` : amount.toLocaleString()
+        return h('span', { className: 'ofm_creditbadge' }, t('chan.credit.today').replace('{credit}', text))
+      }
 
       const card = h('article', {
         className: `ofm_chan ofm_glass${status?.closed === true ? ' off' : ''}`,
@@ -3612,13 +3651,11 @@ window.__ModuleLoader__.load({
           accounts === undefined ? h('div', { className: 'ofm_skel', style: { minHeight: 44 } })
             : accounts.length === 0 ? h('p', { className: 'ofm_note' }, t('chan.noAccount'))
               : h('div', { className: 'ofm_acctlist' }, accounts.map(row => {
-                const credit = creditFor(row.id)
                 const pending = row.refreshable !== true && !Number.isFinite(row.expiresAt)
                 return h('div', { className: 'ofm_acct' + (pending ? ' pending' : ''), key: row.id },
                   h('span', { className: 'ofm_acctname', title: row.nickname ?? row.id }, row.nickname ?? row.id),
                   h('span', { className: 'ofm_acctmeta' }, row.enabled === false ? t('chan.disabled') : t('chan.enabled'), ' · ', expiryText(row, t)),
-                  credit?.todayCheckedIn === true && Number.isFinite(credit.todayCredit) ? h('span', { className: 'ofm_creditbadge' },
-                    t('chan.credit.today').replace('{credit}', String(credit.todayCredit))) : null,
+                  todayClaimed(row.id),
                   (() => {
                     const balance = balanceOf(row.id)
                     if (!creditCapability) return null
@@ -3792,9 +3829,14 @@ window.__ModuleLoader__.load({
       // wrongness that reads as a bug. Local actions refresh immediately.
       useEffect(() => {
         if (!available) return undefined
-        const timer = setInterval(() => { void loadStatus() }, 45_000)
+        const timer = setInterval(() => {
+          void loadStatus()
+          // 同一个节奏顺带重读签到台账：后台自动签到跑完后，账号行上的
+          // 「今日已领」徽标最多 45 秒就跟上，不用刷新页面。
+          void loadAuto()
+        }, 45_000)
         return () => clearInterval(timer)
-      }, [available, loadStatus])
+      }, [available, loadStatus, loadAuto])
 
       const onChanged = useCallback(() => {
         void loadStatus()
@@ -3906,6 +3948,10 @@ window.__ModuleLoader__.load({
             t,
             onError,
             onChanged,
+            // 「今日已领」徽标的数据源（逐账号台账）。所有可签到渠道共用这一份，
+            // 见 ChannelCard.todayClaimed。
+            auto,
+            onAutoRefresh: loadAuto,
           }))) : null,
           anomalies.length === 0 ? null : h(AnomalyPanel, {
             anomalies,

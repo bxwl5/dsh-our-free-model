@@ -126,6 +126,73 @@ assert.ok(button(card, '启用'))
 assert.equal(changed, 3)
 console.log('ok  client probe isolation/retry, account action labels, hidden status and retired model restoration')
 
+/*
+ * 「今日已领」徽标（用户 2026-10-28）。
+ *
+ * 用户原话：「像 WorkBuddy 国内版一样，在账号列表界面，显示今日已领 xxx 积分，
+ * 所有支持签到的渠道都这样改」。此前后端只有 `buddy` / `minimax` 的 credits API
+ * 会回 `today_credit`，其余渠道恒为 0 —— 于是徽标只在那两个渠道出现。
+ * 现在改由**逐账号签到台账**（`usage.autoCheckin().results`）供给，故这里用
+ * `codearts`（一个本来没有 todayCredit 的渠道）来锁行为。
+ */
+{
+  cells.length = 0
+  const ledgerRpc = async () => ({ models, accounts })
+  const claimedCard = async auto => {
+    cells.length = 0
+    const base = {
+      t, channel: { id: 'codearts', name: 'CodeArts' }, status: {}, rpc: ledgerRpc,
+      auto, onError: (_provider, error) => { throw error }, onChanged: () => {},
+    }
+    const view = render(ChannelCard, base)
+    // 账号折叠默认收起（`open` 初值 null）；展开动作本身是 async 的
+    // （`toggleFold` 里直接 await loadAccounts），必须 await 后再渲染。
+    const fold = nodes(view).find(node => node.type === 'button' && texts(node).includes('账号'))
+    assert.ok(fold, '账号折叠开关必须存在')
+    await fold.props.onClick()
+    return render(ChannelCard, base)
+  }
+
+  // ① 台账里有今天 claimed 的行 ⇒ 显示「今日已领 1,000」（千分位）
+  const withLedger = await claimedCard({
+    results: [{ provider: 'codearts', accountId: 'account', accountName: 'Fixture', outcome: 'claimed', amount: 1000, unit: 'credit' }],
+  })
+  assert.ok(texts(withLedger).some(text => text.includes('今日已领 1,000')),
+    '台账里有今天的领取记录时，账号行必须显示「今日已领 1,000」')
+
+  // ② token 与积分量纲不同：token 走 M/K 缩写并带单位
+  const tokenLedger = await claimedCard({
+    results: [{ provider: 'codearts', accountId: 'account', accountName: 'Fixture', outcome: 'claimed', amount: 100000000, unit: 'token' }],
+  })
+  assert.ok(texts(tokenLedger).includes('今日已领 100.0Mtoken'), 'token 必须用 M 缩写并带 token 单位')
+
+  // ③ 只有 already-claimed / failed ⇒ 不显示徽标（没领到就不该写「已领」）
+  const alreadyOnly = await claimedCard({
+    results: [{ provider: 'codearts', accountId: 'account', accountName: 'Fixture', outcome: 'already-claimed', amount: 0, unit: 'credit' }],
+  })
+  assert.equal(texts(alreadyOnly).some(text => text.includes('今日已领')), false,
+    '当天只「已领过」而没有新领取时不得显示徽标')
+
+  // ④ 台账里是别的渠道的行 ⇒ 不能串到本卡片
+  const otherProvider = await claimedCard({
+    results: [{ provider: 'workbuddy', accountId: 'account', accountName: 'Fixture', outcome: 'claimed', amount: 999, unit: 'credit' }],
+  })
+  assert.equal(texts(otherProvider).some(text => text.includes('今日已领')), false,
+    '其它渠道的领取记录不得显示在本渠道卡片上')
+  /*
+   * ⚠️ 必须把本块的异步尾巴排空再清空 `cells`。
+   *
+   * ChannelCard 的折叠动作里有 `void loadCredits()` / `void loadBalances()` ——
+   * 它们在本块结束后才 resolve，回调会写回 `cells` 里 ChannelCard 的槽位。
+   * 而 `render()` 只重置游标、不清数组，后面的 ChainEditor 用例会读到**别的
+   * 组件残留的** useState 槽位（实测：`capacity` 变 null，断言直接崩）。
+   */
+  await new Promise(resolve => setImmediate(resolve))
+  cells.length = 0
+  effects.length = 0
+}
+console.log('ok  today-claimed badge comes from the per-account ledger for every claim-capable channel')
+
 const catalog = [
   { id: 'free' }, { id: 'region' }, { id: 'kilo', channel: 'kilo' },
   { id: 'aggregate', channel: 'aggregate' },
