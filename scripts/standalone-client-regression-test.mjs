@@ -137,7 +137,11 @@ console.log('ok  client probe isolation/retry, account action labels, hidden sta
  */
 {
   cells.length = 0
-  const ledgerRpc = async () => ({ models, accounts })
+  // `credits.balances` 必须回一个真实余额：增量「(+200)」是拼在余额徽标里的，
+  // 没有余额就整块不渲染，断言会假绿。
+  const ledgerRpc = async method => method === 'credits.balances'
+    ? { accounts: [{ accountId: 'account', balance: { total: 12345 } }] }
+    : { models, accounts }
   const claimedCard = async auto => {
     cells.length = 0
     const base = {
@@ -150,6 +154,10 @@ console.log('ok  client probe isolation/retry, account action labels, hidden sta
     const fold = nodes(view).find(node => node.type === 'button' && texts(node).includes('账号'))
     assert.ok(fold, '账号折叠开关必须存在')
     await fold.props.onClick()
+    // `toggleFold` 里 `loadBalances()` 是 `void` 起的（回车即走），而余额徽标要等它
+    // resolve 才渲染 —— 多排两轮微任务再渲染，否则读到的是「加载中」。
+    await new Promise(resolve => setImmediate(resolve))
+    await new Promise(resolve => setImmediate(resolve))
     return render(ChannelCard, base)
   }
 
@@ -157,28 +165,30 @@ console.log('ok  client probe isolation/retry, account action labels, hidden sta
   const withLedger = await claimedCard({
     results: [{ provider: 'codearts', accountId: 'account', accountName: 'Fixture', outcome: 'claimed', amount: 1000, unit: 'credit' }],
   })
-  assert.ok(texts(withLedger).some(text => text.includes('今日已领 1,000')),
-    '台账里有今天的领取记录时，账号行必须显示「今日已领 1,000」')
+  assert.ok(texts(withLedger).some(text => text.includes('(+1,000)')),
+    '台账里有今天的领取记录时，余额徽标必须带「(+1,000)」增量')
+  assert.equal(texts(withLedger).some(text => text.includes('今日已领')), false,
+    '独立的「今日已领」徽标必须已经删掉（用户 2026-10-28：太挤了）')
 
   // ② token 与积分量纲不同：token 走 M/K 缩写并带单位
   const tokenLedger = await claimedCard({
     results: [{ provider: 'codearts', accountId: 'account', accountName: 'Fixture', outcome: 'claimed', amount: 100000000, unit: 'token' }],
   })
-  assert.ok(texts(tokenLedger).includes('今日已领 100.0Mtoken'), 'token 必须用 M 缩写并带 token 单位')
+  assert.ok(texts(tokenLedger).some(text => text.includes('(+100.0Mtoken)')), 'token 必须用 M 缩写并带 token 单位')
 
   // ③ 只有 already-claimed / failed ⇒ 不显示徽标（没领到就不该写「已领」）
   const alreadyOnly = await claimedCard({
     results: [{ provider: 'codearts', accountId: 'account', accountName: 'Fixture', outcome: 'already-claimed', amount: 0, unit: 'credit' }],
   })
-  assert.equal(texts(alreadyOnly).some(text => text.includes('今日已领')), false,
-    '当天只「已领过」而没有新领取时不得显示徽标')
+  assert.equal(texts(alreadyOnly).some(text => text.includes('(+')), false,
+    '当天只「已领过」而没有新领取时不得显示增量')
 
   // ④ 台账里是别的渠道的行 ⇒ 不能串到本卡片
   const otherProvider = await claimedCard({
     results: [{ provider: 'workbuddy', accountId: 'account', accountName: 'Fixture', outcome: 'claimed', amount: 999, unit: 'credit' }],
   })
-  assert.equal(texts(otherProvider).some(text => text.includes('今日已领')), false,
-    '其它渠道的领取记录不得显示在本渠道卡片上')
+  assert.equal(texts(otherProvider).some(text => text.includes('(+')), false,
+    '其它渠道的领取记录不得串到本渠道卡片上')
   /*
    * ⚠️ 必须把本块的异步尾巴排空再清空 `cells`。
    *
@@ -191,7 +201,7 @@ console.log('ok  client probe isolation/retry, account action labels, hidden sta
   cells.length = 0
   effects.length = 0
 }
-console.log('ok  today-claimed badge comes from the per-account ledger for every claim-capable channel')
+console.log('ok  today-claimed amount is folded into the balance badge for every claim-capable channel')
 
 const catalog = [
   { id: 'free' }, { id: 'region' }, { id: 'kilo', channel: 'kilo' },

@@ -256,7 +256,6 @@ window.__ModuleLoader__.load({
         'chan.test.failed': '测试失败：{reason}',
         'chan.claim.result': '已领取 {count} 个账号，共 {credit} 积分。',
         'chan.claim.none': '今天没有可领取的积分。',
-        'chan.credit.today': '今日已领 {credit}',
         'chan.model.free': '免费额度',
         'chan.model.dead': '已下架',
         'chan.model.hidden': '已隐藏',
@@ -739,7 +738,6 @@ window.__ModuleLoader__.load({
         'chan.test.failed': 'Test failed: {reason}',
         'chan.claim.result': 'Claimed for {count} account(s), {credit} credits in total.',
         'chan.claim.none': 'Nothing to claim today.',
-        'chan.credit.today': '{credit} claimed today',
         'chan.model.free': 'Free quota',
         'chan.model.dead': 'Retired',
         'chan.model.hidden': 'Hidden',
@@ -1505,6 +1503,8 @@ window.__ModuleLoader__.load({
 .ofm_navmark img,.ofm_chanlogo img{width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block}
 .ofm_chanlogo{padding:0;overflow:hidden}
 .ofm_credittotal b{color:var(--dsw-alias-state-success-primary);font-variant-numeric:tabular-nums}
+/* 余额徽标里的「今日增量」：同色系、略淡，跟在「剩余积分」后面 */
+.ofm_creditdelta{font-weight:600;opacity:.75}
 .ofm_creditbadge{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;padding:2px 9px;border-radius:999px;border:1px solid color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 50%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 9%,transparent);color:var(--dsw-alias-state-warning-primary,#f0a441);white-space:nowrap}
 .ofm_creditbadge.strong{max-width:100%;white-space:normal;overflow-wrap:anywhere;color:var(--dsw-alias-state-success-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-success-primary) 50%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 9%,transparent)}
 /* 模型额度标签：绿色=还剩多少 / 红色=已用尽（用户 2026-10-27 指定）。
@@ -3492,10 +3492,12 @@ window.__ModuleLoader__.load({
       const creditFor = accountId => (credits ?? []).find(row => row.accountId === accountId)?.status ?? null
 
       /**
-       * 某账号「今日已领」徽标（用户 2026-10-28 要求）。
+       * 某账号**今日已领**的额度（格式化成可直接拼进余额徽标的文本）。
        *
-       * 原话：「像 WorkBuddy 国内版一样，在账号列表界面，显示今日已领 xxx 积分，
-       * 所有支持签到的渠道都这样改」。
+       * 用户 2026-10-28 两次调整后的最终形态：
+       * 1. 先是「像 WorkBuddy 国内版一样，显示今日已领 xxx」；
+       * 2. 随后「太挤了，删掉今日已领 xx，直接放在剩余积分 xx (+200)」——
+       *    即**不再单独占一个徽标**，而是作为余额徽标里的增量后缀。
        *
        * ⚠️ 数据源是**自动签到的逐账号台账**（`usage.autoCheckin().results`），
        * 不是各渠道自己的 credits API —— 后者只有 `buddy` / `minimax` 会回
@@ -3505,8 +3507,10 @@ window.__ModuleLoader__.load({
        *
        * 顺序：台账优先（它记录的是**本插件今天真的领到的**），没有台账行时才回落到
        * 上游自己报的 `todayCredit`（比如领完了才打开插件、或积分是在官网领的）。
+       *
+       * @returns 例如 `1,000` / `100.0Mtoken`；今天没领到则 `null`。
        */
-      const todayClaimed = accountId => {
+      const todayClaimedAmount = accountId => {
         const rows = Array.isArray(auto?.results) ? auto.results : []
         const row = rows.find(entry => entry.provider === channel.id
           && entry.accountId === accountId
@@ -3524,8 +3528,7 @@ window.__ModuleLoader__.load({
         }
         if (!Number.isFinite(amount) || amount <= 0) return null
         // token 与积分量纲不同（见 credits.ts 的 totalByUnit 说明），不能混写。
-        const text = unit === 'token' ? `${formatTokens(amount)}token` : amount.toLocaleString()
-        return h('span', { className: 'ofm_creditbadge' }, t('chan.credit.today').replace('{credit}', text))
+        return unit === 'token' ? `${formatTokens(amount)}token` : amount.toLocaleString()
       }
 
       const card = h('article', {
@@ -3655,9 +3658,10 @@ window.__ModuleLoader__.load({
                 return h('div', { className: 'ofm_acct' + (pending ? ' pending' : ''), key: row.id },
                   h('span', { className: 'ofm_acctname', title: row.nickname ?? row.id }, row.nickname ?? row.id),
                   h('span', { className: 'ofm_acctmeta' }, row.enabled === false ? t('chan.disabled') : t('chan.enabled'), ' · ', expiryText(row, t)),
-                  todayClaimed(row.id),
                   (() => {
                     const balance = balanceOf(row.id)
+                    // 今日已领的增量（可能为 null：今天没领到或还没领）。
+                    const bonus = todayClaimedAmount(row.id)
                     if (!creditCapability) return null
                     if (balanceLoading) return h('span', { className: 'ofm_note' }, t('chan.credits.loading'))
                     const result = (balances ?? []).find(entry => entry.accountId === row.id)
@@ -3668,7 +3672,10 @@ window.__ModuleLoader__.load({
                       ? (balance.packages ?? []).map(pkg => `${pkg.name} ${pkg.remaining}%`).join(' · ') || '—'
                       : kilo(balance.total)
                     return h('span', { className: 'ofm_creditbadge strong', title: balanceLabel },
-                      `${balanceLabel} ${reading}`)
+                      `${balanceLabel} ${reading}`,
+                      // 「剩余积分 12,345 (+200)」：增量跟在余额后面，不再单占一个徽标
+                      // （用户 2026-10-28：「太挤了」）。
+                      bonus === null ? null : h('span', { className: 'ofm_creditdelta' }, ` (+${bonus})`))
                   })(),
                   h('span', { className: 'ofm_acctacts' },
                     h('button', {
