@@ -964,7 +964,7 @@ export async function verifyRemoteCatalogFields() {
   const { parseKukuCatalog, kukuDisplayName } = await import('../vendor/channel-pack/src/kuku-adapter.ts')
   const { accioDisplayName } = await import('../vendor/channel-pack/src/accio-adapter.ts')
   const { parseModelConfig } = await import('../vendor/channel-pack/src/autoclaw.ts')
-  const { autoClawDisplayName } = await import('../vendor/channel-pack/src/autoclaw-adapter.ts')
+  const { autoClawDisplayName, autoClawQuotaLabel } = await import('../vendor/channel-pack/src/autoclaw-adapter.ts')
   const { monkeyCodeDisplayName } = await import('../vendor/channel-pack/src/monkeycode-adapter.ts')
 
   // ── kuku：cost_ratio 是倍率字符串，think_list 是全局档位表 ──
@@ -1027,11 +1027,15 @@ export async function verifyRemoteCatalogFields() {
   assert.equal(ac[0].tooltip, '自动选模型')
   // ⚠️ 上游只给「低/中/高」标签，无数字倍率 —— 展示层不得换算成 x0.5。
   assert.equal(autoClawDisplayName(ac[0]), 'Auto · 低')
-  assert.equal(autoClawDisplayName(ac[1]), 'Auto-Fast · 中 · 额度用完', 'forbiddenNotice 存在 = 该模型额度用完')
+  // ⚠️ 额度状态**不进名字**（用户 2026-10-27：改用红色标签单独显示）。
+  assert.equal(autoClawDisplayName(ac[1]), 'Auto-Fast · 中', '名字里不含额度状态')
+  assert.equal(autoClawQuotaLabel(ac[1]), '额度用尽', '额度状态走独立标签（红色框）')
   assert.equal(ac[1].quotaExhausted, true)
   assert.equal(ac[1].quotaNotice, '免费额度已用完，24 小时后重置')
-  assert.equal(autoClawDisplayName(ac[2]), 'GLM-5.3 · 高 · 限时半价 · 额度用完',
+  assert.equal(autoClawDisplayName(ac[2]), 'GLM-5.3 · 高 · 限时半价',
     '促销用上游文案，不推断成 x0.5')
+  assert.equal(autoClawQuotaLabel(ac[2]), '额度用尽')
+  assert.equal(autoClawQuotaLabel(ac[0]), undefined, '没用尽 → 不渲染标签（不是空字符串）')
   assert.equal(ac[2].promotion, '限时半价')
   assert.equal(autoClawDisplayName(ac[3]), 'GLM-5.3-Flash · 低', '无促销无告警时只有两段')
   assert.equal(ac[3].quotaExhausted, undefined, '缺失 forbiddenNotice → 不是用完状态')

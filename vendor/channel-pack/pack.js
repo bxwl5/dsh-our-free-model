@@ -48984,8 +48984,10 @@ function autoClawDisplayName(model) {
   const parts = [model.name];
   if (model.creditLevel !== void 0 && model.creditLevel !== "") parts.push(model.creditLevel);
   if (model.promotion !== void 0 && model.promotion !== "") parts.push(model.promotion);
-  if (model.quotaExhausted === true) parts.push("\u989D\u5EA6\u7528\u5B8C");
   return parts.join(" \xB7 ");
+}
+function autoClawQuotaLabel(model) {
+  return model.quotaExhausted === true ? "\u989D\u5EA6\u7528\u5C3D" : void 0;
 }
 function autoClawQuotaNotice(model) {
   if (model.quotaExhausted !== true) return void 0;
@@ -49093,6 +49095,22 @@ var AutoClawAdapter = class extends LlmAdapter12 {
     const source = this.remoteModels ?? this.product.fallbackModels;
     const model = source.find((item) => item.id === modelId);
     return model === void 0 ? void 0 : autoClawDisplayName(model);
+  }
+  /**
+   * 额度状态的红色标签（供 `model.list` 的 `quota` 字段）。
+   *
+   * 用户 2026-10-27 要求：`额度用尽` 用红色框显示，别拼进模型名。
+   * 上游只给二值（`metadata.forbiddenNotice`），故没有「剩余量」可示 ——
+   * 积分钱包按来源分账（活动/签到/订阅/加油包），没有模型维度。
+   */
+  quotaFor(modelId) {
+    const source = this.remoteModels ?? this.product.fallbackModels;
+    const model = source.find((item) => item.id === modelId);
+    return model === void 0 ? void 0 : autoClawQuotaLabel(model);
+  }
+  /** AutoClaw 的额度标签恒为「已用尽」语义 → 红色框。 */
+  quotaKind() {
+    return "exhausted";
   }
   /**
    * **强制**重新拉取远端目录（「重新获取模型」按钮），绕过 TTL。
@@ -68300,7 +68318,9 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             // 同样**缺失不写**：不按模型分账的渠道不该有这项。
             ...(() => {
               const quota = catalogSource?.quotaFor?.(model.id);
-              return quota === void 0 ? {} : { quota };
+              if (quota === void 0) return {};
+              const kind = catalogSource?.quotaKind?.() ?? "remaining";
+              return { quota, quotaKind: kind };
             })()
           }))
         };

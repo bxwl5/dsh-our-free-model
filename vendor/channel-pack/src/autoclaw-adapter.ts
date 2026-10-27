@@ -82,17 +82,17 @@ const AUTO_CLAW_EFFORT_NAMES: Readonly<Record<string, string>> = {
 /**
  * 模型展示名（用户 2026-10-27 指定的格式）。
  *
- * 形态：`名称 · 消耗档 [· 促销] [· 额度用完]`
+ * 形态：`名称 · 消耗档 [· 促销]`
  *
  * 例：
  * ```
  * Auto · 低
- * Auto-Fast · 中 · 额度用完
- * GLM-5.3 · 高 · 限时半价 · 额度用完
+ * Auto-Fast · 中
+ * GLM-5.3 · 高 · 限时半价
  * GLM-5.3-Flash · 低
  * ```
  *
- * ## 三段各自的来源与口径
+ * ## 两段各自的来源与口径
  *
  * 1. **消耗档**（`creditConsumptionLevel`）：上游只给 `低`/`中`/`高` 三个
  *    中文标签，**没有任何数字倍率**。故原样显示，不换算成 `x0.5`。
@@ -100,12 +100,16 @@ const AUTO_CLAW_EFFORT_NAMES: Readonly<Record<string, string>> = {
  * 2. **促销**（`metadata.__pricingPromotion.badge`）：上游给的是**文案**
  *    （实测 `"限时半价"`），不是数字。原样显示，不推断成 `x0.5`
  *    —— `scope` 是 `['autoLegal']`，无法保证等价于「所有场景都 5 折」。
- * 3. **额度用完**（`metadata.forbiddenNotice`）：这是**按模型**的状态，
- *    也就是用户真正关心的「这个模型现在还能不能使」。
+ *
+ * ## 「额度用尽」为什么不在名字里
+ *
+ * 用户 2026-10-27 要求：额度状态改用**红色标签**单独显示（与 ZCode 的
+ * 绿色余量标签同一套机制）。故它由 {@link autoClawQuotaLabel} 产出，
+ * 经 `model.list` 的 `quota` 字段交给前端渲染。
  *
  * ⚠️ **不显示「剩多少 M」**：上游的积分钱包（`/agent-assetmgr/.../wallets`）
  * 按来源分账（活动奖励 / 每日签到 / 订阅 / 加油包），**没有模型维度**，
- * 拆到每个模型只能是编造。真实的是「用完 vs 能用」这个二值状态。
+ * 拆到每个模型只能是编造。真实的是「用尽 vs 能用」这个二值状态。
  */
 export function autoClawDisplayName(model: AutoClawModelRow): string {
   const parts: string[] = [model.name]
@@ -113,9 +117,17 @@ export function autoClawDisplayName(model: AutoClawModelRow): string {
   if (model.creditLevel !== undefined && model.creditLevel !== '') parts.push(model.creditLevel)
   // 2. 促销徽标（上游原文）。
   if (model.promotion !== undefined && model.promotion !== '') parts.push(model.promotion)
-  // 3. 按模型的额度状态。
-  if (model.quotaExhausted === true) parts.push('额度用完')
   return parts.join(' · ')
+}
+
+/**
+ * 额度状态的**标签文本**（红色框用，用户 2026-10-27 指定）。
+ *
+ * 上游只给二值（`metadata.forbiddenNotice` 存在即用尽），故只有
+ * 「额度用尽」这一种文本；没用到 → `undefined`，前端就不渲染标签。
+ */
+export function autoClawQuotaLabel(model: AutoClawModelRow): string | undefined {
+  return model.quotaExhausted === true ? '额度用尽' : undefined
 }
 
 /**
@@ -248,6 +260,24 @@ export class AutoClawAdapter extends LlmAdapter {
     const source = this.remoteModels ?? this.product.fallbackModels
     const model = source.find((item) => item.id === modelId)
     return model === undefined ? undefined : autoClawDisplayName(model)
+  }
+
+  /**
+   * 额度状态的红色标签（供 `model.list` 的 `quota` 字段）。
+   *
+   * 用户 2026-10-27 要求：`额度用尽` 用红色框显示，别拼进模型名。
+   * 上游只给二值（`metadata.forbiddenNotice`），故没有「剩余量」可示 ——
+   * 积分钱包按来源分账（活动/签到/订阅/加油包），没有模型维度。
+   */
+  quotaFor(modelId: string): string | undefined {
+    const source = this.remoteModels ?? this.product.fallbackModels
+    const model = source.find((item) => item.id === modelId)
+    return model === undefined ? undefined : autoClawQuotaLabel(model)
+  }
+
+  /** AutoClaw 的额度标签恒为「已用尽」语义 → 红色框。 */
+  quotaKind(): 'remaining' | 'exhausted' {
+    return 'exhausted'
   }
 
   /**

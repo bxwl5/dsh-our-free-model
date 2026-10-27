@@ -936,6 +936,13 @@ export interface ModelCatalogSource {
    * 不按模型分账或查不到 —— 客户端据此不渲染绿色标签。
    */
   quotaFor?(modelId: string): string | undefined
+  /**
+   * 额度标签的语义（可选，默认 `remaining`）。
+   *
+   * `'exhausted'` → 前端用红色框（如 AutoClaw 的「额度用尽」）；
+   * 其余 → 绿色框（如 ZCode 的「剩 3.0M」）。
+   */
+  quotaKind?(): 'remaining' | 'exhausted'
 }
 
 /**
@@ -4219,7 +4226,11 @@ function registerChannelPackEndpoints(
             // 同样**缺失不写**：不按模型分账的渠道不该有这项。
             ...(() => {
               const quota = catalogSource?.quotaFor?.(model.id)
-              return quota === undefined ? {} : { quota }
+              if (quota === undefined) return {}
+              // 带上语义，让前端按 quotaKind 选配色（绿=剩多少 / 红=已用尽），
+              // 而不是靠字符串匹配猜。
+              const kind = catalogSource?.quotaKind?.() ?? 'remaining'
+              return { quota, quotaKind: kind }
             })(),
           })),
         }
