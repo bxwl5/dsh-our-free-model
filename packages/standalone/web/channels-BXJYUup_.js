@@ -268,8 +268,8 @@ import{c as Gt,R as Zt,r as V,j as x,N as Jt,S as Ja,C as Kt,B as na,a as ka,b a
 .ofm_tank.xl .ofm_tankglass{border-radius:20px}
 /* ══ 渠道接入页 ════════════════════════════════════════════════════════ */
 /* 「异常汇总」表格（放在 20 个渠道卡片下方，仅在有限流时出现） */
-.ofm_anomaly{margin-top:14px;border:1px solid color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 40%,transparent);
-  border-radius:12px;background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 6%,transparent);overflow:hidden}
+.ofm_anomaly{margin-top:14px;border:1px solid var(--dsw-alias-border-l2);
+  border-radius:12px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}
 .ofm_anomalyhead{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
   padding:10px 14px;font:inherit;font-size:12.5px;font-weight:600;color:inherit;background:none;border:0;
   cursor:pointer;text-align:left}
@@ -280,11 +280,11 @@ import{c as Gt,R as Zt,r as V,j as x,N as Jt,S as Ja,C as Kt,B as na,a as ka,b a
   background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 14%,transparent)}
 .ofm_anomalychev{font-size:11px;opacity:.6}
 /* 表格：窄屏横向滚动，不挤压列宽（列多，硬换行会读不出来） */
-.ofm_anomalyscroll{overflow-x:auto;border-top:1px solid color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 22%,transparent)}
+.ofm_anomalyscroll{overflow-x:auto;border-top:1px solid var(--dsw-alias-border-l2)}
 .ofm_anomalytable{width:100%;border-collapse:collapse;font-size:12px;min-width:640px}
 .ofm_anomalytable thead th{position:sticky;top:0;text-align:left;font-size:11px;font-weight:600;
   padding:7px 14px;color:var(--dsw-alias-label-secondary);white-space:nowrap;
-  background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 70%,transparent);
+  background:var(--dsw-alias-bg-layer-2);
   border-bottom:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 70%,transparent)}
 .ofm_anomalytable tbody td{padding:7px 14px;border-bottom:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 45%,transparent);
   vertical-align:middle}
