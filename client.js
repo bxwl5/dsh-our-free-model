@@ -1264,46 +1264,49 @@ window.__ModuleLoader__.load({
 /* 表格：窄屏横向滚动，不挤压列宽（列多，硬换行会读不出来） */
 .ofm_anomalyscroll{overflow-x:auto;border-top:1px solid var(--dsw-alias-border-l2)}
 /*
- * 表格布局对齐「免费模型」页的模型表（用户 2026-10-27 要求）：
- * - 中间分隔线很淡（md-line-soft 那一档），只起视觉分隔作用；
- * - 表头与数据**同一套列宽**，否则列会错位；
- * - 单元格 vertical-align: middle，表头 text-align 与数据一致。
+ * 列布局照「免费模型」页的模型表：**grid + minmax(fr) + 固定 gap**，
+ * 而不是 table + 百分比（用户 2026-10-27 截图对比后指出列宽分配不均）。
+ *
+ * 为什么不用 table：table 的列宽由内容与百分比共同决定，账号列容易被长昵称
+ * 撑开、时间列被压缩，视觉上就是「中间留白很大、两边挤」。
+ * grid 的 fr 比例只受声明控制，与内容长度无关，六列才会稳定均分。
  */
-.ofm_anomalytable{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;min-width:680px}
-/* 列宽按内容特征分配（不是等分）：渠道名短、账号名长、时间是固定宽度。 */
-.ofm_anomalytable thead th:nth-child(1),.ofm_anomalytable tbody td:nth-child(1){width:14%}
-.ofm_anomalytable thead th:nth-child(2),.ofm_anomalytable tbody td:nth-child(2){width:24%}
-.ofm_anomalytable thead th:nth-child(3),.ofm_anomalytable tbody td:nth-child(3){width:12%}
-.ofm_anomalytable thead th:nth-child(4),.ofm_anomalytable tbody td:nth-child(4){width:22%}
-.ofm_anomalytable thead th:nth-child(5),.ofm_anomalytable tbody td:nth-child(5){width:16%}
-.ofm_anomalytable thead th:nth-child(6),.ofm_anomalytable tbody td:nth-child(6){width:12%}
-.ofm_anomalytable thead th{position:sticky;top:0;text-align:left;font-size:11px;font-weight:600;
-  padding:8px 14px;color:var(--dsw-alias-label-secondary);white-space:nowrap;
-  background:var(--dsw-alias-bg-layer-2);
-  border-bottom:1px solid var(--dsw-alias-border-l2)}
-.ofm_anomalytable tbody td{padding:8px 14px;
-  /* 中间线：很淡，只作分隔（对齐免费模型页的 --md-line-soft 观感）。 */
-  border-bottom:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 42%,transparent);
-  vertical-align:middle;text-align:left}
-.ofm_anomalytable tbody tr:last-child td{border-bottom:0}
-.ofm_anomalytable tbody tr:hover td{background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 45%,transparent)}
-/*
- * 单元格对齐（用户 2026-10-27 指出「异常模型」与下面的模型名没对齐）：
- * 所有单元格统一 line-height + 单行省略，行高才一致、基线才齐。
- * 展示名可能很长（如 DeepSeek-Flash · 免费），故用省略号而不是换行 ——
- * 换行会把该行撑高，视觉上就和其它列错位了。
- */
-.ofm_anomalytd_channel{color:var(--dsw-alias-label-secondary);white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis;font-size:11.5px;line-height:1.6}
-.ofm_anomalytd_account{font-weight:580;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.6}
-.ofm_anomalytd_model{font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis;line-height:1.6}
-.ofm_anomalytd_allmodels{font-weight:600;color:var(--dsw-alias-state-warning-primary,#f0a441);
-  white-space:nowrap;line-height:1.6}
-.ofm_anomalytd_until,.ofm_anomalytd_remaining{font-variant-numeric:tabular-nums;white-space:nowrap;
-  font-size:11.5px;line-height:1.6}
-.ofm_anomalytd_until{color:var(--dsw-alias-label-secondary)}
-.ofm_anomalytd_remaining{font-weight:600}
+.ofm_anomalyheadrow,.ofm_anomalyrow{
+  display:grid;
+  grid-template-columns:
+    minmax(80px,1.1fr)   /* 渠道 */
+    minmax(120px,1.6fr)  /* 账号 */
+    minmax(72px,.9fr)    /* 异常类型 */
+    minmax(110px,1.5fr)  /* 异常模型 */
+    minmax(96px,1.2fr)   /* 解封时间 */
+    minmax(76px,.95fr);  /* 剩余时间 */
+  gap:18px;padding:9px 16px;align-items:center}
+.ofm_anomalyheadrow{position:sticky;top:0;z-index:2;
+  font-size:11px;font-weight:600;letter-spacing:.045em;
+  color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);
+  /* 表头下线略深（与参考页的 md-line 同档）：它是表头与数据的分界。 */
+  border-bottom:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 78%,transparent);
+  /* 内高光：参考页表头有 inset 白线，白底上让表头有轻微隆起感。 */
+  box-shadow:inset 0 1px 0 rgb(255 255 255 / 55%)}
+.ofm_anomalybody .ofm_anomalyrow{
+  font-size:12px;font-variant-numeric:tabular-nums;
+  /*
+   * 数据行之间的分隔线要**比表头线更淡**：参考页用的是两档色
+   * （表头 md-line #e9e4db、行间 md-line-soft #f1ece3）。同一条线会让
+   * 表头显得过重（用户 2026-10-27 对比截图后指出）。
+   */
+  border-bottom:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 30%,transparent)}
+.ofm_anomalybody .ofm_anomalyrow:last-child{border-bottom:0}
+.ofm_anomalybody .ofm_anomalyrow:hover{background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 45%,transparent)}
+/* 单元格统一单行省略：长展示名换行会把该行撑高，与相邻列错位。 */
+.ofm_anomalycell{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.6}
+.ofm_anomalycell.channel{color:var(--dsw-alias-label-secondary);font-size:11.5px}
+.ofm_anomalycell.account{font-weight:580}
+.ofm_anomalycell.model{font-variant-numeric:tabular-nums}
+.ofm_anomalycell.allmodels{font-weight:600;color:var(--dsw-alias-state-warning-primary,#f0a441)}
+.ofm_anomalycell.until,.ofm_anomalycell.remaining{font-size:11.5px}
+.ofm_anomalycell.until{color:var(--dsw-alias-label-secondary)}
+.ofm_anomalycell.remaining{font-weight:600}
 .ofm_anomalykind{display:inline-block;font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:999px;white-space:nowrap;
   color:var(--dsw-alias-state-warning-primary,#f0a441);
   background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 14%,transparent)}
@@ -3794,25 +3797,28 @@ window.__ModuleLoader__.load({
             h('span', { className: 'ofm_anomalycount' }, String(anomalies.length))),
           h('span', { className: 'ofm_anomalychev', 'aria-hidden': 'true' }, open ? '▾' : '▸')),
         open ? h('div', { className: 'ofm_anomalyscroll' },
-          h('table', { className: 'ofm_anomalytable' },
-            h('thead', null, h('tr', null,
-              h('th', null, t('chan.anomaly.col.channel')),
-              h('th', null, t('chan.anomaly.col.account')),
-              h('th', null, t('chan.anomaly.col.kind')),
-              h('th', null, t('chan.anomaly.col.model')),
-              h('th', null, t('chan.anomaly.col.until')),
-              h('th', null, t('chan.anomaly.col.remaining')))),
-            h('tbody', null, anomalies.map((row, index) => h('tr', {
+          h('div', { className: 'ofm_anomalyheadrow', role: 'row' },
+            h('span', { className: 'ofm_anomalycell', role: 'columnheader' }, t('chan.anomaly.col.channel')),
+            h('span', { className: 'ofm_anomalycell', role: 'columnheader' }, t('chan.anomaly.col.account')),
+            h('span', { className: 'ofm_anomalycell', role: 'columnheader' }, t('chan.anomaly.col.kind')),
+            h('span', { className: 'ofm_anomalycell', role: 'columnheader' }, t('chan.anomaly.col.model')),
+            h('span', { className: 'ofm_anomalycell', role: 'columnheader' }, t('chan.anomaly.col.until')),
+            h('span', { className: 'ofm_anomalycell', role: 'columnheader' }, t('chan.anomaly.col.remaining'))),
+          h('div', { className: 'ofm_anomalybody', role: 'rowgroup' },
+            anomalies.map((row, index) => h('div', {
+              className: 'ofm_anomalyrow', role: 'row',
               key: `${row.provider}:${row.accountId}:${row.modelName ?? '*'}:${index}`,
             },
-              h('td', { className: 'ofm_anomalytd_channel' }, channelName(row.provider)),
-              h('td', { className: 'ofm_anomalytd_account', title: row.accountId }, row.accountName),
-              h('td', null, h('span', { className: 'ofm_anomalykind' }, t('chan.anomaly.rateLimit'))),
-              h('td', {
-                className: row.modelName === undefined ? 'ofm_anomalytd_allmodels' : 'ofm_anomalytd_model',
+              h('span', { className: 'ofm_anomalycell channel', role: 'cell' }, channelName(row.provider)),
+              h('span', { className: 'ofm_anomalycell account', role: 'cell', title: row.accountId }, row.accountName),
+              h('span', { className: 'ofm_anomalycell', role: 'cell' },
+                h('span', { className: 'ofm_anomalykind' }, t('chan.anomaly.rateLimit'))),
+              h('span', {
+                className: 'ofm_anomalycell ' + (row.modelName === undefined ? 'allmodels' : 'model'),
+                role: 'cell', title: row.modelName ?? '',
               }, row.modelName === undefined ? t('chan.anomaly.allModels') : row.modelName),
-              h('td', { className: 'ofm_anomalytd_until' }, absolute(row.resetAtMs)),
-              h('td', { className: 'ofm_anomalytd_remaining' }, remaining(row.resetAtMs))))))) : null)
+              h('span', { className: 'ofm_anomalycell until', role: 'cell' }, absolute(row.resetAtMs)),
+              h('span', { className: 'ofm_anomalycell remaining', role: 'cell' }, remaining(row.resetAtMs)))))) : null)
     }
 
     // ── 数据看板 / 运行日志 / 网关设置 ────────────────────────────────────────
