@@ -1263,20 +1263,45 @@ window.__ModuleLoader__.load({
 .ofm_anomalychev{font-size:11px;opacity:.6}
 /* 表格：窄屏横向滚动，不挤压列宽（列多，硬换行会读不出来） */
 .ofm_anomalyscroll{overflow-x:auto;border-top:1px solid var(--dsw-alias-border-l2)}
-.ofm_anomalytable{width:100%;border-collapse:collapse;font-size:12px;min-width:640px}
+/*
+ * 表格布局对齐「免费模型」页的模型表（用户 2026-10-27 要求）：
+ * - 中间分隔线很淡（md-line-soft 那一档），只起视觉分隔作用；
+ * - 表头与数据**同一套列宽**，否则列会错位；
+ * - 单元格 vertical-align: middle，表头 text-align 与数据一致。
+ */
+.ofm_anomalytable{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;min-width:680px}
+/* 列宽按内容特征分配（不是等分）：渠道名短、账号名长、时间是固定宽度。 */
+.ofm_anomalytable thead th:nth-child(1),.ofm_anomalytable tbody td:nth-child(1){width:14%}
+.ofm_anomalytable thead th:nth-child(2),.ofm_anomalytable tbody td:nth-child(2){width:24%}
+.ofm_anomalytable thead th:nth-child(3),.ofm_anomalytable tbody td:nth-child(3){width:12%}
+.ofm_anomalytable thead th:nth-child(4),.ofm_anomalytable tbody td:nth-child(4){width:22%}
+.ofm_anomalytable thead th:nth-child(5),.ofm_anomalytable tbody td:nth-child(5){width:16%}
+.ofm_anomalytable thead th:nth-child(6),.ofm_anomalytable tbody td:nth-child(6){width:12%}
 .ofm_anomalytable thead th{position:sticky;top:0;text-align:left;font-size:11px;font-weight:600;
-  padding:7px 14px;color:var(--dsw-alias-label-secondary);white-space:nowrap;
+  padding:8px 14px;color:var(--dsw-alias-label-secondary);white-space:nowrap;
   background:var(--dsw-alias-bg-layer-2);
-  border-bottom:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 70%,transparent)}
-.ofm_anomalytable tbody td{padding:7px 14px;border-bottom:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 45%,transparent);
-  vertical-align:middle}
+  border-bottom:1px solid var(--dsw-alias-border-l2)}
+.ofm_anomalytable tbody td{padding:8px 14px;
+  /* 中间线：很淡，只作分隔（对齐免费模型页的 --md-line-soft 观感）。 */
+  border-bottom:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 42%,transparent);
+  vertical-align:middle;text-align:left}
 .ofm_anomalytable tbody tr:last-child td{border-bottom:0}
 .ofm_anomalytable tbody tr:hover td{background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 45%,transparent)}
-.ofm_anomalytd_channel{color:var(--dsw-alias-label-secondary);white-space:nowrap;font-size:11.5px}
-.ofm_anomalytd_account{font-weight:580;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ofm_anomalytd_model{font-variant-numeric:tabular-nums;white-space:nowrap}
-.ofm_anomalytd_allmodels{font-weight:600;color:var(--dsw-alias-state-warning-primary,#f0a441);white-space:nowrap}
-.ofm_anomalytd_until,.ofm_anomalytd_remaining{font-variant-numeric:tabular-nums;white-space:nowrap;font-size:11.5px}
+/*
+ * 单元格对齐（用户 2026-10-27 指出「异常模型」与下面的模型名没对齐）：
+ * 所有单元格统一 line-height + 单行省略，行高才一致、基线才齐。
+ * 展示名可能很长（如 DeepSeek-Flash · 免费），故用省略号而不是换行 ——
+ * 换行会把该行撑高，视觉上就和其它列错位了。
+ */
+.ofm_anomalytd_channel{color:var(--dsw-alias-label-secondary);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;font-size:11.5px;line-height:1.6}
+.ofm_anomalytd_account{font-weight:580;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.6}
+.ofm_anomalytd_model{font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;line-height:1.6}
+.ofm_anomalytd_allmodels{font-weight:600;color:var(--dsw-alias-state-warning-primary,#f0a441);
+  white-space:nowrap;line-height:1.6}
+.ofm_anomalytd_until,.ofm_anomalytd_remaining{font-variant-numeric:tabular-nums;white-space:nowrap;
+  font-size:11.5px;line-height:1.6}
 .ofm_anomalytd_until{color:var(--dsw-alias-label-secondary)}
 .ofm_anomalytd_remaining{font-weight:600}
 .ofm_anomalykind{display:inline-block;font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:999px;white-space:nowrap;
