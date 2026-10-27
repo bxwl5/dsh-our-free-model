@@ -812,6 +812,17 @@ export interface RpcModelListEntry {
    */
   isFree?: boolean
   /**
+   * 该模型的**剩余额度**（人读字符串，如 `剩 3.0M`）。
+   *
+   * 用户 2026-10-27 要求：模型名后面用一个绿色标签显示各自余量。
+   * 只有**按模型分账**的渠道才有（目前 ZCode：`billing/balance` 的桶带
+   * `capabilities: ["model:glm-5.3"]` + `remaining_units`）。
+   *
+   * ⚠️ **缺失 = 该渠道不按模型分账**（或查不到），客户端就不渲染标签 ——
+   * 不编造 0（0 是「已用光」，与「不知道」语义相反）。
+   */
+  quota?: string
+  /**
    * 该模型是否已被判定为**上游下架**（`dead-models.json` 命中）。
    *
    * ⚠️ 恒为布尔值、**不省略**：缺失即 false。客户端据此灰显并给出「重新显示」

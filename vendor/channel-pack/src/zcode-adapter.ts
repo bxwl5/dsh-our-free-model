@@ -80,6 +80,7 @@ import {
   buildZcodeSystemBlocks,
   withContextPrefix,
 } from './zcode-identity.js'
+import { fetchZcodeBalance } from './zcode-upstream.js'
 import {
   consumeAnthropicSse,
   toAnthropicMessages,
@@ -328,12 +329,74 @@ export interface ZcodeAdapterOptions {
 }
 
 /** ZCode 模型适配器。 */
+/**
+ * 模型展示名：`名称 · [档位] · 剩 N tokens`（用户 2026-10-27 要求「能看到每个模型的余量」）。
+ *
+ * ## 口径
+ *
+ * - **余量来自 `billing/balance` 的桶**：每个桶带
+ *   `capabilities: ["model:glm-5.3"]` + `remaining_units`，按模型名匹配；
+ * - 单位是 **token**（上游 `unit_type: "token"`），故格式化成 `3.0M` 这种；
+ * - 桶不存在 / 查不到 → **不写余量**（不显示成 0，0 是「已用光」的语义）；
+ * - ZCode 是**额度制不是倍率**（用户 2026-10-26 明确指出），故**不写 x倍数**。
+ */
+export function zcodeDisplayName(
+  model: { id: string; name: string; reasoningLevels?: readonly string[] },
+  remaining?: { units: number },
+): string {
+  const parts: string[] = [model.name]
+  // 档位：低/高/极高（上游 low/high/max），只在模型确实有声明的档位时写。
+  if (model.reasoningLevels !== undefined && model.reasoningLevels.length > 0) {
+    parts.push(model.reasoningLevels.map((level) => ZCODE_LEVEL_NAMES[level] ?? level).join('/'))
+  }
+  /**
+   * ⚠️ 余量**不再拼进名字**（用户 2026-10-27 改口径：要用绿色标签单独显示）。
+   * 这里保留参数只为兼容既有调用与测试 —— 它现在不产出任何文本。
+   * 真正的余量由 `quotaFor()` 交给 `model.list` 的 `quota` 字段。
+   */
+  void remaining
+  return parts.join(' · ')
+}
+
+/** 余量的展示文本（绿色标签用），如 `剩 3.0M`。 */
+export function zcodeQuotaLabel(units: number): string {
+  return `剩 ${formatZcodeUnits(units)}`
+}
+
+/** 档位 id 的中文名（上游 `reasoning.levels` 的键）。 */
+const ZCODE_LEVEL_NAMES: Readonly<Record<string, string>> = {
+  none: '关闭',
+  minimal: '最少',
+  low: '低',
+  medium: '中',
+  high: '高',
+  xhigh: '极高',
+  max: '极高',
+}
+
+/** 把 token 数格式化成人读形式（`3000000` → `3.0M`）。 */
+export function formatZcodeUnits(units: number): string {
+  if (!Number.isFinite(units) || units < 0) return '—'
+  if (units >= 1_000_000_000) return `${(units / 1_000_000_000).toFixed(1)}B`
+  if (units >= 1_000_000) return `${(units / 1_000_000).toFixed(1)}M`
+  if (units >= 1_000) return `${(units / 1_000).toFixed(1)}K`
+  return String(Math.trunc(units))
+}
+
 export class ZcodeAdapter extends LlmAdapter {
   private readonly product: ZcodeProduct
   private readonly fetchImpl: typeof fetch
   /** 兜底模型索引（id → 条目）。 */
   private readonly fallbackIndex: ReadonlyMap<string, ZcodeFallbackModel>
   private remoteModels: ZcodeRemoteModel[] | undefined
+  /**
+   * 每个模型的剩余额度（`模型名小写 → remaining_units`）。
+   *
+   * 来自 `billing/balance` 的 `balances[].capabilities`（`model:glm-5.3`）
+   * + `remaining_units`。`undefined` 表示还没查过；空 Map 表示查过但没有桶
+   * （此时**不显示余量** —— 显示 0 会让人误以为用光了）。
+   */
+  private modelRemaining: Map<string, number> | undefined
   /** 目录加载闸门：并发去重 + 失败/空结果冷却（见 `remote-catalog-gate.ts`）。 */
   private readonly catalogGate = new RemoteCatalogGate()
   /** 自建的常驻浏览器（仅当调用方没注入 `mintCaptcha` 时用）。 */
@@ -385,9 +448,73 @@ export class ZcodeAdapter extends LlmAdapter {
    * 补回，而那条路径拿不到展示名，会退化成裸 id
    * （`AGENTS.md` 记过 Raccoon 的同款用户报障）。
    */
+  /**
+   * 刷新「每个模型剩多少额度」（`billing/balance` 的桶）。
+   *
+   * 用户 2026-10-27 要求模型列表能看到各自余量。上游按**桶**下发，
+   * 每个桶带 `capabilities: ["model:glm-5.3"]` 与 `remaining_units`，
+   * 故按模型名（小写）索引。
+   *
+   * 失败静默（保留上一次的结果）—— 余量是附加信息，不能因为它拉取失败
+   * 就让整条模型目录不可用。
+   */
+  async refreshModelRemaining(): Promise<boolean> {
+    try {
+      const credential = await this.options.resolveCredential()
+      // ZCode 的凭据是静态 JWT：没有 jwt 就没法查余额（不抛错，静默返回）。
+      if (credential === undefined || typeof credential.zcode_jwt !== 'string'
+        || credential.zcode_jwt === '') return false
+      const balance = await fetchZcodeBalance(credential, this.fetchImpl)
+      if (balance === undefined) return false
+      const next = new Map<string, number>()
+      for (const bucket of balance.buckets) {
+        const remaining = bucket.remainingUnits
+        if (typeof remaining !== 'number' || !Number.isFinite(remaining)) continue
+        // 桶的 capabilities 形如 `model:glm-5.3`；也兼容 showName（实测是模型名）。
+        const keys = new Set<string>()
+        for (const capability of bucket.capabilities ?? []) {
+          const name = String(capability).replace(/^model:/i, '').trim()
+          if (name !== '') keys.add(name.toLowerCase())
+        }
+        if (bucket.showName !== undefined && bucket.showName !== '') {
+          keys.add(bucket.showName.toLowerCase())
+        }
+        for (const key of keys) {
+          const previous = next.get(key)
+          // 同模型多个桶时取较大值（多份额度可叠加使用）。
+          next.set(key, previous === undefined ? remaining : Math.max(previous, remaining))
+        }
+      }
+      this.modelRemaining = next
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** 取某模型的剩余额度（没有对应桶 → undefined，展示时就不写余量）。 */
+  private remainingFor(modelId: string): { units: number } | undefined {
+    const units = this.modelRemaining?.get(modelId.toLowerCase())
+    return units === undefined ? undefined : { units }
+  }
+
+  /**
+   * 单个模型的余量标签（供 `model.list` 的 `quota` 字段）。
+   *
+   * 没有对应桶（不按模型分账 / 查不到）→ `undefined`，客户端就不渲染标签，
+   * 不编造 0。
+   */
+  quotaFor(modelId: string): string | undefined {
+    const remaining = this.remainingFor(modelId)
+    return remaining === undefined ? undefined : zcodeQuotaLabel(remaining.units)
+  }
+
   listAllModels(): readonly { id: string; name: string }[] {
     const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote)
-    return source.map((model) => ({ id: model.id, name: model.name }))
+    return source.map((model) => ({
+      id: model.id,
+      name: zcodeDisplayName(model, this.remainingFor(model.id)),
+    }))
   }
 
   /**
@@ -407,6 +534,27 @@ export class ZcodeAdapter extends LlmAdapter {
    * 与 `loadModels()` 不同：它「有值即返回」且失败会被闸门冷却。按钮要的是
    * 「现在就重新拉一次」，故直接调 `fetchRemoteModels()`，失败保留上次目录。
    */
+  /**
+   * 预热目录与余量（供 `provider.status` / 设置页这类**异步**入口调用）。
+   *
+   * `listAllModels()` 是同步契约，只能读已缓存的数据；首次打开卡片时若
+   * 还没预热，就看不到余量。这里让异步调用方先等一次。
+   *
+   * 失败静默（两部分各自独立，一个失败不影响另一个）。
+   */
+  async warmCatalog(): Promise<void> {
+    const fetchRemote = this.options.fetchRemoteModels
+    if (fetchRemote !== undefined && this.remoteModels === undefined) {
+      try {
+        const fetched = await fetchRemote()
+        if (fetched.length > 0) this.remoteModels = fetched
+      } catch {
+        // 兜底表接管。
+      }
+    }
+    if (this.modelRemaining === undefined) await this.refreshModelRemaining()
+  }
+
   async refreshCatalog(): Promise<boolean> {
     const fetchRemote = this.options.fetchRemoteModels
     if (fetchRemote === undefined) return false
@@ -414,6 +562,8 @@ export class ZcodeAdapter extends LlmAdapter {
       const fetched = await fetchRemote()
       if (fetched.length === 0) return false
       this.remoteModels = fetched
+      // 余量随目录一起刷新：「重新获取模型」按钮点了就该拿到最新余量。
+      await this.refreshModelRemaining()
       return true
     } catch {
       return false

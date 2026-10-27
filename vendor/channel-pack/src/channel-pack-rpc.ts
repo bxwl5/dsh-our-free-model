@@ -929,6 +929,13 @@ export interface ModelCatalogSource {
    * 拉成功返回 `true`，失败或该渠道不支持远端目录返回 `false`（不抛错）。
    */
   refreshCatalog?(): Promise<boolean>
+  /**
+   * 单个模型的**剩余额度**标签（可选，如 `剩 3.0M`）。
+   *
+   * 只有按模型分账的渠道实现（目前 ZCode）。返回 `undefined` 表示该渠道
+   * 不按模型分账或查不到 —— 客户端据此不渲染绿色标签。
+   */
+  quotaFor?(modelId: string): string | undefined
 }
 
 /**
@@ -4208,6 +4215,12 @@ function registerChannelPackEndpoints(
             // 模型列表按「计费/来源」分组，把「适配器没报」当成「按量计费」是
             // 保守归组，但字段本身仍保持「未知」语义（与全仓约定一致）。
             ...model.isFree === undefined ? {} : { isFree: model.isFree },
+            // 余量标签（用户 2026-10-27 要求用绿色标签显示各模型剩余额度）。
+            // 同样**缺失不写**：不按模型分账的渠道不该有这项。
+            ...(() => {
+              const quota = catalogSource?.quotaFor?.(model.id)
+              return quota === undefined ? {} : { quota }
+            })(),
           })),
         }
         return { ok: true, value }

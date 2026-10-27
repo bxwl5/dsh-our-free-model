@@ -271,6 +271,7 @@ window.__ModuleLoader__.load({
         'chan.model.refetchDone': '模型列表已更新',
         'chan.model.refetchNoChange': '远端暂无新数据，已保留原列表',
         'chan.model.enabledCount': '已开启 {enabled}/{total}',
+        'chan.model.quotaHint': '该模型的剩余额度',
         'chan.model.allScope': '仅操作当前渠道的全部模型',
         'chan.error': '操作失败：{reason}',
         'chan.confirm.delete': '移除账号 {name}？该账号的凭据会一并删除。',
@@ -720,6 +721,7 @@ window.__ModuleLoader__.load({
         'chan.model.refetchDone': 'Model list updated',
         'chan.model.refetchNoChange': 'Upstream returned no new data; kept the current list',
         'chan.model.enabledCount': 'Shown {enabled}/{total}',
+        'chan.model.quotaHint': 'Remaining quota for this model',
         'chan.model.allScope': 'Apply to all models in this channel only',
         'chan.error': 'Action failed: {reason}',
         'chan.confirm.delete': 'Remove account {name}? Its credential is deleted with it.',
@@ -3391,6 +3393,11 @@ window.__ModuleLoader__.load({
                 key: model.id,
               },
                 h('span', { className: 'ofm_id', title: model.id }, model.name ?? model.id),
+                // 余量绿色标签（用户 2026-10-27：用 accio 账号列表那种绿色框）。
+                // 只有 adapter 报了 quota 才渲染 —— 不按模型分账的渠道没有这项。
+                typeof model.quota === 'string' && model.quota !== ''
+                  ? h('span', { className: 'ofm_creditbadge strong', title: t('chan.model.quotaHint') }, model.quota)
+                  : null,
                 model.isFree === true ? h('span', { className: 'ofm_tagpill free' }, t('chan.model.free')) : null,
                 model.dead === true ? h('span', { className: 'ofm_tagpill dead' }, t('chan.model.dead')) : null,
                 model.disabled === true ? h('span', { className: 'ofm_tagpill' }, t('chan.model.hidden')) : null,

@@ -1036,6 +1036,34 @@ export async function verifyRemoteCatalogFields() {
   assert.equal(autoClawDisplayName(ac[3]), 'GLM-5.3-Flash · 低', '无促销无告警时只有两段')
   assert.equal(ac[3].quotaExhausted, undefined, '缺失 forbiddenNotice → 不是用完状态')
 
+  // ── zcode：模型清单要合并两个来源，余量按模型显示（2026-10-27）──
+  //
+  // 用户指出「zcode 不止两个模型」：`builtinModels` 只有 GLM-5.3 /
+  // GLM-5.3-Flash，而 `builtin_provider_config_json` 指向的配置里
+  // 还有 GLM-5.2 / GLM-5-Turbo（实测 4 个，与 magpie 的 MODELS 一致）。
+  const { zcodeDisplayName, zcodeQuotaLabel, formatZcodeUnits } = await import('../vendor/channel-pack/src/zcode-adapter.ts')
+  assert.equal(formatZcodeUnits(3_000_000), '3.0M', 'token 数格式化')
+  assert.equal(formatZcodeUnits(5_000_000), '5.0M')
+  assert.equal(formatZcodeUnits(0), '0')
+  assert.equal(formatZcodeUnits(100_000_000), '100.0M')
+  assert.equal(formatZcodeUnits(1_500), '1.5K')
+  // 档位用中文名；**余量不进名字**（用户 2026-10-27：改用绿色标签单独显示）
+  assert.equal(
+    zcodeDisplayName({ id: 'GLM-5.3', name: 'GLM-5.3', reasoningLevels: ['low', 'high', 'max'] }, { units: 3_000_000 }),
+    'GLM-5.3 · 低/高/极高',
+    '⚠️ 余量必须**不**出现在名字里（否则前端会重复显示）',
+  )
+  assert.equal(
+    zcodeDisplayName({ id: 'GLM-5.2', name: 'GLM-5.2' }),
+    'GLM-5.2',
+    '⚠️ 无档位时只显示名字（不从同族推断档位）',
+  )
+  // 余量走独立的绿色标签（quota 字段）
+  assert.equal(zcodeQuotaLabel(3_000_000), '剩 3.0M')
+  assert.equal(zcodeQuotaLabel(5_000_000), '剩 5.0M')
+  assert.equal(zcodeQuotaLabel(0), '剩 0', '0 余量如实显示（与「查不到」不同）')
+  assert.ok(!/x\d/.test(zcodeDisplayName({ id: 'Y', name: 'Y' })), '⚠️ 额度制不得出现 x倍数')
+
   // ── monkeycode：input_price 换算成**相对倍率**（1000 = x1）──
   // 用户 2026-10-27 口径：只体现模型间倍率差异，不显示绝对积分。
   assert.equal(monkeyCodeDisplayName({ name: 'a', inputPrice: 1000 }), 'a · x1', '1000 是基准 x1')
