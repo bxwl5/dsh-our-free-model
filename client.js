@@ -3977,7 +3977,15 @@ window.__ModuleLoader__.load({
       const already = results.filter(row => row.outcome === 'already-claimed')
       const skipped = results.filter(row => row.outcome === 'skipped')
 
-      const group = (rows, label, className) => rows.length === 0 ? null : [
+      /**
+       * 渲染一组（表头 + 该组所有行）。
+       *
+       * ⚠️ 空组必须返回 **`[]` 而不是 `null`**：调用处是 `...group(...)`，
+       * 展开 `null` 会抛 `TypeError: ... is not iterable`，整个设置页白屏。
+       * （2026-10-27 实际踩过：只要有任意一组为空就崩 —— 而「今天没有失败
+       * 的渠道」是常态，所以这个 bug 必然触发。）
+       */
+      const group = (rows, label, className) => rows.length === 0 ? [] : [
         h('div', { className: 'ofm_checkinheadrow', role: 'row', key: `${className}-head` },
           h('span', { className: 'ofm_checkincell', role: 'columnheader' }, ''),
           h('span', { className: 'ofm_checkincell', role: 'columnheader' }, t('chan.checkin.col.channel')),

@@ -9,7 +9,7 @@ import { filterModels } from '../packages/standalone/frontend/models-data.mjs'
 import { visibilityCopy } from '../packages/standalone/frontend/visibility-data.mjs'
 
 const source = fs.readFileSync(new URL('../client.js', import.meta.url), 'utf8')
-  .replace('exports.__test = {', 'exports.__test = { Shell, FreePage, ChannelCard, DICT, Roster, ModelCard, Preferences, ModelPicker, ChainEditor, ChainCard, ChainCapacity,')
+  .replace('exports.__test = {', 'exports.__test = { Shell, FreePage, ChannelCard, DICT, Roster, ModelCard, Preferences, ModelPicker, ChainEditor, ChainCard, ChainCapacity, CheckinPanel, AnomalyPanel,')
 let bundle
 const window = { __ModuleLoader__: { load: value => { bundle = value } } }
 let cursor = 0
@@ -48,6 +48,15 @@ const { Shell, FreePage, ChannelCard, DICT, Roster, ModelCard, Preferences, Mode
 const t = key => DICT.zh[key] ?? key
 const nodes = tree => Array.isArray(tree) ? tree.flatMap(nodes)
   : tree && typeof tree === 'object' ? [tree, ...nodes(tree.children)] : []
+/**
+ * 递归取出渲染树里**所有**文本片段。
+ *
+ * ⚠️ 不能用 `node.children.includes(text)`：文本可能在更深一层（本仓库的表格
+ * 组件把 `rows` 数组直接塞进 children，于是多嵌套一层），那样断言会假红。
+ */
+const texts = tree => Array.isArray(tree) ? tree.flatMap(texts)
+  : typeof tree === 'string' || typeof tree === 'number' ? [String(tree)]
+  : tree && typeof tree === 'object' ? texts(tree.children) : []
 const render = (Component, props) => { cursor = 0; return Component(props) }
 let summaryReads = 0, statsReads = 0
 const props = {
@@ -188,6 +197,80 @@ const savedCard = render(ChainCard, { t, chain: { id: 'combo:fixture', name: 'Fi
 assert.equal(nodes(savedCard).find(node => node.type === ChainCapacity).props.capacity.contextWindow, 1000000)
 assert.ok(nodes(ChainCapacity({ t, capacity })).some(node => node.children.includes(`${t('tag.context')} 1.0M`)))
 console.log('ok  combo picker capacities, saved card and live server intersection refresh')
+
+/*
+ * 签到结果表格 / 异常汇总的**真实渲染**冒烟。
+ *
+ * 为什么必须有：2026-10-27 这两个板块都出过「整个设置页白屏」——
+ * `CheckinPanel` 的 `group()` 在空组时返回 `null`，而调用处写的是
+ * `...group(...)`，展开 null 抛 `TypeError: not iterable`。`node --check`
+ * 只验语法、lint 只验文案与类名，**都拦不住这类运行时崩溃**。
+ * 故这里直接调用组件函数并断言它返回可渲染的节点。
+ *
+ * ⚠️ 关键用例是「只有部分分组非空」——那正是真实形态（今天没有失败渠道
+ * 是常态），也是当初崩掉的那个分支。
+ */
+{
+  const { CheckinPanel, AnomalyPanel } = bundle.factory(() => react).__test
+  const channelName = id => id
+  /*
+   * ⚠️ 必须清空 `cells`：`render` 只重置游标，不清状态数组。前面几十个用例
+   * 已经把 cells 塞满了，不清的话本组件会读到**别的组件的** useState 槽位
+   * （例如 `open` 拿到一个字符串），渲染结果就与单独运行不一致。
+   */
+  cells.length = 0
+
+  // ① 只有 claimed（其余三组为空）—— 当初崩溃的分支
+  const onlyClaimed = render(CheckinPanel, {
+    results: [{ provider: 'codearts', accountId: 'a1', accountName: '主号', outcome: 'claimed', amount: 1000, unit: 'credit' }],
+    channelName, t,
+  })
+  assert.ok(onlyClaimed, '只有 claimed 时表格必须渲染出来，而不是 null/崩溃')
+  assert.equal(onlyClaimed.type, 'section')
+  assert.ok(texts(onlyClaimed).includes('+1,000'), 'claimed 行必须显示带千分位的金额')
+  // 绿色底徽章：复用 zcode 余量那两个类
+  assert.ok(nodes(onlyClaimed).some(node => String(node.props.className ?? '').includes('ofm_quotabadge')),
+    '领取金额必须用绿色底徽章（与 zcode 余量同一个类）')
+
+  // ② 只有 failed
+  const onlyFailed = render(CheckinPanel, {
+    results: [{ provider: 'qoder', accountId: 'q1', accountName: 'q1', outcome: 'failed', amount: 0, unit: 'credit', message: '未开启活动' }],
+    channelName, t,
+  })
+  assert.ok(onlyFailed, '只有 failed 时同样不能崩')
+  assert.ok(texts(onlyFailed).includes('未开启活动'), '失败原因必须出现在「说明」列')
+
+  // ③ 空数组 ⇒ 整块不渲染（不是白屏）
+  assert.equal(render(CheckinPanel, { results: [], channelName, t }), null, '没有明细时整块不渲染')
+
+  // ④ 四组齐全
+  const all = render(CheckinPanel, {
+    results: [
+      { provider: 'a', accountId: '1', accountName: '1', outcome: 'claimed', amount: 200, unit: 'credit' },
+      { provider: 'b', accountId: '2', accountName: '2', outcome: 'already-claimed', amount: 0, unit: 'credit' },
+      { provider: 'c', accountId: '3', accountName: '3', outcome: 'failed', amount: 0, unit: 'credit', message: 'x' },
+      { provider: 'd', accountId: '4', accountName: '4', outcome: 'skipped', amount: 0, unit: 'credit' },
+    ],
+    channelName, t,
+  })
+  assert.equal(nodes(all).filter(node => String(node.props.className ?? '').includes('ofm_checkinrow')).length, 4,
+    '四个分组各一行')
+
+  // ⑤ token 单位走 M/K 缩写，积分走千分位（两者量纲不同，不能混用一种格式）
+  const tokenRow = render(CheckinPanel, {
+    results: [{ provider: 'zcode', accountId: 'z', accountName: 'z', outcome: 'claimed', amount: 100_000_000, unit: 'token' }],
+    channelName, t,
+  })
+  assert.ok(texts(tokenRow).includes('+100.0Mtoken'), 'token 必须用 M 缩写')
+
+  // ⑥ 异常汇总同样要能渲染（同批改动，同一类风险）
+  const anomaly = render(AnomalyPanel, {
+    anomalies: [{ provider: 'workbuddy', accountId: 'w', accountName: 'w', modelName: 'hy3', resetAtMs: Date.now() + 3_600_000 }],
+    channelName, t,
+  })
+  assert.ok(anomaly && anomaly.type === 'section', '异常汇总必须渲染出 section')
+}
+console.log('ok  check-in result table and anomaly panel render without crashing on partial groups')
 
 // Compile the actual standalone page in memory, without rebuilding web output.
 const require = createRequire(import.meta.url)
