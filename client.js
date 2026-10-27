@@ -1402,7 +1402,50 @@ window.__ModuleLoader__.load({
 .ofm_chanstate{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--dsw-alias-label-secondary);padding:3px 10px;border-radius:999px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l1) 90%,transparent);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 70%,transparent);white-space:nowrap}
 .ofm_chanmeta{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--dsw-alias-label-tertiary)}
 .ofm_chanmeta b{color:var(--dsw-alias-label-secondary);font-weight:650;font-variant-numeric:tabular-nums}
-.ofm_chanacts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.ofm_chanacts{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+/*
+ * 渠道卡片操作按钮（用户 2026-10-27：太丑、样式不统一、太大把「账号/模型」挤走）。
+ *
+ * 上一版同一行混用两种类：ofm_btn（实心 + 阴影 + hover 上浮 1px）与
+ * ofm_btn ghost（全透明无边框），四个按钮看起来像三套设计。
+ *
+ * 现在统一成一种**紧凑的次级按钮**：等内高、等圆角、只用描边区分层级，
+ * 且**不做位移**动画 —— 一行四个按钮同时上浮会让整块区域抖动。
+ * 比 ofm_btn 小一圈：左右内边距 14px→10px、字号 12→11.5、圆角 9→7。
+ */
+.ofm_actbtn{display:inline-flex;align-items:center;justify-content:center;gap:5px;
+  font:inherit;font-size:11.5px;font-weight:560;line-height:1;
+  padding:6px 10px;border-radius:7px;white-space:nowrap;
+  border:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 82%,transparent);
+  background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 55%,transparent);
+  color:var(--dsw-alias-label-secondary);cursor:pointer;
+  transition:color .16s ease,background .16s ease,border-color .16s ease,opacity .16s ease}
+.ofm_actbtn:hover:not(:disabled){color:var(--dsw-alias-label-primary);
+  border-color:color-mix(in srgb,var(--chan-accent,var(--dsw-alias-state-business-primary)) 46%,var(--dsw-alias-border-l2));
+  background:color-mix(in srgb,var(--chan-accent,var(--dsw-alias-state-business-primary)) 7%,transparent)}
+.ofm_actbtn:active:not(:disabled){background:color-mix(in srgb,var(--chan-accent,var(--dsw-alias-state-business-primary)) 13%,transparent)}
+.ofm_actbtn:disabled{opacity:.42;cursor:default}
+/* 主操作（还没有账号时的「添加账号」/ 粘贴提交）：同尺寸，只提高对比度，不做成实心大块 */
+.ofm_actbtn.accent{color:var(--chan-accent,var(--dsw-alias-state-business-primary));font-weight:620;
+  border-color:color-mix(in srgb,var(--chan-accent,var(--dsw-alias-state-business-primary)) 52%,transparent);
+  background:color-mix(in srgb,var(--chan-accent,var(--dsw-alias-state-business-primary)) 10%,transparent)}
+.ofm_actbtn.accent:hover:not(:disabled){background:color-mix(in srgb,var(--chan-accent,var(--dsw-alias-state-business-primary)) 17%,transparent);
+  border-color:var(--chan-accent,var(--dsw-alias-state-business-primary));color:var(--dsw-alias-label-primary)}
+/*
+ * 折叠开关独立成行：顶上一条淡分隔线，与操作按钮分开，
+ * 这样按钮再多、怎么换行都不会把「账号 / 模型」挤变形。
+ */
+.ofm_chanfolds{display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  margin-top:2px;padding-top:9px;
+  border-top:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 45%,transparent)}
+/* 粘贴型渠道的输入区：独立成块、占满卡片宽度（不再挤在按钮行里）。 */
+.ofm_chanacts + .chan-paste{margin-top:-2px}
+.chan-paste{display:flex;flex-direction:column;gap:8px;width:100%;
+  padding:10px 11px;border-radius:10px;
+  border:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 70%,transparent);
+  background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 60%,transparent)}
+.chan-paste-input{width:100%;resize:vertical;min-height:62px;font-size:11.5px;line-height:1.5}
+.chan-paste-actions{display:flex;gap:6px;justify-content:flex-end}
 .ofm_acctlist{display:flex;flex-direction:column;gap:6px}
 .ofm_acct{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:7px 10px;border-radius:11px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l1) 82%,transparent);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 62%,transparent);font-size:12px;transition:border-color .16s ease,background .16s ease}
 .ofm_acct:hover{border-color:var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 88%,transparent)}
@@ -3476,13 +3519,41 @@ window.__ModuleLoader__.load({
               onClick: () => chooseZcodeProvider('zai'),
             }, t('chan.zcode.zai'))) : null,
           h('button', {
-            type: 'button', className: 'ofm_btn',
+            // 一个账号都没有时是**主操作**（用 accent 强调）；已有账号后降为普通按钮，
+            // 免得四五个按钮里它一直抢眼（用户 2026-10-27：样式不统一、太丑）。
+            type: 'button', className: enabledCount === 0 && accountsCount === 0 ? 'ofm_actbtn accent' : 'ofm_actbtn',
             disabled: busy !== '' || !rpc,
             'aria-busy': busy === 'add' ? 'true' : undefined,
             'aria-expanded': pasteMode ? pasteOpen : undefined,
             onClick: pasteMode ? () => setPasteOpen(value => !value) : startLogin,
           }, busy === 'add' ? '…' : t('chan.act.add')),
-          // 粘贴型渠道的输入区：展开后接收 Cookie / 令牌，提交走 account.adopt。
+          accountsCount > 0 ? h('button', {
+            type: 'button', className: 'ofm_actbtn', disabled: busy !== '' || !rpc, 'aria-busy': busy === 'refreshAll' ? 'true' : undefined,
+            onClick: () => accountAction('refreshAll', '', async () => {
+              for (const row of accounts ?? await rpc('account.list', { provider: channel.id }).then(v => v?.accounts ?? [])) {
+                try { await rpc('account.refresh', { accountId: row.id }, 90_000) } catch (error) { onError(channel, error) }
+              }
+              onChanged(); await loadAccounts(); void loadBalances(true)
+            }),
+          }, busy === 'refreshAll' ? '…' : recheckOnly ? t('chan.act.recheck') : t('chan.act.refresh')) : null,
+          creditCapability ? h('button', {
+            type: 'button', className: 'ofm_actbtn', disabled: balanceLoading || busy !== '' || !rpc,
+            'aria-busy': balanceLoading ? 'true' : undefined, onClick: () => void loadBalances(true),
+          }, balanceLoading ? t('chan.credits.loading') : t('chan.credits.refresh')) : null,
+          creditCapability?.claim ? h('button', {
+            type: 'button', className: 'ofm_actbtn', disabled: busy !== '' || !rpc, 'aria-busy': busy === 'claim' ? 'true' : undefined,
+            onClick: claim,
+          }, busy === 'claim' ? '…' : t('chan.act.claim')) : null,
+          // ⚠️ 两个折叠开关**移出** `ofm_chanacts`（见该 div 的注释）：
+          // 它们被夹在操作按钮之间，一换行就被挤到边角、还容易误点。
+          // 现在单独一行，左边是「账号 / 模型」，右边留给账本/额度等长文本。
+          ),
+        /*
+         * 粘贴输入区**移出** `ofm_chanacts`。
+         *
+         * 它是个多行 textarea，混在按钮 flex 行里会：①被 flex 拉伸/压缩得宽窄不一，
+         * ②把整行高度撑乱，导致同一行的按钮错位。独立成块后占满整行宽度。
+         */
           pasteMode && pasteOpen ? h('div', { className: 'chan-paste' },
             channel.loginPage ? h('div', {
               className: 'chan-paste-hint',
@@ -3509,31 +3580,15 @@ window.__ModuleLoader__.load({
             }),
             h('div', { className: 'chan-paste-actions' },
               h('button', {
-                type: 'button', className: 'ofm_btn', disabled: busy !== '' || pasteText.trim() === '' || !rpc,
+                type: 'button', className: 'ofm_actbtn accent', disabled: busy !== '' || pasteText.trim() === '' || !rpc,
                 'aria-busy': busy === 'add' ? 'true' : undefined,
                 onClick: () => void submitPaste(),
               }, busy === 'add' ? '…' : t('chan.paste.submit')),
               h('button', {
-                type: 'button', className: 'ofm_btn ghost',
+                type: 'button', className: 'ofm_actbtn',
                 onClick: () => { setPasteText(''); setPasteOpen(false) },
               }, t('chan.paste.cancel')))) : null,
-          accountsCount > 0 ? h('button', {
-            type: 'button', className: 'ofm_btn ghost', disabled: busy !== '' || !rpc, 'aria-busy': busy === 'refreshAll' ? 'true' : undefined,
-            onClick: () => accountAction('refreshAll', '', async () => {
-              for (const row of accounts ?? await rpc('account.list', { provider: channel.id }).then(v => v?.accounts ?? [])) {
-                try { await rpc('account.refresh', { accountId: row.id }, 90_000) } catch (error) { onError(channel, error) }
-              }
-              onChanged(); await loadAccounts(); void loadBalances(true)
-            }),
-          }, busy === 'refreshAll' ? '…' : recheckOnly ? t('chan.act.recheck') : t('chan.act.refresh')) : null,
-          creditCapability ? h('button', {
-            type: 'button', className: 'ofm_btn ghost', disabled: balanceLoading || busy !== '' || !rpc,
-            'aria-busy': balanceLoading ? 'true' : undefined, onClick: () => void loadBalances(true),
-          }, balanceLoading ? t('chan.credits.loading') : t('chan.credits.refresh')) : null,
-          creditCapability?.claim ? h('button', {
-            type: 'button', className: 'ofm_btn ghost', disabled: busy !== '' || !rpc, 'aria-busy': busy === 'claim' ? 'true' : undefined,
-            onClick: claim,
-          }, busy === 'claim' ? '…' : t('chan.act.claim')) : null,
+        h('div', { className: 'ofm_chanfolds' },
           h('button', { type: 'button', className: 'ofm_foldtoggle', 'data-open': open === 'accounts' ? 'true' : 'false', onClick: () => void toggle('accounts') },
             h('svg', { viewBox: '0 0 12 12', 'aria-hidden': 'true' }, h('path', { d: 'M3 1.5l6 4.5-6 4.5z' })),
             t('chan.fold.accounts'), accounts === undefined ? null : ` (${accounts.length})`),
