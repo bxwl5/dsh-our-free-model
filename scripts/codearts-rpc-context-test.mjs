@@ -37,10 +37,13 @@ const hooks = registerHooks({
   },
 })
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'ofm-codearts-rpc-context-'))
-const savedEnvironment = new Map(['DSH_CHANNEL_PACK_STATE_DIR', 'DSH_HOME', 'DSH_OPENAI_GATEWAY_ENABLED', 'CODEARTS_MODELS_CACHE_DIR', 'QODER_MACHINE_TOKEN_PATH', 'QODER_RUNTIME_INFO'].map(key => [key, process.env[key]]))
+// ⚠️ `DSH_CODEARTS_CACHE_DIR` 必须与 `models.ts` 的 `cacheDir()` 同名。
+// 旧名 `CODEARTS_MODELS_CACHE_DIR` 不被代码读取，隔离静默失效，夹具会写进
+// 用户真实的 `~/.cache/deveco/`。
+const savedEnvironment = new Map(['DSH_CHANNEL_PACK_STATE_DIR', 'DSH_HOME', 'DSH_OPENAI_GATEWAY_ENABLED', 'DSH_CODEARTS_CACHE_DIR', 'QODER_MACHINE_TOKEN_PATH', 'QODER_RUNTIME_INFO'].map(key => [key, process.env[key]]))
 delete process.env.DSH_CHANNEL_PACK_STATE_DIR
 process.env.DSH_HOME = scratch
-process.env.CODEARTS_MODELS_CACHE_DIR = scratch
+process.env.DSH_CODEARTS_CACHE_DIR = scratch
 process.env.DSH_OPENAI_GATEWAY_ENABLED = '0'
 process.env.QODER_MACHINE_TOKEN_PATH = path.join(scratch, 'missing-machine-token.json')
 process.env.QODER_RUNTIME_INFO = path.join(scratch, 'missing-runtime.exe')

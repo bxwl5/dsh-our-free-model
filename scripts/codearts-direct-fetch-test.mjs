@@ -20,14 +20,33 @@ if (!process.argv.includes('--trusted-fixture')) {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'ofm-codearts-'))
   const ca = path.join(scratch, 'ca.pem')
   fs.writeFileSync(ca, tlsFixture.cert)
+  // 防退化：跑测试前后对**用户真实缓存**取指纹，变了就报错。
+  // 光靠「记得设对变量名」不够 —— 这个名字错过一次，代价是用户的模型列表
+  // 被夹具覆盖，且现象伪装成「上游只返回 2 个模型」，查了很久才发现。
+  const realCacheDir = path.join(process.env.HOME ?? process.env.USERPROFILE ?? '', '.cache', 'deveco')
+  const fingerprint = () => ['codearts_models.json', 'codearts_benefit_models.json']
+    .map(name => {
+      const file = path.join(realCacheDir, name)
+      try { return name + ':' + fs.readFileSync(file, 'utf-8') } catch { return name + ':<absent>' }
+    }).join('\n')
+  const realCacheBefore = fingerprint()
   // Node 启动时读取附加 CA：仅该测试子进程信任夹具，TLS 校验始终开启。
   const child = spawn(process.execPath, [fileURLToPath(import.meta.url), '--trusted-fixture'], {
     stdio: 'inherit', windowsHide: true,
-    env: { ...process.env, NODE_EXTRA_CA_CERTS: ca, CODEARTS_MODELS_CACHE_DIR: scratch,
+    // ⚠️ 变量名必须与 `models.ts` 的 `cacheDir()` 一致（`DSH_CODEARTS_CACHE_DIR`）。
+    // 曾写成 `CODEARTS_MODELS_CACHE_DIR`（少了 `DSH_` 前缀），隔离静默失效：
+    // 夹具写进了真实 `~/.cache/deveco/codearts_models.json`，把用户的模型列表
+    // 覆盖成 `fixture-model` / `fixture-builtin` —— 这正是「codearts 只有 2 个
+    // 模型」那个悬案的根因。改动此处请同时对齐 `models.ts` 的读取名。
+    env: { ...process.env, NODE_EXTRA_CA_CERTS: ca, DSH_CODEARTS_CACHE_DIR: scratch,
       DSH_CHANNEL_PACK_STATE_DIR: scratch, DSH_HOME: scratch },
   })
   try { process.exitCode = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', code => resolve(code ?? 1)) }) }
   finally { fs.rmSync(scratch, { recursive: true, force: true }) }
+  if (fingerprint() !== realCacheBefore) {
+    console.error('codearts-direct-fetch: 测试污染了真实缓存 ' + realCacheDir + '（缓存目录隔离失效）')
+    process.exitCode = 1
+  }
 } else {
   await verify()
   // 沿用既有离线测试入口，让常规回归同时覆盖真实插件的多上下文 RPC 接线。
