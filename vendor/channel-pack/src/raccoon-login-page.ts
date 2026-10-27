@@ -39,22 +39,14 @@ import {
 } from './raccoon.js'
 import {
   buildRaccoonAuthorizeUrl,
-  buildRaccoonScanUrl,
-  createRaccoonQrSession,
   exchangeRaccoonAuthorizationCode,
-  loginRaccoonWithSmsCode,
-  pollRaccoonQrSession,
-  sendRaccoonSmsCode,
 } from './raccoon-oauth.js'
 import { RACCOON, type RaccoonProduct } from './raccoon-product.js'
-import { renderQrSvg } from './raccoon-qr.js'
 
 /** 本地登录页的路径。 */
 export const RACCOON_LOGIN_PAGE_PATHS = {
   login: '/raccoon/login',
   poll: '/raccoon/poll',
-  smsSend: '/raccoon/sms/send',
-  smsVerify: '/raccoon/sms/verify',
   /** OAuth 授权页的回调落点（`desktop_callback=loopback` 指向这里）。 */
   authCallback: '/auth/callback',
 } as const
@@ -71,35 +63,14 @@ export interface StartedRaccoonLoginFlow {
 
 /** 流程内部状态（**只存在于宿主侧**）。 */
 interface FlowState {
-  /** 服务端下发的扫码 code（宿主侧持有，页面不知道）。 */
-  qrCode: string
-  /** 服务端下发的扫码路径（申请失败时为 undefined）。 */
-  scanPath: string | undefined
-  /** 扫码是否确认不可用（接口失败 / 上游扫码页 404）—— 面板据此提示改用短信登录。 */
-  qrUnavailable: boolean
-  /** 当前展示的短信目标手机号（未发过短信时为空）。 */
-  phone: string
-  /** 最近一次轮询的二维码有效期（供页面展示倒计时）。 */
-  lastExpiredAt: string | undefined
   /**
-   * OAuth 授权流程的 `state`（32 字节 hex）。
+   * OAuth 授权流程的 `state`（32 字节 = 64 位 hex）。
    *
    * 授权页要求 loopback 回调的 `state` 必须是 **64 位 hex**，否则拒绝
    * （见 `buildRaccoonAuthorizeUrl` 的注释）。回调时逐字比对，不符即拒绝 ——
    * 这是防「别人的回调链接被塞进来」的唯一凭据。
    */
   oauthState: string
-}
-
-/** 二维码内容：服务端 `scan_path` + `code/appname/source`（与官方前端一致）。 */
-function qrContentUrl(product: RaccoonProduct, state: FlowState): string {
-  if (state.scanPath === undefined) return ''
-  return buildRaccoonScanUrl(product, {
-    qrcodeCode: state.qrCode,
-    scanPath: state.scanPath,
-    expiresIn: 300,
-    pollInterval: 2,
-  })
 }
 
 /** `startRaccoonLoginFlow` 的选项。 */
@@ -122,28 +93,10 @@ export async function startRaccoonLoginFlow(
 ): Promise<StartedRaccoonLoginFlow> {
   const product = options.product ?? RACCOON
   const fetcher = options.fetcher ?? fetch
-  // 旧「本地随机 code + /login/mp」链路已随上游迁移失效（2026-10-24 实测该页对任何 code 都 404），
-  // 故扫码只走服务端下发 code 的新接口；申请失败就如实标记「扫码不可用」，短信仍可用。
-  const session = await createRaccoonQrSession(product, fetcher)
   const { randomBytes } = await import('node:crypto')
   const state: FlowState = {
-    qrCode: session?.qrcodeCode ?? '',
-    scanPath: session?.scanPath,
-    qrUnavailable: session === undefined,
-    phone: '',
-    lastExpiredAt: undefined,
     // 64 位 hex（32 字节）—— 授权页对 loopback 回调的硬性要求。
     oauthState: randomBytes(32).toString('hex'),
-  }
-  // 探测扫码落地页：只有拿到**明确的非 2xx** 才判定不可用（网络异常不误报）。
-  if (state.scanPath !== undefined) {
-    try {
-      const probe = await fetcher(qrContentUrl(product, state), {
-        method: 'GET',
-        signal: AbortSignal.timeout(8000),
-      })
-      state.qrUnavailable = probe.status >= 400
-    } catch { /* 探测失败按「可用」处理，避免误报 */ }
   }
 
   let resolveResult!: (value: RaccoonCredential) => void
@@ -314,57 +267,6 @@ async function handleRequest(
     writeJson(response, { status: deps.isSettledOk() ? 'success' : 'pending' })
     return
   }
-  if (url.pathname === RACCOON_LOGIN_PAGE_PATHS.smsSend && request.method === 'POST') {
-    const body = await readJsonBody(request)
-    const phone = typeof body.phone === 'string' ? body.phone.trim() : ''
-    const captchaParam = typeof body.captchaParam === 'string' ? body.captchaParam : ''
-    if (!/^1[3-9]\d{9}$/.test(phone)) {
-      response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' })
-      response.end(JSON.stringify({ ok: false, message: '请输入有效的 11 位手机号' }))
-      return
-    }
-    try {
-      await sendRaccoonSmsCode(product, phone, captchaParam, deps.fetcher)
-      // 只在发送成功后才记住手机号：否则后续 verify 会用一个没收到验证码的号码
-      state.phone = phone
-      writeJson(response, { ok: true })
-    } catch (error) {
-      // 单步失败**不终止**流程（用户可能只是滑块过期/验证码输错），
-      // 把原因回给页面让它就地提示并允许重试。
-      writeJson(response, {
-        ok: false,
-        message: error instanceof Error ? error.message : String(error),
-      })
-    }
-    return
-  }
-
-  if (url.pathname === RACCOON_LOGIN_PAGE_PATHS.smsVerify && request.method === 'POST') {
-    const body = await readJsonBody(request)
-    const smsCode = typeof body.smsCode === 'string' ? body.smsCode.trim() : ''
-    if (state.phone.length === 0) {
-      response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' })
-      response.end(JSON.stringify({ ok: false, message: '请先获取手机验证码' }))
-      return
-    }
-    if (smsCode.length === 0) {
-      response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' })
-      response.end(JSON.stringify({ ok: false, message: '请输入验证码' }))
-      return
-    }
-    try {
-      const credential = await loginRaccoonWithSmsCode(product, state.phone, smsCode, deps.fetcher)
-      deps.settleOk(credential)
-      writeJson(response, { ok: true })
-    } catch (error) {
-      writeJson(response, {
-        ok: false,
-        message: error instanceof Error ? error.message : String(error),
-      })
-    }
-    return
-  }
-
   response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Not found')
 }
 
