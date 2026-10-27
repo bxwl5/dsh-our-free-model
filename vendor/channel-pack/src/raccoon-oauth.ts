@@ -287,10 +287,40 @@ function credentialFromEnvelope(envelope: RaccoonEnvelope): RaccoonCredential {
 }
 
 /**
+ * 官方桌面端的**网页授权**地址（OAuth 授权码流程的起点）。
+ *
+ * 参照 magpie 的 `@magpie-community/opencode-raccoon-auth`（其 `browserSignIn`），
+ * 三个关键点缺一不可（2026-10-27 实测授权页 307 → `/authorize` 正常）：
+ *
+ * 1. `login_source=desktop` + `appname=办公小浣熊客户端` —— 走桌面端登录；
+ * 2. `desktop_callback=loopback` —— **让授权页接受 127.0.0.1 回调**
+ *    （默认只认 `office-raccoon://auth/callback` 自定义协议）；
+ * 3. `state` 必须是 **64 位 hex**（32 字节随机数的 hex），否则授权页拒绝
+ *    loopback 回调；`redirect` 指向 `http://127.0.0.1:<port>/auth/callback`。
+ *
+ * ⚠️ 这条链路**替代了扫码与短信**：用户只需在浏览器里登录并点「授权」，
+ * 授权码会自动回到本地服务器，无需手填验证码、也无需复制回调地址
+ * （扫码链路的 `/login/mp` 已失效 —— 见 `createRaccoonQrSession` 的注释）。
+ */
+export function buildRaccoonAuthorizeUrl(
+  product: RaccoonProduct,
+  options: { state: string; redirectUri: string },
+): string {
+  const url = new URL('/code/authorize', product.apiBase)
+  url.searchParams.set('login_source', 'desktop')
+  url.searchParams.set('appname', '办公小浣熊客户端')
+  url.searchParams.set('state', options.state)
+  url.searchParams.set('desktop_callback', 'loopback')
+  url.searchParams.set('redirect', options.redirectUri)
+  return url.href
+}
+
+/**
  * 用授权码换取凭据（官方桌面端链路）。
  *
- * 本插件**当前不走这条路**（收不到自定义协议回调），保留它是为了让
- * 「官方链路」有可单测的落点，并在将来支持自定义协议时可直接复用。
+ * 授权码由 {@link buildRaccoonAuthorizeUrl} 的 loopback 回调带回
+ * （`raccoon-login-page.ts` 的 `/auth/callback` 处理器调用本函数）。
+ * 上游约定 `code === 200035` 表示授权码不存在/过期/已消费。
  */
 export async function exchangeRaccoonAuthorizationCode(
   product: RaccoonProduct,

@@ -84,12 +84,37 @@ export async function verifyRaccoonQr() {
     Response.json({ code: 'OK', data: { status: 'success' } }))
   assert.equal(missingToken.status, 'pending', '缺 access_token 的 success 视为未完成')
 
-  // ── 4) 页面：不可用 → 默认短信 Tab + 提示 ──
-  const unavailableHtml = page.renderRaccoonLoginPage(RACCOON, { unavailable: true })
-  assert.ok(unavailableHtml.includes('扫码暂不可用'), '不可用时必须给出提示')
-  assert.ok(unavailableHtml.includes('data-active="1" type="button">短信登录'), '不可用时应默认短信 Tab')
+  // ── 4) 页面：OAuth 主导（用户 2026-10-27 决定改用网页授权）──
+  //
+  // 扫码链路已随上游迁移失效（`/login/mp` 对任何 code 都 404），短信要过
+  // 阿里云滑块、失败率高。故登录页改为：一张说明卡 + 「去登录」按钮 +
+  // 状态轮询，用户在浏览器完成授权后由 `/auth/callback` 自动落定。
+  const html = page.renderRaccoonLoginPage(RACCOON, {
+    authorizeUrl: oauth.buildRaccoonAuthorizeUrl(RACCOON, {
+      state: 'a'.repeat(64),
+      redirectUri: 'http://127.0.0.1:1234/auth/callback',
+    }),
+  })
+  assert.ok(html.includes('去登录'), '页面必须有「去登录」按钮')
+  assert.ok(/code\/authorize/.test(html), '按钮指向官方授权页')
+  assert.ok(html.includes('login_source=desktop'), '必须带 login_source=desktop')
+  assert.ok(html.includes('desktop_callback=loopback'), '⚠️ 缺这个参数授权页不接受 127.0.0.1 回调')
+  assert.ok(!html.includes('微信扫码'), '不再有扫码 Tab')
+  assert.ok(!html.includes('短信登录'), '不再有短信 Tab')
+  // 安全：页面不得包含任何密钥/token
+  assert.ok(!/access_token|refresh_token|phoneCipher/i.test(html), '页面不得内联任何秘密')
 
-  // ── 5) 流程：申请失败 → 立刻标记不可用（短信仍可用），页面照常打开 ──
+  // ── 5) 授权 URL 的硬约束（授权页对 loopback 的要求）──
+  const url = new URL(oauth.buildRaccoonAuthorizeUrl(RACCOON, {
+    state: 'b'.repeat(64),
+    redirectUri: 'http://127.0.0.1:9999/auth/callback',
+  }))
+  assert.equal(url.pathname, '/code/authorize')
+  assert.equal(url.searchParams.get('state'), 'b'.repeat(64))
+  assert.equal(url.searchParams.get('desktop_callback'), 'loopback')
+  assert.equal(url.searchParams.get('redirect'), 'http://127.0.0.1:9999/auth/callback')
+
+  // ── 6) 流程：登录页可打开且带授权链接（扫码接口失败也不影响）──
   const started = await page.startRaccoonLoginFlow({
     fetcher: async () => new Response('not found', { status: 404 }),
     timeoutMs: 4000,
@@ -97,13 +122,13 @@ export async function verifyRaccoonQr() {
   try {
     const pageResponse = await getText(started.loginUrl)
     assert.equal(pageResponse.status, 200)
-    assert.ok(pageResponse.text.includes('扫码登录暂不可用'), '接口失败时页面必须提示扫码不可用')
-    assert.ok(pageResponse.text.includes('data-active="1" type="button">短信登录'), '并默认切到短信 Tab')
+    assert.ok(pageResponse.text.includes('去登录'), '扫码失败也必须能给 OAuth 登录入口')
+    assert.ok(/code\/authorize/.test(pageResponse.text))
   } finally {
     await started.close()
   }
 
-  console.log('ok  raccoon-qr: 新接口申请/扫码 URL/轮询映射/缺 token 视为未完成/不可用时默认短信')
+  console.log('ok  raccoon-login: OAuth 授权 URL/loopback 参数/页面无秘密/扫码失败仍可登录')
 }
 
 // 单独运行时必须失败（不能静默 exit 0）：见 scripts/lib/direct-run.mjs。

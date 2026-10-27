@@ -6,10 +6,11 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions,
   LlmModelInfo,
+  LlmModelReasoningInfo,
   LlmProviderInfo,
   LlmResolvedModelInfo,
   StreamChunk,
@@ -66,6 +67,44 @@ export function accioDisplayName(model: {
   if (model.priceFactor === undefined) return base
   if (model.priceFactor === 0) return `${base} · 免费`
   return `${base} · x${model.priceFactor}`
+}
+
+/**
+ * 思考档位：**只有「开启 / 关闭」两态**（用户 2026-10-27 指定）。
+ *
+ * ## 为什么不是多档
+ *
+ * Accio 的目录只下发 `enableThinking`（布尔），**没有档位表**
+ * （对比 Qoder 的 `thinking_config.efforts`、kuku 的 `think_list`）。
+ * 只有一个「支不支持思考」的开关，故 UI 只给两态，不编造 `低/中/高`。
+ *
+ * ## 只对 `enableThinking === true` 的模型声明
+ *
+ * `false`（模型不支持）与 `null`（上游没说明）都**不声明** ——
+ * 给一个点了没用的「开启思考」比不给更糟。
+ *
+ * ## ⚠️ 请求侧尚未接线
+ *
+ * 本函数只负责**界面选项**。把选择转成上游字段的那一步没做：accio 的
+ * 对话链路当前被阿里风控拦截（`rgv587_flag: "sm"` + punish 页，
+ * 见 `accio.ts` 的 ADK 信封注释与 issue 记录），**无法实测**上游认哪个
+ * 思考字段（ADK 同族通常用 `generationConfig.thinkingConfig.includeThoughts`，
+ * 但未验证）。在没有可靠证据前不往请求体塞字段 —— 猜错会让用户以为
+ * 「关掉思考了」实际没关，比不给选项更误导。
+ *
+ * TODO(accio-thinking): 对话链路恢复可用后，按实测结果在
+ * `buildGenerateBody` 里接线，并补一条回归断言。
+ */
+export function accioReasoningInfo(
+  model: { supportsThinking?: boolean },
+): LlmModelReasoningInfo | undefined {
+  if (model.supportsThinking !== true) return undefined
+  return {
+    efforts: [
+      { id: ReasoningEffortId('on'), name: '开启思考' },
+      { id: ReasoningEffortId('none'), name: '关闭思考' },
+    ],
+  }
 }
 
 export class AccioAdapter extends LlmAdapter {
@@ -133,7 +172,7 @@ export class AccioAdapter extends LlmAdapter {
       // 倍率拼进 name（不是 description）：composer 的模型切换菜单只渲染 name。
       name: accioDisplayName(model),
       ...(model.usageDesc === undefined ? {} : { description: model.usageDesc }),
-      inputModalities: model.supportsThinking === true ? ['text'] : ['text'],
+      inputModalities: ['text'],
     }))
   }
 
@@ -188,6 +227,11 @@ export class AccioAdapter extends LlmAdapter {
     }
     if (entry?.contextWindow !== undefined) resolved.context = { contextWindow: entry.contextWindow }
     if (entry?.maxTokens !== undefined && entry.maxTokens > 0) resolved.defaultMaxTokens = entry.maxTokens
+    // 思考：只有「开启 / 关闭」两态（上游无档位表，见 accioReasoningInfo）。
+    if (entry !== undefined) {
+      const reasoning = accioReasoningInfo(entry)
+      if (reasoning !== undefined) resolved.reasoning = reasoning
+    }
     return resolved
   }
 

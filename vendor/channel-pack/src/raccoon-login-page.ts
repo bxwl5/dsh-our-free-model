@@ -38,8 +38,10 @@ import {
   type RaccoonCredential,
 } from './raccoon.js'
 import {
+  buildRaccoonAuthorizeUrl,
   buildRaccoonScanUrl,
   createRaccoonQrSession,
+  exchangeRaccoonAuthorizationCode,
   loginRaccoonWithSmsCode,
   pollRaccoonQrSession,
   sendRaccoonSmsCode,
@@ -53,6 +55,8 @@ export const RACCOON_LOGIN_PAGE_PATHS = {
   poll: '/raccoon/poll',
   smsSend: '/raccoon/sms/send',
   smsVerify: '/raccoon/sms/verify',
+  /** OAuth 授权页的回调落点（`desktop_callback=loopback` 指向这里）。 */
+  authCallback: '/auth/callback',
 } as const
 
 /** 一次登录流程的句柄。 */
@@ -77,6 +81,14 @@ interface FlowState {
   phone: string
   /** 最近一次轮询的二维码有效期（供页面展示倒计时）。 */
   lastExpiredAt: string | undefined
+  /**
+   * OAuth 授权流程的 `state`（32 字节 hex）。
+   *
+   * 授权页要求 loopback 回调的 `state` 必须是 **64 位 hex**，否则拒绝
+   * （见 `buildRaccoonAuthorizeUrl` 的注释）。回调时逐字比对，不符即拒绝 ——
+   * 这是防「别人的回调链接被塞进来」的唯一凭据。
+   */
+  oauthState: string
 }
 
 /** 二维码内容：服务端 `scan_path` + `code/appname/source`（与官方前端一致）。 */
@@ -113,12 +125,15 @@ export async function startRaccoonLoginFlow(
   // 旧「本地随机 code + /login/mp」链路已随上游迁移失效（2026-10-24 实测该页对任何 code 都 404），
   // 故扫码只走服务端下发 code 的新接口；申请失败就如实标记「扫码不可用」，短信仍可用。
   const session = await createRaccoonQrSession(product, fetcher)
+  const { randomBytes } = await import('node:crypto')
   const state: FlowState = {
     qrCode: session?.qrcodeCode ?? '',
     scanPath: session?.scanPath,
     qrUnavailable: session === undefined,
     phone: '',
     lastExpiredAt: undefined,
+    // 64 位 hex（32 字节）—— 授权页对 loopback 回调的硬性要求。
+    oauthState: randomBytes(32).toString('hex'),
   }
   // 探测扫码落地页：只有拿到**明确的非 2xx** 才判定不可用（网络异常不误报）。
   if (state.scanPath !== undefined) {
@@ -142,9 +157,11 @@ export async function startRaccoonLoginFlow(
   result.catch(() => {})
 
   let settled = false
+  let settledOk = false
   const settleOk = (value: RaccoonCredential): void => {
     if (settled) return
     settled = true
+    settledOk = true
     resolveResult(value)
   }
   const settleErr = (error: unknown): void => {
@@ -154,7 +171,10 @@ export async function startRaccoonLoginFlow(
   }
 
   const server = createServer((request, response) => {
-    void handleRequest(request, response, { state, product, fetcher, settleOk }).catch(
+    void handleRequest(request, response, {
+      state, product, fetcher, settleOk, settleErr,
+      isSettledOk: () => settledOk,
+    }).catch(
       (error: unknown) => {
         try {
           response
@@ -209,6 +229,10 @@ interface HandleDeps {
   product: RaccoonProduct
   fetcher: typeof fetch
   settleOk: (value: RaccoonCredential) => void
+  /** 失败落定（OAuth 回调里的拒绝 / 换码失败都要立刻结束，而不是等超时）。 */
+  settleErr: (error: unknown) => void
+  /** 是否已成功落定（页面轮询据此停止）。 */
+  isSettledOk: () => boolean
 }
 
 /** 处理一次本地请求。 */
@@ -220,52 +244,76 @@ async function handleRequest(
   const url = new URL(request.url ?? '/', `http://127.0.0.1:${request.socket.localPort ?? 0}`)
   const { state, product } = deps
 
+  /**
+   * OAuth 授权回调（`desktop_callback=loopback` 的落点）。
+   *
+   * 授权页在用户点「授权」后把浏览器 302 到
+   * `http://127.0.0.1:<port>/auth/callback?code=...&state=...`，
+   * 本处理器用 `code` 换凭据并落定登录结果 —— **用户无需填验证码、
+   * 也无需复制任何地址**（这是相对扫码/短信的核心改进）。
+   *
+   * ⚠️ 安全约束（照 magpie 的同款实现）：
+   * - `state` 必须**逐字等于**本次流程生成的值，否则 400（防伪造回调）；
+   * - `code` 只接受一个、非空、长度 ≤ 4096；
+   * - 响应带 `no-store` 与严格 CSP，且不回显任何 token。
+   */
+  if (url.pathname === RACCOON_LOGIN_PAGE_PATHS.authCallback) {
+    const reply = (status: number, text: string): void => {
+      response.writeHead(status, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'Referrer-Policy': 'no-referrer',
+        'Content-Security-Policy': "default-src 'none'",
+      })
+      response.end(text)
+    }
+    if (request.method !== 'GET') { reply(405, '仅支持 GET'); return }
+    const query = url.searchParams
+    const gotState = query.getAll('state')
+    if (gotState.length !== 1 || gotState[0] !== state.oauthState) {
+      reply(400, '回调不属于本次登录，请回到登录页重试。')
+      return
+    }
+    if (query.get('error') !== null) {
+      reply(400, '登录未获授权，请回到登录页重试。')
+      deps.settleErr(new Error('raccoon: 授权被拒绝'))
+      return
+    }
+    const codes = query.getAll('code')
+    const code = codes[0] ?? ''
+    if (codes.length !== 1 || code === '' || code.length > 4096) {
+      reply(400, '回调缺少有效授权码，请回到登录页重试。')
+      return
+    }
+    try {
+      const credential = await exchangeRaccoonAuthorizationCode(product, code, deps.fetcher)
+      reply(200, '商汤小浣熊登录成功，可以关闭此页。')
+      deps.settleOk(credential)
+    } catch (error) {
+      reply(502, `登录未完成：${error instanceof Error ? error.message : String(error)}`)
+      deps.settleErr(error)
+    }
+    return
+  }
+
   if (url.pathname === RACCOON_LOGIN_PAGE_PATHS.login) {
     response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+    const port = request.socket.localPort ?? 0
     response.end(renderRaccoonLoginPage(product, {
-      qrSvg: state.scanPath === undefined ? '' : renderQrSvg(qrContentUrl(product, state), { size: 200 }),
-      unavailable: state.qrUnavailable,
+      authorizeUrl: buildRaccoonAuthorizeUrl(product, {
+        state: state.oauthState,
+        redirectUri: `http://127.0.0.1:${port}${RACCOON_LOGIN_PAGE_PATHS.authCallback}`,
+      }),
     }))
     return
   }
 
   if (url.pathname === RACCOON_LOGIN_PAGE_PATHS.poll) {
-    if (state.scanPath === undefined) {
-      // 没能申请到扫码会话：明确告诉页面「扫码不可用」，让它停下并引导用户改用短信。
-      writeJson(response, { status: 'unavailable' })
-      return
-    }
-    const polled = await pollRaccoonQrSession(product, state.qrCode, deps.fetcher)
-    if (polled.status === 'success' && polled.accessToken !== undefined) {
-      const credential: RaccoonCredential = {
-        access_token: polled.accessToken,
-        refresh_token: polled.refreshToken ?? '',
-        ...polled.expiresAt !== undefined ? { expires_at: polled.expiresAt } : {},
-      }
-      deps.settleOk(credential)
-      writeJson(response, { status: 'success' })
-      return
-    }
-    if (polled.expiredAt !== undefined) state.lastExpiredAt = polled.expiredAt
-    // `canceled` 时换一个新会话，让页面上的二维码重新可用（否则用户卡死）。
-    if (polled.status === 'canceled') {
-      const next = await createRaccoonQrSession(product, deps.fetcher)
-      if (next !== undefined) {
-        state.qrCode = next.qrcodeCode
-        state.scanPath = next.scanPath
-      } else {
-        state.qrUnavailable = true
-      }
-    }
-    writeJson(response, {
-      status: polled.status,
-      ...polled.expiredAt !== undefined ? { expiredAt: polled.expiredAt } : {},
-      // code 变化时把新二维码给页面（页面据此换图）
-      ...polled.status === 'canceled' ? { qr: renderQrSvg(qrContentUrl(product, state), { size: 200 }) } : {},
-    })
+    // OAuth 流程下页面只需知道「还没好 / 成功 / 失败」；成功由 /auth/callback
+    // 里的 settleOk 落定，本端点不再承担换凭据的职责。
+    writeJson(response, { status: deps.isSettledOk() ? 'success' : 'pending' })
     return
   }
-
   if (url.pathname === RACCOON_LOGIN_PAGE_PATHS.smsSend && request.method === 'POST') {
     const body = await readJsonBody(request)
     const phone = typeof body.phone === 'string' ? body.phone.trim() : ''
@@ -386,16 +434,25 @@ function listenOnRandomPort(server: Server): Promise<number> {
  */
 export function renderRaccoonLoginPage(
   product: RaccoonProduct,
-  options: { qrSvg?: string; unavailable?: boolean } = {},
+  options: { authorizeUrl?: string } = {},
 ): string {
-  const unavailable = options.unavailable === true
-  // 无二维码时给一个静态占位，避免页面上出现空框。
-  const qrSvg = options.qrSvg !== undefined && options.qrSvg !== ''
-    ? options.qrSvg
-    : '<div class="qr placeholder" aria-hidden="true" style="display:flex;align-items:center;justify-content:center;font-size:12px;color:#a6a1af;">扫码暂不可用</div>'
-  const qrActive = unavailable ? '0' : '1'
-  const smsActive = unavailable ? '1' : '0'
-
+  /**
+   * ## 为什么改成 OAuth 主导（2026-10-27）
+   *
+   * 之前的「微信扫码 + 短信」两条路都有实测问题：
+   * - **扫码**：上游 `/login/mp` 改为服务端下发 code 后，旧链路对任何 code
+   *   都回 404（见 `createRaccoonQrSession` 的注释），用户扫码后一直 pending；
+   * - **短信**：需要阿里云滑块验证码，失败率高，且要多步手填。
+   *
+   * 现在改用官方桌面端的**网页授权**（OAuth 授权码 + loopback 回调）：
+   * 用户点「去登录」→ 在新窗口完成登录并点「授权」→ 浏览器自动回到
+   * 本地 `/auth/callback`，凭据由宿主侧直接拿下。**无需扫码、无需验证码、
+   * 无需复制任何地址**（与 magpie 的 `browserSignIn` 同款链路）。
+   *
+   * 页面上不再有 Tab：只有一张说明卡 + 一个「去登录」按钮 + 轮询状态。
+   * 授权 URL 由宿主侧生成（含 state 与 loopback redirect），页面拿不到秘密。
+   */
+  const authorizeUrl = options.authorizeUrl ?? ''
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -407,215 +464,55 @@ export function renderRaccoonLoginPage(
   body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
          background: #f5f6f8; color: #1f2329; }
-  .card { background: #fff; border-radius: 12px; padding: 20px 24px 24px; box-shadow: 0 4px 24px rgba(0,0,0,.08);
+  .card { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 4px 24px rgba(0,0,0,.08);
           text-align: center; width: 320px; }
-  h1 { font-size: 16px; margin: 0 0 14px; font-weight: 600; }
-  .tabs { display: flex; gap: 4px; background: #f2f3f5; border-radius: 8px; padding: 4px; margin-bottom: 16px; }
-  .tabs button { flex: 1; padding: 7px; font-size: 13px; border: 0; border-radius: 6px;
-                 background: transparent; color: #4e5969; cursor: pointer; }
-  .tabs button[data-active="1"] { background: #fff; color: #1f2329; font-weight: 600;
-                                  box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-  .pane { display: none; }
-  .pane[data-show="1"] { display: block; }
-  /* 二维码容器：SVG 自适应填充（SVG 自带 width/height 与 viewBox） */
-  .qr { width: 200px; height: 200px; display: block; margin: 0 auto; border: 1px solid #eceef1;
-        border-radius: 8px; padding: 6px; box-sizing: content-box; background: #fff; }
-  .qr svg { display: block; width: 100%; height: 100%; }
-  .sub { font-size: 12px; color: #8a9099; margin: 10px 0 0; }
-  .status { margin-top: 12px; font-size: 13px; color: #4e5969; min-height: 20px; }
-  .status[data-tone="ok"] { color: #0f9d58; font-weight: 600; }
-  .status[data-tone="err"] { color: #d93026; }
-  label { display: block; font-size: 12px; color: #8a9099; margin-bottom: 4px; text-align: left; }
-  input { width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 14px; margin-bottom: 10px;
-          border: 1px solid #d9dde3; border-radius: 6px; }
-  button.primary { width: 100%; padding: 9px; font-size: 14px; border: 0; border-radius: 6px;
-                   background: #8E6BF2; color: #fff; cursor: pointer; }
-  button.primary:disabled { background: #c9cdd4; cursor: not-allowed; }
-  .row { display: flex; gap: 8px; align-items: flex-start; }
-  .row input { margin-bottom: 10px; }
-  #captcha-element { margin-bottom: 10px; }
+  h1 { font-size: 16px; margin: 0 0 6px; }
+  p.sub { font-size: 12px; color: #6b7280; margin: 0 0 18px; line-height: 1.6; }
+  a.go { display: block; padding: 10px; border-radius: 8px; background: #1664ff; color: #fff;
+         text-decoration: none; font-size: 14px; font-weight: 600; }
+  a.go:hover { background: #0e54d8; }
+  .status { margin-top: 14px; font-size: 12px; color: #6b7280; min-height: 18px; }
+  .status[data-error="1"] { color: #d93025; }
+  .steps { text-align: left; font-size: 12px; color: #6b7280; line-height: 1.9;
+           background: #f8f9fb; border-radius: 8px; padding: 10px 12px; margin: 0 0 16px; }
 </style>
 </head>
 <body>
-  <div class="card">
-    <h1>登录 Raccoon Work</h1>
-
-    <div class="tabs">
-      <button id="tabQr" data-active="${qrActive}" type="button">微信扫码</button>
-      <button id="tabSms" data-active="${smsActive}" type="button">短信登录</button>
-    </div>
-
-    <div class="pane" id="paneQr" data-show="${qrActive}">
-      <div class="qr" id="qrBox">${qrSvg}</div>
-      ${unavailable
-        ? '<p class="sub warn" role="alert">扫码登录暂不可用（上游扫码页/接口异常），请改用下方「短信登录」。</p>'
-        : '<p class="sub">打开微信扫一扫，扫描上方二维码</p>'}
-      <div class="status" id="qrStatus">${unavailable ? '扫码暂不可用，请用短信登录' : '等待扫码…'}</div>
-    </div>
-
-    <div class="pane" id="paneSms" data-show="${smsActive}">
-      <label for="phone">手机号</label>
-      <div class="row">
-        <input id="phone" type="tel" inputmode="numeric" maxlength="11" placeholder="请输入 11 位手机号">
-        <button class="primary" id="sendCode" type="button" style="width:auto;white-space:nowrap;padding:9px 12px;">获取验证码</button>
-      </div>
-      <div id="captcha-element"></div>
-      <label for="smsCode">验证码</label>
-      <input id="smsCode" type="text" inputmode="numeric" maxlength="6" placeholder="请输入 6 位验证码">
-      <button class="primary" id="doLogin" type="button">登录</button>
-      <div class="status" id="smsStatus"></div>
-    </div>
+<div class="card">
+  <h1>登录 ${product.displayName}</h1>
+  <p class="sub">将在新窗口完成网页授权，无需扫码或短信验证码</p>
+  <div class="steps">
+    1. 点下方按钮打开登录页<br>
+    2. 完成登录并点「授权」<br>
+    3. 浏览器自动返回，此处即刻完成
   </div>
-
-<script src="https://o.alicdn.com/captcha-frontend/aliyunCaptcha/AliyunCaptcha.js"></script>
+  <a class="go" id="go" href="${authorizeUrl}" target="_blank" rel="noopener noreferrer">去登录</a>
+  <div class="status" id="status">等待授权…</div>
+</div>
 <script>
 (function () {
-  'use strict';
-  var POLL_INTERVAL_MS = 2000;
-  var paths = ${JSON.stringify(RACCOON_LOGIN_PAGE_PATHS)};
-  var QR_UNAVAILABLE = ${unavailable ? 'true' : 'false'};
-
-  // ── Tab 切换 ──
-  var tabQr = document.getElementById('tabQr');
-  var tabSms = document.getElementById('tabSms');
-  var paneQr = document.getElementById('paneQr');
-  var paneSms = document.getElementById('paneSms');
-  function selectTab(sms) {
-    tabQr.setAttribute('data-active', sms ? '0' : '1');
-    tabSms.setAttribute('data-active', sms ? '1' : '0');
-    paneQr.setAttribute('data-show', sms ? '0' : '1');
-    paneSms.setAttribute('data-show', sms ? '1' : '0');
-  }
-  tabQr.addEventListener('click', function () { selectTab(false); });
-  tabSms.addEventListener('click', function () { selectTab(true); });
-
-  // ── 扫码轮询 ──
-  var qrStatus = document.getElementById('qrStatus');
-  var qrBox = document.getElementById('qrBox');
-  var pollTimer = null;
-  function setQrStatus(text, tone) {
-    qrStatus.textContent = text;
-    if (tone) { qrStatus.setAttribute('data-tone', tone); } else { qrStatus.removeAttribute('data-tone'); }
-  }
-  function pollOnce() {
-    fetch(paths.poll).then(function (r) { return r.json(); }).then(function (data) {
-      if (data.status === 'success') {
-        setQrStatus('登录成功，可以关闭此窗口了', 'ok');
-        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-        setTimeout(function () { window.close(); }, 1200);
+  var status = document.getElementById('status');
+  var done = false;
+  // 轮询登录状态：宿主侧在 /auth/callback 落定结果后，这里会拿到 success。
+  function tick() {
+    if (done) return;
+    fetch(${JSON.stringify(RACCOON_LOGIN_PAGE_PATHS.poll)}).then(function (r) { return r.json(); }).then(function (data) {
+      if (data && data.status === 'success') {
+        done = true;
+        status.setAttribute('data-error', '0');
+        status.textContent = '登录成功，可以关闭此页';
         return;
       }
-      if (data.status === 'unavailable') {
-        setQrStatus('扫码登录暂不可用，请改用短信登录', 'err');
-        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      if (data && data.status === 'failed') {
+        done = true;
+        status.setAttribute('data-error', '1');
+        status.textContent = data.message || '登录失败，请重新点击「去登录」';
         return;
       }
-      if (data.status === 'logging') { setQrStatus('已扫码，请在微信中确认…'); return; }
-      if (data.status === 'canceled') {
-        if (data.qr) { qrBox.innerHTML = data.qr; }
-        setQrStatus('二维码已刷新，请重新扫码');
-        return;
-      }
-      setQrStatus('等待扫码…');
-    }).catch(function () {
-      // 轮询偶发失败不打断（下一次继续）
-    });
+      setTimeout(tick, 2000);
+    }).catch(function () { setTimeout(tick, 3000); });
   }
-  if (!QR_UNAVAILABLE) {
-    pollTimer = setInterval(pollOnce, POLL_INTERVAL_MS);
-    pollOnce();
-  }
-
-  // ── 短信登录 ──
-  var smsStatus = document.getElementById('smsStatus');
-  var phoneInput = document.getElementById('phone');
-  var smsCodeInput = document.getElementById('smsCode');
-  var sendBtn = document.getElementById('sendCode');
-  var loginBtn = document.getElementById('doLogin');
-  var captchaInstance = null;
-  var pendingCaptcha = null;
-
-  function setSmsStatus(text, tone) {
-    smsStatus.textContent = text || '';
-    if (tone) { smsStatus.setAttribute('data-tone', tone); } else { smsStatus.removeAttribute('data-tone'); }
-  }
-
-  function submitSmsSend(captchaParam) {
-    var phone = (phoneInput.value || '').trim();
-    if (!/^1[3-9]\\d{9}$/.test(phone)) {
-      setSmsStatus('请输入有效的 11 位手机号', 'err');
-      return;
-    }
-    sendBtn.disabled = true;
-    setSmsStatus('发送中…');
-    fetch(paths.smsSend, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone: phone, captchaParam: captchaParam || '' })
-    }).then(function (r) { return r.json(); }).then(function (data) {
-      if (data && data.ok) { setSmsStatus('验证码已发送，请查收短信', 'ok'); }
-      else { setSmsStatus((data && data.message) || '发送失败，请重试', 'err'); }
-    }).catch(function () {
-      setSmsStatus('发送失败，请检查网络后重试', 'err');
-    }).finally(function () {
-      sendBtn.disabled = false;
-    });
-  }
-
-  // 阿里云滑块：真实加载官方脚本（SceneId / prefix 来自客户端配置）。
-  function initCaptcha() {
-    if (typeof window.initAliyunCaptcha !== 'function') { return false; }
-    window.initAliyunCaptcha({
-      SceneId: '${product.aliyunCaptcha.sceneId}',
-      prefix: '${product.aliyunCaptcha.prefix}',
-      mode: 'popup',
-      element: '#captcha-element',
-      button: '#sendCode',
-      captchaVerifyCallback: function (captchaParam) {
-        pendingCaptcha = captchaParam;
-        submitSmsSend(captchaParam);
-        return { captchaResult: true, bizResult: true };
-      },
-      onBizResultCallback: function () { return null; },
-      getInstance: function (instance) { captchaInstance = instance; return null; },
-      slideStyle: { width: 320, height: 40 },
-      language: 'cn'
-    });
-    return true;
-  }
-  var captchaReady = initCaptcha();
-  sendBtn.addEventListener('click', function () {
-    if (!captchaReady) { captchaReady = initCaptcha(); }
-    if (!captchaReady) {
-      // 脚本未加载（离线/被拦截）：退化为直接提交，让服务端报明确原因
-      // （实测会回 captcha_verify_error，页面据此提示用户）。
-      setSmsStatus('验证码组件未加载，正在尝试直接发送…');
-      submitSmsSend('');
-    }
-  });
-
-  loginBtn.addEventListener('click', function () {
-    var code = (smsCodeInput.value || '').trim();
-    if (!code) { setSmsStatus('请输入验证码', 'err'); return; }
-    loginBtn.disabled = true;
-    setSmsStatus('登录中…');
-    fetch(paths.smsVerify, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ smsCode: code })
-    }).then(function (r) { return r.json(); }).then(function (data) {
-      if (data && data.ok) {
-        setSmsStatus('登录成功，可以关闭此窗口了', 'ok');
-        setTimeout(function () { window.close(); }, 1200);
-      } else {
-        setSmsStatus((data && data.message) || '验证码不正确，请重试', 'err');
-      }
-    }).catch(function () {
-      setSmsStatus('登录失败，请检查网络后重试', 'err');
-    }).finally(function () {
-      loginBtn.disabled = false;
-    });
-  });
+  tick();
 })();
 </script>
 </body>

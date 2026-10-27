@@ -991,6 +991,15 @@ export async function verifyRemoteCatalogFields() {
   assert.deepEqual(kuku.thinkLevels.map(l => l.name), ['低', '高'])
   assert.equal(kuku.defaultThinkId, '3', '默认档来自 default_think_id')
 
+  // ── accio 思考：只有「开启 / 关闭」两态（上游无档位表）──
+  const { accioReasoningInfo } = await import('../vendor/channel-pack/src/accio-adapter.ts')
+  assert.equal(accioReasoningInfo({ supportsThinking: true })?.efforts.map(e => e.name).join('/'),
+    '开启思考/关闭思考', '只有两态，不编造低/中/高')
+  assert.deepEqual(accioReasoningInfo({ supportsThinking: true })?.efforts.map(e => e.id), ['on', 'none'],
+    '⚠️ id 用 DSH 惯用的 on / none')
+  assert.equal(accioReasoningInfo({ supportsThinking: false }), undefined, '不支持思考 → 不声明')
+  assert.equal(accioReasoningInfo({}), undefined, '⚠️ 上游没说明（null）→ 不声明，不给点了没用的开关')
+
   // ── accio：usageMultiple 是倍率，null 表示上游未下发 ──
   assert.equal(accioDisplayName({ name: 'GPT 6 Astra', priceFactor: 3.5 }), 'GPT 6 Astra · x3.5')
   assert.equal(accioDisplayName({ name: 'auto', nameCn: '自动' }), '自动', '中文名优先')
