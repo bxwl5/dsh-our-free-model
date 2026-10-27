@@ -285,6 +285,21 @@ try {
   visit(tree)
   assert.equal(cards.length, 20)
   assert.equal(cards.includes('opencode'), false)
+  /**
+   * 「刷新模型」按钮只对**有远端目录端点**的渠道显示（用户 2026-10-27 要求：
+   * 没有的渠道直接删掉按钮，不要点了才报「暂不支持」）。
+   *
+   * 目前无远端的只有 gemini（Cloud Code 没有模型列表端点）与 orcaterm
+   * （静态白名单）。此外还需与后端**实有**的 refreshCatalog 保持一致 ——
+   * 只在 UI 藏按钮而适配器其实支持（或反之）会让两端口径漂移。
+   */
+  // 从 client.js 源码里抽真实标记（不硬编码，避免测试与实现脱节）。
+  const clientSource = fs.readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  const marked = [...clientSource.matchAll(/\{ id: '([a-z-]+)'[^}]*noRemoteCatalog: true/g)].map(m => m[1])
+  assert.deepEqual(marked.sort(), ['gemini', 'orcaterm'],
+    '⚠️ noRemoteCatalog 只应是这两个（无远端目录端点的渠道）')
+  assert.ok(clientSource.includes("channel.noRemoteCatalog === true ? null : h('button'"),
+    '⚠️ 刷新按钮必须受 noRemoteCatalog 判断约束')
   assert.deepEqual([...cards].sort(), [...adapters.keys()].sort(), 'UI and mounted account providers agree')
   console.log('ok  actual channel page: 20 account cards, OpenCode removed')
   await verifyChannelModelActions()

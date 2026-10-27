@@ -2755,10 +2755,13 @@ window.__ModuleLoader__.load({
       { id: 'raccoon', name: 'Raccoon', org: '商汤', accent: '#00A6A6', note: '手机号登录', login: 'browser' },
       { id: 'minimax', name: 'MiniMax Code', org: 'MiniMax', accent: '#E4007F', note: '设备码 + PKCE，每日签到', login: 'browser' },
       { id: 'zcode', name: 'ZCode', org: '智谱', accent: '#3B6EF6', note: '浏览器登录（需本机可开浏览器）', login: 'browser' },
-      { id: 'gemini', name: 'Gemini', org: 'Google Code Assist', accent: '#4285F4', note: '本地回调 OAuth 免费线', login: 'browser' },
+      // noRemoteCatalog: Cloud Code 没有模型列表端点（用户拍板用静态表），
+      // 故不显示「刷新模型」按钮 —— 点了也只会报「暂不支持」。
+      { id: 'gemini', name: 'Gemini', org: 'Google Code Assist', accent: '#4285F4', note: '本地回调 OAuth 免费线', login: 'browser', noRemoteCatalog: true },
       { id: 'commandcode', name: 'Command Code', org: 'Command Code', accent: '#111827', note: '浏览器授权，自动回调', login: 'browser' },
       { id: 'monkeycode', name: 'MonkeyCode', org: '长亭科技', accent: '#F97316', note: '粘贴 Cookie；每日签到 100 积分', login: 'cookie', loginPage: 'https://monkeycode-ai.com', cookieName: 'baizhi_session（百智云，推荐·自动换出 MonkeyCode 会话）或 monkeycode_ai_session（旧版 nebula_session 也收）' },
-      { id: 'orcaterm', name: 'OrcaTerm', org: '腾讯云', accent: '#00A4FF', note: '粘贴 Cookie，支持完整对话', login: 'cookie', loginPage: 'https://orcaterm.cloud.tencent.com', cookieName: 'ot_sid（旧版叫 ot_session，两个都收）' },
+      // noRemoteCatalog: OrcaTerm 没有模型目录端点（模型表是静态白名单）。
+      { id: 'orcaterm', name: 'OrcaTerm', org: '腾讯云', accent: '#00A4FF', note: '粘贴 Cookie，支持完整对话', login: 'cookie', loginPage: 'https://orcaterm.cloud.tencent.com', cookieName: 'ot_sid（旧版叫 ot_session，两个都收）', noRemoteCatalog: true },
       { id: 'kuku', name: 'KukuAI', org: '百度文库', accent: '#2932E1', note: '百度 App 扫码登录', login: 'browser' },
       { id: 'accio', name: 'Accio', org: '阿里系', accent: '#FF6A00', note: '浏览器授权，国际站', login: 'browser' },
       { id: 'accio-cn', name: 'Accio 国内版', org: '阿里系', accent: '#FF8C42', note: '浏览器授权，国内站', login: 'browser' },
@@ -3401,7 +3404,10 @@ window.__ModuleLoader__.load({
                     title: t('chan.model.allScope'), 'aria-busy': busy === 'models:hide' ? 'true' : undefined,
                     onClick: () => void setAllModels(true),
                   }, t('chan.model.disableAll')),
-                  h('button', {
+                  // 「刷新模型」只对**有远端目录端点**的渠道显示
+                  // （用户 2026-10-27：没有的渠道直接删掉按钮，不要点了才报错）。
+                  // gemini / orcaterm 在渠道定义里标了 noRemoteCatalog: true。
+                  channel.noRemoteCatalog === true ? null : h('button', {
                     type: 'button', className: 'ofm_btn ghost ofm_actionbtn', disabled: busy !== '' || !rpc,
                     title: t('chan.model.refetchHint'),
                     'aria-busy': busy === 'models:refetch' ? 'true' : undefined,
