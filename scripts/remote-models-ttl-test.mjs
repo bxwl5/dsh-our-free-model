@@ -1060,7 +1060,27 @@ export async function verifyRemoteCatalogFields() {
     // 未拉到远端时走兜底表 —— 兜底表同样必须给出展示名而不是裸 id。
     assert.equal(adapter.displayNameFor('dfmodel'), 'DeepSeek-Flash · x0.1',
       '⚠️ 内部 id 必须映射成展示名（含倍率），不能直接显示 dfmodel')
-    assert.equal(adapter.displayNameFor('qmodel_38max'), 'Qwen3.8-Max · x0.5')
+    /*
+     * ⚠️ `displayNameFor()` 内部用 `new Date()` 判促销窗口，所以**断言结果取决于
+     * 跑测试的时刻**：`qmodel_38max` 的促销窗口是 22:00–08:00（Asia/Singapore），
+     * 窗口内 `qoderDisplayName` 会把名字渲染成 `x0.5→x0.2`，窗口外才是 `x0.5`。
+     *
+     * 真实缺陷（2026-10-27 夜里 22:06 实测踩到）：这条断言白天一直绿、夜里必红，
+     * 而它与被测代码毫无关系 —— 是测试自身依赖墙上时钟。=> stash 掉全部改动后
+     * 依然失败，已确认与当轮改动无关。
+     *
+     * 修法：改用**可注入时刻**的 `qoderDisplayName` 直接断言两种窗口形态，
+     * 不再依赖当前时间。
+     */
+    const { qoderDisplayName } = await import('../vendor/channel-pack/src/qoder-adapter.ts')
+    const fallbackRow = QODER.fallbackModels.find((row) => row.id === 'qmodel_38max')
+    assert.ok(fallbackRow, '兜底表里应有 qmodel_38max')
+    // 促销窗口内（22:00–08:00）：原价 → 折后价
+    assert.equal(qoderDisplayName(fallbackRow, new Date('2026-10-27T14:30:00Z')), 'Qwen3.8-Max · x0.5→x0.2',
+      '窗口内必须同时给出原价与折后价（14:30Z = 22:30 新加坡时间）')
+    // 窗口外（08:00–22:00）：只有生效价
+    assert.equal(qoderDisplayName(fallbackRow, new Date('2026-10-27T06:00:00Z')), 'Qwen3.8-Max · x0.5',
+      '窗口外只显示原价（06:00Z = 14:00 新加坡时间）')
     assert.equal(adapter.displayNameFor('__nope__'), undefined,
       '未知 id 返回 undefined，由调用方决定退回 id')
   }
