@@ -44,6 +44,10 @@ const suites = [
   // 自动签到的逐渠道记账（2026-10-26）：失败渠道当天可补跑 / coversToday=false
   // 不记日（Qoder 10:00 窗口）/ 重跑上限 / 旧格式兼容。假上游 + 内存 store。
   ['auto-checkin-ledger', 'auto-checkin-ledger-test.mjs', []],
+  // 远端模型目录落盘快照（2026-10-27）：用户要求「远端拉取全量覆盖兜底表，
+  // 全部渠道都这样」—— 锁死整份覆盖（不是并集）、按渠道分文件、版本/归属校验、
+  // 损坏降级、id 去重与 restore 不覆盖。
+  ['model-catalog-cache', 'model-catalog-cache-test.mjs', []],
   // ⚠️ `channel-credits-ui-test.mjs` 是**纯导出模块**（只 export verifyChannelCreditsUi），
   // 由 channel-pack-test.mjs --source 调用。此前把它同时列为套件 = **假绿**：
   // `node scripts/channel-credits-ui-test.mjs` 直跑零断言、exit 0。

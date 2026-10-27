@@ -58,6 +58,7 @@ import {
   type MonkeyCodeCredential,
 } from './monkeycode.js'
 import { fetchModels, streamChat } from './monkeycode-auth.js'
+import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
 import { providerCatalogVisible } from './account-pool.js'
 import { registerAdapterIdempotent } from './llm-register-compat.js'
 import { emitDeltaBlocks } from './delta-blocks.js'
@@ -178,13 +179,16 @@ export class MonkeyCodeAdapter extends LlmAdapter {
         if (!isCredentialUsable(credential)) return
         this.remoteModels = await fetchModels(this.fetchImpl, this.product, credential)
         this.remoteModelsAt = Date.now()
+        writeModelCatalog(this.product.id, this.remoteModels)
       } catch {
         // 兜底表接管。
       } finally {
         this.loading = undefined
       }
     })()
-    return this.loading
+    await this.loading
+    // 远端这次没拉到：用上次成功落盘的快照顶替编译期兜底表（用户 2026-10-27）。
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels)
   }
 
   async listModels(_provider: string): Promise<readonly LlmModelInfo[]> {
@@ -196,7 +200,7 @@ export class MonkeyCodeAdapter extends LlmAdapter {
     // 隐藏模型不播报（平台把下架/无权限的标成 is_hidden）。
     // 兜底表没有 isHidden 字段，故用显式判等而不是 `in` 检查。
     const all: Array<{ id: string; name: string; contextWindow: number; maxTokens?: number; isHidden?: boolean }> =
-      this.remoteModels ?? this.product.fallbackModels.map((model) => ({ ...model }))
+      restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels.map((model) => ({ ...model }))
     const source = all.filter((model) => model.isHidden !== true)
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id)
     const listed = disabled === undefined || disabled.size === 0
@@ -219,7 +223,7 @@ export class MonkeyCodeAdapter extends LlmAdapter {
       isHidden?: boolean
       isFree?: boolean
       inputPrice?: number
-    }> = this.remoteModels ?? this.product.fallbackModels.map((model) => ({ ...model }))
+    }> = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels.map((model) => ({ ...model }))
     return all.filter((model) => model.isHidden !== true)
       .map((model) => ({ id: model.id, name: monkeyCodeDisplayName(model) }))
   }
@@ -231,7 +235,7 @@ export class MonkeyCodeAdapter extends LlmAdapter {
    * 报障的「模型列表出现 qmodel 等字段」）。
    */
   displayNameFor(modelId: string): string | undefined {
-    const source = this.remoteModels ?? this.product.fallbackModels
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels
     const model = source.find((item) => item.id === modelId)
     return model === undefined ? undefined : monkeyCodeDisplayName(model)
   }
@@ -250,6 +254,7 @@ export class MonkeyCodeAdapter extends LlmAdapter {
       if (rows.length === 0) return false
       this.remoteModels = rows
       this.remoteModelsAt = Date.now()
+      writeModelCatalog(this.product.id, rows)
       return true
     } catch {
       // 拉不到就保留上一次的目录（用户要求）。
@@ -259,7 +264,7 @@ export class MonkeyCodeAdapter extends LlmAdapter {
 
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
     await this.ensureRemoteModels()
-    const source = this.remoteModels ?? [...this.product.fallbackModels]
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? [...this.product.fallbackModels]
     const entry = source.find((candidate) => candidate.id === model)
     const resolved: LlmResolvedModelInfo = {
       provider,

@@ -15,6 +15,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 
 import { KUKU, KUKU_MODEL_LIST_PATH, KUKU_WEB_QUERY, type KukuProduct } from './kuku-product.js'
+import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
 import { isCredentialUsable, kukuHeaders, type KukuCredential } from './kuku.js'
 import { streamChat } from './kuku-auth.js'
 import { providerCatalogVisible } from './account-pool.js'
@@ -171,7 +172,7 @@ export class KukuAdapter extends LlmAdapter {
       return []
     }
     await this.ensureRemoteModels()
-    const source = this.remoteModels ?? this.product.fallbackModels
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id)
     const listed = disabled === undefined || disabled.size === 0
       ? source
@@ -188,7 +189,7 @@ export class KukuAdapter extends LlmAdapter {
 
   /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数会显示「—」。 */
   listAllModels(): readonly { id: string; name: string }[] {
-    const source = this.remoteModels ?? this.product.fallbackModels
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels
     return source.map((model) => ({ id: model.id, name: kukuDisplayName(model) }))
   }
 
@@ -199,7 +200,7 @@ export class KukuAdapter extends LlmAdapter {
    * 报障的「模型列表出现 qmodel 等字段」）。
    */
   displayNameFor(modelId: string): string | undefined {
-    const source = this.remoteModels ?? this.product.fallbackModels
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels
     const model = source.find((item) => item.id === modelId)
     return model === undefined ? undefined : kukuDisplayName(model)
   }
@@ -251,6 +252,7 @@ export class KukuAdapter extends LlmAdapter {
           this.remoteThinkLevels = catalog.thinkLevels
           this.remoteDefaultThinkId = catalog.defaultThinkId
           this.remoteModelsAt = Date.now()
+          writeModelCatalog(this.product.id, catalog.models)
         }
       } catch {
         // 静态表接管。
@@ -258,7 +260,12 @@ export class KukuAdapter extends LlmAdapter {
         this.loading = undefined
       }
     })()
-    return this.loading
+    await this.loading
+    // 远端这次没拉到：用上次成功落盘的快照顶替编译期兜底表（用户 2026-10-27）。
+    // ⚠️ 只恢复**模型目录**：思考档位（`remoteThinkLevels` / `remoteDefaultThinkId`）
+    // 是随目录一起下发的独立字段，没有落盘，此时退回静态表 —— 表现为「离线启动时
+    // 思考档位只有默认那几档」，不影响模型本身可用。
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels)
   }
 
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {

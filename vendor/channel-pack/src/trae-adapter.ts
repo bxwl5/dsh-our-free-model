@@ -25,6 +25,7 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { AccountPool, providerCatalogVisible } from './account-pool.js'
 import { reasoningRankOf } from './reasoning-ladder.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
+import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
 import { settingsNamespaceFor } from './settings-compat.js'
 import {
   TRAE_DEFAULT_MODEL,
@@ -650,8 +651,17 @@ export class TraeAdapter extends LlmAdapter {
       if (models.length === 0) return false
       this.remoteModels = models
       this.remoteMeta = new Map(models.map((model) => [model.id, model]))
+      writeModelCatalog(this.product.id, models)
       return true
     })
+    // 远端这次没拉到：用上次成功落盘的快照顶替编译期兜底表（用户 2026-10-27）。
+    if (this.remoteModels === undefined) {
+      const cached = restoreModelCatalog<TraeRemoteModel>(this.product.id, this.remoteModels)
+      if (cached !== undefined) {
+        this.remoteModels = cached
+        this.remoteMeta = new Map(cached.map((model) => [model.id, model]))
+      }
+    }
   }
 
   /**
@@ -822,9 +832,11 @@ export class TraeAdapter extends LlmAdapter {
     // 过滤逻辑与 `listModels` 的第一、二层一致（usage / config_switch /
     // is_invisible_to_user 已在解析器里剔除；这里再挡 isHidden 与 is_custom_model），
     // **唯一区别是不套用户黑名单**。
-    const source = this.remoteModels === undefined
+    // 远端内存目录 → 落盘快照 → 编译期兜底表（用户 2026-10-27：快照优先于兜底）。
+    const remote = restoreModelCatalog<TraeRemoteModel>(this.product.id, this.remoteModels)
+    const source = remote === undefined
       ? this.staticFallbackModels()
-      : this.remoteModels.filter((model) => isTraeModelCallable(model) && model.isHidden !== true)
+      : remote.filter((model) => isTraeModelCallable(model) && model.isHidden !== true)
     return source.map((model) => ({ id: model.id, name: traeDisplayName(model) }))
   }
 
@@ -835,7 +847,8 @@ export class TraeAdapter extends LlmAdapter {
    * 好（用户报障：「模型列表出现 qmodel 等字段」）。
    */
   displayNameFor(modelId: string): string | undefined {
-    const remote = this.remoteModels?.find((model) => model.id === modelId)
+    const remote = restoreModelCatalog<TraeRemoteModel>(this.product.id, this.remoteModels)
+      ?.find((model) => model.id === modelId)
     if (remote !== undefined) return traeDisplayName(remote)
     return this.product.fallbackModels.find((model) => model.id === modelId)?.name
   }
@@ -855,6 +868,7 @@ export class TraeAdapter extends LlmAdapter {
       if (models.length === 0) return false
       this.remoteModels = models
       this.remoteMeta = new Map(models.map((model) => [model.id, model]))
+      writeModelCatalog(this.product.id, models)
       return true
     } catch {
       // 网络抖动 / 凭据失效：保留上一次的目录（用户要求「拉不到就显示上次的」）。

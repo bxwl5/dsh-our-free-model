@@ -113,6 +113,41 @@
 
 ---
 
+### 2.1 模型目录的唯一事实来源与落盘快照（2026-10-27）
+
+用户当天拍板的两条规则，**全部 22 个渠道**统一执行：
+
+1. **远端目录全量覆盖兜底表**：「不是增量，是直接写入」—— 远端拉成功就把整份目录
+   当作事实来源，**不再与编译期兜底表合并**。兜底表只剩一个用途：远端**从未成功过**
+   （首次启动就离线 / 凭据失效）时顶替。
+2. **落盘快照跨进程存活**：拉成功即写 `$DSH_HOME/channel-pack/model-catalogs/<provider>.json`
+   （原子写 tmp+rename，按渠道分文件，schema+provider 双校验，损坏即当无快照）。
+   重启或离线时用「上次成功的那一份」，而不是退回几个月前的编译期表。
+
+配套的两处收紧：
+
+- **思考档位只认远端**（`reasoning.supportedEfforts` 等）。本地兜底表里的档位 id 若
+  上游不认，透传过去只会被静默忽略或报错，比不显示选择器更糟。
+  受影响：`buddy` / `workbuddy` / `qoder` / `qodercn` / `loomy`。
+- **CodeArts 补上了读盘路径**：它一直 `saveModelsCache()` 写
+  `~/.cache/deveco/codearts_models.json`，但 `availableCodeArtsModels()` **全仓库没有
+  调用点** —— 缓存只写不读，重启后照样退回兜底表。现已接上。
+
+各处历史策略的归宿：
+
+| 位置 | 旧策略 | 现在 |
+| --- | --- | --- |
+| `buddy` / `workbuddy` | `reconcileWithFallback()`：兜底表打底 + 远端补字段 + 追加 `agentReferenced` | 整份替换（`agentReferenced` 仅留作诊断） |
+| `autoclaw` | 并集：补回目录不下发的 `zai_glm-5.3-flash` | 整份替换。实测 **2026-10-28 上游已下发该 id**（目录回 4 个），故当前无损失；若哪天又不下发，它会消失 |
+| `qoder` / `qodercn` | 已是整份替换，但思考档位从兜底表补齐 | 档位不再补齐 |
+| `cline` | 远端为权威、兜底表只给已认识的 id 补元数据 | 未动（本就符合规则） |
+| `officeace` | 上游 `GET {base}/models` 只回 `{id,object,created,owned_by}` | 未动：**上游没有任何倍率字段**，无倍率可显示 |
+
+已知残留（用户 2026-10-27 明确「不动」）：`accio` / `accio-cn` 的
+`rlab-1.0-storyboard`（多分镜视频，非对话模型）仍在目录里，且它是 accio 唯一无倍率的条目。
+
+---
+
 ## 3. 逐渠道细节与取证
 
 ### 3.1 CodeArts（`codearts`）
@@ -127,7 +162,8 @@
 
 - 登录：同一套 `cli-external-link` 两步流程，`POST /v2/plugin/auth/state`（**GET 会 404**）拿
   `{ state, authUrl }`；产品差异（`platform` / endpoint / `X-Product-Code` / UA）全在 `product.ts`。
-- 模型目录：`GET /v3/config` → `data.data.models`。
+- 模型目录：`GET /v3/config` → `data.data.models`，**整份替换**兜底表（见 2.1），
+  并落盘到 `model-catalogs/{buddy,workbuddy}.json`。
 - 额度：`POST /v2/billing/meter/get-user-resource`；国际版**没有**签到接口，
   服务端分支显式拒绝（`credits.claimAll` 的 `workbuddy` 守卫），避免用国际版凭据打国内签到。
 - 图片：两产品都接双桥（`readImage` + `readImageRequest`）。

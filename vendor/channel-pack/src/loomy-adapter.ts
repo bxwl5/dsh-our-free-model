@@ -24,6 +24,7 @@ import type {
 import { AccountPool, providerCatalogVisible } from './account-pool.js'
 import { nextUtc8DayStartMs } from './model-queue.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
+import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
 import { settingsNamespaceFor } from './settings-compat.js'
 import {
   isLoomyChatModel,
@@ -262,7 +263,7 @@ export class LoomyAdapter extends LlmAdapter {
 
   /** 完整目录（**不套黑名单**），带最终展示名。设置页需要它渲染被关闭的模型。 */
   listAllModels(): readonly { id: string; name: string }[] {
-    const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote)
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels.map(fallbackToRemote)
     return source.map((model) => ({ id: model.id, name: model.name }))
   }
 
@@ -273,7 +274,7 @@ export class LoomyAdapter extends LlmAdapter {
    * 报障的「模型列表出现 qmodel 等字段」）。
    */
   displayNameFor(modelId: string): string | undefined {
-    const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote)
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels.map(fallbackToRemote)
     return source.find((model) => model.id === modelId)?.name
   }
 
@@ -290,6 +291,7 @@ export class LoomyAdapter extends LlmAdapter {
       const fetched = await fetchRemote()
       if (fetched.length === 0) return false
       this.remoteModels = fetched
+      writeModelCatalog(this.product.id, fetched)
       return true
     } catch {
       return false
@@ -313,10 +315,14 @@ export class LoomyAdapter extends LlmAdapter {
         const fetched = await fetchRemote()
         if (fetched.length === 0) return false
         this.remoteModels = fetched
+        writeModelCatalog(this.product.id, fetched)
         return true
       })
       if (this.remoteModels !== undefined) return this.remoteModels
     }
+    // 远端这次没拉到：用上次成功落盘的快照顶替编译期兜底表（用户 2026-10-27）。
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels)
+    if (this.remoteModels !== undefined) return this.remoteModels
     return this.product.fallbackModels.map(fallbackToRemote)
   }
 
@@ -494,8 +500,9 @@ export class LoomyAdapter extends LlmAdapter {
      * —— 服务端对未知字段静默忽略（与「无效模型名回退默认模型」同一模式）。
      * 故这里的字段名依据是**远端自己的命名**，而非「试出来能通」。
      */
+    // 思考档位**只认远端**（用户 2026-10-27）：本地兜底表的档位 id 若上游不认，
+    // 透传过去只会被静默忽略，比不声明更糟。
     const effortsForModel = (await this.loadModels()).find((m) => m.id === options.model)?.efforts
-      ?? this.fallbackIndex.get(options.model)?.efforts
     const effort = options.reasoningEffort !== undefined
       && effortsForModel !== undefined
       && effortsForModel.includes(options.reasoningEffort)

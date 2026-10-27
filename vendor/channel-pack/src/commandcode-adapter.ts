@@ -41,6 +41,7 @@ import {
   type CommandCodeCredential,
 } from './commandcode.js'
 import { fetchModelCatalog } from './commandcode-auth.js'
+import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
 import {
   consumeOpenAiSse,
   contentToText,
@@ -137,13 +138,16 @@ export class CommandCodeAdapter extends LlmAdapter {
         if (!isCredentialUsable(credential)) return
         this.remoteModels = await fetchModelCatalog(this.fetchImpl, this.product, credential)
         this.remoteModelsAt = Date.now()
+        writeModelCatalog(this.product.id, this.remoteModels)
       } catch {
         // 静默：兜底表接管。
       } finally {
         this.loading = undefined
       }
     })()
-    return this.loading
+    await this.loading
+    // 远端这次没拉到：用上次成功落盘的快照顶替编译期兜底表（用户 2026-10-27）。
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels)
   }
 
   async listModels(_provider: string): Promise<readonly LlmModelInfo[]> {
@@ -154,7 +158,7 @@ export class CommandCodeAdapter extends LlmAdapter {
       return []
     }
     await this.ensureRemoteModels()
-    const source = this.remoteModels ?? fallbackRows(this.product)
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? fallbackRows(this.product)
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id)
     const listed = disabled === undefined || disabled.size === 0
       ? source
@@ -169,7 +173,7 @@ export class CommandCodeAdapter extends LlmAdapter {
 
   /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数显示「—」。 */
   listAllModels(): readonly { id: string; name: string }[] {
-    const source = this.remoteModels ?? fallbackRows(this.product)
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? fallbackRows(this.product)
     return source.map((model) => ({ id: model.id, name: model.name }))
   }
 
@@ -180,7 +184,7 @@ export class CommandCodeAdapter extends LlmAdapter {
    * 报障的「模型列表出现 qmodel 等字段」正是这一类。
    */
   displayNameFor(modelId: string): string | undefined {
-    const source = this.remoteModels ?? fallbackRows(this.product)
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? fallbackRows(this.product)
     return source.find((model) => model.id === modelId)?.name
   }
 
@@ -206,7 +210,7 @@ export class CommandCodeAdapter extends LlmAdapter {
 
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
     await this.ensureRemoteModels()
-    const source = this.remoteModels ?? fallbackRows(this.product)
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? fallbackRows(this.product)
     const entry = source.find((candidate) => candidate.id === model)
     const resolved: LlmResolvedModelInfo = {
       provider,

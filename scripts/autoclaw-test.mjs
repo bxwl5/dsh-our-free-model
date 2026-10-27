@@ -93,14 +93,13 @@ async function main() {
 
   try {
     const adapter = new AutoClawAdapter({ product, fetchImpl: realFetch, resolveCredential: async () => cred })
-    // 模型目录：远端（1 条）+ 兜底表（4 条）**并集**。
-    // 远端集合不完整是上游实况（2026-10-26：客户端 4 个、目录只回 3 个），
-    // 故 adapter 必须补齐兜底里缺的 id，不能直接替换。
+    // 模型目录：**远端全量覆盖**兜底表（用户 2026-10-27）。
+    // 2026-10-26 这里曾要求「并集补齐」，2026-10-27 改为「远端给什么就用什么，
+    // 不是增量」—— 兜底表独有的 id 不再补进来。
     const models = await adapter.listModels('autoclaw')
     const ids = models.map(m => m.id)
-    assert.ok(ids.includes('autoglm-air'), '远端模型必须在（并集保留远端）')
+    assert.deepEqual(ids, ['autoglm-air'], '只保留远端下发的那 1 条，不得从兜底表补')
     assert.equal(models.find(m => m.id === 'autoglm-air').name, 'AutoGLM Air')
-    assert.ok(ids.includes('zai_glm-5.3-flash'), '兜底表里第 4 个模型要补进来')
     assert.equal(new Set(ids).size, ids.length, '不得重复')
     // 走的是 /autoclaw-proxy/proxy/autoclaw-model-config，且带标准 Authorization
     const catalogReq = seen.find(x => x.url === '/autoclaw-proxy/proxy/autoclaw-model-config')

@@ -31,6 +31,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 import { AccountPool, providerCatalogVisible } from './account-pool.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
+import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
 import { settingsNamespaceFor } from './settings-compat.js'
 import { nextUtc8DayStartMs } from './model-queue.js'
 import { isRaccoonExpired, type RaccoonCredential } from './raccoon.js'
@@ -249,7 +250,7 @@ export class RaccoonAdapter extends LlmAdapter {
    * 补回，而那条路径拿不到展示名，会退化成裸 id（倍率与模型名随之丢失）。
    */
   listAllModels(): readonly { id: string; name: string }[] {
-    const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote)
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels.map(fallbackToRemote)
     return source.map((model) => ({ id: model.id, name: model.name }))
   }
 
@@ -260,7 +261,7 @@ export class RaccoonAdapter extends LlmAdapter {
    * 「模型列表出现 qmodel 等字段」）。
    */
   displayNameFor(modelId: string): string | undefined {
-    const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote)
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels.map(fallbackToRemote)
     return source.find((model) => model.id === modelId)?.name
   }
 
@@ -277,6 +278,7 @@ export class RaccoonAdapter extends LlmAdapter {
       const fetched = await fetchRemote()
       if (fetched.length === 0) return false
       this.remoteModels = fetched
+      writeModelCatalog(this.product.id, fetched)
       return true
     } catch {
       return false
@@ -300,10 +302,14 @@ export class RaccoonAdapter extends LlmAdapter {
         const fetched = await fetchRemote()
         if (fetched.length === 0) return false
         this.remoteModels = fetched
+        writeModelCatalog(this.product.id, fetched)
         return true
       })
       if (this.remoteModels !== undefined) return this.remoteModels
     }
+    // 远端这次没拉到：用上次成功落盘的快照顶替编译期兜底表（用户 2026-10-27）。
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels)
+    if (this.remoteModels !== undefined) return this.remoteModels
     return this.product.fallbackModels.map(fallbackToRemote)
   }
 

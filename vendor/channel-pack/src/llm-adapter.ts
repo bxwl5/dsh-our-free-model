@@ -10,7 +10,7 @@ import { AccountPool, providerCatalogVisible } from './account-pool.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
 import { settingsNamespaceFor } from './settings-compat.js'
 import { nextUtc8DayStartMs } from './model-queue.js'
-import { isCodeArtsBenefitModel } from './models.js'
+import { availableCodeArtsModels, isCodeArtsBenefitModel } from './models.js'
 import { normalizeHarnessMessages } from './message-shape.js'
 import { directFetch } from './direct-fetch.js'
 import { signRequestHuawei } from './sign.js'
@@ -944,6 +944,30 @@ export class CodeArtsAdapter extends LlmAdapter {
       this.remoteModels = models
       return true
     })
+    // 远端没拉到：用磁盘快照（`~/.cache/deveco/codearts_models.json`，由
+    // CodeArtsAuth 拉取成功后写入）。用户 2026-10-27：全部渠道都要能在
+    // 重启/离线时用「上次成功的那一份」，而不是退回编译期兜底表。
+    this.restoreFromDisk()
+  }
+
+  /**
+   * 读磁盘快照并填进 `remoteModels`（已有内存目录时什么都不做）。
+   *
+   * ⚠️ 这条读路径此前是**死代码**：`saveModelsCache()` 一直在写，但
+   * `availableCodeArtsModels()` 全仓库没有任何调用点 —— 于是缓存只写不读，
+   * 重启后模型名照样退回兜底表。这里把它接上。
+   */
+  private restoreFromDisk(): void {
+    if (this.remoteModels !== undefined) return
+    const cached = availableCodeArtsModels()
+    if (cached === undefined || cached.length === 0) return
+    this.remoteModels = cached.map((model) => ({ id: model.id, name: model.name }))
+  }
+
+  /** 目录来源：内存 → 磁盘快照 → 编译期默认表。 */
+  private catalogSource(): readonly { id: string; name: string }[] {
+    this.restoreFromDisk()
+    return this.remoteModels ?? DEFAULT_MODELS.map((id) => ({ id, name: id }))
   }
 
   /**
@@ -955,7 +979,7 @@ export class CodeArtsAdapter extends LlmAdapter {
    * 需要正确的 `name`（否则关闭项显示 `deepseek-v4-flash` 这类裸 id）。
    */
   listAllModels(): readonly { id: string; name: string }[] {
-    const source = this.remoteModels ?? DEFAULT_MODELS.map((id) => ({ id, name: id }))
+    const source = this.catalogSource()
     // 与 listModels 保持同一套「可见性」过滤（VL 多模态不参与），
     // 唯一区别是不套用户黑名单。
     return source
@@ -970,6 +994,7 @@ export class CodeArtsAdapter extends LlmAdapter {
    * `deepseek-v4-flash` 这类裸 id 当成展示名（用户 2026-10-26 报障的同类问题）。
    */
   displayNameFor(modelId: string): string | undefined {
+    this.restoreFromDisk()
     return this.remoteModels?.find((model) => model.id === modelId)?.name
   }
 
@@ -1023,6 +1048,7 @@ export class CodeArtsAdapter extends LlmAdapter {
 
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
     await this.ensureRemoteModels()
+    this.restoreFromDisk()
     const remoteModel = this.remoteModels?.find((m) => m.id === model)
     const name = remoteModel?.name ?? model
     const contextWindow = CONTEXT_WINDOWS.get(model)

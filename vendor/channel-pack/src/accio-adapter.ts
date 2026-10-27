@@ -17,6 +17,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 
 import { ACCIO, type AccioProduct } from './accio-product.js'
+import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
 import {
   isCredentialExpired,
   isCredentialUsable,
@@ -146,13 +147,16 @@ export class AccioAdapter extends LlmAdapter {
         if (!isCredentialUsable(credential)) return
         this.remoteModels = await fetchModels(this.fetchImpl, this.product, credential)
         this.remoteModelsAt = Date.now()
+        writeModelCatalog(this.product.id, this.remoteModels)
       } catch {
         // 兜底表接管。
       } finally {
         this.loading = undefined
       }
     })()
-    return this.loading
+    await this.loading
+    // 远端这次没拉到：用上次成功落盘的快照顶替编译期兜底表（用户 2026-10-27）。
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels)
   }
 
   async listModels(_provider: string): Promise<readonly LlmModelInfo[]> {
@@ -161,7 +165,7 @@ export class AccioAdapter extends LlmAdapter {
       return []
     }
     await this.ensureRemoteModels()
-    const source = this.remoteModels ?? this.product.fallbackModels
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id)
     const listed = disabled === undefined || disabled.size === 0
       ? source
@@ -178,7 +182,7 @@ export class AccioAdapter extends LlmAdapter {
 
   /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数显示「—」。 */
   listAllModels(): readonly { id: string; name: string }[] {
-    const source = this.remoteModels ?? this.product.fallbackModels
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels
     return source.map((model) => ({ id: model.id, name: accioDisplayName(model) }))
   }
 
@@ -189,7 +193,7 @@ export class AccioAdapter extends LlmAdapter {
    * 报障的「模型列表出现 qmodel 等字段」）。
    */
   displayNameFor(modelId: string): string | undefined {
-    const source = this.remoteModels ?? this.product.fallbackModels
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels
     const model = source.find((item) => item.id === modelId)
     return model === undefined ? undefined : accioDisplayName(model)
   }
@@ -216,7 +220,7 @@ export class AccioAdapter extends LlmAdapter {
 
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
     await this.ensureRemoteModels()
-    const source = this.remoteModels ?? this.product.fallbackModels
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels
     const entry = source.find((candidate) => candidate.id === model)
     const resolved: LlmResolvedModelInfo = {
       provider,

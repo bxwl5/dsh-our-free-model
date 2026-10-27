@@ -28,6 +28,7 @@ import { LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { randomUUID } from 'node:crypto'
 import { AccountPool, providerCatalogVisible } from './account-pool.js'
+import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
 import { isQoderExpired, type QoderCredential } from './qoder.js'
 import { QoderEncryptedInfer, type QoderInferMessage, type QoderInferRequest, type QoderInferTool, type QoderInferToolCall } from './qoder-wasm.js'
 import { unwrapQoderEnvelopeStream } from './qoder-envelope.js'
@@ -730,6 +731,7 @@ export class QoderAdapter extends LlmAdapter {
         if (rows.length > 0) {
           this.remoteModels = rows
           this.remoteModelsAt = Date.now()
+          writeModelCatalog(this.product.id, rows)
         }
       } catch {
         // 兜底表接管（含 uid 缺失时 buildCosyHeaders 抛错的情况）。
@@ -737,7 +739,9 @@ export class QoderAdapter extends LlmAdapter {
         this.loadingRemote = undefined
       }
     })()
-    return this.loadingRemote
+    await this.loadingRemote
+    // 远端这次没拉到：用上次成功落盘的快照顶替编译期兜底表（用户 2026-10-27）。
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels)
   }
 
   /**
@@ -771,7 +775,9 @@ export class QoderAdapter extends LlmAdapter {
   }
 
   private modelSource(): readonly QoderFallbackModel[] {
-    if (this.remoteModels === undefined) return this.product.fallbackModels
+    // 远端内存目录 → 落盘快照 → 编译期兜底表（用户 2026-10-27）。
+    const remoteModels = restoreModelCatalog<QoderFallbackModel>(this.product.id, this.remoteModels)
+    if (remoteModels === undefined) return this.product.fallbackModels
     /**
      * **远端直接覆盖兜底**（用户 2026-10-26 明确要求）。
      *
@@ -783,27 +789,15 @@ export class QoderAdapter extends LlmAdapter {
      * id(key)/name/priceFactor/contextWindow/promotion **以及思考档位**（
      * `thinking_config` → `efforts`/`defaultEffort`/`supportsDisable`）全部映射好。
      *
-     * ⚠️ 能力字段（思考档位 / 上下文 / 视觉）再做一层**兜底补齐**：远端若某次
-     * 没有下发 `thinking_config`，就用兜底表同 id 的值顶上 —— 否则那些字段会
-     * 整体消失，表现是「模型还在，但思考程度选不了」（2026-10-26 用户报障）。
-     * 注意补齐**只补缺失项**，远端一旦给了就以远端为准（它才是权威清单）。
+     * ⚠️ 思考档位**不做兜底补齐**（用户 2026-10-27）：「远端给什么，就用什么，
+     * 远端无思考程度，就算本地有也没用的啊。」档位 id 必须被上游接受，本地表里
+     * 的值只会在用户点下去之后被静默忽略或报错，比不显示更糟。
+     *
+     * 2026-10-26 曾在此按兜底表补齐（当时用户报障「模型还在，但思考程度选不了」）；
+     * 那条需求已被本次决定覆盖：远端某次没下发 `thinking_config` 时，宁可不显示
+     * 档位选择器，也不要给一个可能不生效的值。
      */
-    return this.remoteModels.map((model) => {
-      const local = this.fallbackIndex.get(model.id)
-      if (local === undefined) return model
-      return {
-        ...model,
-        ...(model.efforts === undefined && local.efforts !== undefined
-          ? { efforts: local.efforts }
-          : {}),
-        ...(model.defaultEffort === undefined && local.defaultEffort !== undefined
-          ? { defaultEffort: local.defaultEffort }
-          : {}),
-        ...(model.supportsDisable === undefined && local.supportsDisable !== undefined
-          ? { supportsDisable: local.supportsDisable }
-          : {}),
-      }
-    })
+    return remoteModels
   }
   /**
    * 完整模型目录（**不应用用户黑名单**），含最终展示名（倍率/免费标记）。

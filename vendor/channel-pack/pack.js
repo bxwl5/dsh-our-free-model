@@ -31869,8 +31869,8 @@ __export(autoclaw_sms_exports, {
   toAutoclawCredential: () => toAutoclawCredential
 });
 import { createHash as createHash9, randomUUID as randomUUID8 } from "node:crypto";
-import { mkdirSync as mkdirSync5, readFileSync as readFileSync6, writeFileSync as writeFileSync5 } from "node:fs";
-import { join as join4 } from "node:path";
+import { mkdirSync as mkdirSync6, readFileSync as readFileSync7, writeFileSync as writeFileSync6 } from "node:fs";
+import { join as join5 } from "node:path";
 function autoclawSign(appId, timestamp, appKey) {
   return createHash9("md5").update(`${appId}&${timestamp}&${appKey}`).digest("hex");
 }
@@ -31890,20 +31890,20 @@ function normalizeAutoclawPhone(raw) {
   return PHONE_RE.test(local) ? local : "";
 }
 function autoclawDeviceIdPath(home) {
-  return join4(home, "channel-pack", "autoclaw-device.json");
+  return join5(home, "channel-pack", "autoclaw-device.json");
 }
 function resolveAutoclawDeviceId(home) {
   const file = autoclawDeviceIdPath(home);
   try {
-    const parsed = JSON.parse(readFileSync6(file, "utf8"));
+    const parsed = JSON.parse(readFileSync7(file, "utf8"));
     const value = parsed?.deviceId;
     if (typeof value === "string" && value.length >= 8) return value;
   } catch {
   }
   const deviceId = randomUUID8();
   try {
-    mkdirSync5(join4(home, "channel-pack"), { recursive: true });
-    writeFileSync5(file, `${JSON.stringify({ deviceId, createdAt: Date.now() }, null, 2)}
+    mkdirSync6(join5(home, "channel-pack"), { recursive: true });
+    writeFileSync6(file, `${JSON.stringify({ deviceId, createdAt: Date.now() }, null, 2)}
 `, "utf8");
   } catch {
   }
@@ -34449,10 +34449,10 @@ function accountFromCredentialRef(ref) {
   };
 }
 var FileStore = class {
-  constructor(home, path2, logger2) {
+  constructor(home, path2, logger3) {
     this.home = home;
     this.path = path2;
-    this.logger = logger2;
+    this.logger = logger3;
   }
   home;
   path;
@@ -34591,9 +34591,9 @@ var MemoryLockStore = class {
   }
 };
 var FileLockStore = class {
-  constructor(path2, logger2) {
+  constructor(path2, logger3) {
     this.path = path2;
-    this.logger = logger2;
+    this.logger = logger3;
   }
   path;
   logger;
@@ -36711,6 +36711,27 @@ function saveModelsCache(models) {
   } catch {
   }
 }
+function loadModelsCache() {
+  const path2 = modelsCachePath();
+  if (!path2) return void 0;
+  try {
+    if (!existsSync3(path2)) return void 0;
+    const text = readFileSync3(path2, "utf-8");
+    const models = JSON.parse(text);
+    return Array.isArray(models) && models.length > 0 ? models : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function availableCodeArtsModels() {
+  if (memoryCache !== void 0) return memoryCache;
+  const disk = loadModelsCache();
+  if (disk !== void 0) {
+    memoryCache = disk;
+    return disk;
+  }
+  return void 0;
+}
 function setMemoryCache(models) {
   memoryCache = models;
 }
@@ -37223,9 +37244,9 @@ var MemoryDeadModelStore = class {
   }
 };
 var FileDeadModelStore = class {
-  constructor(path2, logger2) {
+  constructor(path2, logger3) {
     this.path = path2;
-    this.logger = logger2;
+    this.logger = logger3;
   }
   path;
   logger;
@@ -38370,6 +38391,25 @@ var CodeArtsAdapter = class extends LlmAdapter {
       this.remoteModels = models;
       return true;
     });
+    this.restoreFromDisk();
+  }
+  /**
+   * 读磁盘快照并填进 `remoteModels`（已有内存目录时什么都不做）。
+   *
+   * ⚠️ 这条读路径此前是**死代码**：`saveModelsCache()` 一直在写，但
+   * `availableCodeArtsModels()` 全仓库没有任何调用点 —— 于是缓存只写不读，
+   * 重启后模型名照样退回兜底表。这里把它接上。
+   */
+  restoreFromDisk() {
+    if (this.remoteModels !== void 0) return;
+    const cached2 = availableCodeArtsModels();
+    if (cached2 === void 0 || cached2.length === 0) return;
+    this.remoteModels = cached2.map((model) => ({ id: model.id, name: model.name }));
+  }
+  /** 目录来源：内存 → 磁盘快照 → 编译期默认表。 */
+  catalogSource() {
+    this.restoreFromDisk();
+    return this.remoteModels ?? DEFAULT_MODELS.map((id) => ({ id, name: id }));
   }
   /**
    * 完整模型目录（**不应用用户黑名单**）。
@@ -38380,7 +38420,7 @@ var CodeArtsAdapter = class extends LlmAdapter {
    * 需要正确的 `name`（否则关闭项显示 `deepseek-v4-flash` 这类裸 id）。
    */
   listAllModels() {
-    const source = this.remoteModels ?? DEFAULT_MODELS.map((id) => ({ id, name: id }));
+    const source = this.catalogSource();
     return source.filter((m) => !/-VL-/i.test(m.id) && !/-VL$/i.test(m.id)).map((m) => ({ id: m.id, name: m.name }));
   }
   /**
@@ -38390,6 +38430,7 @@ var CodeArtsAdapter = class extends LlmAdapter {
    * `deepseek-v4-flash` 这类裸 id 当成展示名（用户 2026-10-26 报障的同类问题）。
    */
   displayNameFor(modelId) {
+    this.restoreFromDisk();
     return this.remoteModels?.find((model) => model.id === modelId)?.name;
   }
   /**
@@ -38420,6 +38461,7 @@ var CodeArtsAdapter = class extends LlmAdapter {
   }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
+    this.restoreFromDisk();
     const remoteModel = this.remoteModels?.find((m) => m.id === model);
     const name2 = remoteModel?.name ?? model;
     const contextWindow = CONTEXT_WINDOWS.get(model);
@@ -39094,6 +39136,99 @@ import {
   LlmError as LlmError3,
   ReasoningEffortId as ReasoningEffortId2
 } from "@deepseek-ai/dsh-llm";
+
+// vendor/channel-pack/src/model-catalog-cache.ts
+import { existsSync as existsSync5, mkdirSync as mkdirSync5, readFileSync as readFileSync5, renameSync as renameSync5, writeFileSync as writeFileSync5 } from "node:fs";
+import { join as join4 } from "node:path";
+var MODEL_CATALOG_DIR = "model-catalogs";
+var SCHEMA3 = 1;
+var MAX_ENTRIES = 2e3;
+var logger2;
+var injectedCtx2;
+var resolvedDir;
+var memoryCache2 = /* @__PURE__ */ new Map();
+function configureModelCatalogCache(ctx) {
+  injectedCtx2 = ctx;
+  logger2 = ctx.logger;
+  resolvedDir = void 0;
+}
+function catalogDir() {
+  if (resolvedDir !== void 0) return resolvedDir;
+  const home = resolveChannelPackHome(injectedCtx2 ?? {});
+  resolvedDir = home === void 0 ? null : join4(home, "channel-pack", MODEL_CATALOG_DIR);
+  if (resolvedDir === null) {
+    logger2?.warn("[channel-pack] \u65E0\u6CD5\u5B9A\u4F4D DSH home\uFF0C\u6A21\u578B\u76EE\u5F55\u5FEB\u7167\u4EC5\u5B58\u5728\u4E8E\u5185\u5B58\u4E2D");
+  }
+  return resolvedDir;
+}
+function fileNameFor(provider) {
+  return /^[a-z0-9][a-z0-9._-]*$/i.test(provider) ? `${provider}.json` : void 0;
+}
+function sanitizeModels(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) return void 0;
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const id = item.id;
+    if (typeof id !== "string" || id.length === 0) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(item);
+    if (out.length >= MAX_ENTRIES) break;
+  }
+  return out.length === 0 ? void 0 : out;
+}
+function readModelCatalog(provider) {
+  const cached2 = memoryCache2.get(provider);
+  if (cached2 !== void 0) return cached2;
+  const file = fileNameFor(provider);
+  const dir = catalogDir();
+  if (file === void 0 || dir === null) return void 0;
+  const path2 = join4(dir, file);
+  try {
+    if (!existsSync5(path2)) return void 0;
+    const body = JSON.parse(readFileSync5(path2, "utf-8"));
+    if (typeof body !== "object" || body === null) return void 0;
+    const record = body;
+    if (record.schema !== SCHEMA3 || record.provider !== provider) return void 0;
+    const models = sanitizeModels(record.models);
+    if (models === void 0) return void 0;
+    memoryCache2.set(provider, models);
+    return models;
+  } catch (error) {
+    logger2?.warn(`[channel-pack] \u8BFB\u53D6\u6A21\u578B\u76EE\u5F55\u5FEB\u7167 ${path2} \u5931\u8D25\uFF0C\u6309\u65E0\u5FEB\u7167\u5904\u7406: ${String(error)}`);
+    return void 0;
+  }
+}
+function writeModelCatalog(provider, models) {
+  const sanitized = sanitizeModels(models);
+  if (sanitized === void 0) return;
+  memoryCache2.set(provider, sanitized);
+  const file = fileNameFor(provider);
+  const dir = catalogDir();
+  if (file === void 0 || dir === null) return;
+  try {
+    mkdirSync5(dir, { recursive: true });
+    const path2 = join4(dir, file);
+    const tmp = `${path2}.tmp`;
+    writeFileSync5(tmp, JSON.stringify({
+      schema: SCHEMA3,
+      provider,
+      savedAt: Date.now(),
+      models: sanitized
+    }), "utf-8");
+    renameSync5(tmp, path2);
+  } catch (error) {
+    logger2?.warn(`[channel-pack] \u5199\u5165\u6A21\u578B\u76EE\u5F55\u5FEB\u7167\u5931\u8D25\uFF08${provider}\uFF09: ${String(error)}`);
+  }
+}
+function restoreModelCatalog(provider, current) {
+  if (current !== void 0 && current.length > 0) return current;
+  return readModelCatalog(provider);
+}
+
+// vendor/channel-pack/src/buddy-adapter.ts
 import { ToolCallId as ToolCallId2 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/buddy.ts
@@ -39734,7 +39869,7 @@ var WORKBUDDY_FALLBACK_MODELS = [
   },
   {
     // 2026-09 补录：/v3/config 的 cli agent 白名单里有它，但兜底表原先漏了，
-    // 于是被 reconcileWithFallback 丢弃、模型选择器里看不到。实测能看图。
+    // 模型选择器里看不到。实测能看图。
     id: "hy4-preview",
     name: "Hy4 preview",
     contextWindow: 1e6,
@@ -40068,18 +40203,6 @@ var IMAGE_MODELS = /* @__PURE__ */ new Set([
   "kimi-k2.7",
   "kimi-k2.6",
   "minimax-m3"
-]);
-var REASONING_EFFORTS = /* @__PURE__ */ new Map([
-  ["deepseek-v4-flash", ["low", "high", "max"]],
-  ["deepseek-v4.1-flash", ["low", "high", "max"]],
-  ["deepseek-v4-pro", ["low", "high", "xhigh"]],
-  ["hy4-preview", ["high"]],
-  ["hy4-preview-x", ["high"]],
-  ["hy3", ["low", "high"]],
-  ["hy3-x", ["low", "high"]],
-  ["glm-5.3", ["low", "high", "max"]],
-  ["glm-5.3-flash", ["low", "high", "max"]],
-  ["glm-5.2", ["high", "xhigh"]]
 ]);
 var EFFORT_NAMES = {
   low: "Low",
@@ -40446,69 +40569,55 @@ var BuddyAdapter = class _BuddyAdapter extends LlmAdapter2 {
     await this.catalogGate.run(async () => {
       const models = await fetchRemote();
       if (models.length === 0) return false;
-      const reconciled = this.reconcileWithFallback(models);
-      this.remoteModels = reconciled;
-      this.remoteMeta = new Map(reconciled.map((model) => [model.id, model]));
-      this.remoteContextWindows = new Map(
-        reconciled.filter((model) => model.contextWindow !== void 0).map((model) => [model.id, model.contextWindow])
-      );
+      this.commitRemoteModels(models);
       return true;
     });
+    if (this.remoteModels === void 0) this.restoreRemoteModels();
   }
   /**
-   * 用产品兜底表校正远端结果。
+   * 采用一份远端目录：**整份替换**，不与兜底表做任何合并。
    *
-   * 为什么需要校正：服务端按**认证上下文**决定返回哪些模型，插件的 CLI
-   * token 拿到的集合可能是残缺甚至错的 —— 实测 WorkBuddy 国际版的 CLI token
-   * 只拿到 13 个内部别名（含实际不可用的 `o4-mini`），而 IDE 用的是 20 个
-   * （含全部 GPT 系列）。此时若直接采信远端，模型选择器会缺掉用户真正要用的模型。
+   * 用户 2026-10-27 拍板：远端目录就是唯一事实来源。原先的
+   * `reconcileWithFallback()`（兜底表打底 + 远端补字段 + 追加 agentReferenced）
+   * 已删除 —— 它会留下「远端根本没下发、所以永远没有倍率」的行
+   * （CodeBuddy 的 `kimi-k2.7` / `kimi-k2.6`，WorkBuddy 国际版的
+   * `gpt-5.3-codex` / `gemini-3.5-flash` / `kimi-k2.8-preview` 等）。
    *
-   * 有产品兜底表时以它为准：
-   * - 只保留兜底表里声明的 id（远端多出来的别名/内部模型被丢弃）；
-   * - 兜底表声明但远端缺失的模型补进来（用兜底表的元数据）；
-   * - ⚠️ **例外：被 agent 引用的模型即使不在兜底表也保留**（见下）。
-   *
-   * ⚠️ **为什么需要那个例外**：两个端点下发的 id 集合**不同**，而兜底表是
-   * 编译期快照、只覆盖其中一套。实测（2026-09-21）`hy4-preview-f`
-   * —— 新用户限时免费变体 —— **只由 `/v3/config` 下发**，且被
-   * `craft`/`ask`/`plan` 三个 agent 引用（即服务端声明「对话里可选」），
-   * 但**不在兜底表**里。白名单重建会把它丢掉，于是用户看不到那个免费变体，
-   * 而 IDE 里能看到（用户报障「hy4 preview 现在 ide 是免费我们还是 0.29」）。
-   *
-   * 判据用 `agentReferenced`（服务端自己的「可选」信号）而非猜测 id 后缀 ——
-   * 后缀规则不统一（`-f` / `-x` / `-sg` / `-ioa` 含义各异），猜错会放进
-   * 不可用的模型。未标记的内部别名（如 `default`）不会被误留。
+   * 代价（已与用户确认接受）：兜底表不再为远端缺字段的模型补
+   * `contextWindow` / `maxOutputTokens` / `reasoningEfforts`。
    */
-  reconcileWithFallback(models) {
-    const fallback2 = this.product.fallbackModels;
-    if (fallback2 === void 0 || fallback2.length === 0) return [...models];
-    const remoteById = new Map(models.map((model) => [model.id, model]));
-    const reconciled = fallback2.map((entry) => {
-      const remote = remoteById.get(entry.id);
-      return {
-        id: entry.id,
-        name: remote?.name ?? entry.name,
-        ...entry.contextWindow !== void 0 || remote?.contextWindow !== void 0 ? { contextWindow: remote?.contextWindow ?? entry.contextWindow } : {},
-        // 输出上限同样「远端优先、兜底补位」：远端不下发时兜底表给保守值，
-        // 两边都没有则留 undefined（不编造，见 resolveModel 的说明）。
-        ...entry.maxOutputTokens !== void 0 || remote?.maxOutputTokens !== void 0 ? { maxOutputTokens: remote?.maxOutputTokens ?? entry.maxOutputTokens } : {},
-        ...entry.supportsImages !== void 0 || remote?.supportsImages !== void 0 ? { supportsImages: remote?.supportsImages ?? entry.supportsImages } : {},
-        ...entry.reasoningEfforts !== void 0 || remote?.reasoningEfforts !== void 0 ? { reasoningEfforts: [...remote?.reasoningEfforts ?? entry.reasoningEfforts ?? []] } : {},
-        ...entry.defaultReasoningEffort !== void 0 || remote?.defaultReasoningEffort !== void 0 ? { defaultReasoningEffort: remote?.defaultReasoningEffort ?? entry.defaultReasoningEffort } : {},
-        // 计费倍率只可能来自远端（兜底表是编译期快照，价格会变，不写死）。
-        // 注意本函数是**白名单式重建**：不在这里显式搬运的字段会被静默丢弃，
-        // 新增远端字段时必须同步加一行，否则 listModels 看不到它。
-        ...remote?.creditsRate !== void 0 ? { creditsRate: remote.creditsRate } : {},
-        ...remote?.discountedCreditsRate !== void 0 ? { discountedCreditsRate: remote.discountedCreditsRate } : {}
-      };
-    });
-    const known = new Set(reconciled.map((model) => model.id));
-    for (const model of models) {
-      if (model.agentReferenced !== true || known.has(model.id)) continue;
-      known.add(model.id);
-      reconciled.push({ ...model });
-    }
-    return reconciled;
+  applyRemoteModels(models) {
+    this.remoteModels = [...models];
+    this.remoteMeta = new Map(models.map((model) => [model.id, model]));
+    this.remoteContextWindows = new Map(
+      models.filter((model) => model.contextWindow !== void 0).map((model) => [model.id, model.contextWindow])
+    );
+  }
+  /** 采用远端目录**并落盘**成快照（下次启动/离线时用它顶替兜底表）。 */
+  commitRemoteModels(models) {
+    this.applyRemoteModels(models);
+    writeModelCatalog(this.product.id, models);
+  }
+  /**
+   * 恢复上次成功拉取的目录快照；没有快照就保持 `undefined`（调用方退回兜底表）。
+   *
+   * ⚠️ 这里是**同步**的，且会被 `catalogSource()` 在 `ensureRemoteModels()` 之前
+   * 触发：`displayNameFor()` 走的是 RPC 的「补回被关闭模型」路径，不经过
+   * `listModels`；若不在这里恢复，那条路径只能退回兜底表 —— 表现为
+   * 「关闭的模型没有倍率」（用户 2026-10-26 报障过同类问题）。
+   */
+  restoreRemoteModels() {
+    const cached2 = readModelCatalog(this.product.id);
+    if (cached2 === void 0 || cached2.length === 0) return;
+    this.applyRemoteModels(cached2);
+  }
+  /**
+   * 目录来源：**远端（内存里的，或上次落盘的快照）优先**，两者都没有时才退回
+   * 编译期兜底表。
+   */
+  catalogSource() {
+    if (this.remoteModels === void 0) this.restoreRemoteModels();
+    return this.remoteModels ?? this.staticFallbackModels();
   }
   /**
    * 远端能力字段被实测证伪、需要强制覆盖为「支持图片」的模型。
@@ -40540,9 +40649,16 @@ var BuddyAdapter = class _BuddyAdapter extends LlmAdapter2 {
     const supportsImages = _BuddyAdapter.IMAGE_CAPABILITY_OVERRIDES.has(model) || (this.remoteMeta.get(model)?.supportsImages ?? this.productFallbackMeta.get(model)?.supportsImages ?? IMAGE_MODELS.has(model));
     return supportsImages ? ["text", "image"] : ["text"];
   }
-  /** 模型可选的思考等级：远端 supportedEfforts 优先，产品兜底表次之，通用静态表最后。 */
+  /**
+   * 模型可选的思考等级——**只认远端 `reasoning.supportedEfforts`**。
+   *
+   * 用户 2026-10-27：「远端给什么，就用什么，远端无思考程度，就算本地有也没用的
+   * 啊。」档位 id 必须被上游接受：本地兜底表里那些值若上游不认，用户点下去只会
+   * 被静默忽略（或直接报错），比不显示选择器更糟。故远端没声明就返回空数组，
+   * UI 显示「该模型未提供推理等级」。
+   */
   effortsFor(model) {
-    return this.remoteMeta.get(model)?.reasoningEfforts ?? this.productFallbackMeta.get(model)?.reasoningEfforts ?? REASONING_EFFORTS.get(model) ?? [];
+    return this.remoteMeta.get(model)?.reasoningEfforts ?? [];
   }
   /**
    * 模型声明的默认思考等级（远端 `reasoning.defaultEffort` 优先，产品兜底表次之）。
@@ -40551,7 +40667,7 @@ var BuddyAdapter = class _BuddyAdapter extends LlmAdapter2 {
    * 若声明值不在该模型的支持档内（远端数据不一致）则视为未声明，由调用方回退。
    */
   defaultEffortFor(model) {
-    const declared = this.remoteMeta.get(model)?.defaultReasoningEffort ?? this.productFallbackMeta.get(model)?.defaultReasoningEffort;
+    const declared = this.remoteMeta.get(model)?.defaultReasoningEffort;
     return declared !== void 0 && this.effortsFor(model).includes(declared) ? declared : void 0;
   }
   /**
@@ -40576,7 +40692,7 @@ var BuddyAdapter = class _BuddyAdapter extends LlmAdapter2 {
    * 变体标记，名字随开关跳变。
    */
   listAllModels() {
-    const source = this.remoteModels ?? this.staticFallbackModels();
+    const source = this.catalogSource();
     return source.map((model) => ({ id: model.id, name: displayNameFor(model, source) }));
   }
   /**
@@ -40587,7 +40703,7 @@ var BuddyAdapter = class _BuddyAdapter extends LlmAdapter2 {
    * 避免那些 id 以裸内部编码出现在界面上（用户 2026-10-26 报障）。
    */
   displayNameFor(modelId) {
-    const source = this.remoteModels ?? this.staticFallbackModels();
+    const source = this.catalogSource();
     const model = source.find((item) => item.id === modelId);
     return model === void 0 ? void 0 : displayNameFor(model, source);
   }
@@ -40604,12 +40720,7 @@ var BuddyAdapter = class _BuddyAdapter extends LlmAdapter2 {
     try {
       const models = await fetchRemote();
       if (models.length === 0) return false;
-      const reconciled = this.reconcileWithFallback(models);
-      this.remoteModels = reconciled;
-      this.remoteMeta = new Map(reconciled.map((model) => [model.id, model]));
-      this.remoteContextWindows = new Map(
-        reconciled.filter((model) => model.contextWindow !== void 0).map((model) => [model.id, model.contextWindow])
-      );
+      this.commitRemoteModels(models);
       return true;
     } catch {
       return false;
@@ -40618,7 +40729,7 @@ var BuddyAdapter = class _BuddyAdapter extends LlmAdapter2 {
   async listModels(_provider) {
     if (!await providerCatalogVisible(this.options.accountPool, this.product.id)) return [];
     await this.ensureRemoteModels();
-    const source = this.remoteModels ?? this.staticFallbackModels();
+    const source = this.catalogSource();
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id);
     const listed = disabled === void 0 || disabled.size === 0 ? source : source.filter((model) => !disabled.has(model.id));
     return listed.map((model) => ({
@@ -40658,7 +40769,7 @@ var BuddyAdapter = class _BuddyAdapter extends LlmAdapter2 {
     if (maxOutputTokens !== void 0) resolved.defaultMaxTokens = maxOutputTokens;
     const efforts = this.effortsFor(model);
     if (efforts.length > 0) {
-      const remoteDefault = this.remoteMeta.get(model)?.defaultReasoningEffort ?? this.productFallbackIndex.get(model)?.defaultReasoningEffort;
+      const remoteDefault = this.remoteMeta.get(model)?.defaultReasoningEffort;
       resolved.reasoning = {
         efforts: efforts.map((id) => ({
           id: ReasoningEffortId2(id),
@@ -41489,7 +41600,7 @@ function withQoderNickname(credential, nickname) {
 }
 
 // vendor/channel-pack/src/qoder-wasm.ts
-import { readFileSync as readFileSync5 } from "node:fs";
+import { readFileSync as readFileSync6 } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 var WASM_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "qoder-auth-wasm.wasm");
@@ -41575,7 +41686,7 @@ async function getGlue() {
   return gluePromise;
 }
 async function createGlue() {
-  const bytes = readFileSync5(WASM_PATH);
+  const bytes = readFileSync6(WASM_PATH);
   const module = await WebAssembly.compile(bytes);
   let exports = {};
   let cachedHeap = null;
@@ -43179,13 +43290,15 @@ var QoderAdapter = class extends LlmAdapter3 {
         if (rows.length > 0) {
           this.remoteModels = rows;
           this.remoteModelsAt = Date.now();
+          writeModelCatalog(this.product.id, rows);
         }
       } catch {
       } finally {
         this.loadingRemote = void 0;
       }
     })();
-    return this.loadingRemote;
+    await this.loadingRemote;
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels);
   }
   /**
    * 可用模型集合：**远端与兜底的并集**（远端优先）。
@@ -43217,17 +43330,9 @@ var QoderAdapter = class extends LlmAdapter3 {
     return remote ?? this.fallbackIndex.get(modelId);
   }
   modelSource() {
-    if (this.remoteModels === void 0) return this.product.fallbackModels;
-    return this.remoteModels.map((model) => {
-      const local = this.fallbackIndex.get(model.id);
-      if (local === void 0) return model;
-      return {
-        ...model,
-        ...model.efforts === void 0 && local.efforts !== void 0 ? { efforts: local.efforts } : {},
-        ...model.defaultEffort === void 0 && local.defaultEffort !== void 0 ? { defaultEffort: local.defaultEffort } : {},
-        ...model.supportsDisable === void 0 && local.supportsDisable !== void 0 ? { supportsDisable: local.supportsDisable } : {}
-      };
-    });
+    const remoteModels = restoreModelCatalog(this.product.id, this.remoteModels);
+    if (remoteModels === void 0) return this.product.fallbackModels;
+    return remoteModels;
   }
   /**
    * 完整模型目录（**不应用用户黑名单**），含最终展示名（倍率/免费标记）。
@@ -44848,8 +44953,16 @@ var TraeAdapter = class extends LlmAdapter4 {
       if (models.length === 0) return false;
       this.remoteModels = models;
       this.remoteMeta = new Map(models.map((model) => [model.id, model]));
+      writeModelCatalog(this.product.id, models);
       return true;
     });
+    if (this.remoteModels === void 0) {
+      const cached2 = restoreModelCatalog(this.product.id, this.remoteModels);
+      if (cached2 !== void 0) {
+        this.remoteModels = cached2;
+        this.remoteMeta = new Map(cached2.map((model) => [model.id, model]));
+      }
+    }
   }
   /**
    * 模型接受的输入模态 —— **逐模型**判定，不是按 provider 一刀切。
@@ -44998,7 +45111,8 @@ var TraeAdapter = class extends LlmAdapter4 {
    * 对话框模型选择器读的仍是 `listModels`（已过滤），可见性行为不变。
    */
   listAllModels() {
-    const source = this.remoteModels === void 0 ? this.staticFallbackModels() : this.remoteModels.filter((model) => isTraeModelCallable(model) && model.isHidden !== true);
+    const remote = restoreModelCatalog(this.product.id, this.remoteModels);
+    const source = remote === void 0 ? this.staticFallbackModels() : remote.filter((model) => isTraeModelCallable(model) && model.isHidden !== true);
     return source.map((model) => ({ id: model.id, name: traeDisplayName(model) }));
   }
   /**
@@ -45008,7 +45122,7 @@ var TraeAdapter = class extends LlmAdapter4 {
    * 好（用户报障：「模型列表出现 qmodel 等字段」）。
    */
   displayNameFor(modelId) {
-    const remote = this.remoteModels?.find((model) => model.id === modelId);
+    const remote = restoreModelCatalog(this.product.id, this.remoteModels)?.find((model) => model.id === modelId);
     if (remote !== void 0) return traeDisplayName(remote);
     return this.product.fallbackModels.find((model) => model.id === modelId)?.name;
   }
@@ -45027,6 +45141,7 @@ var TraeAdapter = class extends LlmAdapter4 {
       if (models.length === 0) return false;
       this.remoteModels = models;
       this.remoteMeta = new Map(models.map((model) => [model.id, model]));
+      writeModelCatalog(this.product.id, models);
       return true;
     } catch {
       return false;
@@ -46384,13 +46499,14 @@ var ClineAdapter = class extends LlmAdapter5 {
         }
         if (!gotRemote) return false;
         this.remoteModels = merged;
-        return true;
+        writeModelCatalog(this.product.id, merged);
         return true;
       } catch (error) {
         console.warn(`[cline] \u6A21\u578B\u76EE\u5F55\u62C9\u53D6\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`);
         return false;
       }
     });
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels);
   }
   /**
    * 懒加载 models.dev 目录，并发去重。
@@ -46445,7 +46561,7 @@ var ClineAdapter = class extends LlmAdapter5 {
    * 故实际使用中不会读到空目录。
    */
   listAllModels() {
-    const source = this.remoteModels ?? this.fallbackCatalog();
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.fallbackCatalog();
     if (this.remoteModels === void 0) void this.ensureRemoteModels();
     return source.map((model) => ({ id: model.id, name: clineDisplayName(model), isFree: model.isFree }));
   }
@@ -46483,7 +46599,7 @@ var ClineAdapter = class extends LlmAdapter5 {
     if (loggedIn) {
       await this.ensureRemoteModels();
     }
-    const source = loggedIn ? this.remoteModels ?? this.fallbackCatalog() : this.fallbackCatalog();
+    const source = loggedIn ? restoreModelCatalog(this.product.id, this.remoteModels) ?? this.fallbackCatalog() : this.fallbackCatalog();
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id);
     const listed = disabled === void 0 || disabled.size === 0 ? source : source.filter((model) => !disabled.has(model.id));
     return listed.map((model) => ({
@@ -46498,7 +46614,7 @@ var ClineAdapter = class extends LlmAdapter5 {
   }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
-    const source = this.remoteModels ?? this.fallbackCatalog();
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.fallbackCatalog();
     const entry = source.find((candidate) => candidate.id === model);
     const resolved = {
       provider,
@@ -47270,19 +47386,21 @@ var CommandCodeAdapter = class extends LlmAdapter6 {
         if (!isCredentialUsable(credential)) return;
         this.remoteModels = await fetchModelCatalog(this.fetchImpl, this.product, credential);
         this.remoteModelsAt = Date.now();
+        writeModelCatalog(this.product.id, this.remoteModels);
       } catch {
       } finally {
         this.loading = void 0;
       }
     })();
-    return this.loading;
+    await this.loading;
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels);
   }
   async listModels(_provider) {
     if (this.options.accountPool !== void 0 && !await providerCatalogVisible(this.options.accountPool, this.product.id)) {
       return [];
     }
     await this.ensureRemoteModels();
-    const source = this.remoteModels ?? fallbackRows(this.product);
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? fallbackRows(this.product);
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id);
     const listed = disabled === void 0 || disabled.size === 0 ? source : source.filter((model) => !disabled.has(model.id));
     return listed.map((model) => ({
@@ -47294,7 +47412,7 @@ var CommandCodeAdapter = class extends LlmAdapter6 {
   }
   /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数显示「—」。 */
   listAllModels() {
-    const source = this.remoteModels ?? fallbackRows(this.product);
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? fallbackRows(this.product);
     return source.map((model) => ({ id: model.id, name: model.name }));
   }
   /**
@@ -47304,7 +47422,7 @@ var CommandCodeAdapter = class extends LlmAdapter6 {
    * 报障的「模型列表出现 qmodel 等字段」正是这一类。
    */
   displayNameFor(modelId) {
-    const source = this.remoteModels ?? fallbackRows(this.product);
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? fallbackRows(this.product);
     return source.find((model) => model.id === modelId)?.name;
   }
   /**
@@ -47327,7 +47445,7 @@ var CommandCodeAdapter = class extends LlmAdapter6 {
   }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
-    const source = this.remoteModels ?? fallbackRows(this.product);
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? fallbackRows(this.product);
     const entry = source.find((candidate) => candidate.id === model);
     const resolved = {
       provider,
@@ -47683,19 +47801,21 @@ var MonkeyCodeAdapter = class extends LlmAdapter7 {
         if (!isCredentialUsable2(credential)) return;
         this.remoteModels = await fetchModels(this.fetchImpl, this.product, credential);
         this.remoteModelsAt = Date.now();
+        writeModelCatalog(this.product.id, this.remoteModels);
       } catch {
       } finally {
         this.loading = void 0;
       }
     })();
-    return this.loading;
+    await this.loading;
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels);
   }
   async listModels(_provider) {
     if (this.options.accountPool !== void 0 && !await providerCatalogVisible(this.options.accountPool, this.product.id)) {
       return [];
     }
     await this.ensureRemoteModels();
-    const all = this.remoteModels ?? this.product.fallbackModels.map((model) => ({ ...model }));
+    const all = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels.map((model) => ({ ...model }));
     const source = all.filter((model) => model.isHidden !== true);
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id);
     const listed = disabled === void 0 || disabled.size === 0 ? source : source.filter((model) => !disabled.has(model.id));
@@ -47709,7 +47829,7 @@ var MonkeyCodeAdapter = class extends LlmAdapter7 {
   }
   /** 「显示列表」用的完整目录（不套用户黑名单；上游标 is_hidden 的仍排除）。 */
   listAllModels() {
-    const all = this.remoteModels ?? this.product.fallbackModels.map((model) => ({ ...model }));
+    const all = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels.map((model) => ({ ...model }));
     return all.filter((model) => model.isHidden !== true).map((model) => ({ id: model.id, name: monkeyCodeDisplayName(model) }));
   }
   /**
@@ -47719,7 +47839,7 @@ var MonkeyCodeAdapter = class extends LlmAdapter7 {
    * 报障的「模型列表出现 qmodel 等字段」）。
    */
   displayNameFor(modelId) {
-    const source = this.remoteModels ?? this.product.fallbackModels;
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels;
     const model = source.find((item) => item.id === modelId);
     return model === void 0 ? void 0 : monkeyCodeDisplayName(model);
   }
@@ -47737,6 +47857,7 @@ var MonkeyCodeAdapter = class extends LlmAdapter7 {
       if (rows.length === 0) return false;
       this.remoteModels = rows;
       this.remoteModelsAt = Date.now();
+      writeModelCatalog(this.product.id, rows);
       return true;
     } catch {
       return false;
@@ -47744,7 +47865,7 @@ var MonkeyCodeAdapter = class extends LlmAdapter7 {
   }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
-    const source = this.remoteModels ?? [...this.product.fallbackModels];
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? [...this.product.fallbackModels];
     const entry = source.find((candidate) => candidate.id === model);
     const resolved = {
       provider,
@@ -48224,9 +48345,9 @@ function registerOrcaTermLlm(ctx, options) {
 
 // vendor/channel-pack/src/kuku-adapter.ts
 init_kuku_product();
+import { LlmAdapter as LlmAdapter9, LlmError as LlmError13, ReasoningEffortId as ReasoningEffortId7 } from "@deepseek-ai/dsh-llm";
 init_kuku();
 init_kuku_auth();
-import { LlmAdapter as LlmAdapter9, LlmError as LlmError13, ReasoningEffortId as ReasoningEffortId7 } from "@deepseek-ai/dsh-llm";
 var REMOTE_MODELS_TTL_MS3 = 6e5;
 function parseKukuCatalog(value) {
   const data = value !== null && typeof value === "object" && "data" in value ? value.data : value;
@@ -48302,7 +48423,7 @@ var KukuAdapter = class extends LlmAdapter9 {
       return [];
     }
     await this.ensureRemoteModels();
-    const source = this.remoteModels ?? this.product.fallbackModels;
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels;
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id);
     const listed = disabled === void 0 || disabled.size === 0 ? source : source.filter((model) => !disabled.has(model.id));
     return listed.map((model) => ({
@@ -48316,7 +48437,7 @@ var KukuAdapter = class extends LlmAdapter9 {
   }
   /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数会显示「—」。 */
   listAllModels() {
-    const source = this.remoteModels ?? this.product.fallbackModels;
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels;
     return source.map((model) => ({ id: model.id, name: kukuDisplayName(model) }));
   }
   /**
@@ -48326,7 +48447,7 @@ var KukuAdapter = class extends LlmAdapter9 {
    * 报障的「模型列表出现 qmodel 等字段」）。
    */
   displayNameFor(modelId) {
-    const source = this.remoteModels ?? this.product.fallbackModels;
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels;
     const model = source.find((item) => item.id === modelId);
     return model === void 0 ? void 0 : kukuDisplayName(model);
   }
@@ -48375,13 +48496,15 @@ var KukuAdapter = class extends LlmAdapter9 {
           this.remoteThinkLevels = catalog.thinkLevels;
           this.remoteDefaultThinkId = catalog.defaultThinkId;
           this.remoteModelsAt = Date.now();
+          writeModelCatalog(this.product.id, catalog.models);
         }
       } catch {
       } finally {
         this.loading = void 0;
       }
     })();
-    return this.loading;
+    await this.loading;
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels);
   }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
@@ -48476,9 +48599,9 @@ function registerKukuLlm(ctx, options) {
 
 // vendor/channel-pack/src/accio-adapter.ts
 init_accio_product();
+import { LlmAdapter as LlmAdapter10, LlmError as LlmError14, ReasoningEffortId as ReasoningEffortId8 } from "@deepseek-ai/dsh-llm";
 init_accio();
 init_accio_auth();
-import { LlmAdapter as LlmAdapter10, LlmError as LlmError14, ReasoningEffortId as ReasoningEffortId8 } from "@deepseek-ai/dsh-llm";
 var REMOTE_MODELS_TTL_MS4 = 3e5;
 function accioDisplayName(model) {
   const base = model.nameCn !== void 0 && model.nameCn !== "" ? model.nameCn : model.name;
@@ -48522,19 +48645,21 @@ var AccioAdapter = class extends LlmAdapter10 {
         if (!isCredentialUsable5(credential)) return;
         this.remoteModels = await fetchModels2(this.fetchImpl, this.product, credential);
         this.remoteModelsAt = Date.now();
+        writeModelCatalog(this.product.id, this.remoteModels);
       } catch {
       } finally {
         this.loading = void 0;
       }
     })();
-    return this.loading;
+    await this.loading;
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels);
   }
   async listModels(_provider) {
     if (this.options.accountPool !== void 0 && !await providerCatalogVisible(this.options.accountPool, this.product.id)) {
       return [];
     }
     await this.ensureRemoteModels();
-    const source = this.remoteModels ?? this.product.fallbackModels;
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels;
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id);
     const listed = disabled === void 0 || disabled.size === 0 ? source : source.filter((model) => !disabled.has(model.id));
     return listed.map((model) => ({
@@ -48548,7 +48673,7 @@ var AccioAdapter = class extends LlmAdapter10 {
   }
   /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数显示「—」。 */
   listAllModels() {
-    const source = this.remoteModels ?? this.product.fallbackModels;
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels;
     return source.map((model) => ({ id: model.id, name: accioDisplayName(model) }));
   }
   /**
@@ -48558,7 +48683,7 @@ var AccioAdapter = class extends LlmAdapter10 {
    * 报障的「模型列表出现 qmodel 等字段」）。
    */
   displayNameFor(modelId) {
-    const source = this.remoteModels ?? this.product.fallbackModels;
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels;
     const model = source.find((item) => item.id === modelId);
     return model === void 0 ? void 0 : accioDisplayName(model);
   }
@@ -48582,7 +48707,7 @@ var AccioAdapter = class extends LlmAdapter10 {
   }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
-    const source = this.remoteModels ?? this.product.fallbackModels;
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels;
     const entry = source.find((candidate) => candidate.id === model);
     const resolved = {
       provider,
@@ -48670,8 +48795,8 @@ function registerAccioLlm(ctx, options) {
 
 // vendor/channel-pack/src/officeace-adapter.ts
 init_officeace_product();
-init_officeace();
 import { LlmAdapter as LlmAdapter11, LlmError as LlmError15 } from "@deepseek-ai/dsh-llm";
+init_officeace();
 var FIRST_TOKEN_TIMEOUT_MS2 = 3e5;
 var CHUNK_TIMEOUT_MS2 = 3e5;
 var REMOTE_MODELS_TTL_MS5 = 3e5;
@@ -48733,20 +48858,22 @@ var OfficeAceAdapter = class extends LlmAdapter11 {
         if (rows.length > 0) {
           this.remoteModels = rows;
           this.remoteModelsAt = Date.now();
+          writeModelCatalog(this.product.id, rows);
         }
       } catch {
       } finally {
         this.loading = void 0;
       }
     })();
-    return this.loading;
+    await this.loading;
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels);
   }
   async listModels(_provider) {
     if (this.options.accountPool !== void 0 && !await providerCatalogVisible(this.options.accountPool, this.product.id)) {
       return [];
     }
     await this.ensureRemoteModels();
-    const source = this.remoteModels ?? this.product.fallbackModels;
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels;
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id);
     const listed = disabled === void 0 || disabled.size === 0 ? source : source.filter((model) => !disabled.has(model.id));
     return listed.map((model) => ({
@@ -48758,7 +48885,7 @@ var OfficeAceAdapter = class extends LlmAdapter11 {
   }
   /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数显示「—」。 */
   listAllModels() {
-    const source = this.remoteModels ?? this.product.fallbackModels;
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels;
     return source.map((model) => ({ id: model.id, name: model.name }));
   }
   /**
@@ -48768,7 +48895,7 @@ var OfficeAceAdapter = class extends LlmAdapter11 {
    * 报障的「模型列表出现 qmodel 等字段」）。
    */
   displayNameFor(modelId) {
-    const source = this.remoteModels ?? this.product.fallbackModels;
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels;
     return source.find((model) => model.id === modelId)?.name;
   }
   /**
@@ -48791,7 +48918,7 @@ var OfficeAceAdapter = class extends LlmAdapter11 {
   }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
-    const source = this.remoteModels ?? this.product.fallbackModels;
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels;
     const entry = source.find((candidate) => candidate.id === model);
     const resolved = {
       provider,
@@ -48891,8 +49018,8 @@ function registerOfficeAceLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/autoclaw-adapter.ts
-init_autoclaw_product();
 import { LlmAdapter as LlmAdapter12, LlmError as LlmError16, ReasoningEffortId as ReasoningEffortId9 } from "@deepseek-ai/dsh-llm";
+init_autoclaw_product();
 
 // vendor/channel-pack/src/autoclaw.ts
 init_autoclaw_sms();
@@ -49062,24 +49189,24 @@ var AutoClawAdapter = class extends LlmAdapter12 {
         if (!response.ok) return;
         const rows = parseModelConfig(await response.json().catch(() => void 0));
         if (rows.length > 0) {
-          const seen = new Set(rows.map((row) => row.id));
-          const missing = this.product.fallbackModels.filter((model) => !seen.has(model.id));
-          this.remoteModels = [...rows, ...missing.map((model) => ({ ...model }))];
+          this.remoteModels = rows;
           this.remoteModelsAt = Date.now();
+          writeModelCatalog(this.product.id, rows);
         }
       } catch {
       } finally {
         this.loading = void 0;
       }
     })();
-    return this.loading;
+    await this.loading;
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels);
   }
   async listModels(_provider) {
     if (this.options.accountPool !== void 0 && !await providerCatalogVisible(this.options.accountPool, this.product.id)) {
       return [];
     }
     await this.ensureRemoteModels();
-    const source = this.remoteModels ?? this.product.fallbackModels;
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels;
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id);
     const listed = disabled === void 0 || disabled.size === 0 ? source : source.filter((model) => !disabled.has(model.id));
     return listed.map((model) => ({
@@ -49117,7 +49244,7 @@ var AutoClawAdapter = class extends LlmAdapter12 {
     await this.ensureRemoteModels();
   }
   listAllModels() {
-    const source = this.remoteModels ?? this.product.fallbackModels;
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels;
     return source.map((model) => ({ id: model.id, name: autoClawDisplayName(model) }));
   }
   /**
@@ -49127,7 +49254,7 @@ var AutoClawAdapter = class extends LlmAdapter12 {
    * 真找不到时才让调用方退回裸 id。
    */
   displayNameFor(modelId) {
-    const source = this.remoteModels ?? this.product.fallbackModels;
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels;
     const model = source.find((item) => item.id === modelId);
     return model === void 0 ? void 0 : autoClawDisplayName(model);
   }
@@ -49139,7 +49266,7 @@ var AutoClawAdapter = class extends LlmAdapter12 {
    * 积分钱包按来源分账（活动/签到/订阅/加油包），没有模型维度。
    */
   quotaFor(modelId) {
-    const source = this.remoteModels ?? this.product.fallbackModels;
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels;
     const model = source.find((item) => item.id === modelId);
     return model === void 0 ? void 0 : autoClawQuota(model);
   }
@@ -49163,7 +49290,7 @@ var AutoClawAdapter = class extends LlmAdapter12 {
   }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
-    const source = this.remoteModels ?? this.product.fallbackModels;
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels;
     const entry = source.find((candidate) => candidate.id === model);
     const resolved = {
       provider,
@@ -49481,7 +49608,7 @@ var LoomyAdapter = class extends LlmAdapter13 {
   }
   /** 完整目录（**不套黑名单**），带最终展示名。设置页需要它渲染被关闭的模型。 */
   listAllModels() {
-    const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote);
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels.map(fallbackToRemote);
     return source.map((model) => ({ id: model.id, name: model.name }));
   }
   /**
@@ -49491,7 +49618,7 @@ var LoomyAdapter = class extends LlmAdapter13 {
    * 报障的「模型列表出现 qmodel 等字段」）。
    */
   displayNameFor(modelId) {
-    const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote);
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels.map(fallbackToRemote);
     return source.find((model) => model.id === modelId)?.name;
   }
   /**
@@ -49507,6 +49634,7 @@ var LoomyAdapter = class extends LlmAdapter13 {
       const fetched = await fetchRemote();
       if (fetched.length === 0) return false;
       this.remoteModels = fetched;
+      writeModelCatalog(this.product.id, fetched);
       return true;
     } catch {
       return false;
@@ -49529,10 +49657,13 @@ var LoomyAdapter = class extends LlmAdapter13 {
         const fetched = await fetchRemote();
         if (fetched.length === 0) return false;
         this.remoteModels = fetched;
+        writeModelCatalog(this.product.id, fetched);
         return true;
       });
       if (this.remoteModels !== void 0) return this.remoteModels;
     }
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels);
+    if (this.remoteModels !== void 0) return this.remoteModels;
     return this.product.fallbackModels.map(fallbackToRemote);
   }
   inputModalitiesFor(model) {
@@ -49643,7 +49774,7 @@ var LoomyAdapter = class extends LlmAdapter13 {
     }
     const messages = serializeMessages3(options.messages, imageUrls);
     const wireMessages = options.system !== void 0 && options.system.length > 0 ? [{ role: "system", content: options.system }, ...messages] : messages;
-    const effortsForModel = (await this.loadModels()).find((m) => m.id === options.model)?.efforts ?? this.fallbackIndex.get(options.model)?.efforts;
+    const effortsForModel = (await this.loadModels()).find((m) => m.id === options.model)?.efforts;
     const effort = options.reasoningEffort !== void 0 && effortsForModel !== void 0 && effortsForModel.includes(options.reasoningEffort) ? options.reasoningEffort : void 0;
     const buildBody = () => JSON.stringify({
       model: options.model,
@@ -49994,7 +50125,7 @@ var RaccoonAdapter = class extends LlmAdapter14 {
    * 补回，而那条路径拿不到展示名，会退化成裸 id（倍率与模型名随之丢失）。
    */
   listAllModels() {
-    const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote2);
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels.map(fallbackToRemote2);
     return source.map((model) => ({ id: model.id, name: model.name }));
   }
   /**
@@ -50004,7 +50135,7 @@ var RaccoonAdapter = class extends LlmAdapter14 {
    * 「模型列表出现 qmodel 等字段」）。
    */
   displayNameFor(modelId) {
-    const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote2);
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels.map(fallbackToRemote2);
     return source.find((model) => model.id === modelId)?.name;
   }
   /**
@@ -50020,6 +50151,7 @@ var RaccoonAdapter = class extends LlmAdapter14 {
       const fetched = await fetchRemote();
       if (fetched.length === 0) return false;
       this.remoteModels = fetched;
+      writeModelCatalog(this.product.id, fetched);
       return true;
     } catch {
       return false;
@@ -50042,10 +50174,13 @@ var RaccoonAdapter = class extends LlmAdapter14 {
         const fetched = await fetchRemote();
         if (fetched.length === 0) return false;
         this.remoteModels = fetched;
+        writeModelCatalog(this.product.id, fetched);
         return true;
       });
       if (this.remoteModels !== void 0) return this.remoteModels;
     }
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels);
+    if (this.remoteModels !== void 0) return this.remoteModels;
     return this.product.fallbackModels.map(fallbackToRemote2);
   }
   inputModalitiesFor(model) {
@@ -55797,10 +55932,10 @@ function zcodeProductById(id) {
 
 // vendor/channel-pack/src/zcode-captcha.ts
 import { spawn as spawn2, spawnSync } from "node:child_process";
-import { existsSync as existsSync5, mkdtempSync, rmSync, writeFileSync as writeFileSync6 } from "node:fs";
+import { existsSync as existsSync6, mkdtempSync, rmSync, writeFileSync as writeFileSync7 } from "node:fs";
 import { createServer as createServer7 } from "node:net";
 import { homedir as homedir2, tmpdir } from "node:os";
-import { basename, isAbsolute, join as join5, posix } from "node:path";
+import { basename, isAbsolute, join as join6, posix } from "node:path";
 var ZCODE_CAPTCHA_FALLBACK = {
   region: "cn",
   prefix: "no8xfe",
@@ -55867,21 +56002,21 @@ function windowsBrowserCandidates(env, home) {
      * 用户设了它们就说明默认路径不对。若排在 `~/scoop` 之后，会出现
      * 「旧默认路径恰好存在 → 用它，而用户实际在用的那个被忽略」。
      */
-    ...env.SCOOP !== void 0 && env.SCOOP.trim().length > 0 ? [join5(env.SCOOP.trim(), "apps", "chromium", "current", "chrome.exe")] : [],
-    ...env.SCOOP_GLOBAL !== void 0 && env.SCOOP_GLOBAL.trim().length > 0 ? [join5(env.SCOOP_GLOBAL.trim(), "apps", "chromium", "current", "chrome.exe")] : [],
+    ...env.SCOOP !== void 0 && env.SCOOP.trim().length > 0 ? [join6(env.SCOOP.trim(), "apps", "chromium", "current", "chrome.exe")] : [],
+    ...env.SCOOP_GLOBAL !== void 0 && env.SCOOP_GLOBAL.trim().length > 0 ? [join6(env.SCOOP_GLOBAL.trim(), "apps", "chromium", "current", "chrome.exe")] : [],
     // ② scoop 默认根目录（`~/scoop`）。实测可用。
-    join5(home, "scoop", "apps", "chromium", "current", "chrome.exe"),
+    join6(home, "scoop", "apps", "chromium", "current", "chrome.exe"),
     // ③ 系统 Chrome。
-    join5(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
-    join5(programFilesX86, "Google", "Chrome", "Application", "chrome.exe"),
-    join5(localAppData, "Google", "Chrome", "Application", "chrome.exe"),
+    join6(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
+    join6(programFilesX86, "Google", "Chrome", "Application", "chrome.exe"),
+    join6(localAppData, "Google", "Chrome", "Application", "chrome.exe"),
     // ④ Chromium。
-    join5(localAppData, "Chromium", "Application", "chrome.exe"),
-    join5(programFiles, "Chromium", "Application", "chrome.exe"),
+    join6(localAppData, "Chromium", "Application", "chrome.exe"),
+    join6(programFiles, "Chromium", "Application", "chrome.exe"),
     // ⑤ Edge（Chromium 内核，系统普遍自带）。
-    join5(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe"),
-    join5(programFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
-    join5(localAppData, "Microsoft", "Edge", "Application", "msedge.exe")
+    join6(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe"),
+    join6(programFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
+    join6(localAppData, "Microsoft", "Edge", "Application", "msedge.exe")
   ];
 }
 function macBrowserCandidates(home) {
@@ -55934,7 +56069,7 @@ function findBrowserExecutable() {
   for (const candidate of browserCandidates()) {
     try {
       if (candidate.length === 0 || !isAbsolute(candidate)) continue;
-      if (existsSync5(candidate)) return candidate;
+      if (existsSync6(candidate)) return candidate;
     } catch {
     }
   }
@@ -56208,10 +56343,10 @@ foreach ($h in $all) {
 }
 Write-Output "hidden=$n"
 `;
-    const dir = mkdtempSync(join5(tmpdir(), "zcode-hide-"));
-    const file = join5(dir, "hide.ps1");
+    const dir = mkdtempSync(join6(tmpdir(), "zcode-hide-"));
+    const file = join6(dir, "hide.ps1");
     dirCreated = dir;
-    writeFileSync6(file, script, "ascii");
+    writeFileSync7(file, script, "ascii");
     const child = spawn2("powershell.exe", [
       "-NoProfile",
       "-NonInteractive",
@@ -56369,7 +56504,7 @@ var ZcodeCaptchaBrowser = class {
       );
     }
     this.spawnFailure = void 0;
-    this.profileDir = mkdtempSync(join5(tmpdir(), "zcode-captcha-"));
+    this.profileDir = mkdtempSync(join6(tmpdir(), "zcode-captcha-"));
     this.port = this.options.debugPort ?? await pickFreePort();
     const hide = this.options.hideWindow !== false;
     this.child = spawn2(executable, [
@@ -59755,9 +59890,9 @@ function buildEnvironmentSection(options) {
 }
 function isGitRepo(cwd) {
   try {
-    const { existsSync: existsSync12 } = __require("node:fs");
-    const { join: join14 } = __require("node:path");
-    return existsSync12(join14(cwd, ".git"));
+    const { existsSync: existsSync13 } = __require("node:fs");
+    const { join: join15 } = __require("node:path");
+    return existsSync13(join15(cwd, ".git"));
   } catch {
     return false;
   }
@@ -60086,7 +60221,7 @@ var ZcodeAdapter = class extends LlmAdapter15 {
     return remaining === void 0 ? void 0 : zcodeQuota(remaining.units);
   }
   listAllModels() {
-    const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote3);
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels.map(fallbackToRemote3);
     return source.map((model) => ({
       id: model.id,
       name: zcodeDisplayName(model, this.remainingFor(model.id))
@@ -60099,7 +60234,7 @@ var ZcodeAdapter = class extends LlmAdapter15 {
    * 这里只负责别把内部 id 直接摊到界面上（用户 2026-10-26 报障）。
    */
   displayNameFor(modelId) {
-    const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote3);
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels.map(fallbackToRemote3);
     return source.find((model) => model.id === modelId)?.name;
   }
   /**
@@ -60121,9 +60256,13 @@ var ZcodeAdapter = class extends LlmAdapter15 {
     if (fetchRemote !== void 0 && this.remoteModels === void 0) {
       try {
         const fetched = await fetchRemote();
-        if (fetched.length > 0) this.remoteModels = fetched;
+        if (fetched.length > 0) {
+          this.remoteModels = fetched;
+          writeModelCatalog(this.product.id, fetched);
+        }
       } catch {
       }
+      this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels);
     }
     if (this.modelRemaining === void 0) await this.refreshModelRemaining();
   }
@@ -60134,6 +60273,7 @@ var ZcodeAdapter = class extends LlmAdapter15 {
       const fetched = await fetchRemote();
       if (fetched.length === 0) return false;
       this.remoteModels = fetched;
+      writeModelCatalog(this.product.id, fetched);
       await this.refreshModelRemaining();
       return true;
     } catch {
@@ -60157,10 +60297,13 @@ var ZcodeAdapter = class extends LlmAdapter15 {
         const fetched = await fetchRemote();
         if (fetched.length === 0) return false;
         this.remoteModels = fetched;
+        writeModelCatalog(this.product.id, fetched);
         return true;
       });
       if (this.remoteModels !== void 0) return this.remoteModels;
     }
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels);
+    if (this.remoteModels !== void 0) return this.remoteModels;
     return this.product.fallbackModels.map(fallbackToRemote3);
   }
   inputModalitiesFor(model) {
@@ -62576,9 +62719,9 @@ function quotaRejectionHint(text) {
 
 // vendor/channel-pack/src/qoder-machine.ts
 import { execFileSync, spawn as spawn3 } from "node:child_process";
-import { existsSync as existsSync6, readFileSync as readFileSync7, readdirSync } from "node:fs";
+import { existsSync as existsSync7, readFileSync as readFileSync8, readdirSync } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { join as join6 } from "node:path";
+import { join as join7 } from "node:path";
 var RUNTIME_INFO_TIMEOUT_MS = 2e4;
 var cached;
 function candidatePaths() {
@@ -62588,20 +62731,20 @@ function candidatePaths() {
   const appData = process.env.APPDATA;
   if (appData !== void 0 && appData.length > 0) {
     for (const dir of ["Qoder", "Qoder CN"]) {
-      paths.push(join6(appData, dir, "SharedClientCache", "cache", "machine_token.json"));
+      paths.push(join7(appData, dir, "SharedClientCache", "cache", "machine_token.json"));
     }
   }
   const home = homedir3();
   for (const dir of ["Qoder", "Qoder CN"]) {
-    paths.push(join6(home, "Library", "Application Support", dir, "SharedClientCache", "cache", "machine_token.json"));
-    paths.push(join6(home, ".config", dir, "SharedClientCache", "cache", "machine_token.json"));
+    paths.push(join7(home, "Library", "Application Support", dir, "SharedClientCache", "cache", "machine_token.json"));
+    paths.push(join7(home, ".config", dir, "SharedClientCache", "cache", "machine_token.json"));
   }
   return paths;
 }
 function parseFile(path2) {
   let raw;
   try {
-    raw = readFileSync7(path2, "utf8");
+    raw = readFileSync8(path2, "utf8");
   } catch {
     return void 0;
   }
@@ -62640,7 +62783,7 @@ var QODER_DATA_DIR_NAMES = [".qoder", ".qoder-cn"];
 function findRuntimeInfoExecutable(home, dataDirNames = QODER_DATA_DIR_NAMES) {
   const exeName = process.platform === "win32" ? "runtime-info.exe" : "runtime-info";
   for (const dirName of dataDirNames) {
-    const binDir = join6(home, dirName, ".bin");
+    const binDir = join7(home, dirName, ".bin");
     let entries;
     try {
       entries = readdirSync(binDir);
@@ -62649,8 +62792,8 @@ function findRuntimeInfoExecutable(home, dataDirNames = QODER_DATA_DIR_NAMES) {
     }
     const dir = entries.find((name2) => name2.startsWith("umid-"));
     if (dir === void 0) continue;
-    const exe = join6(binDir, dir, exeName);
-    if (existsSync6(exe)) return exe;
+    const exe = join7(binDir, dir, exeName);
+    if (existsSync7(exe)) return exe;
   }
   return void 0;
 }
@@ -62658,7 +62801,7 @@ function locateRuntimeInfo(override) {
   const fromEnv = process.env.QODER_RUNTIME_INFO;
   const candidate = override ?? (fromEnv !== void 0 && fromEnv.length > 0 ? fromEnv : void 0);
   if (candidate !== void 0) {
-    return existsSync6(candidate) ? candidate : void 0;
+    return existsSync7(candidate) ? candidate : void 0;
   }
   return findRuntimeInfoExecutable(homedir3());
 }
@@ -65037,8 +65180,8 @@ async function handleOpencodeRpc(ctx, pool, method, payload) {
 }
 
 // vendor/channel-pack/src/badge-preferences.ts
-import { existsSync as existsSync7, mkdirSync as mkdirSync6, readFileSync as readFileSync8, renameSync as renameSync5, writeFileSync as writeFileSync7 } from "node:fs";
-import { join as join7 } from "node:path";
+import { existsSync as existsSync8, mkdirSync as mkdirSync7, readFileSync as readFileSync9, renameSync as renameSync6, writeFileSync as writeFileSync8 } from "node:fs";
+import { join as join8 } from "node:path";
 var BADGE_PREFERENCES_FILE = "ui-preferences.json";
 var BADGE_PREFERENCES = ["auto", "subscription", "credits"];
 var DEFAULT_BADGE_PREFERENCE = "auto";
@@ -65056,17 +65199,17 @@ var MemoryPreferenceStore = class {
   }
 };
 var FilePreferenceStore = class {
-  constructor(path2, logger2) {
+  constructor(path2, logger3) {
     this.path = path2;
-    this.logger = logger2;
+    this.logger = logger3;
   }
   path;
   logger;
   kind = "file";
   load() {
     try {
-      if (!existsSync7(this.path)) return DEFAULT_BADGE_PREFERENCE;
-      const parsed = JSON.parse(readFileSync8(this.path, "utf-8"));
+      if (!existsSync8(this.path)) return DEFAULT_BADGE_PREFERENCE;
+      const parsed = JSON.parse(readFileSync9(this.path, "utf-8"));
       return sanitizeBadgePreference(preferenceFieldOf(parsed));
     } catch (error) {
       this.logger?.warn(`[channel-pack] \u8BFB\u53D6 ${this.path} \u5931\u8D25\uFF0C\u7528\u91CF\u5FBD\u6807\u504F\u597D\u6309\u9ED8\u8BA4\u503C\u5904\u7406: ${String(error)}`);
@@ -65074,13 +65217,13 @@ var FilePreferenceStore = class {
     }
   }
   async save(preference) {
-    mkdirSync6(join7(this.path, ".."), { recursive: true });
+    mkdirSync7(join8(this.path, ".."), { recursive: true });
     const tmp = `${this.path}.tmp`;
-    writeFileSync7(tmp, JSON.stringify({ schema: SCHEMA3, badgePreference: preference }, null, 2), "utf-8");
-    renameSync5(tmp, this.path);
+    writeFileSync8(tmp, JSON.stringify({ schema: SCHEMA4, badgePreference: preference }, null, 2), "utf-8");
+    renameSync6(tmp, this.path);
   }
 };
-var SCHEMA3 = "dsh-codearts-auth/ui-preferences/v1";
+var SCHEMA4 = "dsh-codearts-auth/ui-preferences/v1";
 function preferenceFieldOf(parsed) {
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return parsed;
   const record = parsed;
@@ -65092,7 +65235,7 @@ function createBadgePreferenceStore(ctx) {
     ctx.logger?.warn?.("[channel-pack] \u65E0\u6CD5\u5B9A\u4F4D DSH home\uFF0C\u7528\u91CF\u5FBD\u6807\u504F\u597D\u4EC5\u5B58\u5728\u4E8E\u5185\u5B58\u4E2D");
     return new MemoryPreferenceStore();
   }
-  return new FilePreferenceStore(join7(home, "channel-pack", BADGE_PREFERENCES_FILE), ctx.logger);
+  return new FilePreferenceStore(join8(home, "channel-pack", BADGE_PREFERENCES_FILE), ctx.logger);
 }
 
 // vendor/channel-pack/src/badge-subscription.ts
@@ -65274,10 +65417,10 @@ function isAllFailed(snapshot) {
 }
 
 // vendor/channel-pack/src/auto-checkin.ts
-import { existsSync as existsSync8, mkdirSync as mkdirSync7, readFileSync as readFileSync9, renameSync as renameSync6, writeFileSync as writeFileSync8 } from "node:fs";
-import { join as join8 } from "node:path";
+import { existsSync as existsSync9, mkdirSync as mkdirSync8, readFileSync as readFileSync10, renameSync as renameSync7, writeFileSync as writeFileSync9 } from "node:fs";
+import { join as join9 } from "node:path";
 var AUTO_CHECKIN_FILE = "auto-checkin.json";
-var SCHEMA4 = "dsh-codearts-auth/auto-checkin/v2";
+var SCHEMA5 = "dsh-codearts-auth/auto-checkin/v2";
 var DEFAULT_AUTO_CHECKIN = {
   enabled: true,
   lastDate: "",
@@ -65451,27 +65594,27 @@ var MemoryAutoCheckinStore = class {
   }
 };
 var FileAutoCheckinStore = class {
-  constructor(path2, logger2) {
+  constructor(path2, logger3) {
     this.path = path2;
-    this.logger = logger2;
+    this.logger = logger3;
   }
   path;
   logger;
   kind = "file";
   load() {
     try {
-      if (!existsSync8(this.path)) return { ...DEFAULT_AUTO_CHECKIN };
-      return sanitizeAutoCheckin(JSON.parse(readFileSync9(this.path, "utf-8")));
+      if (!existsSync9(this.path)) return { ...DEFAULT_AUTO_CHECKIN };
+      return sanitizeAutoCheckin(JSON.parse(readFileSync10(this.path, "utf-8")));
     } catch (error) {
       this.logger?.warn(`[channel-pack] \u8BFB\u53D6 ${this.path} \u5931\u8D25\uFF0C\u81EA\u52A8\u7B7E\u5230\u6309\u9ED8\u8BA4\u8BBE\u7F6E\uFF08\u5F00\u542F\uFF09\u5904\u7406: ${String(error)}`);
       return { ...DEFAULT_AUTO_CHECKIN };
     }
   }
   async save(doc) {
-    mkdirSync7(join8(this.path, ".."), { recursive: true });
+    mkdirSync8(join9(this.path, ".."), { recursive: true });
     const tmp = `${this.path}.tmp`;
-    writeFileSync8(tmp, JSON.stringify({
-      schema: SCHEMA4,
+    writeFileSync9(tmp, JSON.stringify({
+      schema: SCHEMA5,
       enabled: doc.enabled,
       lastDate: doc.lastDate,
       lastResult: doc.lastResult,
@@ -65486,7 +65629,7 @@ var FileAutoCheckinStore = class {
       resultsDay: doc.resultsDay,
       dismissedRunAt: doc.dismissedRunAt
     }, null, 2), "utf-8");
-    renameSync6(tmp, this.path);
+    renameSync7(tmp, this.path);
   }
 };
 function createAutoCheckinStore(ctx) {
@@ -65495,7 +65638,7 @@ function createAutoCheckinStore(ctx) {
     ctx.logger?.warn?.("[channel-pack] \u65E0\u6CD5\u5B9A\u4F4D DSH home\uFF0C\u81EA\u52A8\u7B7E\u5230\u5F00\u5173\u4EC5\u5B58\u5728\u4E8E\u5185\u5B58\u4E2D");
     return new MemoryAutoCheckinStore();
   }
-  return new FileAutoCheckinStore(join8(home, "channel-pack", AUTO_CHECKIN_FILE), ctx.logger);
+  return new FileAutoCheckinStore(join9(home, "channel-pack", AUTO_CHECKIN_FILE), ctx.logger);
 }
 function emptyTotals2() {
   return { providers: 0, claimed: 0, totalCredit: 0, totalByUnit: { token: 0, credit: 0 }, alreadyClaimed: 0, inactive: 0, failed: 0, coversToday: 0, skipped: 0, errors: 0, givenUp: 0 };
@@ -69330,22 +69473,22 @@ var ADOPTABLE_CHANNELS = {
 import { createServer as createServer10 } from "node:http";
 import { randomUUID as randomUUID17 } from "node:crypto";
 import { homedir as homedir4 } from "node:os";
-import { join as join10 } from "node:path";
+import { join as join11 } from "node:path";
 
 // vendor/channel-pack/src/openai-gateway/auth.ts
-import { mkdirSync as mkdirSync8, readFileSync as readFileSync10, renameSync as renameSync7, writeFileSync as writeFileSync9, existsSync as existsSync9 } from "node:fs";
+import { mkdirSync as mkdirSync9, readFileSync as readFileSync11, renameSync as renameSync8, writeFileSync as writeFileSync10, existsSync as existsSync10 } from "node:fs";
 import { randomBytes as randomBytes13 } from "node:crypto";
-import { join as join9 } from "node:path";
+import { join as join10 } from "node:path";
 var KEY_FILE = "api-key";
 var KEY_PATTERN2 = /^[A-Za-z0-9_-]{43}$/;
 function loadOrCreateApiKey(home, env = process.env) {
   const configured = env.DSH_OPENAI_GATEWAY_API_KEY?.trim();
   if (configured) return { value: configured, fromEnv: true, path: null };
-  const directory = join9(home, "openai-gateway");
-  const path2 = join9(directory, KEY_FILE);
+  const directory = join10(home, "openai-gateway");
+  const path2 = join10(directory, KEY_FILE);
   let stored;
   try {
-    stored = readFileSync10(path2, "utf8").trim();
+    stored = readFileSync11(path2, "utf8").trim();
   } catch {
   }
   if (stored) {
@@ -69355,14 +69498,14 @@ function loadOrCreateApiKey(home, env = process.env) {
     );
   }
   const key = randomBytes13(32).toString("base64url");
-  mkdirSync8(directory, { recursive: true });
+  mkdirSync9(directory, { recursive: true });
   const temporary = `${path2}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync9(temporary, key, { encoding: "utf8", mode: 384 });
+  writeFileSync10(temporary, key, { encoding: "utf8", mode: 384 });
   try {
-    renameSync7(temporary, path2);
+    renameSync8(temporary, path2);
   } catch (error) {
-    if (existsSync9(path2)) {
-      const existing = readFileSync10(path2, "utf8").trim();
+    if (existsSync10(path2)) {
+      const existing = readFileSync11(path2, "utf8").trim();
       if (KEY_PATTERN2.test(existing)) return { value: existing, fromEnv: false, path: path2 };
     }
     throw error;
@@ -70753,33 +70896,33 @@ function authorized(request2, key) {
   return typeof value === "string" && value === `Bearer ${key}`;
 }
 function getHome(options) {
-  return options.home ?? options.env?.DSH_HOME ?? process.env.DSH_HOME ?? join10(homedir4(), ".dsh");
+  return options.home ?? options.env?.DSH_HOME ?? process.env.DSH_HOME ?? join11(homedir4(), ".dsh");
 }
 function createOpenAiGateway(options) {
   const env = options.env ?? process.env;
   const config = resolveGatewayConfig(env);
   const apiKey = loadOrCreateApiKey(getHome(options), env);
   const key = apiKey.value;
-  const logger2 = options.logger ?? defaultLogger;
+  const logger3 = options.logger ?? defaultLogger;
   let server;
   let boundPort = config.port;
   const active = /* @__PURE__ */ new Set();
   const describe2 = (error) => error instanceof Error ? error.message : String(error);
   const handleModels = async (response) => {
     const groups = await collectGatewayModels(options.llm, (provider, error) => {
-      logger2.warn(`[openai-gateway] ${provider} \u6A21\u578B\u76EE\u5F55\u8BFB\u53D6\u5931\u8D25\uFF0C\u5DF2\u4ECE /v1/models \u8DF3\u8FC7\uFF1A${describe2(error)}`);
+      logger3.warn(`[openai-gateway] ${provider} \u6A21\u578B\u76EE\u5F55\u8BFB\u53D6\u5931\u8D25\uFF0C\u5DF2\u4ECE /v1/models \u8DF3\u8FC7\uFF1A${describe2(error)}`);
     });
     const effortViews = await collectGatewayEffortViews(options.llm, groups, (provider, error) => {
-      logger2.warn(`[openai-gateway] ${provider}\uFF1A${describe2(error)}`);
+      logger3.warn(`[openai-gateway] ${provider}\uFF1A${describe2(error)}`);
     });
     jsonResponse(response, 200, { object: "list", data: toOpenAiModels(groups, effortViews) });
   };
   const handleReasoningEfforts = async (response) => {
     const groups = await collectGatewayModels(options.llm, (provider, error) => {
-      logger2.warn(`[openai-gateway] ${provider} \u6A21\u578B\u76EE\u5F55\u8BFB\u53D6\u5931\u8D25\uFF0C\u5DF2\u4ECE /v1/reasoning-efforts \u8DF3\u8FC7\uFF1A${describe2(error)}`);
+      logger3.warn(`[openai-gateway] ${provider} \u6A21\u578B\u76EE\u5F55\u8BFB\u53D6\u5931\u8D25\uFF0C\u5DF2\u4ECE /v1/reasoning-efforts \u8DF3\u8FC7\uFF1A${describe2(error)}`);
     });
     const effortViews = await collectGatewayEffortViews(options.llm, groups, (provider, error) => {
-      logger2.warn(`[openai-gateway] ${provider}\uFF1A${describe2(error)}`);
+      logger3.warn(`[openai-gateway] ${provider}\uFF1A${describe2(error)}`);
     });
     jsonResponse(response, 200, {
       object: "list",
@@ -70865,12 +71008,12 @@ function createOpenAiGateway(options) {
   const logEffortNotice = (route, notice) => {
     const target = `${route.provider}/${route.model}`;
     if (notice.outcome === "translated") {
-      logger2.info(
+      logger3.info(
         `[openai-gateway] ${target}\uFF1A\u601D\u8003\u6863\u4F4D ${notice.requested} \u4E0D\u662F\u8BE5\u6A21\u578B\u58F0\u660E\u7684 id\uFF0C\u5DF2\u6309\u5F3A\u5EA6\u5C31\u8FD1\u4E0B\u53D1 ${notice.applied}`
       );
       return;
     }
-    logger2.warn(
+    logger3.warn(
       `[openai-gateway] ${target}\uFF1A\u601D\u8003\u6863\u4F4D ${notice.requested} \u65E0\u6CD5\u8868\u8FBE\uFF08\u8BE5\u6A21\u578B\u6CA1\u6709\u8FD9\u4E00\u65CF\u7684\u6863\u4F4D\uFF09\uFF0C\u672C\u6B21\u4E0D\u4E0B\u53D1\u8BE5\u53C2\u6570\u3001\u6309\u6A21\u578B\u9ED8\u8BA4\u8D70`
     );
   };
@@ -70925,7 +71068,7 @@ function createOpenAiGateway(options) {
         bridge: options.attachments,
         limits: options.imageLimits
       }, (dropped) => {
-        logger2.warn(
+        logger3.warn(
           `[openai-gateway] /v1/responses\uFF1A\u5DE5\u5177\u7C7B\u578B ${dropped.type}${dropped.name === void 0 ? "" : `\uFF08${dropped.name}\uFF09`} \u65E0\u6CD5\u7528 DSH \u7684 ToolSchema \u8868\u8FBE\uFF0C\u5DF2\u4ECE\u672C\u6B21\u8BF7\u6C42\u4E22\u5F03`
         );
       });
@@ -70999,10 +71142,10 @@ function createOpenAiGateway(options) {
         current.once("listening", onListening);
         current.listen(config.port, config.host);
       }).catch((error) => {
-        logger2.error(`[openai-gateway] \u542F\u52A8\u5931\u8D25 ${config.host}:${config.port}\uFF1A${error instanceof Error ? error.message : String(error)}`);
+        logger3.error(`[openai-gateway] \u542F\u52A8\u5931\u8D25 ${config.host}:${config.port}\uFF1A${error instanceof Error ? error.message : String(error)}`);
         throw error;
       });
-      logger2.info(`[openai-gateway] \u5DF2\u76D1\u542C http://${config.host}:${boundPort}/v1`);
+      logger3.info(`[openai-gateway] \u5DF2\u76D1\u542C http://${config.host}:${boundPort}/v1`);
     },
     async close() {
       for (const controller of active) controller.abort();
@@ -71013,7 +71156,7 @@ function createOpenAiGateway(options) {
         current.close(() => resolve2());
         current.closeAllConnections?.();
       });
-      logger2.info("[openai-gateway] \u5DF2\u5173\u95ED");
+      logger3.info("[openai-gateway] \u5DF2\u5173\u95ED");
     },
     address() {
       return { host: config.host, port: boundPort };
@@ -71029,7 +71172,7 @@ function makeGatewayAttachmentBridge(ctx) {
   return { saveImage: (input) => attachments.saveImage(input) };
 }
 function mountOpenAiGateway(ctx, pool) {
-  const logger2 = {
+  const logger3 = {
     info: (message2) => ctx.logger?.info?.(message2),
     warn: (message2) => ctx.logger?.warn?.(message2),
     error: (message2) => ctx.logger?.error?.(message2)
@@ -71046,22 +71189,22 @@ function mountOpenAiGateway(ctx, pool) {
           // 提供文本能力，收到图片时明确报「未装载附件服务」而非静默丢图。
           attachments: makeGatewayAttachmentBridge(ctx),
           home: resolveChannelPackHome(ctx),
-          logger: logger2
+          logger: logger3
         });
       } catch (error) {
-        logger2.error(`[openai-gateway] \u521D\u59CB\u5316\u5931\u8D25\uFF0C\u672C\u673A\u7F51\u5173\u672A\u542F\u52A8\uFF1A${describe2(error)}`);
+        logger3.error(`[openai-gateway] \u521D\u59CB\u5316\u5931\u8D25\uFF0C\u672C\u673A\u7F51\u5173\u672A\u542F\u52A8\uFF1A${describe2(error)}`);
         return void 0;
       }
     });
   } catch (error) {
-    logger2.error(`[openai-gateway] \u521D\u59CB\u5316\u5931\u8D25\uFF0C\u672C\u673A\u7F51\u5173\u672A\u542F\u52A8\uFF1A${describe2(error)}`);
+    logger3.error(`[openai-gateway] \u521D\u59CB\u5316\u5931\u8D25\uFF0C\u672C\u673A\u7F51\u5173\u672A\u542F\u52A8\uFF1A${describe2(error)}`);
     return;
   }
   if (!isGatewayEnabled(process.env)) {
-    logger2.info("[openai-gateway] DSH_OPENAI_GATEWAY_ENABLED \u5DF2\u505C\u7528\u672C\u673A\u7F51\u5173");
+    logger3.info("[openai-gateway] DSH_OPENAI_GATEWAY_ENABLED \u5DF2\u505C\u7528\u672C\u673A\u7F51\u5173");
   }
   void applyGatewayDesiredState().catch((error) => {
-    logger2.error(`[openai-gateway] \u542F\u52A8\u5F02\u5E38\uFF1A${describe2(error)}`);
+    logger3.error(`[openai-gateway] \u542F\u52A8\u5F02\u5E38\uFF1A${describe2(error)}`);
   });
   ctx.effect(() => () => {
     void disposeGatewayRuntime();
@@ -71259,12 +71402,12 @@ function installLoopResume(ctx) {
 }
 
 // vendor/channel-pack/src/token-ledger-store.ts
-import { existsSync as existsSync10, mkdirSync as mkdirSync9, readFileSync as readFileSync11, renameSync as renameSync8, writeFileSync as writeFileSync10 } from "node:fs";
-import { join as join11 } from "node:path";
+import { existsSync as existsSync11, mkdirSync as mkdirSync10, readFileSync as readFileSync12, renameSync as renameSync9, writeFileSync as writeFileSync11 } from "node:fs";
+import { join as join12 } from "node:path";
 var TOKEN_LEDGER_FILE = "token-ledger.json";
 var TOKEN_LEDGER_DAYS = 90;
 var TOKEN_LEDGER_FLUSH_MS = 2e3;
-var SCHEMA5 = "dsh-codearts-auth/token-ledger/v1";
+var SCHEMA6 = "dsh-codearts-auth/token-ledger/v1";
 function pruneDays(days) {
   const cutoff = Date.now() + 8 * 60 * 60 * 1e3 - TOKEN_LEDGER_DAYS * 24 * 60 * 60 * 1e3;
   const pruned = /* @__PURE__ */ new Map();
@@ -71287,9 +71430,9 @@ var MemoryLedgerStore = class {
   }
 };
 var FileLedgerStore = class {
-  constructor(path2, logger2) {
+  constructor(path2, logger3) {
     this.path = path2;
-    this.logger = logger2;
+    this.logger = logger3;
     this.days = this.readFile();
     this.written = cloneDays(this.days);
   }
@@ -71311,8 +71454,8 @@ var FileLedgerStore = class {
   readFile() {
     const out = /* @__PURE__ */ new Map();
     try {
-      if (!existsSync10(this.path)) return out;
-      const parsed = JSON.parse(readFileSync11(this.path, "utf-8"));
+      if (!existsSync11(this.path)) return out;
+      const parsed = JSON.parse(readFileSync12(this.path, "utf-8"));
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return out;
       const record = parsed;
       if (typeof record.days !== "object" || record.days === null || Array.isArray(record.days)) return out;
@@ -71403,7 +71546,7 @@ var FileLedgerStore = class {
    */
   flush() {
     try {
-      mkdirSync9(join11(this.path, ".."), { recursive: true });
+      mkdirSync10(join12(this.path, ".."), { recursive: true });
       const merged = this.readFile();
       let hasDelta = false;
       for (const [day2, buckets] of this.days) {
@@ -71431,8 +71574,8 @@ var FileLedgerStore = class {
         days[day2] = Object.fromEntries(buckets);
       }
       const tmp = `${this.path}.tmp`;
-      writeFileSync10(tmp, JSON.stringify({ schema: SCHEMA5, days }, null, 2), "utf-8");
-      renameSync8(tmp, this.path);
+      writeFileSync11(tmp, JSON.stringify({ schema: SCHEMA6, days }, null, 2), "utf-8");
+      renameSync9(tmp, this.path);
       this.written = cloneDays(this.days);
     } catch (error) {
       this.logger?.warn(`[channel-pack] \u5199\u5165 ${this.path} \u5931\u8D25\uFF08\u672C\u6B21\u7EDF\u8BA1\u4E0D\u5165\u76D8\uFF09: ${String(error)}`);
@@ -71492,7 +71635,7 @@ function createTokenLedgerStore(ctx) {
     ctx.logger?.warn?.("[channel-pack] \u65E0\u6CD5\u5B9A\u4F4D DSH home\uFF0CToken \u7528\u91CF\u5386\u53F2\u4EC5\u5B58\u5728\u4E8E\u5185\u5B58\u4E2D");
     return new MemoryLedgerStore();
   }
-  return new FileLedgerStore(join11(home, "channel-pack", TOKEN_LEDGER_FILE), ctx.logger);
+  return new FileLedgerStore(join12(home, "channel-pack", TOKEN_LEDGER_FILE), ctx.logger);
 }
 
 // vendor/channel-pack/src/buddy-balance-selector.ts
@@ -72584,10 +72727,13 @@ var MinimaxAdapter = class extends LlmAdapter17 {
         const fetched = await fetchRemote();
         if (fetched.length === 0) return false;
         this.remoteModels = fetched;
+        writeModelCatalog(this.product.id, fetched);
         return true;
       });
       if (this.remoteModels !== void 0) return this.remoteModels;
     }
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels);
+    if (this.remoteModels !== void 0) return this.remoteModels;
     return minimaxFallbackEntries(this.product);
   }
   /**
@@ -72616,7 +72762,7 @@ var MinimaxAdapter = class extends LlmAdapter17 {
    * 与 `raccoon-adapter.ts:229-232` 逐字同构。
    */
   listAllModels() {
-    const source = this.remoteModels ?? minimaxFallbackEntries(this.product);
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? minimaxFallbackEntries(this.product);
     return source.map((model) => ({ id: model.id, name: model.name }));
   }
   /**
@@ -72626,7 +72772,7 @@ var MinimaxAdapter = class extends LlmAdapter17 {
    * 「模型列表出现 qmodel 等字段」）。
    */
   displayNameFor(modelId) {
-    const source = this.remoteModels ?? minimaxFallbackEntries(this.product);
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? minimaxFallbackEntries(this.product);
     return source.find((model) => model.id === modelId)?.name;
   }
   /**
@@ -72642,6 +72788,7 @@ var MinimaxAdapter = class extends LlmAdapter17 {
       const fetched = await fetchRemote();
       if (fetched.length === 0) return false;
       this.remoteModels = fetched;
+      writeModelCatalog(this.product.id, fetched);
       return true;
     } catch {
       return false;
@@ -73432,8 +73579,8 @@ var GeminiAuth = class extends Service11 {
 
 // vendor/channel-pack/src/gemini-sigstore.ts
 import { createHash as createHash14 } from "node:crypto";
-import { existsSync as existsSync11, mkdirSync as mkdirSync10, readFileSync as readFileSync12, renameSync as renameSync9, writeFileSync as writeFileSync11 } from "node:fs";
-import { dirname as dirname2, join as join12 } from "node:path";
+import { existsSync as existsSync12, mkdirSync as mkdirSync11, readFileSync as readFileSync13, renameSync as renameSync10, writeFileSync as writeFileSync12 } from "node:fs";
+import { dirname as dirname2, join as join13 } from "node:path";
 var GEMINI_SIG_FILE = "gemini-sigs.json";
 var GEMINI_SIG_MAX_ENTRIES = 2e3;
 var SIG_KEY_BODY_LIMIT = 512;
@@ -73448,9 +73595,9 @@ function trimGeminiSignature(signature) {
   return signature.trim();
 }
 var GeminiSigStore = class {
-  constructor(path2, logger2) {
+  constructor(path2, logger3) {
     this.path = path2;
-    this.logger = logger2;
+    this.logger = logger3;
     this.entries = this.load();
   }
   path;
@@ -73544,10 +73691,10 @@ var GeminiSigStore = class {
       2
     );
     try {
-      mkdirSync10(dirname2(this.path), { recursive: true });
+      mkdirSync11(dirname2(this.path), { recursive: true });
       const tmp = `${this.path}.tmp`;
-      writeFileSync11(tmp, payload, "utf-8");
-      renameSync9(tmp, this.path);
+      writeFileSync12(tmp, payload, "utf-8");
+      renameSync10(tmp, this.path);
     } catch (error) {
       this.logger?.warn(`[gemini] \u7B7E\u540D\u7F13\u5B58\u5199\u5165\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u63A8\u7406\uFF09: ${String(error)}`);
     }
@@ -73557,8 +73704,8 @@ var GeminiSigStore = class {
     const out = /* @__PURE__ */ new Map();
     if (this.path === void 0) return out;
     try {
-      if (!existsSync11(this.path)) return out;
-      const parsed = JSON.parse(readFileSync12(this.path, "utf-8"));
+      if (!existsSync12(this.path)) return out;
+      const parsed = JSON.parse(readFileSync13(this.path, "utf-8"));
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return out;
       for (const [key, value] of Object.entries(parsed)) {
         if (typeof value !== "object" || value === null) continue;
@@ -73582,7 +73729,7 @@ function createGeminiSigStore(ctx) {
     ctx.logger?.warn?.("[gemini] \u65E0\u6CD5\u5B9A\u4F4D DSH home\uFF0C\u7B7E\u540D\u7F13\u5B58\u4EC5\u5B58\u5728\u4E8E\u5185\u5B58\u4E2D\uFF08\u547D\u4E2D\u7387\u4F1A\u5728\u91CD\u542F\u540E\u5F52\u96F6\uFF09");
     return new GeminiSigStore(void 0, ctx.logger);
   }
-  return new GeminiSigStore(join12(home, "channel-pack", GEMINI_SIG_FILE), ctx.logger);
+  return new GeminiSigStore(join13(home, "channel-pack", GEMINI_SIG_FILE), ctx.logger);
 }
 
 // vendor/channel-pack/src/opencode-adapter.ts
@@ -73810,9 +73957,9 @@ function buildOpencodePayloadWithToolMap(input) {
 
 // vendor/channel-pack/src/opencode-capability.ts
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { readFileSync as readFileSync13 } from "node:fs";
+import { readFileSync as readFileSync14 } from "node:fs";
 import { homedir as homedir5 } from "node:os";
-import { join as join13 } from "node:path";
+import { join as join14 } from "node:path";
 var MEASURED_IMAGE_OVERRIDES = {
   // 实测 2026-10-02：models.dev 标 `modalities.input: ["text"]`，
   // 但 1×1 PNG 的多模态请求真实返回 200（big-pickle 是最常用的免费模型）。
@@ -73872,8 +74019,8 @@ function normalizeEntry(id, raw) {
   };
 }
 function cacheFilePath() {
-  const home = process.env.DSH_HOME?.trim() || join13(homedir5(), ".dsh");
-  return join13(home, "cache", "opencode-capabilities.json");
+  const home = process.env.DSH_HOME?.trim() || join14(homedir5(), ".dsh");
+  return join14(home, "cache", "opencode-capabilities.json");
 }
 var memory = [];
 var cacheFileAt = 0;
@@ -73896,7 +74043,7 @@ function loadDiskCacheSync() {
   if (diskLoaded) return;
   diskLoaded = true;
   try {
-    const raw = readFileSync13(cacheFilePath(), "utf8");
+    const raw = readFileSync14(cacheFilePath(), "utf8");
     const parsed = JSON.parse(raw);
     if (parsed?.version === 3 && Array.isArray(parsed.entries) && parsed.entries.length > 0) {
       memory = parsed.entries;
@@ -73908,7 +74055,7 @@ function loadDiskCacheSync() {
 async function writeDiskCache(entries) {
   try {
     const path2 = cacheFilePath();
-    await mkdir(join13(path2, ".."), { recursive: true });
+    await mkdir(join14(path2, ".."), { recursive: true });
     const payload = { version: 3, at: Date.now(), entries };
     await writeFile(path2, JSON.stringify(payload), "utf8");
   } catch {
@@ -74431,6 +74578,7 @@ function apply(ctx, config = {}) {
   const service = new CodeArtsAuth(ctx, { fetcher: signedNetwork.fetch });
   const pool = new AccountPool(ctx);
   configureDeadModelStore(ctx);
+  configureModelCatalogCache(ctx);
   const tokenLedgerStore = createTokenLedgerStore(ctx);
   const detachTokenLedger = attachTokenLedgerStore(tokenLedgerStore);
   ctx.effect(() => () => {

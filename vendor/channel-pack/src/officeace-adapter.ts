@@ -23,6 +23,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 
 import { OFFICEACE, type OfficeAceProduct } from './officeace-product.js'
+import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
 import {
   basicAuthHeader,
   isCredentialUsable,
@@ -119,14 +120,20 @@ export class OfficeAceAdapter extends LlmAdapter {
           const contextWindow = typeof contextRaw === 'number' && contextRaw > 0 ? contextRaw : 128_000
           rows.push({ id, name: typeof item.name === 'string' && item.name !== '' ? item.name : id, contextWindow })
         }
-        if (rows.length > 0) { this.remoteModels = rows; this.remoteModelsAt = Date.now() }
+        if (rows.length > 0) {
+          this.remoteModels = rows
+          this.remoteModelsAt = Date.now()
+          writeModelCatalog(this.product.id, rows)
+        }
       } catch {
         // 兜底表接管。
       } finally {
         this.loading = undefined
       }
     })()
-    return this.loading
+    await this.loading
+    // 远端这次没拉到：用上次成功落盘的快照顶替编译期兜底表（用户 2026-10-27）。
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels)
   }
 
   async listModels(_provider: string): Promise<readonly LlmModelInfo[]> {
@@ -135,7 +142,7 @@ export class OfficeAceAdapter extends LlmAdapter {
       return []
     }
     await this.ensureRemoteModels()
-    const source = this.remoteModels ?? this.product.fallbackModels
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id)
     const listed = disabled === undefined || disabled.size === 0
       ? source
@@ -150,7 +157,7 @@ export class OfficeAceAdapter extends LlmAdapter {
 
   /** 「显示列表」用的完整目录（不套用户黑名单）；缺了它卡片模型数显示「—」。 */
   listAllModels(): readonly { id: string; name: string }[] {
-    const source = this.remoteModels ?? this.product.fallbackModels
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels
     return source.map((model) => ({ id: model.id, name: model.name }))
   }
 
@@ -161,7 +168,7 @@ export class OfficeAceAdapter extends LlmAdapter {
    * 报障的「模型列表出现 qmodel 等字段」）。
    */
   displayNameFor(modelId: string): string | undefined {
-    const source = this.remoteModels ?? this.product.fallbackModels
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels
     return source.find((model) => model.id === modelId)?.name
   }
 
@@ -187,7 +194,7 @@ export class OfficeAceAdapter extends LlmAdapter {
 
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
     await this.ensureRemoteModels()
-    const source = this.remoteModels ?? this.product.fallbackModels
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels
     const entry = source.find((candidate) => candidate.id === model)
     const resolved: LlmResolvedModelInfo = {
       provider,

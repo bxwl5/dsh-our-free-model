@@ -61,6 +61,7 @@ import { refreshOfficeAceCredential } from './officeace.js'
 import { refreshAutoclawCredential } from './autoclaw-sms.js'
 import { AUTOCLAW } from './autoclaw-product.js'
 import { configureDeadModelStore, withDeadModelPruning } from './dead-model-store.js'
+import { configureModelCatalogCache } from './model-catalog-cache.js'
 import type { CodeArtsCredential, BuddyCredential } from './types.js'
 import type { QoderCredential } from './qoder.js'
 import type { TraeCredential } from './trae.js'
@@ -327,6 +328,15 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
   // 解析。必须在任何 `registerXxxLlm` 之前调用 —— 各适配器经
   // `registerAdapterIdempotent` 注册时就会包装上剔除逻辑（见该函数注释）。
   configureDeadModelStore(ctx)
+
+  // 远端模型目录快照（用户 2026-10-27 要求：「远端拉取全量覆盖兜底表，全部渠道
+  // 都这样」）。注入 ctx 同样只为复用同一份 home 解析（`profileContext.home` →
+  // `$DSH_HOME` → `~/.dsh`），让快照与 `state.json` 落在同一目录。
+  //
+  // 未调用也能工作（退化为环境变量解析），但那样会跳过 `profileContext.home`，
+  // 在 profile home ≠ `$DSH_HOME` 时把快照写到另一个目录 —— 与
+  // `dead-model-store.ts` 长注释警告的是同一类问题。
+  configureModelCatalogCache(ctx)
 
   // ===== Token 账本持久化（第 2 期 · 日聚合落盘）=====
   //

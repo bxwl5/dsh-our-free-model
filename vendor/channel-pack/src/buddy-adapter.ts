@@ -19,6 +19,7 @@ import {
 } from '@deepseek-ai/dsh-llm'
 import { AccountPool, providerCatalogVisible } from './account-pool.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
+import { readModelCatalog, writeModelCatalog } from './model-catalog-cache.js'
 import { settingsNamespaceFor } from './settings-compat.js'
 import {
   RATE_LIMIT_FALLBACK_MS,
@@ -159,19 +160,6 @@ const IMAGE_MODELS: ReadonlySet<string> = new Set([
  * 只列出**可枚举**等级的模型；仅有固定默认 effort 的模型（glm-5.1/kimi-*）
  * 不在此表内，即不向用户暴露等级选择器。
  */
-const REASONING_EFFORTS: ReadonlyMap<string, readonly string[]> = new Map([
-  ['deepseek-v4-flash', ['low', 'high', 'max']],
-  ['deepseek-v4.1-flash', ['low', 'high', 'max']],
-  ['deepseek-v4-pro', ['low', 'high', 'xhigh']],
-  ['hy4-preview', ['high']],
-  ['hy4-preview-x', ['high']],
-  ['hy3', ['low', 'high']],
-  ['hy3-x', ['low', 'high']],
-  ['glm-5.3', ['low', 'high', 'max']],
-  ['glm-5.3-flash', ['low', 'high', 'max']],
-  ['glm-5.2', ['high', 'xhigh']],
-])
-
 /** 思考等级 id → 展示名（对齐 DeepSeek 官方 provider 的命名）。 */
 const EFFORT_NAMES: Readonly<Record<string, string>> = {
   low: 'Low',
@@ -914,7 +902,7 @@ export class BuddyAdapter extends LlmAdapter {
     if (typeof modelId !== 'string' || modelId.length === 0) return false
     await this.ensureRemoteModels()
     // ⚠️ 兜底表（`BuddyFallbackModel`）**没有**倍率字段 —— 它是编译期快照，
-    // 价格会变，故刻意不写死（见 `reconcileWithFallback` 的说明）。
+    // 价格会变，故刻意不写死（兜底表只在远端整体不可用时顶替）。
     // 因此这里只信远端 `remoteMeta`；查不到即视为「无法确认免费」。
     const meta = this.remoteMeta.get(modelId)
     if (meta === undefined) return false
@@ -977,92 +965,63 @@ export class BuddyAdapter extends LlmAdapter {
     await this.catalogGate.run(async () => {
       const models = await fetchRemote()
       if (models.length === 0) return false
-      // /v3/config data.models[] 是权威来源（对齐 Rust TUI buddy_context_limits
-      // 注入逻辑）：远端下发的上下文窗口优先于静态 fallback 表；
-      // 能力字段（supportsImages / reasoning.supportedEfforts）同理。
-      const reconciled = this.reconcileWithFallback(models)
-      this.remoteModels = reconciled
-      this.remoteMeta = new Map(reconciled.map((model) => [model.id, model]))
-      this.remoteContextWindows = new Map(
-        reconciled
-          .filter((model) => model.contextWindow !== undefined)
-          .map((model) => [model.id, model.contextWindow as number]),
-      )
+      this.commitRemoteModels(models)
       return true
     })
+    // 远端这次没拉到（无账号 / 网络 / 冷却）：用**上次成功的那份快照**顶上。
+    // 这是用户 2026-10-27 要求的「重启/离线也用上次的快照」。
+    if (this.remoteModels === undefined) this.restoreRemoteModels()
   }
 
   /**
-   * 用产品兜底表校正远端结果。
+   * 采用一份远端目录：**整份替换**，不与兜底表做任何合并。
    *
-   * 为什么需要校正：服务端按**认证上下文**决定返回哪些模型，插件的 CLI
-   * token 拿到的集合可能是残缺甚至错的 —— 实测 WorkBuddy 国际版的 CLI token
-   * 只拿到 13 个内部别名（含实际不可用的 `o4-mini`），而 IDE 用的是 20 个
-   * （含全部 GPT 系列）。此时若直接采信远端，模型选择器会缺掉用户真正要用的模型。
+   * 用户 2026-10-27 拍板：远端目录就是唯一事实来源。原先的
+   * `reconcileWithFallback()`（兜底表打底 + 远端补字段 + 追加 agentReferenced）
+   * 已删除 —— 它会留下「远端根本没下发、所以永远没有倍率」的行
+   * （CodeBuddy 的 `kimi-k2.7` / `kimi-k2.6`，WorkBuddy 国际版的
+   * `gpt-5.3-codex` / `gemini-3.5-flash` / `kimi-k2.8-preview` 等）。
    *
-   * 有产品兜底表时以它为准：
-   * - 只保留兜底表里声明的 id（远端多出来的别名/内部模型被丢弃）；
-   * - 兜底表声明但远端缺失的模型补进来（用兜底表的元数据）；
-   * - ⚠️ **例外：被 agent 引用的模型即使不在兜底表也保留**（见下）。
-   *
-   * ⚠️ **为什么需要那个例外**：两个端点下发的 id 集合**不同**，而兜底表是
-   * 编译期快照、只覆盖其中一套。实测（2026-09-21）`hy4-preview-f`
-   * —— 新用户限时免费变体 —— **只由 `/v3/config` 下发**，且被
-   * `craft`/`ask`/`plan` 三个 agent 引用（即服务端声明「对话里可选」），
-   * 但**不在兜底表**里。白名单重建会把它丢掉，于是用户看不到那个免费变体，
-   * 而 IDE 里能看到（用户报障「hy4 preview 现在 ide 是免费我们还是 0.29」）。
-   *
-   * 判据用 `agentReferenced`（服务端自己的「可选」信号）而非猜测 id 后缀 ——
-   * 后缀规则不统一（`-f` / `-x` / `-sg` / `-ioa` 含义各异），猜错会放进
-   * 不可用的模型。未标记的内部别名（如 `default`）不会被误留。
+   * 代价（已与用户确认接受）：兜底表不再为远端缺字段的模型补
+   * `contextWindow` / `maxOutputTokens` / `reasoningEfforts`。
    */
-  private reconcileWithFallback(models: readonly BuddyRemoteModel[]): BuddyRemoteModel[] {
-    const fallback = this.product.fallbackModels
-    if (fallback === undefined || fallback.length === 0) return [...models]
-    const remoteById = new Map(models.map((model) => [model.id, model]))
-    const reconciled = fallback.map((entry) => {
-      const remote = remoteById.get(entry.id)
-      // 远端元数据优先（更权威），缺失的字段用兜底表补齐
-      return {
-        id: entry.id,
-        name: remote?.name ?? entry.name,
-        ...entry.contextWindow !== undefined || remote?.contextWindow !== undefined
-          ? { contextWindow: remote?.contextWindow ?? entry.contextWindow }
-          : {},
-        // 输出上限同样「远端优先、兜底补位」：远端不下发时兜底表给保守值，
-        // 两边都没有则留 undefined（不编造，见 resolveModel 的说明）。
-        ...entry.maxOutputTokens !== undefined || remote?.maxOutputTokens !== undefined
-          ? { maxOutputTokens: remote?.maxOutputTokens ?? entry.maxOutputTokens }
-          : {},
-        ...entry.supportsImages !== undefined || remote?.supportsImages !== undefined
-          ? { supportsImages: remote?.supportsImages ?? entry.supportsImages }
-          : {},
-        ...entry.reasoningEfforts !== undefined || remote?.reasoningEfforts !== undefined
-          ? { reasoningEfforts: [...(remote?.reasoningEfforts ?? entry.reasoningEfforts ?? [])] }
-          : {},
-        ...entry.defaultReasoningEffort !== undefined || remote?.defaultReasoningEffort !== undefined
-          ? { defaultReasoningEffort: remote?.defaultReasoningEffort ?? entry.defaultReasoningEffort }
-          : {},
-        // 计费倍率只可能来自远端（兜底表是编译期快照，价格会变，不写死）。
-        // 注意本函数是**白名单式重建**：不在这里显式搬运的字段会被静默丢弃，
-        // 新增远端字段时必须同步加一行，否则 listModels 看不到它。
-        ...remote?.creditsRate !== undefined ? { creditsRate: remote.creditsRate } : {},
-        ...remote?.discountedCreditsRate !== undefined
-          ? { discountedCreditsRate: remote.discountedCreditsRate }
-          : {},
-      }
-    })
-    // ⚠️ 追加「被 agent 引用但不在兜底表」的模型（见本方法注释的例外说明）。
-    //
-    // 放在**末尾**：兜底表里的模型保持原有顺序与权威性，补充的变体排在后面，
-    // 不打乱用户已熟悉的列表顺序。
-    const known = new Set(reconciled.map((model) => model.id))
-    for (const model of models) {
-      if (model.agentReferenced !== true || known.has(model.id)) continue
-      known.add(model.id)
-      reconciled.push({ ...model })
-    }
-    return reconciled
+  private applyRemoteModels(models: readonly BuddyRemoteModel[]): void {
+    this.remoteModels = [...models]
+    this.remoteMeta = new Map(models.map((model) => [model.id, model]))
+    this.remoteContextWindows = new Map(
+      models
+        .filter((model) => model.contextWindow !== undefined)
+        .map((model) => [model.id, model.contextWindow as number]),
+    )
+  }
+
+  /** 采用远端目录**并落盘**成快照（下次启动/离线时用它顶替兜底表）。 */
+  private commitRemoteModels(models: readonly BuddyRemoteModel[]): void {
+    this.applyRemoteModels(models)
+    writeModelCatalog(this.product.id, models)
+  }
+
+  /**
+   * 恢复上次成功拉取的目录快照；没有快照就保持 `undefined`（调用方退回兜底表）。
+   *
+   * ⚠️ 这里是**同步**的，且会被 `catalogSource()` 在 `ensureRemoteModels()` 之前
+   * 触发：`displayNameFor()` 走的是 RPC 的「补回被关闭模型」路径，不经过
+   * `listModels`；若不在这里恢复，那条路径只能退回兜底表 —— 表现为
+   * 「关闭的模型没有倍率」（用户 2026-10-26 报障过同类问题）。
+   */
+  private restoreRemoteModels(): void {
+    const cached = readModelCatalog<BuddyRemoteModel>(this.product.id)
+    if (cached === undefined || cached.length === 0) return
+    this.applyRemoteModels(cached)
+  }
+
+  /**
+   * 目录来源：**远端（内存里的，或上次落盘的快照）优先**，两者都没有时才退回
+   * 编译期兜底表。
+   */
+  private catalogSource(): readonly BuddyRemoteModel[] {
+    if (this.remoteModels === undefined) this.restoreRemoteModels()
+    return this.remoteModels ?? this.staticFallbackModels()
   }
 
   /**
@@ -1100,12 +1059,16 @@ export class BuddyAdapter extends LlmAdapter {
     return supportsImages ? ['text', 'image'] : ['text']
   }
 
-  /** 模型可选的思考等级：远端 supportedEfforts 优先，产品兜底表次之，通用静态表最后。 */
+  /**
+   * 模型可选的思考等级——**只认远端 `reasoning.supportedEfforts`**。
+   *
+   * 用户 2026-10-27：「远端给什么，就用什么，远端无思考程度，就算本地有也没用的
+   * 啊。」档位 id 必须被上游接受：本地兜底表里那些值若上游不认，用户点下去只会
+   * 被静默忽略（或直接报错），比不显示选择器更糟。故远端没声明就返回空数组，
+   * UI 显示「该模型未提供推理等级」。
+   */
   private effortsFor(model: string): readonly string[] {
-    return this.remoteMeta.get(model)?.reasoningEfforts
-      ?? this.productFallbackMeta.get(model)?.reasoningEfforts
-      ?? REASONING_EFFORTS.get(model)
-      ?? []
+    return this.remoteMeta.get(model)?.reasoningEfforts ?? []
   }
 
   /**
@@ -1115,8 +1078,8 @@ export class BuddyAdapter extends LlmAdapter {
    * 若声明值不在该模型的支持档内（远端数据不一致）则视为未声明，由调用方回退。
    */
   private defaultEffortFor(model: string): string | undefined {
+    // 同上：默认档也只认远端（本地表的值可能已不在远端支持集合里）。
     const declared = this.remoteMeta.get(model)?.defaultReasoningEffort
-      ?? this.productFallbackMeta.get(model)?.defaultReasoningEffort
     return declared !== undefined && this.effortsFor(model).includes(declared) ? declared : undefined
   }
 
@@ -1143,7 +1106,7 @@ export class BuddyAdapter extends LlmAdapter {
    * 变体标记，名字随开关跳变。
    */
   listAllModels(): readonly { id: string; name: string }[] {
-    const source = this.remoteModels ?? this.staticFallbackModels()
+    const source = this.catalogSource()
     return source.map((model) => ({ id: model.id, name: displayNameFor(model, source) }))
   }
 
@@ -1155,7 +1118,7 @@ export class BuddyAdapter extends LlmAdapter {
    * 避免那些 id 以裸内部编码出现在界面上（用户 2026-10-26 报障）。
    */
   displayNameFor(modelId: string): string | undefined {
-    const source = this.remoteModels ?? this.staticFallbackModels()
+    const source = this.catalogSource()
     const model = source.find((item) => item.id === modelId)
     return model === undefined ? undefined : displayNameFor(model, source)
   }
@@ -1173,14 +1136,7 @@ export class BuddyAdapter extends LlmAdapter {
     try {
       const models = await fetchRemote()
       if (models.length === 0) return false
-      const reconciled = this.reconcileWithFallback(models)
-      this.remoteModels = reconciled
-      this.remoteMeta = new Map(reconciled.map((model) => [model.id, model]))
-      this.remoteContextWindows = new Map(
-        reconciled
-          .filter((model) => model.contextWindow !== undefined)
-          .map((model) => [model.id, model.contextWindow as number]),
-      )
+      this.commitRemoteModels(models)
       return true
     } catch {
       // 网络抖动 / 凭据失效：保留上一次的目录。
@@ -1194,7 +1150,7 @@ export class BuddyAdapter extends LlmAdapter {
     // ⚠️ 必须返回 `[]` 而**不能抛错**（抛错会被归入 catalog 的 `failures`）。
     if (!await providerCatalogVisible(this.options.accountPool, this.product.id)) return []
     await this.ensureRemoteModels()
-    const source = this.remoteModels ?? this.staticFallbackModels()
+    const source = this.catalogSource()
     // 用户在 Channel Pack 关闭的模型（黑名单制：不在表里即默认打开）。
     // 按本适配器的产品 id 取表，CodeBuddy 与 WorkBuddy 的开关互不影响。
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id)
@@ -1261,7 +1217,6 @@ export class BuddyAdapter extends LlmAdapter {
     const efforts = this.effortsFor(model)
     if (efforts.length > 0) {
       const remoteDefault = this.remoteMeta.get(model)?.defaultReasoningEffort
-        ?? this.productFallbackIndex.get(model)?.defaultReasoningEffort
       resolved.reasoning = {
         efforts: efforts.map((id) => ({
           id: ReasoningEffortId(id),

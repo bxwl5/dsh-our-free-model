@@ -471,13 +471,10 @@ export interface BuddyRemoteModel {
   /**
    * 是否被**某个 agent 引用**（即服务端声明「该模型可在对话里选择」）。
    *
-   * ⚠️ 用途：`reconcileWithFallback` 是**白名单式重建**，不在产品兜底表里的
-   * id 会被丢弃。而两个端点下发的 id 集合不同 —— 实测 `hy4-preview-f`
-   * （新用户限时免费变体）**只由 `/v3/config` 下发**且**被 craft/ask/plan 引用**，
-   * 却不在兜底表里，于是被丢弃，用户看不到那个免费变体。
-   *
-   * 故用本标志把「服务端说可选」的模型保留下来；未声明的内部别名
-   * （如 `default`）不会被误留。
+   * ⚠️ 自 2026-10-27 起本标志**不再参与目录构建**：那时用户拍板「远端目录全量
+   * 覆盖兜底表」，适配器里的 `reconcileWithFallback()` 已删除，远端下发什么就
+   * 显示什么。此处继续解析它只是**保留诊断信息**（排查「某个模型为什么没出现
+   * 在 IDE 里」时，能一眼看出服务端是否把它挂到了 agent 上）。
    */
   agentReferenced?: boolean
 }
@@ -748,7 +745,8 @@ export function parseModelsFromConfig(body: unknown): BuddyRemoteModel[] {
   const promotions = parsePromotions(record)
 
   // 收集**全部** agent 引用的 id（含 craft/ask/plan/cli）。
-  // 用于给模型打 `agentReferenced` 标记 —— 适配器的 `reconcileWithFallback`
+  // 用于给模型打 `agentReferenced` 标记（自 2026-10-27 起仅作诊断用，
+  // 不再参与目录构建 —— 见 `BuddyRemoteModel.agentReferenced` 的说明）。
   // 是白名单式重建，不在产品兜底表里的 id 会被丢弃，而两个端点下发的 id
   // 集合不同（实测 `hy4-preview-f` 只在 /v3/config 里且被 agent 引用），
   // 该标记让「服务端说可选」的模型得以保留。

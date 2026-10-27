@@ -613,13 +613,17 @@ export async function verifyKukuSseProtocol() {
 }
 
 /**
- * AutoClaw 目录并集回归（2026-10-26）。
+ * AutoClaw 目录**全量覆盖**回归（2026-10-27 翻转，原为「并集」）。
  *
- * 上游目录接口下发的集合**不完整**：官方客户端有 4 个模型，目录只回 3 个，
- * 缺 `zai_glm-5.3-flash`（它在上游静态表 models.rs 里存在且实测可调用）。
- * 故 adapter 必须把远端与兜底表做**并集**，直接替换会吞掉第 4 个。
+ * 历史：2026-10-26 这里锁的是并集 —— 上游目录只回 3 个、官方客户端有 4 个，
+ * 缺的 `zai_glm-5.3-flash` 只在兜底表里，当时要求补齐。
+ *
+ * 2026-10-27 用户改为全局规则「远端拉取全量覆盖兜底表（不是增量），全部渠道都
+ * 这样；远端给什么就用什么」。故 adapter 现在**整份替换**：目录没下发的 id 不再
+ * 从兜底表补 —— 代价就是这个模型会从列表里消失（换掉的是「远端没数据、
+ * 因而永远没有倍率」的行）。
  */
-export async function verifyAutoClawCatalogUnion() {
+export async function verifyAutoClawCatalogReplace() {
   const http = await import('node:http')
   const { fetch: realFetch } = await import('undici')
   const { AutoClawAdapter } = await import('../vendor/channel-pack/src/autoclaw-adapter.ts')
@@ -651,11 +655,12 @@ export async function verifyAutoClawCatalogUnion() {
   try {
     const models = await adapter.listModels('autoclaw')
     const ids = models.map(m => m.id)
-    assert.equal(ids.length, 4, `应合并出 4 个模型（远端 3 + 兜底补齐 1），实得 ${ids.length}：${ids.join(',')}`)
-    assert.ok(ids.includes('zai_glm-5.3-flash'), '第 4 个模型 zai_glm-5.3-flash 必须保留（目录不下发但真实可用）')
-    assert.ok(ids.includes('zai_auto'), '远端模型也要在')
+    assert.equal(ids.length, 3, `全量覆盖后只应有远端下发的 3 个，实得 ${ids.length}：${ids.join(',')}`)
+    assert.ok(!ids.includes('zai_glm-5.3-flash'),
+      '兜底表独有的 id 不得再补进来（用户 2026-10-27：远端给什么就用什么）')
+    assert.ok(ids.includes('zai_auto'), '远端模型必须在')
     assert.equal(new Set(ids).size, ids.length, '不得有重复 id')
-    console.log('autoclaw-catalog-union: 3 组断言通过（并集 4 个 / 补齐第 4 个 / 无重复）')
+    console.log('autoclaw-catalog-replace: 3 组断言通过（只留远端 3 个 / 不补兜底独有 id / 无重复）')
   } finally {
     upstream.close()
   }

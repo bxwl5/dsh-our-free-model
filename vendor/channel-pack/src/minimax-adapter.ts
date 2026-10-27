@@ -41,6 +41,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { providerCatalogVisible } from './account-pool.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
+import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
 import type { AccountPool } from './account-pool.js'
 import { httpErrorCode, collectImages } from './openai-compat.js'
 import { MINIMAX, MINIMAX_INFER_PATH, type MinimaxProduct } from './minimax-product.js'
@@ -208,10 +209,14 @@ export class MinimaxAdapter extends LlmAdapter {
         const fetched = await fetchRemote()
         if (fetched.length === 0) return false
         this.remoteModels = fetched
+        writeModelCatalog(this.product.id, fetched)
         return true
       })
       if (this.remoteModels !== undefined) return this.remoteModels
     }
+    // 远端这次没拉到：用上次成功落盘的快照顶替编译期兜底表（用户 2026-10-27）。
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels)
+    if (this.remoteModels !== undefined) return this.remoteModels
     return minimaxFallbackEntries(this.product)
   }
 
@@ -241,7 +246,7 @@ export class MinimaxAdapter extends LlmAdapter {
    * 与 `raccoon-adapter.ts:229-232` 逐字同构。
    */
   listAllModels(): readonly { id: string; name: string }[] {
-    const source = this.remoteModels ?? minimaxFallbackEntries(this.product)
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? minimaxFallbackEntries(this.product)
     return source.map((model) => ({ id: model.id, name: model.name }))
   }
 
@@ -252,7 +257,7 @@ export class MinimaxAdapter extends LlmAdapter {
    * 「模型列表出现 qmodel 等字段」）。
    */
   displayNameFor(modelId: string): string | undefined {
-    const source = this.remoteModels ?? minimaxFallbackEntries(this.product)
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? minimaxFallbackEntries(this.product)
     return source.find((model) => model.id === modelId)?.name
   }
 
@@ -269,6 +274,7 @@ export class MinimaxAdapter extends LlmAdapter {
       const fetched = await fetchRemote()
       if (fetched.length === 0) return false
       this.remoteModels = fetched
+      writeModelCatalog(this.product.id, fetched)
       return true
     } catch {
       return false

@@ -307,7 +307,7 @@ const WORKBUDDY_FALLBACK_MODELS: readonly BuddyFallbackModel[] = [
   },
   {
     // 2026-09 补录：/v3/config 的 cli agent 白名单里有它，但兜底表原先漏了，
-    // 于是被 reconcileWithFallback 丢弃、模型选择器里看不到。实测能看图。
+    // 模型选择器里看不到。实测能看图。
     id: 'hy4-preview', name: 'Hy4 preview', contextWindow: 1_000_000, supportsImages: true,
     reasoningEfforts: ['high'], defaultReasoningEffort: 'high', maxOutputTokens: 64_000,
   },

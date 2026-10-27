@@ -64,6 +64,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 import { AccountPool, providerCatalogVisible } from './account-pool.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
+import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
 import { settingsNamespaceFor } from './settings-compat.js'
 import { collectImages, serializeMessages } from './openai-compat.js'
 import { projectRequestImage, type ImageRequestTarget } from './image-budget.js'
@@ -522,7 +523,7 @@ export class ZcodeAdapter extends LlmAdapter {
   }
 
   listAllModels(): readonly { id: string; name: string }[] {
-    const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote)
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels.map(fallbackToRemote)
     return source.map((model) => ({
       id: model.id,
       name: zcodeDisplayName(model, this.remainingFor(model.id)),
@@ -536,7 +537,7 @@ export class ZcodeAdapter extends LlmAdapter {
    * 这里只负责别把内部 id 直接摊到界面上（用户 2026-10-26 报障）。
    */
   displayNameFor(modelId: string): string | undefined {
-    const source = this.remoteModels ?? this.product.fallbackModels.map(fallbackToRemote)
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels.map(fallbackToRemote)
     return source.find((model) => model.id === modelId)?.name
   }
 
@@ -559,10 +560,14 @@ export class ZcodeAdapter extends LlmAdapter {
     if (fetchRemote !== undefined && this.remoteModels === undefined) {
       try {
         const fetched = await fetchRemote()
-        if (fetched.length > 0) this.remoteModels = fetched
+        if (fetched.length > 0) {
+          this.remoteModels = fetched
+          writeModelCatalog(this.product.id, fetched)
+        }
       } catch {
-        // 兜底表接管。
+        // 兜底表接管（若落盘过快照则优先用快照，见下）。
       }
+      this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels)
     }
     if (this.modelRemaining === undefined) await this.refreshModelRemaining()
   }
@@ -574,6 +579,7 @@ export class ZcodeAdapter extends LlmAdapter {
       const fetched = await fetchRemote()
       if (fetched.length === 0) return false
       this.remoteModels = fetched
+      writeModelCatalog(this.product.id, fetched)
       // 余量随目录一起刷新：「重新获取模型」按钮点了就该拿到最新余量。
       await this.refreshModelRemaining()
       return true
@@ -599,10 +605,14 @@ export class ZcodeAdapter extends LlmAdapter {
         const fetched = await fetchRemote()
         if (fetched.length === 0) return false
         this.remoteModels = fetched
+        writeModelCatalog(this.product.id, fetched)
         return true
       })
       if (this.remoteModels !== undefined) return this.remoteModels
     }
+    // 远端这次没拉到：用上次成功落盘的快照顶替编译期兜底表（用户 2026-10-27）。
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels)
+    if (this.remoteModels !== undefined) return this.remoteModels
     return this.product.fallbackModels.map(fallbackToRemote)
   }
 

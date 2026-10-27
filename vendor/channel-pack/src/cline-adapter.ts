@@ -39,6 +39,7 @@ import {
   recordsClineRateLimit,
 } from './cline-rate-limit.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
+import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
 import { settingsNamespaceFor } from './settings-compat.js'
 import { isClineExpired, clineHeaders, type ClineCredential } from './cline.js'
 import {
@@ -351,7 +352,7 @@ export class ClineAdapter extends LlmAdapter {
         }
         if (!gotRemote) return false
         this.remoteModels = merged
-        return true
+        writeModelCatalog(this.product.id, merged)
         return true
       } catch (error) {
         // 拉取失败保持未定义，后续 listModels/resolveModel 仍回退静态兜底表。
@@ -360,6 +361,9 @@ export class ClineAdapter extends LlmAdapter {
         return false
       }
     })
+    // 远端这次没拉到（两个端点全挂 / 冷却中）：用上次成功落盘的快照顶替编译期
+    // 兜底表（用户 2026-10-27）。
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels)
   }
 
   /**
@@ -418,7 +422,7 @@ export class ClineAdapter extends LlmAdapter {
    * 故实际使用中不会读到空目录。
    */
   listAllModels(): readonly { id: string; name: string; isFree: boolean }[] {
-    const source = this.remoteModels ?? this.fallbackCatalog()
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.fallbackCatalog()
     if (this.remoteModels === undefined) void this.ensureRemoteModels()
     // ⚠️ 必须带上 `isFree`：Channel Pack 的模型列表要按「计费/来源」分组
     // （订阅 / 免费 / Cloud / 按量计费），而**免费集合是远端动态下发的**
@@ -478,7 +482,9 @@ export class ClineAdapter extends LlmAdapter {
       // 故这里不需要再单独 await 一次模态表。
       await this.ensureRemoteModels()
     }
-    const source = loggedIn ? (this.remoteModels ?? this.fallbackCatalog()) : this.fallbackCatalog()
+    const source = loggedIn
+      ? (restoreModelCatalog(this.product.id, this.remoteModels) ?? this.fallbackCatalog())
+      : this.fallbackCatalog()
     // 用户在 Channel Pack 关闭的模型（黑名单制：不在表里即默认打开）。
     // 只影响此处对外播报的模型目录，不改变 resolveModel/stream 的路由能力
     // ——与 DSH 对 listModels 的约定一致（目录是建议性的，缺省不构成拒绝）。
@@ -501,7 +507,7 @@ export class ClineAdapter extends LlmAdapter {
     // 目录里已并入 models.dev（名字 / 窗口 / 图片能力），故 `inputModalities`
     // 与展示名在这一次 await 之后就都是最终值。
     await this.ensureRemoteModels()
-    const source = this.remoteModels ?? this.fallbackCatalog()
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.fallbackCatalog()
     const entry = source.find((candidate) => candidate.id === model)
     const resolved: LlmResolvedModelInfo = {
       provider,
