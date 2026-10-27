@@ -1747,8 +1747,20 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
   // 但 base64 后的截图很大（2560×1600 各约 3.9 MB），两张就接近常见网关
   // 的 10MB 门槛 —— 与 raccoon 的同因（issue !IKITT9 那一族）。
   readImageRequest: makeReadImageRequest(ctx),
-  // 模型目录用静态白名单（实测可用的两个）—— 上游模型池含
-  // 实测返回空响应的两条（GLM-5-Turbo / GLM-5.2），故不枚举远端。
+  /**
+   * 模型目录**从远端枚举**（2026-10-27 更正）。
+   *
+   * ⚠️ 此处原注释写「用静态白名单、不枚举远端」——**已过时且与代码矛盾**
+   * （这一行本身就是远端枚举）。现在的口径：
+   *
+   * - 目录取上游 `client/configs` 的 `data.builtinModels`，**以它为准**；
+   * - 上游清单里的 `GLM-5.2` / `GLM-5-Turbo` **不再硬编码加入**（用户
+   *   2026-10-27 明确要求「保持使用上游同步的」）：曾短暂从
+   *   `builtin_provider_config_json` 的 id 清单补齐过，但那两条只有 id、
+   *   无任何能力字段，补出来的档位/窗口全是猜的；
+   * - 历史实测「这两条返回空响应」是**旧结论**，不作为过滤依据 ——
+   *   上游现在给什么就显示什么，真不可用会由失效模型机制剔除。
+   */
   fetchRemoteModels: () => zcode.fetchRemoteModelsOnly(),
   accountPool: pool,
   product: ZCODE,

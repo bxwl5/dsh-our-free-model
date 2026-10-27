@@ -1048,11 +1048,15 @@ export async function verifyRemoteCatalogFields() {
   assert.equal(formatZcodeUnits(0), '0')
   assert.equal(formatZcodeUnits(100_000_000), '100.0M')
   assert.equal(formatZcodeUnits(1_500), '1.5K')
-  // 档位用中文名；**余量不进名字**（用户 2026-10-27：改用绿色标签单独显示）
+  // ⚠️ 名字里**既无档位也无余量**（用户 2026-10-27 两次改口径）：
+  // - 档位由 DSH 的「思考强度」选择器展示，拼进名字是重复且会被误读成倍率；
+  // - 余量改用绿色标签（quota 字段）。
+  // 对比：autoclaw 的「低/中/高」是 creditConsumptionLevel（消耗档=计费信息），
+  // 那个该写；ZCode 没有倍率一说（额度制），名字必须干净。
   assert.equal(
     zcodeDisplayName({ id: 'GLM-5.3', name: 'GLM-5.3', reasoningLevels: ['low', 'high', 'max'] }, { units: 3_000_000 }),
-    'GLM-5.3 · 低/高/极高',
-    '⚠️ 余量必须**不**出现在名字里（否则前端会重复显示）',
+    'GLM-5.3',
+    '⚠️ 档位与余量都不进名字（档位走 resolveModel.reasoning，余量走 quota）',
   )
   assert.equal(
     zcodeDisplayName({ id: 'GLM-5.2', name: 'GLM-5.2' }),

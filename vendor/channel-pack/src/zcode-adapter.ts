@@ -340,22 +340,33 @@ export interface ZcodeAdapterOptions {
  * - 桶不存在 / 查不到 → **不写余量**（不显示成 0，0 是「已用光」的语义）；
  * - ZCode 是**额度制不是倍率**（用户 2026-10-26 明确指出），故**不写 x倍数**。
  */
+/**
+ * 模型展示名：**只有名字**（用户 2026-10-27 明确要求）。
+ *
+ * ## 为什么不写档位
+ *
+ * `低/高/极高` 是**思考档位**（上游 `reasoning.levels` 的 low/high/max），
+ * 它已经由 DSH 的「思考强度」选择器展示 —— 拼进模型名是重复信息，
+ * 而且会让用户误以为那是「倍率」。
+ *
+ * ⚠️ 与 autoclaw 的区别：那边名字里的 `低/中/高` 是
+ * `creditConsumptionLevel`（**积分消耗档**，倍率性质，不同模型真的不一样贵），
+ * 属于计费信息，该写；ZCode **没有倍率一说**（额度制，按 token 扣桶），
+ * 所以名字里不该有任何档位字样。
+ *
+ * ## 为什么不写余量
+ *
+ * 余量改用绿色标签单独显示（`quotaFor()` → `model.list` 的 `quota` 字段）。
+ *
+ * 参数保留只为兼容既有调用 —— 它们都不参与输出。
+ */
 export function zcodeDisplayName(
   model: { id: string; name: string; reasoningLevels?: readonly string[] },
   remaining?: { units: number },
 ): string {
-  const parts: string[] = [model.name]
-  // 档位：低/高/极高（上游 low/high/max），只在模型确实有声明的档位时写。
-  if (model.reasoningLevels !== undefined && model.reasoningLevels.length > 0) {
-    parts.push(model.reasoningLevels.map((level) => ZCODE_LEVEL_NAMES[level] ?? level).join('/'))
-  }
-  /**
-   * ⚠️ 余量**不再拼进名字**（用户 2026-10-27 改口径：要用绿色标签单独显示）。
-   * 这里保留参数只为兼容既有调用与测试 —— 它现在不产出任何文本。
-   * 真正的余量由 `quotaFor()` 交给 `model.list` 的 `quota` 字段。
-   */
+  void model.reasoningLevels
   void remaining
-  return parts.join(' · ')
+  return model.name
 }
 
 /** 余量的展示文本（绿色标签用），如 `剩 3.0M`。 */
