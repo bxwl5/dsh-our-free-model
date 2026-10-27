@@ -5121,8 +5121,16 @@ function registerChannelPackEndpoints(
           if (slash <= 0) return raw
           const provider = raw.slice(0, slash)
           const modelId = raw.slice(slash + 1)
+          /**
+           * ⚠️ 先判断**是不是已经是展示名**（含 ` · ` 后缀，或与某个目录条目
+           * 的 name 完全相同）—— 新记录从写入侧就存展示名（见
+           * `wrapAdapterWithTokenLedger` 的注释），再映射一次会把
+           * `DeepSeek-Flash · x0.1` 当 id 去查，查不到就原样返回（无害但白跑）。
+           */
+          const catalog = modelAdapters?.[provider]?.listAllModels() ?? []
+          if (catalog.some((m) => m.name === modelId)) return raw
           const named = modelAdapters?.[provider]?.displayNameFor?.(modelId)
-            ?? modelAdapters?.[provider]?.listAllModels().find((m) => m.id === modelId)?.name
+            ?? catalog.find((m) => m.id === modelId)?.name
           return named === undefined || named === '' ? raw : `${provider}/${named}`
         }
         /**

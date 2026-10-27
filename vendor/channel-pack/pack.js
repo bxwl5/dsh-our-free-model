@@ -37771,7 +37771,17 @@ function wrapAdapterWithTokenLedger(providers, adapter) {
   const provider = providers[0] ?? "";
   const accountingStream = (options, open) => {
     const channel = channelOfOptions(options);
-    const model = String(options?.model ?? "").slice(0, 160);
+    const modelId = String(options?.model ?? "").slice(0, 160);
+    const model = (() => {
+      try {
+        const named = adapter.displayNameFor?.(modelId);
+        if (typeof named === "string" && named !== "") return named.slice(0, 160);
+        const listed = adapter.listAllModels?.().find((entry) => entry.id === modelId);
+        if (listed !== void 0 && listed.name !== "") return listed.name.slice(0, 160);
+      } catch {
+      }
+      return modelId;
+    })();
     return recordThroughStream(open, { channel, provider, model, startedAt: Date.now() });
   };
   return new Proxy(adapter, {
@@ -69009,7 +69019,9 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           if (slash <= 0) return raw2;
           const provider = raw2.slice(0, slash);
           const modelId = raw2.slice(slash + 1);
-          const named = modelAdapters?.[provider]?.displayNameFor?.(modelId) ?? modelAdapters?.[provider]?.listAllModels().find((m) => m.id === modelId)?.name;
+          const catalog = modelAdapters?.[provider]?.listAllModels() ?? [];
+          if (catalog.some((m) => m.name === modelId)) return raw2;
+          const named = modelAdapters?.[provider]?.displayNameFor?.(modelId) ?? catalog.find((m) => m.id === modelId)?.name;
           return named === void 0 || named === "" ? raw2 : `${provider}/${named}`;
         };
         const renameModels = (accounts) => accounts.map((account) => ({

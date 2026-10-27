@@ -169,7 +169,36 @@ export function wrapAdapterWithTokenLedger<T extends object>(providers: readonly
    */
   const accountingStream = (options: unknown, open: () => AsyncIterable<unknown>): AsyncIterable<unknown> => {
     const channel = channelOfOptions(options)
-    const model = String((options as { model?: unknown })?.model ?? '').slice(0, 160)
+    const modelId = String((options as { model?: unknown })?.model ?? '').slice(0, 160)
+    /**
+     * ⚠️ **记账用展示名，对话用内部 id**（用户 2026-10-27 定的口径）。
+     *
+     * 请求本身必须用内部 id（`dfmodel` —— 上游只认它），但**台账不该记 id**：
+     * 数据看板直接渲染这个字段，于是界面上冒出 `qfmodel` / `dfmodel`
+     * （用户报障）。此前是在 RPC 读取侧做 id→名映射，但历史数据里
+     * 同时存在 id 与旧展示名两种写法，映射后仍对不上、同一模型占两行。
+     *
+     * 改在**写入侧**一次性归一：新记录从一开始就存展示名，
+     * 读取侧只需要兜底老数据（那部分无法追改）。
+     *
+     * 取不到展示名时**保留原 id** —— 未知模型（上游新上、本地兜底表没有）
+     * 记 id 仍好过记空串，至少能看出是哪个模型。
+     */
+    const model = ((): string => {
+      try {
+        const named = (adapter as {
+          displayNameFor?: (id: string) => string | undefined
+        }).displayNameFor?.(modelId)
+        if (typeof named === 'string' && named !== '') return named.slice(0, 160)
+        const listed = (adapter as {
+          listAllModels?: () => readonly { id: string; name: string }[]
+        }).listAllModels?.().find((entry) => entry.id === modelId)
+        if (listed !== undefined && listed.name !== '') return listed.name.slice(0, 160)
+      } catch {
+        // 适配器没有展示名能力 / 抛错 —— 退回 id，绝不让记账失败影响对话。
+      }
+      return modelId
+    })()
     return recordThroughStream(open, { channel, provider, model, startedAt: Date.now() })
   }
 
