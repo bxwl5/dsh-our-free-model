@@ -280,7 +280,17 @@ window.__ModuleLoader__.load({
         'chan.anomaly.title': '异常汇总',
         'chan.anomaly.rateLimit': '限流',
         'chan.anomaly.allModels': '全部模型',
-        'chan.anomaly.tomorrow': '明天',
+        'chan.anomaly.col.channel': '渠道',
+        'chan.anomaly.col.account': '账号',
+        'chan.anomaly.col.kind': '异常类型',
+        'chan.anomaly.col.model': '异常模型',
+        'chan.anomaly.col.until': '解封时间',
+        'chan.anomaly.col.remaining': '剩余时间',
+        'chan.anomaly.day': '天',
+        'chan.anomaly.hour': '小时',
+        'chan.anomaly.minute': '分',
+        'chan.anomaly.underMinute': '不到 1 分钟',
+        'chan.anomaly.expired': '已解封',
         'chan.model.allScope': '仅操作当前渠道的全部模型',
         'chan.error': '操作失败：{reason}',
         'chan.confirm.delete': '移除账号 {name}？该账号的凭据会一并删除。',
@@ -737,7 +747,17 @@ window.__ModuleLoader__.load({
         'chan.anomaly.title': 'Limits',
         'chan.anomaly.rateLimit': 'Rate limited',
         'chan.anomaly.allModels': 'All models',
-        'chan.anomaly.tomorrow': 'Tomorrow',
+        'chan.anomaly.col.channel': 'Channel',
+        'chan.anomaly.col.account': 'Account',
+        'chan.anomaly.col.kind': 'Type',
+        'chan.anomaly.col.model': 'Model',
+        'chan.anomaly.col.until': 'Until',
+        'chan.anomaly.col.remaining': 'Remaining',
+        'chan.anomaly.day': 'd',
+        'chan.anomaly.hour': 'h',
+        'chan.anomaly.minute': 'm',
+        'chan.anomaly.underMinute': '<1 min',
+        'chan.anomaly.expired': 'Cleared',
         'chan.model.allScope': 'Apply to all models in this channel only',
         'chan.error': 'Action failed: {reason}',
         'chan.confirm.delete': 'Remove account {name}? Its credential is deleted with it.',
@@ -1229,7 +1249,7 @@ window.__ModuleLoader__.load({
 .ofm_tank.xl{width:264px;height:148px;border-radius:20px;box-shadow:inset 0 0 0 1px rgb(255 255 255 / 12%),0 16px 40px rgb(0 0 0 / 14%)}
 .ofm_tank.xl .ofm_tankglass{border-radius:20px}
 /* ══ 渠道接入页 ════════════════════════════════════════════════════════ */
-/* 「异常汇总」板块（放在 20 个渠道卡片下方，仅在有限流时出现） */
+/* 「异常汇总」表格（放在 20 个渠道卡片下方，仅在有限流时出现） */
 .ofm_anomaly{margin-top:14px;border:1px solid color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 40%,transparent);
   border-radius:12px;background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 6%,transparent);overflow:hidden}
 .ofm_anomalyhead{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
@@ -1241,18 +1261,27 @@ window.__ModuleLoader__.load({
   color:var(--dsw-alias-state-warning-primary,#f0a441);
   background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 14%,transparent)}
 .ofm_anomalychev{font-size:11px;opacity:.6}
-.ofm_anomalylist{display:flex;flex-direction:column;border-top:1px solid color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 22%,transparent)}
-.ofm_anomalyrow{display:flex;align-items:center;gap:10px;padding:7px 14px;font-size:12px}
-.ofm_anomalyrow+.ofm_anomalyrow{border-top:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 60%,transparent)}
-.ofm_anomalykind{flex:0 0 auto;font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:999px;white-space:nowrap;
+/* 表格：窄屏横向滚动，不挤压列宽（列多，硬换行会读不出来） */
+.ofm_anomalyscroll{overflow-x:auto;border-top:1px solid color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 22%,transparent)}
+.ofm_anomalytable{width:100%;border-collapse:collapse;font-size:12px;min-width:640px}
+.ofm_anomalytable thead th{position:sticky;top:0;text-align:left;font-size:11px;font-weight:600;
+  padding:7px 14px;color:var(--dsw-alias-label-secondary);white-space:nowrap;
+  background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 70%,transparent);
+  border-bottom:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 70%,transparent)}
+.ofm_anomalytable tbody td{padding:7px 14px;border-bottom:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 45%,transparent);
+  vertical-align:middle}
+.ofm_anomalytable tbody tr:last-child td{border-bottom:0}
+.ofm_anomalytable tbody tr:hover td{background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 45%,transparent)}
+.ofm_anomalytd_channel{color:var(--dsw-alias-label-secondary);white-space:nowrap;font-size:11.5px}
+.ofm_anomalytd_account{font-weight:580;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ofm_anomalytd_model{font-variant-numeric:tabular-nums;white-space:nowrap}
+.ofm_anomalytd_allmodels{font-weight:600;color:var(--dsw-alias-state-warning-primary,#f0a441);white-space:nowrap}
+.ofm_anomalytd_until,.ofm_anomalytd_remaining{font-variant-numeric:tabular-nums;white-space:nowrap;font-size:11.5px}
+.ofm_anomalytd_until{color:var(--dsw-alias-label-secondary)}
+.ofm_anomalytd_remaining{font-weight:600}
+.ofm_anomalykind{display:inline-block;font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:999px;white-space:nowrap;
   color:var(--dsw-alias-state-warning-primary,#f0a441);
   background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 14%,transparent)}
-.ofm_anomalywho{display:flex;align-items:center;gap:6px;flex:1 1 auto;min-width:0;overflow:hidden}
-.ofm_anomalychannel{flex:0 0 auto;color:var(--dsw-alias-label-secondary);font-size:11.5px}
-.ofm_anomalyaccount{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:580}
-.ofm_anomalymodel{flex:0 0 auto;font-size:11px;padding:1px 6px;border-radius:6px;white-space:nowrap;
-  background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 88%,transparent);color:var(--dsw-alias-label-secondary)}
-.ofm_anomalyuntil{flex:0 0 auto;font-size:11.5px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}
 .ofm_chanwrap{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
 .ofm_chan{position:relative;display:flex;flex-direction:column;gap:12px;padding:16px 17px 15px;border-radius:16px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 78%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 5%),0 1px 2px rgb(0 0 0 / 5%);overflow:hidden;transition:transform .22s cubic-bezier(.32,.72,0,1),box-shadow .24s ease,border-color .2s ease}
 .ofm_chan::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,var(--chan-accent,var(--dsw-alias-state-business-primary)),transparent 78%);opacity:.95}
@@ -3670,37 +3699,64 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 「异常汇总」板块（用户 2026-10-27 要求，放在 20 个渠道卡片下方）。
+     * 「异常汇总」表格（用户 2026-10-27 要求，放在 20 个渠道卡片下方）。
      *
-     * ## 只列**限流**，不列「账号封禁」
+     * ## 为什么是表格
+     *
+     * 用户的实际场景是「账号 × 模型」二维状态（4 账号 × 2 模型交叉限流）。
+     * 之前的徽标行在信息密度上不够：看不出哪列是什么、无法横向对比。
+     * 改成表格后与「模型」板块的视觉语言一致，且每列语义明确：
+     *
+     * ```
+     * 渠道      账号              异常类型  异常模型              解封时间      剩余时间
+     * workbuddy workbuddy/bxwl5   限流      deepseek-v4.1-flash  10月30日09:18 5小时49分
+     * workbuddy workbuddy/1768…   限流      全部模型              10月30日10:10 4小时57分
+     * ```
+     *
+     * ## 只列限流，不列「账号封禁」
      *
      * 数据层没有账号级封禁：`pool.permanentLocked(provider)` 是**渠道级**开关
-     * （Loomy 的「锁定永久积分」，防误烧），语义与「账号被封」不同。故本板块
-     * 只汇总真实存在的两类状态（用户已确认跳过封禁）：
+     * （Loomy 的「锁定永久积分」，防误烧），语义与「账号被封」不同。
+     *
+     * ## 两类语义
      *
      * - `modelName === undefined` → 该账号**全部模型**都被限（"整个用不了"）；
      * - 有 `modelName` → 只有该模型被限。
-     *
-     * ## 时间格式
-     *
-     * 显示 `15:30`（用户指定）。跨天时补「明天」/日期，否则用户会误以为是今天。
      */
     function AnomalyPanel(props) {
       const { anomalies, channelName, t } = props
       const [open, setOpen] = useState(true)
-      const clock = ms => {
+
+      /** 解封时刻：`10月30日09:18`（跨年时补年份，避免歧义）。 */
+      const absolute = ms => {
         const at = new Date(ms)
         const hhmm = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
-        const today = new Date()
-        const sameDay = at.getFullYear() === today.getFullYear()
-          && at.getMonth() === today.getMonth() && at.getDate() === today.getDate()
-        if (sameDay) return hhmm
-        const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
-        const isTomorrow = at.getFullYear() === tomorrow.getFullYear()
-          && at.getMonth() === tomorrow.getMonth() && at.getDate() === tomorrow.getDate()
-        if (isTomorrow) return `${t('chan.anomaly.tomorrow')} ${hhmm}`
-        return `${at.getMonth() + 1}/${at.getDate()} ${hhmm}`
+        const md = `${at.getMonth() + 1}月${at.getDate()}日`
+        const sameYear = at.getFullYear() === new Date().getFullYear()
+        return sameYear ? `${md}${hhmm}` : `${at.getFullYear()}年${md}${hhmm}`
       }
+
+      /**
+       * 剩余时长：`5小时49分` / `3天2小时` / `<1分钟`。
+       *
+       * ⚠️ 刻意不显示秒：这个板块 45 秒才刷新一次，显示秒会立刻过期，
+       * 让人以为卡住了。分钟粒度与刷新节奏匹配。
+       */
+      const remaining = ms => {
+        const left = ms - Date.now()
+        if (left <= 0) return t('chan.anomaly.expired')
+        const minutes = Math.floor(left / 60_000)
+        if (minutes < 1) return t('chan.anomaly.underMinute')
+        const days = Math.floor(minutes / (60 * 24))
+        const hours = Math.floor((minutes % (60 * 24)) / 60)
+        const mins = minutes % 60
+        const parts = []
+        if (days > 0) parts.push(`${days}${t('chan.anomaly.day')}`)
+        if (hours > 0) parts.push(`${hours}${t('chan.anomaly.hour')}`)
+        if (days === 0) parts.push(`${mins}${t('chan.anomaly.minute')}`)
+        return parts.join('')
+      }
+
       return h('section', { className: 'ofm_anomaly' },
         h('button', {
           type: 'button', className: 'ofm_anomalyhead',
@@ -3712,17 +3768,26 @@ window.__ModuleLoader__.load({
             t('chan.anomaly.title'),
             h('span', { className: 'ofm_anomalycount' }, String(anomalies.length))),
           h('span', { className: 'ofm_anomalychev', 'aria-hidden': 'true' }, open ? '▾' : '▸')),
-        open ? h('div', { className: 'ofm_anomalylist' }, anomalies.map((row, index) => h('div', {
-          className: 'ofm_anomalyrow',
-          key: `${row.provider}:${row.accountId}:${row.modelName ?? '*'}:${index}`,
-        },
-          h('span', { className: 'ofm_anomalykind' }, t('chan.anomaly.rateLimit')),
-          h('span', { className: 'ofm_anomalywho' },
-            h('span', { className: 'ofm_anomalychannel' }, channelName(row.provider)),
-            h('span', { className: 'ofm_anomalyaccount', title: row.accountId }, row.accountName),
-            h('span', { className: 'ofm_anomalymodel' },
-              row.modelName === undefined ? t('chan.anomaly.allModels') : row.modelName)),
-          h('span', { className: 'ofm_anomalyuntil' }, clock(row.resetAtMs))))) : null)
+        open ? h('div', { className: 'ofm_anomalyscroll' },
+          h('table', { className: 'ofm_anomalytable' },
+            h('thead', null, h('tr', null,
+              h('th', null, t('chan.anomaly.col.channel')),
+              h('th', null, t('chan.anomaly.col.account')),
+              h('th', null, t('chan.anomaly.col.kind')),
+              h('th', null, t('chan.anomaly.col.model')),
+              h('th', null, t('chan.anomaly.col.until')),
+              h('th', null, t('chan.anomaly.col.remaining')))),
+            h('tbody', null, anomalies.map((row, index) => h('tr', {
+              key: `${row.provider}:${row.accountId}:${row.modelName ?? '*'}:${index}`,
+            },
+              h('td', { className: 'ofm_anomalytd_channel' }, channelName(row.provider)),
+              h('td', { className: 'ofm_anomalytd_account', title: row.accountId }, row.accountName),
+              h('td', null, h('span', { className: 'ofm_anomalykind' }, t('chan.anomaly.rateLimit'))),
+              h('td', {
+                className: row.modelName === undefined ? 'ofm_anomalytd_allmodels' : 'ofm_anomalytd_model',
+              }, row.modelName === undefined ? t('chan.anomaly.allModels') : row.modelName),
+              h('td', { className: 'ofm_anomalytd_until' }, absolute(row.resetAtMs)),
+              h('td', { className: 'ofm_anomalytd_remaining' }, remaining(row.resetAtMs))))))) : null)
     }
 
     // ── 数据看板 / 运行日志 / 网关设置 ────────────────────────────────────────
@@ -5050,7 +5115,7 @@ window.__ModuleLoader__.load({
     exports.inject = inject
     exports.name = 'our-free-model'
     // Headless test seams use the same stub React as scripts/client-lint.mjs.
-    exports.__test = { parseSafeHtml, safeUrl, sanitizeStyle, htmlToDom, buildHeatCells, Heatmap, ChannelsPage, DICT, useChannelRpc, Shell, CSS }
+    exports.__test = { parseSafeHtml, safeUrl, sanitizeStyle, htmlToDom, buildHeatCells, Heatmap, ChannelsPage, AnomalyPanel, DICT, useChannelRpc, Shell, CSS }
     return module.exports
   },
 })
