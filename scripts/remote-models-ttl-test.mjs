@@ -1027,8 +1027,15 @@ export async function verifyRemoteCatalogFields() {
   assert.equal(autoClawDisplayName(ac[3]), 'GLM-5.3-Flash · 低', '无促销无告警时只有两段')
   assert.equal(ac[3].quotaExhausted, undefined, '缺失 forbiddenNotice → 不是用完状态')
 
-  // ── monkeycode：input_price 是单价，绝不能当倍率 ──
-  assert.equal(monkeyCodeDisplayName({ name: 'glm-5', isFree: false }), 'glm-5', '⚠️ 按量计费不显示倍率')
+  // ── monkeycode：input_price 换算成**相对倍率**（1000 = x1）──
+  // 用户 2026-10-27 口径：只体现模型间倍率差异，不显示绝对积分。
+  assert.equal(monkeyCodeDisplayName({ name: 'a', inputPrice: 1000 }), 'a · x1', '1000 是基准 x1')
+  assert.equal(monkeyCodeDisplayName({ name: 'b', inputPrice: 800 }), 'b · x0.8')
+  assert.equal(monkeyCodeDisplayName({ name: 'c', inputPrice: 600 }), 'c · x0.6')
+  assert.equal(monkeyCodeDisplayName({ name: 'd', inputPrice: 400 }), 'd · x0.4')
+  assert.equal(monkeyCodeDisplayName({ name: 'e', inputPrice: 200 }), 'e · x0.2')
+  assert.equal(monkeyCodeDisplayName({ name: 'f', inputPrice: 0 }), 'f · x0', '0 也如实换算')
+  assert.equal(monkeyCodeDisplayName({ name: 'glm-5', isFree: false }), 'glm-5', '⚠️ 无 input_price 不编造 x1')
   assert.equal(monkeyCodeDisplayName({ name: 'free-one', isFree: true }), 'free-one · 免费')
 
   console.log('remote-catalog-fields: 4 渠道断言通过（kuku 倍率+档位 / accio 倍率+中文名 / autoclaw 积分分档+档位 / monkeycode 不掉价）')

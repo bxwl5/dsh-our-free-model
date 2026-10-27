@@ -28339,7 +28339,9 @@ function isRecord2(value) {
 }
 function unwrapData(value) {
   if (!isRecord2(value)) return value;
-  if ("data" in value && isRecord2(value.data)) return value.data;
+  if (!("data" in value)) return value;
+  const data = value.data;
+  if (Array.isArray(data) || isRecord2(data)) return data;
   return value;
 }
 function stripSetCookieAttributes(text) {
@@ -47609,8 +47611,13 @@ async function* emitDeltaBlocks(deltas, options = {}) {
 
 // vendor/channel-pack/src/monkeycode-adapter.ts
 var REMOTE_MODELS_TTL_MS2 = 3e5;
+var MONKEYCODE_PRICE_BASE = 1e3;
 function monkeyCodeDisplayName(model) {
-  return model.isFree === true ? `${model.name} \xB7 \u514D\u8D39` : model.name;
+  if (model.isFree === true) return `${model.name} \xB7 \u514D\u8D39`;
+  if (model.inputPrice === void 0) return model.name;
+  const rate = model.inputPrice / MONKEYCODE_PRICE_BASE;
+  const rounded = Math.round(rate * 1e3) / 1e3;
+  return `${model.name} \xB7 x${rounded}`;
 }
 var MonkeyCodeAdapter = class extends LlmAdapter7 {
   constructor(options) {

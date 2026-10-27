@@ -90,15 +90,51 @@ export interface MonkeyCodeAdapterOptions {
 const REMOTE_MODELS_TTL_MS = 300_000
 
 /**
- * 模型展示名。
+ * MonkeyCode 的**参考单价基数**：`input_price = 1000` 对应 `x1`。
  *
- * ⚠️ **MonkeyCode 是按量计费**（用户 2026-10-26 说明）：上游只给单价
- * `input_price`（实测 `400`），没有倍率概念。故这里**只在免费时**标注，
- * 其余保持裸名 —— 符合用户「没有倍率的直接不显示倍率」的要求，
- * 也避免把单价误当成倍率（`x400` 会严重误导）。
+ * 用户 2026-10-27 的决定：把上游积分单价换算成**相对倍率**展示，
+ * 因为「不同模型之间的倍率差异」才是用户要的信息，
+ * 而「每次实际扣多少积分」受上下文长度、输出 token 数影响，
+ * 无法用单一数字表达 —— 显示绝对积分反而误导。
+ *
+ *   1000 → x1     800 → x0.8     600 → x0.6     400 → x0.4     200 → x0.2
+ *
+ * ⚠️ 这是**本渠道内部**的相对刻度，不是跨渠道可比的价格（与 Qoder 的
+ * `price_factor` 量纲不同，别混在一起读）。
  */
-export function monkeyCodeDisplayName(model: { name: string; isFree?: boolean }): string {
-  return model.isFree === true ? `${model.name} · 免费` : model.name
+export const MONKEYCODE_PRICE_BASE = 1000
+
+/**
+ * 模型展示名：`名称 · x<相对倍率>`（用户 2026-10-27 指定）。
+ *
+ * 例：
+ * ```
+ * qwen3.6-plus · x0.2
+ * glm-5 · x0.4
+ * qwen3.7-max · x0.6
+ * glm-5.1 · x0.8
+ * ```
+ *
+ * ## 口径说明
+ *
+ * - `input_price ÷ 1000` → 倍率。1000 为 `x1` 基准（{@link MONKEYCODE_PRICE_BASE}）。
+ * - **不显示原始积分值**（用户明确要求：实际扣多少积分不好衡量，不需要知道）。
+ * - `is_free: true` → 显示「免费」（比 `x0` 更准确）。
+ * - 上游没给 `input_price` → **只显示名字**，不编造 `x1`
+ *   （与全仓「无倍率不显示倍率」的约定一致）。
+ */
+export function monkeyCodeDisplayName(model: {
+  name: string
+  isFree?: boolean
+  inputPrice?: number
+}): string {
+  if (model.isFree === true) return `${model.name} · 免费`
+  if (model.inputPrice === undefined) return model.name
+  const rate = model.inputPrice / MONKEYCODE_PRICE_BASE
+  // 去掉浮点噪声（200/1000 → 0.2，不是 0.20000000000000001），
+  // 同时避免 `x1.0000000000000002` 这种只因除法误差出现的怪值。
+  const rounded = Math.round(rate * 1000) / 1000
+  return `${model.name} · x${rounded}`
 }
 
 export class MonkeyCodeAdapter extends LlmAdapter {
@@ -177,8 +213,13 @@ export class MonkeyCodeAdapter extends LlmAdapter {
 
   /** 「显示列表」用的完整目录（不套用户黑名单；上游标 is_hidden 的仍排除）。 */
   listAllModels(): readonly { id: string; name: string }[] {
-    const all: Array<{ id: string; name: string; isHidden?: boolean; isFree?: boolean }> =
-      this.remoteModels ?? this.product.fallbackModels.map((model) => ({ ...model }))
+    const all: Array<{
+      id: string
+      name: string
+      isHidden?: boolean
+      isFree?: boolean
+      inputPrice?: number
+    }> = this.remoteModels ?? this.product.fallbackModels.map((model) => ({ ...model }))
     return all.filter((model) => model.isHidden !== true)
       .map((model) => ({ id: model.id, name: monkeyCodeDisplayName(model) }))
   }

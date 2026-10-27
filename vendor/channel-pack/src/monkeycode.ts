@@ -91,9 +91,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  *
  * 参考实现两种都兼容；这里统一剥壳，避免每个解析函数各写一遍。
  */
+/**
+ * 解包上游的 `{code, message, data}` 信封。
+ *
+ * ⚠️ **`data` 是数组时也必须解包**（真实缺陷，2026-10-27 实测）：
+ * `/users/models/available` 返回 `{code:0, message:'success', data:[…]}`，
+ * 而旧实现只认「`data` 是对象」（`isRecord(value.data)` 对数组恒为 `false`）
+ * → 整个信封被原样返回 → `fetchModels` 的 `Array.isArray(body)` 判断失败
+ * → 抛「模型目录不是数组」→ 适配器静默回落**子集兜底表**。
+ *
+ * 表现就是：`refreshCatalog` 返回 false、模型列表里没有单价与免费标记，
+ * 用户看到的是 14 条「裸名」而不是远端 26 条的真实目录。
+ */
 export function unwrapData(value: unknown): unknown {
   if (!isRecord(value)) return value
-  if ('data' in value && isRecord(value.data)) return value.data
+  if (!('data' in value)) return value
+  const data = value.data
+  // 数组（模型列表）与对象（用户信息 / 任务详情）都是合法的 `data` 形态。
+  if (Array.isArray(data) || isRecord(data)) return data
   return value
 }
 
