@@ -58077,55 +58077,7 @@ async function fetchZcodeModels(credential, fetchImpl = fetch) {
         ...defaultReasoningLevel !== void 0 ? { defaultReasoningLevel } : {}
       });
     }
-    const extraIds = await fetchZcodeProviderModelIds(credential, fetchImpl);
-    const known = new Set(models.map((model) => model.id.toLowerCase()));
-    for (const id of extraIds ?? []) {
-      if (known.has(id.toLowerCase())) continue;
-      known.add(id.toLowerCase());
-      models.push({
-        id,
-        name: id,
-        contextWindow: 2e5,
-        maxTokens: 32768,
-        supportsImage: false
-      });
-    }
     return models.length > 0 ? models : void 0;
-  } catch {
-    return void 0;
-  }
-}
-async function fetchZcodeProviderModelIds(credential, fetchImpl = fetch) {
-  const appVersion = credential.app_version ?? ZCODE_APP_VERSION_FALLBACK;
-  const configsUrl = `${ZCODE_CLIENT_CONFIGS_URL}?app_version=${encodeURIComponent(appVersion)}&platform=unknown`;
-  try {
-    const response = await fetchWithTimeout(fetchImpl, configsUrl, {
-      method: "GET",
-      headers: buildZcodeHeaders(credential, { authorization: `Bearer ${credential.zcode_jwt}`, json: false })
-    }, 2e4);
-    if (!response.ok) return void 0;
-    const parsed = await response.json();
-    const data = parsed.data ?? parsed;
-    const configs = data.configs ?? data;
-    const configUrl = configs.builtin_provider_config_json;
-    if (typeof configUrl !== "string" || !configUrl.startsWith("https://")) return void 0;
-    const configResponse = await fetchWithTimeout(fetchImpl, configUrl, {
-      method: "GET",
-      headers: { "User-Agent": `ZCode/${appVersion}` }
-    }, 2e4);
-    if (!configResponse.ok) return void 0;
-    const document = await configResponse.json();
-    const config = document.config ?? {};
-    const modelConfigRules = config.modelConfigRules ?? {};
-    const rules = modelConfigRules.builtinProviderModelRules;
-    if (!Array.isArray(rules)) return void 0;
-    const ids = /* @__PURE__ */ new Set();
-    for (const rule of rules) {
-      if (typeof rule !== "object" || rule === null) continue;
-      const modelId = rule.modelId;
-      if (typeof modelId === "string" && modelId.length > 0) ids.add(modelId);
-    }
-    return ids.size > 0 ? [...ids] : void 0;
   } catch {
     return void 0;
   }

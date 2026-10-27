@@ -1038,9 +1038,10 @@ export async function verifyRemoteCatalogFields() {
 
   // ── zcode：模型清单要合并两个来源，余量按模型显示（2026-10-27）──
   //
-  // 用户指出「zcode 不止两个模型」：`builtinModels` 只有 GLM-5.3 /
-  // GLM-5.3-Flash，而 `builtin_provider_config_json` 指向的配置里
-  // 还有 GLM-5.2 / GLM-5-Turbo（实测 4 个，与 magpie 的 MODELS 一致）。
+  // 模型清单**只取上游 `builtinModels`**（用户 2026-10-27 决定：不做硬编码补齐）。
+  // 曾短暂合并过 `builtin_provider_config_json` 里的 GLM-5.2 / GLM-5-Turbo，
+  // 但那两条只有 id、无任何能力字段（套 provider config 的正则兜底反而错），
+  // 用户要求撤掉，保持与上游同步。
   const { zcodeDisplayName, zcodeQuotaLabel, formatZcodeUnits } = await import('../vendor/channel-pack/src/zcode-adapter.ts')
   assert.equal(formatZcodeUnits(3_000_000), '3.0M', 'token 数格式化')
   assert.equal(formatZcodeUnits(5_000_000), '5.0M')
@@ -1058,6 +1059,7 @@ export async function verifyRemoteCatalogFields() {
     'GLM-5.2',
     '⚠️ 无档位时只显示名字（不从同族推断档位）',
   )
+  // 无档位的模型不该凭空长出档位 —— 这正是撤掉硬编码补齐的动因之一。
   // 余量走独立的绿色标签（quota 字段）
   assert.equal(zcodeQuotaLabel(3_000_000), '剩 3.0M')
   assert.equal(zcodeQuotaLabel(5_000_000), '剩 5.0M')
