@@ -79,6 +79,7 @@ docker logs ofm | head -5     # 拿一次性的面板登录链接
 - **必须 `--network host`**：服务只绑回环地址（`isLoopbackHost()` 是硬校验），
   bridge 网络下端口映射转发不进管理页面。
 - **数据卷**：`/data` 里是账号凭据、账号池、Token 账本和 API Key，不挂卷等于重建即丢。
+  bind mount（`-v ./ofm-data:/data`）也直接可用——镜像入口脚本会先修好目录属主再降权运行。
 - 从别的机器管理面板：`ssh -L 18900:127.0.0.1:18900 用户名@NAS`，然后本地开
   `http://127.0.0.1:18900`。
 

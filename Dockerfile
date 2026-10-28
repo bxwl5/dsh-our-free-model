@@ -36,7 +36,7 @@ LABEL org.opencontainers.image.title="Our Free Model (standalone)" \
 
 # ca-certificates：访问各家渠道的 HTTPS 必需。
 # tzdata：让 TZ 生效（容器默认没有时区库）。
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata su-exec
 
 WORKDIR /app
 
@@ -52,27 +52,31 @@ COPY --chown=node:node packages/standalone/*.mjs ./packages/standalone/
 COPY --chown=node:node packages/standalone/channels ./packages/standalone/channels
 COPY --chown=node:node packages/standalone/web ./packages/standalone/web
 COPY --chown=node:node vendor/channel-pack/qoder-auth-wasm.wasm ./vendor/channel-pack/
+COPY docker-entrypoint.sh /usr/local/bin/ofm-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/ofm-entrypoint.sh
 
 RUN mkdir -p /data && chown node:node /data
 
-USER node
-
 VOLUME ["/data"]
+
+# ⚠️ 这里**故意不写 `USER node`**：bind mount 时宿主目录属主通常是 root，
+# 固定非 root 会直接 EACCES（实测 `open '/data/service.lock'` 失败并无限重启）。
+# 入口脚本以 root 修好 /data 属主后立刻用 su-exec 降权到 node 运行，
+# 应用本身仍然不是 root。想强制非 root 就用 `--user 1000:1000`（脚本会跳过改属主）。
 
 # 18900 = 主服务（面板 + 管理 API + /v1 推理 + /health）
 # 18901 = 可选 LAN 推理中继（--lan 才开；它不转发管理面）
 EXPOSE 18900 18901
 
-# 端口冲突时服务会自动换端口，那时这里的 18900 探测会失败 —— 用
-# `docker logs` 看实际端口，或用 --port 固定一个空闲端口。
-# 探测端口读 OFM_PORT：用 `--port` 改端口时同步 `-e OFM_PORT=<port>`，
-# 否则健康检查会一直探 18900 而永远不 healthy。
+# 探测端口读 OFM_PORT：用 `--port` 改端口时要同步 `-e OFM_PORT=<port>`，
+# 否则健康检查会一直探 18900、容器永远不 healthy（实测过）。
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.OFM_PORT||18900)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-# ⚠️ 必须是 ENTRYPOINT + CMD 两段：node 官方镜像自带 docker-entrypoint.sh，
-# 若只写 CMD，用户 `docker run 镜像 --lan` 会被 entrypoint 解释成 `node --lan` 而失败。
-# 这样写之后：`docker run 镜像` → `--port 18900`；
-#              `docker run 镜像 --lan --lan-port 18901` → 参数原样传给 CLI。
-ENTRYPOINT ["node", "packages/standalone/cli.mjs"]
+# ENTRYPOINT 是入口脚本、CMD 是默认参数 —— 这样 CLI 参数能直传：
+#   docker run 镜像                              → --port 18900
+#   docker run 镜像 --lan --lan-port 18901       → 原样交给 CLI
+# （别改回 `ENTRYPOINT ["node", ...]`：那样 `docker run 镜像 --lan` 仍可用，但
+#  会绕开"修 /data 属主 + 降权"这一步，bind mount 场景又会 EACCES。）
+ENTRYPOINT ["/usr/local/bin/ofm-entrypoint.sh"]
 CMD ["--port", "18900"]

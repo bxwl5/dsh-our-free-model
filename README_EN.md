@@ -90,7 +90,9 @@ docker logs ofm | head -5     # one-time dashboard login link
 - **`--network host` is required**: the service binds loopback only (`isLoopbackHost()`
   is a hard check), so a bridged container cannot reach the dashboard through a port map.
 - **Volume**: `/data` holds credentials, the account pool, the token ledger and the API
-  key — without a volume a rebuild loses everything.
+  key — without a volume a rebuild loses everything. A bind mount
+  (`-v ./ofm-data:/data`) works too: the entrypoint fixes the directory ownership
+  before dropping privileges.
 - Managing from another machine: `ssh -L 18900:127.0.0.1:18900 user@nas`, then open
   `http://127.0.0.1:18900`.
 

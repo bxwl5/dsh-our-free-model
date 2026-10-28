@@ -1,0 +1,32 @@
+# Our Free Model 独立服务（Docker Compose）
+#
+# 用法：
+#   1. 把本文件放到你想放数据的地方，或直接设置 OFM_DATA_DIR 指向宿主机目录
+#   2. docker compose up -d
+#   3. docker compose logs -f | head -5     # 拿一次性的面板登录链接
+#
+# ⚠️ `network_mode: host` 是必需的：服务只绑定回环地址（service.mjs 里
+#    isLoopbackHost() 是硬校验），bridge 网络下端口映射转发不进管理页面。
+services:
+  our-free-model:
+    image: ghcr.io/bxwl5/dsh-our-free-model:latest
+    container_name: ofm
+    network_mode: host
+    restart: unless-stopped
+
+    environment:
+      TZ: Asia/Shanghai
+      # 与下面的 command 端口保持一致：HEALTHCHECK 按它探测。
+      OFM_PORT: "18900"
+
+    volumes:
+      # ★ 持久化目录。里面是账号凭据、账号池、Token 账本、API Key，
+      #   删掉就等于所有渠道重新登录。
+      #   默认落在 compose 文件旁边的 ./ofm-data；想放别处就设：
+      #     OFM_DATA_DIR=/volume1/docker/ofm-data docker compose up -d
+      - ${OFM_DATA_DIR:-./ofm-data}:/data
+
+    # 显式写死端口，避免"上次保存的端口"在容器重建后漂移。
+    command: ["--port", "18900"]
+
+    # 健康检查已在镜像里（探 OFM_PORT），这里不重复。

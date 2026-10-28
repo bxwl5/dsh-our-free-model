@@ -83,7 +83,23 @@ host 网络下 `127.0.0.1` 就是宿主机回环 —— **局域网里的其它�
 
 ## 数据目录
 
-`OFM_HOME=/data`，容器内挂卷即可。里面全是**明文**内容，注意权限：
+`OFM_HOME=/data`。两种挂法都可以：
+
+```yaml
+# docker-compose.yml（仓库自带的那份就是这种）
+volumes:
+  - ${OFM_DATA_DIR:-./ofm-data}:/data     # bind mount，宿主机看得见
+# 或命名卷（不占宿主机路径，但要在 /var/lib/docker/volumes 里找）
+volumes:
+  - ofm-data:/data
+```
+
+⚠️ **bind mount 的属主问题已自动处理**：宿主目录一般是 `root:root`，而应用以
+uid 1000（node）运行。镜像入口脚本会在以 root 启动时把 `/data` 递归交给 `node`，
+然后**立刻降权**执行应用；因此容器内进程仍然不是 root。想强制非 root 直接跑就加
+`--user 1000:1000`，此时需要自己保证宿主目录可写。
+
+里面全是**明文**内容：
 
 | 文件 | 内容 |
 |---|---|
