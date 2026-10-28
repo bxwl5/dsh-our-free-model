@@ -198,16 +198,6 @@ export function peekLedgerAccount(provider: string): string {
   return reportedAccounts.get(provider) ?? ''
 }
 
-/** 诊断用：注册表当前条数。 */
-export function ledgerAccountCount(): number {
-  return reportedAccounts.size
-}
-
-/** 测试专用：清空回报表。 */
-export function resetLedgerAccountsForTests(): void {
-  reportedAccounts.clear()
-}
-
 /**
  * 日聚合存储后端的**最小契约**（`token-ledger-store.ts` 的实现满足它）。
  *
@@ -527,21 +517,6 @@ export function readTokenLedger(options: { limit?: number } = {}): TokenLedgerSn
     totals: finalizeAverages(totals),
     entries: ledger.slice(0, limit),
   }
-}
-
-/**
- * 测试与 dispose 专用：清空账本。
- *
- * ⚠️ 不导出给 RPC/UI —— 正常运行时账本不该被外部清空（用户看到「突然归零」
- * 会以为丢了数据）；只有单测需要隔离状态。
- */
-export function resetTokenLedgerForTests(): void {
-  ledger = []
-}
-
-/** 当前保留的流水条数（诊断用）。 */
-export function tokenLedgerSize(): number {
-  return ledger.length
 }
 
 /**

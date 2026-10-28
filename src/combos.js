@@ -173,7 +173,3 @@ export function pruneRotation(combos) {
   for (const key of rotation.keys()) if (!live.has(key)) rotation.delete(key)
 }
 
-/** Test seam: the rotation map is process state. */
-export function resetRotation() {
-  rotation.clear()
-}

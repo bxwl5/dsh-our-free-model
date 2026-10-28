@@ -74,8 +74,6 @@ export const GEMINI_ENDPOINT_SANDBOX = 'https://daily-cloudcode-pa.sandbox.googl
  */
 export const GEMINI_ENDPOINTS: readonly string[] = [GEMINI_ENDPOINT_DAILY, GEMINI_ENDPOINT_SANDBOX]
 
-/** 非流式推理路径。 */
-export const GEMINI_GENERATE_PATH = '/v1internal:generateContent'
 /** 流式推理路径（SSE）。 */
 export const GEMINI_STREAM_PATH = '/v1internal:streamGenerateContent?alt=sse'
 /** 配额查询路径（**Summary 变体**，请求体见 `gemini-credits.ts`）。 */
@@ -114,9 +112,6 @@ export const GEMINI_IDENTITY_HEADERS: Readonly<Record<string, string>> = Object.
   'x-vscode-sessionid': 'proxy',
 })
 
-/** 信封里的 `userAgent` 字段（与 `x-client-name` 同值）。 */
-export const GEMINI_UPSTREAM_USER_AGENT = 'antigravity'
-
 // ---------------------------------------------------------------------------
 // 项目与会话常量
 // ---------------------------------------------------------------------------
@@ -143,16 +138,6 @@ export const GEMINI_DEFAULT_PROJECT = 'aicode-consumers'
  */
 export const GEMINI_SESSION_LANE_INFER = 'infer'
 export const GEMINI_SESSION_LANE_SMOKE = 'smoke'
-
-/**
- * 推理用 sessionId 的**历史常量**（仅作覆盖示例 / 文档留证，不再是默认值）。
- *
- * @deprecated 默认走 {@link deriveGeminiSessionId} 派生。要复刻历史抓包时用
- * `sessionId` 选项显式钉住。
- */
-export const GEMINI_SESSION_ID_INFER = '3124275334370613369'
-/** 冒烟/探测用 sessionId 的**历史常量**。@deprecated 同 {@link GEMINI_SESSION_ID_INFER}。 */
-export const GEMINI_SESSION_ID_SMOKE = '-6686302828062879362'
 
 /**
  * 按 `(project, 首条 user 文本, lane)` **确定性派生** sessionId。
@@ -206,8 +191,6 @@ export function deriveGeminiSessionId(
 // 超时与缓存
 // ---------------------------------------------------------------------------
 
-/** 推理请求超时。 */
-export const GEMINI_REQUEST_TIMEOUT_MS = 120_000
 /**
  * SSE 空闲超时（毫秒）。
  *
@@ -217,8 +200,6 @@ export const GEMINI_REQUEST_TIMEOUT_MS = 120_000
  * harness 才能重试该步骤。
  */
 export const GEMINI_IDLE_TIMEOUT_MS = 120_000
-/** OAuth 端点请求超时。 */
-export const GEMINI_OAUTH_TIMEOUT_MS = 20_000
 /** 配额查询超时。 */
 export const GEMINI_CREDITS_TIMEOUT_MS = 30_000
 /** 配额缓存 TTL（原版 `quotaCacheTTL`）。 */
@@ -247,11 +228,6 @@ export const GEMINI: GeminiProduct = {
   defaultCredentialRef: 'GEMINI_ACCESS_TOKEN',
   imagePixelBudget: DEFAULT_IMAGE_PIXEL_BUDGET,
   maxOutputTokens: 64_000,
-}
-
-/** 按 id 查产品（探测分派表用）。 */
-export function geminiProductById(id: string): GeminiProduct | undefined {
-  return id === GEMINI.id ? GEMINI : undefined
 }
 
 // ---------------------------------------------------------------------------

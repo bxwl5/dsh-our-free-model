@@ -697,10 +697,3 @@ export class QoderEncryptedInfer {
   }
 }
 
-/** 供测试注入/复位（导出以便单测隔离）。 */
-export const __testing = {
-  resetGlue(): void {
-    gluePromise = null
-  },
-  wasmPath: WASM_PATH,
-}

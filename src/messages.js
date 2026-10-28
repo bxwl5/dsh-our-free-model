@@ -421,9 +421,5 @@ export function toToolDefs(tools, style) {
   return list
 }
 
-/** Does this content list need an image-capable model? */
-export function needsVision(messages) {
-  return (messages ?? []).some(message => hasBlocks(message.content, 'image') && message.content.some(block => block?.type === 'image' && block.offloaded !== true))
-}
 
 export { baseModelId, restoreToolName }

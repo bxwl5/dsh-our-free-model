@@ -44,8 +44,6 @@ export const DETECT_WINDOW = 1024
 /** Per-hunk line cap: one 10 000-line hunk must not eat the whole diff budget. */
 export const GIT_DIFF_HUNK_MAX_LINES = 100
 
-/** Context lines kept around changes (Rust parity; the JS port keeps the hunk head verbatim). */
-export const GIT_DIFF_CONTEXT_KEEP = 3
 
 /** `git log` output line cap; beyond this the history is older than the turn needs. */
 export const GIT_LOG_MAX_LINES = 200

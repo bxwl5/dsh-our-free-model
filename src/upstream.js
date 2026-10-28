@@ -572,15 +572,6 @@ export function restoreToolName(name, map) {
   return map.get(name) ?? name
 }
 
-/** Session-scoped identity used to pick a decoy out of a real tool call. */
-export function declaredToolNames(body) {
-  const names = new Set()
-  for (const tool of Array.isArray(body.tools) ? body.tools : []) {
-    const n = toolNameOf(tool)
-    if (n) names.add(n)
-  }
-  return names
-}
 
 function truncateSession(value) {
   if (typeof value !== 'string') return ''
