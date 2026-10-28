@@ -26,6 +26,7 @@
 
 import type { ZcodeCredential } from './zcode.js'
 import { buildZcodeHeaders, zcodeMessagesUrl } from './zcode-upstream.js'
+import { resolveZcodeAppVersion } from './zcode.js'
 
 /** ZCode 的两条上游通道。 */
 export type ZcodeChannel = 'start-plan' | 'coding-plan'
@@ -211,7 +212,8 @@ function bizHeaders(token: string, credential: ZcodeCredential): Record<string, 
   return {
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
-    'User-Agent': `ZCode/${credential.app_version ?? '3.14.4'}`,
+    // 与其余 ZCode 请求同源：登录时存的旧版本会被 `resolveZcodeAppVersion` 钳到服务端认的窗口。
+    'User-Agent': `ZCode/${resolveZcodeAppVersion(credential.app_version)}`,
     'X-Platform': 'win32',
     ...(typeof credential.device_mid === 'string' && credential.device_mid.length > 0
       ? { 'X-Device-Mid': credential.device_mid }

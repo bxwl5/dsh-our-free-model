@@ -1662,6 +1662,38 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
     activeZcodeAccountId.set(ZCODE.id, undefined)
     return await zcode.current()
   },
+  /**
+   * ★ 模型余量要按**全部账号合计**（用户 2026-10-28）。
+   *
+   * 一个 ZCode 渠道可以挂多个账号（额度用尽就切下一个），故「GLM-5.3-Flash 还能用
+   * 多少」对使用者来说就是各账号之和。适配器只做求和，**这里负责枚举**：
+   * 逐账号读**自己的** `credentialRef`（与 `refreshAll` 同一条纪律 —— 不要用
+   * `current()` 拿一个凭据再套到别的 ref 上，那会串号）。
+   *
+   * ⚠ 单个账号解析失败**静默跳过**：余量是附加信息，不该因为它把模型目录带崩；
+   *   也绝不返回「空数组」当成「有 0 个账号」—— 交给适配器退回单账号路径。
+   */
+  resolveAllCredentials: async () => {
+    let entries
+    try {
+      entries = await pool.listAccounts(ZCODE.id)
+    } catch {
+      return []
+    }
+    const credentials: ZcodeCredential[] = []
+    for (const entry of entries) {
+      if (entry.enabled === false) continue
+      try {
+        const resolved = await ctx.credentials.resolve(credentialRef(entry.credentialRef))
+        if (resolved === undefined) continue
+        const parsed = JSON.parse(resolved.value) as ZcodeCredential
+        if (typeof parsed?.zcode_jwt === 'string' && parsed.zcode_jwt !== '') credentials.push(parsed)
+      } catch {
+        // 单个账号坏掉不影响其余账号的合计。
+      }
+    }
+    return credentials
+  },
   refresh: async () => {
     /**
      * ⚠ ZCode **没有** refresh 端点（与 Loomy 恒 false 同类，但原因不同）：

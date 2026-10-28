@@ -82,7 +82,7 @@ import {
   buildZcodeSystemBlocks,
   withContextPrefix,
 } from './zcode-identity.js'
-import { fetchZcodeBalance } from './zcode-upstream.js'
+import { fetchZcodeBalance, zcodeRemainingByModel } from './zcode-upstream.js'
 import {
   consumeAnthropicSse,
   toAnthropicMessages,
@@ -209,6 +209,18 @@ export interface ZcodeAdapterOptions {
   credentialRef: CredentialRef
   /** 解析当前可用凭据。 */
   resolveCredential: (modelId?: string) => Promise<ZcodeCredential | undefined>
+  /**
+   * ★ 枚举**全部**账号凭据（可选）。
+   *
+   * 用户 2026-10-28 要求「模型界面上每个模型后面的余量应该是所有账号合计」——
+   * 一个渠道可以挂多个 ZCode 账号（前一个额度用尽就切下一个），所以单个模型的
+   * 可用余量天然是**多账号之和**。缺省时退化成「只看当前账号」，行为与旧版一致
+   * （其它渠道 / 单账号场景不受影响）。
+   *
+   * ⚠ 由 `index.ts` 注入（它持有账号池与凭据服务）；**失败要静默**，
+   *   余量是附加信息，不能因为枚举账号出错就把模型目录带崩。
+   */
+  resolveAllCredentials?: () => Promise<readonly ZcodeCredential[]>
   /**
    * 凭据失效时的处理。
    *
@@ -377,6 +389,9 @@ export function zcodeQuota(units: number): ModelQuota {
 }
 
 /** 档位 id 的中文名（上游 `reasoning.levels` 的键）。 */
+/** 余量重查间隔（与前端 `provider.status` 的 45 秒轮询同量级）。 */
+const MODEL_REMAINING_TTL_MS = 60_000
+
 const ZCODE_LEVEL_NAMES: Readonly<Record<string, string>> = {
   none: '关闭',
   minimal: '最少',
@@ -410,6 +425,8 @@ export class ZcodeAdapter extends LlmAdapter {
    * （此时**不显示余量** —— 显示 0 会让人误以为用光了）。
    */
   private modelRemaining: Map<string, number> | undefined
+  /** 上次成功刷新余量的时刻（配合 TTL 让「活动额度到期」能自动反映到界面）。 */
+  private modelRemainingAt = 0
   /** 目录加载闸门：并发去重 + 失败/空结果冷却（见 `remote-catalog-gate.ts`）。 */
   private readonly catalogGate = new RemoteCatalogGate()
   /** 自建的常驻浏览器（仅当调用方没注入 `mintCaptcha` 时用）。 */
@@ -473,36 +490,59 @@ export class ZcodeAdapter extends LlmAdapter {
    */
   async refreshModelRemaining(): Promise<boolean> {
     try {
-      const credential = await this.options.resolveCredential()
-      // ZCode 的凭据是静态 JWT：没有 jwt 就没法查余额（不抛错，静默返回）。
-      if (credential === undefined || typeof credential.zcode_jwt !== 'string'
-        || credential.zcode_jwt === '') return false
-      const balance = await fetchZcodeBalance(credential, this.fetchImpl)
-      if (balance === undefined) return false
+      /**
+       * 取**全部**账号的凭据（没有注入枚举回调时只看当前账号）。
+       *
+       * 用户 2026-10-28：「模型界面每个模型后面的余量应该是所有账号合计」。
+       * 一个渠道可以挂多个账号，推理时会按池轮换，故「这个模型还能用多少」
+       * 对使用者来说就是各账号之和。
+       */
+      const credentials = await this.allCredentials()
+      if (credentials.length === 0) return false
+      /** 模型键（小写）→ 全部账号合计的剩余量。 */
       const next = new Map<string, number>()
-      for (const bucket of balance.buckets) {
-        const remaining = bucket.remainingUnits
-        if (typeof remaining !== 'number' || !Number.isFinite(remaining)) continue
-        // 桶的 capabilities 形如 `model:glm-5.3`；也兼容 showName（实测是模型名）。
-        const keys = new Set<string>()
-        for (const capability of bucket.capabilities ?? []) {
-          const name = String(capability).replace(/^model:/i, '').trim()
-          if (name !== '') keys.add(name.toLowerCase())
+      let read = 0
+      for (const credential of credentials) {
+        // ZCode 的凭据是静态 JWT：没有 jwt 就没法查余额（静默跳过该账号）。
+        if (typeof credential.zcode_jwt !== 'string' || credential.zcode_jwt === '') continue
+        let balance
+        try {
+          balance = await fetchZcodeBalance(credential, this.fetchImpl)
+        } catch {
+          continue
         }
-        if (bucket.showName !== undefined && bucket.showName !== '') {
-          keys.add(bucket.showName.toLowerCase())
-        }
-        for (const key of keys) {
-          const previous = next.get(key)
-          // 同模型多个桶时取较大值（多份额度可叠加使用）。
-          next.set(key, previous === undefined ? remaining : Math.max(previous, remaining))
+        if (balance === undefined) continue
+        read += 1
+        /**
+         * ⚠ 口径见 `zcodeRemainingByModel`：**按时刻**算（活动额度要生效后才算、
+         *   到期即不算），并避免「plans 的发放声明」与「balances 的桶」重复相加。
+         */
+        for (const [key, units] of zcodeRemainingByModel(balance)) {
+          next.set(key, (next.get(key) ?? 0) + units)
         }
       }
+      // 一个账号都没读到 ⇒ 保留上一次结果（不要让余量标签整片消失）。
+      if (read === 0) return false
       this.modelRemaining = next
+      this.modelRemainingAt = Date.now()
       return true
     } catch {
       return false
     }
+  }
+
+  /** 本次统计要看的凭据集合（多账号合计；失败退化成当前账号）。 */
+  private async allCredentials(): Promise<readonly ZcodeCredential[]> {
+    if (this.options.resolveAllCredentials !== undefined) {
+      try {
+        const all = await this.options.resolveAllCredentials()
+        if (Array.isArray(all) && all.length > 0) return all
+      } catch {
+        // 枚举失败 ⇒ 退回单账号路径（余量宁少不全，不炸模型目录）。
+      }
+    }
+    const credential = await this.options.resolveCredential()
+    return credential === undefined ? [] : [credential]
   }
 
   /** 取某模型的剩余额度（没有对应桶 → undefined，展示时就不写余量）。 */
@@ -569,7 +609,21 @@ export class ZcodeAdapter extends LlmAdapter {
       }
       this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels)
     }
-    if (this.modelRemaining === undefined) await this.refreshModelRemaining()
+    /**
+     * 余量必须**定期重查**，不能只查一次（2026-10-28 用户指出）。
+     *
+     * ZCode 的活动额度带生效/到期两个时刻（实测当天领的 3 亿当晚 23:00 生效、
+     * 次日 09:00 到期），余量因此会**自己变**；多账号合计也会随账号增删变。
+     * 只查一次（旧行为：`modelRemaining === undefined` 才查）会让面板一直停在
+     * 第一次读到的数字上，用户看不到「到点了没」「过期了没」。
+     *
+     * TTL 取 60 秒：`provider.status` 由前端 45 秒轮询一次，这个节奏下每次
+     * 最多多打一次 `billing/balance`（每账号一次），代价可接受。
+     */
+    const now = Date.now()
+    if (this.modelRemaining === undefined || now - this.modelRemainingAt >= MODEL_REMAINING_TTL_MS) {
+      await this.refreshModelRemaining()
+    }
   }
 
   async refreshCatalog(): Promise<boolean> {

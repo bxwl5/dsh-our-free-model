@@ -69,6 +69,7 @@ import type { ZcodeAuth } from './zcode-auth.js'
 import { ZCODE } from './zcode-product.js'
 import type { ZcodeCredential } from './zcode.js'
 import { phoneFromUserId, isUsableZcodeCredential } from './zcode.js'
+import { zcodeEffectiveActivityGrants } from './zcode-upstream.js'
 import type { ZcodeBalanceResult } from './zcode-upstream.js'
 import { ZCODE_LOGIN_PROVIDER, type ZcodeLoginProvider } from './zcode-login.js'
 import type { RaccoonCredential } from './raccoon.js'
@@ -1369,10 +1370,27 @@ function registerChannelPackEndpoints(
    * 让 UI 至少能显示「0 / 0」并带上 `result.planName`。
    */
   function buildZcodeBalance(result: ZcodeBalanceResult): CreditBalance {
-    const packages: CreditBalance['packages'] = result.buckets.map((bucket) => {
+    /**
+     * ## 三个不能再省的口径（2026-10-28 用户指出）
+     *
+     * 1. **过期不算**：`balances[]` 里可能残留已经过了 `expires_at` 的桶
+     *    （实测 `…-0817` 到期后仍在下发），不滤掉就会把「早就作废的额度」
+     *    当成本刻余量显示。
+     * 2. **没生效也不算**：活动额度领到手不等于立刻可用（实测当天领的 3 亿
+     *    `effective_at` 是当晚 23:00）。只有到点之后才计入。
+     * 3. **同一份额度只能算一次**：`plans[].entitlements[].grant_units` 与
+     *    `balances[]` 的桶是同一份额度的两种形态，相加就翻倍。
+     *    故 `zcodeEffectiveActivityGrants` 只会吐出「还没被桶表达」的那部分。
+     */
+    const nowMs = Date.now()
+    const nowSec = Math.floor(nowMs / 1000)
+    const packages: CreditBalance['packages'] = []
+    for (const bucket of result.buckets) {
+      // ① 过期桶直接丢弃（详见上面第 1 条）。
+      if (bucket.expiresAt !== undefined && bucket.expiresAt <= nowSec) continue
       const remaining = bucket.availableUnits ?? bucket.remainingUnits ?? 0
       const total = bucket.totalUnits ?? 0
-      return {
+      packages.push({
         name: bucket.showName ?? result.planName ?? 'ZCode 免费额度',
         // ⚠ 单位是 **token**（不是 credit）—— 如实标注，
         // 避免用户以为 ZCode 有 1 亿积分。
@@ -1388,8 +1406,35 @@ function registerChannelPackEndpoints(
         expiredTime: bucket.expiresAt !== undefined
           ? new Date(bucket.expiresAt * 1000).toISOString()
           : (result.expiresAt !== undefined ? new Date(result.expiresAt * 1000).toISOString() : ''),
-      }
-    })
+      })
+    }
+    /**
+     * ② 已生效、但上游还没以桶形式下发的活动额度（见上面第 2/3 条）。
+     *
+     * 它们在 `plans[]` 里就已经写明了额度与到点时刻，只是 `balances[]` 还没跟上
+     * （实测：领取后到 `effective_at` 之间，`balances[]` 里一条都不多）。若不补，
+     * 用户在「已经生效」之后仍会看到旧的小额度，以为没领到。
+     */
+    for (const grant of zcodeEffectiveActivityGrants(result, nowMs)) {
+      const name = grant.showName ?? grant.planName ?? 'ZCode 活动额度'
+      packages.push({
+        name,
+        unit: 'token',
+        remaining: grant.units,
+        total: grant.units,
+        used: 0,
+        active: true,
+        // 生效时刻放 `cycleStartTime`：前端若要展示「活动·到 xx」，
+        // 起点与终点都已经有了。
+        cycleStartTime: new Date(grant.effectiveAtMs).toISOString(),
+        cycleEndTime: grant.endsAtMs === Number.MAX_SAFE_INTEGER
+          ? ''
+          : new Date(grant.endsAtMs).toISOString(),
+        expiredTime: grant.endsAtMs === Number.MAX_SAFE_INTEGER
+          ? ''
+          : new Date(grant.endsAtMs).toISOString(),
+      })
+    }
     if (packages.length === 0) {
       packages.push({
         name: result.planName ?? 'ZCode 免费额度',
@@ -1406,9 +1451,10 @@ function registerChannelPackEndpoints(
       })
     }
     return {
-      // 仍是**全桶汇总**，与 `packages` 逐项之和一致（`fetchZcodeBalance` 的
-      // `:251-260` 就是这么累加的）。
-      total: result.remaining,
+      // ⚠ 汇总必须**由包相加**得出，不能再用 `result.remaining`：
+      //   那个值只含 `balances[]`，会把生效中的活动额度漏掉（用户看到的
+      //   「明明领了 3 亿，面板还是 5M」就是这么来的）。
+      total: packages.reduce((sum, item) => sum + item.remaining, 0),
       // ZCode 不在同一响应里区分「已失效包」，故为 0。
       expiredTotal: 0,
       packages,

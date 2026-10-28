@@ -33,7 +33,7 @@
  */
 
 import type { ZcodeCredential } from './zcode.js'
-import { ZCODE_APP_VERSION_FALLBACK } from './zcode.js'
+import { resolveZcodeAppVersion } from './zcode.js'
 import { hasZcodeUnusualActivity, parseZcodeBusinessCode } from './zcode-diagnostics.js'
 import type { ZcodeRemoteModelLike } from './zcode-product.js'
 
@@ -84,7 +84,7 @@ export function buildZcodeHeaders(
   credential: Pick<ZcodeCredential, 'device_mid' | 'app_version'>,
   options: { authorization?: string; json?: boolean; captcha?: { param: string; region: string } } = {},
 ): Record<string, string> {
-  const appVersion = credential.app_version ?? ZCODE_APP_VERSION_FALLBACK
+  const appVersion = resolveZcodeAppVersion(credential.app_version)
   const headers: Record<string, string> = {
     'User-Agent': `ZCode/${appVersion}`,
     'HTTP-Referer': ZCODE_ORIGIN,
@@ -109,6 +109,16 @@ export function buildZcodeHeaders(
 /** 一次额度桶（`balances[]` 的一项）。 */
 export interface ZcodeBalanceBucket {
   planId?: string
+  /**
+   * 该桶属于哪个**权益**（`entitlements[].entitlement_id`）。
+   *
+   * 有了它才能把「计划里的权益」与「余额桶」一一对上，从而判断
+   * **这份活动额度是不是已经以桶的形式下发了**（见
+   * {@link zcodeEffectiveActivityGrants}）—— 否则会**重复计算**：
+   * 同一份 3 亿既是 `plans[].entitlements[].grant_units`，又出现在
+   * `balances[]` 里，两份相加就成了 6 亿。
+   */
+  entitlementId?: string
   /** 展示名（实测为模型名，如 `GLM-5.3-Flash`）。 */
   showName?: string
   /**
@@ -145,10 +155,50 @@ export interface ZcodeBalanceBucket {
 }
 
 /** 余额查询结果。 */
+/** `plans[]` 里的一项权益（活动额度的**发放单元**，带生效时间）。 */
+export interface ZcodeBalanceEntitlement {
+  entitlementId: string
+  showName?: string
+  unitType?: string
+  capabilities?: readonly string[]
+  /** 这份权益**能发多少**（实测 `entitlements[].grant_units`）。 */
+  grantUnits?: number
+  period?: string
+  /**
+   * 生效时刻（Unix **秒**；缺省或 `0` 表示随计划开始立即生效）。
+   *
+   * ⚠ 这是本仓库最容易漏掉的一个字段（2026-10-28 用户指出）：领取到的活动额度
+   *   **不是立刻可用**的 —— 实测当天领到的 3 亿 `effective_at` 是当晚 23:00，
+   *   到点才会真正计入余量。
+   */
+  effectiveAt?: number
+}
+
+/** `billing/balance` 的 `plans[]` 一项（已领取的套餐及其权益）。 */
+export interface ZcodeBalancePlan {
+  planId: string
+  userPlanId?: string
+  name?: string
+  /** 上游状态，实测 `active`（已过期时上游也可能仍返回，需自行按 `endsAt` 判断）。 */
+  status?: string
+  startsAt?: number
+  /** 到期时刻（Unix **秒**）。 */
+  endsAt?: number
+  entitlements: readonly ZcodeBalanceEntitlement[]
+}
+
 export interface ZcodeBalanceResult {
   /** 是否为「企业版」等不下发额度数字的形态（此时 buckets 为空）。 */
   enterprise?: boolean
   buckets: readonly ZcodeBalanceBucket[]
+  /**
+   * 已领取的活动套餐（`plans[]`）。
+   *
+   * ⚠ 必须解析：活动额度有**生效 / 到期**两个时刻，而 `balances[]` 桶只有到期
+   * （`expires_at`）。不读 `plans[]` 就既不知道「还没生效」，也不知道
+   * 「这份额度本来就是哪一期活动给的」。
+   */
+  plans: readonly ZcodeBalancePlan[]
   /** 汇总剩余额度（所有桶累加）。 */
   remaining: number
   /** 汇总总量。 */
@@ -287,7 +337,7 @@ export async function fetchZcodeBalance(
   if (data === undefined) return undefined
   if (typeof data.displayMode === 'string' && data.displayMode === 'enterprise') {
     // ⚠ 企业版**不下发额度数字**，也就没有可领活动 ⇒ 不发 preview 请求。
-    return { enterprise: true, buckets: [], remaining: 0, total: 0, claimablePlans: [] }
+    return { enterprise: true, buckets: [], plans: [], remaining: 0, total: 0, claimablePlans: [] }
   }
 
   const rawBuckets = Array.isArray(data.balances) ? data.balances : []
@@ -297,6 +347,7 @@ export async function fetchZcodeBalance(
     const record = item as Record<string, unknown>
     buckets.push({
       planId: typeof record.plan_id === 'string' ? record.plan_id : undefined,
+      entitlementId: typeof record.entitlement_id === 'string' ? record.entitlement_id : undefined,
       showName: typeof record.show_name === 'string' ? record.show_name : undefined,
       // ⚠ 单位字段必须带上：上游说 `unit_type: "token"`，界面据此显示 M 量级。
       unitType: typeof record.unit_type === 'string' ? record.unit_type : undefined,
@@ -326,12 +377,198 @@ export async function fetchZcodeBalance(
 
   return {
     buckets,
+    plans: parseBalancePlans(data.plans),
     remaining,
     total,
     expiresAt,
     planName: buckets[0]?.showName,
     claimablePlans: await fetchClaimablePlans(credential, fetchImpl),
   }
+}
+
+/** 解析 `balances[].plans`（已领取的套餐 + 权益 + 生效/到期时刻）。 */
+function parseBalancePlans(raw: unknown): ZcodeBalancePlan[] {
+  if (!Array.isArray(raw)) return []
+  const plans: ZcodeBalancePlan[] = []
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) continue
+    const record = item as Record<string, unknown>
+    const planId = typeof record.plan_id === 'string' ? record.plan_id : undefined
+    if (planId === undefined || planId === '') continue
+    const entitlements: ZcodeBalanceEntitlement[] = []
+    for (const entry of Array.isArray(record.entitlements) ? record.entitlements : []) {
+      if (typeof entry !== 'object' || entry === null) continue
+      const item2 = entry as Record<string, unknown>
+      const entitlementId = typeof item2.entitlement_id === 'string' ? item2.entitlement_id : undefined
+      if (entitlementId === undefined || entitlementId === '') continue
+      entitlements.push({
+        entitlementId,
+        ...(typeof item2.show_name === 'string' ? { showName: item2.show_name } : {}),
+        ...(typeof item2.unit_type === 'string' ? { unitType: item2.unit_type } : {}),
+        ...Array.isArray(item2.capabilities) ? {
+          capabilities: item2.capabilities
+            .filter((value): value is string => typeof value === 'string' && value !== ''),
+        } : {},
+        ...(num(item2.grant_units) === undefined ? {} : { grantUnits: num(item2.grant_units) }),
+        ...(typeof item2.period === 'string' ? { period: item2.period } : {}),
+        ...(num(item2.effective_at) === undefined ? {} : { effectiveAt: num(item2.effective_at) }),
+      })
+    }
+    plans.push({
+      planId,
+      ...(typeof record.user_plan_id === 'string' ? { userPlanId: record.user_plan_id } : {}),
+      ...(typeof record.name === 'string' ? { name: record.name } : {}),
+      ...(typeof record.status === 'string' ? { status: record.status } : {}),
+      ...(num(record.starts_at) === undefined ? {} : { startsAt: num(record.starts_at) }),
+      ...(num(record.ends_at) === undefined ? {} : { endsAt: num(record.ends_at) }),
+      entitlements,
+    })
+  }
+  return plans
+}
+
+/**
+ * 一份「**已生效、未过期、且上游还没以余额桶形式下发**」的活动额度。
+ *
+ * ## 为什么需要这个概念（2026-10-28 用户指出）
+ *
+ * ZCode 的活动额度有两个跟时间有关的事实：
+ *
+ * 1. **有效期**：`plans[].ends_at`（到点作废）—— 与余额桶的 `expires_at` 同源；
+ * 2. **生效时间**：`plans[].entitlements[].effective_at` —— 领到手 ≠ 立刻可用。
+ *    实测当天领到的 3 亿是「现在领、当晚 23:00 生效、次日 09:00 到期」。
+ *
+ * 所以「当前实际余量」必须**按时刻算**：生效前不算、过期后不算。
+ *
+ * ## 为什么还要判「有没有桶」
+ *
+ * 同一份额度会以两种形态出现：`plans[].entitlements[].grant_units`（发放声明）
+ * 与 `balances[]` 的桶（真实余量，带 `remaining_units`，用掉会变）。**两者不能相加**，
+ * 否则 3 亿会变成 6 亿。故：只要 `balances[]` 里已经出现同一 `entitlement_id`
+ * 的桶，就以**桶**为准（它才是扣过的真实余量），这份 grant 不再计入。
+ */
+export interface ZcodeActivityGrant {
+  planId: string
+  userPlanId?: string
+  entitlementId: string
+  planName?: string
+  showName?: string
+  unitType?: string
+  /** 这份额度服务哪些模型（`capabilities` 去掉 `model:` 前缀、小写）。 */
+  models: readonly string[]
+  /** 本次发放多少（= `grant_units`）。 */
+  units: number
+  effectiveAtMs: number
+  endsAtMs: number
+}
+
+/** 把 `capabilities` 归一成模型键（`model:glm-5.3` → `glm-5.3`）。 */
+function modelKeysOf(capabilities: readonly string[] | undefined, showName: string | undefined): string[] {
+  const keys = new Set<string>()
+  for (const capability of capabilities ?? []) {
+    const name = String(capability).replace(/^model:/i, '').trim().toLowerCase()
+    if (name !== '') keys.add(name)
+  }
+  if (keys.size === 0 && typeof showName === 'string' && showName.trim() !== '') {
+    keys.add(showName.trim().toLowerCase())
+  }
+  return [...keys]
+}
+
+/**
+ * 取「此刻已经生效、且还没被余额桶表达」的活动额度。
+ *
+ * 判定顺序（每一步都不可省）：
+ *
+ * 1. **计划过期**（`ends_at <= now`）→ 整份跳过（上游可能仍把它标成 `active`，
+ *    实测 `zcode-v3-start-plan-0817` 到期后还留在 `plans[]` 里）；
+ * 2. **已经下发成桶**（同 `entitlement_id`）→ 跳过，交给桶（真实余量）；
+ * 3. **还没生效**（`effective_at > now`）→ 跳过；
+ * 4. 否则按 `grant_units` 计入。
+ *
+ * ⚠ `effective_at` 为 `0`/缺省时按「随计划开始立即生效」处理 ——
+ *   实测 `…-0817` 的两份权益就是 `effective_at: 0`。
+ */
+export function zcodeEffectiveActivityGrants(
+  balance: ZcodeBalanceResult,
+  nowMs: number = Date.now(),
+): ZcodeActivityGrant[] {
+  const nowSec = Math.floor(nowMs / 1000)
+  /** 余额桶已经表达过的权益（按 id）。 */
+  const represented = new Set<string>()
+  for (const bucket of balance.buckets) {
+    if (typeof bucket.entitlementId === 'string' && bucket.entitlementId !== '') {
+      represented.add(bucket.entitlementId)
+    }
+  }
+  const grants: ZcodeActivityGrant[] = []
+  for (const plan of balance.plans) {
+    if (typeof plan.status === 'string' && plan.status.toLowerCase() !== 'active') continue
+    const endsAt = plan.endsAt
+    if (endsAt !== undefined && endsAt <= nowSec) continue
+    for (const entitlement of plan.entitlements) {
+      if (represented.has(entitlement.entitlementId)) continue
+      const units = entitlement.grantUnits
+      if (typeof units !== 'number' || !Number.isFinite(units) || units <= 0) continue
+      const effectiveAt = entitlement.effectiveAt !== undefined && entitlement.effectiveAt > 0
+        ? entitlement.effectiveAt
+        : (plan.startsAt ?? 0)
+      if (effectiveAt > nowSec) continue
+      grants.push({
+        planId: plan.planId,
+        ...(plan.userPlanId === undefined ? {} : { userPlanId: plan.userPlanId }),
+        entitlementId: entitlement.entitlementId,
+        ...(plan.name === undefined ? {} : { planName: plan.name }),
+        ...(entitlement.showName === undefined ? {} : { showName: entitlement.showName }),
+        ...(entitlement.unitType === undefined ? {} : { unitType: entitlement.unitType }),
+        models: modelKeysOf(entitlement.capabilities, entitlement.showName),
+        units,
+        effectiveAtMs: effectiveAt * 1000,
+        // 计划没有 ends_at 时用「很远」表示（不参与过期判断）。
+        endsAtMs: endsAt === undefined ? Number.MAX_SAFE_INTEGER : endsAt * 1000,
+      })
+    }
+  }
+  return grants
+}
+
+/**
+ * 按模型汇总「当前真实余量」（**单个账号**，多账号由调用方相加）。
+ *
+ * 口径：
+ * - `balances[]` 的桶：已过期（`expires_at <= now`）跳过；否则取
+ *   `available_units ?? remaining_units`；
+ * - 再加上 {@link zcodeEffectiveActivityGrants} 那部分（已生效、未被桶表达）。
+ *
+ * ⚠ 同一模型出现多个桶时**相加**（不同期的额度可叠加使用）。此前实现取
+ *   `Math.max`，在「旧期还剩 5M + 新期 300M」这种真实形态下会**漏掉**其中一份。
+ */
+export function zcodeRemainingByModel(
+  balance: ZcodeBalanceResult,
+  nowMs: number = Date.now(),
+): Map<string, number> {
+  const nowSec = Math.floor(nowMs / 1000)
+  const remaining = new Map<string, number>()
+  const add = (keys: readonly string[], units: number): void => {
+    if (!Number.isFinite(units) || units <= 0) return
+    for (const key of keys) remaining.set(key, (remaining.get(key) ?? 0) + units)
+  }
+  const seenEntitlements = new Set<string>()
+  for (const bucket of balance.buckets) {
+    if (bucket.expiresAt !== undefined && bucket.expiresAt <= nowSec) continue
+    // 同一份权益被上游重复下发时只算一次（防翻倍）。
+    if (typeof bucket.entitlementId === 'string' && bucket.entitlementId !== '') {
+      if (seenEntitlements.has(bucket.entitlementId)) continue
+      seenEntitlements.add(bucket.entitlementId)
+    }
+    const units = bucket.availableUnits ?? bucket.remainingUnits
+    if (typeof units !== 'number') continue
+    add(modelKeysOf(bucket.capabilities, bucket.showName), units)
+  }
+  for (const grant of zcodeEffectiveActivityGrants(balance, nowMs)) {
+    add(grant.models, grant.units)
+  }
+  return remaining
 }
 
 /** `ZcodeBalanceResult` 里由 `preview` 带出的可领活动。 */
@@ -365,7 +602,7 @@ async function fetchClaimablePlans(
   fetchImpl: typeof fetch,
 ): Promise<ZcodeClaimablePlanSummary[]> {
   try {
-    const appVersion = credential.app_version ?? ZCODE_APP_VERSION_FALLBACK
+    const appVersion = resolveZcodeAppVersion(credential.app_version)
     const response = await fetchWithTimeout(
       fetchImpl,
       `${ZCODE_BILLING_PREVIEW_URL}?app_version=${encodeURIComponent(appVersion)}&platform=win32`,
@@ -404,7 +641,7 @@ export async function reportZcodeActivation(
   credential: ZcodeCredential,
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
-  const appVersion = credential.app_version ?? ZCODE_APP_VERSION_FALLBACK
+  const appVersion = resolveZcodeAppVersion(credential.app_version)
   for (const event of ['app_launch', 'app_daily_active']) {
     try {
       await fetchWithTimeout(fetchImpl, ZCODE_EVENT_REPORT_URL, {
@@ -428,7 +665,7 @@ export async function fetchZcodeClaimablePlans(
   credential: ZcodeCredential,
   fetchImpl: typeof fetch = fetch,
 ): Promise<readonly ZcodeClaimablePlan[]> {
-  const appVersion = credential.app_version ?? ZCODE_APP_VERSION_FALLBACK
+  const appVersion = resolveZcodeAppVersion(credential.app_version)
   const url = `${ZCODE_BILLING_PREVIEW_URL}?app_version=${encodeURIComponent(appVersion)}&platform=win32`
   const response = await fetchWithTimeout(fetchImpl, url, {
     method: 'GET',
@@ -493,7 +730,25 @@ export async function fetchZcodeClaimablePlans(
 export async function claimZcodePlan(
   credential: ZcodeCredential,
   planId: string,
-  captcha: { param: string; region: string },
+  /**
+   * 验证码头。**省略即「不带验证头先试一发」**（2026-10-28 实测）。
+   *
+   * ## 为什么要允许省略（而不是像旧注释那样说「始终强制」）
+   *
+   * 旧结论是「claim 端点始终索要 captcha，校验还前置于 plan 校验」。但 2026-10-28
+   * 用真凭据复测（`app_version: 3.16.3`）：**不带任何验证头**的 claim 直接回
+   * `code:0 / 套餐领取成功 / 300,000,000 token`。也就是说「必然要验证」这件事
+   * 至少在 3.16.3 这一档**不成立**了。
+   *
+   * 这条实测很值钱：验证头要靠浏览器（内部载体或外挂 chromium）产 param，
+   * 而在没有浏览器的环境（本仓库的 web/独立服务形态）里那条链根本起不来 ——
+   * 旧逻辑下「一键领取」对 ZCode 是**必失败**的。
+   *
+   * 故调用方的策略改成**先不带验证头试一发，只在上游回 `3007` 时才去产 param**
+   * （`zcode-auth.ts` 的 `claimOnePlan`）。既保留上游真要求验证时的旧路径，
+   * 又让「上游不要验证」的常态不再付出浏览器代价。
+   */
+  captcha?: { param: string; region: string },
   fetchImpl: typeof fetch = fetch,
 ): Promise<ZcodeClaimOutcome> {
   let response: Response
@@ -613,7 +868,7 @@ export async function fetchZcodeCaptchaConfig(
   credential: ZcodeCredential,
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ region: string; prefix: string; sceneId: string } | undefined> {
-  const appVersion = credential.app_version ?? ZCODE_APP_VERSION_FALLBACK
+  const appVersion = resolveZcodeAppVersion(credential.app_version)
   const url = `${ZCODE_CLIENT_CONFIGS_URL}?app_version=${encodeURIComponent(appVersion)}&platform=unknown`
   try {
     const response = await fetchWithTimeout(fetchImpl, url, {
@@ -675,7 +930,7 @@ export async function fetchZcodeModels(
   credential: ZcodeCredential,
   fetchImpl: typeof fetch = fetch,
 ): Promise<ZcodeRemoteModelLike[] | undefined> {
-  const appVersion = credential.app_version ?? ZCODE_APP_VERSION_FALLBACK
+  const appVersion = resolveZcodeAppVersion(credential.app_version)
   const url = `${ZCODE_CLIENT_CONFIGS_URL}?app_version=${encodeURIComponent(appVersion)}&platform=unknown`
   try {
     const response = await fetchWithTimeout(fetchImpl, url, {

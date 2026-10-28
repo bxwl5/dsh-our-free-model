@@ -144,8 +144,78 @@ export function phoneFromUserId(userId: string | undefined): string | undefined 
   return `${head.slice(0, 3)}****${head.slice(-4)}`
 }
 
-/** 客户端版本的兜底值（请求头 `X-ZCode-App-Version` 用）。 */
-export const ZCODE_APP_VERSION_FALLBACK = '3.14.3'
+/**
+ * 客户端版本的兜底值（请求头 `X-ZCode-App-Version` 与 `?app_version=` 用）。
+ *
+ * ## 为什么是 3.16.3 而不是「版本号随便写」（2026-10-28 实测）
+ *
+ * ZCode 的**每日活动额度**（`/billing/preview` 下发、`/billing/claim` 领取）
+ * 被服务端当成**客户端版本门槛**：同一账号、同一 JWT、同一组请求头，只改
+ * `app_version`，`preview` 的返回就完全不同 ——
+ *
+ * | app_version | `preview.plans` |
+ * |---|---|
+ * | `3.14.3`（本仓库此前一直发的） | `[]` ← 于是我们判定「今日额度尚未到账」 |
+ * | `3.15.0` / `3.15.2` / `3.16.0` | `[]` |
+ * | **`3.16.3` ~ `3.20.x`** | `[zcode-v3-start-plan-1028]`：ZCODE GLOBAL BUILD、300,000,000 token、GLM-5.3-Flash |
+ * | `4.0.0` | `[]`（跨大版本同样不认） |
+ *
+ * 也就是说「今天能不能领到 3 亿」**只由这个版本号决定**，与领取逻辑无关。
+ * 这是本仓库长期「每轮都报今日没到账」的真正根因。
+ *
+ * ⚠ 服务端认的是**请求里的版本**，不是「客户端真的是哪个版本」—— 官方 3.16.3
+ *   客户端也只是一个也发 `3.16.3` 的客户端。故这是一个**协议常量**，
+ *   不能指望「用户升级了官方客户端就自动对上」。
+ */
+export const ZCODE_APP_VERSION_FALLBACK = '3.16.3'
+
+/** 服务端接受「下发每日活动额度」的最低版本（含）。 */
+export const ZCODE_APP_VERSION_MIN = '3.16.3'
+/** 服务端接受该额度的最高次版本（`3.20.x` 是实测上限，含）。 */
+export const ZCODE_APP_VERSION_MAX_MINOR = 20
+
+/** 解析 `3.16.3` / `v3.16.3` / `3.16.3-beta.1` 的前三段；解析不出返回 undefined。 */
+function parseAppVersion(value: string): [number, number, number] | undefined {
+  const matched = /^v?(\d+)\.(\d+)\.(\d+)/.exec(value.trim())
+  if (matched === null) return undefined
+  return [Number(matched[1]), Number(matched[2]), Number(matched[3])]
+}
+
+/**
+ * 把**凭据里存着的**登录时版本归一成「服务端当前认的版本」。
+ *
+ * ## 为什么必须有这一层（真实缺陷）
+ *
+ * `ZCODE_APP_VERSION_FALLBACK` 只在**凭据没写版本**时才生效，而本仓库的登录流程
+ * 会把当时的版本（`3.14.3`）写进凭据的 `app_version`。于是：
+ *
+ * - 只改常量 ⇒ **存量账号全部无效**（凭据里那个 `3.14.3` 永远赢），
+ *   表面上「代码改了」，实际每轮仍然 `preview: []`；
+ * - 用户重登一次才生效 ⇒ 而重登本身有代价（要浏览器过登录流程）。
+ *
+ * 故统一在**发请求前**钳制：落在服务端接受窗口内就原样用，否则退回
+ * {@link ZCODE_APP_VERSION_FALLBACK}（一个**已知可用**的版本）。
+ * 这样「存量凭据 + 新代码」立刻能领，不需要任何迁移。
+ *
+ * ⚠ 钳制**只影响活动额度这条链路**（`billing/preview`、`billing/claim`、
+ *   `event/report`、`client/configs`）与通用请求头；不改变凭据里存的值
+ *   （用户下次登录自然会写成新版本）。
+ */
+export function resolveZcodeAppVersion(stored?: string): string {
+  if (typeof stored !== 'string') return ZCODE_APP_VERSION_FALLBACK
+  const trimmed = stored.trim()
+  if (trimmed === '') return ZCODE_APP_VERSION_FALLBACK
+  const parsed = parseAppVersion(trimmed)
+  if (parsed === undefined) return ZCODE_APP_VERSION_FALLBACK
+  const [major, minor, patch] = parsed
+  const minParsed = parseAppVersion(ZCODE_APP_VERSION_MIN) as [number, number, number]
+  // 只认 3.x：4.0.0 实测同样拿不到活动额度（大版本被拒）。
+  if (major !== minParsed[0]) return ZCODE_APP_VERSION_FALLBACK
+  if (minor < minParsed[1]) return ZCODE_APP_VERSION_FALLBACK
+  if (minor === minParsed[1] && patch < minParsed[2]) return ZCODE_APP_VERSION_FALLBACK
+  if (minor > ZCODE_APP_VERSION_MAX_MINOR) return ZCODE_APP_VERSION_FALLBACK
+  return trimmed
+}
 
 /**
  * 凭据是否「够用」。

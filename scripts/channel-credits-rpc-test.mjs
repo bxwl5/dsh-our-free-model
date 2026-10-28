@@ -35,6 +35,35 @@ export async function verifyChannelCreditsRpc({ ctx, call, creds }) {
         body = { base_resp: { status_code: 0 }, total_count: 1, details: [{ remaining_amount: '123.00' }] }
       } else if (pathname.includes('/profile-summary')) {
         body = { code: 0, success: true, data: { totalCreditsRemaining: 123, creditItems: [] } }
+      } else if (pathname.includes('/zcode-plan/billing/balance')) {
+        /**
+         * ZCode 的额度是**活动制**：`balances[]` 是真实余量桶（带到期），
+         * `plans[]` 是已领取的套餐（带 `effective_at` 生效时刻）。
+         *
+         * 用户 2026-10-28 的两条要求正好都在这里验：
+         * ① 余额要按**时刻**算（没生效不算、过期不算）；
+         * ② 同一份额度在 `plans` 与 `balances` 两种形态下**不能相加**。
+         *
+         * 故这个替身刻意造出四种情形，见下面的断言。
+         */
+        const nowSec = Math.floor(Date.now() / 1000)
+        body = { code: 0, data: { server_time: nowSec, plans: [
+          { plan_id: 'plan-effective', name: 'ZCODE GLOBAL BUILD', status: 'active',
+            starts_at: nowSec - 3600, ends_at: nowSec + 43200,
+            entitlements: [{ entitlement_id: 'ent-effective', show_name: 'GLM-5.3-Flash', unit_type: 'token',
+              capabilities: ['model:glm-5.3-flash'], grant_units: 300000000, period: 'one_time', effective_at: nowSec - 1 }] },
+          { plan_id: 'plan-future', name: 'FUTURE', status: 'active',
+            starts_at: nowSec - 3600, ends_at: nowSec + 43200,
+            entitlements: [{ entitlement_id: 'ent-future', show_name: 'GLM-5.3', unit_type: 'token',
+              capabilities: ['model:glm-5.3'], grant_units: 999999999, period: 'one_time', effective_at: nowSec + 7200 }] },
+        ], balances: [
+          { plan_id: 'plan-old', entitlement_id: 'ent-live', show_name: 'GLM-5.3-Flash', unit_type: 'token',
+            total_units: 5000000, remaining_units: 5000000, expires_at: nowSec + 3600, capabilities: ['model:glm-5.3-flash'] },
+          { plan_id: 'plan-expired', entitlement_id: 'ent-expired', show_name: 'GLM-5.3', unit_type: 'token',
+            total_units: 3000000, remaining_units: 3000000, expires_at: nowSec - 1, capabilities: ['model:glm-5.3'] },
+        ] } }
+      } else if (pathname.includes('/zcode-plan/billing/preview')) {
+        body = { code: 0, data: { plans: [] } }
       } else if (pathname.endsWith(':retrieveUserQuotaSummary')) {
         quotaRequests++
         if (quotaFailed) return new Response('本机配额查询失败', { status: 502 })
@@ -54,6 +83,30 @@ export async function verifyChannelCreditsRpc({ ctx, call, creds }) {
     }
     assert.equal((await ctx.zcodeAuth.current()).zcode_jwt, 'fixture-credits-jwt')
     assert.equal((await ctx.zcodeAuth.status()).configured, true)
+    /**
+     * ZCode 余额卡的口径（用户 2026-10-28）：
+     * - 有效桶 5,000,000 计入；
+     * - **已生效**的活动额度 300,000,000 计入；
+     * - 还没到 `effective_at` 的 999,999,999 **不计入**；
+     * - 已经过 `expires_at` 的 3,000,000 **不计入**。
+     */
+    /**
+     * ⚠ `ZcodeAuth` 在**构造期**捕获了 `fetchImpl`（＝挂载时那个 offlineFetch），
+     * 而本用例是**运行期**才替换 `globalThis.fetch` 的 —— 不显式换掉这一个字段，
+     * 请求会走 offlineFetch 并抛「external network is disabled」。
+     * 其它渠道没这个问题（它们逐请求读 `globalThis.fetch`）。
+     */
+    const savedZcodeFetch = ctx.zcodeAuth.fetchImpl
+    ctx.zcodeAuth.fetchImpl = globalThis.fetch
+    let zcodeBalance
+    try {
+      zcodeBalance = await call('credits.balances', { provider: 'zcode' })
+    } finally {
+      ctx.zcodeAuth.fetchImpl = savedZcodeFetch
+    }
+    assert.equal(zcodeBalance.ok, true)
+    assert.equal(zcodeBalance.value.accounts[0].balance.total, 305_000_000,
+      '余额 = 有效桶 + 已生效活动额度；没生效/已过期的都不算')
     creds.delete('FIXTURE_CREDITS_QODER')
     const missing = await call('credits.balances', { provider: 'qoder' })
     assert.equal(missing.value.accounts[0].balance, null)

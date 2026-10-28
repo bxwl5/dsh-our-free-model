@@ -1363,11 +1363,24 @@ export class ZcodeAuth extends Service {
        * 放在**任何网络往返之前**（下面还有激活上报与 plan 查询两跳），是为了给
        * client 产出一个提前量 —— 它要「建 guest → 导航载体页 → 加载 SDK → 无感验证」
        * 约 2–4 秒，而槽的有界等待只有 1.5 秒。
+       *
+       * ⚠ 自 2026-10-28 起「第一发不带验证头」是常态（见 {@link claimOnePlan}），
+       *   所以这个位**多数情况下产出的 param 用不上**。仍然留在窗口入口，是为了
+       *   保住 `3007` 兜底时的提前量 —— 那时代价是「白产一个 param」，
+       *   而挪到晚一点（真撞 3007 才置位）就得每次先白等 1.5 秒的槽超时。
        */
       setCaptchaDemand(true)
-      if (mintCaptcha === undefined) {
-        return [{ kind: 'failed', code: -1, message: 'captcha 产出不可用（找不到浏览器？）' }]
-      }
+      /**
+       * ⚠ **不再因为「没有注入链」就早退**（2026-10-28 实测修正）。
+       *
+       * 旧行为：`mintCaptcha === undefined` ⇒ 直接回「captcha 产出不可用（找不到浏览器？）」。
+       * 依据是「claim 端点始终强制索要 captcha」。但真凭据复测（`app_version 3.16.3`）
+       * 显示：**不带任何验证头**的 claim 直接 `code:0` 领取成功 —— 常态并不需要验证。
+       *
+       * 于是在没有浏览器的形态（web / 独立服务）里，那把早退闸门会把「本来能领」的
+       * 用户挡在门外。现在改成：先不带验证头领（见 {@link claimOnePlan}），只有上游
+       * 真的回 `3007` 时才需要 param，那时才依赖注入链 / 外挂 chromium。
+       */
 
       await reportZcodeActivation(credential, this.fetchImpl)
       const plans = await fetchZcodeClaimablePlans(credential, this.fetchImpl)
@@ -1489,41 +1502,25 @@ export class ZcodeAuth extends Service {
   }): Promise<{ outcome: ClaimOutcome; continueWithNextPlan: boolean }> {
     const { plan, credential, accountId, mintCaptcha, captchaConfig, region } = input
     try {
-      // ⚠ 每个 plan 单独 mint（captcha 一次性）：内部载体优先，等不到即那条 chromium 链。
-      const minted = await this.mintClaimCaptcha(mintCaptcha, captchaConfig)
       /**
-       * ★ 「已发出」必须在 **mint 之后**记（真实缺陷，2026-10-05 自审发现）。
+       * ★ 第一发**不带验证头**（2026-10-28 实测）。
        *
-       * `mintClaimCaptcha` 会**抛错**：注入链撞上退避冷却时会如实上抛
-       * （见 {@link retryClaimWithInjectedChain} 与 `mintCaptchaAfterRejection`）。
-       * 若把本行放在 mint **之前**，那次抛错就会留下**一次没有对应上游请求的
-       * `sent`**：① 失败计数少记（异常直接跳 `catch`）；②「距上条」的分母被一个
-       * **从未发出**的请求占用，下一次真实请求的间隔会算成「距那次失败」而不是
-       * 「距上一条真实请求」—— 正是 issue 要回答的「是否频率风控」被污染。
+       * 官方 `app_version 3.16.3` 下，同一账号同一 JWT 不带 `X-Aliyun-Captcha-Verify-*`
+       * 直接 `code:0 / 套餐领取成功 / 300,000,000 token`。旧结论「claim 始终强制索要
+       * captcha」在当前窗口已不成立，而产 param 需要浏览器（内部载体或外挂 chromium）——
+       * 在没有浏览器的形态里，那把「先 mint 再领」会把一键领取直接卡死。
        *
-       * ⚠ 与 {@link retryClaimWithInjectedChain} 的顺序**必须一致**（那里也是先
-       *   `await injected(...)` 再记 sent）—— 两处不一致就是同型缺陷写两遍。
-       * ⚠ `claimZcodePlan` 在**网络异常与读体异常**时**不抛**（内部都兜成
-       *   `ok:false` 的返回），故 `sent` 与 `ok`/`failed` 在此之后是**配平**的。
-       *   ⚠ 措辞别说成「自身绝不抛」：对抗性审计证伪过那个绝对断言 ——
-       *   若 `fetch` 返回**非 Response**（如 `null`），属性访问会同步抛
-       *   （真实 `fetch` 不会如此，生产影响≈0，且 `zcode-upstream.ts` 现已
-       *   把读体整段包住）。这里依赖的只是「网络/读体异常不抛」这条**较弱**前提。
+       * 故改为：**先裸发一发**；只有上游回 `3007`（真的要求验证）才去 mint 并重发
+       * （见下面的 `3007` 分支）。代价是上游要求验证时多一发 `3007`，收益是常态
+       * 下一发即中、且不依赖任何浏览器。
        */
       const claimStartedAt = Date.now()
       noteZcodeRequestSent(accountId, claimStartedAt)
       let outcome: ZcodeClaimOutcome = await claimZcodePlan(
-        credential, plan.planId, { param: minted.param, region }, this.fetchImpl,
+        credential, plan.planId, undefined, this.fetchImpl,
       )
       /** 本 plan 是否已走过「3007 换链重发」（只影响 3007 的文案措辞）。 */
       let internalRetried = false
-      /**
-       * 渲染诊断用的「本次出发时刻」。
-       *
-       * ⚠⚠ 重发后**必须换成重发的时刻** —— 若仍用首发的 `claimStartedAt`，
-       * `previousSentAt`（= 首发时刻）与诊断的 `sentAt` 又会相等 ⇒
-       * 「距上条」**再一次**变成 `0ms`（该缺陷的第二个实例，实测抓到过）。
-       */
       let diagnosticSentAt = claimStartedAt
       if (outcome.ok) {
         noteZcodeRequestOk(accountId, Date.now())
@@ -1531,41 +1528,35 @@ export class ZcodeAuth extends Service {
         noteZcodeRequestFailed(accountId)
       }
       /**
-       * ★ **评审 C4：claim 接上 3007 降级链**（此前只有推理路径有，领取这条**最需要**它的路径反而没有）。
+       * ★ `3007` = 上游这次要安全验证 ⇒ 产一个 param 重发（本 plan 上限一次）。
        *
-       * ## 为什么领取上尤其严重
-       * `/zcode-plan/billing/claim` **始终**索要 captcha，且校验**前置于** plan 校验
-       * （实测：带非法 captcha 与不带 captcha 都回 `400/3007`）⇒ 内部 param 在这里
-       * 被拒的概率比推理路径高得多。少了这段，用户看到的就是「一键领取直接失败」，
-       * 而失败原因只有一个干巴巴的 `3007`。
-       *
-       * ## 三条纪律
-       * 1. **只按 `minted.source === 'internal'` 归因**：chromium 的 param 被拒是
-       *    「时效 / 设备信誉」问题（`CaptchaBackoff` 管的那本账），不许记到载体头上；
-       *    而 `source === 'chromium'` 本身就说明**载体链本轮没参与**
-       *    （web 版 `supplied` 恒 0、或 env 关掉了），**没有第二条链可换** ——
-       *    「chromium 被拒也重试一次」只会白扣同设备每小时 150 次那份配额，
-       *    且换一个 chromium param 面对同一个服务端判定，期望收益极低；
-       * 2. **重发上限一次**：本方法一个 plan 只走一遍，重发后**无论成不成**都收工
-       *    —— 再撞 `3007` 就如实失败。再试只是白扣设备级配额（阿里云同设备 150 次/小时），
-       *    且「已经换过 chromium 还是 3007」**本身就是**给用户的诊断信息；
-       * 3. **禁用计数走既有语义**：记一次 `internalRejected`，到阈值由
-       *    `CaptchaCarrier` 判本次运行禁用（见 `noteInternalRejection`）。
-       *
-       * ⚠ 重发用**注入链**（`mintCaptcha`），不是 `carrier` 里那条腿 ——
-       *   claim 的 param 一贯由注入链产出，兜底也该走同一条。
-       * ⚠ 重发**沿用同一份配置**（`captchaConfig`）：换 param 不换配置，region
-       *   也就不变 —— 否则重发会亲手制造出「param 与 region 不同源」。
+       * ⚠ mint 放在这里（而不是进入本方法就做）才是「按需」：见上面第一发的说明。
+       * ⚠ mint 可能抛错（注入链撞退避冷却 / 找不到浏览器），由本方法的 `catch`
+       *   归一成这个 plan 的 `failed` —— 不让它拖垮同账号的其它 plan。
        */
-      if (outcome.code === 3007 && minted.source === 'internal') {
-        this.carrier.noteInternalRejection()
-        internalRetried = true
-        const retried = await this.retryClaimWithInjectedChain(
-          credential, plan.planId, mintCaptcha, captchaConfig, region, { accountId },
+      if (outcome.code === 3007) {
+        const minted = await this.mintClaimCaptcha(mintCaptcha, captchaConfig)
+        const retryStartedAt = Date.now()
+        noteZcodeRequestSent(accountId, retryStartedAt)
+        outcome = await claimZcodePlan(
+          credential, plan.planId, { param: minted.param, region }, this.fetchImpl,
         )
-        // ★ 写回（不是直接返回）⇒ 下面的短路判定天然覆盖重发这一发。
-        outcome = retried.outcome
-        diagnosticSentAt = retried.sentAt
+        diagnosticSentAt = retryStartedAt
+        if (outcome.ok) {
+          noteZcodeRequestOk(accountId, Date.now())
+        } else {
+          noteZcodeRequestFailed(accountId)
+        }
+        // 换链重发的旧语义原样保留（只对内部载体的 param 归因）。
+        if (outcome.code === 3007 && minted.source === 'internal') {
+          this.carrier.noteInternalRejection()
+          internalRetried = true
+          const retried = await this.retryClaimWithInjectedChain(
+            credential, plan.planId, mintCaptcha, captchaConfig, region, { accountId },
+          )
+          outcome = retried.outcome
+          diagnosticSentAt = retried.sentAt
+        }
       }
       const mapped = toClaimOutcome(outcome, plan.planId, {
         plan, accountId, sentAt: diagnosticSentAt, status: outcome.httpStatus, internalRetried,

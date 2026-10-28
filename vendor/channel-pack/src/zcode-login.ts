@@ -42,6 +42,7 @@
  */
 
 import { randomBytes, randomUUID } from 'node:crypto'
+import { ZCODE_APP_VERSION_FALLBACK } from './zcode.js'
 
 /** ZCode 平台 origin。 */
 export const ZCODE_ORIGIN = 'https://zcode.z.ai'
@@ -163,7 +164,7 @@ export async function startZcodeLogin(
   options: { provider?: ZcodeLoginProvider; appVersion?: string } = {},
 ): Promise<ZcodeLoginFlow> {
   const flowSecret = generateFlowSecret()
-  const appVersion = options.appVersion ?? '3.14.3'
+  const appVersion = options.appVersion ?? ZCODE_APP_VERSION_FALLBACK
   const provider = options.provider ?? ZCODE_LOGIN_PROVIDER
 
   let response: Response
@@ -250,7 +251,7 @@ export type ZcodePollOutcome =
 export async function pollZcodeLogin(
   flow: Pick<ZcodeLoginFlow, 'flowId' | 'flowSecret'>,
   fetchImpl: typeof fetch = fetch,
-  appVersion = '3.14.3',
+  appVersion = ZCODE_APP_VERSION_FALLBACK,
 ): Promise<ZcodePollOutcome> {
   let response: Response
   try {
