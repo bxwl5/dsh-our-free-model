@@ -300,13 +300,13 @@ import{c as Xt,R as $t,r as W,j as k,N as eo,S as et,C as ao,B as ia,a as Ta,b a
 .ofm_anomalyheadrow,.ofm_anomalyrow{
   display:grid;
   grid-template-columns:
-    minmax(80px,1.1fr)   /* 渠道 */
-    minmax(120px,1.6fr)  /* 账号 */
-    minmax(72px,.9fr)    /* 异常类型 */
-    minmax(110px,1.5fr)  /* 异常模型 */
-    minmax(96px,1.2fr)   /* 解封时间 */
-    minmax(76px,.95fr);  /* 剩余时间 */
-  gap:18px;padding:9px 16px;align-items:center}
+    minmax(104px,1.25fr) /* 渠道：「WorkBuddy 国际版」要完整 */
+    minmax(80px,.68fr)   /* 账号：昵称本身就短，不值得多占 */
+    minmax(72px,.5fr)    /* 异常类型：只放一个「限流」徽标 */
+    minmax(184px,3.4fr)  /* 异常模型：长名（DeepSeek-V4.1-Flash · x0.25）必须完整 */
+    minmax(88px,.9fr)    /* 解封时间 */
+    minmax(74px,.75fr);  /* 剩余时间 */
+  gap:16px;padding:9px 16px;align-items:center}
 .ofm_anomalyheadrow{position:sticky;top:0;z-index:2;
   font-size:11px;font-weight:600;letter-spacing:.045em;
   color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);
@@ -333,6 +333,15 @@ import{c as Xt,R as $t,r as W,j as k,N as eo,S as et,C as ao,B as ia,a as Ta,b a
 .ofm_anomalycell.until,.ofm_anomalycell.remaining{font-size:11.5px}
 .ofm_anomalycell.until{color:var(--dsw-alias-label-secondary)}
 .ofm_anomalycell.remaining{font-weight:600}
+/*
+ * 窄屏收紧间隙：六列的 minmax 下限相加约 602px，加上 5×16 gap 与左右内边距
+ * 需要 714px；820px 以下的容器装不下就会冒出横向滚动条（用户 2026-10-28
+ * 的桌面截图是宽的，但侧边栏收起时容器会变窄）。此处把 gap 降到 12px、
+ * 内边距降到 12px，同样内容只需 686px —— 常见的窄侧栏也能一屏放下。
+ */
+@media (max-width:860px){
+  .ofm_anomalyheadrow,.ofm_anomalyrow{gap:12px;padding:9px 12px}
+}
 .ofm_anomalykind{display:inline-block;font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:999px;white-space:nowrap;
   color:var(--dsw-alias-state-warning-primary,#f0a441);
   background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 14%,transparent)}
