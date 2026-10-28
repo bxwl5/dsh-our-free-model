@@ -17,6 +17,23 @@
 # 推荐用 `--network host` 运行，否则管理页面从宿主机访问不到。详见 docs/docker.md。
 FROM node:22-alpine
 
+# OCI 标签：让 `docker inspect` / GHCR 页面能看出"这是什么、什么版本、哪次提交、
+# 基于哪个基础镜像"。三个 ARG 由 .github/workflows/docker.yml 注入。
+# 没有它们时镜像在 GHCR 上只会剩一个 :latest，看不出任何版本信息。
+ARG APP_VERSION=0.0.0
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
+LABEL org.opencontainers.image.title="Our Free Model (standalone)" \
+      org.opencontainers.image.description="Our Free Model 独立服务：自带网页管理面板与 OpenAI 兼容推理接口，20 个免费账号渠道，无需 DSH" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.source="https://github.com/bxwl5/dsh-our-free-model" \
+      org.opencontainers.image.documentation="https://github.com/bxwl5/dsh-our-free-model/blob/main/docs/docker.md" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.base.name="docker.io/library/node:22-alpine" \
+      org.opencontainers.image.base.digest="node:22-alpine (multi-arch: linux/amd64, linux/arm64)"
+
 # ca-certificates：访问各家渠道的 HTTPS 必需。
 # tzdata：让 TZ 生效（容器默认没有时区库）。
 RUN apk add --no-cache ca-certificates tzdata

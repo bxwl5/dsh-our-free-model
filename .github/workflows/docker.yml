@@ -25,6 +25,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # `workflow_dispatch` 没有 tag，metadata-action 取不到 semver，所以版本号
+      # 统一从 package.json 读，作为 OCI 标签的 org.opencontainers.image.version。
+      - id: appver
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
       - id: meta
         uses: docker/metadata-action@v5
         with:
@@ -53,12 +58,29 @@ jobs:
           file: ./Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            APP_VERSION=${{ steps.appver.outputs.version }}
+            VCS_REF=${{ github.sha }}
+            BUILD_DATE=${{ github.event.repository.pushed_at }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       # 构建完成后把镜像摘要写进 job summary，便于核对"这个 tag 对应哪次提交"。
+      # runner 自带 docker，所以推送后可以真拉下来核对：标签是否写进去了、
+      # 多架构清单是否齐全。这两样在别处（无 read:packages 权限时）都查不到。
+      - id: verify
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}:latest"
+          docker pull "$IMAGE"
+          echo '--- OCI labels ---'
+          docker image inspect "$IMAGE" --format '{{json .Config.Labels}}' | tr ',' '\n'
+          echo '--- base image ---'
+          docker image inspect "$IMAGE" --format '{{.Config.Env}}'
+          echo '--- platforms in manifest ---'
+          docker buildx imagetools inspect "$IMAGE" | sed -n '1,20p'
+
       - id: summary
         run: |
           {

@@ -56,6 +56,34 @@ https://github.com/bxwl5/dsh-our-free-model
 
 设置页共七部分：免费模型、渠道接入、省 Token、路由、数据看板、运行日志、网关设置。
 
+## Docker（独立服务）
+
+也可以**完全不用 DSH**，直接把独立版跑在容器里。镜像由 GitHub Actions 构建并推送到
+GHCR，多架构 `linux/amd64` + `linux/arm64`：
+
+```bash
+docker run -d --name ofm \
+  --network host \
+  -v ofm-data:/data \
+  -e TZ=Asia/Shanghai \
+  --restart unless-stopped \
+  ghcr.io/bxwl5/dsh-our-free-model:latest
+
+docker logs ofm | head -5     # 拿一次性的面板登录链接
+```
+
+- **镜像**：`ghcr.io/bxwl5/dsh-our-free-model`，标签 `latest` / `2.5.7-priv.1` / `2.5`
+  （打 `v*` tag 时自动生成）。基础镜像 `node:22-alpine`，约 5 MB 应用文件、零 npm 运行时依赖。
+- **面板端口**：`18900`（面板 / 管理 API / `/v1` 推理 / `/health` 同一个端口）；
+  `18901` 是可选的局域网推理中继，**不转发管理面**。
+- **必须 `--network host`**：服务只绑回环地址（`isLoopbackHost()` 是硬校验），
+  bridge 网络下端口映射转发不进管理页面。
+- **数据卷**：`/data` 里是账号凭据、账号池、Token 账本和 API Key，不挂卷等于重建即丢。
+- 从别的机器管理面板：`ssh -L 18900:127.0.0.1:18900 用户名@NAS`，然后本地开
+  `http://127.0.0.1:18900`。
+
+完整说明（GHCR 可见性、端口冲突、升级、已知限制）见 [docs/docker.md](docs/docker.md)。
+
 ## 渠道
 
 **免密车道（2 个）**：匿名免费车道（OpenCode）、Kilo 免费池。都不需要账号。

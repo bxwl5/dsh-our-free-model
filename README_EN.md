@@ -66,6 +66,37 @@ After restarting, the composer's model picker gains an **Our Free Model** group.
 
 The settings page has seven parts: free models, channels, token savers, routing, dashboard, request log and gateway.
 
+## Docker (standalone service)
+
+You can skip DSH entirely and run the standalone build in a container. The image is
+built by GitHub Actions and pushed to GHCR for both `linux/amd64` and `linux/arm64`:
+
+```bash
+docker run -d --name ofm \
+  --network host \
+  -v ofm-data:/data \
+  -e TZ=Asia/Shanghai \
+  --restart unless-stopped \
+  ghcr.io/bxwl5/dsh-our-free-model:latest
+
+docker logs ofm | head -5     # one-time dashboard login link
+```
+
+- **Image**: `ghcr.io/bxwl5/dsh-our-free-model`, tags `latest` / `2.5.7-priv.1` / `2.5`
+  (version tags are produced when you push a `v*` tag). Base image `node:22-alpine`,
+  ~5 MB of app files, zero npm runtime dependencies.
+- **Dashboard port**: `18900` (dashboard, admin API, `/v1` inference and `/health` share
+  one port); `18901` is the optional LAN inference relay and never proxies the admin side.
+- **`--network host` is required**: the service binds loopback only (`isLoopbackHost()`
+  is a hard check), so a bridged container cannot reach the dashboard through a port map.
+- **Volume**: `/data` holds credentials, the account pool, the token ledger and the API
+  key — without a volume a rebuild loses everything.
+- Managing from another machine: `ssh -L 18900:127.0.0.1:18900 user@nas`, then open
+  `http://127.0.0.1:18900`.
+
+Full details (GHCR visibility, port conflicts, upgrades, known limits):
+[docs/docker.md](docs/docker.md).
+
 ## Channels
 
 **Keyless lanes (2)** — anonymous free lane (OpenCode) and the Kilo free pool. Neither needs an account.
