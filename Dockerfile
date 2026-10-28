@@ -43,6 +43,7 @@ WORKDIR /app
 # 数据目录：账号凭据、账号池、Token 账本、API Key 都在这里，必须挂卷。
 ENV NODE_ENV=production \
     OFM_HOME=/data \
+    OFM_PORT=18900 \
     TZ=Asia/Shanghai
 
 COPY --chown=node:node src ./src
@@ -64,7 +65,14 @@ EXPOSE 18900 18901
 
 # 端口冲突时服务会自动换端口，那时这里的 18900 探测会失败 —— 用
 # `docker logs` 看实际端口，或用 --port 固定一个空闲端口。
+# 探测端口读 OFM_PORT：用 `--port` 改端口时同步 `-e OFM_PORT=<port>`，
+# 否则健康检查会一直探 18900 而永远不 healthy。
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:18900/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.OFM_PORT||18900)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-CMD ["node", "packages/standalone/cli.mjs", "--port", "18900"]
+# ⚠️ 必须是 ENTRYPOINT + CMD 两段：node 官方镜像自带 docker-entrypoint.sh，
+# 若只写 CMD，用户 `docker run 镜像 --lan` 会被 entrypoint 解释成 `node --lan` 而失败。
+# 这样写之后：`docker run 镜像` → `--port 18900`；
+#              `docker run 镜像 --lan --lan-port 18901` → 参数原样传给 CLI。
+ENTRYPOINT ["node", "packages/standalone/cli.mjs"]
+CMD ["--port", "18900"]

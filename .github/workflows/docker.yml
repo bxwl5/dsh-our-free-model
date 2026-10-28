@@ -28,7 +28,9 @@ jobs:
       # `workflow_dispatch` 没有 tag，metadata-action 取不到 semver，所以版本号
       # 统一从 package.json 读，作为 OCI 标签的 org.opencontainers.image.version。
       - id: appver
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+          echo "built=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - id: meta
         uses: docker/metadata-action@v5
@@ -61,9 +63,13 @@ jobs:
           build-args: |
             APP_VERSION=${{ steps.appver.outputs.version }}
             VCS_REF=${{ github.sha }}
-            BUILD_DATE=${{ github.event.repository.pushed_at }}
+            BUILD_DATE=${{ steps.appver.outputs.built }}
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          # ⚠️ 刻意**不传** `labels: ${{ steps.meta.outputs.labels }}`：
+          # docker/build-push-action 的 labels 会覆盖 Dockerfile 里的 LABEL，
+          # 实测把 org.opencontainers.image.version 写成了 "latest"、
+          # description 写成仓库简介。版本/提交/构建时间由 Dockerfile 的
+          # ARG + LABEL 负责（值来自上面的 appver 与 github.sha）。
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

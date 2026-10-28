@@ -34,6 +34,19 @@ docker run -d --name ofm \
   ghcr.io/bxwl5/dsh-our-free-model:latest
 ```
 
+CLI 参数可以直传（镜像用 `ENTRYPOINT node cli.mjs` + `CMD --port 18900`）：
+
+```bash
+docker run … ghcr.io/bxwl5/dsh-our-free-model:latest --lan --lan-port 18901
+```
+
+改端口时要同时改健康检查用的环境变量，否则容器会一直不 healthy：
+
+```bash
+docker run -d --name ofm --network host -e OFM_PORT=18990 -v ofm-data:/data \
+  ghcr.io/bxwl5/dsh-our-free-model:latest --port 18990
+```
+
 首次启动会用一次性登录链接打开面板，读日志拿链接：
 
 ```bash
@@ -53,7 +66,7 @@ docker logs ofm | head -5
 
 ⚠️ 端口不是固定的：服务会优先复用上次保存的端口，冲突时自动挑一个空闲端口。
 用 `docker logs` 或 `ss -ltnp | grep node` 确认真实端口；想固定就显式传
-`--port 18900` 并保证宿主机上没被占用。
+`--port 18900` 并保证宿主机上没被占用（同时设 `-e OFM_PORT=18900`，健康检查按它探测）。
 
 ## 从局域网其它机器访问面板
 
