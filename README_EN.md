@@ -99,15 +99,18 @@ docker logs ofm | head -5     # one-time dashboard login link
 Full details (GHCR visibility, port conflicts, upgrades, known limits):
 [docs/docker.md](docs/docker.md).
 
+To build the standalone service or the Windows desktop shell (Tauri) yourself, or to
+regenerate the shipped artifacts, see [PACKAGING.md](PACKAGING.md).
+
 ## Channels
 
 **Keyless lanes (2)** — anonymous free lane (OpenCode) and the Kilo free pool. Neither needs an account.
 
-**Account channels (22)**, added under Channels in settings:
+**Account channels (20)**, added under Channels in settings:
 
 | Channel | Sign-in | Chat |
 |---|---|---|
-| CodeArts / CodeBuddy / WorkBuddy / LobsterAI | browser | ✅ |
+| CodeArts / CodeBuddy / WorkBuddy | browser | ✅ |
 | Qoder / Qoder CN / TRAE / Cline / Gemini | browser | ✅ |
 | Loomy / Raccoon / MiniMax Code / ZCode | browser | ✅ |
 | Command Code | browser (auto callback) | ✅ |
@@ -117,11 +120,10 @@ Full details (GHCR visibility, port conflicts, upgrades, known limits):
 | KukuAI | Baidu App QR scan (local page) | ✅ |
 | MonkeyCode | paste cookie (`nebula_session`) | ✅ |
 | AutoClaw (CN) | phone + SMS code | ✅ |
-| AutoClaw Intl | paste token | ✅ |
 
 **On paste-based channels** — these upstreams expose no scriptable authorization flow. Sign in on the official site first, then copy the cookie or token out of the browser's developer tools.
 
-**On AutoClaw** — the mainland site signs in with a **phone number plus SMS code** (no browser; "paste a token instead" still works). The international site's OAuth hard-requires the Aliyun CAPTCHA SDK (`AliyunCaptcha.js`, scenario `sq51tr`), which the plugin cannot complete on its own, hence the pasted-token route there.
+**On AutoClaw** — signs in with a **phone number plus SMS code** (no browser; the local page carries it). The international channel (`autoclaw-intl`) and its OAuth were removed entirely on request.
 
 **Can't see a channel's models?** The picker only lists models of channels you are signed in to;
 a channel with no usable account is not offered (its rows could not work). Its model list and the

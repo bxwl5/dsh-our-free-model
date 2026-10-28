@@ -10,13 +10,16 @@
 
 普通贡献者与维护者的检查分工、受保护的签名补丁准备流程见
 [`contributor-ci-signing.md`](contributor-ci-signing.md)。贡献者运行
-`npm run test:contributor`；main 合并前必须通过 `release-readiness`，
-默认 `npm test` 仍包含完整发布校验。不要让贡献者持有发布私钥。
+`npm run test:contributor`；main 合并前必须通过 `.github/workflows/test.yml` 的三个 job
+（`offline` / `typecheck` / `standalone-frontend`）。默认 `npm test` 仍包含完整发布校验。
+不要让贡献者持有发布私钥。
 
-## 推送公告
+## 推送公告（⚠️ 机制已移除，仅存格式参考）
 
-编辑 [`feed/announcements.json`](../feed/announcements.json)，往 `announcements`
-数组加一条：
+> `feed/announcements.json` 与读取它的 `src/feed.js` 已在 `95657a7` 整体删除，**当前没有
+> 「推送公告」这个动作**。下面保留的是当年那份 JSON 的字段含义，仅供日后重建时对照。
+
+编辑 `feed/announcements.json`，往 `announcements` 数组加一条：
 
 ```json
 {
@@ -81,7 +84,7 @@ node scripts/build-standalone-ui.mjs --check  # CI 的 standalone-frontend job �
 
 **推送即发布**意味着「改了发布文件却没重签清单」不是普通的 CI 红灯，而是让所有旧
 版本用户的一键升级当场失败（1.4.5 事故、2026-10-06 main 上 1.4.6 的漂移都是这一类）。
-仓库因此给 main 配了 ruleset：`offline` 与 `release-readiness` 两个检查是必需的，且
+仓库因此给 main 配了 ruleset：`offline` 与 `typecheck`（以及 `standalone-frontend`）是必需的，且
 改动必须走 PR——清单与实物不一致的树在 merge 前就会被挡下，而不是发布后让用户撞墙。
 
 这带来两条纪律：
@@ -203,17 +206,23 @@ CDN 上 `…@main/index.js` 仍返回 v1.3.0 的 56 999 字节——清单声明
 
 This document is for maintainers and is not part of the release: `package.json`'s
 `files` does not include `docs/`, so it never reaches an installed copy and never
-appears in [`README_EN.md`](../README_EN.md). Everything lives in the repository's
-`feed/` directory — **pushing is publishing**.
+appears in [`README_EN.md`](../README_EN.md). The `feed/` directory and its
+"pushing is publishing" chain were removed in `95657a7`; what remains is the
+`catalog/` record — see [`release-pipeline-gap.md`](release-pipeline-gap.md).
 
 See [`contributor-ci-signing.md`](contributor-ci-signing.md) for contributor
 checks and protected signature preparation. Contributors run
-`npm run test:contributor`; maintainers must pass `release-readiness` before
+`npm run test:contributor`; maintainers must pass the three jobs in
+`.github/workflows/test.yml` (`offline` / `typecheck` / `standalone-frontend`) before
 merging into main. The default `npm test` still checks the complete release.
 
-## Push an announcement
+## Push an announcement (⚠️ mechanism removed; schema kept for reference)
 
-Edit [`feed/announcements.json`](../feed/announcements.json) and add one entry:
+> `feed/announcements.json` and its reader `src/feed.js` were removed in `95657a7`.
+> There is no "push an announcement" action today; the fields below are kept so a
+> future rebuild has the original shape to follow.
+
+Edit `feed/announcements.json` and add one entry:
 
 ```json
 {

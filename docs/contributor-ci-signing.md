@@ -1,5 +1,13 @@
 # 贡献者检查与发布签名
 
+> ⚠️ **本文描述的受保护签名流程在当前仓库里没有承载者。**
+> 它依赖的 `.github/workflows/prepare-release.yml`、`release-sign.yml` 与
+> `scripts/prepare-release.mjs` 已在 `95657a7` 整体删除（`git tag` 也已停在 v1.3.1）。
+> 现有 CI 只有 `.github/workflows/` 下的 `test.yml`（offline / typecheck /
+> standalone-frontend）、`docker.yml`、`build-macos.yml`。本文因此是**设计参考 +
+> 缺口说明**，不是可执行的操作手册；缺口清单见
+> [`release-pipeline-gap.md`](release-pipeline-gap.md)。
+
 ## 目标与约束
 
 - 普通贡献者无需发布私钥即可验证代码、协议、恢复、前端及 adapter 隔离。

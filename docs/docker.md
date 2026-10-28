@@ -10,7 +10,7 @@ GitHub Actions 在**打 tag** 时构建并推送到 GHCR：
 
 ```
 ghcr.io/bxwl5/dsh-our-free-model:latest
-ghcr.io/bxwl5/dsh-our-free-model:2.5.4     # 取自 tag v2.5.4
+ghcr.io/bxwl5/dsh-our-free-model:2.5.7     # 取自 tag v2.5.7
 ghcr.io/bxwl5/dsh-our-free-model:2.5
 ```
 

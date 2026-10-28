@@ -4,7 +4,7 @@
 > 行号；凡是当前不存在的工具、目录、密钥，都明确标为「缺」，不描述其行为。
 >
 > 编写时的基线：`main` @ `93dafa4`（`package.json` 版本 `2.5.7-priv.1`）。
-> 相关的既有文档：[`RELEASING.md`](RELEASING.md)（418 行，含中英双语）、
+> 相关的既有文档：[`RELEASING.md`](RELEASING.md)（约 410 行，含中英双语）、
 > [`contributor-ci-signing.md`](contributor-ci-signing.md)（123 行）。
 
 ## 0. 一句话结论

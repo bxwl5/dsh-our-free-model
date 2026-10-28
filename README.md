@@ -85,15 +85,17 @@ docker logs ofm | head -5     # 拿一次性的面板登录链接
 
 完整说明（GHCR 可见性、端口冲突、升级、已知限制）见 [docs/docker.md](docs/docker.md)。
 
+自己构建独立服务、Windows 桌面壳（Tauri）或改动产物，见 [PACKAGING.md](PACKAGING.md)。
+
 ## 渠道
 
 **免密车道（2 个）**：匿名免费车道（OpenCode）、Kilo 免费池。都不需要账号。
 
-**账号渠道（22 个）**，在「渠道接入」页添加：
+**账号渠道（20 个）**，在「渠道接入」页添加：
 
 | 渠道 | 登录方式 | 对话 |
 |---|---|---|
-| CodeArts / CodeBuddy / WorkBuddy / LobsterAI | 浏览器授权 | ✅ |
+| CodeArts / CodeBuddy / WorkBuddy | 浏览器授权 | ✅ |
 | Qoder / Qoder 中国版 / TRAE / Cline / Gemini | 浏览器授权 | ✅ |
 | Loomy / Raccoon / MiniMax Code / ZCode | 浏览器授权 | ✅ |
 | Command Code | 浏览器授权（自动回调） | ✅ |
@@ -103,11 +105,10 @@ docker logs ofm | head -5     # 拿一次性的面板登录链接
 | KukuAI | 百度 App 扫码（本地弹窗页） | ✅ |
 | MonkeyCode | 粘贴 Cookie（`nebula_session`） | ✅ |
 | AutoClaw（国内） | 手机号 + 短信验证码（本地弹窗页） | ✅ |
-| AutoClaw 国际版 | 粘贴令牌 | ✅ |
 
 **关于粘贴型渠道**：这些上游没有可脚本化的授权流程，需要先在官方站点登录，再从开发者工具复制 Cookie 或令牌粘贴进来。
 
-**关于 AutoClaw**：国内站用**手机号 + 短信验证码**登录（无需浏览器；也可点「改用粘贴令牌」走旧路）。国际站的 OAuth 强制要求阿里云验证码 SDK（`AliyunCaptcha.js`，场景 `sq51tr`），插件内无法自动完成，故只能用粘贴令牌。
+**关于 AutoClaw**：用**手机号 + 短信验证码**登录（无需浏览器，本地弹窗页承载）。国际版（`autoclaw-intl`）与其 OAuth 已按用户要求整渠道移除。
 
 **看不到某个渠道的模型？** 模型选择器只列**已登录渠道**的模型：没有可用账号的渠道不进候选
 （点了也用不了）。设置页里仍能看到它们的模型清单与模型开关；给渠道加一个账号，下一次打开选择器

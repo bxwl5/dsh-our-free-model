@@ -15,58 +15,46 @@
 | 类别 | 数量 | 渠道 |
 | --- | --- | --- |
 | 免密车道（无需账号） | 2 | 匿名免费车道（OpenCode Zen）、Kilo 免费池 |
-| 账号渠道（provider） | 22 | 见 §2 主表；免密车道逐条说明见 §3.19 |
+| 账号渠道（provider） | 20 | 见 §2 主表；免密车道逐条说明见 §3.19 |
 
-「账号渠道 22」这一数字在本仓库有四处独立佐证，逐字一致：
+「账号渠道 20」这一数字在本仓库有四处独立佐证（2026-10-28 重新核对；此前写 22 是
+`autoclaw-intl` / `lobsterai` 移除前的旧值）：
 
-- `README.md` 渠道章节「**账号渠道（22 个）**」；`README_EN.md` "**Account channels (22)**"；
-- `client.js` 的 `CHANNEL_PROVIDERS` 表：22 条卡片（每条的 `login` 字段决定交互形态）；
-- `scripts/channel-pack-test.mjs`：`assert.equal(adapters.size, 22)` 与 `assert.equal(cards.length, 22)`；
-- `vendor/channel-pack/src/index.ts` 的注册段：22 个账号 provider（OFM 挂载时关闭上游 OpenCode 账号接入，故不计入）。
+- `README.md` 渠道章节「**账号渠道（20 个）**」；`README_EN.md` "**Account channels (20)**"；
+- `client.js` 的 `CHANNEL_PROVIDERS` 表：20 条卡片（每条的 `login` 字段决定交互形态）；
+- `scripts/channel-pack-test.mjs`：`assert.equal(adapters.size, 20)` 与 `assert.equal(cards.length, 20)`；
+- `vendor/channel-pack/src/index.ts` 的注册段：20 个账号 provider（OFM 挂载时关闭上游 OpenCode 账号接入，故不计入）。
 
-**纯粘贴渠道 3 个**（上游没有可脚本化的授权流程，只能用 `account.adopt` 粘贴 Cookie / 令牌）：
-`monkeycode`、`orcaterm`。
-`ADOPTABLE_CHANNELS` 因此有 3 条。**Accio 家族的粘贴兜底已移除**（2026-10-24，真机确认
+**纯粘贴渠道 2 个**（上游没有可脚本化的授权流程，只能用 `account.adopt` 粘贴 Cookie）：
+`monkeycode`、`orcaterm`。`ADOPTABLE_CHANNELS` 因此只有 2 条（源码见
+`channel-pack-rpc.ts` 的同名常量）。**Accio 家族的粘贴兜底已移除**（2026-10-24，真机确认
 浏览器授权可用后按用户要求撤掉）——它们现在只有浏览器授权一条路径。
 
 > 口径变更（2026-10-24）：`kuku` 已改为百度 App 扫码、`autoclaw` 国内站已改为手机号 +
 > 短信验证码，都不再是粘贴渠道；旧的「粘贴型渠道共 5 个」描述已过期。
 >
-> 粘贴这三个渠道时，面板会给出「先打开官网登录 → F12 到哪抄哪一段」的引导
+> 粘贴这两个渠道时，面板会给出「先打开官网登录 → F12 到哪抄哪一段」的引导
 > （`loginPage` + `cookieName`，由 `scripts/channel-login-methods-test.mjs` 守卫），
 > 不再让用户对着空粘贴框猜。
 
-### 1.2 计数口径核对（结论：22 与 13，已无 12）
+### 1.2 计数口径（20 / 13 / 2）
 
-仓库里流通两种**互不相同**的计数，收敛后的口径如下：
+| 计数 | 它到底在数什么 | 权威来源 |
+| --- | --- | --- |
+| **20** | 账号渠道（provider）条数 | `README.md` / `README_EN.md` 的渠道表、`client.js` 的 `CHANNEL_PROVIDERS`、`scripts/channel-pack-test.mjs` 的 `adapters.size === 20` 与 `cards.length === 20`、`vendor/channel-pack/src/index.ts` 注册段 |
+| **13** | 「带额度 / 签到能力」的契约集合 | `client.js` 的 `CHANNEL_CREDITS`（13 条）、`scripts/channel-credits-rpc-test.mjs` 的 13 providers 列表 |
+| **2** | 纯粘贴型登录 | `ADOPTABLE_CHANNELS`（`monkeycode` `orcaterm`） |
 
-| 计数 | 它到底在数什么 | 权威来源 | 移除粘贴型渠道后 |
-| --- | --- | --- | --- |
-| **22** | 账号渠道（provider）条数 | README 双语渠道表、`client.js` 卡片表、`scripts/channel-pack-test.mjs` 的 `adapters.size === 22` 与 `cards.length === 22`、`vendor/channel-pack/src/index.ts` 注册段 | 23 → 22 |
-| **13** | 「带额度 / 签到能力的渠道」契约集合 | `client.js` 的 `CHANNEL_CREDITS`（13 条）、`scripts/channel-credits-rpc-test.mjs` 的 13 providers 列表、`scripts/channel-credits-ui-test.mjs` 的 9 个可领取 + workbuddy / cline / raccoon / gemini、`package.json` 描述、`vendor/channel-pack/NOTICE.md` | **不变（仍 13）** |
-
-核对结论（逐条有证据）：
-
-1. 被移除的那个渠道**从未**登记在 `CHANNEL_CREDITS` 里，也不在
-   `scripts/channel-credits-rpc-test.mjs` 的 13 providers 列表中 —— 它的能力只到
-   「凭据 + 模型目录」，故「13」不因它减少；账号渠道集则是 23 → 22。
-2. 曾经的混乱来自**日志文案**而非断言：`scripts/channel-pack-test.mjs` 的几行日志
-   一度写成「十二渠道 / 12 providers / 12 account cards」，而同一文件断言的是
-   `adapters.size === 22`、`cards.length === 22` —— 12 在任何地方都找不到对应的
-   12 元清单。现已全部改为与断言同值：
-   - 图片计价日志（遍历全部已挂载适配器）→ `22 个账号渠道`；
-   - 挂载日志 → `22 providers`；
-   - 账号卡片日志 → `22 account cards`；
-   - 额度日志 → `共享渠道余额（13 条额度契约）`（此行跟随额度契约集，**应为 13**）。
-3. 结论：本文以 **README 为准**（账号渠道 22 + 免密车道 2 + 粘贴型 5）。
-   任何新增的计数文案都必须与同一文件里的断言同值，并同步本节；维护要求见 §5 第 3 条。
+`autoclaw-intl` 与 `lobsterai` 已于 2026-10-25 整链移除（源码 / 卡片 / 凭据解析 / 测试
+一并删除），故 20 而不是早先文档里的 22。任何计数文案都必须与同一文件里的断言同值，
+维护要求见 §5。
 
 > 本文不收录已从仓库整链移除的渠道：其源码、卡片、凭据解析与测试均已删除，
 > 矩阵中不再出现。
 
 ---
 
-## 2. 能力矩阵（22 个账号渠道）
+## 2. 能力矩阵（20 个账号渠道）
 
 图例：**✅** 插件已接入；**⚠️** 上游或模块内有该能力、但插件未接入（括号内写原因）；
 **❌** 无此能力或上游没有该端点。
@@ -82,40 +70,40 @@
 | 1 | `codearts` · CodeArts | 浏览器授权（华为云 IAM，本地回调 + ticketId） | ✅ | ✅ 远端 | ✅ | ✅ | ❌（非文本块被丢弃） |
 | 2 | `buddy` · WorkBuddy 国内版（CodeBuddy 端点） | 浏览器授权（两步：`POST /v2/plugin/auth/state` → authUrl） | ✅ | ✅ 远端 | ✅ | ✅ | ✅ 双桥 |
 | 3 | `workbuddy` · WorkBuddy 国际版 | 浏览器授权（同上，`platform=workbuddy-ai`） | ✅ | ✅ 远端 | ✅ | ❌（后端无签到接口） | ✅ 双桥 |
-| 5 | `qoder` · Qoder | 浏览器授权（OAuth；推理走加密端点，需 WASM 签名） | ✅ | ✅ 本机客户端解密目录（`catalog-v6`） | ✅ | ✅ | ✅ 双桥 |
-| 6 | `qodercn` · Qoder 中国版 | 浏览器授权（同上，读 `~/.qoder-cn`） | ✅ | ✅ 本机客户端解密目录 | ✅ | ✅ | ✅ 双桥 |
-| 7 | `trae` · TRAE | 浏览器授权（官方登录页，手机号） | ✅ | ✅ 远端 | ✅ | ✅ | ✅ 单桥 |
-| 8 | `cline` · Cline | 浏览器授权（Cline OAuth） | ✅ | ✅ 内嵌目录 + models.dev 远端补充 | ✅（单位 dollars） | ❌（无签到端点） | ✅ 双桥 |
-| 9 | `loomy` · Loomy | 本地页微信扫码；短信验证码为备用路径 | ✅ | ✅ 远端 | ✅ | ✅ | ✅ 单桥 |
-| 10 | `raccoon` · Raccoon Work | 本地页微信扫码 + 短信双路径（不依赖官方客户端回调） | ✅ | ✅ 远端 | ✅ | ❌（每日积分由服务端自动发放；另有新手任务领取） | ✅ 双桥 |
-| 11 | `minimax` · MiniMax Code | OAuth 设备码 + PKCE | ✅（Anthropic Messages 协议族） | ✅ 远端 | ✅ | ✅ | ✅ 单桥 |
-| 12 | `zcode` · ZCode | 浏览器授权（官方 CLI 设备授权流 `/oauth/cli/init` → 轮询） | ✅（Anthropic Messages 协议族） | ✅ 静态白名单（远端接口保留） | ✅（单位 tokens） | ✅ | ✅ 双桥 |
-| 13 | `gemini` · Gemini | 浏览器授权（Google OAuth，本地回调；只做 OAuth） | ✅ | ❌ 静态（Cloud Code 无目录端点） | ✅（配额窗口） | ❌（无每日签到） | ✅ 双桥 |
-| 14 | `commandcode` · Command Code | 浏览器授权（自动回调；授权页 `/studio/auth/cli`） | ✅ | ✅ 远端 | ✅（`/alpha/billing/credits`，`readCredits`） | ❌ | ❌ |
-| 15 | `officeace` · OfficeAce 果办 | 浏览器授权（自助 OAuth + 轮询授权码，回调不落本机） | ✅ | ✅ 远端 | ❌ | ❌ | ❌ |
-| 16 | `accio` · Accio | 浏览器授权（国际站） | ✅ | ✅ 远端 | ✅（配额百分比，`fetchQuota`） | ❌ | ❌ |
-| 17 | `accio-cn` · Accio 国内版 | 浏览器授权（国内站） | ✅ | ✅ 远端 | ✅（配额百分比，`fetchQuota`） | ❌ | ❌ |
-| 18 | `orcaterm` · OrcaTerm | 粘贴 Cookie（`ot_session`） | ✅ | ❌ 静态（上游无公开目录端点） | ❌ | ❌ | ❌ |
-| 19 | `kuku` · KukuAI | 粘贴 Cookie（`BDUSS`） | ✅ | ✅ 远端（`model/list`，TTL 10 分钟） | ✅ 积分（`getgfvipremain`） | ✅ 签到（`freepoint` LOGIN/CHAT） | ❌ |
-| 20 | `monkeycode` · MonkeyCode | 粘贴 Cookie（`nebula_session`） | ✅（建任务 + WebSocket 两步） | ✅ 远端 | ✅（`/api/v1/users/wallet`） | ✅（`wallet/checkin`，每次奖励 100 积分） | ❌ |
-| 21 | `autoclaw` · AutoClaw | 粘贴令牌（上游 OAuth 被阿里云验证码 SDK 阻断） | ✅ | ✅ 远端（`autoclaw-model-config`） | ❌ | ❌ | ❌ |
+| 4 | `qoder` · Qoder | 浏览器授权（OAuth；推理走加密端点，需 WASM 签名） | ✅ | ✅ 本机客户端解密目录（`catalog-v6`） | ✅ | ✅ | ✅ 双桥 |
+| 5 | `qodercn` · Qoder 中国版 | 浏览器授权（同上，读 `~/.qoder-cn`） | ✅ | ✅ 本机客户端解密目录 | ✅ | ✅ | ✅ 双桥 |
+| 6 | `trae` · TRAE | 浏览器授权（官方登录页，手机号） | ✅ | ✅ 远端 | ✅ | ✅ | ✅ 单桥 |
+| 7 | `cline` · Cline | 浏览器授权（Cline OAuth） | ✅ | ✅ 内嵌目录 + models.dev 远端补充 | ✅（单位 dollars） | ❌（无签到端点） | ✅ 双桥 |
+| 8 | `loomy` · Loomy | 本地页微信扫码；短信验证码为备用路径 | ✅ | ✅ 远端 | ✅ | ✅ | ✅ 单桥 |
+| 9 | `raccoon` · Raccoon Work | 本地页微信扫码 + 短信双路径（不依赖官方客户端回调） | ✅ | ✅ 远端 | ✅ | ❌（每日积分由服务端自动发放；另有新手任务领取） | ✅ 双桥 |
+| 10 | `minimax` · MiniMax Code | OAuth 设备码 + PKCE | ✅（Anthropic Messages 协议族） | ✅ 远端 | ✅ | ✅ | ✅ 单桥 |
+| 11 | `zcode` · ZCode | 浏览器授权（官方 CLI 设备授权流 `/oauth/cli/init` → 轮询） | ✅（Anthropic Messages 协议族） | ✅ 静态白名单（远端接口保留） | ✅（单位 tokens） | ✅ | ✅ 双桥 |
+| 12 | `gemini` · Gemini | 浏览器授权（Google OAuth，本地回调；只做 OAuth） | ✅ | ❌ 静态（Cloud Code 无目录端点） | ✅（配额窗口） | ❌（无每日签到） | ✅ 双桥 |
+| 13 | `commandcode` · Command Code | 浏览器授权（自动回调；授权页 `/studio/auth/cli`） | ✅ | ✅ 远端 | ✅（`/alpha/billing/credits`，`readCredits`） | ❌ | ❌ |
+| 14 | `officeace` · OfficeAce 果办 | 浏览器授权（自助 OAuth + 轮询授权码，回调不落本机） | ✅ | ✅ 远端 | ❌ | ❌ | ❌ |
+| 15 | `accio` · Accio | 浏览器授权（国际站） | ✅ | ✅ 远端 | ✅（配额百分比，`fetchQuota`） | ❌ | ❌ |
+| 16 | `accio-cn` · Accio 国内版 | 浏览器授权（国内站） | ✅ | ✅ 远端 | ✅（配额百分比，`fetchQuota`） | ❌ | ❌ |
+| 17 | `orcaterm` · OrcaTerm | 粘贴 Cookie（`ot_session`） | ✅ | ❌ 静态（上游无公开目录端点） | ❌ | ❌ | ❌ |
+| 18 | `kuku` · KukuAI | 百度 App 扫码（本地弹窗页承载） | ✅ | ✅ 远端（`model/list`，TTL 10 分钟） | ✅ 积分（`getgfvipremain`） | ✅ 签到（`freepoint` LOGIN/CHAT） | ❌ |
+| 19 | `monkeycode` · MonkeyCode | 粘贴 Cookie（`nebula_session`） | ✅（建任务 + WebSocket 两步） | ✅ 远端 | ✅（`/api/v1/users/wallet`） | ✅（`wallet/checkin`，每次奖励 100 积分） | ❌ |
+| 20 | `autoclaw` · AutoClaw（国内） | 手机号 + 短信验证码（本地弹窗页承载） | ✅ | ✅ 远端（`autoclaw-model-config`） | ❌ | ❌ | ❌ |
 
 **按维度汇总**：
 
 | 维度 | 已接入 | 未接入 / 不支持 |
 | --- | --- | --- |
-| 对话 | 22（全部） | — |
+| 对话 | 20（全部） | — |
 | 模型目录 | 非静态目录 20 条（其中 `qoder`/`qodercn` 来自官方客户端本机解密文件 `catalog-v6`） | 仅静态兜底表 2 条：`gemini`、`orcaterm` |
-| 额度查询 | **18 条**（原 13 条 + `commandcode` `monkeycode` `accio` `accio-cn` + `kuku`） | 3 条：`orcaterm` `autoclaw` `officeace` |
+| 额度查询 | **17 条** | 3 条：`orcaterm` `autoclaw` `officeace` |
 | 签到 | **10 条**（原 9 条 + `monkeycode`） | 服务端显式守卫「无签到端点」3 条（`workbuddy` `cline` `raccoon`）+ `gemini`/`commandcode`/`accio`/`accio-cn`（无 claim 能力）+ 上游无签到 5 条 |
 | 图片（双桥） | 8 条：`buddy` `workbuddy` `qoder` `qodercn` `cline` `raccoon` `gemini` `zcode` | 单桥 3 条：`trae` `loomy` `minimax`；未接 9 条 |
-| 粘贴型登录 | 纯粘贴 2 条（`monkeycode` `orcaterm`） | — |
+| 粘贴型登录 | 纯粘贴 2 条（`monkeycode` `orcaterm`）；另有本地页承载的扫码/短信 3 条（`loomy` `kuku` `autoclaw`） | — |
 
 ---
 
 ### 2.1 模型目录的唯一事实来源与落盘快照（2026-10-27）
 
-用户当天拍板的两条规则，**全部 22 个渠道**统一执行：
+用户当天拍板的两条规则，**全部 20 个渠道**统一执行：
 
 1. **远端目录全量覆盖兜底表**：「不是增量，是直接写入」—— 远端拉成功就把整份目录
    当作事实来源，**不再与编译期兜底表合并**。兜底表只剩一个用途：远端**从未成功过**
@@ -352,8 +340,8 @@
 
 | 结论 | 取证命令 / 文件 |
 | --- | --- |
-| 账号渠道 22、免密车道 2、粘贴型 5 | `grep -n "账号渠道（22" README.md; grep -n "Account channels (22)" README_EN.md`；`node scripts/channel-pack-test.mjs --source`（粘贴型提示与形状解析用例） |
-| 卡片与已挂载 provider 一致（各 22） | `node scripts/channel-pack-test.mjs`（断言 `adapters.size === 22`、`cards.length === 22`） |
+| 账号渠道 20、免密车道 2、纯粘贴 2 | `grep -n "账号渠道（20" README.md; grep -n "Account channels (20)" README_EN.md`；`node scripts/channel-pack-test.mjs --source`（粘贴型提示与形状解析用例） |
+| 卡片与已挂载 provider 一致（各 20） | `node scripts/channel-pack-test.mjs`（断言 `adapters.size === 20`、`cards.length === 20`） |
 | 额度 / 签到的渠道集合（13 条契约） | `node scripts/channel-credits-rpc-test.mjs`；`vendor/channel-pack/src/channel-pack-rpc.ts` 的 `credits.balances` / `credits.claimAll` / `credits.status` 分派 |
 | 图片双桥 / 单桥 | `vendor/channel-pack/src/index.ts` 各注册块的 `readImage` / `readImageRequest` |
 | 发布产物与源码同步（防「改了 src 忘了重打包」） | `node scripts/channel-pack-test.mjs` —— 打包模式**也跑** `account.adopt` 端到端；产物重建见 §4.1 |
@@ -402,5 +390,5 @@ esbuild 取自仓库自身（`packages/standalone/package-lock.json` 钉 0.25.9�
 2. **能力状态变化**（例如「模块内有实现但未接入」被接线）：改本文件 §2 与 §3 的对应行，
    并在 §4 补一条可复现命令。
 3. **口径**：任何「渠道数」文案改动都必须同时覆盖 §1 列出的来源，且日志数字必须与**同一文件里的
-   断言**同值（账号渠道一律 22；额度 / 签到契约一律 13），并同步本文 §1.2 —— 避免再次出现
-   「日志说 12、断言说 22」。改动 `src/**` 后必须按 §4.1 重建产物。
+   断言**同值（账号渠道一律 20；额度 / 签到契约一律 13），并同步本文 §1.2 —— 避免再次出现
+   「文档说 22、断言说 20」。改动 `src/**` 后必须按 §4.1 重建产物。
