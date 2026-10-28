@@ -6,6 +6,7 @@ import path from 'node:path'
 import { promisify } from 'node:util'
 import vm from 'node:vm'
 import { openLoginTerminal } from '../packages/standalone/login-terminal.mjs'
+import { exitIfDirectRun } from './lib/direct-run.mjs'
 
 const runFile = promisify(execFile)
 const shellQuote = value => `'${value.replaceAll("'", "'\\''")}'`
@@ -171,3 +172,6 @@ export async function verifyLoginTerminal() {
     await new Promise(resolve => server.close(resolve))
   }
 }
+
+// 单独运行没有任何断言会执行（由汇总套件 import 调用）⇒ 明确失败，别伪装成通过。
+exitIfDirectRun(import.meta.url, 'standalone-login-terminal-test')

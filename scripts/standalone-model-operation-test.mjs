@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { stripTypeScriptTypes } from 'node:module'
 import vm from 'node:vm'
+import { exitIfDirectRun } from './lib/direct-run.mjs'
 
 // 执行组件实际的异步操作函数，模拟 Host 返回和状态更新，不复制业务逻辑。
 const source = fs.readFileSync(new URL('../packages/standalone/frontend/models.tsx', import.meta.url), 'utf8')
@@ -77,3 +78,6 @@ export async function verifyModelOperation() {
   await running
   assert.equal(cancelled.state.error, '', '离开页面后的错误不得更新状态')
 }
+
+// 单独运行没有任何断言会执行（由汇总套件 import 调用）⇒ 明确失败，别伪装成通过。
+exitIfDirectRun(import.meta.url, 'standalone-model-operation-test')

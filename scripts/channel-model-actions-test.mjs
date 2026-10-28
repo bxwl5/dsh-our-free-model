@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import { exitIfDirectRun } from './lib/direct-run.mjs'
 
 /** 挂载实际共享渠道卡片，检查批量操作及加载、失败、重复点击路径。 */
 export async function verifyChannelModelActions() {
@@ -103,3 +104,6 @@ export async function verifyChannelModelActions() {
   cells[2] = []
   assert.equal(button('全部关闭'), undefined, '空目录不能批量修改')
 }
+
+// 单独运行没有任何断言会执行（由汇总套件 import 调用）⇒ 明确失败，别伪装成通过。
+exitIfDirectRun(import.meta.url, 'channel-model-actions-test')

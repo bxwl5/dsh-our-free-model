@@ -1,5 +1,30 @@
 /** Command Code 纯函数回归：凭据解析、鉴权头、授权 URL、额度归一。 */
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+import { registerHooks } from 'node:module'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+
+const sourceRoot = new URL('../vendor/channel-pack/src/', import.meta.url).href
+
+/**
+ * 把源码里的 `./x.js` 解析成 `./x.ts`。
+ *
+ * 源码按 NodeNext 约定写扩展名，而这里直接 import `.ts`；不装钩子会
+ * `ERR_MODULE_NOT_FOUND: commandcode-product.js`（这正是本套件**此前从未真正跑过**
+ * 的原因之一）。被汇总套件 import 时不重复安装。
+ */
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  registerHooks({
+    resolve(specifier, context, nextResolve) {
+      if (context.parentURL?.startsWith(sourceRoot) && specifier.endsWith('.js')) {
+        const url = new URL(specifier.replace(/\.js$/, '.ts'), context.parentURL)
+        if (fs.existsSync(fileURLToPath(url))) return { url: url.href, shortCircuit: true }
+      }
+      return nextResolve(specifier, context)
+    },
+  })
+}
 
 async function main() {
   const {
@@ -137,4 +162,20 @@ async function main() {
 
 export async function verifyCommandCode() {
   await main()
+}
+
+/**
+ * ⚠ 顶层自执行（2026-10-28 修）。
+ *
+ * 本文件的**唯一入口**就是 `test-all.mjs` 的那一条 `node scripts/commandcode-test.mjs`，
+ * 而此前文件只定义了 `main()` 与 `verifyCommandCode()`、没有任何调用点 ——
+ * 于是那一轮「通过」是**零断言**跑完的（实测直跑 0 字节输出、exit 0）。
+ * 这套断言（`parseWhoami` / `parseCredits` / `parseCallbackCredentials` / 产品配置）
+ * 因此从未真正执行过。
+ *
+ * 只在**直接运行**时执行：万一以后有汇总套件 import 它，也不会重复跑。
+ */
+if (process.argv[1] !== undefined
+  && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await verifyCommandCode()
 }

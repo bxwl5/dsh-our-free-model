@@ -31,6 +31,14 @@ const { mode, only } = options
 const releaseSuites = new Set(['catalog'])
 
 const suites = [
+  // ⚠️ 以下 6 个模块是**纯导出**（只 `export verifyXxx`），由汇总套件 import 调用；
+  // 曾经同时列为套件 = **假绿**（直跑零断言、exit 0）。现已从本清单移除，并在各文件里
+  // 加了 `exitIfDirectRun` 守卫：单独运行会**明确失败**而不是伪装成通过（2026-10-28）。
+  //   channel-credits-rpc / channel-model-actions / channel-image-pricing
+  //   → 由 channel-pack-test.mjs（含 --source）调用
+  //   standalone-channel-filter / standalone-model-operation
+  //   → 由 standalone-frontend-test.mjs 调用
+  //   standalone-login-terminal → 由 standalone-management-test.mjs 调用
   ['client-lint', 'client-lint.mjs', []],
   ['heatmap', 'heatmap-test.mjs', []],
   ['trust', 'trust-test.mjs', []],
@@ -44,7 +52,6 @@ const suites = [
   // 下发 …start-plan 活动包，而凭据里存着登录时的 3.14.3 —— 不钳制就永远「今日没到账」。
   // 同时锁死「领取先裸发、3007 才产 captcha」这条不依赖浏览器的路径。
   ['zcode-app-version', 'zcode-app-version-test.mjs', []],
-  ['channel-credits-rpc', 'channel-credits-rpc-test.mjs', []],
   // 自动签到的逐渠道记账（2026-10-26）：失败渠道当天可补跑 / coversToday=false
   // 不记日（Qoder 10:00 窗口）/ 重跑上限 / 旧格式兼容。假上游 + 内存 store。
   ['auto-checkin-ledger', 'auto-checkin-ledger-test.mjs', []],
@@ -56,7 +63,6 @@ const suites = [
   // 由 channel-pack-test.mjs --source 调用。此前把它同时列为套件 = **假绿**：
   // `node scripts/channel-credits-ui-test.mjs` 直跑零断言、exit 0。
   // 现已在那个文件里加 exitIfDirectRun 守卫，这里不能再把它当套件跑（否则守卫会判失败）。
-  ['channel-model-actions', 'channel-model-actions-test.mjs', []],
   ['channel-login', 'channel-login-test.mjs', []],
   // 登录方式矩阵的漂移守卫：文档 / client.js 的 login 字段 / ADOPTABLE_CHANNELS 三方一致。
   ['channel-login-methods', 'channel-login-methods-test.mjs', []],
@@ -65,7 +71,6 @@ const suites = [
   // 元测试：只导出 verify* 的测试模块必须有「直接运行即失败」的守卫（防假绿复发）。
   ['test-entrypoint-guard', 'test-entrypoint-guard-test.mjs', []],
   ['open-external', 'open-external-test.mjs', []],
-  ['channel-image-pricing', 'channel-image-pricing-test.mjs', []],
   ['forward-boot', 'forward-boot-test.mjs', []],
   ['standalone', 'standalone-test.mjs', []],
   ['desktop', 'desktop-test.mjs', []],
@@ -74,10 +79,7 @@ const suites = [
   ['standalone-lan', 'standalone-lan-test.mjs', []],
   ['standalone-frontend', 'standalone-frontend-test.mjs', []],
   ['standalone-client-regression', 'standalone-client-regression-test.mjs', []],
-  ['standalone-channel-filter', 'standalone-channel-filter-test.mjs', []],
-  ['standalone-model-operation', 'standalone-model-operation-test.mjs', []],
   ['standalone-settings-host', 'standalone-settings-host-test.mjs', []],
-  ['standalone-login-terminal', 'standalone-login-terminal-test.mjs', []],
   ['standalone-package', 'standalone-package-test.mjs', ['--sources-only']],
   ['egress', 'egress-test.mjs', []],
   ['effort', 'effort-test.mjs', []],

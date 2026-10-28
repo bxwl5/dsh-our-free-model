@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { exitIfDirectRun } from './lib/direct-run.mjs'
 
 /** 使用实际已打包 RPC，只提供账号池 ref，禁止真实网络与旧单凭据回退。 */
 export async function verifyChannelCreditsRpc({ ctx, call, creds }) {
@@ -356,3 +357,6 @@ async function verifyNewProviderRefreshDispatch({ ctx, call, creds }) {
   }
   console.log('ok  refresh RPC (t4): commandcode/accio/accio-cn/officeace 四分支 — accio 家族与 officeace 走真续期并回写池，commandcode 走复核')
 }
+
+// 单独运行没有任何断言会执行（由汇总套件 import 调用）⇒ 明确失败，别伪装成通过。
+exitIfDirectRun(import.meta.url, 'channel-credits-rpc-test')

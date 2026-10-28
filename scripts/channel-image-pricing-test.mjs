@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { LlmAdapter } from './lib/channel-pack-kernel.mjs'
+import { exitIfDirectRun } from './lib/direct-run.mjs'
 
 /** 实际发布渠道包在缺失、继承默认和已有厂商计价时的行为。 */
 export function verifyChannelImagePricing(adapters) {
@@ -39,3 +40,6 @@ export function verifyChannelImagePricing(adapters) {
     else delete LlmAdapter.prototype.imageRequestPricing
   }
 }
+
+// 单独运行没有任何断言会执行（由汇总套件 import 调用）⇒ 明确失败，别伪装成通过。
+exitIfDirectRun(import.meta.url, 'channel-image-pricing-test')

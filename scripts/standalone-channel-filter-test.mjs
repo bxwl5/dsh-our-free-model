@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { stripTypeScriptTypes } from 'node:module'
 import vm from 'node:vm'
+import { exitIfDirectRun } from './lib/direct-run.mjs'
 
 const source = fs.readFileSync(new URL('../packages/standalone/frontend/components/channel-browser.tsx', import.meta.url), 'utf8')
 const start = source.indexOf('  const connected =')
@@ -40,3 +41,6 @@ export function verifyChannelFilters() {
   assert.deepEqual(Array.from(filterChannels({}, 'all').labels), [4, 0, 0], '未读取的渠道不能计入待接入')
   assert.deepEqual(Array.from(filterChannels(undefined, 'all').labels), [4, '—', '—'], '状态加载前不显示虚构的分类数量')
 }
+
+// 单独运行没有任何断言会执行（由汇总套件 import 调用）⇒ 明确失败，别伪装成通过。
+exitIfDirectRun(import.meta.url, 'standalone-channel-filter-test')
