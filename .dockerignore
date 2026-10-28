@@ -1,0 +1,25 @@
+# 构建上下文只需要运行时的最小文件集（约 5 MB）。
+# 实测：src(2.0MB) + packages/standalone(~4.7MB) + wasm(320KB)。
+
+.git
+.github
+node_modules
+**/node_modules
+
+# 独立前端源码（镜像用已构建的 packages/standalone/web）
+packages/standalone/frontend
+
+# 以下是 DSH 插件侧产物/资料，独立版运行**不需要**
+vendor/**
+!vendor/channel-pack/qoder-auth-wasm.wasm
+adapter
+catalog
+docs
+locale
+scripts
+worker
+*.md
+!packages/standalone/README.md
+
+*.log
+.DS_Store
