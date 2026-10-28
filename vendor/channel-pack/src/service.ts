@@ -1,7 +1,7 @@
 import { directFetch } from './direct-fetch.js'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialRef } from '@deepseek-ai/dsh-credentials'
-import { runLoginFlow, runOAuthFlow, startOAuthFlow, type StartedOAuthFlow } from './login.js'
+import { runOAuthFlow, startOAuthFlow, type StartedOAuthFlow } from './login.js'
 import {
   RefreshTokenExpiredError,
   credentialFromTokenResponse,
@@ -183,12 +183,10 @@ export class CodeArtsAuth extends Service {
       && a.refresh_token === b.refresh_token
   }
 
-  /** 运行登录流程（默认新式 OAuth；flow: 'ticket' 走旧流程回退）并持久化凭据。 */
-  async login(options: { flow?: 'oauth' | 'ticket'; refName?: string; accountId?: string; pool?: AccountPool } & LoginFlowOptions = {}): Promise<LoginResult> {
+  /** 运行登录流程（新式 OAuth）并持久化凭据。旧 ticket 流程已于 2026-10-29 删除。 */
+  async login(options: { refName?: string; accountId?: string; pool?: AccountPool } & LoginFlowOptions = {}): Promise<LoginResult> {
     this.active = true
-    const flow: LoginFlowResult = options.flow === 'ticket'
-      ? await runLoginFlow(options)
-      : await runOAuthFlow(options)
+    const flow: LoginFlowResult = await runOAuthFlow(options)
     return this.persistLogin(flow, options)
   }
 

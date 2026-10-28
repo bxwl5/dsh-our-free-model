@@ -84,7 +84,7 @@ async function createLane(id, balance) {
     access_key_id: 'FIXTURE_AK_' + id, secret_access_key: 'FIXTURE_SECRET_' + id,
     security_token: 'FIXTURE_TOKEN_' + id, expires_at: new Date(Date.now() + 3600000).toISOString(),
   }
-  const lane = { id, balance, credential, seen: [], sent: [], hold: undefined }
+  const lane = { id, balance, credential, seen: [], sent: [], hold: undefined, confirmFailures: 0, claimFailsOnce: false }
   const server = http.createServer((req, res) => { void (async () => {
     const chunks = []; for await (const chunk of req) chunks.push(chunk)
     const body = Buffer.concat(chunks), pathname = new URL(req.url, 'https://' + snapHost).pathname
@@ -99,13 +99,27 @@ async function createLane(id, balance) {
     }
     if (pathname === infoPath) res.end(JSON.stringify(info(balance)))
     else if (pathname === deliveryPath) res.end(JSON.stringify({ code: 0, data: { items: [
-      { campaignId: id, type: 'USER_LOGIN', claimable: true, status: 'AVAILABLE', benefitAmount: balance },
+      lane.claimWasRejected
+        ? { campaignId: id, type: 'USER_LOGIN', claimable: false, status: 'CONFIRMED', benefitAmount: balance }
+        : { campaignId: id, type: 'USER_LOGIN', claimable: true, status: 'AVAILABLE', benefitAmount: balance },
     ] } }))
     else if (pathname === claimPath || pathname === confirmPath) {
       const request = JSON.parse(body)
       assert.equal(request.campaignId, id)
       assert.equal(req.method, 'POST')
       if (pathname === claimPath) assert.equal(request.channel, 'IDE')
+      if (pathname === confirmPath && lane.confirmFailures > 0) {
+        // 2026-10-29 新行为：confirm 失败插件会重试一次 —— 首次 500、重试 200。
+        lane.confirmFailures -= 1
+        res.writeHead(500); res.end(JSON.stringify({ error_msg: 'fixture confirm down' })); return
+      }
+      if (pathname === claimPath && lane.claimFailsOnce) {
+        // 2026-10-29 新行为：claim 失败后插件重查 delivery —— 翻转为已领取，
+        // 插件应报 already-claimed 而不是 failed。
+        lane.claimFailsOnce = false
+        lane.claimWasRejected = true
+        res.writeHead(500); res.end(JSON.stringify({ error_msg: 'fixture claim rejected' })); return
+      }
       res.end(JSON.stringify({ code: 0, data: { id: 'benefit-' + id, benefitAmount: balance } }))
     } else throw new Error('unexpected fixture path: ' + req.url)
   })().catch(error => { lane.failure = error; res.destroy(error) }) })
@@ -222,6 +236,31 @@ try {
       assert.deepEqual(lane.seen.map(row => row.pathname), [infoPath, infoPath, deliveryPath, claimPath, confirmPath])
       assert.ok(lane.seen.every(row => row.valid))
     }
+  })
+  // ── 2026-10-29 新行为（对齐 magpie）：① confirm 首次失败插件重试一次；
+  // ② claim 失败后插件重查 delivery，已是已领取态就报 already-claimed。──
+  await check('签到 confirm 首次失败自动重试一次（重试成功仍算已领取）', async () => {
+    a.confirmFailures = 1
+    const before = a.seen.length
+    const result = await first.call('credits.claimAll')
+    assert.equal(result.ok, true, JSON.stringify(result))
+    const outcome = result.value.results[0].outcome
+    assert.equal(outcome.kind, 'claimed', JSON.stringify(outcome))
+    const confirms = a.seen.slice(before).filter(row => row.pathname === confirmPath)
+    assert.equal(confirms.length, 2, `confirm 必须恰好重试一次，实际 ${confirms.length} 次`)
+    assert.ok(confirms[0].valid && confirms[1].valid, '重试请求同样过验签')
+  })
+  await check('签到 claim 被拒时重查活动列表，已领取态报 already-claimed 而不是 failed', async () => {
+    b.claimFailsOnce = true
+    const before = b.seen.length
+    const result = await second.call('credits.claimAll')
+    assert.equal(result.ok, true, JSON.stringify(result))
+    const outcome = result.value.results[0].outcome
+    assert.equal(outcome.kind, 'already-claimed', JSON.stringify(outcome))
+    const deliveries = b.seen.slice(before).filter(row => row.pathname === deliveryPath)
+    assert.equal(deliveries.length, 2, 'claim 失败后必须重查一次活动列表')
+    // 复位翻转态，免得污染后续 expectClaim（替身会一直回「已领取」）。
+    b.claimWasRejected = false
   })
   releases.push(attachDirectFetch(async () => { defaultCalls++; throw new Error('latest global lane must not handle context RPC') }))
   await check('后挂载的全局默认出口不能劫持任一上下文', async () => {

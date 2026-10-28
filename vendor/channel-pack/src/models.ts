@@ -18,6 +18,30 @@ export const OPENGW_GATEWAY_CONFIG_URL = 'https://opengw.developer.huaweicloud.c
 export const SNAP_MODEL_BUILTIN_URL = 'https://snap-access.cn-north-4.myhuaweicloud.com/v1/model/builtin'
 
 /** 远端动态模型列表缓存文件名（~/.cache/deveco/codearts_models.json）。 */
+/**
+ * agent-center 端点（模型消耗系数「倍率」的来源，2026-10-29）：
+ * 账号主智能体（`original_id === 'build'`，旧清单叫 CodeAgent）的
+ * `agents/detail → gpts.models[].credit[0].ratio_display`（字符串 "1.50"）。
+ * magpie opencode-codearts-auth 同源同判据；该端点用 `Agent-Type: AgentCenter`
+ * （**签名后追加**，与 PromptCenter 同一批「不参与签名」的头，见
+ * `codearts-credits.ts` 的 SNAP_EXTRA_HEADERS 注记）。
+ */
+export const CODEARTS_AGENT_LIST_URL = 'https://snap-access.cn-north-4.myhuaweicloud.com/v1/agent-center/agents/useragents?offset=0&limit=100'
+export const CODEARTS_AGENT_DETAIL_URL = (id: string): string =>
+  `https://snap-access.cn-north-4.myhuaweicloud.com/v1/agent-center/agents/detail?agent_id=${encodeURIComponent(id)}`
+/** 主智能体识别：`original_id` 是 build（现行）或 CodeAgent（旧清单）。 */
+const MAIN_AGENT_ORIGINAL_IDS: readonly string[] = ['build', 'CodeAgent']
+/** 主智能体 agent_id 兜底（magpie 实测固定值；agent 列表读不出时直接试它）。 */
+const MAIN_AGENT_FALLBACK_ID = 'a8bcb36232554267a5142361cc25a393'
+/** 最多试几个智能体的 detail 才放弃（magpie 同款 3）。 */
+const AGENT_DETAIL_TRIES = 3
+/** agent-center 附加头（签名后追加，不参与签名计算）。 */
+const AGENT_CENTER_HEADERS: Readonly<Record<string, string>> = {
+  'Content-Type': 'application/json',
+  'Agent-Type': 'AgentCenter',
+  'X-Language': 'zh-cn',
+}
+
 const CODEARTS_MODELS_CACHE_FILENAME = 'codearts_models.json'
 
 /**
@@ -217,6 +241,23 @@ export async function fetchCodeArtsRemoteModels(
     }
   }
 
+  // 3. agent-center 主智能体模型列表（2026-10-29）：给目录里已有的模型**补
+  //    消耗系数**（rate），智能体独有的可调用模型也一并补进列表（magpie 同款
+  //    合并规则：非自有（!own）、未隐藏（!hidden）、非 VL）。失败/空响应不
+  //    阻断目录 —— 只是没有倍率（与 ①② 两个端点同级降级）。
+  const agent = await fetchCodeArtsAgentModels(credential, fetcher)
+  if (agent.rates.size > 0) {
+    for (const model of models) {
+      const rate = agent.rates.get(model.id)
+      if (rate !== undefined && rate > 0) model.rate = rate
+    }
+  }
+  // 智能体独有、目录里没有的模型补进列表（Agent 独有模型也是该账号能调用的）。
+  for (const [id, rate] of agent.rates) {
+    if (models.some((model) => model.id === id)) continue
+    models.push({ id, name: id, ...(rate > 0 ? { rate } : {}) })
+  }
+
   // 持久化 benefit 集合：chat 请求签名时据此决定是否带 maas_type。
   // 仅在确实从 gateway 拿到模型时写入，避免把空集合覆盖掉可用缓存。
   if (benefitIds.length > 0) {
@@ -225,6 +266,100 @@ export async function fetchCodeArtsRemoteModels(
   }
 
   return models
+}
+
+/**
+ * 从 `credit` 字段解析消耗系数：单层或一层价格档数组，`ratio_display`
+ * 是字符串形态的倍率（"1.50"）。无/非法 → 0。
+ */
+function creditRateOf(credit: unknown): number {
+  const tier = Array.isArray(credit) ? credit[0] : credit
+  if (typeof tier !== 'object' || tier === null) return 0
+  const raw = (tier as Record<string, unknown>)['ratio_display'] ?? (tier as Record<string, unknown>)['ratioDisplay']
+  const parsed = typeof raw === 'string' ? Number.parseFloat(raw) : typeof raw === 'number' ? raw : Number.NaN
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
+
+/** 解析 agent 模型条目（`model_parameters.model_id` 才是请求真正用的 id）。 */
+function parseAgentModel(m: Record<string, unknown>): { id: string; rate: number; own: boolean; hidden: boolean } | undefined {
+  const params = typeof m['model_parameters'] === 'object' && m['model_parameters'] !== null
+    ? (m['model_parameters'] as Record<string, unknown>)
+    : {}
+  const rawId = typeof params['model_id'] === 'string' && params['model_id'] !== '' ? params['model_id']
+    : typeof m['model_id'] === 'string' ? m['model_id'] : undefined
+  if (rawId === undefined) return undefined
+  const id = normalizeModelId(rawId)
+  // VL 模型不进目录（与 ①② 同判据）。
+  if (id.includes('-VL-') || id.endsWith('-VL')) return undefined
+  const own = m['model_type'] === 'third' || m['model_type'] === 'custom' || m['is_custom_model'] === true
+  const hidden = m['display_enabled'] === false || params['display_enabled'] === false
+  return { id, rate: creditRateOf(m['credit'] ?? params['credit']), own, hidden }
+}
+
+/**
+ * 拉主智能体的模型清单 → `Map<模型id, 消耗系数>`。
+ *
+ * 顺序（magpie agentCandidates 同判据）：agent 列表按 `original_id` 排序
+ * （build 最优先），逐个试 `agents/detail`（最多 {@link AGENT_DETAIL_TRIES} 个）；
+ * 列表端点不可用时直接试固定兜底 id。任一 detail 拿到 `gpts.models` 即停。
+ */
+async function fetchCodeArtsAgentModels(
+  credential: CodeArtsCredential,
+  fetcher: typeof fetch,
+): Promise<{ rates: Map<string, number> }> {
+  const { access_key_id: ak, secret_access_key: sk, security_token: st } = credential
+  if (!ak || !sk) return { rates: new Map() }
+
+  const ids: string[] = []
+  const listText = await fetchSignedGet(fetcher, CODEARTS_AGENT_LIST_URL, ak, sk, st, AGENT_CENTER_HEADERS)
+  if (listText !== undefined) {
+    const agents = extractJsonArray(listText, ['agents']) ?? extractJsonArray(listText, ['data', 'agents']) ?? []
+    const ranked: Array<{ id: string; rank: number }> = []
+    for (const agent of agents) {
+      if (typeof agent !== 'object' || agent === null) continue
+      const record = agent as Record<string, unknown>
+      const agentId = typeof record['agent_id'] === 'string' ? record['agent_id'] : undefined
+      if (agentId === undefined || agentId === '') continue
+      const originalId = typeof record['original_id'] === 'string' ? record['original_id'] : agentId
+      const rank = MAIN_AGENT_ORIGINAL_IDS.indexOf(originalId)
+      ranked.push({ id: agentId, rank: rank < 0 ? MAIN_AGENT_ORIGINAL_IDS.length : rank })
+    }
+    ranked.sort((a, b) => a.rank - b.rank)
+    ids.push(...ranked.map((entry) => entry.id))
+  }
+  ids.push(MAIN_AGENT_FALLBACK_ID)
+
+  for (const agentId of [...new Set(ids)].slice(0, AGENT_DETAIL_TRIES)) {
+    const detailText = await fetchSignedGet(fetcher, CODEARTS_AGENT_DETAIL_URL(agentId), ak, sk, st, AGENT_CENTER_HEADERS)
+    if (detailText === undefined) continue
+    let models: unknown[] | undefined
+    try {
+      const parsed: unknown = JSON.parse(detailText)
+      if (typeof parsed === 'object' && parsed !== null) {
+        const record = parsed as Record<string, unknown>
+        const gpts = typeof record['gpts'] === 'object' && record['gpts'] !== null
+          ? (record['gpts'] as Record<string, unknown>)
+          : typeof (record['data'] as Record<string, unknown> | undefined)?.gpts === 'object'
+            ? ((record['data'] as Record<string, unknown>).gpts as Record<string, unknown>)
+            : undefined
+        if (Array.isArray(gpts?.['models'])) models = gpts['models'] as unknown[]
+      }
+    } catch {
+      models = undefined
+    }
+    if (models === undefined || models.length === 0) continue
+    const rates = new Map<string, number>()
+    for (const item of models) {
+      if (typeof item !== 'object' || item === null) continue
+      const parsed = parseAgentModel(item as Record<string, unknown>)
+      // 智能体自有/隐藏/VL 模型不进倍率表（own 是用户或租户配置的，不是
+      // CodeArts 自己的计费模型；hidden 是 IDE 里被关掉的）。
+      if (parsed === undefined || parsed.own || parsed.hidden) continue
+      if (parsed.rate > 0 && !rates.has(parsed.id)) rates.set(parsed.id, parsed.rate)
+    }
+    if (rates.size > 0) return { rates }
+  }
+  return { rates: new Map() }
 }
 
 /**

@@ -67,7 +67,7 @@
 
 | # | 渠道（provider · 展示名） | 登录方式 | 对话 | 模型目录 | 额度查询 | 签到 | 图片 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | `codearts` · CodeArts | 浏览器授权（华为云 IAM，本地回调 + ticketId） | ✅ | ✅ 远端 | ✅ | ✅ | ❌（非文本块被丢弃） |
+| 1 | `codearts` · CodeArts | 浏览器授权（华为云 IAM，本地回调 + PKCE） | ✅ | ✅ 远端 | ✅ | ✅ | ❌（非文本块被丢弃） |
 | 2 | `buddy` · WorkBuddy 国内版（CodeBuddy 端点） | 浏览器授权（两步：`POST /v2/plugin/auth/state` → authUrl） | ✅ | ✅ 远端 | ✅ | ✅ | ✅ 双桥 |
 | 3 | `workbuddy` · WorkBuddy 国际版 | 浏览器授权（同上，`platform=workbuddy-ai`） | ✅ | ✅ 远端 | ✅ | ❌（后端无签到接口） | ✅ 双桥 |
 | 4 | `qoder` · Qoder | 浏览器授权（OAuth；推理走加密端点，需 WASM 签名） | ✅ | ✅ 本机客户端解密目录（`catalog-v6`） | ✅ | ✅ | ✅ 双桥 |
@@ -140,7 +140,7 @@
 
 ### 3.1 CodeArts（`codearts`）
 
-- 登录：华为云 IAM 授权，登录 URL 由本地回调端口 + ticketId 动态拼出（`login.ts` `buildLoginUrl`）。
+- 登录：华为云 IAM 授权，登录 URL 由本地回调端口 + PKCE 动态拼出（`login.ts` `buildOAuthLoginUrl`）；旧 ticket 轮询兜底已删（2026-10-29）。
 - 模型 / 额度端点走 **AK/SK 签名**（`signRequestHuawei`）；余额来自 `statistics/plugin`，
   非积分账户（Token 计费）**如实报「无积分余额」**而不是 0。
 - 签到：`claimCodeArtsDailyCheckin`，领取流程自带账户类型 + 活动列表预检（`precheckStatus: false`）。

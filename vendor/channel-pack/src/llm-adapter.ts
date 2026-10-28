@@ -916,8 +916,8 @@ export class CodeArtsAdapter extends LlmAdapter {
     return { id, name: 'CodeArts Agent' }
   }
 
-  /** 动态模型缓存（首次 listModels 成功后填充）。 */
-  private remoteModels: Array<{ id: string; name: string }> | undefined
+  /** 动态模型缓存（首次 listModels 成功后填充）；rate = 消耗系数（agent-center）。 */
+  private remoteModels: Array<{ id: string; name: string; rate?: number }> | undefined
 
   /**
    * 目录加载闸门：并发去重 + 失败冷却。
@@ -965,7 +965,7 @@ export class CodeArtsAdapter extends LlmAdapter {
   }
 
   /** 目录来源：内存 → 磁盘快照 → 编译期默认表。 */
-  private catalogSource(): readonly { id: string; name: string }[] {
+  private catalogSource(): readonly { id: string; name: string; rate?: number }[] {
     this.restoreFromDisk()
     return this.remoteModels ?? DEFAULT_MODELS.map((id) => ({ id, name: id }))
   }
@@ -975,7 +975,8 @@ export class CodeArtsAdapter extends LlmAdapter {
    *
    * 设置页必须渲染被关闭的模型（否则用户无法重新打开），而 `listModels` 会按
    * 黑名单过滤掉它们 —— RPC 层只能凭裸 id 补回，展示名随之丢失
-   * （用户报障：「关闭的就没有显示倍率」）。CodeArts 目录虽无倍率，但同样
+   * （用户报障：「关闭的就没有显示倍率」）。CodeArts 目录的倍率来自
+   * agent-center（2026-10-29 起），但同样
    * 需要正确的 `name`（否则关闭项显示 `deepseek-v4-flash` 这类裸 id）。
    */
   listAllModels(): readonly { id: string; name: string }[] {
@@ -984,7 +985,12 @@ export class CodeArtsAdapter extends LlmAdapter {
     // 唯一区别是不套用户黑名单。
     return source
       .filter((m) => !/-VL-/i.test(m.id) && !/-VL$/i.test(m.id))
-      .map((m) => ({ id: m.id, name: m.name }))
+      // 消耗系数（2026-10-29）：拼进展示名 `glm-5.3 · x1.5`（x1 不标，与
+      // OfficeAce 渠道同口径）。请求发的仍是 id，倍率只影响显示。
+      .map((m) => ({
+        id: m.id,
+        name: m.rate !== undefined && m.rate !== 1 ? `${m.name} · x${m.rate}` : m.name,
+      }))
   }
 
   /**

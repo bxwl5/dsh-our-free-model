@@ -334,6 +334,29 @@ async function verifyNewProviderRefreshDispatch({ ctx, call, creds }) {
         dropCredential(ref)
       }
     }
+    // ── orcaterm：复核（无网络调用，2026-10-29 补的第 20 渠道）──
+    {
+      const accountId = 'fixture-refresh-orcaterm', ref = 'FIXTURE_REFRESH_ORCATERM'
+      try {
+        await ctx.accountPool.addAccount({
+          id: accountId, provider: 'orcaterm', nickname: 'orca-recheck', credentialRef: ref,
+          enabled: true, refreshable: false, createdAt: 1,
+        })
+        await setCredential(ref, { access_token: 'ot_sid=fixture-session; path=/' })
+        seen.length = 0
+        const result = await call('account.refresh', { accountId })
+        assert.equal(result.ok, true, 'orcaterm: 不再抛 Unknown provider，复核成功')
+        assert.equal(seen.length, 0, 'orcaterm: 复核不发任何网络请求')
+        // 凭据缺会话字段 → ok:false（如实报错）
+        await setCredential(ref, { access_token: 'other=1' })
+        const rejected = await call('account.refresh', { accountId })
+        assert.equal(rejected.ok, false, 'orcaterm: 凭据不可用时必须失败')
+        assert.match(rejected.error.message, /凭据不可用/)
+      } finally {
+        await ctx.accountPool.removeAccount(accountId)
+        dropCredential(ref)
+      }
+    }
     // ── officeace 无 refresh_token：如实报错（不能装成功）──
     {
       const accountId = 'fixture-refresh-officeace-norefresh', ref = 'FIXTURE_REFRESH_OA_NOREFRESH'

@@ -24,6 +24,7 @@ import type {
 
 import { OFFICEACE, type OfficeAceProduct } from './officeace-product.js'
 import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
+import { fetchTokenRates, resetOfficeAceTokenRatesCache } from './officeace.js'
 import {
   basicAuthHeader,
   isCredentialUsable,
@@ -67,7 +68,7 @@ const REMOTE_MODELS_TTL_MS = 300_000
 export class OfficeAceAdapter extends LlmAdapter {
   private readonly product: OfficeAceProduct
   private readonly fetchImpl: typeof fetch
-  private remoteModels: Array<{ id: string; name: string; contextWindow: number; maxTokens?: number }> | undefined
+  private remoteModels: Array<{ id: string; name: string; contextWindow: number; maxTokens?: number; rate?: number }> | undefined
   /** 上次成功拉取的时刻。配合 {@link REMOTE_MODELS_TTL_MS} 决定是否重拉。 */
   private remoteModelsAt = 0
   private loading: Promise<void> | undefined
@@ -110,7 +111,7 @@ export class OfficeAceAdapter extends LlmAdapter {
         if (typeof body !== 'object' || body === null) return
         const record = body as Record<string, unknown>
         if (!Array.isArray(record.data)) return
-        const rows: Array<{ id: string; name: string; contextWindow: number; maxTokens?: number }> = []
+        const rows: Array<{ id: string; name: string; contextWindow: number; maxTokens?: number; rate?: number }> = []
         for (const raw of record.data) {
           if (typeof raw !== 'object' || raw === null) continue
           const item = raw as Record<string, unknown>
@@ -121,6 +122,19 @@ export class OfficeAceAdapter extends LlmAdapter {
           rows.push({ id, name: typeof item.name === 'string' && item.name !== '' ? item.name : id, contextWindow })
         }
         if (rows.length > 0) {
+          // 倍率（2026-10-29）：与目录**并联**拉（`/v1/model-token-rates`，V11
+          // 签名，与订阅同网关同凭据）。失败/为空不阻断目录 —— 只是没有 x 系数。
+          // 展示口径与 magpie officeace-auth 一致：rate 拼进 name（`glm-5.3 · x0.79`），
+          // **x1 不标**（全默认倍率没有信息量）。倍率只用于展示：请求发的仍是 id，
+          // 且不做「倍率表当白名单」的过滤（见 fetchTokenRates 的注释）。
+          const rates = await fetchTokenRates(this.fetchImpl, credential).catch(() => new Map<string, number>())
+          for (const row of rows) {
+            const rate = rates.get(row.id)
+            if (rate !== undefined && rate !== 1) {
+              row.rate = rate
+              row.name = `${row.name} · x${rate}`
+            }
+          }
           this.remoteModels = rows
           this.remoteModelsAt = Date.now()
           writeModelCatalog(this.product.id, rows)

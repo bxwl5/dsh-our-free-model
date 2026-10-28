@@ -609,21 +609,44 @@ export async function claimCodeArtsDailyCheckin(
     fetcher,
   )
   if (!claimResult.ok) {
+    // 2026-10-29（对齐 magpie）：claim 失败可能是「刚被别处领走」（IDE / 另一
+    // 实例），重查一次活动列表 —— 已是已领取态就如实报 already-claimed，
+    // 不报 failed（failed 会进自动签到重试，白白多打上游）。
+    const again = await fetchCodeArtsOpsActivitiesDetailed(credential, fetcher)
+    if (again.ok) {
+      const latest = findDailyCheckinActivity(again.activities)
+      if (latest !== undefined && !latest.claimable
+        && CLAIMED_STATUSES.includes(latest.status)) {
+        return { kind: 'already-claimed', message: '今天已领取' }
+      }
+    }
     return { kind: 'failed', code: claimResult.code, message: claimResult.message }
   }
 
   // 服务端要求确认时才补 confirm：IDE 的判据是 `benefit.id !== null`。
   // confirm 失败**不**把整体判为失败 —— 积分已进入待确认态，报 failed 会让
   // 用户以为没领到而重复点击；这里如实返回 claimed，把确认异常留在日志层。
+  //
+  // 2026-10-29（对齐 magpie opencode-codearts-auth 的 dailyCheckin）：confirm
+  // 失败先**重试一次**——magpie 的做法是把「待确认」持久化到下次签到补办，
+  // 我们没有跨调用的状态存储，就用重试覆盖最常见的瞬时失败；重试仍失败时
+  // 在 message 里带出「待确认」，让用户知道积分没丢、只是晚一点入账。
+  // （claim 已成功，无论 confirm 结果如何都返回 claimed。）
   const benefitId = claimResult.data.id
+  let confirmNote = ''
   if (benefitId !== null && benefitId !== undefined) {
-    await signedSnapRequest(
+    const confirm = () => signedSnapRequest(
       'POST',
       `${CODEARTS_SNAP_ENGINE_URL}${CODEARTS_OPS_CONFIRM_PATH}`,
       credential,
       JSON.stringify({ campaignId: activity.campaignId }),
       fetcher,
     )
+    const first = await confirm()
+    if (!first.ok) {
+      const retry = await confirm()
+      if (!retry.ok) confirmNote = '（已领取，确认入账失败，稍后自动到账）'
+    }
   }
 
   // 积分取多级回退：领取响应 → 活动条目。两处都没有时如实记 0，
@@ -642,6 +665,7 @@ export async function claimCodeArtsDailyCheckin(
     // CodeArts 的活动不下发连续签到天数概念（那是 CodeBuddy 的机制）。
     streakDays: 0,
     isStreakDay: false,
+    ...(confirmNote === '' ? {} : { message: `领取成功${confirmNote}` }),
   }
 }
 

@@ -38,7 +38,7 @@
 - **本地回调**（`codearts`、`trae`、`gemini`、`commandcode`、`accio`）：在
   `127.0.0.1` 上起一次性 HTTP 服务接授权码。`commandcode` 从 5959 起逐个试 10 个端口
   （与官方 CLI 一致，`commandcode-product.ts:139`），`accio` 用 5960–5969（两段有重叠），
-  其余用候选端口探测。`codearts` 在 portal 回退路径上还有 ticket 轮询兜底（`login.ts:320-334`），
+  其余用候选端口探测（`codearts` 只认 `code`，旧 ticket 轮询兜底已于 2026-10-29 删除），
   `gemini` 的端口是动态 0（不是固定 8845）。
 - **轮询 token**（`buddy`/`workbuddy`、`officeace`）：浏览器授权在**上游服务端**完成，
   插件只用 `state` 或授权码轮询结果，所以不起本地端口。

@@ -82,7 +82,7 @@ const CHANNELS = [
     name: 'CodeArts',
     loginMode: '浏览器授权（华为 IAM）',
     notes: [
-      '登录 URL 由本地回调端口 + ticketId 动态拼出（login.ts buildLoginUrl），这里探门户登录页。',
+      '登录 URL 由本地回调端口 + PKCE 动态拼出（login.ts buildOAuthLoginUrl），这里探门户登录页。',
       '模型/额度端点走 AK/SK 签名（signRequestHuawei），无签名 401 属正常。',
     ],
     endpoints: [

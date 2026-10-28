@@ -615,15 +615,11 @@ export function parseSubscriptionSnapshot(body: unknown, nowMs = Date.now()): Of
   }
 }
 
-/** 拉取订阅/积分快照（V11 签名 + `x-subscription-type: v2`）。 */
-export async function fetchSubscriptionSnapshot(
-  fetcher: typeof fetch,
-  product: OfficeAceProduct,
-  credential: OfficeAceCredential,
-  options: { signal?: AbortSignal } = {},
-): Promise<OfficeAceSubscriptionSnapshot> {
-  // 网关 = model_info.model_api_url_base（登录时 validate 下发；quota.mjs 同源）。
-  // 上游发的是裸 host（无 scheme），统一补 https；测试替身可显式带 http://。
+/**
+ * 订阅面网关地址（`model_info.model_api_url_base`；订阅/倍率/签到三个端点同源）。
+ * 上游发的是裸 host（无 scheme），统一补 https；测试替身可显式带 http://。
+ */
+function resolveSubscriptionGateway(credential: OfficeAceCredential): string {
   const rawBase = credential.model_info !== undefined && isRecord(credential.model_info)
     ? stringValue(credential.model_info.model_api_url_base)
     : undefined
@@ -634,8 +630,17 @@ export async function fetchSubscriptionSnapshot(
   if (stripped === '') {
     throw new Error('OfficeAce：凭据缺少 model_info.model_api_url_base（重新登录可重建）')
   }
-  const gateway = /^https?:\/\//.test(rawBase) ? rawBase.replace(/\/+$/, '') : `https://${stripped}`
-  const url = `${gateway}/v1/subscription`
+  return /^https?:\/\//.test(rawBase) ? rawBase.replace(/\/+$/, '') : `https://${stripped}`
+}
+
+/** V11 签名的 GET 请求（订阅面通用：`/v1/subscription`、`/v1/model-token-rates`）。 */
+async function v11SignedGet(
+  fetcher: typeof fetch,
+  url: string,
+  credential: OfficeAceCredential,
+  path: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<Response> {
   const host = new URL(url).host
   const timestampMs = Date.now()
   const sdkDate = formatSdkDate(timestampMs)
@@ -651,7 +656,7 @@ export async function fetchSubscriptionSnapshot(
   }
   const payloadHash = await sha256Hex('')
   const { canonicalRequest, signedHeaders } = buildCanonicalRequest({
-    method: 'GET', path: '/v1/subscription', query: '', host, headers: signHeaders, payloadHash,
+    method: 'GET', path, query: '', host, headers: signHeaders, payloadHash,
   })
   const { authorization } = await signV11({
     accessKey: credential.access_key,
@@ -661,18 +666,113 @@ export async function fetchSubscriptionSnapshot(
     service: 'apic',
     canonicalRequest, signedHeaders, timestampMs,
   })
-  const response = await fetcher(url, {
+  return fetcher(url, {
     method: 'GET',
     headers: {
       Accept: 'application/json',
       Authorization: authorization,
       'X-Sdk-Date': sdkDate,
       'X-Subscription-Type': 'v2',
-      ...(credential.security_token === undefined ? {} : { 'X-Security-Token': credential.security_token }),
-      ...(projectId === undefined ? {} : { 'X-Project-ID': projectId }),
+      ...(credential.security_token === undefined || credential.security_token === '' ? {} : { 'X-Security-Token': credential.security_token }),
+      ...(projectId === undefined || projectId === '' ? {} : { 'X-Project-ID': projectId }),
     },
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   })
+}
+
+/**
+ * 模型消耗倍率（`GET {gateway}/v1/model-token-rates`，V11 签名）。
+ *
+ * 实测响应形状（magpie officeace-auth 2026-10 实机）：
+ * `{"models":[{"model_name":"glm-5.3","cost_coefficient":0.79}]}`，
+ * snake_case（解析兼容 camelCase）；`model_name` **可能带尾部换行**，必须 trim。
+ *
+ * ## 缓存与失败语义（magpie 踩过的真缺陷）
+ * - 模块级缓存 20 分钟：目录与倍率同源，保证「显示的倍率 = 实际计费」；
+ * - **失败返回上一份成功缓存，而不是空表**：空表会让调用方误判「没有任何模型
+ *   有倍率」。解析出 0 条同理（上游换形状 ≠ 真没有），失败并重置计时
+ *  （20 分钟内不重复打失败的上游）；
+ * - 从来没拿到过（缓存为空 + 本次失败）返回空 Map —— 调用方据此降级为
+ *   「名字不带 x 系数」，模型照常可用。
+ *
+ * ⚠️ 刻意**不做** magpie providers-hub 的「倍率表当模型白名单」：
+ * 「进了倍率表 ≠ 已部署、免费模型不入表」（该仓库自注的反向例外），
+ * 我们的目录以 `{base}/models` 为准，倍率只用于展示。
+ */
+export interface OfficeAceTokenRate {
+  /** 模型 id（已 trim）。 */
+  model: string
+  /** 消费倍率（x0.08 ~ x2.38 实测范围；1 = 默认）。 */
+  rate: number
+}
+
+const TOKEN_RATES_TTL_MS = 20 * 60 * 1000
+let tokenRatesCache: { at: number; map: Map<string, number> } = { at: 0, map: new Map() }
+
+/** 清空倍率缓存（测试隔离用）。 */
+export function resetOfficeAceTokenRatesCache(): void {
+  tokenRatesCache = { at: 0, map: new Map() }
+}
+
+export async function fetchTokenRates(
+  fetcher: typeof fetch,
+  credential: OfficeAceCredential,
+  options: { signal?: AbortSignal } = {},
+): Promise<Map<string, number>> {
+  if (Date.now() - tokenRatesCache.at < TOKEN_RATES_TTL_MS && tokenRatesCache.map.size > 0) {
+    return tokenRatesCache.map
+  }
+  // 失败路径：保留旧缓存并重置计时（20 分钟内不重复打失败的上游）。
+  const keepStale = (): Map<string, number> => {
+    tokenRatesCache = { at: Date.now(), map: tokenRatesCache.map }
+    return tokenRatesCache.map
+  }
+
+  let response: Response
+  try {
+    response = await v11SignedGet(fetcher, `${resolveSubscriptionGateway(credential)}/v1/model-token-rates`, credential, '/v1/model-token-rates', options)
+  } catch {
+    return keepStale()
+  }
+  if (!response.ok) return keepStale()
+
+  let body: unknown
+  try {
+    body = await response.json()
+  } catch {
+    return keepStale()
+  }
+  const rows = Array.isArray(body)
+    ? body
+    : Array.isArray((body as Record<string, unknown> | null)?.models)
+      ? ((body as Record<string, unknown>).models as unknown[])
+      : Array.isArray((body as Record<string, unknown> | null)?.data)
+        ? ((body as Record<string, unknown>).data as unknown[])
+        : []
+
+  const map = new Map<string, number>()
+  for (const row of rows) {
+    if (!isRecord(row)) continue
+    const raw = stringValue(row.model_name) ?? stringValue(row.modelName) ?? stringValue(row.model) ?? stringValue(row.name)
+    // ⚠ 实测 model_name 带尾部换行（"kimi-k3\n"）→ stringValue 已非空，但 trim 交给这里。
+    const name = typeof raw === 'string' ? raw.trim() : ''
+    const rate = numberValue(row.cost_coefficient) ?? numberValue(row.costCoefficient) ?? numberValue(row.rate)
+    if (name !== '' && rate !== undefined && Number.isFinite(rate)) map.set(name, rate)
+  }
+  if (map.size === 0) return keepStale()
+
+  tokenRatesCache = { at: Date.now(), map }
+  return map
+}
+
+/** 拉取订阅/积分快照（V11 签名 + `x-subscription-type: v2`）。 */
+export async function fetchSubscriptionSnapshot(
+  fetcher: typeof fetch,
+  product: OfficeAceProduct,
+  credential: OfficeAceCredential,
+  options: { signal?: AbortSignal } = {},
+): Promise<OfficeAceSubscriptionSnapshot> {
+  const response = await v11SignedGet(fetcher, `${resolveSubscriptionGateway(credential)}/v1/subscription`, credential, '/v1/subscription', options)
   if (!response.ok) {
     const text = await response.text().catch(() => '')
     throw new Error(`OfficeAce：订阅查询返回 HTTP ${response.status}${text === '' ? '' : `：${text.slice(0, 200)}`}`)
@@ -696,7 +796,9 @@ export async function fetchSubscriptionSnapshot(
  * 重复调就是安全的空动作。
  *
  * ## 返回值
- * `gained` 是领奖前后的积分增量；领前读数拿不到时为 `undefined`，
+ * `gained` 优先**直读领取响应**的 `bonus_skus[].points`（magpie officeace-auth
+ * 同款，2026-10-29：零额外请求）；直读不出（响应为空/形状变化）才退回
+ * 「领前/领后两次订阅查询」的增量法。两条路都拿不到时为 `undefined`，
  * 此时**如实说「已签到」而不编一个数字**。
  */
 export async function claimBonus(
@@ -768,7 +870,34 @@ export async function claimBonus(
     throw new Error(`OfficeAce：领奖返回 HTTP ${response.status}${text === '' ? '' : `：${text.slice(0, 200)}`}`)
   }
 
-  // 增量算不出（领取前的读数没拿到）时如实说「已签到」，不编一个数字。
+  // ── ① 直读响应（magpie officeace-auth 同款，2026-10-29）：领取响应自带
+  // `bonus_skus[]`（activity_name + points），省掉领前/领后两次订阅查询。
+  const text = await response.text().catch(() => '')
+  if (text !== '') {
+    try {
+      const body: unknown = JSON.parse(text)
+      const bonusSkus = Array.isArray((body as Record<string, unknown>)?.bonus_skus)
+        ? ((body as Record<string, unknown>).bonus_skus as unknown[]).filter(isRecord)
+        : []
+      const rows = bonusSkus.map((row) => ({
+        name: stringValue(row.activity_name) ?? stringValue(row.activity_id) ?? '活动奖励',
+        points: numberValue(row.points) ?? 0,
+      }))
+      const direct = rows.reduce((sum, row) => sum + row.points, 0)
+      if (rows.length > 0) {
+        return direct > 0
+          ? { gained: direct, message: `已领取 ${direct} 积分（${rows.map((r) => `${r.name} +${r.points}`).join('；')}）` }
+          : { gained: 0, message: '今天没有可领的奖励（或已领过）' }
+      }
+      // bonus_skus 是空数组：上游幂等的「今天已领完」形态（2xx + 空表）。
+      // 退回增量法确认：增量 ≤ 0 时如实报「没有可领」。
+    } catch {
+      // 2xx 但 JSON 解析失败：领取本身可能已成功（上游幂等，明天再来），
+      // 不当失败报（magpie 同款取舍）—— 退回增量法尽力算一个数。
+    }
+  }
+
+  // ── ② 增量法兜底（响应为空/直读不出）：领前读数没拿到时如实说「已签到」。
   if (before === undefined) return { gained: undefined, message: '已签到' }
   let after: number | undefined
   try {

@@ -135,6 +135,18 @@ async function verify() {
       res.end(sse(nextError === undefined ? frame : { error_code: nextError, error_msg: 'benefit not found' })); nextError = undefined
     } else if (req.url.includes('/gateway/config')) res.end(JSON.stringify({ result: { models: [{ model_id: 'fixture-model', model_name: 'fixture' }] } }))
     else if (req.url.includes('/model/builtin')) res.end(JSON.stringify({ builtinModels: [{ model_id: 'fixture-builtin', model_name: 'fixture' }] }))
+    else if (req.url.includes('/agent-center/agents/useragents')) res.end(JSON.stringify({ agents: [
+      { agent_id: 'agent-fix-1', original_id: 'build' },
+    ] }))
+    else if (req.url.includes('/agent-center/agents/detail')) res.end(JSON.stringify({ gpts: { models: [
+      // fixture-model 在目录里 → 只补倍率；agent 独有模型也补进目录。
+      { model_parameters: { model_id: 'fixture-model' }, credit: [{ ratio_display: '1.50' }] },
+      { model_parameters: { model_id: 'agent-only-model' }, credit: [{ ratio_display: '0.80' }] },
+      // own（用户自配）与 hidden 不进倍率表（magpie 同判据）。
+      { model_parameters: { model_id: 'custom-model' }, credit: [{ ratio_display: '9.9' }], model_type: 'custom' },
+      { model_parameters: { model_id: 'hidden-model' }, credit: [{ ratio_display: '9.9' }], display_enabled: false },
+      { model_parameters: { model_id: 'qwen3-VL-235B' }, credit: [{ ratio_display: '9.9' }] },
+    ] } }))
     else res.end(JSON.stringify({ package: { is_credit_package: true, package_name_cn: '隔离套餐' }, metrics: {} }))
   }
   const handler = (req, res) => { void serve(req, res).catch(error => res.destroy(error)) }
@@ -187,13 +199,22 @@ async function verify() {
     })
     await check('模型目录、积分及认证服务的默认签名 GET 同样经过专用传输', async () => {
       const before = globalCalls, start = seen.length
-      assert.deepEqual((await fetchCodeArtsRemoteModels(credential)).map(row => row.id), ['fixture-model', 'fixture-builtin'])
+      const remote = await fetchCodeArtsRemoteModels(credential)
+      assert.deepEqual(remote.map(row => row.id), ['fixture-model', 'fixture-builtin', 'agent-only-model'],
+        'agent 独有模型补进目录；own/hidden/VL 排除')
+      assert.equal(remote.find(row => row.id === 'fixture-model')?.rate, 1.5, '目录已有模型补上消耗系数（"1.50" → 1.5）')
+      assert.equal(remote.find(row => row.id === 'agent-only-model')?.rate, 0.8, 'agent 独有模型自带倍率')
       const account = await fetchCodeArtsAccountInfoDetailed(credential)
       assert.equal(account.ok, true); assert.equal(account.info.packageName, '隔离套餐')
       const ctx = { provide() {}, credentials: { resolve: async () => ({ value: JSON.stringify(credential) }) } }
       const service = new CodeArtsAuth(ctx)
-      assert.equal((await service.refreshModels({ listAccountsByProvider: () => [{ credentialRef: 'FIXTURE' }] })).length, 2); service.stop()
-      assert.equal(globalCalls, before); assert.equal(seen.length, start + 5); assert.ok(seen.slice(start).every(row => row.valid && row.method === 'GET'))
+      assert.equal((await service.refreshModels({ listAccountsByProvider: () => [{ credentialRef: 'FIXTURE' }] })).length, 3, 'agent 独有模型并入缓存'); service.stop()
+      const rows = seen.slice(start)
+      // 组成（每次 fetchCodeArtsRemoteModels 发 4 个 GET）：
+      //   目录 4（gateway/builtin/agent-list/agent-detail）
+      // + 积分 1（statistics/plugin）
+      // + refreshModels 4（同款目录拉取，落内存+磁盘缓存）
+      assert.equal(globalCalls, before); assert.equal(seen.length, start + 9, '目录4+积分1+refreshModels4'); assert.ok(rows.every(row => row.valid && row.method === 'GET'))
     })
     await check('显式 fetchImpl/fetcher 保留优先级，离线测试入口仍有效', async () => {
       let calls = 0

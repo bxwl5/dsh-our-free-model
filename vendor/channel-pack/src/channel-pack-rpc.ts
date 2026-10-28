@@ -38,7 +38,7 @@ import type { ClineAuth } from './cline-auth.js'
 import { LOOMY } from './loomy-product.js'
 import { buddyExpiringWindowDays } from './buddy-balance-rank.js'
 import { normalizeCookie as normalizeMonkeyCodeCookie } from './monkeycode.js'
-import { normalizeCookie as normalizeOrcaTermCookie } from './orcaterm.js'
+import { isCredentialUsable as isOrcaTermCredentialUsable, normalizeCookie as normalizeOrcaTermCookie, type OrcaTermCredential } from './orcaterm.js'
 import { KUKU } from './kuku-product.js'
 import { startKukuLoginFlow } from './kuku-qr-login-page.js'
 import { parseCredential as parseAutoClawCredential, type AutoClawCredential } from './autoclaw.js'
@@ -1830,14 +1830,35 @@ function registerChannelPackEndpoints(
             id, provider, nickname: id, enabled: true,
             credentialRef: refName, refreshable: false, createdAt: Date.now(),
           })
+          // ⚠ stsPersisted：catch 里区分「失败发生在凭据落盘前还是后」的标记。
+          // 落盘**前**失败（轮询超时/用户放弃授权）→ 删占位条目（没有凭据的条目
+          // 只是幽灵账号）；落盘**后**失败（validate 没拿到网关三件套等）→
+          // **保留账号**：此刻凭据（含一次性 refresh_token + DPoP）已在库里，
+          // 删条目等于把续期链钥匙一并作废，用户必须重开浏览器。validate 失败
+          // （未开通 MaaS）可在开通后点「续期」补齐网关信息（续期分支会补一次
+          // validatePermission，见 account.refresh 的 officeace case）。
+          let stsPersisted = false
           void (async () => {
             const code = await oa.pollAuthCode(codeartsFetcher, OFFICEACE, state)
             const dpop = await import('./officeace-dpop.js')
             const dpopKey = await dpop.createDpopKeyPair()
             const sts = await oa.exchangeCodeForSts(codeartsFetcher, OFFICEACE, code, pkce.verifier, dpopKey)
+            // ⚠ **STS 一成功立即落盘**（magpie officeace-auth 的实测教训，用户
+            // 实际报障「凭证老是失效」的根因之一）：refresh_token 一次性轮换 ——
+            // 换码那刻起授权码已作废、新 refresh_token 只在内存里。旧实现先去
+            // validatePermission 再落盘，中途崩掉（网络断/进程重启）它就跟着丢了，
+            // 用户只能重开浏览器。先落盘 = 续期链钥匙先保住。
+            stsPersisted = true
+            const dpopJwk = await dpop.exportDpopJwkPair(dpopKey)
+            await ctx.credentials.set(credentialRef(refName), JSON.stringify({ ...sts, dpop: dpopJwk }))
+            await pool.updateAccount(id, {
+              refreshable: typeof sts.refresh_token === 'string' && sts.refresh_token !== '',
+            })
             const permission = await oa.validatePermission(codeartsFetcher, OFFICEACE, sts)
             // 网关三件套在 validate 的 model_info 里（STS 响应没有）；缺了说明
-            // 账号未开通 —— 给出可读原因而不是落一个不可用的空凭据。
+            // 账号未开通 —— 抛可读错误。⚠ 凭据**已落盘**、账号条目**保留**：
+            // catch 不删账号（下方 catch 与本分支约定：凭据可用时只报失败原因），
+            // 用户开通服务后点「续期」补齐网关信息即可，无需重新授权。
             if (permission.baseUrl === undefined || permission.appKey === undefined || permission.appSecret === undefined) {
               throw new Error('OfficeAce：云端未返回模型网关信息（账号可能未开通服务，需先在官方客户端兑换邀请码/开通后再试）')
             }
@@ -1853,7 +1874,7 @@ function registerChannelPackEndpoints(
               ...(permission.modelInfo === undefined ? {} : { model_info: permission.modelInfo }),
               // 续期链的钥匙：一次性 refresh_token + 本次 DPoP 密钥对（JWK 落库，
               // 续期签 proof 必须用同一把私钥 —— 参考实现同款约束）。
-              dpop: await dpop.exportDpopJwkPair(dpopKey),
+              dpop: dpopJwk,
             }
             await ctx.credentials.set(credentialRef(refName), JSON.stringify(credential))
             await pool.updateAccount(id, {
@@ -1863,11 +1884,10 @@ function registerChannelPackEndpoints(
             })
           })().catch((err) => {
             ctx.logger.warn(`[channel-pack] background ${provider} login failed for ${id}: ${err}`)
-            // ⚠️ 只写日志不够：占位条目随即被删除，前端 `login.poll` 就再也拿不到
-            // 任何线索，只能干等到 10 分钟超时才显示「登录已过期」（本缺陷）。
-            // 与 codearts / gemini 同款：原因放进失败表，由下一次 poll 读走。
+            // 失败原因给 login.poll（本缺陷）；凭据已落盘时**保留账号**——
+            // 删条目等于把一次性 refresh_token 一并作废（详见 stsPersisted 声明处）。
             pendingLoginFailures.set(id, (err instanceof Error ? err.message : String(err)).slice(0, 500))
-            void pool.removeAccount(id).catch(() => {})
+            if (!stsPersisted) void pool.removeAccount(id).catch(() => {})
           })
           return { ok: true, value: { accountId: id, loginUrl } }
         } else if (provider === 'accio' || provider === 'accio-cn') {
@@ -2573,6 +2593,20 @@ function registerChannelPackEndpoints(
               if (cookie === '') throw new Error('凭据不可用，请重新登录')
               break
             }
+            case 'orcaterm': {
+              // OrcaTerm 是 Cookie 型渠道（ot_sid/ot_session），**没有续期端点**：
+              // 与 kuku / monkeycode 同为「刷新即复核」—— 重读凭据并确认 Cookie
+              // 形状可用，不可用就如实报错引导重新粘贴。此前缺本分支，点续期
+              // 直接抛 `Unknown provider: orcaterm`（20 渠道里唯一的缺口）。
+              const resolved = await ctx.credentials.resolve(credentialRef(entry.credentialRef))
+              if (resolved === undefined) throw new Error('凭据未配置')
+              let credential: OrcaTermCredential | undefined
+              try {
+                credential = JSON.parse(resolved.value) as OrcaTermCredential
+              } catch { credential = undefined }
+              if (!isOrcaTermCredentialUsable(credential)) throw new Error('凭据不可用，请重新粘贴浏览器 Cookie')
+              break
+            }
             case COMMANDCODE.id: {
               // Command Code 是长期 API Key 型渠道（**没有 refresh_token**，key 不轮换），
               // 与 kuku / monkeycode 同为「刷新即复核」：重读凭据、确认 key 形状可用，
@@ -2615,12 +2649,38 @@ function registerChannelPackEndpoints(
               // OfficeAce **有真续期**（`grant_type=refresh_token` 换新 AK/SK，实测
               // 2026-10-24 连续两次 200；refresh_token 一次性轮换，新值必须落库）。
               // 凭据里的 `refresh_token` + `dpop` 私钥就是续期链钥匙（登录时落库的）。
-              const { refreshOfficeAceCredential } = await import('./officeace.js')
+              const { refreshOfficeAceCredential, validatePermission } = await import('./officeace.js')
               const { OFFICEACE } = await import('./officeace-product.js')
               const resolved = await ctx.credentials.resolve(credentialRef(entry.credentialRef))
               if (resolved === undefined) throw new Error('凭据未配置')
               const current = JSON.parse(resolved.value) as OfficeAceCredential
               const refreshed = await refreshOfficeAceCredential(codeartsFetcher, OFFICEACE, current)
+              // 续期后补一次 validatePermission（magpie officeace-auth 的 doRefresh
+              // 同款，2026-10-29）：① 登录时 validate 失败的账号（当时未开通 MaaS）
+              // 开通后点「续期」即可补齐网关三件套，不必重开浏览器 —— 这是登录分支
+              // 「STS 先落盘、账号保留」策略的配套补救路径；② STS 续期响应**不带**
+              // model_info（比登录响应瘦），若 model_api_url_base 下发变化，这里同步。
+              // validate 失败**不回滚**续期：新 AK/SK 已落盘，推理凭据可能仍有效
+              //（magpie 同款取舍），只是网关信息维持原样。
+              try {
+                const permission = await validatePermission(codeartsFetcher, OFFICEACE, refreshed)
+                if (permission.baseUrl !== undefined && permission.appKey !== undefined && permission.appSecret !== undefined) {
+                  Object.assign(refreshed, {
+                    base_url: permission.baseUrl,
+                    app_key: permission.appKey,
+                    app_secret: permission.appSecret,
+                    ...(permission.accountId === undefined ? {} : { account_id: permission.accountId }),
+                    ...(permission.principalId === undefined ? {} : { principal_id: permission.principalId }),
+                    ...(permission.nickname === undefined ? {} : { nickname: permission.nickname }),
+                    ...(permission.projectId === undefined ? {} : { project_id: permission.projectId }),
+                    ...(permission.modelInfo === undefined ? {} : { model_info: permission.modelInfo }),
+                  })
+                }
+              } catch (error) {
+                ctx.logger?.warn?.(
+                  `[channel-pack] officeace 续期后的权限校验失败（保留原网关信息）：${error instanceof Error ? error.message : String(error)}`,
+                )
+              }
               await ctx.credentials.set(credentialRef(entry.credentialRef), JSON.stringify(refreshed))
               await pool.updateAccount(entry.id, {
                 expiresAt: refreshed.expire_time,
@@ -2661,22 +2721,15 @@ function registerChannelPackEndpoints(
            * 本分支只有 `success` 一个布尔：**失败是业务终态，不是可自愈的中间态**，
            * 与上述四者不同类。
            *
-           * ## 为什么 `ok:false` 不会打破仓库内任何调用方
-           * `account.refresh` **全仓库零调用方**：面板 `plugin-src/client/channel-pack.js`
-           * 的 42 处 `rpcCall(` 里没有它（账号卡片的按钮是 测试/重测/重置/停用/代理/
-           * 指纹/删除，**没有「刷新」**）；另两处 `rpcCall(变量)` 的实参经追溯只有
-           * `opencode.*` 四个方法。它从来就是给仓库外脚本/手工 RPC 用的端点。
-           * ⇒ 这是**对外部调用方的破坏性契约变更**：原先误判的调用方会从「静默错」
-           * 变成 `unwrapRpcResult` 抛错，属预期的「提前炸」。成功路径仍是
-           * `ok:true + value.success:true`，未变。
+           * ## 调用方现状（2026-10-29 复核，原「零调用方」结论已过期）
+           * 面板 client.js 现有**两处** `rpc('account.refresh')`（卡片级「续期/
+           * 重新校验」按钮 + 账号行级按钮，2026-10-06 fba1eb25 引入）。本分支
+           * 只有 `success` 一个布尔且失败一律 `ok:false`：面板 unwrapRpcResult
+           * 抛错 → onError 显示原因，失败可见，无静默误读路径 —— 契约对这两处
+           * 调用方仍是安全的。
            *
            * ⚠⚠ **复现这条取证不要用 `git log -S "rpcCall('account.refresh'"`**：
-           * 本注释自身引用了该字面量，`-S` 会**自匹配修复提交本身**（返回 `68fb567`），
-           * 那正是 `AGENTS.md` 明令禁止的「注释与实测脱节」。在 `origin/master`
-           * （修复前）上该命令零命中，这本身是它曾有效的证据。稳定写法是只搜
-           * **不含注释**的客户端源码：
-           * `Select-String -Path plugin-src\client\*.js -Pattern "rpcCall\('account\."`
-           * （应零命中；`account.refreshable` 是另一个字段名，不是端点）。
+           * 本注释自身引用了该字面量，`-S` 会**自匹配修复提交本身**。
            *
            * 回归用例在
            * 「issue IKJOZA」段（锁死「失败不得是 ok:true」+「失败必须带原因」）。

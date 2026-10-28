@@ -15,11 +15,15 @@ import http from 'node:http'
 export async function verifyRemoteModelsTtl() {
 const { OfficeAceAdapter } = await import('../vendor/channel-pack/src/officeace-adapter.ts')
 const { OFFICEACE } = await import('../vendor/channel-pack/src/officeace-product.ts')
+const { resetOfficeAceTokenRatesCache } = await import('../vendor/channel-pack/src/officeace.ts')
 const { fetch: realFetch } = await import('undici')
 
 let hits = 0
 let payload = [{ id: 'model-a', name: 'A' }, { id: 'model-b', name: 'B' }]
 let failNext = false
+// 倍率端点替身：目录成功时回一张小倍率表（含尾部换行，验证 trim）。
+let ratesPayload = { models: [{ model_name: 'model-a\n', cost_coefficient: 0.79 }, { model_name: 'model-b', cost_coefficient: 1 }] }
+let ratesFailNext = false
 
 const upstream = http.createServer((req, res) => {
   // normalizeBaseUrl 会自动补 /v2，故实际路径是 /v2/models。
@@ -28,6 +32,13 @@ const upstream = http.createServer((req, res) => {
     if (failNext) { res.writeHead(500, { Connection: 'close' }).end('{}'); return }
     res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' })
       .end(JSON.stringify({ data: payload }))
+    return
+  }
+  // 倍率（2026-10-29）：V11 签名 GET（这里不验签，测试关注解析与展示拼接）。
+  if (req.url === '/v1/model-token-rates') {
+    if (ratesFailNext) { res.writeHead(500, { Connection: 'close' }).end('{}'); return }
+    res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' })
+      .end(JSON.stringify(ratesPayload))
     return
   }
   res.writeHead(404, { Connection: 'close' }).end('{}')
@@ -43,14 +54,22 @@ const adapter = new OfficeAceAdapter({
     app_key: 'k', app_secret: 's', access_key: 'ak', secret_key: 'sk',
     security_token: 't', refresh_token: 'r', expire_time: 0,
     nickname: 'n', created_at: 0, account_id: 'a', principal_id: 'p',
+    // 倍率端点（/v1/model-token-rates）打的是**订阅面网关**
+    // （model_info.model_api_url_base），不是推理 base_url —— 凭据缺它时
+    // fetchTokenRates 抛「缺少 model_info」→ 空表降级（生产凭据登录时必有）。
+    model_info: { model_api_url_base: base },
   }),
 })
 
 try {
+  resetOfficeAceTokenRatesCache()
   // ── 1. 首次拉取 ──
   const first = await adapter.listModels('officeace')
   assert.equal(first.length, 2, '首次拿到 2 个模型')
   assert.equal(hits, 1, '首次只发一次请求')
+  // ── 1b. 倍率拼接（2026-10-29）：model-a 带 x0.79（trim 尾换行），x1 不标 ──
+  assert.equal(first.find(m => m.id === 'model-a')?.name, 'A · x0.79', '倍率拼进展示名（model_name 尾部换行被 trim）')
+  assert.equal(first.find(m => m.id === 'model-b')?.name, 'B', 'x1 不标（全默认倍率没有信息量）')
 
   // ── 2. TTL 内不重复拉取 ──
   await adapter.listModels('officeace')
@@ -67,6 +86,7 @@ try {
   // ── 4. 拉取失败保留旧列表 ──
   adapter.remoteModelsAt = 0
   failNext = true
+  ratesFailNext = true
   const third = await adapter.listModels('officeace')
   assert.equal(hits, 3, '失败也要真的试一次')
   assert.deepEqual(third.map(m => m.id), ['model-c'], '失败时保留上一次的列表，不清空')
@@ -79,7 +99,7 @@ try {
   assert.ok(!KUKU.fallbackModels.some(m => m.id === 'kuku'), '占位 id `kuku` 不是真实模型，必须移除')
   assert.ok(KUKU.fallbackModels.some(m => m.id === 'auto'), 'auto 是上游自动选路档')
 
-  console.log('remote-models-ttl: 5 组断言通过（TTL 命中 / 过期重拉 / 失败保留旧列表 / kuku 目录）')
+  console.log('remote-models-ttl: 7 组断言通过（TTL 命中 / 过期重拉 / 失败保留旧列表 / 倍率拼接+x1 不标 / kuku 目录）')
 } finally {
   upstream.close()
 }
@@ -219,6 +239,8 @@ export async function verifyChannelCheckinJudgements() {
   // `officeace_points` 的 sku_value - current_value 即剩余积分。
   let pointsTotal = 500
   let pointsUsed = 0
+  let oaClaimed = false
+  let oaSecondCall = false
   const oaServer = http.createServer((req, res) => {
     req.resume()
     req.on('end', () => {
@@ -227,7 +249,13 @@ export async function verifyChannelCheckinJudgements() {
         // 幂等由上游保证：一天一个活动只能领一次，重复领不重复入账。
         // 首次入账 +100，之后重复调用总额不变。
         if (pointsTotal === 500) pointsTotal += 100
-        json({ ok: true })
+        // 真实响应自带 bonus_skus[]（activity_name + points）—— 直读优先的依据。
+        // 用独立的 claimed 标志：首 claim 带活动行，重复 claim 是幂等空表。
+        if (oaClaimed) oaSecondCall = true
+        oaClaimed = true
+        json(!oaSecondCall
+          ? { bonus_skus: [{ activity_id: 'daily', activity_name: '每日签到', points: 100 }] }
+          : { bonus_skus: [] })
         return
       }
       if (req.url.startsWith('/v1/subscription')) {
@@ -249,18 +277,20 @@ export async function verifyChannelCheckinJudgements() {
   }
   try {
     const gained = await claimBonus(realFetch, OFFICEACE, oaCredential)
-    assert.equal(gained.gained, 100, '增量 = 领奖前后 remaining 之差')
-    assert.match(gained.message, /已领取 100/, '文案要带增量')
+    assert.equal(gained.gained, 100, '① 直读响应：bonus_skus[].points 之和')
+    assert.match(gained.message, /已领取 100/, '文案要带积分数')
+    assert.match(gained.message, /每日签到/, '文案要带活动名（magpie 同款）')
 
-    // 幂等：重复调用 remaining 不再变（上游保证），文案说明已领过/无可领
+    // 幂等：重复调用 bonus_skus 变空数组（上游幂等形态），退回增量法
+    // 确认 remaining 没变 → 如实报「没有可领」
     const again = await claimBonus(realFetch, OFFICEACE, oaCredential)
-    assert.equal(again.gained, 0, '重复领不重复入账')
+    assert.equal(again.gained, 0, '重复领不重复入账（增量法兜底确认）')
     assert.match(again.message, /已领过|没有可领/, '要说明「已领过或今天没有可领」')
   } finally {
     oaServer.close()
   }
 
-  console.log('channel-checkin: 5 组断言通过（autoclaw 三态判据 / officeace 增量与幂等）')
+  console.log('channel-checkin: 6 组断言通过（autoclaw 三态判据 / officeace 直读优先+增量兜底+幂等）')
 }
 
 /**

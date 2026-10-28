@@ -2,30 +2,6 @@ import type { DpopPrivateJwk } from './oauth.js'
 import type { BadgePreference } from './badge-preferences.js'
 import type { TokenLedgerSnapshot, TokenLedgerHistoryDay, TokenLedgerModelRow } from './token-ledger.js'
 
-/** snap-manager ticket 端点响应的传输格式。 */
-export interface CodeArtsCredentialResponse {
-  credential?: {
-    access?: string
-    secret?: string
-    securitytoken?: string
-    securityToken?: string
-    expires_at?: string
-    expiresAt?: string
-  }
-  result?: {
-    accessKeyId?: string
-    secretAccessKey?: string
-    securityToken?: string
-    expiration?: string
-    expiresAt?: string
-  }
-  domain_id?: string
-  user_id?: string
-  user_name?: string
-  error_code?: string
-  error_msg?: string
-}
-
 /**
  * ========================================
  * ProviderAccountEntry 与多账号相关类型
@@ -1216,16 +1192,12 @@ export interface LoginFlowResult {
   loginUrl: string
 }
 
-/** runLoginFlow 和 startCallbackServer 接受的选项。 */
+/** CodeArts 登录流程接受的选项（旧 ticket 流程已删，只剩 OAuth）。 */
 export interface LoginFlowOptions {
-  /** pollForCredential 使用的 fetch 实现；默认为全局 fetch。 */
+  /** OAuth 换码与凭据请求使用的 fetch 实现；默认为全局 fetch。 */
   fetcher?: typeof fetch
   /** 在浏览器中打开登录 URL；默认使用平台打开器。 */
   openBrowser?: (url: string) => void | Promise<void>
-  /** 轮询尝试次数上限；默认为 120。 */
-  maxAttempts?: number
-  /** 登录流程选择：'oauth'（默认）或 'ticket'（旧流程回退）。 */
-  flow?: 'oauth' | 'ticket'
 }
 
 /**
