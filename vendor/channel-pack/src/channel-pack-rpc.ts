@@ -40,7 +40,7 @@ import { buddyExpiringWindowDays } from './buddy-balance-rank.js'
 import { normalizeCookie as normalizeMonkeyCodeCookie } from './monkeycode.js'
 import { isCredentialUsable as isOrcaTermCredentialUsable, normalizeCookie as normalizeOrcaTermCookie, type OrcaTermCredential } from './orcaterm.js'
 import { KUKU } from './kuku-product.js'
-import { startKukuLoginFlow } from './kuku-qr-login-page.js'
+import { startKukuLoginFlow, type KukuLoginFlow } from './kuku-qr-login-page.js'
 import { parseCredential as parseAutoClawCredential, type AutoClawCredential } from './autoclaw.js'
 import type { AccioCredential } from './accio.js'
 import { ACCIO, ACCIO_CN } from './accio-product.js'
@@ -58,7 +58,7 @@ import type { MonkeyCodeCredential } from './monkeycode.js'
 import { MONKEYCODE } from './monkeycode-product.js'
 import { AUTOCLAW } from './autoclaw-product.js'
 import { refreshAutoclawCredential, resolveAutoclawDeviceId } from './autoclaw-sms.js'
-import { startAutoclawLoginFlow } from './autoclaw-login-page.js'
+import { startAutoclawLoginFlow, type AutoclawLoginFlow } from './autoclaw-login-page.js'
 import { resolveChannelPackHome } from './channel-pack-store.js'
 import { parseCredential as parseOfficeAceCredential, type OfficeAceCredential } from './officeace.js'
 import type { LoomyAuth } from './loomy-auth.js'
@@ -252,6 +252,8 @@ export const CHANNEL_PACK_API_PATH = '/api/channel-pack'
  *   因而带得上那份会话 cookie，属 Task 5 的**实测项**，不在这里放宽。
  */
 export const CAPTCHA_CARRIER_PATH = '/api/channel-pack/captcha-carrier'
+/** 卡片内嵌登录流程的驱动路由前缀（kuku 轮询/刷新、autoclaw 发码/验证）。 */
+export const EMBEDDED_LOGIN_BASE_PATH = '/api/channel-pack/login' 
 /** Gateway RPC 端点名（connection.rpc.call 的 endpoint 参数） */
 const CHANNEL_PACK_ENDPOINT = 'channel-pack'
 
@@ -1092,6 +1094,14 @@ function registerChannelPackEndpoints(
   const pendingLoginFailures = new Map<string, string>()
 
   /**
+   * 卡片内嵌登录流程表（2026-10-30）：kuku 扫码 / autoclaw 短信的**进行中状态**
+   * 都放在这里，卡片经 DSH GET/POST 路由（`/api/channel-pack/login/...`）驱动，
+   * 不再有 127.0.0.1 本地页 —— 远程浏览器（NAS 场景）直接可用。
+   * 键 = flowId（account.create 生成并返回给前端），值 = 流程对象。
+   */
+  const embeddedLoginFlows = new Map<string, KukuLoginFlow | AutoclawLoginFlow>()
+
+  /**
    * 记录一条后台登录失败原因，供下一次 `login.poll` 读走。
    *
    * ⚠️ 此前有 12 个渠道的分支只 `logger.warn` + 删除占位账号：前端 `login.poll`
@@ -1234,6 +1244,71 @@ function registerChannelPackEndpoints(
       return ZCODE_CAPTCHA_FALLBACK
     }
   }
+
+  /**
+   * 卡片内嵌登录流程的驱动路由（2026-10-30）。
+   *
+   * ## 背景
+   * kuku 扫码 / autoclaw 短信的旧形态各起一个 `127.0.0.1:<随机端口>` 本地页，
+   * 远程浏览器（DSH 在 NAS、浏览器在 PC）打不开，登录必败。现在流程状态在
+   * `embeddedLoginFlows`（内存表），卡片经**这里**驱动——地址就是浏览器已经在
+   * 用的 DSH origin（`http://192.168.2.6:28000/...`），天然可达。
+   *
+   * ## 路由
+   * - `GET  <base>/kuku/poll?flow=<id>`    → `{ state }`（服务端长轮询上游 ~30s）
+   * - `GET  <base>/kuku/reload?flow=<id>`  → `{ qrDataUrl }`（重新取码）
+   * - `POST <base>/autoclaw/send?flow=<id>` body `{ phone }` → `{ ok, message? }`
+   * - `POST <base>/autoclaw/verify?flow=<id>` body `{ code }` → `{ ok, message? }`
+   *
+   * flowId 是 account.create 发给前端的随机短 ID；未知/已清理的 flowId 一律 404。
+   * autoclaw 的手机号/验证码校验在流程对象里（与旧本地页同一套实现）。
+   */
+  connection.fetch.register({
+    path: EMBEDDED_LOGIN_BASE_PATH,
+    methods: ['GET', 'POST'],
+    requestBody: 'buffered' as const,
+    async fetch(request: Request): Promise<Response> {
+      const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+      // dsh 分发器按注册 path 精确匹配路由；带子路径的请求可能落到这里，先判 404。
+      const parts = url.pathname.slice(EMBEDDED_LOGIN_BASE_PATH.length).split('/').filter(Boolean)
+      const [channel, action] = parts
+      const flowId = url.searchParams.get('flow') ?? ''
+      const flow = flowId === '' ? undefined : embeddedLoginFlows.get(flowId)
+
+      const json = (payload: unknown, status = 200): Response =>
+        new Response(JSON.stringify(payload), {
+          status,
+          headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+        })
+
+      if (channel === 'kuku' && flow !== undefined && !('sendCode' in flow)) {
+        const kuku = flow as KukuLoginFlow
+        if (action === 'poll' && request.method === 'GET') return json(await kuku.poll())
+        if (action === 'reload' && request.method === 'GET') {
+          try {
+            await kuku.reload()
+            return json({ qrDataUrl: kuku.qrDataUrl })
+          } catch (error) {
+            return json({ state: 'expired', error: error instanceof Error ? error.message : String(error) })
+          }
+        }
+      }
+
+      if (channel === 'autoclaw' && flow !== undefined && 'sendCode' in flow) {
+        const sms = flow as AutoclawLoginFlow
+        if (request.method === 'POST' && (action === 'send' || action === 'verify')) {
+          let body: Record<string, unknown> = {}
+          try { body = await request.json() as Record<string, unknown> } catch { /* 空/坏体按空处理 */ }
+          const result = action === 'send'
+            ? await sms.sendCode(typeof body.phone === 'string' ? body.phone : '')
+            : await sms.verify(typeof body.code === 'string' ? body.code : '')
+          return json(result)
+        }
+      }
+
+      return json({ error: 'not found' }, 404)
+    },
+  })
 
   /**
    * 内部载体的载体页（**旧路由：已不是 guest 的入口**，见下面的取证）。
@@ -1737,21 +1812,18 @@ function registerChannelPackEndpoints(
           if (home === undefined) {
             return { ok: false, error: { code: 'internal', message: '无法定位插件数据目录，短信登录不可用' } }
           }
-          const started = await startAutoclawLoginFlow({
+          // 2026-10-30：卡片内嵌形态 —— account.create 返回 flowId，卡片渲染
+          // 手机号/验证码表单，发码与验证走 DSH 路由（不再有 127.0.0.1 本地页）。
+          const flow = await startAutoclawLoginFlow({
             product: AUTOCLAW,
             fetcher: codeartsFetcher,
             deviceId: resolveAutoclawDeviceId(home),
           })
-          await pool.addAccount({
-            id,
-            provider,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now(),
-          })
-          started.result.then(async (credential) => {
+          const flowId = `autoclaw-${id}`
+          embeddedLoginFlows.set(flowId, flow)
+          const cleanup = (): void => { embeddedLoginFlows.delete(flowId) }
+          flow.result.then(async (credential) => {
+            cleanup()
             await ctx.credentials.set(credentialRef(refName), JSON.stringify(credential))
             await pool.updateAccount(id, {
               nickname: credential.nickname ?? id,
@@ -1759,15 +1831,11 @@ function registerChannelPackEndpoints(
               refreshable: typeof credential.refresh_token === 'string' && credential.refresh_token !== '',
             })
           }).catch((error: unknown) => {
+            cleanup()
             ctx.logger.warn(`[channel-pack] background ${AUTOCLAW.id} login failed for ${id}: ${String(error)}`)
             recordLoginFailure(id, error)
             void pool.removeAccount(id).catch(() => {})
           })
-          return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } }
-        } else if (provider === KUKU.id) {
-          // KukuAI：百度 passport 扫码登录（本地弹窗页承载二维码 + 长轮询）。
-          // 与 autoclaw/raccoon 同型：建占位账号 → 返回 loginUrl → 后台等结果。
-          const started = await startKukuLoginFlow({ fetcher: codeartsFetcher })
           await pool.addAccount({
             id,
             provider,
@@ -1777,7 +1845,18 @@ function registerChannelPackEndpoints(
             refreshable: false,
             createdAt: Date.now(),
           })
-          started.result.then(async (credential) => {
+          return { ok: true, value: { accountId: id, loginKind: 'autoclaw-sms', flowId } }
+        } else if (provider === KUKU.id) {
+          // KukuAI：百度 passport 扫码登录（**卡片内嵌**，2026-10-30）。
+          // 旧形态是 127.0.0.1 本地弹窗页 —— 远程浏览器（DSH 在 NAS）打不开，
+          // 登录必败。现在 account.create 直接返回二维码 data URL，卡片内渲染；
+          // 轮询/刷新走 DSH 路由 `/api/channel-pack/login/kuku/{poll,reload}`。
+          const flow = await startKukuLoginFlow({ fetcher: codeartsFetcher })
+          const flowId = `kuku-${id}`
+          embeddedLoginFlows.set(flowId, flow)
+          const cleanup = (): void => { embeddedLoginFlows.delete(flowId) }
+          flow.result.then(async (credential) => {
+            cleanup()
             await ctx.credentials.set(credentialRef(refName), JSON.stringify(credential))
             await pool.updateAccount(id, {
               nickname: credential.nickname ?? id,
@@ -1785,11 +1864,21 @@ function registerChannelPackEndpoints(
               refreshable: false,
             })
           }).catch((error: unknown) => {
+            cleanup()
             ctx.logger.warn(`[channel-pack] background ${KUKU.id} login failed for ${id}: ${String(error)}`)
             recordLoginFailure(id, error)
             void pool.removeAccount(id).catch(() => {})
           })
-          return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } }
+          await pool.addAccount({
+            id,
+            provider,
+            nickname: id,
+            enabled: true,
+            credentialRef: refName,
+            refreshable: false,
+            createdAt: Date.now(),
+          })
+          return { ok: true, value: { accountId: id, loginKind: 'kuku-qr', flowId, qrDataUrl: flow.qrDataUrl } }
         } else if (provider === 'commandcode') {
           // Command Code：浏览器 OAuth + 本地回调（端口 5959 起）。
           // 与 codearts 同款两步式：先返回 loginUrl 让前端立刻 window.open，

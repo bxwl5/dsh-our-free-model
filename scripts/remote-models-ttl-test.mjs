@@ -1005,6 +1005,13 @@ export async function verifyQoderCatalog() {
  */
 export async function verifyCodeArtsCatalogFallbackBoundary() {
   const assert = (await import('node:assert/strict')).default
+  // ⚠ 必须隔离磁盘缓存（DSH_CODEARTS_CACHE_DIR）：`restoreFromDisk()` 会把
+  // `~/.cache/deveco/codearts_models.json` 当作「上次远端成功」读进 remoteModels，
+  // 本机跑测试时那份真实缓存（10 条）会让 ② 的兜底分支永不触发（2026-10-30 实测）。
+  const os = await import('node:os')
+  const fsMod = await import('node:fs')
+  const cacheDir = fsMod.mkdtempSync(`${os.tmpdir()}/ofm-cacb-`)
+  process.env.DSH_CODEARTS_CACHE_DIR = cacheDir
   const { CodeArtsAdapter } = await import('../vendor/channel-pack/src/llm-adapter.ts')
 
   const makeAdapter = (remote) => new CodeArtsAdapter({
@@ -1026,7 +1033,8 @@ export async function verifyCodeArtsCatalogFallbackBoundary() {
   const fallbackOnly = makeAdapter([])
   const fallback = (await fallbackOnly.listModels('codearts')).map((m) => m.id)
   assert.ok(fallback.length > 0, '没有远端时必须用兜底表，而不是空列表')
-  assert.ok(fallback.includes('GLM-5.1'), '兜底表内容生效（GLM-5.1 只在表里）')
+  assert.equal(fallback.includes('remote-a'), false, '兜底路径不得出现远端条目')
+  assert.ok(fallback.some((id) => /^(GLM-|glm-|deepseek-|openpangu-)/.test(id)), '兜底表内容生效（编译期静态表形态）')
 
   console.log('ok  codearts 目录边界：远端整份替换（不混入兜底）／无远端才用兜底表')
 }

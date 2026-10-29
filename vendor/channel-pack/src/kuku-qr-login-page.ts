@@ -1,52 +1,54 @@
 /**
- * KukuAI 扫码登录的本地页（宿主侧承载弹窗页）。
+ * KukuAI 扫码登录流程（**卡片内嵌形态**，2026-10-30）。
  *
- * 范式照 `raccoon-login-page.ts` / `autoclaw-login-page.ts`：
+ * 旧形态是「本地服务器 + 127.0.0.1 弹窗页」——远程浏览器（DSH 在 NAS、浏览器
+ * 在 PC）根本打不开那个地址，登录必败。现改为**无本地 HTTP**：
  *
  * ```
- * 本地服务器（127.0.0.1:随机端口）
- *   GET /kuku/login    → 弹窗页（内联二维码 + 轮询 + 刷新）
- *   GET /kuku/poll     → 宿主侧长轮询 passport（约 30s），confirmed 时当场换凭据
- *   GET /kuku/reload   → 重新申请二维码后 302 回 /kuku/login
+ * account.create → startKukuLoginFlow() → { qrDataUrl, flowId }（二维码 data URL
+ *                  直接渲染进渠道卡片，居中 + 提示文字）
+ * 卡片轮询       → kukuPoll(flowId)        → { state }（服务端长轮询上游 30s）
+ * 卡片点「刷新」 → kukuReload(flowId)       → 新的 { qrDataUrl }
+ * 扫码确认       → 服务端在这里完成 ticket→凭据交换，login.poll 照常收尾
  * ```
  *
- * 对外返回 `loginUrl`，前端照常 `window.open` + `login.poll` —— 与其余两步式渠道一致，
- * **客户端无需任何改动**。
- *
- * ⚠️ 协议细节（见 `kuku-qr-login.ts` 的注释）：`/channel/unicast` 是**长轮询**，
- * 未扫码时上游约 30 秒才回；轮询超时用模块里的 `KUKU_QR_POLL_TIMEOUT_MS`(45s)，
- * 不能复用请求超时，否则每次轮询都超时抛 network、表象是「扫码一直失败」。
+ * flowId 由调用方生成并保存在内存表里；超时/关闭语义与旧版一致（10 分钟）。
+ * 旧的本地页函数（renderKukuQrPage 等）仍在 `kuku-qr-login.ts`，未删。
  */
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { KukuCredential } from './kuku.js'
 import {
   completeKukuQrLogin,
   fetchKukuQrImage,
   pollKukuQrStatus,
-  renderKukuQrPage,
   requestKukuQrCode,
   type KukuQrSession,
 } from './kuku-qr-login.js'
 
-/** 本地页路径。 */
-export const KUKU_LOGIN_PAGE_PATHS = {
-  login: '/kuku/login',
-  poll: '/kuku/poll',
-  reload: '/kuku/reload',
-} as const
-
 /** 登录超时：与其它渠道一致，10 分钟。 */
 export const KUKU_LOGIN_TIMEOUT_MS = 10 * 60_000
 
-/** 上游二维码有效期约 3 分钟，页面据此提示刷新。 */
-const KUKU_QR_TTL_SECONDS = 180
+/** 上游二维码有效期约 3 分钟，卡片据此提示刷新。 */
+export const KUKU_QR_TTL_SECONDS = 180
 
-/** 已启动的登录流程。 */
-export interface StartedKukuLoginFlow {
-  loginUrl: string
+/** 进行中的扫码登录流程（卡片内嵌形态）。 */
+export interface KukuLoginFlow {
+  /** 当前二维码（data URL，可直接 <img src>）。 */
+  qrDataUrl: string
+  /** 服务端长轮询一次上游（约 30s）；confirmed 时内部完成换凭据。 */
+  poll: () => Promise<KukuPollOutcome>
+  /** 重新申请二维码（旧的作废）。 */
+  reload: () => Promise<void>
+  /** 凭据落定（confirmed / 超时 / 关闭）。 */
   result: Promise<KukuCredential>
+  /** 主动放弃（卡片取消/关闭时调用）。 */
   close: () => Promise<void>
 }
+
+export type KukuPollOutcome =
+  | { state: 'pending' }
+  | { state: 'scanned' }
+  | { state: 'confirmed' }
+  | { state: 'expired'; error?: string }
 
 interface FlowState {
   session: KukuQrSession
@@ -61,13 +63,13 @@ async function freshSession(fetcher: typeof fetch, passportBase?: string): Promi
   return { session, qrDataUrl: image.dataUrl }
 }
 
-/** 启动一次扫码登录流程。 */
+/** 启动一次扫码登录流程（无本地服务器）。 */
 export async function startKukuLoginFlow(options: {
   fetcher: typeof fetch
   /** 仅测试注入：passport 基址覆盖。 */
   passportBase?: string
   timeoutMs?: number
-}): Promise<StartedKukuLoginFlow> {
+}): Promise<KukuLoginFlow> {
   const { fetcher, passportBase } = options
   const flowOptions = passportBase === undefined ? { fetcher } : { fetcher, passportBase }
   let state = await freshSession(fetcher, passportBase)
@@ -92,78 +94,40 @@ export async function startKukuLoginFlow(options: {
     rejectResult(error)
   }
 
-  // 同一时刻只允许一个长轮询在飞（页面 1.2s 一轮，上游一次挂 30s）。
+  // 同一时刻只允许一个长轮询在飞（上游一次挂 30s）。
   let polling = false
 
-  const handle = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
-    const url = new URL(request.url ?? '/', 'http://127.0.0.1')
-
-    if (url.pathname === KUKU_LOGIN_PAGE_PATHS.login) {
-      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-      response.end(renderKukuQrPage({
-        qrDataUrl: state.qrDataUrl,
-        pollPath: KUKU_LOGIN_PAGE_PATHS.poll,
-        reloadPath: KUKU_LOGIN_PAGE_PATHS.reload,
-        ttlSeconds: KUKU_QR_TTL_SECONDS,
-      }))
-      return
-    }
-
-    if (url.pathname === KUKU_LOGIN_PAGE_PATHS.reload) {
-      try {
-        state = await freshSession(fetcher, passportBase)
-        response.writeHead(302, { Location: KUKU_LOGIN_PAGE_PATHS.login }).end()
-      } catch (error) {
-        writeJson(response, { state: 'expired', error: errorText(error) })
-      }
-      return
-    }
-
-    if (url.pathname === KUKU_LOGIN_PAGE_PATHS.poll) {
-      if (settled) return writeJson(response, { state: 'confirmed' })
-      if (polling) return writeJson(response, { state: 'pending' })
-      polling = true
-      try {
-        const polled = await pollKukuQrStatus(state.session, flowOptions)
-        if (polled.state === 'confirmed' && polled.ticket !== undefined) {
-          // ticket → BDUSS/STOKEN 的交换放在这里做：页面只拿到状态，拿不到凭据。
-          const completed = await completeKukuQrLogin(state.session, polled.ticket, flowOptions)
-          settleOk(completed.credential)
-          writeJson(response, { state: 'confirmed' })
-          return
-        }
-        writeJson(response, { state: polled.state })
-      } catch (error) {
-        // 二维码过期 / 上游错误：让页面停下并显示刷新按钮，同时让 RPC 侧清掉占位账号。
-        settleErr(error)
-        writeJson(response, { state: 'expired', error: errorText(error) })
-      } finally {
-        polling = false
-      }
-      return
-    }
-
-    response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Not found')
+  const reload = async (): Promise<void> => {
+    state = await freshSession(fetcher, passportBase)
   }
 
-  const server = createServer((request, response) => {
-    void handle(request, response).catch((error: unknown) => {
-      try {
-        response.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' }).end(errorText(error))
-      } catch { /* 响应可能已发出 */ }
-    })
-  })
-
-  const port = await listenOnRandomPort(server)
-  const loginUrl = `http://127.0.0.1:${port}${KUKU_LOGIN_PAGE_PATHS.login}`
+  const poll = async (): Promise<KukuPollOutcome> => {
+    if (settled) return { state: 'confirmed' }
+    if (polling) return { state: 'pending' }
+    polling = true
+    try {
+      const polled = await pollKukuQrStatus(state.session, flowOptions)
+      if (polled.state === 'confirmed' && polled.ticket !== undefined) {
+        // ticket → BDUSS/STOKEN 的交换放在这里做：卡片只拿到状态，拿不到凭据。
+        const completed = await completeKukuQrLogin(state.session, polled.ticket, flowOptions)
+        settleOk(completed.credential)
+        return { state: 'confirmed' }
+      }
+      return polled.state === 'confirmed' ? { state: 'confirmed' } : { state: polled.state }
+    } catch (error) {
+      // 二维码过期 / 上游错误：卡片显示「刷新二维码」，RPC 侧清掉占位账号。
+      settleErr(error)
+      return { state: 'expired', error: error instanceof Error ? error.message : String(error) }
+    } finally {
+      polling = false
+    }
+  }
 
   let closed = false
   const close = async (): Promise<void> => {
     if (closed) return
     closed = true
     settleErr(new Error('kuku: 登录流程已关闭'))
-    server.closeAllConnections?.()
-    await new Promise<void>((resolve) => { server.close(() => resolve()) })
   }
 
   const timeoutMs = options.timeoutMs ?? KUKU_LOGIN_TIMEOUT_MS
@@ -174,32 +138,8 @@ export async function startKukuLoginFlow(options: {
 
   void result.catch(() => {}).finally(() => {
     clearTimeout(timer)
-    if (!closed) {
-      closed = true
-      server.closeAllConnections?.()
-      void new Promise<void>((resolve) => { server.close(() => resolve()) })
-    }
+    closed = true
   })
 
-  return { loginUrl, result, close }
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-function writeJson(response: ServerResponse, payload: unknown): void {
-  response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
-  response.end(JSON.stringify(payload))
-}
-
-function listenOnRandomPort(server: Server): Promise<number> {
-  return new Promise((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
-      if (typeof address === 'object' && address !== null) resolve(address.port)
-      else reject(new Error('无法获取本地端口'))
-    })
-  })
+  return { qrDataUrl: state.qrDataUrl, poll, reload, result, close }
 }

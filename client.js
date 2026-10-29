@@ -247,6 +247,16 @@ window.__ModuleLoader__.load({
         'chan.login.step1': '在浏览器中完成登录（若没有自动打开，点下面的按钮）。',
         'chan.login.step2': '登录成功后本页会自动完成，无需复制任何东西。',
         'chan.login.open': '打开登录页',
+        'chan.login.embedded.kuku': '请用百度 App 扫描二维码登录',
+        'chan.login.embedded.kukuHint': '二维码有效期约 3 分钟；过期后点「刷新二维码」。',
+        'chan.login.embedded.reload': '刷新二维码',
+        'chan.login.embedded.phone': '手机号',
+        'chan.login.embedded.phonePlaceholder': '11 位手机号',
+        'chan.login.embedded.send': '发送验证码',
+        'chan.login.embedded.sent': '已发送（{s} s 后可重发）',
+        'chan.login.embedded.code': '验证码',
+        'chan.login.embedded.codePlaceholder': '短信验证码',
+        'chan.login.embedded.submit': '登录',
         'chan.login.cancel': '取消',
         'chan.login.waiting': '已打开登录页，等待授权…（最长等待 10 分钟）',
         'chan.login.expired': '等待超时，请重新发起登录。',
@@ -729,6 +739,16 @@ window.__ModuleLoader__.load({
         'chan.login.step1': 'Finish the sign-in in your browser (if it did not open, use the button below).',
         'chan.login.step2': 'This page completes by itself once the browser flow does — nothing to copy.',
         'chan.login.open': 'Open sign-in page',
+        'chan.login.embedded.kuku': 'Scan the QR code with the Baidu app to sign in',
+        'chan.login.embedded.kukuHint': 'The QR code expires in ~3 minutes; tap Refresh when it does.',
+        'chan.login.embedded.reload': 'Refresh QR code',
+        'chan.login.embedded.phone': 'Phone',
+        'chan.login.embedded.phonePlaceholder': '11-digit phone number',
+        'chan.login.embedded.send': 'Send code',
+        'chan.login.embedded.sent': 'Sent ({s} s to resend)',
+        'chan.login.embedded.code': 'Code',
+        'chan.login.embedded.codePlaceholder': 'SMS code',
+        'chan.login.embedded.submit': 'Sign in',
         'chan.login.cancel': 'Cancel',
         'chan.login.waiting': 'Sign-in page opened; waiting for authorization… (up to 10 minutes)',
         'chan.login.expired': 'Timed out — please start the sign-in again.',
@@ -1491,6 +1511,19 @@ window.__ModuleLoader__.load({
 .ofm_skel::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent,rgb(255 255 255 / 8%) 42%,transparent 74%);animation:ofmshine 1.5s ease-in-out infinite}
 @keyframes ofmshine{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
 @keyframes ofmpulse{0%,100%{opacity:1}50%{opacity:.55}}
+/* ══ 卡片内嵌登录（kuku 二维码 / autoclaw 短信，2026-10-30）══════════════ */
+.ofm_embedlogin{display:flex;flex-direction:column;align-items:center;gap:10px;padding:4px 0}
+.ofm_embedqr{width:196px;height:196px;border-radius:12px;background:#fff;padding:8px;box-shadow:0 1px 8px rgba(0,0,0,.12)}
+.ofm_embedtext{font-size:13px;line-height:1.55;text-align:center}
+.ofm_embedtext.ofm_dim{font-size:11.5px;opacity:.68}
+.ofm_field{display:flex;flex-direction:column;gap:5px;align-self:stretch}
+.ofm_fieldlabel{font-size:11.5px;color:var(--dsw-alias-label-secondary)}
+.ofm_fieldrow{display:flex;gap:8px;align-items:flex-end;align-self:stretch}
+.ofm_fieldrow .ofm_grow{flex:1}
+.ofm_input{width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-primary, #d0d0d5);background:var(--dsw-alias-bg-primary, #fff);font-size:13px}
+.ofm_input:focus{outline:2px solid var(--dsw-alias-brand-primary, #4d6bfe);outline-offset:-1px}
+.ofm_embedmsg{font-size:12px;color:#c0392b;text-align:center;align-self:stretch}
+
 /* ══ 登录引导 ══════════════════════════════════════════════════════════ */
 .ofm_loginbody{display:flex;flex-direction:column;gap:14px}
 .ofm_loginstep{display:flex;gap:11px;align-items:flex-start;font-size:12.5px;line-height:1.6;color:var(--dsw-alias-label-secondary)}
@@ -3364,7 +3397,19 @@ window.__ModuleLoader__.load({
               try { window.open(url, '_blank', 'noopener') } catch { /* the modal offers the link too */ }
             }
           } else { closeLoginPopup(attempt.popup); attempt.popup = null }
-          setLogin({ accountId, url: typeof url === 'string' ? url : '', startedAt: Date.now() })
+          // 卡片内嵌登录（2026-10-30）：kuku 扫码 / autoclaw 短信不再弹本地页
+          //（127.0.0.1 远程浏览器打不开），account.create 直接回 flowId 与二维码，
+          // 由本卡片渲染并经 DSH 路由驱动。url 存在与否区分两种形态。
+          const loginKind = value?.loginKind === 'kuku-qr' || value?.loginKind === 'autoclaw-sms'
+            ? value.loginKind : null
+          setLogin({
+            accountId,
+            url: typeof url === 'string' ? url : '',
+            loginKind,
+            flowId: loginKind === null ? '' : String(value?.flowId ?? ''),
+            qrDataUrl: loginKind === 'kuku-qr' ? String(value?.qrDataUrl ?? '') : '',
+            startedAt: Date.now(),
+          })
           setOpen('accounts')
         } catch (error) {
           closeLoginPopup(attempt.popup)
@@ -3379,6 +3424,8 @@ window.__ModuleLoader__.load({
 
       // Poll the placeholder until its credential lands. Ten minutes matches the
       // window the pack keeps a pending login link alive for.
+      // 卡片内嵌形态（kuku）另外驱动服务端长轮询：poll 是上游 ~30s 的长轮询，
+      // 所以它的间隔独立（1.2s 发一次，服务端自己做单飞合并）。
       useEffect(() => {
         if (login === null) return undefined
         let alive = true
@@ -3409,6 +3456,33 @@ window.__ModuleLoader__.load({
         }, 3000)
         return () => { alive = false; clearInterval(timer) }
       }, [login, rpc, channel.id, t, onChanged, loadAccounts, loadCredits, loadBalances])
+
+      // kuku 卡片：驱动服务端轮询上游扫码状态。expired → 换一张二维码重试。
+      useEffect(() => {
+        if (login?.loginKind !== 'kuku-qr' || login.flowId === '') return undefined
+        let alive = true
+        let busy = false
+        const timer = setInterval(async () => {
+          if (busy || !alive) return
+          busy = true
+          try {
+            const response = await fetch(`/api/channel-pack/login/kuku/poll?flow=${encodeURIComponent(login.flowId)}`, { method: 'GET' })
+            const value = await response.json().catch(() => null)
+            if (!alive || loginAttempt.current === null) return
+            if (value?.state === 'expired') {
+              try {
+                const reload = await fetch(`/api/channel-pack/login/kuku/reload?flow=${encodeURIComponent(login.flowId)}`, { method: 'GET' })
+                const next = await reload.json().catch(() => null)
+                if (typeof next?.qrDataUrl === 'string' && next.qrDataUrl !== '') {
+                  setLogin(prev => (prev === null ? prev : { ...prev, qrDataUrl: next.qrDataUrl }))
+                }
+              } catch { /* 下轮再试 */ }
+            }
+          } catch { /* 网络抖动：下一轮继续 */ }
+          finally { busy = false }
+        }, 1500)
+        return () => { alive = false; clearInterval(timer) }
+      }, [login?.loginKind, login?.flowId])
 
       const accountAction = async (key, accountId, fn) => {
         setBusy(key); setNotice('')
@@ -3765,17 +3839,101 @@ window.__ModuleLoader__.load({
                   }),
                 }, model.dead === true ? t('chan.model.restore') : model.disabled === true ? t('chan.model.on') : t('chan.model.off'))))))) : null)
 
+      // ── 卡片内嵌登录（2026-10-30）：kuku 二维码 / autoclaw 短信表单 ──
+      // 这两个渠道不再有 127.0.0.1 本地页（远程浏览器打不开），状态直接渲染在
+      // 渠道卡片里；成功/失败仍由 login.poll 收尾（见上方 effect）。
+      const [smsPhone, setSmsPhone] = useState('')
+      const [smsCode, setSmsCode] = useState('')
+      const [smsSentAt, setSmsSentAt] = useState(0)
+      const [smsBusy, setSmsBusy] = useState(false)
+      const [smsMessage, setSmsMessage] = useState('')
+
+      const embeddedLogin = login?.loginKind === 'kuku-qr' || login?.loginKind === 'autoclaw-sms'
+        ? login : null
+      const embeddedBody = (() => {
+        if (embeddedLogin === null) return null
+        if (embeddedLogin.loginKind === 'kuku-qr') {
+          return h('div', { className: 'ofm_embedlogin' },
+            h('img', { className: 'ofm_embedqr', src: embeddedLogin.qrDataUrl, alt: 'QR' }),
+            h('div', { className: 'ofm_embedtext strong' }, t('chan.login.embedded.kuku')),
+            h('div', { className: 'ofm_embedtext ofm_dim' }, t('chan.login.embedded.kukuHint')),
+            h('button', {
+              type: 'button', className: 'ofm_btn ghost',
+              onClick: async () => {
+                try {
+                  const response = await fetch(`/api/channel-pack/login/kuku/reload?flow=${encodeURIComponent(embeddedLogin.flowId)}`, { method: 'GET' })
+                  const next = await response.json().catch(() => null)
+                  if (typeof next?.qrDataUrl === 'string' && next.qrDataUrl !== '') {
+                    setLogin(prev => (prev === null ? prev : { ...prev, qrDataUrl: next.qrDataUrl }))
+                  }
+                } catch { /* 下轮轮询会再试 */ }
+              },
+            }, t('chan.login.embedded.reload')))
+        }
+        // autoclaw 短信表单
+        const waitSeconds = smsSentAt === 0 ? 0 : Math.max(0, 60 - Math.round((Date.now() - smsSentAt) / 1000))
+        return h('div', { className: 'ofm_embedlogin' },
+          h('label', { className: 'ofm_field' },
+            h('span', { className: 'ofm_fieldlabel' }, t('chan.login.embedded.phone')),
+            h('input', {
+              className: 'ofm_input', type: 'tel', inputMode: 'numeric', maxLength: 14,
+              placeholder: t('chan.login.embedded.phonePlaceholder'),
+              value: smsPhone, onInput: event => setSmsPhone(event.target.value),
+            })),
+          h('div', { className: 'ofm_fieldrow' },
+            h('label', { className: 'ofm_field ofm_grow' },
+              h('span', { className: 'ofm_fieldlabel' }, t('chan.login.embedded.code')),
+              h('input', {
+                className: 'ofm_input', type: 'text', inputMode: 'numeric', maxLength: 8,
+                placeholder: t('chan.login.embedded.codePlaceholder'),
+                value: smsCode, onInput: event => setSmsCode(event.target.value),
+              })),
+            h('button', {
+              type: 'button', className: 'ofm_btn', disabled: smsBusy || waitSeconds > 0 || smsPhone.trim() === '',
+              onClick: async () => {
+                setSmsBusy(true); setSmsMessage('')
+                try {
+                  const response = await fetch(`/api/channel-pack/login/autoclaw/send?flow=${encodeURIComponent(embeddedLogin.flowId)}`, {
+                    method: 'POST', headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ phone: smsPhone }),
+                  })
+                  const value = await response.json().catch(() => null)
+                  if (value?.ok === true) { setSmsSentAt(Date.now()); setSmsMessage('') }
+                  else setSmsMessage(value?.message ?? '发送失败')
+                } catch (error) { setSmsMessage(error instanceof Error ? error.message : String(error)) }
+                finally { setSmsBusy(false) }
+              },
+            }, smsBusy ? '…' : waitSeconds > 0 ? t('chan.login.embedded.sent').replace('{s}', String(waitSeconds)) : t('chan.login.embedded.send'))),
+          smsMessage === '' ? null : h('div', { className: 'ofm_embedmsg' }, smsMessage),
+          h('button', {
+            type: 'button', className: 'ofm_btn primary', disabled: smsBusy || smsCode.trim() === '' || smsPhone.trim() === '',
+            onClick: async () => {
+              setSmsBusy(true); setSmsMessage('')
+              try {
+                const response = await fetch(`/api/channel-pack/login/autoclaw/verify?flow=${encodeURIComponent(embeddedLogin.flowId)}`, {
+                  method: 'POST', headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ code: smsCode }),
+                })
+                const value = await response.json().catch(() => null)
+                if (value?.ok !== true) setSmsMessage(value?.message ?? '登录失败')
+              } catch (error) { setSmsMessage(error instanceof Error ? error.message : String(error)) }
+              finally { setSmsBusy(false) }
+            },
+          }, smsBusy ? '…' : t('chan.login.embedded.submit')))
+      })()
+
       const modal = login === null ? null : h('div', { className: 'ofm_scrim' },
         h('div', { className: 'ofm_modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('chan.login.title').replace('{name}', channel.name) },
           h('div', { className: 'ofm_modalhead' }, t('chan.login.title').replace('{name}', channel.name)),
           h('div', { className: 'ofm_modalbody ofm_loginbody' },
-            h('div', { className: 'ofm_loginstep' }, h('b', null, '1'), h('span', null, t('chan.login.step1'))),
-            h('div', { className: 'ofm_loginstep' }, h('b', null, '2'), h('span', null, t('chan.login.step2'))),
-            login.url === '' ? null : h('code', { className: 'ofm_mono', style: { wordBreak: 'break-all', whiteSpace: 'pre-wrap' } }, login.url),
-            h('p', { className: 'ofm_note ofm_scanline' }, t('chan.login.waiting'))),
+            embeddedBody !== null ? embeddedBody : h('div', { className: 'ofm_loginbody' },
+              h('div', { className: 'ofm_loginstep' }, h('b', null, '1'), h('span', null, t('chan.login.step1'))),
+              h('div', { className: 'ofm_loginstep' }, h('b', null, '2'), h('span', null, t('chan.login.step2'))),
+              login.url === '' ? null : h('code', { className: 'ofm_mono', style: { wordBreak: 'break-all', whiteSpace: 'pre-wrap' } }, login.url),
+              h('p', { className: 'ofm_note ofm_scanline' }, t('chan.login.waiting')))),
           h('div', { className: 'ofm_modalfoot' },
-            login.url === '' ? null : h('a', { className: 'ofm_btn primary', href: login.url, target: '_blank', rel: 'noreferrer noopener' }, t('chan.login.open')),
-            h('button', { type: 'button', className: 'ofm_btn ghost', onClick: () => setLogin(null) }, t('chan.login.cancel')))))
+            embeddedLogin === null && login.url !== '' ? h('a', { className: 'ofm_btn primary', href: login.url, target: '_blank', rel: 'noreferrer noopener' }, t('chan.login.open')) : null,
+            h('button', { type: 'button', className: 'ofm_btn ghost', onClick: () => { setLogin(null); setSmsMessage(''); setSmsCode('') } }, t('chan.login.cancel')))))
 
       return h(Fragment, null, card, modal)
     }

@@ -147,8 +147,8 @@ export async function verifyAutoclawSms() {
   assert.equal((await sms.loginAutoclawWithCode({ product: AUTOCLAW, fetcher: noNetwork, phone: '17683839846', code: 'abc', deviceId })).ok, false)
 
 
-  // 7) 本地登录页端到端（照 raccoon 范式）：起页 → 发码 → 提交验证码 → result 落定。
-  //    fetcher 注入本地假上游，全程不联网；页面只拿到状态，拿不到 token。
+  // 7) 卡片内嵌流程端到端（2026-10-30 改版，本地页已删）：发码 → 提交验证码 → result 落定。
+  //    fetcher 注入本地假上游，全程不联网；卡片只拿到状态，拿不到 token。
   const page = await import('../vendor/channel-pack/src/autoclaw-login-page.ts')
   const upstream = async (input, init) => {
     const url = String(input)
@@ -166,14 +166,14 @@ export async function verifyAutoclawSms() {
     throw new Error(`假上游没有该端点：${url} ${init?.method ?? 'GET'}`)
   }
   const started = await page.startAutoclawLoginFlow({ product: AUTOCLAW, fetcher: upstream, deviceId, timeoutMs: 5000 })
-  assert.match(started.loginUrl, /^http:\/\/127\.0\.0\.1:\d+\/autoclaw\/login$/)
-  const origin = new URL(started.loginUrl).origin
-  const pageResponse = await localCall(started.loginUrl)
-  assert.equal(pageResponse.status, 200)
-  assert.match(pageResponse.text, /发送验证码/, '登录页必须包含发码按钮')
-  const sendResponse = JSON.parse((await localCall(`${origin}${page.AUTOCLAW_LOGIN_PAGE_PATHS.smsSend}`, { phone: '+8617683839846' })).text)
+  assert.equal(started.loginUrl, undefined, '卡片形态不再有本地页 URL')
+  const sendResponse = await started.sendCode('+8617683839846')
   assert.deepEqual(sendResponse, { ok: true })
-  const verifyResponse = JSON.parse((await localCall(`${origin}${page.AUTOCLAW_LOGIN_PAGE_PATHS.smsVerify}`, { code: '645067' })).text)
+  // 服务端 60 秒冷却：立刻再发必须被拒且带等待秒数
+  const throttled = await started.sendCode('+8617683839846')
+  assert.equal(throttled.ok, false)
+  assert.match(throttled.message ?? '', /秒后再试/, '发码必须有服务端冷却')
+  const verifyResponse = await started.verify('645067')
   assert.deepEqual(verifyResponse, { ok: true })
   const settled = await started.result
   assert.equal(settled.account_id, 'fixture-uuid')
@@ -218,7 +218,7 @@ export async function verifyAutoclawSms() {
 
   assert.equal((await sms.refreshAutoclawCredential({ product: AUTOCLAW, fetcher: noNetwork, credential: { access_token: 'x' } })).ok, false, '没有 refresh_token 必须拒绝且不发请求')
 
-  console.log('ok  autoclaw-sms: 签名/手机号归一/发码与登录请求形状/JWT exp 优先/UUID user_id/Bearer 剥离/错误透传/本地页端到端/续期与端点回退')
+  console.log('ok  autoclaw-sms: 签名/手机号归一/发码与登录请求形状/JWT exp 优先/UUID user_id/Bearer 剥离/错误透传/卡片内嵌流程端到端(含冷却)/续期与端点回退')
 }
 
 // 单独运行时必须失败（不能静默 exit 0）：见 scripts/lib/direct-run.mjs。
