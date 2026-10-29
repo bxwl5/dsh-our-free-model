@@ -1947,22 +1947,51 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
       try {
         const next = await refreshOne(credential)
         await ctx.credentials.set(credentialRef(entry.credentialRef), JSON.stringify(next))
+        // ⚠ 必须把新的到期时间写回账号池：否则面板徽标永远显示旧的「已过期」，
+        // 而凭据其实已经续好（用户无从判断）。codearts 的 syncAccountExpiry 同因。
+        const nextExpiry = expiresAtOf(next)
+        if (nextExpiry !== undefined && nextExpiry !== entry.expiresAt) {
+          await pool.updateAccount(entry.id, { expiresAt: nextExpiry })
+        }
       } catch (error) {
         ctx.logger?.warn?.(`[channel-pack] ${providerId} 账号 ${entry.id} 续期失败: ${String(error)}`)
       }
     }
   }
 
+  /**
+   * OfficeAce refresh_token 一次性轮换的**并发去重闸**。
+   *
+   * ⚠ 键必须是**凭据身份**（refresh_token 本身），不是渠道 id：同渠道多账号
+   * 并发续期时按渠道键控会让 B 共享 A 的结果（magpie officeace-auth 的实测教训）。
+   * 同一份 token 被两条路径同时续期 ⇒ 后一个撞 `STS5.1806 token has been used`，
+   * 而服务端已经消费掉它 ⇒ 续期链被打死、只能重新登录。
+   */
+  const officeAceRefreshInFlight = new Map<string, Promise<unknown>>()
+
   const refreshOfficeAceAccounts = (p: AccountPool) => refreshExpiringAccounts(
     p,
     OFFICEACE.id,
     (value) => typeof (value as OfficeAceCredential | undefined)?.refresh_token === 'string'
       && (value as OfficeAceCredential).refresh_token !== '',
+    // ⚠ 字段名是 `expire_time`（OfficeAceCredential 的定义），不是 `expires_at`。
+    // 早期写成 `expires_at` ⇒ 恒为 undefined ⇒ lead 窗口判据失效 ⇒ **每 30 分钟
+    // 无条件续期一次**，把一次性 refresh_token 白白烧掉（2026-10-29 实测：
+    // 凭据 STS 停在 09:31 过期 10 小时无人续期，倍率/签到全部 APIG.0602）。
     (value) => {
-      const raw = (value as OfficeAceCredential | undefined)?.expires_at
+      const raw = (value as OfficeAceCredential | undefined)?.expire_time
       return typeof raw === 'number' ? raw : undefined
     },
-    async (value) => refreshOfficeAceCredential(fetch, OFFICEACE, value as OfficeAceCredential),
+    async (value) => {
+      const credential = value as OfficeAceCredential
+      const key = credential.refresh_token ?? ''
+      const pending = officeAceRefreshInFlight.get(key)
+      if (pending !== undefined) return pending
+      const task = refreshOfficeAceCredential(fetch, OFFICEACE, credential)
+        .finally(() => officeAceRefreshInFlight.delete(key))
+      officeAceRefreshInFlight.set(key, task)
+      return task
+    },
   )
 
   const refreshAutoclawAccounts = (p: AccountPool) => refreshExpiringAccounts(

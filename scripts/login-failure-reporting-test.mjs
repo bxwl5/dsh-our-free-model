@@ -36,3 +36,20 @@ assert.ok(checked >= 14, `只找到 ${checked} 处后台登录 catch，明显少
 assert.deepEqual(failures, [], `以下分支只写日志、没有上报失败原因：\n${failures.join('\n')}`)
 
 console.log(`ok  login-failure-reporting: ${checked} 处后台登录失败均会上报给 login.poll`)
+
+// ── OfficeAce 续期判据的字段名守卫（2026-10-29 实测缺陷）──────────────────────
+// 旧实现读 `expires_at`（OfficeAceCredential 里不存在，字段名是 `expire_time`），
+// 导致 lead 窗口判据恒为 undefined ⇒ 每 30 分钟无条件续期、烧掉一次性
+// refresh_token ⇒ 续期链被 1806 打死（现场：STS 停在 09:31，10 小时无人续期，
+// 倍率/签到全部 APIG.0602）。这里做静态守卫，防止字段名再次写错。
+{
+  const indexSource = readFileSync(new URL('../vendor/channel-pack/src/index.ts', import.meta.url), 'utf8')
+  const start = indexSource.indexOf('const refreshOfficeAceAccounts')
+  assert.ok(start > 0, 'refreshOfficeAceAccounts 不见了')
+  const block = indexSource.slice(start, start + 2000)
+  assert.match(block, /expire_time/, 'OfficeAce 续期判据必须读 expire_time')
+  assert.doesNotMatch(block, /\?\.expires_at/, 'OfficeAce 凭据没有 expires_at 字段（写错会让 lead 判据失效）')
+  assert.match(block, /officeAceRefreshInFlight/, 'refresh_token 一次性轮换必须有并发去重闸')
+  assert.match(block, /refresh_token \?\? ''/, '去重键必须是凭据身份（refresh_token）而不是渠道 id')
+  console.log('ok  officeace 续期：判据读 expire_time、去重键用 refresh_token')
+}

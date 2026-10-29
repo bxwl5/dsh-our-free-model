@@ -75721,20 +75721,37 @@ function apply(ctx, config = {}) {
       try {
         const next = await refreshOne(credential);
         await ctx.credentials.set(credentialRef15(entry.credentialRef), JSON.stringify(next));
+        const nextExpiry = expiresAtOf(next);
+        if (nextExpiry !== void 0 && nextExpiry !== entry.expiresAt) {
+          await pool2.updateAccount(entry.id, { expiresAt: nextExpiry });
+        }
       } catch (error) {
         ctx.logger?.warn?.(`[channel-pack] ${providerId} \u8D26\u53F7 ${entry.id} \u7EED\u671F\u5931\u8D25: ${String(error)}`);
       }
     }
   }
+  const officeAceRefreshInFlight = /* @__PURE__ */ new Map();
   const refreshOfficeAceAccounts = (p) => refreshExpiringAccounts(
     p,
     OFFICEACE.id,
     (value) => typeof value?.refresh_token === "string" && value.refresh_token !== "",
+    // ⚠ 字段名是 `expire_time`（OfficeAceCredential 的定义），不是 `expires_at`。
+    // 早期写成 `expires_at` ⇒ 恒为 undefined ⇒ lead 窗口判据失效 ⇒ **每 30 分钟
+    // 无条件续期一次**，把一次性 refresh_token 白白烧掉（2026-10-29 实测：
+    // 凭据 STS 停在 09:31 过期 10 小时无人续期，倍率/签到全部 APIG.0602）。
     (value) => {
-      const raw = value?.expires_at;
+      const raw = value?.expire_time;
       return typeof raw === "number" ? raw : void 0;
     },
-    async (value) => refreshOfficeAceCredential(fetch, OFFICEACE, value)
+    async (value) => {
+      const credential = value;
+      const key = credential.refresh_token ?? "";
+      const pending = officeAceRefreshInFlight.get(key);
+      if (pending !== void 0) return pending;
+      const task = refreshOfficeAceCredential(fetch, OFFICEACE, credential).finally(() => officeAceRefreshInFlight.delete(key));
+      officeAceRefreshInFlight.set(key, task);
+      return task;
+    }
   );
   const refreshAutoclawAccounts = (p) => refreshExpiringAccounts(
     p,
