@@ -994,6 +994,43 @@ export async function verifyQoderCatalog() {
  * ⚠️ 断言的是「不编造」：没有倍率字段时**不能**显示 `x1`，
  * 按量计费的单价**不能**当成倍率。
  */
+/**
+ * CodeArts 模型目录：**兜底表只兜底、绝不混入远端结果**（用户规则）。
+ *
+ * 历史先例：`buddy-adapter` 的 `reconcileWithFallback()` 曾把兜底表条目并进
+ * 远端列表，留下「远端根本没下发、永远没有倍率」的行，2026-10-28 删除。
+ * 本用例把 CodeArts 的语义钉死：
+ *   1. 远端拉到 → 列表**恰好等于**远端（兜底表里的 `GLM-5.1` 等不得出现）；
+ *   2. 远端从没拉到过 → 用兜底表顶上（不是空列表）。
+ */
+export async function verifyCodeArtsCatalogFallbackBoundary() {
+  const assert = (await import('node:assert/strict')).default
+  const { CodeArtsAdapter } = await import('../vendor/channel-pack/src/llm-adapter.ts')
+
+  const makeAdapter = (remote) => new CodeArtsAdapter({
+    credentialRef: 'FIXTURE',
+    resolveCredential: async () => ({ access_key_id: 'ak', secret_access_key: 'sk', security_token: 'st', expires_at: '' }),
+    refresh: async () => {},
+    fetchRemoteModels: async () => remote,
+  })
+
+  // ① 远端成功：整份替换，且**不含**兜底表条目
+  const remoteOnly = [['remote-a', 'Remote A'], ['remote-b', 'Remote B']]
+  const adapter = makeAdapter(remoteOnly.map(([id, name]) => ({ id, name })))
+  const listed = (await adapter.listModels('codearts')).map((m) => m.id)
+  assert.deepEqual(listed, ['remote-a', 'remote-b'], '远端拉到即整份替换')
+  assert.equal(listed.includes('GLM-5.1'), false, '兜底表条目不得混入远端结果')
+  assert.equal(listed.includes('glm-5.3-flash'), false, '兜底表条目不得混入远端结果（benefit 组）')
+
+  // ② 远端从没拉到过（空数组 = 拉取失败/首启）：兜底表顶上
+  const fallbackOnly = makeAdapter([])
+  const fallback = (await fallbackOnly.listModels('codearts')).map((m) => m.id)
+  assert.ok(fallback.length > 0, '没有远端时必须用兜底表，而不是空列表')
+  assert.ok(fallback.includes('GLM-5.1'), '兜底表内容生效（GLM-5.1 只在表里）')
+
+  console.log('ok  codearts 目录边界：远端整份替换（不混入兜底）／无远端才用兜底表')
+}
+
 export async function verifyRemoteCatalogFields() {
   const assert = (await import('node:assert/strict')).default
   const { parseKukuCatalog, kukuDisplayName } = await import('../vendor/channel-pack/src/kuku-adapter.ts')

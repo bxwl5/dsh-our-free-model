@@ -35,6 +35,27 @@ const BENEFIT_NOT_FOUND_CODE = 'BENEFIT_NOT_FOUND'
 /** CodeArts 在账号没有 benefit 包时下发的事件 error_code。 */
 const CODEARTS_BENEFIT_NOT_FOUND_ERROR_CODE = 'InferHub.4004.200'
 
+/**
+ * 编译期兜底目录：**只在「从来没拉到过远端」时使用**（新机器首启、断网）。
+ *
+ * ## 与远端的关系（用户 2026-10-27 定的规则，2026-10-29 再次确认）
+ * - 远端拉到 → **整份替换**（`remoteModels` 覆盖），兜底表不参与、不并集；
+ * - 远端拉不到/还没拉 → 才用这张表顶上；
+ * - **绝不能把兜底表条目混进远端结果**。历史先例：`buddy-adapter` 的
+ *   `reconcileWithFallback()`（兜底表打底 + 远端补字段 + 追加 agentReferenced）
+ *   会在列表里留下「远端根本没下发、因而永远没有倍率」的行，2026-10-28 已删除。
+ *
+ * 内容口径：`gateway/config` 下发的 benefit 那组（无日期后缀形态 —— 无后缀始终
+ * 可用、不依赖 benefit 头；`deepseek-v4.1-flash` 只有 benefit 形态）。
+ */
+const DEFAULT_MODELS: readonly string[] = [
+  'GLM-5.2', 'GLM-5.1', 'GLM-5',
+  'glm-5.3-flash',
+  'openpangu-2.0-flash', 'openpangu-2.0-pro',
+  'deepseek-v4-flash', 'deepseek-v4-pro',
+  'deepseek-v4.1-flash',
+]
+
 // DeepSeek V4（CodeArts Agent 模型列表新增，UI 标注"每日 1000 万免费 Tokens"福利）：
 //
 // 修正（2026-09-23，对齐 deveco-code-rust fb1b4a2）：早期注释称
@@ -961,11 +982,12 @@ export class CodeArtsAdapter extends LlmAdapter {
   /** 目录来源：内存 → 磁盘快照 → 编译期默认表。 */
   private catalogSource(): readonly { id: string; name: string; rate?: number }[] {
     this.restoreFromDisk()
-    // ⚠ 2026-10-29（用户要求）：**删掉编译期兜底表**，模型清单只看远端
-    // （启动时由 `refreshModels` 拉取并落盘，离线读上次成功的快照）。
-    // 远端还没拉到过时返回空数组 —— listModels 的调用方会因此隐藏该渠道分组，
-    // 比显示一批早已下架的静态 id 诚实。
-    return this.remoteModels ?? []
+    // ⚠ 用户规则（2026-10-27 定、2026-10-29 再次确认）：
+    //   - 远端拉到 → **整份替换**（`this.remoteModels` 直接就是远端结果）；
+    //   - 远端从没拉到过（新机器首启/断网/无快照）→ 用编译期兜底表顶上；
+    //   - **绝不并集**：兜底表条目不得混进远端结果（先例见 DEFAULT_MODELS 注释）。
+    // 这里用 `??` 正是该语义 —— 不是 `[...remote, ...fallback]`。
+    return this.remoteModels ?? DEFAULT_MODELS.map((id) => ({ id, name: id }))
   }
 
   /**

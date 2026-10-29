@@ -37873,6 +37873,17 @@ var CHAT_API_BASE = "https://snap-access.cn-north-4.myhuaweicloud.com/api/v2";
 var PROVIDER = "codearts";
 var BENEFIT_NOT_FOUND_CODE = "BENEFIT_NOT_FOUND";
 var CODEARTS_BENEFIT_NOT_FOUND_ERROR_CODE = "InferHub.4004.200";
+var DEFAULT_MODELS = [
+  "GLM-5.2",
+  "GLM-5.1",
+  "GLM-5",
+  "glm-5.3-flash",
+  "openpangu-2.0-flash",
+  "openpangu-2.0-pro",
+  "deepseek-v4-flash",
+  "deepseek-v4-pro",
+  "deepseek-v4.1-flash"
+];
 var CONTEXT_WINDOWS = /* @__PURE__ */ new Map([
   ["GLM-5.2", 202752],
   ["glm-5.3-flash", 1048576],
@@ -38329,7 +38340,7 @@ var CodeArtsAdapter = class extends LlmAdapter {
   /** 目录来源：内存 → 磁盘快照 → 编译期默认表。 */
   catalogSource() {
     this.restoreFromDisk();
-    return this.remoteModels ?? [];
+    return this.remoteModels ?? DEFAULT_MODELS.map((id) => ({ id, name: id }));
   }
   /**
    * 完整模型目录（**不应用用户黑名单**）。
@@ -40072,7 +40083,7 @@ function isPositiveFinite(value) {
 function isDeepSeekModel(model) {
   return /^deepseek/i.test(model.trim());
 }
-var DEFAULT_MODELS = [
+var DEFAULT_MODELS2 = [
   "deepseek-v4-flash",
   "deepseek-v4-pro",
   "hy4-preview",
@@ -40675,7 +40686,7 @@ var BuddyAdapter = class _BuddyAdapter extends LlmAdapter2 {
     if (productModels !== void 0 && productModels.length > 0) {
       return productModels.map((model) => ({ id: model.id, name: model.name }));
     }
-    return DEFAULT_MODELS.map((id) => ({ id, name: id }));
+    return DEFAULT_MODELS2.map((id) => ({ id, name: id }));
   }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
