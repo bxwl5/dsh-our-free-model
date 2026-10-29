@@ -495,9 +495,11 @@ import{c as mo,R as po,r as Y,j as N,N as uo,S as dt,C as fo,B as ua,a as za,b a
 .ofm_fieldlabel{font-size:11.5px;color:var(--dsw-alias-label-secondary)}
 .ofm_fieldrow{display:flex;gap:8px;align-items:flex-end;align-self:stretch}
 .ofm_fieldrow .ofm_grow{flex:1}
-.ofm_input{width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-primary, #d0d0d5);background:var(--dsw-alias-bg-primary, #fff);font-size:13px}
-.ofm_input:focus{outline:2px solid var(--dsw-alias-brand-primary, #4d6bfe);outline-offset:-1px}
-.ofm_embedmsg{font-size:12px;color:#c0392b;text-align:center;align-self:stretch}
+/* ⚠ 输入框样式复用面板既有的 .ofm_input（1164 行起，dsw-alias-* 主题感知）——
+   不要在这里再定义一份：硬编码浅色 fallback 会覆盖主题变量，
+   深色模式下表现为「白底白字」（2026-10-30 用户实测）。 */
+.ofm_field .ofm_input{font-size:13px;padding:8px 10px}
+.ofm_embedmsg{font-size:12px;color:var(--dsw-alias-state-danger-primary,#d93025);text-align:center;align-self:stretch}
 
 /* ══ 登录引导 ══════════════════════════════════════════════════════════ */
 .ofm_loginbody{display:flex;flex-direction:column;gap:14px}
