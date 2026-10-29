@@ -3468,7 +3468,7 @@ window.__ModuleLoader__.load({
           try {
             const response = await fetch(`/api/channel-pack/login/kuku/poll?flow=${encodeURIComponent(login.flowId)}`, { method: 'GET' })
             const value = await response.json().catch(() => null)
-            if (!alive || loginAttempt.current === null) return
+            if (!alive) return
             if (value?.state === 'expired') {
               try {
                 const reload = await fetch(`/api/channel-pack/login/kuku/reload?flow=${encodeURIComponent(login.flowId)}`, { method: 'GET' })

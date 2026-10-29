@@ -252,8 +252,20 @@ export const CHANNEL_PACK_API_PATH = '/api/channel-pack'
  *   因而带得上那份会话 cookie，属 Task 5 的**实测项**，不在这里放宽。
  */
 export const CAPTCHA_CARRIER_PATH = '/api/channel-pack/captcha-carrier'
-/** 卡片内嵌登录流程的驱动路由前缀（kuku 轮询/刷新、autoclaw 发码/验证）。 */
-export const EMBEDDED_LOGIN_BASE_PATH = '/api/channel-pack/login' 
+/**
+ * 卡片内嵌登录流程的驱动路由（**4 条精确路径**，2026-10-30 深夜修）。
+ *
+ * ⚠⚠ 初版注册成一条前缀 `/api/channel-pack/login`，靠 handler 内解析子路径
+ * 分发——**不可用**：dsh 分发器按 `fetchRoutes.get(pathname)` **精确匹配完整
+ * pathname**（本文件 captcha-carrier 注释已记录该机制），`/api/channel-pack/
+ * login/kuku/poll` 这样的子路径永远轮不到 handler。症状：kuku 二维码出现了但
+ * 扫码无反应（没人驱动服务端长轮询）、autoclaw 发码一直失败（请求 404）。
+ * 修复 = 拆成 4 条整路径注册，与 captcha-carrier 同范式。
+ */
+export const KUKU_POLL_PATH = '/api/channel-pack/login/kuku/poll'
+export const KUKU_RELOAD_PATH = '/api/channel-pack/login/kuku/reload'
+export const AUTOCLAW_SEND_PATH = '/api/channel-pack/login/autoclaw/send'
+export const AUTOCLAW_VERIFY_PATH = '/api/channel-pack/login/autoclaw/verify' 
 /** Gateway RPC 端点名（connection.rpc.call 的 endpoint 参数） */
 const CHANNEL_PACK_ENDPOINT = 'channel-pack'
 
@@ -1263,50 +1275,77 @@ function registerChannelPackEndpoints(
    * flowId 是 account.create 发给前端的随机短 ID；未知/已清理的 flowId 一律 404。
    * autoclaw 的手机号/验证码校验在流程对象里（与旧本地页同一套实现）。
    */
+  /** 组标准 JSON 响应（no-store：扫码/短信状态都不得缓存）。 */
+  const embeddedJson = (payload: unknown, status = 200): Response =>
+    new Response(JSON.stringify(payload), {
+      status,
+      headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+    })
+
+  // 按流程类型取对象：两条 kuku 路由只要 KukuLoginFlow，两条 autoclaw 只要 AutoclawLoginFlow，
+  // 类型不匹配（同 flowId 不可能，防御）一律按未知处理 → 404。
   connection.fetch.register({
-    path: EMBEDDED_LOGIN_BASE_PATH,
-    methods: ['GET', 'POST'],
+    path: KUKU_POLL_PATH,
+    methods: ['GET'],
     requestBody: 'buffered' as const,
     async fetch(request: Request): Promise<Response> {
-      const url = new URL(request.url ?? '/', 'http://127.0.0.1')
-      // dsh 分发器按注册 path 精确匹配路由；带子路径的请求可能落到这里，先判 404。
-      const parts = url.pathname.slice(EMBEDDED_LOGIN_BASE_PATH.length).split('/').filter(Boolean)
-      const [channel, action] = parts
-      const flowId = url.searchParams.get('flow') ?? ''
+      if (request.method !== 'GET') return embeddedJson({ error: 'method not allowed' }, 405)
+      const flowId = new URL(request.url ?? '/', 'http://127.0.0.1').searchParams.get('flow') ?? ''
       const flow = flowId === '' ? undefined : embeddedLoginFlows.get(flowId)
-
-      const json = (payload: unknown, status = 200): Response =>
-        new Response(JSON.stringify(payload), {
-          status,
-          headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
-        })
-
-      if (channel === 'kuku' && flow !== undefined && !('sendCode' in flow)) {
-        const kuku = flow as KukuLoginFlow
-        if (action === 'poll' && request.method === 'GET') return json(await kuku.poll())
-        if (action === 'reload' && request.method === 'GET') {
-          try {
-            await kuku.reload()
-            return json({ qrDataUrl: kuku.qrDataUrl })
-          } catch (error) {
-            return json({ state: 'expired', error: error instanceof Error ? error.message : String(error) })
-          }
-        }
+      if (flow === undefined || !('poll' in flow)) return embeddedJson({ error: 'not found' }, 404)
+      try {
+        return embeddedJson(await (flow as KukuLoginFlow).poll())
+      } catch (error) {
+        return embeddedJson({ state: 'expired', error: error instanceof Error ? error.message : String(error) })
       }
+    },
+  })
 
-      if (channel === 'autoclaw' && flow !== undefined && 'sendCode' in flow) {
-        const sms = flow as AutoclawLoginFlow
-        if (request.method === 'POST' && (action === 'send' || action === 'verify')) {
-          let body: Record<string, unknown> = {}
-          try { body = await request.json() as Record<string, unknown> } catch { /* 空/坏体按空处理 */ }
-          const result = action === 'send'
-            ? await sms.sendCode(typeof body.phone === 'string' ? body.phone : '')
-            : await sms.verify(typeof body.code === 'string' ? body.code : '')
-          return json(result)
-        }
+  connection.fetch.register({
+    path: KUKU_RELOAD_PATH,
+    methods: ['GET'],
+    requestBody: 'buffered' as const,
+    async fetch(request: Request): Promise<Response> {
+      if (request.method !== 'GET') return embeddedJson({ error: 'method not allowed' }, 405)
+      const flowId = new URL(request.url ?? '/', 'http://127.0.0.1').searchParams.get('flow') ?? ''
+      const flow = flowId === '' ? undefined : embeddedLoginFlows.get(flowId)
+      if (flow === undefined || !('reload' in flow)) return embeddedJson({ error: 'not found' }, 404)
+      try {
+        await (flow as KukuLoginFlow).reload()
+        return embeddedJson({ qrDataUrl: (flow as KukuLoginFlow).qrDataUrl })
+      } catch (error) {
+        return embeddedJson({ state: 'expired', error: error instanceof Error ? error.message : String(error) })
       }
+    },
+  })
 
-      return json({ error: 'not found' }, 404)
+  connection.fetch.register({
+    path: AUTOCLAW_SEND_PATH,
+    methods: ['POST'],
+    requestBody: 'buffered' as const,
+    async fetch(request: Request): Promise<Response> {
+      if (request.method !== 'POST') return embeddedJson({ error: 'method not allowed' }, 405)
+      const flowId = new URL(request.url ?? '/', 'http://127.0.0.1').searchParams.get('flow') ?? ''
+      const flow = flowId === '' ? undefined : embeddedLoginFlows.get(flowId)
+      if (flow === undefined || !('sendCode' in flow)) return embeddedJson({ error: 'not found' }, 404)
+      let body: Record<string, unknown> = {}
+      try { body = await request.json() as Record<string, unknown> } catch { /* 空/坏体按空处理 */ }
+      return embeddedJson(await (flow as AutoclawLoginFlow).sendCode(typeof body.phone === 'string' ? body.phone : ''))
+    },
+  })
+
+  connection.fetch.register({
+    path: AUTOCLAW_VERIFY_PATH,
+    methods: ['POST'],
+    requestBody: 'buffered' as const,
+    async fetch(request: Request): Promise<Response> {
+      if (request.method !== 'POST') return embeddedJson({ error: 'method not allowed' }, 405)
+      const flowId = new URL(request.url ?? '/', 'http://127.0.0.1').searchParams.get('flow') ?? ''
+      const flow = flowId === '' ? undefined : embeddedLoginFlows.get(flowId)
+      if (flow === undefined || !('verify' in flow)) return embeddedJson({ error: 'not found' }, 404)
+      let body: Record<string, unknown> = {}
+      try { body = await request.json() as Record<string, unknown> } catch { /* 空/坏体按空处理 */ }
+      return embeddedJson(await (flow as AutoclawLoginFlow).verify(typeof body.code === 'string' ? body.code : ''))
     },
   })
 

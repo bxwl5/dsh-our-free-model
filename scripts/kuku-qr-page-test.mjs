@@ -9,6 +9,29 @@
 import assert from 'node:assert/strict'
 import { createFakePassport } from './kuku-qr-selftest.mjs'
 
+export async function verifyKukuEmbeddedRoute({ routes } = {}) {
+  const assert = (await import('node:assert/strict')).default
+  const { KUKU_POLL_PATH, KUKU_RELOAD_PATH, AUTOCLAW_SEND_PATH, AUTOCLAW_VERIFY_PATH } =
+    await import('../vendor/channel-pack/src/channel-pack-rpc.ts')
+  const routeByPath = new Map((routes ?? []).map((route) => [route.path, route]))
+
+  // ① 4 条路由必须按**整路径**注册（dsh 分发器精确匹配 pathname —— 初版缺陷：
+  //    注册成前缀 /api/channel-pack/login，子路径永远 404，二维码无反应/发码失败）。
+  const expected = [KUKU_POLL_PATH, KUKU_RELOAD_PATH, AUTOCLAW_SEND_PATH, AUTOCLAW_VERIFY_PATH]
+  for (const p of expected) assert.ok(routeByPath.has(p), `必须按整路径注册：${p}`)
+  assert.equal(routeByPath.has('/api/channel-pack/login'), false, '前缀路由不得再注册（旧缺陷形态）')
+
+  // ② 路由分发语义：未知 flowId → 404（防探测）；两条 autoclaw 路由只认 POST。
+  const pollRoute = routeByPath.get(KUKU_POLL_PATH)
+  const miss = await pollRoute.fetch(new Request(`http://127.0.0.1${KUKU_POLL_PATH}?flow=no-such-flow`, { method: 'GET' }))
+  assert.equal(miss.status, 404, '未知 flowId 必须 404')
+  const sendRoute = routeByPath.get(AUTOCLAW_SEND_PATH)
+  const wrongMethod = await sendRoute.fetch(new Request(`http://127.0.0.1${AUTOCLAW_SEND_PATH}?flow=x`, { method: 'GET' }))
+  assert.equal(wrongMethod.status, 405, 'send 只认 POST')
+
+  console.log('ok  kuku/autoclaw 卡片内嵌路由：4 条整路径注册、未知 flowId 404、方法校验')
+}
+
 export async function verifyKukuQrPage() {
   const page = await import('../vendor/channel-pack/src/kuku-qr-login-page.ts')
   const { fetch: realFetch } = await import('undici')

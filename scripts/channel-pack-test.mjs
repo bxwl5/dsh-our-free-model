@@ -401,8 +401,9 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   await verifyChannelAdoptParsers()
   const { verifyAutoclawSms } = await import('./autoclaw-sms-test.mjs')
   await verifyAutoclawSms()
-  const { verifyKukuQrPage } = await import('./kuku-qr-page-test.mjs')
+  const { verifyKukuQrPage, verifyKukuEmbeddedRoute } = await import('./kuku-qr-page-test.mjs')
   await verifyKukuQrPage()
+  await verifyKukuEmbeddedRoute({ routes })
   const { verifyRaccoonLogin } = await import('./raccoon-login-test.mjs')
   await verifyRaccoonLogin()
   // 用户实测的真实 Cookie 形状（字段名随上游改名）：OrcaTerm 用 ot_sid、MonkeyCode 用 monkeycode_ai_session。
