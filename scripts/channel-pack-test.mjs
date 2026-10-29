@@ -14,6 +14,20 @@ import { verifyChannelCreditsRpc } from './channel-credits-rpc-test.mjs'
 import { verifyChannelImagePricing } from './channel-image-pricing-test.mjs'
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'ofm-channel-pack-'))
+/**
+ * CodeArts 的模型清单**只看远端**（分渠道编译期兜底表已删，2026-10-29）：
+ * 干净环境（CI 无网络、无缓存）下 `listAllModels()` 返回空、卡片显示「—」。
+ * 这里显式铺一份**磁盘快照**（= 上次远端成功的结果，`~/.cache/deveco` 的等价物），
+ * 既让「20 渠道模型数 > 0」的守卫继续有效，也让该用例不依赖跑测试那台机器
+ * 上的真实用户缓存（本机有缓存 → 绿；CI 无缓存 → 曾红，2026-10-29 实测）。
+ */
+{
+  const codeartsCache = fs.mkdtempSync(path.join(os.tmpdir(), 'ofm-codearts-cache-'))
+  fs.writeFileSync(path.join(codeartsCache, 'codearts_models.json'), JSON.stringify([
+    { id: 'fixture-codearts-model', name: 'fixture-codearts-model' },
+  ]))
+  process.env.DSH_CODEARTS_CACHE_DIR = codeartsCache
+}
 const kernel = new URL('./lib/channel-pack-kernel.mjs', import.meta.url).href
 const sourceMode = process.argv.includes('--source')
 const ts = sourceMode ? (await import('typescript')).default : undefined
