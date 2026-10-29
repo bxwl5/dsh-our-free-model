@@ -111,17 +111,22 @@ export function normalizeModelId(id: string): string {
 
 function parseModelInfo(m: Record<string, unknown>, seen: Set<string>): RemoteModel | undefined {
   const rawId = m['model_id']
-  if (typeof rawId !== 'string' || rawId.length === 0) return undefined
-  const id = normalizeModelId(rawId)
-  // 过滤视觉（VL）多模态模型
-  // id 含 -VL- 或以 -VL 结尾（如 Qwen3-VL-235B），上下文小、不支持工具调用，
-  // 不适合当 agent 主模型，从列表隐藏；只通过 analyzeImage 等工具间接调用。
-  if (id.includes('-VL-') || id.endsWith('-VL')) return undefined
-  const rawName = m['model_name']
-  const name = typeof rawName === 'string' && rawName.length > 0 ? normalizeModelId(rawName) : id
+  if (typeof rawId !== 'string' || rawId.trim().length === 0) return undefined
+  // ⚠ 2026-10-29（用户要求）：**id 与 name 原样跟随上游** —— 不去日期后缀、
+  // 不改大小写、不过滤视觉模型。上游 `builtinModels` 现在下发 10 个（含
+  // `Qwen3-VL-235B` / `kimi-k2.6-vl` 两个 `display_enabled:false` 的图片理解
+  // 模型、以及 `deepseek-v4.1-flash-1017` 这个带日期后缀的独立计费模型），
+  // 三者都是上游真实条目，全部保留。是否显示由面板决定，拉取层不做裁剪。
+  const id = rawId.trim()
   if (seen.has(id)) return undefined
   seen.add(id)
-  return { id, name }
+  const rawName = m['model_name']
+  const name = typeof rawName === 'string' && rawName.length > 0 ? rawName : id
+  // 倍率（消耗系数）直接读上游条目自带的 `credit[0].ratio_display`（"0.7x"）——
+  // 与目录同一次响应，零额外请求；没有计费档（`credit: []`，如两个 VL 模型）
+  // 就不带倍率，面板照常显示模型名。
+  const rate = creditRateOf(m['credit'])
+  return { id, name, ...(rate > 0 ? { rate } : {}) }
 }
 
 /** 从 JSON 响应中沿路径指针取数组。 */
@@ -213,7 +218,7 @@ export async function fetchCodeArtsRemoteModels(
           const mi = parseModelInfo(entry, seen)
           if (mi) {
             // 仅当归一化未改写 id 时才记为 benefit（见上方说明）
-            if (rawId.length > 0 && normalizeModelId(rawId) === rawId) benefitIds.push(mi.id)
+            if (rawId.length > 0) benefitIds.push(mi.id)
             models.push(mi)
           }
         }
@@ -288,9 +293,7 @@ function parseAgentModel(m: Record<string, unknown>): { id: string; rate: number
   const rawId = typeof params['model_id'] === 'string' && params['model_id'] !== '' ? params['model_id']
     : typeof m['model_id'] === 'string' ? m['model_id'] : undefined
   if (rawId === undefined) return undefined
-  const id = normalizeModelId(rawId)
-  // VL 模型不进目录（与 ①② 同判据）。
-  if (id.includes('-VL-') || id.endsWith('-VL')) return undefined
+  const id = rawId.trim()
   const own = m['model_type'] === 'third' || m['model_type'] === 'custom' || m['is_custom_model'] === true
   const hidden = m['display_enabled'] === false || params['display_enabled'] === false
   return { id, rate: creditRateOf(m['credit'] ?? params['credit']), own, hidden }

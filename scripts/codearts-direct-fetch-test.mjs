@@ -111,13 +111,19 @@ async function verify() {
     } finally { clearTimeout(timer) }
   }
   const hash = body => createHash('sha256').update(body).digest('hex')
+/** 华为 APIG 规范：canonical query 按 key 排序、值 RFC3986 编码。 */
+const canonicalQueryOf = (url) => [...url.searchParams.entries()]
+  .sort(([a, x], [b, y]) => (a < b ? -1 : a > b ? 1 : x < y ? -1 : x > y ? 1 : 0))
+  .map(([k, v]) => `${encodeURIComponent(k).replace(/[!'()*]/g, ch => '%' + ch.charCodeAt(0).toString(16).toUpperCase())}=${encodeURIComponent(v).replace(/[!'()*]/g, ch => '%' + ch.charCodeAt(0).toString(16).toUpperCase())}`)
+  .join('&')
+
   // 服务端依据实际收到的字节及 SignedHeaders 独立验签，不调用生产签名函数。
   function validSignature(req, body) {
     const match = /^SDK-HMAC-SHA256 Access=FIXTUREAK,SignedHeaders=([^,]+),Signature=([0-9a-f]{64})$/.exec(req.headers.authorization ?? '')
     if (!match || hash(body) !== req.headers['x-sdk-content-sha256']) return false
     const names = match[1].split(';'), url = new URL(req.url, 'https://' + req.headers.host)
     if (names.join(';') !== [...new Set(names)].sort().join(';')) return false
-    const canonical = [req.method, url.pathname.replace(/\/?$/, '/'), url.search.slice(1), names.map(name => name + ':' + (req.headers[name] ?? '')).join('\n'), '', match[1], hash(body)].join('\n')
+    const canonical = [req.method, url.pathname.replace(/\/?$/, '/'), canonicalQueryOf(url), names.map(name => name + ':' + (req.headers[name] ?? '')).join('\n'), '', match[1], hash(body)].join('\n')
     const expected = createHmac('sha256', credential.secret_access_key).update('SDK-HMAC-SHA256\n' + req.headers['x-sdk-date'] + '\n' + hash(canonical)).digest('hex')
     return expected === match[2] && req.headers['x-security-token'] === credential.security_token
   }
@@ -200,15 +206,20 @@ async function verify() {
     await check('模型目录、积分及认证服务的默认签名 GET 同样经过专用传输', async () => {
       const before = globalCalls, start = seen.length
       const remote = await fetchCodeArtsRemoteModels(credential)
-      assert.deepEqual(remote.map(row => row.id), ['fixture-model', 'fixture-builtin', 'agent-only-model'],
-        'agent 独有模型补进目录；own/hidden/VL 排除')
-      assert.equal(remote.find(row => row.id === 'fixture-model')?.rate, 1.5, '目录已有模型补上消耗系数（"1.50" → 1.5）')
+      // 2026-10-29：VL 不再过滤、日期后缀不再合并、大小写跟随上游。
+      // 但 fixture 里的 qwen3-VL-235B 只出现在 agent detail（own=false, hidden=false），
+      // 按合并规则会作为 agent 独有模型补进目录 → 共 4 条。
+      assert.deepEqual(remote.map(row => row.id),
+        ['fixture-model', 'fixture-builtin', 'agent-only-model', 'qwen3-VL-235B'],
+        'agent 独有模型补进目录；own/hidden 仍排除（VL 不再排除）')
+      assert.equal(remote.find(row => row.id === 'fixture-model')?.rate, 1.5, '倍率取 builtin/gateway 自带的 credit.ratio_display')
       assert.equal(remote.find(row => row.id === 'agent-only-model')?.rate, 0.8, 'agent 独有模型自带倍率')
+      assert.equal(remote.find(row => row.id === 'qwen3-VL-235B')?.rate, 9.9, 'VL 模型同样带倍率（若上游给了）')
       const account = await fetchCodeArtsAccountInfoDetailed(credential)
       assert.equal(account.ok, true); assert.equal(account.info.packageName, '隔离套餐')
       const ctx = { provide() {}, credentials: { resolve: async () => ({ value: JSON.stringify(credential) }) } }
       const service = new CodeArtsAuth(ctx)
-      assert.equal((await service.refreshModels({ listAccountsByProvider: () => [{ credentialRef: 'FIXTURE' }] })).length, 3, 'agent 独有模型并入缓存'); service.stop()
+      assert.equal((await service.refreshModels({ listAccountsByProvider: () => [{ credentialRef: 'FIXTURE' }] })).length, 4, 'agent 独有模型 + VL 条目全部并入缓存'); service.stop()
       const rows = seen.slice(start)
       // 组成（每次 fetchCodeArtsRemoteModels 发 4 个 GET）：
       //   目录 4（gateway/builtin/agent-list/agent-detail）

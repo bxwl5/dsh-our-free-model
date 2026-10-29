@@ -66,13 +66,19 @@ const timeout = async (pending, name) => {
 }
 const check = async (name, run) => { await timeout(run(), name); checks++; console.log('ok  ' + name) }
 
+/** 华为 APIG 规范：canonical query 按 key 排序、值 RFC3986 编码。 */
+const canonicalQueryOf = (url) => [...url.searchParams.entries()]
+  .sort(([a, x], [b, y]) => (a < b ? -1 : a > b ? 1 : x < y ? -1 : x > y ? 1 : 0))
+  .map(([k, v]) => `${encodeURIComponent(k).replace(/[!'()*]/g, ch => '%' + ch.charCodeAt(0).toString(16).toUpperCase())}=${encodeURIComponent(v).replace(/[!'()*]/g, ch => '%' + ch.charCodeAt(0).toString(16).toUpperCase())}`)
+  .join('&')
+
 // 独立验证实际收到的签名字节。转发仅更换连接地址，签名中的 host 仍为原上游。
 function verifySignature(req, body, credential) {
   const match = /^SDK-HMAC-SHA256 Access=([^,]+),SignedHeaders=([^,]+),Signature=([0-9a-f]{64})$/.exec(req.headers.authorization ?? '')
   if (!match || match[1] !== credential.access_key_id || hash(body) !== req.headers['x-sdk-content-sha256']) return false
   const names = match[2].split(';'), url = new URL(req.url, 'https://' + snapHost)
   if (names.join(';') !== [...new Set(names)].sort().join(';')) return false
-  const canonical = [req.method, url.pathname.replace(/\/?$/, '/'), url.search.slice(1),
+  const canonical = [req.method, url.pathname.replace(/\/?$/, '/'), canonicalQueryOf(url),
     names.map(name => name + ':' + (name === 'host' ? snapHost : req.headers[name] ?? '')).join('\n'), '', match[2], hash(body)].join('\n')
   const expected = createHmac('sha256', credential.secret_access_key)
     .update('SDK-HMAC-SHA256\n' + req.headers['x-sdk-date'] + '\n' + hash(canonical)).digest('hex')

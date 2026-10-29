@@ -44,16 +44,10 @@ const CODEARTS_BENEFIT_NOT_FOUND_ERROR_CODE = 'InferHub.4004.200'
 //   - deepseek-v4-flash-0731 / deepseek-v4-pro-0813 → benefit 模型（需 maas_type）
 //   - deepseek-v4-flash / deepseek-v4-pro（无后缀）  → 非 benefit（带该头会
 //     `unsupported model`）
-// gateway/config 返回的是 benefit 那组，故下方静态表保留无后缀形态
-// （无后缀始终可用，不依赖 benefit 头），而 deepseek-v4.1-flash 只有 benefit 形态。
-const DEFAULT_MODELS: readonly string[] = [
-  'GLM-5.2', 'GLM-5.1', 'GLM-5',
-  'glm-5.3-flash',
-  'openpangu-2.0-flash', 'openpangu-2.0-pro',
-  'deepseek-v4-flash', 'deepseek-v4-pro',
-  'deepseek-v4.1-flash',
-]
-
+// gateway/config 返回的是 benefit 那组。⚠ 2026-10-29：**编译期模型兜底表已删**
+// （用户要求「只看远端」）—— 模型清单只来自远端 `builtinModels`
+// 与上次成功的磁盘快照；这里保留的只是 benefit 判定所需的静态 id 集合
+//（协议语义，不是模型清单）。
 /**
  * 模型上下文窗口（最大合并请求+响应 token 数）。
  * - GLM-5.2：202752（对齐 CodeArts Agent IDE 模型卡标注）。
@@ -967,7 +961,11 @@ export class CodeArtsAdapter extends LlmAdapter {
   /** 目录来源：内存 → 磁盘快照 → 编译期默认表。 */
   private catalogSource(): readonly { id: string; name: string; rate?: number }[] {
     this.restoreFromDisk()
-    return this.remoteModels ?? DEFAULT_MODELS.map((id) => ({ id, name: id }))
+    // ⚠ 2026-10-29（用户要求）：**删掉编译期兜底表**，模型清单只看远端
+    // （启动时由 `refreshModels` 拉取并落盘，离线读上次成功的快照）。
+    // 远端还没拉到过时返回空数组 —— listModels 的调用方会因此隐藏该渠道分组，
+    // 比显示一批早已下架的静态 id 诚实。
+    return this.remoteModels ?? []
   }
 
   /**
@@ -981,10 +979,10 @@ export class CodeArtsAdapter extends LlmAdapter {
    */
   listAllModels(): readonly { id: string; name: string }[] {
     const source = this.catalogSource()
-    // 与 listModels 保持同一套「可见性」过滤（VL 多模态不参与），
-    // 唯一区别是不套用户黑名单。
+    // ⚠ 2026-10-29（用户要求）：**不再过滤视觉模型** —— 上游 builtin 下发的
+    // 10 条（含 `Qwen3-VL-235B` / `kimi-k2.6-vl`）全部显示；没有倍率的条目
+    // 只是不带 `· xN` 后缀，不隐藏。是否可调用由上游决定，目录层不裁剪。
     return source
-      .filter((m) => !/-VL-/i.test(m.id) && !/-VL$/i.test(m.id))
       // 消耗系数（2026-10-29）：拼进展示名 `glm-5.3 · x1.5`（x1 不标，与
       // OfficeAce 渠道同口径）。请求发的仍是 id，倍率只影响显示。
       .map((m) => ({
