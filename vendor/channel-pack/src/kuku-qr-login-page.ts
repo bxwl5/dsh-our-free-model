@@ -13,7 +13,7 @@
  * ```
  *
  * flowId 由调用方生成并保存在内存表里；超时/关闭语义与旧版一致（10 分钟）。
- * 旧的本地页函数（renderKukuQrPage 等）仍在 `kuku-qr-login.ts`，未删。
+ * 旧形态的本地页与 `renderKukuQrPage` 已随之删除（2026-10-30）。
  */
 import type { KukuCredential } from './kuku.js'
 import {

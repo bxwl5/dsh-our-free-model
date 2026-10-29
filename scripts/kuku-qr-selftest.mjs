@@ -462,22 +462,10 @@ async function selftest() {
   }
   console.log('ok 10 请求形状：Referer/UA/JSONP/固定参数/channel_id/_sdkFrom/sig 全部对齐')
 
-  // ── ⑪ 渲染页面：纯函数、内联二维码、无外部资源 ──
-  {
-    const html = mod.renderKukuQrPage({
-      qrDataUrl: 'data:image/png;base64,AAAA',
-      pollPath: '/kuku/poll',
-      reloadPath: '/kuku/reload',
-    })
-    check(html.includes('data:image/png;base64,AAAA'), '页面未内联二维码')
-    check(html.includes('/kuku/poll'), '页面未带轮询路径')
-    check(html.includes('/kuku/reload'), '页面未带刷新路径')
-    check(!/<script[^>]+src=/.test(html), '页面不应引用外部脚本')
-    check(!/<link[^>]+href=/.test(html), '页面不应引用外部样式')
-    check(html.includes("res.state === 'confirmed'"), '页面未处理 confirmed')
-    check(html.includes("res.state === 'expired'"), '页面未处理 expired')
-    check(html.includes("res.state === 'scanned'"), '页面未处理 scanned')
-  }
+  // ── ⑪ 渲染页面（已删，2026-10-30）──
+  // 卡片内嵌形态取代了 127.0.0.1 本地弹窗页（renderKukuQrPage 随之删除），
+  // 该段检查不再适用；二维码/轮询/刷新的接线由 kuku-qr-page-test.mjs 覆盖。
+
   console.log('ok 11 扫码页：内联二维码、零外部资源、四种状态都处理')
 
   // ── ⑫ 错误分类表：每个 code 都能被构造并被识别 ──

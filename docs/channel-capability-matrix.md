@@ -84,9 +84,9 @@
 | 15 | `accio` · Accio | 浏览器授权（国际站） | ✅ | ✅ 远端 | ✅（配额百分比，`fetchQuota`） | ❌ | ❌ |
 | 16 | `accio-cn` · Accio 国内版 | 浏览器授权（国内站） | ✅ | ✅ 远端 | ✅（配额百分比，`fetchQuota`） | ❌ | ❌ |
 | 17 | `orcaterm` · OrcaTerm | 粘贴 Cookie（`ot_session`） | ✅ | ❌ 静态（上游无公开目录端点） | ❌ | ❌ | ❌ |
-| 18 | `kuku` · KukuAI | 百度 App 扫码（本地弹窗页承载） | ✅ | ✅ 远端（`model/list`，TTL 10 分钟） | ✅ 积分（`getgfvipremain`） | ✅ 签到（`freepoint` LOGIN/CHAT） | ❌ |
+| 18 | `kuku` · KukuAI | 百度 App 扫码（卡片内嵌二维码，无本地页） | ✅ | ✅ 远端（`model/list`，TTL 10 分钟） | ✅ 积分（`getgfvipremain`） | ✅ 签到（`freepoint` LOGIN/CHAT） | ❌ |
 | 19 | `monkeycode` · MonkeyCode | 粘贴 Cookie（`nebula_session`） | ✅（建任务 + WebSocket 两步） | ✅ 远端 | ✅（`/api/v1/users/wallet`） | ✅（`wallet/checkin`，每次奖励 100 积分） | ❌ |
-| 20 | `autoclaw` · AutoClaw（国内） | 手机号 + 短信验证码（本地弹窗页承载） | ✅ | ✅ 远端（`autoclaw-model-config`） | ❌ | ❌ | ❌ |
+| 20 | `autoclaw` · AutoClaw（国内） | 手机号 + 短信验证码（卡片内嵌表单，无本地页） | ✅ | ✅ 远端（`autoclaw-model-config`） | ❌ | ❌ | ❌ |
 
 **按维度汇总**：
 
@@ -97,7 +97,7 @@
 | 额度查询 | **17 条** | 3 条：`orcaterm` `autoclaw` `officeace` |
 | 签到 | **10 条**（原 9 条 + `monkeycode`） | 服务端显式守卫「无签到端点」3 条（`workbuddy` `cline` `raccoon`）+ `gemini`/`commandcode`/`accio`/`accio-cn`（无 claim 能力）+ 上游无签到 5 条 |
 | 图片（双桥） | 8 条：`buddy` `workbuddy` `qoder` `qodercn` `cline` `raccoon` `gemini` `zcode` | 单桥 3 条：`trae` `loomy` `minimax`；未接 9 条 |
-| 粘贴型登录 | 纯粘贴 2 条（`monkeycode` `orcaterm`）；另有本地页承载的扫码/短信 3 条（`loomy` `kuku` `autoclaw`） | — |
+| 粘贴型登录 | 纯粘贴 2 条（`monkeycode` `orcaterm`）；扫码/短信 3 条中 `kuku` `autoclaw` 已改卡片内嵌（无本地页），`loomy` `raccoon` 仍为本地页 | — |
 
 ---
 

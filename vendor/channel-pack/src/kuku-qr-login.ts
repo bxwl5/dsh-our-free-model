@@ -38,8 +38,7 @@
  * ## 纯模块
  *
  * 这里**不起服务器、不渲染页面、不写凭据**：只做协议三步，全部依赖可注入。
- * 本地弹窗页与 RPC 接线由调用方完成（`renderKukuQrPage` 提供了页面 HTML 的纯函数，
- * 不含任何服务端逻辑）。
+ * 本地弹窗页已删（2026-10-30，卡片内嵌形态取代；见 kuku-qr-login-page.ts）。
  */
 
 import { createHash, randomBytes } from 'node:crypto'
@@ -744,94 +743,4 @@ function buildCredentialCookie(jar: KukuCookieJar): string {
     .map((name) => `${name}=${jar.get(name) ?? ''}`)
     .filter((pair) => !pair.endsWith('='))
     .join('; ')
-}
-
-/**
- * 渲染扫码页 HTML（纯函数，不联网、不起服务）。
- *
- * 给调用方的本地回环页直接用：把 `qrDataUrl` 内联进去即可，**不依赖任何外部资源**
- * （断网也能显示二维码本身）。页面自己轮询 `pollPath`，状态由调用方在服务端映射。
- *
- * 页面只做三件事：显示二维码 / 轮询状态 / 过期时提示"重新申请"。刷新二维码需要
- * 服务端重新 `requestKukuQrCode`（sign 一次性），所以按钮走 `reloadPath`。
- */
-export function renderKukuQrPage(options: {
-  qrDataUrl: string
-  /** 前端轮询端点（返回 `{ state: KukuQrState }`）。 */
-  pollPath: string
-  /** "重新申请二维码"端点（返回新的整页或 302 回来）。 */
-  reloadPath?: string
-  /** 二维码有效期提示（秒）。上游实测约 3 分钟。 */
-  ttlSeconds?: number
-}): string {
-  const reload = options.reloadPath === undefined
-    ? ''
-    : `<button class="ghost" id="reload" type="button">二维码过期？点这里刷新</button>`
-  return `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>KukuAI 扫码登录</title>
-<style>
-  :root { color-scheme: light dark; }
-  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
-         background: #f5f6f8; color: #1f2329; }
-  .card { background: #fff; border-radius: 12px; padding: 28px 32px; box-shadow: 0 4px 24px rgba(0,0,0,.08);
-          text-align: center; width: 320px; }
-  h1 { font-size: 17px; margin: 0 0 4px; font-weight: 600; }
-  .sub { font-size: 13px; color: #8a9099; margin-bottom: 18px; }
-  .qr { width: 220px; height: 220px; display: block; margin: 0 auto; border: 1px solid #eceef1;
-        border-radius: 8px; background: #fff; }
-  .status { margin-top: 16px; font-size: 13px; color: #4e5969; min-height: 20px; }
-  .status[data-tone="ok"] { color: #0f9d58; font-weight: 600; }
-  .status[data-tone="err"] { color: #d93026; }
-  button { width: 100%; padding: 9px; font-size: 14px; border: 0; border-radius: 6px;
-           background: #2932e1; color: #fff; cursor: pointer; }
-  button.ghost { background: #f2f3f5; color: #1f2329; margin-top: 10px; }
-  button[hidden] { display: none; }
-</style>
-</head>
-<body>
-  <div class="card">
-    <h1>用百度 App 扫码登录 KukuAI</h1>
-    <div class="sub">扫码后需在手机上点「确认登录」</div>
-    <img class="qr" id="qr" alt="百度登录二维码" src="${options.qrDataUrl}">
-    <div class="status" id="status">等待扫码…</div>
-    ${reload}
-  </div>
-<script>
-(function () {
-  var statusEl = document.getElementById('status');
-  var reloadEl = document.getElementById('reload');
-  var stopped = false;
-  function setStatus(text, tone) {
-    statusEl.textContent = text;
-    if (tone) statusEl.setAttribute('data-tone', tone); else statusEl.removeAttribute('data-tone');
-  }
-  function stop(text, tone) {
-    stopped = true;
-    setStatus(text, tone);
-    if (reloadEl) reloadEl.hidden = false;
-  }
-  function poll() {
-    if (stopped) return;
-    fetch('${options.pollPath}', { cache: 'no-store' })
-      .then(function (r) { return r.json(); })
-      .then(function (res) {
-        if (res.state === 'confirmed') return stop('登录成功，可以关闭此窗口了', 'ok');
-        if (res.state === 'expired') return stop('二维码已过期，请点下方按钮刷新', 'err');
-        if (res.state === 'scanned') setStatus('已扫码，请在手机上确认');
-        else setStatus('等待扫码…');
-        setTimeout(poll, 1200);
-      })
-      .catch(function () { setTimeout(poll, 2000); });
-  }
-  if (reloadEl) reloadEl.addEventListener('click', function () { location.href = '${options.reloadPath ?? ''}'; });
-  poll();
-})();
-</script>
-</body>
-</html>`
 }

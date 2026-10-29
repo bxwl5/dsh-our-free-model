@@ -26,8 +26,8 @@
 | 17 | `raccoon` | 微信扫码（服务端下发 code）/ 短信，本地页承载 | ✅ | 微信扫码或短信 | 是 | `raccoon-login-page.ts`、`raccoon-oauth.ts` 的 `/api/iam/v1` 函数 |
 | 18 | `monkeycode` | 粘贴 Cookie（`nebula_session`） | ❌ | 手动复制 Cookie | 否 | `channel-pack-rpc.ts:4448` |
 | 19 | `orcaterm` | 粘贴 Cookie（`ot_session`） | ❌ | 手动复制 Cookie | 否 | `channel-pack-rpc.ts:4455` |
-| 20 | `kuku` | 百度 App 扫码，**本地弹窗页**承载 | ✅ | 手机扫码 + 确认 | 是（本地页） | `kuku-qr-login.ts`、`kuku-qr-login-page.ts` |
-| 21 | `autoclaw` | 手机号 + 短信验证码，**本地弹窗页**承载 | ✅ | 输手机号 + 验证码 | 是（本地页） | `autoclaw-login-page.ts`、`autoclaw-sms.ts` |
+| 20 | `kuku` | 百度 App 扫码，**卡片内嵌二维码**（2026-10-30，无本地页） | ✅ | 手机扫码 + 确认 | 否 | `kuku-qr-login.ts`、`kuku-qr-login-page.ts` |
+| 21 | `autoclaw` | 手机号 + 短信验证码，**卡片内嵌表单**（2026-10-30，无本地页） | ✅ | 输手机号 + 验证码 | 否 | `autoclaw-login-page.ts`、`autoclaw-sms.ts` |
 
 统计：**一键 17 / 半自动 1 / 纯粘贴 2**（共 20 个渠道；2026-10-25 移除 `autoclaw-intl` 与 `lobsterai`）。
 
@@ -44,10 +44,15 @@
   插件只用 `state` 或授权码轮询结果，所以不起本地端口。
 - **Accio 家族只走浏览器授权**：2026-10-24 真机确认可用后，按用户要求移除了「改用粘贴令牌」兜底
   （`account.adopt` 不再接受 `accio` / `accio-cn`）。
-- **本地页承载扫码/短信**（`loomy`、`raccoon`、`autoclaw`）：起本地页显示二维码或短信表单，
+- **本地页承载扫码/短信**（`loomy`、`raccoon`）：起本地页显示二维码或短信表单，
   用户在页面里完成，插件轮询登录态；对外统一返回 `loginUrl`，前端无需改动。都不需要手抄
   凭据，故计入「一键」；`loomy` 的界面声明是 `browser+sms`，**仅当该微信账号未绑手机号时**
   弹窗内会补要手机号 + 短信码（面板本身不渲染短信表单），因此单独标成「半自动」。
+- **卡片内嵌登录**（`kuku`、`autoclaw`，2026-10-30）：这两家的本地页已删——远程浏览器
+  （DSH 在 NAS、浏览器在 PC）打不开 127.0.0.1 本地页，登录必败。现改为 `account.create`
+  直接回 `flowId`（kuku 另回二维码 data URL），二维码/短信表单直接渲染在渠道卡片里，
+  经 DSH 路由 `/api/channel-pack/login/...` 驱动；成功/失败仍由 `login.poll` 收尾，
+  前端类型契约不变。
 - **粘贴**（5 个）：上游没有可脚本化的授权流，只能手工复制。
 
 ## 3. 与界面的口径一致性
@@ -102,8 +107,8 @@
 
 | 事项 | 状态 | 说明 |
 | --- | --- | --- |
-| `autoclaw`（国内）短信登录 | **已实现，真机验证通过** | 手机号 + 验证码，**本地弹窗页**承载（范式照 `raccoon`）：`autoclaw-login-page.ts` + `autoclaw-sms.ts`，对外仍返回 `loginUrl`，前端走既有两步式 → **客户端零改动**。2026-10-24 真机换到 24h token。⚠️ 常量逆向所得，失效时该渠道暂不可用（粘贴入口已移除）。 |
-| `kuku` 扫码登录 | **已实现** | 百度 passport 扫码：`kuku-qr-login.ts`（协议）+ `kuku-qr-login-page.ts`（本地页 + 长轮询）。两个只有真连才暴露的坑已修：`/channel/unicast` 是**长轮询**（未扫码约 30s 才回，需 45s 超时）；`bdusslogin` **成功响应没有 errno**（写 `errno===0` 会判失败每次真登录）。 |
+| `autoclaw`（国内）短信登录 | **已实现，真机验证通过** | 手机号 + 验证码；2026-10-30 起为**卡片内嵌表单**（本地弹窗页已删，远程浏览器可用）：`autoclaw-login-page.ts`（流程对象）+ `autoclaw-sms.ts`（协议），驱动路由 `/api/channel-pack/login/autoclaw/*`。2026-10-24 真机换到 24h token。⚠️ 常量逆向所得，失效时该渠道暂不可用（粘贴入口已移除）。 |
+| `kuku` 扫码登录 | **已实现** | 百度 passport 扫码：`kuku-qr-login.ts`（协议）+ `kuku-qr-login-page.ts`（流程对象；2026-10-30 起卡片内嵌二维码，本地页已删），驱动路由 `/api/channel-pack/login/kuku/*`。两个只有真连才暴露的坑已修：`/channel/unicast` 是**长轮询**（未扫码约 30s 才回，需 45s 超时）；`bdusslogin` **成功响应没有 errno**（写 `errno===0` 会判失败每次真登录）。 |
 | ~~`autoclaw-intl` OAuth~~ | 渠道已移除 | 2026-10-25 按用户要求整渠道删除（Z.ai OAuth loopback + 阿里滑块，自动化成本高）。 |
 | `orcaterm` 书签收号 | 半自动，待实测 | `ot_session` 非 HttpOnly，用户在已登录页点一次书签回传；未知项是 https 页 → `http://127.0.0.1` 的 PNA/混合内容限制。 |
 | `monkeycode` | 维持粘贴 | 设备码 client_id 写死 `monkeyai-runtime`、scope 仅 `device:*`；会话 Cookie HttpOnly ⇒ 内嵌浏览器也取不到。 |
