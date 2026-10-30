@@ -58,7 +58,7 @@ import {
   type MonkeyCodeCredential,
 } from './monkeycode.js'
 import { fetchModels, streamChat } from './monkeycode-auth.js'
-import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
+import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import { providerCatalogVisible } from './account-pool.js'
 import { registerAdapterIdempotent } from './llm-register-compat.js'
 import { emitDeltaBlocks } from './delta-blocks.js'
@@ -179,7 +179,7 @@ export class MonkeyCodeAdapter extends LlmAdapter {
         if (!isCredentialUsable(credential)) return
         this.remoteModels = await fetchModels(this.fetchImpl, this.product, credential)
         this.remoteModelsAt = Date.now()
-        writeModelCatalog(this.product.id, this.remoteModels)
+        void writeModelCatalogClosingNew(this.product.id, this.remoteModels, this.options.accountPool)
       } catch {
         // 兜底表接管。
       } finally {
@@ -254,7 +254,7 @@ export class MonkeyCodeAdapter extends LlmAdapter {
       if (rows.length === 0) return false
       this.remoteModels = rows
       this.remoteModelsAt = Date.now()
-      writeModelCatalog(this.product.id, rows)
+      void writeModelCatalogClosingNew(this.product.id, rows, this.options.accountPool)
       return true
     } catch {
       // 拉不到就保留上一次的目录（用户要求）。

@@ -23,7 +23,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 
 import { OFFICEACE, type OfficeAceProduct } from './officeace-product.js'
-import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
+import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import { fetchTokenRates, resetOfficeAceTokenRatesCache } from './officeace.js'
 import {
   basicAuthHeader,
@@ -137,7 +137,7 @@ export class OfficeAceAdapter extends LlmAdapter {
           }
           this.remoteModels = rows
           this.remoteModelsAt = Date.now()
-          writeModelCatalog(this.product.id, rows)
+          void writeModelCatalogClosingNew(this.product.id, rows, this.options.accountPool)
         }
       } catch {
         // 兜底表接管。

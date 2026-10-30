@@ -10,7 +10,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { ModelQuota } from './types.js'
-import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
+import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import type {
   GenerateOptions,
   LlmModelInfo,
@@ -195,7 +195,7 @@ export class AutoClawAdapter extends LlmAdapter {
            */
           this.remoteModels = rows
           this.remoteModelsAt = Date.now()
-          writeModelCatalog(this.product.id, rows)
+          void writeModelCatalogClosingNew(this.product.id, rows, this.options.accountPool)
         }
       } catch {
         // 兜底表接管。

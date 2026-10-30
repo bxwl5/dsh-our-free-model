@@ -64,7 +64,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 import { AccountPool, providerCatalogVisible } from './account-pool.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
-import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
+import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import { settingsNamespaceFor } from './settings-compat.js'
 import { collectImages, serializeMessages } from './openai-compat.js'
 import { projectRequestImage, type ImageRequestTarget } from './image-budget.js'
@@ -602,7 +602,7 @@ export class ZcodeAdapter extends LlmAdapter {
         const fetched = await fetchRemote()
         if (fetched.length > 0) {
           this.remoteModels = fetched
-          writeModelCatalog(this.product.id, fetched)
+          void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool)
         }
       } catch {
         // 兜底表接管（若落盘过快照则优先用快照，见下）。
@@ -633,7 +633,7 @@ export class ZcodeAdapter extends LlmAdapter {
       const fetched = await fetchRemote()
       if (fetched.length === 0) return false
       this.remoteModels = fetched
-      writeModelCatalog(this.product.id, fetched)
+      void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool)
       // 余量随目录一起刷新：「重新获取模型」按钮点了就该拿到最新余量。
       await this.refreshModelRemaining()
       return true
@@ -659,7 +659,7 @@ export class ZcodeAdapter extends LlmAdapter {
         const fetched = await fetchRemote()
         if (fetched.length === 0) return false
         this.remoteModels = fetched
-        writeModelCatalog(this.product.id, fetched)
+        void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool)
         return true
       })
       if (this.remoteModels !== undefined) return this.remoteModels

@@ -41,7 +41,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { providerCatalogVisible } from './account-pool.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
-import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
+import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import type { AccountPool } from './account-pool.js'
 import { httpErrorCode, collectImages } from './openai-compat.js'
 import { MINIMAX, MINIMAX_INFER_PATH, type MinimaxProduct } from './minimax-product.js'
@@ -209,7 +209,7 @@ export class MinimaxAdapter extends LlmAdapter {
         const fetched = await fetchRemote()
         if (fetched.length === 0) return false
         this.remoteModels = fetched
-        writeModelCatalog(this.product.id, fetched)
+        void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool)
         return true
       })
       if (this.remoteModels !== undefined) return this.remoteModels
@@ -274,7 +274,7 @@ export class MinimaxAdapter extends LlmAdapter {
       const fetched = await fetchRemote()
       if (fetched.length === 0) return false
       this.remoteModels = fetched
-      writeModelCatalog(this.product.id, fetched)
+      void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool)
       return true
     } catch {
       return false

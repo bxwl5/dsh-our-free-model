@@ -15,7 +15,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 
 import { KUKU, KUKU_MODEL_LIST_PATH, KUKU_WEB_QUERY, type KukuProduct } from './kuku-product.js'
-import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
+import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import { isCredentialUsable, kukuHeaders, type KukuCredential } from './kuku.js'
 import { streamChat } from './kuku-auth.js'
 import { providerCatalogVisible } from './account-pool.js'
@@ -252,7 +252,7 @@ export class KukuAdapter extends LlmAdapter {
           this.remoteThinkLevels = catalog.thinkLevels
           this.remoteDefaultThinkId = catalog.defaultThinkId
           this.remoteModelsAt = Date.now()
-          writeModelCatalog(this.product.id, catalog.models)
+          void writeModelCatalogClosingNew(this.product.id, catalog.models, this.options.accountPool)
         }
       } catch {
         // 静态表接管。

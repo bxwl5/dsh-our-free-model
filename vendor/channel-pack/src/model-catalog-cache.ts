@@ -57,7 +57,7 @@ const SCHEMA = 1
 const MAX_ENTRIES = 2_000
 
 /** 记日志用的 logger（由 {@link configureModelCatalogCache} 注入）。 */
-let logger: { warn(message: string): void } | undefined
+let logger: { warn(message: string): void; info?(message: string): void } | undefined
 
 /**
  * 注入的 ctx（由 {@link configureModelCatalogCache} 注入）。
@@ -91,7 +91,7 @@ const memoryCache = new Map<string, unknown[]>()
  */
 export function configureModelCatalogCache(ctx: Context): void {
   injectedCtx = ctx
-  logger = ctx.logger
+  logger = ctx.logger as { warn(message: string): void; info?(message: string): void } | undefined
   resolvedDir = undefined
 }
 
@@ -167,6 +167,12 @@ export function readModelCatalog<T = unknown>(provider: string): T[] | undefined
     const models = sanitizeModels(record.models)
     if (models === undefined) return undefined
     memoryCache.set(provider, models)
+    // 磁盘快照被读起来时，它就是「上一份目录」——后续 writeModelCatalog 的新增
+    // 判据以它为基准。没有这行，进程重启后第一次远端拉取会把**全部**模型当成
+    // 新增（previousIds 为空集 ⇒ 全部不在基准里），触发整表关闭。
+    if (!previousIds.has(provider)) {
+      previousIds.set(provider, new Set(models.map((item) => (item as { id?: unknown }).id as string)))
+    }
     return models as T[]
   } catch (error) {
     // 损坏按**无快照**处理：回退兜底表最多是「旧」，而拿半个解析结果去渲染
@@ -174,6 +180,57 @@ export function readModelCatalog<T = unknown>(provider: string): T[] | undefined
     logger?.warn(`[channel-pack] 读取模型目录快照 ${path} 失败，按无快照处理: ${String(error)}`)
     return undefined
   }
+}
+
+/**
+ * **快照写入前的旧目录**（per-provider）。
+ *
+ * `writeModelCatalog` 是整份覆盖，覆盖后「上次有哪些模型」这个信息就没了。
+ * 而「新增模型默认关闭」（用户 2026-10-30 规则）需要知道**这次新增了哪些 id**
+ * —— 判据只能是「上一份目录里有没有」，所以必须在覆盖前把旧 id 集合存下来。
+ *
+ * 键 = provider；值 = 那一刻快照里的 id 集合。适配器启动时经
+ * {@link rememberCatalogIds} 预填（从磁盘快照恢复的目录也算「上一份」）。
+ */
+const previousIds = new Map<string, ReadonlySet<string>>()
+
+/**
+ * 记住一份目录的 id 集合，作为下一次 {@link writeModelCatalog} 的「旧目录」基准。
+ *
+ * 两个调用时机：
+ * 1. 适配器启动时用磁盘快照（或兜底表）预填 —— 否则进程重启后第一次拉远端，
+ *    所有模型都会被当成「新增」全部关掉，那不是用户要的；
+ * 2. `writeModelCatalog` 覆盖成功后自填 —— 一次进程内连续两次刷新，
+ *    第二次的新增判据是第一次的结果，而不是启动时的老快照。
+ */
+export function rememberCatalogIds(provider: string, models: readonly unknown[]): void {
+  const ids = new Set<string>()
+  for (const item of models) {
+    const id = (item as { id?: unknown } | null)?.id
+    if (typeof id === 'string' && id.length > 0) ids.add(id)
+  }
+  previousIds.set(provider, ids)
+}
+
+/**
+ * 找出 `models` 里**上一份目录没有的** id（新增模型）。
+ *
+ * 没有旧基准（`rememberCatalogIds` 从未调过、且磁盘无快照）时返回空集：
+ * 首次拉到目录的全部条目都算「原有的」—— 冷启动就该是全量可见，
+ * 把整张表判成「新增」会让新用户面对一个全关的渠道。
+ */
+export function newModelIdsSinceLastCatalog(
+  provider: string,
+  models: readonly unknown[],
+): string[] {
+  const previous = previousIds.get(provider)
+  if (previous === undefined) return []
+  const fresh: string[] = []
+  for (const item of models) {
+    const id = (item as { id?: unknown } | null)?.id
+    if (typeof id === 'string' && id.length > 0 && !previous.has(id)) fresh.push(id)
+  }
+  return fresh
 }
 
 /**
@@ -200,9 +257,97 @@ export function writeModelCatalog(provider: string, models: readonly unknown[]):
       models: sanitized,
     }), 'utf-8')
     renameSync(tmp, path)
+    // 覆盖成功后把这份 id 集合记为「旧目录」：同进程内连续两次刷新，
+    // 第二次的新增判据必须是第一次的结果（而不是启动时的老快照）。
+    previousIds.set(provider, new Set(sanitized.map((item) => (item as { id?: unknown }).id as string)))
   } catch (error) {
     logger?.warn(`[channel-pack] 写入模型目录快照失败（${provider}）: ${String(error)}`)
   }
+}
+
+/**
+ * 「写快照 + 新增模型默认关闭」的一体化入口（用户 2026-10-30 规则）。
+ *
+ * ## 规则
+ *
+ * 远端目录**整份覆盖**（既有规则，见 `writeModelCatalog`）不变；在此基础上，
+ * 本次目录里**上一份没有的** id（新增模型）自动写入黑名单 —— 上游悄悄上架的
+ * 新模型不该默认进入用户的模型选择器与计费路径，要用户在 Channel Pack
+ * 手动打开才可见。
+ *
+ * ## 为什么放这里，而不是每个适配器自己写
+ *
+ * 写快照的点有 15 处、分布在 14 个适配器 + CodeArts 的 service —— 逐处手写
+ * 「对照旧 id → 求新增 → 批量关」必然漏（先例：`restoreFromDisk` 漏倍率）。
+ * 收口在写快照的必经之路，新增调用点天然继承本规则。
+ *
+ * ## 失败策略
+ *
+ * 关闭失败**不回滚**快照：目录已经是远端的新事实，把它回滚成旧表会让
+ * 「上游下架的模型」永久残留（与既有「全量覆盖」规则冲突）。关闭失败只
+ * warn，用户下次在面板手动关即可。
+ *
+ * @param pool 有 `setModelsDisabled` / `listDisabledModels` 的账号池；
+ *   `undefined`（无池的替身 / 单测）时只写快照、不关新模型 —— 与
+ *   `providerCatalogVisible` 接受可选池的既有口径一致。
+ */
+export async function writeModelCatalogClosingNew(
+  provider: string,
+  models: readonly unknown[],
+  pool: {
+    listDisabledModels(p: string): Record<string, boolean>
+    setModelsDisabled(p: string, ids: readonly string[]): Promise<void>
+  } | undefined,
+): Promise<void> {
+  // ① 先取「上一份目录」的 id 基准，再覆盖（覆盖会刷新基准）。
+  const known = previousIds.get(provider)
+    ?? readModelCatalogSafe(provider)
+  rememberCatalogIds(provider, models)
+  // ② 写快照（整份覆盖，既有语义）。
+  writeModelCatalog(provider, models)
+  if (pool === undefined || known === undefined) return
+  // ③ 新增 = 本次有、上一份没有。没有基准（首次拉到）时不关任何东西。
+  const fresh = newModelIdsSinceLastCatalogKnown(provider, models, known)
+  if (fresh.length === 0) return
+  // ④ 只关「用户从未设置过」的：黑名单里已有记录的 id（无论开或关）是用户的
+  //    显式决定，不因目录刷新而翻转 —— 否则「关了又拉 → 又被关回去」。
+  const recorded = pool.listDisabledModels(provider)
+  const toClose = fresh.filter((id) => recorded[id] !== true && recorded[id] !== false)
+  if (toClose.length === 0) return
+  try {
+    await pool.setModelsDisabled(provider, toClose)
+    logger?.info?.(
+      `[channel-pack] ${provider}：新增 ${toClose.length} 个模型已默认关闭（${toClose.join(', ')}），需在渠道面板手动打开`,
+    )
+  } catch (error) {
+    logger?.warn(
+      `[channel-pack] ${provider}：新增模型自动关闭失败（不影响目录更新）: ${String(error)}`,
+    )
+  }
+}
+
+/** readModelCatalog 的吞错包装（仅用于取旧基准；本模块已有内存镜像，通常命中）。 */
+function readModelCatalogSafe(provider: string): ReadonlySet<string> | undefined {
+  const models = readModelCatalog(provider)
+  if (models === undefined) return undefined
+  return new Set(models.map((item) => (item as { id?: unknown }).id as string).filter(
+    (id) => typeof id === 'string' && id.length > 0,
+  ))
+}
+
+/** 用显式传入的旧基准判新增（previousIds 已被 rememberCatalogIds 覆盖，故不能再用它）。 */
+function newModelIdsSinceLastCatalogKnown(
+  provider: string,
+  models: readonly unknown[],
+  known: ReadonlySet<string>,
+): string[] {
+  void provider
+  const fresh: string[] = []
+  for (const item of models) {
+    const id = (item as { id?: unknown } | null)?.id
+    if (typeof id === 'string' && id.length > 0 && !known.has(id)) fresh.push(id)
+  }
+  return fresh
 }
 
 /**
@@ -219,8 +364,21 @@ export function restoreModelCatalog<T>(
   provider: string,
   current: readonly T[] | undefined,
 ): T[] | undefined {
-  if (current !== undefined && current.length > 0) return current as T[]
-  return readModelCatalog<T>(provider)
+  if (current !== undefined && current.length > 0) {
+    // 内存里已有目录（远端刚拉到 / 适配器自填）：把它记为「上一份」基准。
+    // 没有这行，同进程内「先 warmCatalog 拉到 → 再 refreshCatalog」时第二次
+    // 的新增判据仍是启动前的老快照，第一次的新模型会被重复关闭（幂等无害，
+    // 但用户手动打开后又被翻回去就成缺陷了 —— recorded 过滤挡不住第一次的基准漂移）。
+    if (!previousIds.has(provider)) rememberCatalogIds(provider, current)
+    return current as T[]
+  }
+  const restored = readModelCatalog<T>(provider)
+  // 磁盘快照恢复成功 = 这就是「上一份」（readModelCatalog 内部也会记，双保险
+  // 是为了显式表达这条路径的语义；Set 记录是幂等的）。
+  if (restored !== undefined && !previousIds.has(provider)) {
+    rememberCatalogIds(provider, restored)
+  }
+  return restored
 }
 
 /**

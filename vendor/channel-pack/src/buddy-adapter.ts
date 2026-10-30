@@ -19,7 +19,7 @@ import {
 } from '@deepseek-ai/dsh-llm'
 import { AccountPool, providerCatalogVisible } from './account-pool.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
-import { readModelCatalog, writeModelCatalog } from './model-catalog-cache.js'
+import { readModelCatalog, writeModelCatalogClosingNew } from './model-catalog-cache.js'
 import { settingsNamespaceFor } from './settings-compat.js'
 import {
   RATE_LIMIT_FALLBACK_MS,
@@ -998,7 +998,7 @@ export class BuddyAdapter extends LlmAdapter {
   /** 采用远端目录**并落盘**成快照（下次启动/离线时用它顶替兜底表）。 */
   private commitRemoteModels(models: readonly BuddyRemoteModel[]): void {
     this.applyRemoteModels(models)
-    writeModelCatalog(this.product.id, models)
+    void writeModelCatalogClosingNew(this.product.id, models, this.options.accountPool)
   }
 
   /**

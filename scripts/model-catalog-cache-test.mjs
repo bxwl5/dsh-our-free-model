@@ -152,6 +152,76 @@ const hooks = registerHooks({
   assert.equal(typeof body.savedAt, 'number')
   assert.deepEqual(body.models, [{ id: 'one', name: 'One' }])
 
+  // ══ 10) 新增模型默认关闭（用户 2026-10-30 规则，全部渠道一致）═════════════
+  //
+  // 规则：远端目录整份覆盖不变，但**上一份没有的** id 自动写入黑名单；
+  // 用户显式设置过的 id（黑名单里已有 true/false）不翻转；无旧基准（首次
+  // 拉到）时不关任何东西。入口是 writeModelCatalogClosingNew（15 处写快照
+  // 的收口），旧基准由 write/restore/read 三条路径自动维护。
+  {
+    rmSync(dir, { recursive: true, force: true })
+    resetModelCatalogCacheForTest()
+    /** 账号池替身：只实现新入口用到的两个方法。 */
+    const makePool = () => {
+      const calls = { closed: [] }
+      return {
+        calls,
+        listDisabledModels(p) { return this._map[p] ?? {} },
+        async setModelsDisabled(p, ids) { calls.closed.push({ p, ids: [...ids] }) },
+        _map: {},
+      }
+    }
+
+    // 10a) 无旧基准（首次拉到）：不关任何模型 —— 冷启动必须是全量可见。
+    const poolA = makePool()
+    await mod.writeModelCatalogClosingNew('alpha', [{ id: 'm1' }, { id: 'm2' }], poolA)
+    assert.deepEqual(poolA.calls.closed, [], '首次拉到目录（无旧基准）不得关闭任何模型')
+    assert.deepEqual(readModelCatalog('alpha')?.map((m) => m.id), ['m1', 'm2'], '快照照常写入')
+
+    // 10b) 第二次拉取带新模型：新增的 m3 自动关闭，原有的不动。
+    const poolB = makePool()
+    await mod.writeModelCatalogClosingNew('alpha', [{ id: 'm1' }, { id: 'm2' }, { id: 'm3' }], poolB)
+    assert.deepEqual(poolB.calls.closed, [{ p: 'alpha', ids: ['m3'] }],
+      '新增模型必须被自动关闭，且只关新增的')
+
+    // 10c) 用户显式设置过的 id 不翻转：m4 已被用户关着（true）、m5 被用户开着（false），
+    //      刷新后两者都不得再动。
+    const poolC = makePool()
+    poolC._map['alpha'] = { m4: true, m5: false }
+    await mod.writeModelCatalogClosingNew('alpha', [
+      { id: 'm1' }, { id: 'm4' }, { id: 'm5' }, { id: 'm6' },
+    ], poolC)
+    assert.deepEqual(poolC.calls.closed, [{ p: 'alpha', ids: ['m6'] }],
+      '用户显式关/开的模型不得被目录刷新翻转，只关无记录的新增')
+
+    // 10d) 下架（旧条目消失）不产生任何关闭动作；同进程第二次刷新的基准是上一份。
+    const poolD = makePool()
+    await mod.writeModelCatalogClosingNew('alpha', [{ id: 'm1' }], poolD)
+    assert.deepEqual(poolD.calls.closed, [], '只减不增的刷新不得触发关闭')
+    await mod.writeModelCatalogClosingNew('alpha', [{ id: 'm1' }, { id: 'm7' }], poolD)
+    assert.deepEqual(poolD.calls.closed, [{ p: 'alpha', ids: ['m7'] }],
+      '第二次刷新的新增判据必须是第一次刷新后的目录')
+
+    // 10e) 无账号池（替身/单测形态）：只写快照、不关模型、不抛错。
+    await mod.writeModelCatalogClosingNew('beta', [{ id: 'b1' }], undefined)
+    assert.deepEqual(readModelCatalog('beta')?.map((m) => m.id), ['b1'], '无池时快照仍要写')
+
+    // 10f) 磁盘快照恢复（restoreModelCatalog）会预填旧基准：重启后第一次远端
+    //      拉取只关真正的新增，而不是把整表当新增。
+    rmSync(dir, { recursive: true, force: true })
+    resetModelCatalogCacheForTest()
+    mod.writeModelCatalog('gamma', [{ id: 'g1' }, { id: 'g2' }])
+    resetModelCatalogCacheForTest() // 模拟进程重启（内存镜像清空）
+    assert.deepEqual(mod.restoreModelCatalog('gamma', undefined), [{ id: 'g1' }, { id: 'g2' }],
+      '重启后 restore 应从磁盘恢复')
+    const poolF = makePool()
+    await mod.writeModelCatalogClosingNew('gamma', [{ id: 'g1' }, { id: 'g2' }, { id: 'g3' }], poolF)
+    assert.deepEqual(poolF.calls.closed, [{ p: 'gamma', ids: ['g3'] }],
+      '重启后第一次刷新：恢复出的目录就是旧基准，只关真新增')
+
+    console.log('ok  model-catalog-cache: 新增模型默认关闭（首拉不关/只关新增/用户选择不翻转/基准逐次更新/无池降级/重启后基准恢复）')
+  }
+
   rmSync(home, { recursive: true, force: true })
   delete process.env.DSH_CHANNEL_PACK_STATE_DIR
   resetModelCatalogCacheForTest()

@@ -1282,3 +1282,36 @@ export async function verifyRemoteCatalogFields() {
 
   console.log('remote-catalog-fields: 4 渠道断言通过（kuku 倍率+档位 / accio 倍率+中文名 / autoclaw 积分分档+档位 / monkeycode 不掉价）')
 }
+
+/**
+ * 「新增模型默认关闭」的**接线守卫**（用户 2026-10-30 规则，全部渠道一致）。
+ *
+ * 行为断言在 model-catalog-cache 用例（10a-10f）；这里守的是**接线完整性**：
+ * 全部 15 个写快照的点必须走 `writeModelCatalogClosingNew`（收口入口），
+ * 任何一处直接调 `writeModelCatalog` 都意味着那个渠道刷新后新增模型仍会
+ * 默认打开 —— 规则静默失效，正是本仓库最擅长养出来的那类 bug。
+ */
+export async function verifyNewModelAutoDisableWiring() {
+  const { readFileSync, readdirSync } = await import('node:fs')
+  const srcDir = new URL('../vendor/channel-pack/src/', import.meta.url)
+  const offenders = []
+  for (const name of readdirSync(srcDir)) {
+    if (!name.endsWith('.ts')) continue
+    const src = readFileSync(new URL(name, srcDir), 'utf8')
+    if (name === 'model-catalog-cache.ts') continue // 入口本体
+    // 直接调用 writeModelCatalog( 而非 writeModelCatalogClosingNew( ——
+    // 注释里提及不算（先剥行注释再判，教训见 credential-freshness 守卫）。
+    const code = src.split('\n').map((line) => line.replace(/\/\/.*$/, '')).join('\n')
+    if (/\bwriteModelCatalog\s*\(/.test(code)) offenders.push(name)
+  }
+  assert.deepEqual(offenders, [],
+    '以下文件仍在直接调 writeModelCatalog（绕过了「新增模型默认关闭」的收口）：\n' + offenders.join('\n'))
+  // CodeArts 的快照走 models.ts 的 saveModelsCache（独立文件），其关闭逻辑在
+  // service.ts 的 refreshModels 内联 —— 用两条静态断言守住：
+  const service = readFileSync(new URL('../vendor/channel-pack/src/service.ts', import.meta.url), 'utf8')
+  assert.match(service, /loadModelsCache\(\)/, 'codearts 新增判据必须用 loadModelsCache 还原旧基准')
+  assert.match(service, /setModelsDisabled\('codearts'/, 'codearts 新增模型必须写黑名单')
+  const cache = readFileSync(new URL('../vendor/channel-pack/src/model-catalog-cache.ts', import.meta.url), 'utf8')
+  assert.match(cache, /export async function writeModelCatalogClosingNew/, '收口入口必须存在')
+  console.log('ok  new-model-auto-disable: 15 处写快照全部走收口 + codearts 内联路径在位')
+}

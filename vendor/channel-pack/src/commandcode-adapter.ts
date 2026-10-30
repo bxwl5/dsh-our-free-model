@@ -41,7 +41,7 @@ import {
   type CommandCodeCredential,
 } from './commandcode.js'
 import { fetchModelCatalog } from './commandcode-auth.js'
-import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
+import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import {
   consumeOpenAiSse,
   contentToText,
@@ -138,7 +138,7 @@ export class CommandCodeAdapter extends LlmAdapter {
         if (!isCredentialUsable(credential)) return
         this.remoteModels = await fetchModelCatalog(this.fetchImpl, this.product, credential)
         this.remoteModelsAt = Date.now()
-        writeModelCatalog(this.product.id, this.remoteModels)
+        void writeModelCatalogClosingNew(this.product.id, this.remoteModels, this.options.accountPool)
       } catch {
         // 静默：兜底表接管。
       } finally {

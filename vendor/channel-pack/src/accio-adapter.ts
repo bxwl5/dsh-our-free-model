@@ -17,7 +17,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 
 import { ACCIO, type AccioProduct } from './accio-product.js'
-import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
+import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import {
   isCredentialExpired,
   isCredentialUsable,
@@ -147,7 +147,7 @@ export class AccioAdapter extends LlmAdapter {
         if (!isCredentialUsable(credential)) return
         this.remoteModels = await fetchModels(this.fetchImpl, this.product, credential)
         this.remoteModelsAt = Date.now()
-        writeModelCatalog(this.product.id, this.remoteModels)
+        void writeModelCatalogClosingNew(this.product.id, this.remoteModels, this.options.accountPool)
       } catch {
         // 兜底表接管。
       } finally {

@@ -39,7 +39,7 @@ import {
   recordsClineRateLimit,
 } from './cline-rate-limit.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
-import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
+import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import { settingsNamespaceFor } from './settings-compat.js'
 import { isClineExpired, clineHeaders, type ClineCredential } from './cline.js'
 import {
@@ -352,7 +352,7 @@ export class ClineAdapter extends LlmAdapter {
         }
         if (!gotRemote) return false
         this.remoteModels = merged
-        writeModelCatalog(this.product.id, merged)
+        void writeModelCatalogClosingNew(this.product.id, merged, this.options.accountPool)
         return true
       } catch (error) {
         // 拉取失败保持未定义，后续 listModels/resolveModel 仍回退静态兜底表。

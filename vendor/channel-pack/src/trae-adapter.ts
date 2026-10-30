@@ -25,7 +25,7 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { AccountPool, providerCatalogVisible } from './account-pool.js'
 import { reasoningRankOf } from './reasoning-ladder.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
-import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
+import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import { settingsNamespaceFor } from './settings-compat.js'
 import {
   TRAE_DEFAULT_MODEL,
@@ -651,7 +651,7 @@ export class TraeAdapter extends LlmAdapter {
       if (models.length === 0) return false
       this.remoteModels = models
       this.remoteMeta = new Map(models.map((model) => [model.id, model]))
-      writeModelCatalog(this.product.id, models)
+      void writeModelCatalogClosingNew(this.product.id, models, this.options.accountPool)
       return true
     })
     // 远端这次没拉到：用上次成功落盘的快照顶替编译期兜底表（用户 2026-10-27）。
@@ -868,7 +868,7 @@ export class TraeAdapter extends LlmAdapter {
       if (models.length === 0) return false
       this.remoteModels = models
       this.remoteMeta = new Map(models.map((model) => [model.id, model]))
-      writeModelCatalog(this.product.id, models)
+      void writeModelCatalogClosingNew(this.product.id, models, this.options.accountPool)
       return true
     } catch {
       // 网络抖动 / 凭据失效：保留上一次的目录（用户要求「拉不到就显示上次的」）。

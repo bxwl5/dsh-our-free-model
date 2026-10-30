@@ -454,6 +454,13 @@ export class AccountPool {
   }
 
   /**
+   * ⚠⚠ **修改黑名单前必须先调 `withDisabledSnapshot(provider, ids)`**，
+   * 它会在原列表之外把**新增**的 id 一起算进「要关闭的集合」
+   * （用户 2026-10-30 规则：模型刷新后新出现的模型**默认关闭**）。
+   * 直接调 {@link setModelsDisabled} 只会关你传入的那几个。
+   */
+
+  /**
    * 批量关闭一批模型（Channel Pack 模型列表的「关闭全部」）。
    *
    * 语义是**按当前列表逐项加入黑名单**，与 {@link setModelDisabled} 的关闭方向

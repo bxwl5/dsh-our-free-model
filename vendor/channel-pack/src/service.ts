@@ -55,6 +55,7 @@ const CODEARTS_EXPIRY_ACCESSORS: ExpiryAccessors<CodeArtsCredential> = {
 }
 import {
   fetchCodeArtsRemoteModels,
+  loadModelsCache,
   saveModelsCache,
   setMemoryCache,
 } from './models.js'
@@ -533,8 +534,34 @@ export class CodeArtsAuth extends Service {
     if (credential === undefined) return []
     const models = await fetchCodeArtsRemoteModels(credential, this.fetchImpl)
     if (models.length > 0) {
+      // 新增模型默认关闭（用户 2026-10-30，全部渠道一致）：必须在 setMemoryCache
+      // **之前**对照旧 id 求新增 —— setMemoryCache 一落，availableCodeArtsModels
+      // 就只看得到新表，「上一份有哪些模型」再也算不出来。
+      // CodeArts 的快照走自己的 `~/.cache/deveco/codearts_models.json`
+      // （saveModelsCache），不走 model-catalog-cache 的 per-provider 快照，
+      // 故这里的旧基准要用同一份磁盘缓存（loadModelsCache）还原。
+      const previous = loadModelsCache()
+      const known = previous === undefined ? undefined : new Set(previous.map((m) => m.id))
       setMemoryCache(models)
       saveModelsCache(models)
+      if (known !== undefined) {
+        const recorded = pool.listDisabledModels('codearts')
+        const fresh = models
+          .map((m) => m.id)
+          .filter((id) => !known.has(id) && recorded[id] !== true && recorded[id] !== false)
+        if (fresh.length > 0) {
+          try {
+            await pool.setModelsDisabled('codearts', fresh)
+            this.ctx.logger?.info?.(
+              `[channel-pack] codearts：新增 ${fresh.length} 个模型已默认关闭（${fresh.join(', ')}），需在渠道面板手动打开`,
+            )
+          } catch (error) {
+            this.ctx.logger?.warn?.(
+              `[channel-pack] codearts：新增模型自动关闭失败（不影响目录更新）: ${String(error)}`,
+            )
+          }
+        }
+      }
     }
     return models
   }

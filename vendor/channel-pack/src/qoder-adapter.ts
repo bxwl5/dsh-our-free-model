@@ -28,7 +28,7 @@ import { LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { randomUUID } from 'node:crypto'
 import { AccountPool, providerCatalogVisible } from './account-pool.js'
-import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
+import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import { isQoderExpired, type QoderCredential } from './qoder.js'
 import { QoderEncryptedInfer, type QoderInferMessage, type QoderInferRequest, type QoderInferTool, type QoderInferToolCall } from './qoder-wasm.js'
 import { unwrapQoderEnvelopeStream } from './qoder-envelope.js'
@@ -731,7 +731,7 @@ export class QoderAdapter extends LlmAdapter {
         if (rows.length > 0) {
           this.remoteModels = rows
           this.remoteModelsAt = Date.now()
-          writeModelCatalog(this.product.id, rows)
+          void writeModelCatalogClosingNew(this.product.id, rows, this.options.accountPool)
         }
       } catch {
         // 兜底表接管（含 uid 缺失时 buildCosyHeaders 抛错的情况）。

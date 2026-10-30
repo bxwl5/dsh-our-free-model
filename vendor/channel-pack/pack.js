@@ -34779,6 +34779,12 @@ var AccountPool = class {
     await this.writeModels(next);
   }
   /**
+   * ⚠⚠ **修改黑名单前必须先调 `withDisabledSnapshot(provider, ids)`**，
+   * 它会在原列表之外把**新增**的 id 一起算进「要关闭的集合」
+   * （用户 2026-10-30 规则：模型刷新后新出现的模型**默认关闭**）。
+   * 直接调 {@link setModelsDisabled} 只会关你传入的那几个。
+   */
+  /**
    * 批量关闭一批模型（Channel Pack 模型列表的「关闭全部」）。
    *
    * 语义是**按当前列表逐项加入黑名单**，与 {@link setModelDisabled} 的关闭方向
@@ -39109,11 +39115,23 @@ function readModelCatalog(provider) {
     const models = sanitizeModels(record.models);
     if (models === void 0) return void 0;
     memoryCache2.set(provider, models);
+    if (!previousIds.has(provider)) {
+      previousIds.set(provider, new Set(models.map((item) => item.id)));
+    }
     return models;
   } catch (error) {
     logger2?.warn(`[channel-pack] \u8BFB\u53D6\u6A21\u578B\u76EE\u5F55\u5FEB\u7167 ${path2} \u5931\u8D25\uFF0C\u6309\u65E0\u5FEB\u7167\u5904\u7406: ${String(error)}`);
     return void 0;
   }
+}
+var previousIds = /* @__PURE__ */ new Map();
+function rememberCatalogIds(provider, models) {
+  const ids = /* @__PURE__ */ new Set();
+  for (const item of models) {
+    const id = item?.id;
+    if (typeof id === "string" && id.length > 0) ids.add(id);
+  }
+  previousIds.set(provider, ids);
 }
 function writeModelCatalog(provider, models) {
   const sanitized = sanitizeModels(models);
@@ -39133,13 +39151,58 @@ function writeModelCatalog(provider, models) {
       models: sanitized
     }), "utf-8");
     renameSync5(tmp, path2);
+    previousIds.set(provider, new Set(sanitized.map((item) => item.id)));
   } catch (error) {
     logger2?.warn(`[channel-pack] \u5199\u5165\u6A21\u578B\u76EE\u5F55\u5FEB\u7167\u5931\u8D25\uFF08${provider}\uFF09: ${String(error)}`);
   }
 }
+async function writeModelCatalogClosingNew(provider, models, pool) {
+  const known = previousIds.get(provider) ?? readModelCatalogSafe(provider);
+  rememberCatalogIds(provider, models);
+  writeModelCatalog(provider, models);
+  if (pool === void 0 || known === void 0) return;
+  const fresh = newModelIdsSinceLastCatalogKnown(provider, models, known);
+  if (fresh.length === 0) return;
+  const recorded = pool.listDisabledModels(provider);
+  const toClose = fresh.filter((id) => recorded[id] !== true && recorded[id] !== false);
+  if (toClose.length === 0) return;
+  try {
+    await pool.setModelsDisabled(provider, toClose);
+    logger2?.info?.(
+      `[channel-pack] ${provider}\uFF1A\u65B0\u589E ${toClose.length} \u4E2A\u6A21\u578B\u5DF2\u9ED8\u8BA4\u5173\u95ED\uFF08${toClose.join(", ")}\uFF09\uFF0C\u9700\u5728\u6E20\u9053\u9762\u677F\u624B\u52A8\u6253\u5F00`
+    );
+  } catch (error) {
+    logger2?.warn(
+      `[channel-pack] ${provider}\uFF1A\u65B0\u589E\u6A21\u578B\u81EA\u52A8\u5173\u95ED\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u76EE\u5F55\u66F4\u65B0\uFF09: ${String(error)}`
+    );
+  }
+}
+function readModelCatalogSafe(provider) {
+  const models = readModelCatalog(provider);
+  if (models === void 0) return void 0;
+  return new Set(models.map((item) => item.id).filter(
+    (id) => typeof id === "string" && id.length > 0
+  ));
+}
+function newModelIdsSinceLastCatalogKnown(provider, models, known) {
+  void provider;
+  const fresh = [];
+  for (const item of models) {
+    const id = item?.id;
+    if (typeof id === "string" && id.length > 0 && !known.has(id)) fresh.push(id);
+  }
+  return fresh;
+}
 function restoreModelCatalog(provider, current) {
-  if (current !== void 0 && current.length > 0) return current;
-  return readModelCatalog(provider);
+  if (current !== void 0 && current.length > 0) {
+    if (!previousIds.has(provider)) rememberCatalogIds(provider, current);
+    return current;
+  }
+  const restored = readModelCatalog(provider);
+  if (restored !== void 0 && !previousIds.has(provider)) {
+    rememberCatalogIds(provider, restored);
+  }
+  return restored;
 }
 
 // vendor/channel-pack/src/buddy-adapter.ts
@@ -40510,7 +40573,7 @@ var BuddyAdapter = class _BuddyAdapter extends LlmAdapter2 {
   /** 采用远端目录**并落盘**成快照（下次启动/离线时用它顶替兜底表）。 */
   commitRemoteModels(models) {
     this.applyRemoteModels(models);
-    writeModelCatalog(this.product.id, models);
+    void writeModelCatalogClosingNew(this.product.id, models, this.options.accountPool);
   }
   /**
    * 恢复上次成功拉取的目录快照；没有快照就保持 `undefined`（调用方退回兜底表）。
@@ -43204,7 +43267,7 @@ var QoderAdapter = class extends LlmAdapter3 {
         if (rows.length > 0) {
           this.remoteModels = rows;
           this.remoteModelsAt = Date.now();
-          writeModelCatalog(this.product.id, rows);
+          void writeModelCatalogClosingNew(this.product.id, rows, this.options.accountPool);
         }
       } catch {
       } finally {
@@ -44867,7 +44930,7 @@ var TraeAdapter = class extends LlmAdapter4 {
       if (models.length === 0) return false;
       this.remoteModels = models;
       this.remoteMeta = new Map(models.map((model) => [model.id, model]));
-      writeModelCatalog(this.product.id, models);
+      void writeModelCatalogClosingNew(this.product.id, models, this.options.accountPool);
       return true;
     });
     if (this.remoteModels === void 0) {
@@ -45055,7 +45118,7 @@ var TraeAdapter = class extends LlmAdapter4 {
       if (models.length === 0) return false;
       this.remoteModels = models;
       this.remoteMeta = new Map(models.map((model) => [model.id, model]));
-      writeModelCatalog(this.product.id, models);
+      void writeModelCatalogClosingNew(this.product.id, models, this.options.accountPool);
       return true;
     } catch {
       return false;
@@ -46413,7 +46476,7 @@ var ClineAdapter = class extends LlmAdapter5 {
         }
         if (!gotRemote) return false;
         this.remoteModels = merged;
-        writeModelCatalog(this.product.id, merged);
+        void writeModelCatalogClosingNew(this.product.id, merged, this.options.accountPool);
         return true;
       } catch (error) {
         console.warn(`[cline] \u6A21\u578B\u76EE\u5F55\u62C9\u53D6\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`);
@@ -47300,7 +47363,7 @@ var CommandCodeAdapter = class extends LlmAdapter6 {
         if (!isCredentialUsable(credential)) return;
         this.remoteModels = await fetchModelCatalog(this.fetchImpl, this.product, credential);
         this.remoteModelsAt = Date.now();
-        writeModelCatalog(this.product.id, this.remoteModels);
+        void writeModelCatalogClosingNew(this.product.id, this.remoteModels, this.options.accountPool);
       } catch {
       } finally {
         this.loading = void 0;
@@ -47715,7 +47778,7 @@ var MonkeyCodeAdapter = class extends LlmAdapter7 {
         if (!isCredentialUsable2(credential)) return;
         this.remoteModels = await fetchModels(this.fetchImpl, this.product, credential);
         this.remoteModelsAt = Date.now();
-        writeModelCatalog(this.product.id, this.remoteModels);
+        void writeModelCatalogClosingNew(this.product.id, this.remoteModels, this.options.accountPool);
       } catch {
       } finally {
         this.loading = void 0;
@@ -47771,7 +47834,7 @@ var MonkeyCodeAdapter = class extends LlmAdapter7 {
       if (rows.length === 0) return false;
       this.remoteModels = rows;
       this.remoteModelsAt = Date.now();
-      writeModelCatalog(this.product.id, rows);
+      void writeModelCatalogClosingNew(this.product.id, rows, this.options.accountPool);
       return true;
     } catch {
       return false;
@@ -48410,7 +48473,7 @@ var KukuAdapter = class extends LlmAdapter9 {
           this.remoteThinkLevels = catalog.thinkLevels;
           this.remoteDefaultThinkId = catalog.defaultThinkId;
           this.remoteModelsAt = Date.now();
-          writeModelCatalog(this.product.id, catalog.models);
+          void writeModelCatalogClosingNew(this.product.id, catalog.models, this.options.accountPool);
         }
       } catch {
       } finally {
@@ -48559,7 +48622,7 @@ var AccioAdapter = class extends LlmAdapter10 {
         if (!isCredentialUsable5(credential)) return;
         this.remoteModels = await fetchModels2(this.fetchImpl, this.product, credential);
         this.remoteModelsAt = Date.now();
-        writeModelCatalog(this.product.id, this.remoteModels);
+        void writeModelCatalogClosingNew(this.product.id, this.remoteModels, this.options.accountPool);
       } catch {
       } finally {
         this.loading = void 0;
@@ -48781,7 +48844,7 @@ var OfficeAceAdapter = class extends LlmAdapter11 {
           }
           this.remoteModels = rows;
           this.remoteModelsAt = Date.now();
-          writeModelCatalog(this.product.id, rows);
+          void writeModelCatalogClosingNew(this.product.id, rows, this.options.accountPool);
         }
       } catch {
       } finally {
@@ -49114,7 +49177,7 @@ var AutoClawAdapter = class extends LlmAdapter12 {
         if (rows.length > 0) {
           this.remoteModels = rows;
           this.remoteModelsAt = Date.now();
-          writeModelCatalog(this.product.id, rows);
+          void writeModelCatalogClosingNew(this.product.id, rows, this.options.accountPool);
         }
       } catch {
       } finally {
@@ -49557,7 +49620,7 @@ var LoomyAdapter = class extends LlmAdapter13 {
       const fetched = await fetchRemote();
       if (fetched.length === 0) return false;
       this.remoteModels = fetched;
-      writeModelCatalog(this.product.id, fetched);
+      void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool);
       return true;
     } catch {
       return false;
@@ -49580,7 +49643,7 @@ var LoomyAdapter = class extends LlmAdapter13 {
         const fetched = await fetchRemote();
         if (fetched.length === 0) return false;
         this.remoteModels = fetched;
-        writeModelCatalog(this.product.id, fetched);
+        void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool);
         return true;
       });
       if (this.remoteModels !== void 0) return this.remoteModels;
@@ -50074,7 +50137,7 @@ var RaccoonAdapter = class extends LlmAdapter14 {
       const fetched = await fetchRemote();
       if (fetched.length === 0) return false;
       this.remoteModels = fetched;
-      writeModelCatalog(this.product.id, fetched);
+      void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool);
       return true;
     } catch {
       return false;
@@ -50097,7 +50160,7 @@ var RaccoonAdapter = class extends LlmAdapter14 {
         const fetched = await fetchRemote();
         if (fetched.length === 0) return false;
         this.remoteModels = fetched;
-        writeModelCatalog(this.product.id, fetched);
+        void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool);
         return true;
       });
       if (this.remoteModels !== void 0) return this.remoteModels;
@@ -50776,8 +50839,26 @@ var CodeArtsAuth = class extends Service2 {
     if (credential === void 0) return [];
     const models = await fetchCodeArtsRemoteModels(credential, this.fetchImpl);
     if (models.length > 0) {
+      const previous = loadModelsCache();
+      const known = previous === void 0 ? void 0 : new Set(previous.map((m) => m.id));
       setMemoryCache(models);
       saveModelsCache(models);
+      if (known !== void 0) {
+        const recorded = pool.listDisabledModels("codearts");
+        const fresh = models.map((m) => m.id).filter((id) => !known.has(id) && recorded[id] !== true && recorded[id] !== false);
+        if (fresh.length > 0) {
+          try {
+            await pool.setModelsDisabled("codearts", fresh);
+            this.ctx.logger?.info?.(
+              `[channel-pack] codearts\uFF1A\u65B0\u589E ${fresh.length} \u4E2A\u6A21\u578B\u5DF2\u9ED8\u8BA4\u5173\u95ED\uFF08${fresh.join(", ")}\uFF09\uFF0C\u9700\u5728\u6E20\u9053\u9762\u677F\u624B\u52A8\u6253\u5F00`
+            );
+          } catch (error) {
+            this.ctx.logger?.warn?.(
+              `[channel-pack] codearts\uFF1A\u65B0\u589E\u6A21\u578B\u81EA\u52A8\u5173\u95ED\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u76EE\u5F55\u66F4\u65B0\uFF09: ${String(error)}`
+            );
+          }
+        }
+      }
     }
     return models;
   }
@@ -60340,7 +60421,7 @@ var ZcodeAdapter = class extends LlmAdapter15 {
         const fetched = await fetchRemote();
         if (fetched.length > 0) {
           this.remoteModels = fetched;
-          writeModelCatalog(this.product.id, fetched);
+          void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool);
         }
       } catch {
       }
@@ -60358,7 +60439,7 @@ var ZcodeAdapter = class extends LlmAdapter15 {
       const fetched = await fetchRemote();
       if (fetched.length === 0) return false;
       this.remoteModels = fetched;
-      writeModelCatalog(this.product.id, fetched);
+      void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool);
       await this.refreshModelRemaining();
       return true;
     } catch {
@@ -60382,7 +60463,7 @@ var ZcodeAdapter = class extends LlmAdapter15 {
         const fetched = await fetchRemote();
         if (fetched.length === 0) return false;
         this.remoteModels = fetched;
-        writeModelCatalog(this.product.id, fetched);
+        void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool);
         return true;
       });
       if (this.remoteModels !== void 0) return this.remoteModels;
@@ -72751,7 +72832,7 @@ var MinimaxAdapter = class extends LlmAdapter17 {
         const fetched = await fetchRemote();
         if (fetched.length === 0) return false;
         this.remoteModels = fetched;
-        writeModelCatalog(this.product.id, fetched);
+        void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool);
         return true;
       });
       if (this.remoteModels !== void 0) return this.remoteModels;
@@ -72812,7 +72893,7 @@ var MinimaxAdapter = class extends LlmAdapter17 {
       const fetched = await fetchRemote();
       if (fetched.length === 0) return false;
       this.remoteModels = fetched;
-      writeModelCatalog(this.product.id, fetched);
+      void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool);
       return true;
     } catch {
       return false;

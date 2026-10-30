@@ -24,7 +24,7 @@ import type {
 import { AccountPool, providerCatalogVisible } from './account-pool.js'
 import { nextUtc8DayStartMs } from './model-queue.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
-import { writeModelCatalog, restoreModelCatalog } from './model-catalog-cache.js'
+import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import { settingsNamespaceFor } from './settings-compat.js'
 import {
   isLoomyChatModel,
@@ -291,7 +291,7 @@ export class LoomyAdapter extends LlmAdapter {
       const fetched = await fetchRemote()
       if (fetched.length === 0) return false
       this.remoteModels = fetched
-      writeModelCatalog(this.product.id, fetched)
+      void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool)
       return true
     } catch {
       return false
@@ -315,7 +315,7 @@ export class LoomyAdapter extends LlmAdapter {
         const fetched = await fetchRemote()
         if (fetched.length === 0) return false
         this.remoteModels = fetched
-        writeModelCatalog(this.product.id, fetched)
+        void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool)
         return true
       })
       if (this.remoteModels !== undefined) return this.remoteModels
