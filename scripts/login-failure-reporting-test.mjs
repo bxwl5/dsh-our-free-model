@@ -58,7 +58,16 @@ console.log(`ok  login-failure-reporting: ${checked} 处后台登录失败均会
   assert.doesNotMatch(accounts, /\?\.expires_at/, 'OfficeAce 凭据没有 expires_at 字段（写错会让 lead 判据失效）')
 
   // 用时续期必须存在且被适配器解析器调用（2026-10-30 修复点）
-  assert.match(indexSource, /const ensureCredentialFresh = /, '缺少用时续期通用实现')
+  //
+  // 2026-10-30 二次修订：通用实现从 index.ts 的内联闭包**抽到
+  // `src/expiry-sync.ts`**（`ensureCredentialFresh`）。原因是它内联时
+  // **没有任何单测能覆盖**，静态守卫只断言「有这段代码」，于是
+  // `pool.listAccounts(...).find(...)`（async 当同步用）一路活到线上，
+  // 把一次性 refresh_token 烧成死链。现在行为契约由 credential-freshness
+  // 用例真跑，这里只守「index.ts 确实接上了它」。
+  const expirySource = readFileSync(new URL('../vendor/channel-pack/src/expiry-sync.ts', import.meta.url), 'utf8')
+  assert.match(expirySource, /export async function ensureCredentialFresh/, '缺少用时续期通用实现（应在 expiry-sync.ts）')
+  assert.match(indexSource, /import \{ ensureCredentialFresh, shouldRefreshNow \} from '\.\/expiry-sync\.js'/, 'index.ts 必须从 expiry-sync 引入用时续期')
   assert.match(indexSource, /ensureOfficeAceCredentialFresh\(/, 'OfficeAce 解析器必须走用时续期')
   assert.match(indexSource, /refreshOne: refreshOneAutoClawCredential/, 'AutoClaw 也必须走用时续期')
   console.log('ok  officeace/autoclaw 续期：expire_time 判据、refresh_token 去重键、用时续期已接入')

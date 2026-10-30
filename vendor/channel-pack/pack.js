@@ -34006,6 +34006,44 @@ async function refreshAccountWithReconcile(params) {
   params.info?.(`${tag2} \u8D26\u53F7 ${accountId} \u5DF2\u7EED\u671F`);
   return true;
 }
+async function ensureCredentialFresh(params) {
+  const { providerId, defaultCredentialRef, credential, accountId, refreshOne, save, pool, log, tag: tag2 } = params;
+  if (typeof credential.refresh_token !== "string" || credential.refresh_token === "") return credential;
+  const expiresAt = typeof credential.expire_time === "number" ? credential.expire_time : void 0;
+  if (!shouldRefreshNow(expiresAt, params.now)) return credential;
+  let next;
+  try {
+    next = await refreshOne(credential);
+  } catch (error) {
+    log?.warn?.(`[channel-pack] ${tag2} \u7528\u65F6\u7EED\u671F\u5931\u8D25\uFF08\u7EE7\u7EED\u7528\u65E7\u51ED\u636E\uFF09: ${describeError(error)}`);
+    return credential;
+  }
+  const entry = accountId === "" ? void 0 : pool.listAccountsByProvider(providerId).find((row) => row.id === accountId);
+  const targetRef = entry?.credentialRef ?? defaultCredentialRef;
+  try {
+    await save(targetRef, next);
+  } catch (error) {
+    log?.error?.(
+      `[channel-pack] ${tag2} \u7528\u65F6\u7EED\u671F\u5DF2\u6210\u529F\u4F46**\u843D\u76D8\u5931\u8D25**\uFF08\u65E7 refresh_token \u5DF2\u88AB\u4E0A\u6E38\u6D88\u8D39\uFF0C\u9700\u91CD\u65B0\u767B\u5F55\uFF09: ${describeError(error)}`
+    );
+    return next;
+  }
+  log?.info?.(`[channel-pack] ${tag2} \u7528\u65F6\u7EED\u671F\u6210\u529F\uFF08\u65B0\u5230\u671F ${new Date(next.expire_time ?? 0).toISOString()}\uFF09`);
+  try {
+    if (entry !== void 0) {
+      const nextExpiry = typeof next.expire_time === "number" ? next.expire_time : void 0;
+      if (nextExpiry !== void 0 && nextExpiry !== entry.expiresAt) {
+        await pool.updateAccount(entry.id, { expiresAt: nextExpiry });
+      }
+    }
+  } catch (error) {
+    log?.warn?.(`[channel-pack] ${tag2} \u7EED\u671F\u6210\u529F\u4F46\u56DE\u5199\u8D26\u53F7\u6C60\u6709\u6548\u671F\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u4F7F\u7528\uFF09: ${describeError(error)}`);
+  }
+  return next;
+}
+function describeError(error) {
+  return error instanceof Error ? error.message : String(error);
+}
 
 // vendor/channel-pack/src/index.ts
 import { LlmError as LlmError26 } from "@deepseek-ai/dsh-llm";
@@ -75003,38 +75041,21 @@ function apply(ctx, config = {}) {
     officeAceRefreshInFlight.set(key, task);
     return task;
   };
-  const ensureCredentialFresh = async (options) => {
-    const { providerId, defaultCredentialRef, credential, accountId, refreshOne, logTag } = options;
-    if (typeof credential.refresh_token !== "string" || credential.refresh_token === "") return credential;
-    const expiresAt = typeof credential.expire_time === "number" ? credential.expire_time : void 0;
-    if (expiresAt !== void 0 && !shouldRefreshNow(expiresAt)) return credential;
-    try {
-      const next = await refreshOne(credential);
-      const entry = accountId === "" ? void 0 : pool.listAccounts(providerId).find((row) => row.id === accountId);
-      const targetRef = entry?.credentialRef ?? defaultCredentialRef;
-      await ctx.credentials.set(credentialRef15(targetRef), JSON.stringify(next));
-      if (entry !== void 0) {
-        const nextExpiry = typeof next.expire_time === "number" ? next.expire_time : void 0;
-        if (nextExpiry !== void 0 && nextExpiry !== entry.expiresAt) {
-          await pool.updateAccount(entry.id, { expiresAt: nextExpiry });
-        }
-      }
-      ctx.logger?.info?.(`[channel-pack] ${logTag} \u7528\u65F6\u7EED\u671F\u6210\u529F\uFF08\u65B0\u5230\u671F ${new Date(next.expire_time ?? 0).toISOString()}\uFF09`);
-      return next;
-    } catch (error) {
-      ctx.logger?.warn?.(
-        `[channel-pack] ${logTag} \u7528\u65F6\u7EED\u671F\u5931\u8D25\uFF08\u7EE7\u7EED\u7528\u65E7\u51ED\u636E\uFF09: ${error instanceof Error ? error.message : String(error)}`
-      );
-      return credential;
-    }
-  };
-  const ensureOfficeAceCredentialFresh = async (credential, accountId) => ensureCredentialFresh({
-    providerId: OFFICEACE.id,
-    defaultCredentialRef: OFFICEACE.defaultCredentialRef,
+  const freshCredential = (credential, accountId, options) => ensureCredentialFresh({
+    ...options,
     credential,
     accountId,
+    save: async (ref, next) => {
+      await ctx.credentials.set(credentialRef15(ref), JSON.stringify(next));
+    },
+    pool,
+    log: ctx.logger
+  });
+  const ensureOfficeAceCredentialFresh = async (credential, accountId) => freshCredential(credential, accountId, {
+    providerId: OFFICEACE.id,
+    defaultCredentialRef: OFFICEACE.defaultCredentialRef,
     refreshOne: refreshOneOfficeAceCredential,
-    logTag: "officeace"
+    tag: "officeace"
   });
   const officeAceAdapter = registerOfficeAceLlm(ctx, {
     fetchImpl: network.fetch,
@@ -75081,14 +75102,16 @@ function apply(ctx, config = {}) {
     const available2 = await pool.getAvailableAccount(product.id, "");
     activeAutoClawAccountId = available2?.entry.id ?? "";
     if (activeAutoClawAccountId.length > 0) reportLedgerAccount(product.id, activeAutoClawAccountId);
-    const fresh = (credential) => ensureCredentialFresh({
-      providerId: product.id,
-      defaultCredentialRef: product.defaultCredentialRef,
+    const fresh = (credential) => freshCredential(
       credential,
-      accountId: activeAutoClawAccountId,
-      refreshOne: refreshOneAutoClawCredential,
-      logTag: product.id
-    });
+      activeAutoClawAccountId,
+      {
+        providerId: product.id,
+        defaultCredentialRef: product.defaultCredentialRef,
+        refreshOne: refreshOneAutoClawCredential,
+        tag: product.id
+      }
+    );
     if (available2) return fresh(available2.credential);
     const resolved = await ctx.credentials.resolve(credentialRef15(product.defaultCredentialRef));
     if (!resolved) return void 0;
@@ -75585,7 +75608,7 @@ function apply(ctx, config = {}) {
     ["autoclaw", (p) => refreshAutoclawAccounts(p)]
   ];
   async function refreshExpiringAccounts(pool2, providerId, isRefreshable2, expiresAtOf, refreshOne) {
-    for (const entry of pool2.listAccounts(providerId)) {
+    for (const entry of pool2.listAccountsByProvider(providerId)) {
       if (entry.refreshable === false) continue;
       let credential;
       try {
@@ -75598,15 +75621,30 @@ function apply(ctx, config = {}) {
       if (!isRefreshable2(credential)) continue;
       const expiresAt = expiresAtOf(credential);
       if (expiresAt !== void 0 && !shouldRefreshNow(expiresAt)) continue;
+      let next;
       try {
-        const next = await refreshOne(credential);
+        next = await refreshOne(credential);
+      } catch (error) {
+        ctx.logger?.warn?.(`[channel-pack] ${providerId} \u8D26\u53F7 ${entry.id} \u7EED\u671F\u5931\u8D25: ${String(error)}`);
+        continue;
+      }
+      try {
         await ctx.credentials.set(credentialRef15(entry.credentialRef), JSON.stringify(next));
+      } catch (error) {
+        ctx.logger?.error?.(
+          `[channel-pack] ${providerId} \u8D26\u53F7 ${entry.id} \u7EED\u671F\u5DF2\u6210\u529F\u4F46**\u843D\u76D8\u5931\u8D25**\uFF08\u65E7 refresh_token \u5DF2\u88AB\u4E0A\u6E38\u6D88\u8D39\uFF0C\u9700\u91CD\u65B0\u767B\u5F55\uFF09: ${String(error)}`
+        );
+        continue;
+      }
+      try {
         const nextExpiry = expiresAtOf(next);
         if (nextExpiry !== void 0 && nextExpiry !== entry.expiresAt) {
           await pool2.updateAccount(entry.id, { expiresAt: nextExpiry });
         }
       } catch (error) {
-        ctx.logger?.warn?.(`[channel-pack] ${providerId} \u8D26\u53F7 ${entry.id} \u7EED\u671F\u5931\u8D25: ${String(error)}`);
+        ctx.logger?.warn?.(
+          `[channel-pack] ${providerId} \u8D26\u53F7 ${entry.id} \u7EED\u671F\u6210\u529F\u4F46\u56DE\u5199\u8D26\u53F7\u6C60\u6709\u6548\u671F\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u4F7F\u7528\uFF09: ${String(error)}`
+        );
       }
     }
   }

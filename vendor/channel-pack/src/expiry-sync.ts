@@ -218,3 +218,123 @@ export async function refreshAccountWithReconcile<TCredential>(params: {
   params.info?.(`${tag} 账号 ${accountId} 已续期`)
   return true
 }
+
+/**
+ * 「用时续期」所需的最小账号池能力。
+ *
+ * ⚠⚠ **`listAccountsByProvider` 必须是同步的。**
+ *
+ * `AccountPool.listAccounts` 是 `async`（它要逐个 `credentials.describe` 才拼得出
+ * `ProviderAccountStatus`），返回 Promise；对它做 `.find(...)` 或 `for...of`
+ * 会当场抛 `TypeError`。2026-10-30 的事故就是把它当同步用：
+ * 续期成功后、落盘前抛错 ⇒ 上游已消费掉一次性 refresh_token，本地却仍留着
+ * 旧值 ⇒ 续期链被打死，只能重新登录（用户原话：「你把 officeace 的续期彻底玩坏了」）。
+ *
+ * 这里把类型收窄成同步方法，**编译期**就能挡住同类误用（`vendor/` 不在
+ * `tsc` 的 include 里，所以这条约束靠本模块的类型签名 + 单测来守）。
+ */
+export interface FreshnessPool {
+  listAccountsByProvider(provider: string): ReadonlyArray<{
+    id: string
+    credentialRef: string
+    expiresAt?: number
+  }>
+  updateAccount(id: string, patch: { expiresAt?: number }): Promise<void>
+}
+
+/** 续期一条凭据的日志出口（与 cordis 的 logger 形状对齐，便于注入替身）。 */
+export interface FreshnessLog {
+  info?: (message: string) => void
+  warn?: (message: string) => void
+  error?: (message: string) => void
+}
+
+/**
+ * **用时续期**：取凭据之前判一次，临期或已过期就先续，续完再返回。
+ *
+ * ## 为什么光有定时器不够
+ * OfficeAce 的 STS 寿命约 **2 小时**（AutoClaw 约 5.7 小时），而定时器是
+ * 「每 30 分钟检查一次、距过期不足 1 小时才续」（{@link REFRESH_LEAD_MS}）。
+ * 于是这些窗口必然过期：DSH 关闭 / 重启期间、重启后第一轮还没跑到的空档、
+ * 机器休眠醒来后（定时器被挂起）。过期期间签到 / 余额 / 倍率全部
+ * `APIG.0602 security token has expired`，用户看到的就是「老是凭证过期」。
+ *
+ * ## 顺序契约（**本函数最要紧的部分**）
+ *
+ * `refresh_token` 是**一次性轮换**的：上游在续期成功那一刻就把旧值消费掉了。
+ * 所以「续期成功」之后**任何一步失败都不能挡住落盘**，否则磁盘上留下的是一枚
+ * 已作废的 token —— 续期链当场死亡。本函数据此拆成三段，各自的失败策略不同：
+ *
+ * 1. **续期**（网络）：失败 ⇒ 告警并返回旧凭据，让上游错误按既有归因呈现；
+ * 2. **落盘**（本地）：失败 ⇒ **error 级别**报出来（用户需要知道要重新登录），
+ *    仍返回新凭据（内存里这份是好的，本次请求可用）；
+ * 3. **记账**（展示层 `expiresAt`）：失败只告警，**绝不影响**已落盘的新凭据。
+ *
+ * 这三段刻意不共用一个 try —— 共用正是 2026-10-30 事故的成因。
+ */
+export async function ensureCredentialFresh<T extends { refresh_token?: string; expire_time?: number }>(params: {
+  /** provider id（如 `'officeace'`），用于反查账号条目。 */
+  providerId: string
+  /** 单凭据场景的默认 ref（没有账号池条目时落到这里）。 */
+  defaultCredentialRef: string
+  credential: T
+  /** 账号池条目 id；空串表示「不在池里」，走默认 ref。 */
+  accountId: string
+  /** 真正的续期；失败应抛错。 */
+  refreshOne: (value: unknown) => Promise<unknown>
+  /** 写回凭据存储。 */
+  save: (ref: string, credential: T) => Promise<void>
+  pool: FreshnessPool
+  log?: FreshnessLog
+  /** 日志前缀，如 `'officeace'`。 */
+  tag: string
+  /** 当前时刻（测试注入）。 */
+  now?: number
+}): Promise<T> {
+  const { providerId, defaultCredentialRef, credential, accountId, refreshOne, save, pool, log, tag } = params
+  if (typeof credential.refresh_token !== 'string' || credential.refresh_token === '') return credential
+  const expiresAt = typeof credential.expire_time === 'number' ? credential.expire_time : undefined
+  if (!shouldRefreshNow(expiresAt, params.now)) return credential
+
+  // ① 续期
+  let next: T
+  try {
+    next = await refreshOne(credential) as T
+  } catch (error) {
+    log?.warn?.(`[channel-pack] ${tag} 用时续期失败（继续用旧凭据）: ${describeError(error)}`)
+    return credential
+  }
+
+  // 账号条目用**同步**方法查（见 FreshnessPool 的注释）；查不到只是记账降级，不影响落盘。
+  const entry = accountId === '' ? undefined : pool.listAccountsByProvider(providerId).find((row) => row.id === accountId)
+  const targetRef = entry?.credentialRef ?? defaultCredentialRef
+
+  // ② 落盘：紧跟续期，且不与任何其它步骤共用 try
+  try {
+    await save(targetRef, next)
+  } catch (error) {
+    log?.error?.(
+      `[channel-pack] ${tag} 用时续期已成功但**落盘失败**（旧 refresh_token 已被上游消费，需重新登录）: ${describeError(error)}`,
+    )
+    return next
+  }
+  log?.info?.(`[channel-pack] ${tag} 用时续期成功（新到期 ${new Date(next.expire_time ?? 0).toISOString()}）`)
+
+  // ③ 记账：只喂 UI 徽标，出错不反噬凭据
+  try {
+    if (entry !== undefined) {
+      const nextExpiry = typeof next.expire_time === 'number' ? next.expire_time : undefined
+      if (nextExpiry !== undefined && nextExpiry !== entry.expiresAt) {
+        await pool.updateAccount(entry.id, { expiresAt: nextExpiry })
+      }
+    }
+  } catch (error) {
+    log?.warn?.(`[channel-pack] ${tag} 续期成功但回写账号池有效期失败（不影响使用）: ${describeError(error)}`)
+  }
+  return next
+}
+
+/** 异常转一行文案（日志用；不吞栈，因为这里只做单行摘要）。 */
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}

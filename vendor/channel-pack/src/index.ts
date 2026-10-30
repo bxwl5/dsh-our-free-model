@@ -1,6 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { shouldRefreshNow } from './expiry-sync.js'
+import { ensureCredentialFresh, shouldRefreshNow } from './expiry-sync.js'
 import { LlmError } from '@deepseek-ai/dsh-llm'
 import Schema from '@deepseek-ai/schemastery'
 import { registerCodeArtsLlm, PROVIDER as CODEARTS_PROVIDER } from './llm-adapter.js'
@@ -1129,71 +1129,39 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
   }
 
   /**
-   * **用时续期**通用实现（2026-10-30，用户报「OfficeAce 老是凭证过期」的根治）。
+   * 调用共享的「用时续期」实现（`src/expiry-sync.ts` 的 `ensureCredentialFresh`）。
    *
-   * ## 为什么光有 30 分钟定时器不够
-   * OfficeAce 的 STS 寿命约 **2 小时**（AutoClaw 约 5.7 小时），而定时器是
-   * 「每 30 分钟检查一次、距过期不足 1 小时才续」（`REFRESH_LEAD_MS`）。于是
-   * 这些窗口必然过期：
-   * - DSH 关闭 / 重启期间（定时器不存在）；
-   * - 重启后第一轮还没跑到的空档；
-   * - 机器休眠后醒来（定时器被挂起）。
-   * 过期期间签到 / 余额 / 倍率全部 `APIG.0602 security token has expired`，
-   * 用户看到的就是「老是凭证过期」。
-   *
-   * ## 做法
-   * 每次**取凭据之前**判一次：临期（≤ lead 窗口）或已过期就先续，续完再返回。
-   * 续期走各自的 in-flight 去重表（与定时器共用，避免同一份一次性
-   * refresh_token 被并发消费 → `STS5.1806` 打死续期链）。
-   * 续期失败**不阻断**：仍返回旧凭据，让上游错误按既有归因呈现。
+   * 为什么抽到模块里：这段顺序契约（续期 → **落盘** → 记账，三段各自的失败
+   * 策略不同）此前是内联在本文件的一个 40 行闭包，**没有任何单测能覆盖它** ——
+   * 静态守卫只断言了「有这段代码」。于是 2026-10-30 那个
+   * `pool.listAccounts(...).find(...)`（async 方法当同步用）能一路活到线上，
+   * 把一次性 refresh_token 烧成死链。抽出来后由 credential-freshness 用例
+   * 用真实替身跑通「续期成功必须落盘」「记账失败不回滚」等分支。
    */
-  const ensureCredentialFresh = async <T extends { refresh_token?: string; expire_time?: number }>(options: {
-    providerId: string
-    defaultCredentialRef: string
-    credential: T
-    accountId: string
-    refreshOne: (value: unknown) => Promise<unknown>
-    logTag: string
-  }): Promise<T> => {
-    const { providerId, defaultCredentialRef, credential, accountId, refreshOne, logTag } = options
-    if (typeof credential.refresh_token !== 'string' || credential.refresh_token === '') return credential
-    const expiresAt = typeof credential.expire_time === 'number' ? credential.expire_time : undefined
-    if (expiresAt !== undefined && !shouldRefreshNow(expiresAt)) return credential
-    try {
-      const next = await refreshOne(credential) as T
-      // 落盘：账号池条目按**它自己的** ref 写回（多账号各写各的）；没有账号条目
-      // 时才落到单凭据的默认 ref。
-      const entry = accountId === '' ? undefined : pool.listAccounts(providerId).find((row) => row.id === accountId)
-      const targetRef = entry?.credentialRef ?? defaultCredentialRef
-      await ctx.credentials.set(credentialRef(targetRef), JSON.stringify(next))
-      if (entry !== undefined) {
-        const nextExpiry = typeof next.expire_time === 'number' ? next.expire_time : undefined
-        if (nextExpiry !== undefined && nextExpiry !== entry.expiresAt) {
-          await pool.updateAccount(entry.id, { expiresAt: nextExpiry })
-        }
-      }
-      ctx.logger?.info?.(`[channel-pack] ${logTag} 用时续期成功（新到期 ${new Date(next.expire_time ?? 0).toISOString()}）`)
-      return next
-    } catch (error) {
-      // 不阻断：返回旧凭据，让上游错误按既有归因呈现（用户仍能看到真实原因）。
-      ctx.logger?.warn?.(
-        `[channel-pack] ${logTag} 用时续期失败（继续用旧凭据）: ${error instanceof Error ? error.message : String(error)}`,
-      )
-      return credential
-    }
-  }
+  const freshCredential = <T extends { refresh_token?: string; expire_time?: number }>(
+    credential: T,
+    accountId: string,
+    options: { providerId: string; defaultCredentialRef: string; refreshOne: (value: unknown) => Promise<unknown>; tag: string },
+  ): Promise<T> => ensureCredentialFresh({
+    ...options,
+    credential,
+    accountId,
+    save: async (ref, next) => {
+      await ctx.credentials.set(credentialRef(ref), JSON.stringify(next))
+    },
+    pool,
+    log: ctx.logger,
+  })
 
   /** OfficeAce 的用时续期（薄封装，固定 provider 与去重函数）。 */
   const ensureOfficeAceCredentialFresh = async (
     credential: OfficeAceCredential,
     accountId: string,
-  ): Promise<OfficeAceCredential> => ensureCredentialFresh({
+  ): Promise<OfficeAceCredential> => freshCredential(credential, accountId, {
     providerId: OFFICEACE.id,
     defaultCredentialRef: OFFICEACE.defaultCredentialRef,
-    credential,
-    accountId,
     refreshOne: refreshOneOfficeAceCredential,
-    logTag: 'officeace',
+    tag: 'officeace',
   })
 
   const officeAceAdapter = registerOfficeAceLlm(ctx, {
@@ -1248,14 +1216,16 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
     const available = await pool.getAvailableAccount(product.id, '')
     activeAutoClawAccountId = available?.entry.id ?? ''
     if (activeAutoClawAccountId.length > 0) reportLedgerAccount(product.id, activeAutoClawAccountId)
-    const fresh = (credential: AutoClawCredential): Promise<AutoClawCredential> => ensureCredentialFresh({
-      providerId: product.id,
-      defaultCredentialRef: product.defaultCredentialRef,
+    const fresh = (credential: AutoClawCredential): Promise<AutoClawCredential> => freshCredential(
       credential,
-      accountId: activeAutoClawAccountId,
-      refreshOne: refreshOneAutoClawCredential,
-      logTag: product.id,
-    })
+      activeAutoClawAccountId,
+      {
+        providerId: product.id,
+        defaultCredentialRef: product.defaultCredentialRef,
+        refreshOne: refreshOneAutoClawCredential,
+        tag: product.id,
+      },
+    )
     if (available) return fresh(available.credential as AutoClawCredential)
     const resolved = await ctx.credentials.resolve(credentialRef(product.defaultCredentialRef))
     if (!resolved) return undefined
@@ -2076,7 +2046,16 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
     expiresAtOf: (value: unknown) => number | undefined,
     refreshOne: (value: unknown) => Promise<unknown>,
   ): Promise<void> {
-    for (const entry of pool.listAccounts(providerId)) {
+    // ⚠⚠ **必须是同步的 `listAccountsByProvider`，不是 `listAccounts`。**
+    //
+    // `listAccounts` 是 `async`（它要逐个 `credentials.describe` 才拼得出
+    // `ProviderAccountStatus`），返回的是 Promise：对它做 `for...of` 会抛
+    // `TypeError: ... is not a function or its return value is not iterable`。
+    // 那个异常会冒到 `refreshAllCredentials` 的 catch，被记成一条
+    // 「批量续期失败」—— 于是 OfficeAce / AutoClaw 的 30 分钟定时续期
+    // **从 2026-10-26（abf6848）起一次都没真正跑过**，日志里只有一句
+    // 看不懂的 warn，用户看到的就是「老是凭证过期」。
+    for (const entry of pool.listAccountsByProvider(providerId)) {
       if (entry.refreshable === false) continue
       let credential: unknown
       try {
@@ -2092,17 +2071,37 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
       // OfficeAce 的凭据实测就没有该字段，此时按「可能已过期」处理、照常续期，
       // 由上游返回决定成败（续期是幂等的）。
       if (expiresAt !== undefined && !shouldRefreshNow(expiresAt)) continue
+      let next: unknown
       try {
-        const next = await refreshOne(credential)
+        next = await refreshOne(credential)
+      } catch (error) {
+        ctx.logger?.warn?.(`[channel-pack] ${providerId} 账号 ${entry.id} 续期失败: ${String(error)}`)
+        continue
+      }
+      // ⚠ 与 `ensureCredentialFresh` 同一条纪律：**续期一旦成功，落盘必须紧跟着做**。
+      // refresh_token 是一次性轮换的，上游已经消费掉旧值；这里若因为写盘失败而
+      // 走 catch，磁盘上留的就是一枚死 token，续期链当场断掉。故落盘单独 try、
+      // 失败按 error 级别报出来（用户需要知道要重新登录）。
+      try {
         await ctx.credentials.set(credentialRef(entry.credentialRef), JSON.stringify(next))
-        // ⚠ 必须把新的到期时间写回账号池：否则面板徽标永远显示旧的「已过期」，
-        // 而凭据其实已经续好（用户无从判断）。codearts 的 syncAccountExpiry 同因。
+      } catch (error) {
+        ctx.logger?.error?.(
+          `[channel-pack] ${providerId} 账号 ${entry.id} 续期已成功但**落盘失败**`
+          + `（旧 refresh_token 已被上游消费，需重新登录）: ${String(error)}`,
+        )
+        continue
+      }
+      // ⚠ 必须把新的到期时间写回账号池：否则面板徽标永远显示旧的「已过期」，
+      // 而凭据其实已经续好（用户无从判断）。codearts 的 syncAccountExpiry 同因。
+      try {
         const nextExpiry = expiresAtOf(next)
         if (nextExpiry !== undefined && nextExpiry !== entry.expiresAt) {
           await pool.updateAccount(entry.id, { expiresAt: nextExpiry })
         }
       } catch (error) {
-        ctx.logger?.warn?.(`[channel-pack] ${providerId} 账号 ${entry.id} 续期失败: ${String(error)}`)
+        ctx.logger?.warn?.(
+          `[channel-pack] ${providerId} 账号 ${entry.id} 续期成功但回写账号池有效期失败（不影响使用）: ${String(error)}`,
+        )
       }
     }
   }
