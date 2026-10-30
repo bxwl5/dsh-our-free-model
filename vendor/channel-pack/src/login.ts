@@ -212,6 +212,47 @@ export async function startOAuthFlow(options: LoginFlowOptions = {}): Promise<St
  * 阻塞语义：打开浏览器并等待用户完成授权后才返回。
  * 需要「立即拿到 URL」的场景（Channel Pack 两步式登录）请用 {@link startOAuthFlow}。
  */
+/**
+ * 平台默认浏览器打开器（POSIX `xdg-open`/`open`、Windows `cmd /c start`）。
+ *
+ * ⚠ **必须 `child.unref()` + 监听 `'error'`**，二者缺一不可：无桌面环境的
+ * `open`（macOS）/ `xdg-open`（Linux）常常不存在 ⇒ `ENOENT` ⇒ 只 `unref`
+ * 不挂监听器会**直接把宿主进程带走**（POSIX 的已知坑）。
+ *
+ * ⚠️ 本函数在 `401dd0e`（删旧 ticket 流程）时被**连定义一起删掉**，但
+ * `runOAuthFlow` 里的调用点留下了 —— `options.openBrowser ?? openBrowser`
+ * 在调用方没传 openBrowser 时抛 `ReferenceError`。2026-10-31 从历史提交
+ * 恢复本实现（与当时的版本逐字节一致）。
+ */
+export function openBrowser(url: string): void {
+  const warn = (error: unknown): void => {
+    console.error('[codearts-auth] failed to open browser; open manually:', url, error)
+  }
+  if (process.platform === 'win32') {
+    // Windows 下 `cmd /c start` 会把 URL 中每个 `&` 当命令分隔符（参数被截断，
+    // 浏览器只收到 `?theme=2`）。整个 URL 加引号作单参数 + 关闭 Node 二次转义；
+    // start 的窗口标题参数必须显式传 `'""'`（空参数会被 Node 丢弃）。
+    const args = ['/c', 'start', '""', `"${url}"`]
+    try {
+      const child = spawn('cmd', args, { detached: true, stdio: 'ignore', windowsVerbatimArguments: true })
+      child.on('error', warn)
+      child.unref()
+      return
+    } catch (error) {
+      warn(error)
+      return
+    }
+  }
+  const cmd = process.platform === 'darwin' ? 'open' : 'xdg-open'
+  try {
+    const child = spawn(cmd, [url], { detached: true, stdio: 'ignore' })
+    child.on('error', warn)
+    child.unref()
+  } catch (error) {
+    warn(error)
+  }
+}
+
 export async function runOAuthFlow(options: LoginFlowOptions = {}): Promise<LoginFlowResult> {
   const started = await startOAuthFlow(options)
   try {

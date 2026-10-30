@@ -30,7 +30,7 @@ import {
   setGatewayDesiredEnabled,
 } from './openai-gateway/runtime.js'
 import type { CodeArtsAuth } from './service.js'
-import type { CodeArtsCredential, ModelQuota } from './types.js'
+import type { AccountAnomaly, CodeArtsCredential, ModelQuota } from './types.js'
 import type { BuddyAuth } from './buddy-auth.js'
 import type { QoderAuth } from './qoder-auth.js'
 import type { TraeAuth } from './trae-auth.js'
@@ -40,12 +40,14 @@ import { buddyExpiringWindowDays } from './buddy-balance-rank.js'
 import { normalizeCookie as normalizeMonkeyCodeCookie } from './monkeycode.js'
 import { isCredentialUsable as isOrcaTermCredentialUsable, normalizeCookie as normalizeOrcaTermCookie, type OrcaTermCredential } from './orcaterm.js'
 import { KUKU } from './kuku-product.js'
+import type { KukuCredential } from './kuku.js'
 import { startKukuLoginFlow, type KukuLoginFlow } from './kuku-qr-login-page.js'
 import { parseCredential as parseAutoClawCredential, type AutoClawCredential } from './autoclaw.js'
 import type { AccioCredential } from './accio.js'
 import { ACCIO, ACCIO_CN } from './accio-product.js'
 import { fetchQuota as fetchAccioQuota, refreshCredential as refreshAccioCredential } from './accio-auth.js'
 import { readCredits } from './commandcode-credits.js'
+import type { CreditPackage } from './credits.js'
 import type { CommandCodeCredential } from './commandcode.js'
 import { COMMANDCODE } from './commandcode-product.js'
 import {
@@ -330,18 +332,6 @@ function parseCodeArtsCredential(raw: string): CodeArtsCredential | undefined {
   try {
     const parsed = JSON.parse(raw) as CodeArtsCredential
     return typeof parsed === 'object' && parsed !== null && typeof parsed.access_key_id === 'string'
-      ? parsed
-      : undefined
-  } catch {
-    return undefined
-  }
-}
-
-/** 解析 LobsterAI 凭据 JSON；解析失败返回 undefined。 */
-function parseLobsteraiCredential(raw: string): LobsteraiCredential | undefined {
-  try {
-    const parsed = JSON.parse(raw) as LobsteraiCredential
-    return typeof parsed === 'object' && parsed !== null && typeof parsed.access_token === 'string'
       ? parsed
       : undefined
   } catch {
@@ -4013,9 +4003,12 @@ function registerChannelPackEndpoints(
             fetchBalanceDetailed: async (credential) => {
               const points = await fetchKukuPoints(codeartsFetcher, KUKU_PRODUCT, credential)
               // 拿不到就说清楚，不显示成 0（0 会被误读为「积分用光」）。
+              // ⚠️ `packages` 必须带显式 `CreditPackage[]` 类型注解：裸 `[]` 会被
+              // 推成 `never[]`，与 `CreditBalance.packages` 不兼容（2026-10-31
+              // tsc 门禁发现——运行时无影响，类型层谎报）。
               return points === undefined
                 ? { balance: null, error: '未返回积分数据（上游业务码非 0 或结构不认识）' }
-                : { balance: { total: points, packages: [] } }
+                : { balance: { total: points, packages: [] as CreditPackage[] } }
             },
             warn: (msg) => ctx.logger?.warn?.(msg),
           })

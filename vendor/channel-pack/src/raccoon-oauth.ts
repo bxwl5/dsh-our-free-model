@@ -33,6 +33,24 @@ import {
 } from './raccoon.js'
 import { type RaccoonProduct } from './raccoon-product.js'
 
+/**
+ * 商汤业务信封（`code === 0` 为成功）。
+ *
+ * ⚠️ 此前 `parseEnvelope` 的**返回类型注解**引用了一个不存在的名字：
+ * 定义从来没写过（TS 擦除后运行时无影响，但类型层全线失明）。2026-10-31
+ * 按 `parseEnvelope` 的实际产出补上。
+ */
+interface RaccoonEnvelope {
+  /** 业务码；HTTP 非 2xx 时降级为 HTTP 状态码。 */
+  code: number
+  /** 服务端文案（优先于本地 fallback）。 */
+  message: string
+  /** 服务端补充说明。 */
+  details: string
+  /** 业务数据（信封 `data`，可能缺席）。 */
+  data: Record<string, unknown> | undefined
+}
+
 /** 解析业务信封。`code === 0` 为成功。 */
 function parseEnvelope(payload: unknown, status: number): RaccoonEnvelope {
   const record = typeof payload === 'object' && payload !== null && !Array.isArray(payload)

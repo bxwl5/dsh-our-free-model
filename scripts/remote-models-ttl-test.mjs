@@ -1315,3 +1315,69 @@ export async function verifyNewModelAutoDisableWiring() {
   assert.match(cache, /export async function writeModelCatalogClosingNew/, '收口入口必须存在')
   console.log('ok  new-model-auto-disable: 15 处写快照全部走收口 + codearts 内联路径在位')
 }
+
+/**
+ * 「providerRetryPolicy 必须带 mode」的**接线守卫**（2026-10-31 tsc 门禁发现）。
+ *
+ * ## 后果（已实锤，不是理论）
+ *
+ * 7 个渠道（accio/commandcode/monkeycode/orcaterm/kuku/autoclaw/officeace）的
+ * 重试策略形状是旧版宿主的（缺 `mode`）。宿主 `dsh-llm-retry` 的 `recover()`：
+ *
+ *     if (policy.mode === "normal" && previousRetry >= policy.maxRetries) return next()
+ *
+ * `mode` 为 undefined ⇒ 这个**重试上限检查恒 false** ⇒ 这 7 个渠道的失败重试
+ * **没有次数上限** —— 网络故障时同一请求会被无限重试，白烧配额。
+ *
+ * 守卫：全仓静态扫描，任何 `providerRetryPolicy` 的返回值缺 `mode: 'normal'`
+ * （或缺 `mode: 'always'`）都会红。
+ */
+export async function verifyRetryPolicyModeWiring() {
+  const { readFileSync, readdirSync } = await import('node:fs')
+  const srcDir = new URL('../vendor/channel-pack/src/', import.meta.url)
+  const offenders = []
+  for (const name of readdirSync(srcDir)) {
+    if (!name.endsWith('.ts')) continue
+    const src = readFileSync(new URL(name, srcDir), 'utf8')
+    if (!src.includes('providerRetryPolicy')) continue
+    // 剥注释再判（教训：注释里引用错误写法会假阳性）。
+    const code = src.split('\n').map((line) => line.replace(/\/\/.*$/, '')).join('\n')
+    for (const m of code.matchAll(/providerRetryPolicy\(\)\s*:\s*\{([\s\S]{0,300}?)\}\s*\{([\s\S]{0,400}?)\n  \}/g)) {
+      const returnType = m[1]
+      const body = m[2]
+      if (!/mode:\s*'normal'|mode:\s*'always'/.test(returnType)) offenders.push(`${name}: 返回类型缺 mode`)
+      if (!/mode:\s*'normal'|mode:\s*'always'/.test(body)) offenders.push(`${name}: 返回值缺 mode`)
+    }
+  }
+  assert.deepEqual(offenders, [], 'providerRetryPolicy 缺 mode（重试上限会失效 → 无限重试）：\n' + offenders.join('\n'))
+  console.log('ok  retry-policy-mode: 全部 providerRetryPolicy 带 mode（重试上限真实生效）')
+}
+
+/**
+ * 「finish chunk 的 reason 必须是宿主对象形态」的守卫。
+ *
+ * 宿主 `FinishReason` 是 `{kind:'stop'|'tool-calls'|'max-tokens'|...}` 对象；
+ * 写成 `reason: 'stop'`（字符串）时 `agent-loop` 的 `finish.kind` 检查全部落空，
+ * 目前靠 fallthrough 侥幸正确，宿主加检查即炸。delta 契约（`emitDeltaBlocks`）
+ * 只有 text/reasoning 的适配器 finish 恒为 `{kind:'stop'}`。
+ */
+export async function verifyFinishReasonShapeWiring() {
+  const { readFileSync, readdirSync } = await import('node:fs')
+  const srcDir = new URL('../vendor/channel-pack/src/', import.meta.url)
+  const offenders = []
+  for (const name of readdirSync(srcDir)) {
+    if (!name.endsWith('.ts')) continue
+    const src = readFileSync(new URL(name, srcDir), 'utf8')
+    // 剥行注释**和块注释**（教训：`finish_reason:"stop"` 这类上游文案常出现在
+    // 块注释里 —— buddy/trae/openai-compat/sse 四处都是，首次运行即假阳性）。
+    const code = src
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .map((line) => line.replace(/\/\/.*$/, ''))
+      .join('\n')
+    // 字符串形态：reason: 'stop' / reason: "stop"（reason: { ... } 是对的）
+    if (/reason:\s*['"](?:stop|tool-calls|max-tokens)['"]/.test(code)) offenders.push(name)
+  }
+  assert.deepEqual(offenders, [], "finish chunk 的 reason 用了字符串形态（宿主要对象 {kind:...}）：\n" + offenders.join('\n'))
+  console.log('ok  finish-reason-shape: 全部 finish chunk 用宿主对象形态')
+}

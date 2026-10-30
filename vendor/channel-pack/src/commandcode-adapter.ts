@@ -363,6 +363,7 @@ export class CommandCodeAdapter extends LlmAdapter {
    * undefined，于是 undefined * 2ⁿ = NaN，持久会话日志直接拒绝非有限数值。
    */
   providerRetryPolicy(): {
+    mode: 'normal'
     retryableCodes: readonly string[]
     maxRetries: number
     initialDelayMs: number
@@ -370,6 +371,7 @@ export class CommandCodeAdapter extends LlmAdapter {
     jitterRatio: number
   } {
     return {
+      mode: 'normal',
       // AUTH 不在列：Key 失效重试多少次都是 401。
       // 429 不在列：同一轮重试只会继续撞墙。
       retryableCodes: ['TRANSPORT', 'TIMEOUT', 'SERVER_ERROR'],

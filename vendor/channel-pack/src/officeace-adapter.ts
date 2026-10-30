@@ -301,6 +301,7 @@ export class OfficeAceAdapter extends LlmAdapter {
 
   /** 扁平退避策略。 */
   providerRetryPolicy(): {
+    mode: 'normal'
     retryableCodes: readonly string[]
     maxRetries: number
     initialDelayMs: number
@@ -308,6 +309,7 @@ export class OfficeAceAdapter extends LlmAdapter {
     jitterRatio: number
   } {
     return {
+      mode: 'normal',
       retryableCodes: ['TRANSPORT', 'TIMEOUT', 'SERVER_ERROR'],
       maxRetries: 2,
       initialDelayMs: 800,

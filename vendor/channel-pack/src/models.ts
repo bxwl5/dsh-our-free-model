@@ -85,6 +85,15 @@ export const MODEL_REFRESH_INTERVAL_MS = 2 * 3_600_000
 export interface RemoteModel {
   id: string
   name: string
+  /**
+   * 消耗系数（agent-center 的 credit rate；x1 不标，`undefined` = 无倍率信息）。
+   *
+   * ⚠️ 2026-10-29 接入倍率时**漏了本字段**：`fetchCodeArtsAgentModels` 直接
+   * `model.rate = rate` 裸写（TS 擦除后侥幸运行），类型层完全失明 ——
+   * 字段拼错、类型改名都不会被发现。2026-10-31 补上（tsc 门禁发现的 91 条
+   * 历史 TS 错误之一）。
+   */
+  rate?: number
 }
 
 /** 模块级内存缓存：远端拉取或磁盘加载后填充；availableCodeArtsModels 优先读取。 */

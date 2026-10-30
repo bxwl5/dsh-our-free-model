@@ -343,7 +343,13 @@ export class MonkeyCodeAdapter extends LlmAdapter {
       }
       throw new LlmError(message, 'TRANSPORT')
     }
-    yield { type: 'finish', reason: 'stop' }
+    // ⚠ 宿主的 `FinishReason` 是**对象**（`{kind:'stop'}`），不是字符串。
+    // 早期写 `reason: 'stop'`（字符串）：TS 擦除后运行时侥幸正确
+    //（`agent-loop` 检查 `finish.kind` 时 undefined 不命中任何分支，
+    // fallthrough 到 stop），但宿主哪天加一个 kind 检查就会全炸。
+    // 本适配器的 delta 流只有 text/reasoning（`emitDeltaBlocks` 契约），
+    // 不会产出 tool-call 块，故 finish 恒为 `{kind:'stop'}`。
+    yield { type: 'finish', reason: { kind: 'stop' } }
   }
 
   /**
@@ -353,6 +359,7 @@ export class MonkeyCodeAdapter extends LlmAdapter {
    * 嵌进 `backoff: {}` 会读到 undefined → NaN，持久会话日志会拒绝非有限数值。
    */
   providerRetryPolicy(): {
+    mode: 'normal'
     retryableCodes: readonly string[]
     maxRetries: number
     initialDelayMs: number
@@ -360,6 +367,7 @@ export class MonkeyCodeAdapter extends LlmAdapter {
     jitterRatio: number
   } {
     return {
+      mode: 'normal',
       retryableCodes: ['TRANSPORT', 'TIMEOUT'],
       maxRetries: 2,
       initialDelayMs: 900,

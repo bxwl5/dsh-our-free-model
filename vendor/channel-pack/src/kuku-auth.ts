@@ -14,6 +14,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 
 import {
+  KUKU_FREEPOINT_PATH,
   KUKU_SENDMSG_PATH,
   KUKU_SSE_PATH,
   KUKU_VIP_REMAIN_PATH,
