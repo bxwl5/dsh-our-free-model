@@ -155,7 +155,10 @@ export function parseCredential(value: unknown): OfficeAceCredential | undefined
     ...(stringValue(value.nickname) === undefined ? {} : { nickname: stringValue(value.nickname) }),
     ...(stringValue(value.refresh_token) === undefined ? {} : { refresh_token: stringValue(value.refresh_token) }),
     ...(typeof value.expire_time === 'number' && Number.isFinite(value.expire_time) ? { expire_time: value.expire_time } : {}),
-    ...(isRecord(value.dpop) ? { dpop: value.dpop as OfficeAceDpopJwkPair } : {}),
+    // dpop 的内部结构（privateJwk/publicJwk）由登录流程产出、本模块只透传；
+    // 逐字段校验放在使用点（createDpopProofFromJwk）。经 unknown 中转表达
+    // 「形状信任产出方」的既有约定（2026-10-31 门禁）。
+    ...(isRecord(value.dpop) ? { dpop: value.dpop as unknown as OfficeAceDpopJwkPair } : {}),
     ...(value.model_info === undefined ? {} : { model_info: value.model_info }),
     created_at: Date.now(),
   }
@@ -248,6 +251,22 @@ function tokenDisplayName(token: string | undefined): string | undefined {
   }
   const profile = decodeUserProfile(claims.user_profile)
   return profile === undefined ? undefined : stringValue(profile.account_name)
+}
+
+/**
+ * 业务签名（V11 / SDK-HMAC）所需的 **AK/SK** 是否齐备。
+ *
+ * `isCredentialUsable` 只保证**推理**三件套（base_url/app_key/app_secret）；
+ * 签名用的是另一对（STS 下发的 `access_key`/`secret_key`，可选字段）。
+ * 此前 V11/SDK-HMAC 调用点把 `string | undefined` 直接塞进 `signV11` 的
+ * `accessKey: string`（TS2322 ×6，2026-10-31 门禁）—— 运行时缺 AK/SK 会算出
+ * 无效签名而不是明确报错。各签名入口现在先过本守卫。
+ */
+export function hasSigningKeys(
+  credential: OfficeAceCredential,
+): credential is OfficeAceCredential & { access_key: string; secret_key: string } {
+  return typeof credential.access_key === 'string' && credential.access_key !== ''
+    && typeof credential.secret_key === 'string' && credential.secret_key !== ''
 }
 
 /** 判断凭据形状是否可用（推理凭据齐备即可）。 */
@@ -641,6 +660,11 @@ async function v11SignedGet(
   path: string,
   options: { signal?: AbortSignal } = {},
 ): Promise<Response> {
+  // ⚠️ 签名需要 AK/SK（STS 下发，凭据里是可选字段）：缺了不是算出无效签名
+  // （上游只回一句含混的 401），而是当场讲清楚缺什么。
+  if (!hasSigningKeys(credential)) {
+    throw new Error('OfficeAce：凭据缺少 access_key/secret_key（业务签名不可用；重新登录可重建）')
+  }
   const host = new URL(url).host
   const timestampMs = Date.now()
   const sdkDate = formatSdkDate(timestampMs)
@@ -658,6 +682,9 @@ async function v11SignedGet(
   const { canonicalRequest, signedHeaders } = buildCanonicalRequest({
     method: 'GET', path, query: '', host, headers: signHeaders, payloadHash,
   })
+  if (!hasSigningKeys(credential)) {
+    throw new Error('OfficeAce：凭据缺少 access_key/secret_key（业务签名不可用；重新登录可重建）')
+  }
   const { authorization } = await signV11({
     accessKey: credential.access_key,
     secretKey: credential.secret_key,
@@ -844,6 +871,9 @@ export async function claimBonus(
   const { canonicalRequest, signedHeaders } = buildCanonicalRequest({
     method: 'POST', path: OFFICEACE_BONUS_CLAIM_PATH, query: '', host, headers: signHeaders, payloadHash,
   })
+  if (!hasSigningKeys(credential)) {
+    throw new Error('OfficeAce：凭据缺少 access_key/secret_key（业务签名不可用；重新登录可重建）')
+  }
   const { authorization } = await signV11({
     accessKey: credential.access_key,
     secretKey: credential.secret_key,
@@ -957,6 +987,9 @@ export async function validatePermission(
     headers: signHeaders,
     payloadHash,
   })
+  if (!hasSigningKeys(credential)) {
+    throw new Error('OfficeAce：凭据缺少 access_key/secret_key（业务签名不可用；重新登录可重建）')
+  }
   const { authorization } = await signSdkHmac({
     accessKey: credential.access_key,
     secretKey: credential.secret_key,

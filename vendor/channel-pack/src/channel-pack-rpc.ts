@@ -53,7 +53,6 @@ import { COMMANDCODE } from './commandcode-product.js'
 import {
   fetchCheckinStatus as fetchMonkeyCodeCheckinStatus,
   fetchWallet as fetchMonkeyCodeWallet,
-  fetchCheckinStatus as fetchMonkeyCodeCheckinStatus,
   runCheckinWithCaptcha as runMonkeyCodeCheckinWithCaptcha,
 } from './monkeycode-auth.js'
 import type { MonkeyCodeCredential } from './monkeycode.js'
@@ -4000,7 +3999,7 @@ function registerChannelPackEndpoints(
           const values = await collectCreditBalances<KukuCredential, typeof KUKU_PRODUCT>(accounts, KUKU_PRODUCT, {
             fetcher: codeartsFetcher,
             resolve: (ref) => ctx.credentials.resolve(ref),
-            fetchBalanceDetailed: async (credential) => {
+            fetchBalanceDetailed: async (credential, _product) => {
               const points = await fetchKukuPoints(codeartsFetcher, KUKU_PRODUCT, credential)
               // 拿不到就说清楚，不显示成 0（0 会被误读为「积分用光」）。
               // ⚠️ `packages` 必须带显式 `CreditPackage[]` 类型注解：裸 `[]` 会被
@@ -4008,7 +4007,11 @@ function registerChannelPackEndpoints(
               // tsc 门禁发现——运行时无影响，类型层谎报）。
               return points === undefined
                 ? { balance: null, error: '未返回积分数据（上游业务码非 0 或结构不认识）' }
-                : { balance: { total: points, packages: [] as CreditPackage[] } }
+                // ⚠️ `CreditBalance` 必填 `{total, packages, expiredTotal}`：
+                // kuku 是单值积分制（无资源包、无失效包），按其它单值渠道同款
+                // 口径补 `packages: []` + `expiredTotal: 0`（裸 `{total}` 少
+                // `expiredTotal` —— 2026-10-31 tsc 门禁）。
+                : { balance: { total: points, packages: [] as CreditPackage[], expiredTotal: 0 } }
             },
             warn: (msg) => ctx.logger?.warn?.(msg),
           })
@@ -5298,7 +5301,10 @@ function registerChannelPackEndpoints(
           }
           return [...merged.values()].map((entry) => entry.row)
         }
-        const renameModels = (accounts: readonly { models: readonly TokenLedgerModelRow[] }[]) =>
+        // ⚠️ 参数类型不能窄化成 `{ models: ... }`：spread 保留字段没问题，但
+        // TS 对「窄化形参 + 展开」的推断会**丢掉其余字段的类型身份**（TS2322，
+        // 2026-10-31 门禁）。用泛型 `T` 保留完整行类型，结构逐字不变。
+        const renameModels = <T extends { models: readonly TokenLedgerModelRow[] }>(accounts: readonly T[]): T[] =>
           accounts.map((account) => ({ ...account, models: mergeModels(account.models) }))
         const value: RpcUsageTokenLedgerResponse = {
           snapshot: {
@@ -5364,7 +5370,8 @@ function registerChannelPackEndpoints(
          * 四层，只有最内层带 `model` 字段，故只改那一层、其余原样透传
          * （改结构反而容易漏字段，前端按原形消费）。
          */
-        const renameModels = (accounts: readonly { models: readonly { model: string }[] }[]) =>
+        // ⚠️ 同上：泛型保留完整行类型，避免窄化形参 + 展开丢字段（2026-10-31 门禁）。
+        const renameModels = <T extends { models: readonly { model: string }[] }>(accounts: readonly T[]): T[] =>
           accounts.map((account) => ({
             ...account,
             models: account.models.map((row) => ({ ...row, model: modelLabel(row.model) })),

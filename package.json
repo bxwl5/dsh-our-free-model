@@ -25,7 +25,8 @@
     "test:release": "node scripts/test-all.mjs --mode release",
     "channel-pack": "node scripts/build-channel-pack.mjs",
     "selftest": "node scripts/host-selftest.mjs",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck:channels": "tsc --noEmit -p vendor/channel-pack/tsconfig.json"
   },
   "files": [
     "index.js",
@@ -71,6 +72,7 @@
   "devDependencies": {
     "jose": "6.1.3",
     "undici": "8.11.2",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "@types/node": "^22.0.0"
   }
 }

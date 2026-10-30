@@ -37,7 +37,7 @@ import type {
   ToolSchema,
 } from '@deepseek-ai/dsh-llm'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import { collectHarnessSystem, normalizeHarnessMessages } from './message-shape.js'
+import { collectHarnessSystem, normalizeHarnessMessages, type HarnessMessageInput, type NormalizedHarnessMessage } from './message-shape.js'
 import { readWithIdleTimeout, resolveToolPairing } from './sse.js'
 import type { GeminiInlineImage, GeminiModelSpec } from './gemini.js'
 import {
@@ -138,7 +138,14 @@ export function canonicalArgs(args: unknown): string {
 export interface TranslateGeminiRequestOptions {
   modelId: string
   spec: GeminiModelSpec
-  messages: readonly Message[]
+  /**
+   * ⚠️ 入参用**形状宽松**的消息（归一化在函数体内做：`normalizeHarnessMessages`
+   * 会处理 0.1.7 的 `role:'tool'` 一等消息与 `developer` 剥离）。此前写
+   * `readonly Message[]`，而适配器 `stream()` 收到的宿主实参是
+   * `RequestMessage[]`（携带 attachment 字段、role 联合更宽）—— 直接传会
+   * TS2322（2026-10-31 门禁）；此前靠隐式 any 没被发现。
+   */
+  messages: readonly HarnessMessageInput[]
   system?: string
   tools?: readonly ToolSchema[]
   toolChoice?: unknown
@@ -195,9 +202,13 @@ export function translateGeminiRequest(options: TranslateGeminiRequestOptions): 
   // ⚠️ 步骤 1：归一化「一等 tool 消息」形状（0.1.7+ 的 `role:'tool'` + 顶层
   // `toolCallId`）。漏掉会让 `tool-result` 判定恒不命中，工具结果被当成普通
   // 用户文本下发 —— 模型看不到工具输出，表现为提前结束或循环思考。
+  // ⚠️ 用 NormalizedHarnessMessage（content 额外允许 legacy tool-result 块），
+  // 不再 `as unknown as Message[]`：宿主 ContentBlockMap 已删 'tool-result'，
+  // 那个强转会把 `block.type === 'tool-result'` 分支推成 never，整个工具结果
+  // 处理在类型层失明（TS2339 ×4 + TS2367 ×1，2026-10-31 tsc 门禁）。
   const normalized = normalizeHarnessMessages(
     options.messages as unknown as readonly { role: string; content?: unknown }[],
-  ) as unknown as readonly Message[]
+  ) as unknown as readonly NormalizedHarnessMessage[]
 
   // ⚠️ 步骤 2：剔除无法配对的 tool_use / tool_result（孤儿块上游同样 400）。
   const { keepCallIds, keepResultIds } = resolveToolPairing(normalized)
@@ -404,7 +415,14 @@ function sanitizeParameters(parameters: Record<string, unknown>): Record<string,
 }
 
 /** 解析工具参数 JSON；失败/非对象时退化为 `{}`（**不编造参数**）。 */
-function parseToolArguments(raw: string): Record<string, unknown> {
+function parseToolArguments(raw: unknown): Record<string, unknown> {
+  // 归一化块的 `arguments` 是 unknown（宿主 ToolCallBlock 之外还有 legacy 形状）；
+  // 非字符串（对象已解析 / 缺失）直接按原样放行 —— 调用方只做 JSON.stringify。
+  if (typeof raw !== 'string') {
+    return typeof raw === 'object' && raw !== null && !Array.isArray(raw)
+      ? raw as Record<string, unknown>
+      : {}
+  }
   if (raw.trim() === '') return {}
   try {
     const parsed: unknown = JSON.parse(raw)
@@ -417,9 +435,11 @@ function parseToolArguments(raw: string): Record<string, unknown> {
 }
 
 /** 工具结果的内容块 → 纯文本（上游 `functionResponse.response.content` 只吃文本）。 */
-function toolResultText(blocks: readonly ContentBlock[]): string {
+function toolResultText(blocks: unknown): string {
+  // 归一化 tool-result 块的 `content` 是 unknown（透传原样）；非数组视为空。
+  if (!Array.isArray(blocks)) return ''
   const out: string[] = []
-  for (const block of blocks) {
+  for (const block of blocks as readonly ContentBlock[]) {
     if (block.type === 'text') out.push(block.text)
     else if (block.type === 'reasoning') out.push(block.text)
   }

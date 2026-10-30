@@ -48,6 +48,11 @@ jobs:
           node-version: 22
       - run: npm install --ignore-scripts
       - run: npm run typecheck
+      # Channel Pack 的 vendor 树（20 个渠道）也在严格检查内。2026-10-31 起要求
+      # 0 错误：`@types/node@22`（CI 的 node 22 自带）+ tsconfig 的 DOM lib。
+      # 此前 vendor/ 不跑 tsc，`async listAccounts` 当同步用烧掉 OfficeAce
+      # 续期链、providerRetryPolicy 缺 mode 无限重试这类缺陷全都能活到线上。
+      - run: npm run typecheck:channels
 
   standalone-frontend:
     runs-on: ubuntu-latest

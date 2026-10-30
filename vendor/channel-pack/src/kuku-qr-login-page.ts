@@ -49,6 +49,13 @@ export type KukuPollOutcome =
   | { state: 'scanned' }
   | { state: 'confirmed' }
   | { state: 'expired'; error?: string }
+  /**
+   * 上游回了没见过的形状（`KukuQrState` 的 `unknown`，不猜）。
+   * 页面侧按 `pending` 同样处理：继续轮询。此前页面联合缺这个成员，
+   * 把 `polled.state` 原样返回时 TS2322（2026-10-31 门禁）——
+   * 也就是说**真实发生的 unknown 一路被强转掩盖**。
+   */
+  | { state: 'unknown' }
 
 interface FlowState {
   session: KukuQrSession
@@ -113,6 +120,8 @@ export async function startKukuLoginFlow(options: {
         settleOk(completed.credential)
         return { state: 'confirmed' }
       }
+      // `unknown` 原样透传：客户端对非 expired 一律继续轮询（不特判），
+      // 与 `pending` 同效果 —— 「不猜」的语义在两端保持一致。
       return polled.state === 'confirmed' ? { state: 'confirmed' } : { state: polled.state }
     } catch (error) {
       // 二维码过期 / 上游错误：卡片显示「刷新二维码」，RPC 侧清掉占位账号。

@@ -1171,8 +1171,12 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
       activeOfficeAceAccountId = available?.entry.id ?? ''
       if (activeOfficeAceAccountId.length > 0) reportLedgerAccount(OFFICEACE.id, activeOfficeAceAccountId)
       if (available) {
+        // ⚠️ `getAvailableAccount` 的返回类型写死为
+        // `CodeArtsCredential | BuddyCredential`（池接口未按 provider 泛型化 ——
+        // 既有欠账），运行时这里拿到的**就是** OfficeAce 凭据 JSON。经 unknown
+        // 中转并注明缘由，不对类型系统撒谎（2026-10-31 门禁）。
         return await ensureOfficeAceCredentialFresh(
-          available.credential as OfficeAceCredential,
+          available.credential as unknown as OfficeAceCredential,
           activeOfficeAceAccountId,
         )
       }

@@ -116,7 +116,10 @@ export class CommandCodeAdapter extends LlmAdapter {
   }
 
   /** 模型接受的输入模态。无结论时保守报 text。 */
-  private inputModalitiesFor(modelId: string): readonly string[] {
+  // ⚠️ 返回类型必须是对应的 `ModelModality` 联合而不是 `string`：宿主
+  // `LlmModelInfo.inputModalities` / `LlmResolvedModelInfo.inputModalities`
+  // 都收 `readonly ModelModality[]`（TS2322 ×2，2026-10-31 门禁）。
+  private inputModalitiesFor(modelId: string): readonly ('text' | 'image')[] {
     const entry = this.remoteModels?.find((candidate) => candidate.id === modelId)
       ?? this.product.fallbackModels.find((candidate) => candidate.id === modelId)
     return entry?.supportsImage === true ? ['text', 'image'] : ['text']

@@ -49,6 +49,71 @@ export interface HarnessMessageLike {
   [key: string]: unknown
 }
 
+/**
+ * 与 {@link HarnessMessageLike} 同形状，但**不带 index signature** ——
+ * 宿主 `RequestMessage`（readonly 字段 + `id?: never` 等精确键）无法赋给
+ * 带 index signature 的接口（TS4113/TS2322），而 `normalizeHarnessMessages`
+ * 的入参本来就只需「role + content（+ 可选 tool 字段）」这几个形状事实。
+ * 适配器把宿主 `GenerateOptions.messages` 传进来时用本类型。
+ */
+export interface HarnessMessageInput {
+  role: string
+  content?: unknown
+  toolCallId?: unknown
+  isError?: unknown
+  /** 0.1.7 tool 消息的伴随字段（`source.callId` 回退用）。 */
+  source?: unknown
+}
+
+/**
+ * ≤0.1.6 形状的 `tool-result` 包裹块（`normalizeHarnessMessages` 在 0.1.7+
+ * 输入下**主动造出**的形状，见文件头对照表）。
+ *
+ * ⚠️ 为什么必须有这个类型（2026-10-31 tsc 门禁）：宿主 0.1.7 的
+ * `ContentBlockMap` 已**删除** `'tool-result'` 成员，而归一化恰恰要把
+ * `role:'tool'` 消息降级成这种块。此前适配器把归一化结果
+ * `as unknown as readonly Message[]`，于是 `block.type === 'tool-result'`
+ * 的判据把 `block` 推成 `never` —— 工具结果的全部下游代码
+ * （`toolCallId` / `content` / `isError`）在类型层失明（TS2339 ×8 +
+ * TS2367 ×2），拼错字段也不会被发现。适配器现在用本类型收窄。
+ */
+export interface LegacyToolResultBlock {
+  type: 'tool-result'
+  /** 配对的 assistant `tool-call` 块 id（0.1.7 顶层字段降级而来）。 */
+  toolCallId?: unknown
+  /** 工具输出内容（原样透传，各适配器自行序列化）。 */
+  content: unknown
+  /** 工具是否失败（上游按此决定错误呈现）。 */
+  isError?: unknown
+}
+
+/**
+ * OpenAI 兼容网关造的 `tool-result` 块（与 {@link LegacyToolResultBlock} 同形状，
+ * 单独命名是为了错误信息可读：一个是「归一化产出」，一个是「入站转换产出」）。
+ */
+export interface GatewayToolResult extends LegacyToolResultBlock {}
+
+/**
+ * 归一化后的消息：宿主 `Message` 形状，但 content 里**额外允许**
+ * {@link LegacyToolResultBlock}。取代适配器里 `as unknown as Message[]` 的
+ * 双重强转 —— 强转会让 `never` 收窄吞掉整个工具分支。
+ */
+export interface NormalizedHarnessMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool' | 'developer'
+  content: ReadonlyArray<
+    | LegacyToolResultBlock
+    | { type: 'text'; text: string }
+    | { type: 'reasoning'; text: string }
+    | { type: 'image'; [key: string]: unknown }
+    | { type: 'file'; [key: string]: unknown }
+    | { type: 'tool-call'; id: unknown; name: string; arguments?: unknown; [key: string]: unknown }
+    | { type: 'tool-addition' | 'tool-removal'; [key: string]: unknown }
+  >
+  toolCallId?: unknown
+  isError?: unknown
+  [key: string]: unknown
+}
+
 /** 归一化探测结果。 */
 export type MessageShape =
   /** ≤0.1.6：工具结果包裹在 user 消息的 `tool-result` 块里。 */
@@ -65,7 +130,7 @@ function isWrappedToolResult(block: unknown): boolean {
 }
 
 /** 判断一条消息是否为 0.1.7 的一等工具结果消息。 */
-function isToolRoleMessage(message: HarnessMessageLike): boolean {
+function isToolRoleMessage(message: HarnessMessageInput): boolean {
   return message.role === 'tool'
 }
 
@@ -79,7 +144,7 @@ function isToolRoleMessage(message: HarnessMessageLike): boolean {
  * @param messages - harness 传入的完整消息序列。
  * @returns 该历史使用的形状。
  */
-export function detectMessageShape(messages: readonly HarnessMessageLike[]): MessageShape {
+export function detectMessageShape(messages: readonly HarnessMessageInput[]): MessageShape {
   let sawLegacy = false
   for (const message of messages) {
     if (isToolRoleMessage(message)) return 'tool-role'
@@ -108,9 +173,9 @@ export function detectMessageShape(messages: readonly HarnessMessageLike[]): Mes
  * @param messages - harness 传入的完整消息序列。
  * @returns 归一化后的消息序列；**无需改动时返回原数组引用**（零成本透传）。
  */
-export function normalizeHarnessMessages<T extends HarnessMessageLike>(
+export function normalizeHarnessMessages<T extends HarnessMessageInput>(
   messages: readonly T[],
-): readonly HarnessMessageLike[] {
+): readonly HarnessMessageInput[] {
   // `detectMessageShape` 只回答"工具结果长什么样"；`developer` 是 0.1.7 专有角色
   // （0.1.5 的 role 联合类型只有 system/user/assistant），无论有没有工具结果都
   // 必须剥离。两个判据相互独立，故在此分别求值。
@@ -120,7 +185,7 @@ export function normalizeHarnessMessages<T extends HarnessMessageLike>(
     // 0.1.5 路径：连数组身份都不变，确保既有行为逐字节不受影响。
     return messages
   }
-  const normalized: HarnessMessageLike[] = []
+  const normalized: HarnessMessageInput[] = []
   for (const message of messages) {
     if (message.role === 'developer') continue
     if (!isToolRoleMessage(message)) {
@@ -129,7 +194,7 @@ export function normalizeHarnessMessages<T extends HarnessMessageLike>(
     }
     // `source.callId` 是 0.1.7 的伴随字段；顶层缺失时回退它，
     // 两者都缺则保持 undefined（下游按"无 id"处理，与旧行为一致）。
-    const source = message['source']
+    const source = message.source
     const sourceCallId = typeof source === 'object' && source !== null
       ? (source as { callId?: unknown }).callId
       : undefined
@@ -146,7 +211,7 @@ export function normalizeHarnessMessages<T extends HarnessMessageLike>(
 }
 
 /** Collect message-carried system text without turning it into conversation turns. */
-export function collectHarnessSystem(messages: readonly Pick<HarnessMessageLike, 'role' | 'content'>[]): string {
+export function collectHarnessSystem(messages: readonly Pick<HarnessMessageInput, 'role' | 'content'>[]): string {
   const parts: string[] = []
   for (const message of messages) {
     if (message === null || typeof message !== 'object' || message.role !== 'system') continue

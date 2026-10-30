@@ -282,7 +282,11 @@ export class MonkeyCodeWsClient {
    * 直接消费本方法必须自己处理控制帧，否则对端会因收不到 pong 而断开。
    */
   async *frames(): AsyncGenerator<WsFrame> {
-    let buffer = Buffer.alloc(0)
+    // ⚠️ `Buffer.concat` 返回 `Buffer<ArrayBufferLike>`（拼接的一般结果），
+    // 而 `Buffer.alloc(0)` 是 `Buffer<ArrayBuffer>` —— 声明成宽的
+    // `Buffer<ArrayBufferLike>`，消除赋值期的泛型不匹配（TS2322，
+    // 2026-10-31 门禁；@types/node 22 起 Buffer 带视图泛型）。
+    let buffer: Buffer<ArrayBufferLike> = Buffer.alloc(0)
     try {
       for (;;) {
         const chunk = await this.reader.read()

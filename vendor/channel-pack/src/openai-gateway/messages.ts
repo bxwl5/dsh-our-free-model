@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
-import type { GenerateOptions, Message, ToolSchema } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, GenerateOptions, Message, ToolSchema } from '@deepseek-ai/dsh-llm'
+import type { GatewayToolResult } from '../message-shape.js'
 import {
   DEFAULT_IMAGE_LIMITS,
   parseImageDataUrl,
@@ -179,7 +180,9 @@ export async function partsFromContent(
   if (!Array.isArray(content)) {
     throw new OpenAiGatewayError('message.content must be a string or an array of content parts')
   }
-  const blocks: NonNullable<Message['content']> = []
+  // ⚠️ 构造期用可变数组，返回时按宿主契约收窄成 readonly（2026-10-31 tsc 门禁：
+  // 宿主 0.1.7 把 Message.content 改 readonly，构造期的 push 不该谎称 readonly）。
+  const blocks: ContentBlock[] = []
   const used = { count: 0, bytes: 0 }
   for (const part of content) {
     if (!part || typeof part !== 'object') {
@@ -256,7 +259,11 @@ export function textFromContent(content: unknown): string {
 
 /** Produce a fresh V4 source identity for each gateway-owned message (PR #229). */
 export function gatewaySource(): Message['source'] {
-  return { kind: 'plugin:dsh-openai-gateway' } as Message['source']
+  // ⚠️ `plugin:dsh-openai-gateway` 是**本网关自定义**的来源标记，宿主
+  // `MessageSourceMap` 没有这个成员 —— 消费方（诊断日志）只读不校验。
+  // 此前的裸 `as Message['source']` 是对类型系统撒谎；经 unknown 中转并
+  // 注释说明（2026-10-31 tsc 门禁）。
+  return { kind: 'plugin:dsh-openai-gateway' } as unknown as Message['source']
 }
 
 /**
@@ -270,7 +277,12 @@ export function createGatewayMessage(
   content: Message['content'],
   source: Message['source'],
 ): Message {
-  return { id: randomUUID() as Message['id'], role, content, source }
+  // ⚠️ `role` 是运行期联合，TS 无法把「这次调用的 role」关联到 `Message` 对应
+  // 成员（AssistantMessage 要求 source.kind==='model'、ToolResultMessage 要求
+  // 顶层 toolCallId …）。调用点各自构造**符合该角色契约**的实参（user→user 源、
+  // assistant→model 源、tool→tool 源），结构在运行期是正确的；类型层用一次
+  // 受控强转表达「调用点已保证角色与 source 配对」这一约定（2026-10-31 门禁）。
+  return { id: randomUUID() as Message['id'], role, content, source } as unknown as Message
 }
 
 function convertToolCalls(raw: unknown): Message['content'] {
@@ -319,7 +331,7 @@ async function convertMessage(
   }
   if (role === 'assistant') {
     const text = textFromContent(value.content)
-    const content: Message['content'] = text.length > 0 ? [{ type: 'text', text }] : []
+    const content: ContentBlock[] = text.length > 0 ? [{ type: 'text', text }] : []
     if (value.tool_calls !== undefined) content.push(...convertToolCalls(value.tool_calls))
     return createGatewayMessage('assistant', content, { kind: 'model', provider, model })
   }
@@ -334,11 +346,20 @@ async function convertMessage(
     // 图片走与 user 消息**同一份**入站实现（附件服务落盘），故这里复用
     // `partsFromContent`；各适配器本就递归消费 `tool-result` 的内嵌图片
     // （见 `trae-adapter.ts` 的 `collectImages` / `userContentParts`）。
-    return createGatewayMessage('user', [{
+    // ⚠️ `type:'tool-result'` 是**故意的降级形状**（≤0.1.6 user 内嵌块）：
+    // 宿主 0.1.7 的 ContentBlockMap 已删该成员，适配器侧靠
+    // `normalizeHarnessMessages`/直接判据消费它。类型上用
+    // `LegacyToolResultBlock`（message-shape.ts）表达，不再对宿主类型撒谎。
+    // `toolCallId` 同理：GatewayToolResult 的 unknown 字段，消费侧 String() 归一。
+    const toolResult: GatewayToolResult = {
       type: 'tool-result',
-      toolCallId: value.tool_call_id as never,
+      toolCallId: value.tool_call_id,
       content: await partsFromContent(value.content, bridge, limits),
-    }], { kind: 'tool', callId: value.tool_call_id as never })
+    }
+    return createGatewayMessage('user', [toolResult as unknown as ContentBlock], {
+      kind: 'tool',
+      callId: value.tool_call_id as Message['source'] extends { kind: 'tool'; callId: infer T } ? T : never,
+    })
   }
   throw new OpenAiGatewayError(`unsupported message role: ${String(role)}`)
 }

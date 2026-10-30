@@ -42,8 +42,39 @@ export interface AutoClawProduct {
   fallbackModels: readonly AutoClawFallbackModel[]
 }
 
+/**
+ * AutoClaw 模型条目的**展示扩展字段**（全部可选，远端行与兜底行共用）。
+ *
+ * ⚠️ 为什么抽出来（2026-10-31 tsc 门禁）：适配器把远端行（`AutoClawModelRow`）
+ * 与兜底行做联合 `AutoClawModelRow | AutoClawFallbackModel`，联合收窄后只能
+ * 看到**公共字段** —— `efforts` / `tooltip` / `creditLevel` 等在联合上全部
+ * 「不存在」（TS2339 ×9），展示层被迫写防弹衣或干脆失明。10-26 用户报障
+ * 「从远端拉取但推理强度没了」正是这类联合在运行时的体现。
+ * 两侧行都继承本接口后，联合上这些字段可见且类型一致。
+ */
+export interface AutoClawModelDisplay {
+  /** 积分消耗档（上游 `creditConsumptionLevel`，中文分档：`低`/`中`/`高`）。 */
+  creditLevel?: string
+  /** 思考档位 id 表（上游 `reasoningLevel`，如 `['low','high','max']`）。 */
+  efforts?: string[]
+  /** 上游是否支持思考（`reasoning`）。 */
+  supportsThinking?: boolean
+  /** 上游中文说明（`tooltip`，用作 description）。 */
+  tooltip?: string
+  /**
+   * 促销徽标（上游 `metadata.__pricingPromotion.badge`，实测 `"限时半价"`）。
+   *
+   * ⚠️ 上游**只给文案，不给数字倍率**。展示时原样用文案，不要换算成 `x0.5`。
+   */
+  promotion?: string
+  /** 免费额度是否已用完（上游 `metadata.forbiddenNotice` 存在即表示用完）。 */
+  quotaExhausted?: boolean
+  /** 额度用完时上游给的说明（`forbiddenNotice.desc`，含「24 小时后重置」等）。 */
+  quotaNotice?: string
+}
+
 /** 兜底模型条目。 */
-export interface AutoClawFallbackModel {
+export interface AutoClawFallbackModel extends AutoClawModelDisplay {
   id: string
   name: string
   contextWindow: number

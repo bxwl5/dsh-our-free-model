@@ -11,6 +11,7 @@
  */
 
 import { Service, type Context } from '@deepseek-ai/cordis'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 
 import {
   type CommandCodeProduct,
@@ -90,7 +91,7 @@ export class CommandCodeAuth extends Service {
    * 是这个服务最正常的状态之一。
    */
   async credential(): Promise<CommandCodeCredential | undefined> {
-    const resolved = await this.ctx.credentials.resolve(this.credentialRefName)
+    const resolved = await this.ctx.credentials.resolve(credentialRef(this.credentialRefName))
     if (resolved === undefined) return undefined
     try {
       const parsed: unknown = JSON.parse(resolved.value)
@@ -104,12 +105,12 @@ export class CommandCodeAuth extends Service {
 
   /** 写入凭据（覆盖）。 */
   async save(credential: CommandCodeCredential): Promise<void> {
-    await this.ctx.credentials.set(this.credentialRefName, JSON.stringify(credential))
+    await this.ctx.credentials.set(credentialRef(this.credentialRefName), JSON.stringify(credential))
   }
 
   /** 删除凭据（登出）。 */
   async logout(): Promise<void> {
-    await this.ctx.credentials.unset(this.credentialRefName)
+    await this.ctx.credentials.unset(credentialRef(this.credentialRefName))
   }
 
   /**

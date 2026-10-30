@@ -3,7 +3,14 @@
     "target": "ES2023",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2023"],
+        // ⚠️ ES2023 之外必须带上 `DOM`（WebCrypto/DOMException 等 web 平台类型）
+    //    与 `DOM.Iterable`：本包大量使用 `crypto.subtle`（officeace-dpop）、
+    //    `ReadableStream`（node:stream/web 与 DOM 同名类型在 @types/node 22 里
+    //    由 undici-types 桥接，声明依赖 DOM lib 存在与否）。缺 DOM lib 时
+    //    CryptoKey/JsonWebKey/ReadableStream/TransformStream/WebSocket 全部
+    //    TS2304 —— 2026-10-31 tsc 门禁清债时发现（此前 vendor/ 根本不跑 tsc）。
+    //    Node 运行时真有这些全局（18+ 的 web globals），不是撒谎。
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "strict": true,
     "declaration": true,
     "declarationMap": true,

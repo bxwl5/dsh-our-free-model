@@ -450,8 +450,11 @@ export async function* streamChat(
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
 
-import { ACCIO_LOGIN_START_PORT, type AccioProduct } from './accio-product.js'
-import { buildAccioAuthUrl, createPkcePair, type AccioCredential } from './accio.js'
+// ⚠️ AccioProduct / AccioCredential 已在文件顶部从**同一对文件**导入；
+// 这里曾经重复导入（TS2300 Duplicate identifier，2026-10-31 门禁）——
+// 顶部块补上本段实际用到的值导入，避免两份绑定。
+import { ACCIO_LOGIN_START_PORT } from './accio-product.js'
+import { buildAccioAuthUrl, createPkcePair } from './accio.js'
 
 /** 回调路径。 */
 export const ACCIO_CALLBACK_PATH = '/callback'

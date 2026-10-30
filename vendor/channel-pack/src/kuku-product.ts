@@ -31,7 +31,14 @@ export interface KukuProduct {
   fallbackModels: readonly KukuFallbackModel[]
 }
 
-/** 兜底模型条目。 */
+/**
+ * 兜底模型条目。
+ *
+ * ⚠️ 后四个可选字段与远端行 `KukuModelEntry`（kuku-adapter.ts）**对齐**
+ * （2026-10-31 tsc 门禁）：适配器把「远端行 | 兜底行」做联合，收窄后只能看到
+ * 公共字段 —— 兜底行缺这些可选字段时，`description` / `priceFactor` 在联合上
+ * 「不存在」（TS2339 ×2），展示层被迫失明。全可选，兜底表不填即无该信息。
+ */
 export interface KukuFallbackModel {
   /** 模型 wire 名（`model_name`）。 */
   id: string
@@ -41,6 +48,12 @@ export interface KukuFallbackModel {
   maxTokens?: number
   /** 是否支持思考档位。 */
   thinking?: boolean
+  /** 倍率（从 `"0.16x"` 解析成数字）；兜底表条目可不填。 */
+  priceFactor?: number
+  /** 上游原文描述（`description`）；兜底表条目可不填。 */
+  description?: string
+  /** 会员专属（`vip_type: 1`）；兜底表条目可不填。 */
+  vipOnly?: boolean
 }
 
 /**

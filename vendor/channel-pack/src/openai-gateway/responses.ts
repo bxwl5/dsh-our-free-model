@@ -68,6 +68,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, FinishReason, GenerateOptions, Message, StreamChunk, TokenUsage } from '@deepseek-ai/dsh-llm'
+import type { GatewayToolResult } from '../message-shape.js'
 import { DEFAULT_IMAGE_LIMITS, type AttachmentBridge, type ImageLimits } from './images.js'
 import {
   OpenAiGatewayError,
@@ -424,11 +425,14 @@ async function toMessages(
   limits: ImageLimits,
 ): Promise<Message[]> {
   const messages: Message[] = []
+  // ⚠️ pushAssistant 需要「追加进上一条 assistant」——但宿主 Message.content
+  // 是 readonly（不可变契约）。这里 messages 本就是本函数**私有构造**的数组，
+  // 构造期突变安全；用受控可变视图表达（2026-10-31 门禁）。
   const pushAssistant = (blocks: ContentBlock[]): void => {
     if (blocks.length === 0) return
     const last = messages[messages.length - 1]
     if (last !== undefined && last.role === 'assistant') {
-      last.content.push(...blocks)
+      ;(last.content as ContentBlock[]).push(...blocks)
       return
     }
     messages.push(createGatewayMessage('assistant', blocks, assistantItemSource(provider, model)))
@@ -492,11 +496,18 @@ async function toMessages(
     if (type === 'function_call_output') {
       const callId = nonEmptyString(raw.call_id)
       if (callId === undefined) throw new OpenAiGatewayError('function_call_output requires call_id')
-      messages.push(createGatewayMessage('user', [{
+      // type:'tool-result' 是故意的降级形状（宿主 ContentBlockMap 已删该成员，
+      // 适配器侧靠判据消费）；GatewayToolResult 如实表达，见 messages.ts 同款注释。
+      const toolResult: GatewayToolResult = {
         type: 'tool-result',
-        toolCallId: callId as never,
+        toolCallId: callId,
         content: await outputParts(raw.output, bridge, limits),
-      }], { kind: 'tool', callId: callId as never }))
+      }
+      messages.push(createGatewayMessage('user', [toolResult as unknown as ContentBlock], {
+        kind: 'tool',
+        // ToolCallId 是宿主品牌类型；callId 已过 nonEmptyString 验证。
+        callId: callId as Message['source'] extends { kind: 'tool'; callId: infer T } ? T : never,
+      }))
       continue
     }
     if (type === 'reasoning') {

@@ -698,7 +698,9 @@ export class ZcodeAdapter extends LlmAdapter {
     // 2026-10-24 起「未登录也展示渠道的静态模型表」是默认行为（与其余 21 个渠道一致）：
     // 未就绪（没有可用凭据）时播报 `fallbackModels`，不再返回空数组把整组隐藏。
     // 只有凭据就绪时才去读远端目录（`loadModels`），失败仍回退静态表。
-    const all: Array<{ id: string; name: string; supportsImage?: boolean }> =
+    // ⚠️ `all` 不必可变：下游只 filter/map（TS4104，2026-10-31 门禁）。
+    // readonly 数组直接赋给 readonly 声明即可，别为赋值把它改成 mutable。
+    const all: ReadonlyArray<{ id: string; name: string; supportsImage?: boolean }> =
       await this.ready() ? await this.loadModels() : this.product.fallbackModels
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id)
     const listed = disabled === undefined || disabled.size === 0

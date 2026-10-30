@@ -63,7 +63,8 @@ import type {
   TokenUsage,
 } from '@deepseek-ai/dsh-llm'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import { collectHarnessSystem, normalizeHarnessMessages } from './message-shape.js'
+import { collectHarnessSystem, normalizeHarnessMessages, type HarnessMessageInput } from './message-shape.js'
+import { type NormalizedHarnessMessage } from './message-shape.js'
 import { resolveToolPairing } from './sse.js'
 
 /**
@@ -76,7 +77,8 @@ import { resolveToolPairing } from './sse.js'
  */
 export function buildMinimaxMessagesPayload(options: {
   model: string
-  messages: readonly Message[]
+  // 形状宽松入参（函数体内归一化，见 gemini-messages.ts 同款注释）。
+  messages: readonly HarnessMessageInput[]
   system?: string
   tools?: readonly ToolSchema[]
   temperature?: number
@@ -147,6 +149,12 @@ function blockText(block: ContentBlock): string {
   if (block.type === 'reasoning') return block.text
   return ''
 }
+// 归一化联合里 text/reasoning 之外还有 legacy tool-result 等成员；本文件对
+// 非文本块一律返回 ''（上面的窄化已覆盖全部消费路径），故调用点直接传联合也安全。
+function blockTextOf(block: NormalizedHarnessMessage['content'][number]): string {
+  if (block.type === 'text' || block.type === 'reasoning') return block.text
+  return ''
+}
 
 /** 已内联的图片（attachmentId → base64 与 mediaType）。 */
 export interface MinimaxInlineImage {
@@ -186,7 +194,9 @@ export interface MinimaxInlineImage {
  * 调用方没内联成功时**不静默丢图** —— 那会让用户以为图片被模型看到了。
  */
 export function serializeMinimaxMessages(
-  messages: readonly Message[],
+  // 形状宽松入参（本函数体内自行归一化；与 buildMinimaxMessagesPayload 同口径，
+  // 宿主 RequestMessage 不必强转 —— 2026-10-31 门禁）。
+  messages: readonly HarnessMessageInput[],
   images?: ReadonlyMap<string, MinimaxInlineImage>,
 ): Array<Record<string, unknown>> {
   // ⚠️⚠️ 步骤 1：归一化「一等 tool 消息」形状（**本 provider 曾因此整轮 400**）。
@@ -211,9 +221,13 @@ export function serializeMinimaxMessages(
   // 既有五个适配器（llm-adapter / openai-compat / buddy / lobsterai / trae）把
   // 入参声明成宽松结构来规避；本函数是对外导出的纯函数，改签名会波及调用方，
   // 故在此做一次**单向放宽**（内容原样透传，归一化不改数据）。
+  // ⚠️ 用 NormalizedHarnessMessage（content 额外允许 legacy tool-result 块），
+  // 不再 `as unknown as Message[]`：宿主 ContentBlockMap 已删 'tool-result'，
+  // 那个强转会把 `block.type === 'tool-result'` 分支推成 never，整个工具结果
+  // 处理在类型层失明（2026-10-31 tsc 门禁）。
   const normalized = normalizeHarnessMessages(
     messages as unknown as readonly { role: string; content?: unknown }[],
-  ) as unknown as readonly Message[]
+  ) as unknown as readonly NormalizedHarnessMessage[]
 
   // ⚠️ 步骤 2：剔除无法配对的 tool_use / tool_result（与五个既有适配器同口径）。
   //
@@ -310,7 +324,7 @@ export function serializeMinimaxMessages(
         })
         continue
       }
-      const text = blockText(block)
+      const text = blockTextOf(block)
       if (text === '') continue
       if (message.role === 'assistant' && block.type === 'reasoning') {
         // ⚠️ 历史里的 reasoning **不回传**：Anthropic 要求 thinking 块带签名
@@ -358,11 +372,13 @@ export function serializeMinimaxMessages(
 
 /** 工具结果的内容块（图片同样要内联）。 */
 function serializeToolResultContent(
-  blocks: readonly ContentBlock[],
+  blocks: unknown,
   images?: ReadonlyMap<string, MinimaxInlineImage>,
 ): Array<Record<string, unknown>> {
+  // 归一化 tool-result 块的 `content` 是 unknown（透传原样）；非数组视为空。
+  const list: readonly ContentBlock[] = Array.isArray(blocks) ? blocks as readonly ContentBlock[] : []
   const out: Array<Record<string, unknown>> = []
-  for (const block of blocks) {
+  for (const block of list) {
     if (block.type === 'image') {
       const ref = block.attachment as { attachmentId?: unknown } | undefined
       const attachmentId = typeof ref?.attachmentId === 'string' ? ref.attachmentId : undefined
@@ -385,7 +401,13 @@ function serializeToolResultContent(
 }
 
 /** 解析工具参数 JSON；失败/H 非对象时退化为 `{}`。 */
-function parseToolArguments(raw: string): Record<string, unknown> {
+function parseToolArguments(raw: unknown): Record<string, unknown> {
+  // 归一化块的 `arguments` 是 unknown；非字符串（对象已解析 / 缺失）按原样放行。
+  if (typeof raw !== 'string') {
+    return typeof raw === 'object' && raw !== null && !Array.isArray(raw)
+      ? raw as Record<string, unknown>
+      : {}
+  }
   if (raw.trim() === '') return {}
   try {
     const parsed: unknown = JSON.parse(raw)

@@ -29371,7 +29371,7 @@ __export(kuku_product_exports, {
   KUKU_CLIENT_ADDED_CLIENT_TYPE: () => KUKU_CLIENT_ADDED_CLIENT_TYPE,
   KUKU_CLIENT_ADDED_VERSION: () => KUKU_CLIENT_ADDED_VERSION,
   KUKU_CLIENT_TYPE: () => KUKU_CLIENT_TYPE,
-  KUKU_FREEPOINT_PATH: () => KUKU_FREEPOINT_PATH2,
+  KUKU_FREEPOINT_PATH: () => KUKU_FREEPOINT_PATH,
   KUKU_MODEL_LIST_PATH: () => KUKU_MODEL_LIST_PATH,
   KUKU_PROTOCOL_V: () => KUKU_PROTOCOL_V,
   KUKU_SENDMSG_PATH: () => KUKU_SENDMSG_PATH,
@@ -29387,7 +29387,7 @@ __export(kuku_product_exports, {
 function kukuProductById(id) {
   return id === KUKU.id ? KUKU : void 0;
 }
-var KUKU_FALLBACK_MODELS, KUKU, KUKU_CLIENT_TYPE, KUKU_VERSION, KUKU_CHANNEL, KUKU_PROTOCOL_V, KUKU_CLIENT_ADDED_CLIENT_TYPE, KUKU_CLIENT_ADDED_VERSION, KUKU_CHANNEL_NAME, KUKU_APP_ID, KUKU_SENDMSG_PATH, KUKU_SSE_PATH, KUKU_FREEPOINT_PATH2, KUKU_USERREPORT_PATH, KUKU_TASK_COMPLETE_PATH, KUKU_VIP_REMAIN_PATH, KUKU_MODEL_LIST_PATH, KUKU_WEB_QUERY, KUKU_SESSION_COOKIE;
+var KUKU_FALLBACK_MODELS, KUKU, KUKU_CLIENT_TYPE, KUKU_VERSION, KUKU_CHANNEL, KUKU_PROTOCOL_V, KUKU_CLIENT_ADDED_CLIENT_TYPE, KUKU_CLIENT_ADDED_VERSION, KUKU_CHANNEL_NAME, KUKU_APP_ID, KUKU_SENDMSG_PATH, KUKU_SSE_PATH, KUKU_FREEPOINT_PATH, KUKU_USERREPORT_PATH, KUKU_TASK_COMPLETE_PATH, KUKU_VIP_REMAIN_PATH, KUKU_MODEL_LIST_PATH, KUKU_WEB_QUERY, KUKU_SESSION_COOKIE;
 var init_kuku_product = __esm({
   "vendor/channel-pack/src/kuku-product.ts"() {
     "use strict";
@@ -29423,7 +29423,7 @@ var init_kuku_product = __esm({
     KUKU_APP_ID = 123971023;
     KUKU_SENDMSG_PATH = "/wenchain/genflowpro/sendmsg";
     KUKU_SSE_PATH = "/wenchain/genflowpro/sse/getchatcontent";
-    KUKU_FREEPOINT_PATH2 = "/api/genflowpro/freepoint/homenew";
+    KUKU_FREEPOINT_PATH = "/api/genflowpro/freepoint/homenew";
     KUKU_USERREPORT_PATH = "/api/genflowpro/common/userreport";
     KUKU_TASK_COMPLETE_PATH = "/api/genflowpro/freepoint/taskComplete";
     KUKU_VIP_REMAIN_PATH = "/bizapi/gfpro/getgfvipremain";
@@ -31158,6 +31158,7 @@ __export(officeace_exports, {
   fetchState: () => fetchState,
   fetchSubscriptionSnapshot: () => fetchSubscriptionSnapshot,
   fetchTokenRates: () => fetchTokenRates,
+  hasSigningKeys: () => hasSigningKeys,
   isCredentialUsable: () => isCredentialUsable6,
   normalizeBaseUrl: () => normalizeBaseUrl,
   parseCredential: () => parseCredential,
@@ -31199,6 +31200,9 @@ function parseCredential(value) {
     ...stringValue8(value.nickname) === void 0 ? {} : { nickname: stringValue8(value.nickname) },
     ...stringValue8(value.refresh_token) === void 0 ? {} : { refresh_token: stringValue8(value.refresh_token) },
     ...typeof value.expire_time === "number" && Number.isFinite(value.expire_time) ? { expire_time: value.expire_time } : {},
+    // dpop 的内部结构（privateJwk/publicJwk）由登录流程产出、本模块只透传；
+    // 逐字段校验放在使用点（createDpopProofFromJwk）。经 unknown 中转表达
+    // 「形状信任产出方」的既有约定（2026-10-31 门禁）。
     ...isRecord9(value.dpop) ? { dpop: value.dpop } : {},
     ...value.model_info === void 0 ? {} : { model_info: value.model_info },
     created_at: Date.now()
@@ -31265,6 +31269,9 @@ function tokenDisplayName(token) {
   }
   const profile = decodeUserProfile(claims.user_profile);
   return profile === void 0 ? void 0 : stringValue8(profile.account_name);
+}
+function hasSigningKeys(credential) {
+  return typeof credential.access_key === "string" && credential.access_key !== "" && typeof credential.secret_key === "string" && credential.secret_key !== "";
 }
 function isCredentialUsable6(credential) {
   if (credential === void 0) return false;
@@ -31500,6 +31507,9 @@ function resolveSubscriptionGateway(credential) {
   return /^https?:\/\//.test(rawBase) ? rawBase.replace(/\/+$/, "") : `https://${stripped}`;
 }
 async function v11SignedGet(fetcher, url, credential, path2, options = {}) {
+  if (!hasSigningKeys(credential)) {
+    throw new Error("OfficeAce\uFF1A\u51ED\u636E\u7F3A\u5C11 access_key/secret_key\uFF08\u4E1A\u52A1\u7B7E\u540D\u4E0D\u53EF\u7528\uFF1B\u91CD\u65B0\u767B\u5F55\u53EF\u91CD\u5EFA\uFF09");
+  }
   const host = new URL(url).host;
   const timestampMs = Date.now();
   const sdkDate = formatSdkDate(timestampMs);
@@ -31524,6 +31534,9 @@ async function v11SignedGet(fetcher, url, credential, path2, options = {}) {
     headers: signHeaders,
     payloadHash
   });
+  if (!hasSigningKeys(credential)) {
+    throw new Error("OfficeAce\uFF1A\u51ED\u636E\u7F3A\u5C11 access_key/secret_key\uFF08\u4E1A\u52A1\u7B7E\u540D\u4E0D\u53EF\u7528\uFF1B\u91CD\u65B0\u767B\u5F55\u53EF\u91CD\u5EFA\uFF09");
+  }
   const { authorization } = await signV11({
     accessKey: credential.access_key,
     secretKey: credential.secret_key,
@@ -31632,6 +31645,9 @@ async function claimBonus(fetcher, product, credential, options = {}) {
     headers: signHeaders,
     payloadHash
   });
+  if (!hasSigningKeys(credential)) {
+    throw new Error("OfficeAce\uFF1A\u51ED\u636E\u7F3A\u5C11 access_key/secret_key\uFF08\u4E1A\u52A1\u7B7E\u540D\u4E0D\u53EF\u7528\uFF1B\u91CD\u65B0\u767B\u5F55\u53EF\u91CD\u5EFA\uFF09");
+  }
   const { authorization } = await signV11({
     accessKey: credential.access_key,
     secretKey: credential.secret_key,
@@ -31709,6 +31725,9 @@ async function validatePermission(fetcher, product, credential, signal) {
     headers: signHeaders,
     payloadHash
   });
+  if (!hasSigningKeys(credential)) {
+    throw new Error("OfficeAce\uFF1A\u51ED\u636E\u7F3A\u5C11 access_key/secret_key\uFF08\u4E1A\u52A1\u7B7E\u540D\u4E0D\u53EF\u7528\uFF1B\u91CD\u65B0\u767B\u5F55\u53EF\u91CD\u5EFA\uFF09");
+  }
   const { authorization } = await signSdkHmac({
     accessKey: credential.access_key,
     secretKey: credential.secret_key,
@@ -33716,11 +33735,13 @@ __export(login_exports, {
   buildOAuthLoginUrl: () => buildOAuthLoginUrl,
   buildPortalLoginResultUrl: () => buildPortalLoginResultUrl,
   expiresFromCredential: () => expiresFromCredential,
+  openBrowser: () => openBrowser,
   runOAuthFlow: () => runOAuthFlow,
   startOAuthCallbackServer: () => startOAuthCallbackServer,
   startOAuthFlow: () => startOAuthFlow
 });
 import { createServer as createServer3 } from "node:http";
+import { spawn } from "node:child_process";
 import { randomBytes as randomBytes8 } from "node:crypto";
 function expiresFromCredential(credential) {
   if (credential.expires_at) {
@@ -33818,6 +33839,31 @@ async function startOAuthFlow(options = {}) {
   });
   return { loginUrl, result: resultWithUrl, close };
 }
+function openBrowser(url) {
+  const warn = (error) => {
+    console.error("[codearts-auth] failed to open browser; open manually:", url, error);
+  };
+  if (process.platform === "win32") {
+    const args = ["/c", "start", '""', `"${url}"`];
+    try {
+      const child = spawn("cmd", args, { detached: true, stdio: "ignore", windowsVerbatimArguments: true });
+      child.on("error", warn);
+      child.unref();
+      return;
+    } catch (error) {
+      warn(error);
+      return;
+    }
+  }
+  const cmd = process.platform === "darwin" ? "open" : "xdg-open";
+  try {
+    const child = spawn(cmd, [url], { detached: true, stdio: "ignore" });
+    child.on("error", warn);
+    child.unref();
+  } catch (error) {
+    warn(error);
+  }
+}
 async function runOAuthFlow(options = {}) {
   const started = await startOAuthFlow(options);
   try {
@@ -33851,7 +33897,7 @@ var init_login = __esm({
 });
 
 // vendor/channel-pack/src/index.ts
-import { credentialRef as credentialRef15 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef16 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/refresh.ts
 var REFRESH_LEAD_MS = 36e5;
@@ -36710,7 +36756,7 @@ function normalizeHarnessMessages(messages) {
       normalized.push(message2);
       continue;
     }
-    const source = message2["source"];
+    const source = message2.source;
     const sourceCallId = typeof source === "object" && source !== null ? source.callId : void 0;
     const toolCallId = message2.toolCallId ?? sourceCallId;
     const block = {
@@ -47344,6 +47390,9 @@ var CommandCodeAdapter = class extends LlmAdapter6 {
     return { id, name: this.product.displayName };
   }
   /** 模型接受的输入模态。无结论时保守报 text。 */
+  // ⚠️ 返回类型必须是对应的 `ModelModality` 联合而不是 `string`：宿主
+  // `LlmModelInfo.inputModalities` / `LlmResolvedModelInfo.inputModalities`
+  // 都收 `readonly ModelModality[]`（TS2322 ×2，2026-10-31 门禁）。
   inputModalitiesFor(modelId) {
     const entry = this.remoteModels?.find((candidate) => candidate.id === modelId) ?? this.product.fallbackModels.find((candidate) => candidate.id === modelId);
     return entry?.supportsImage === true ? ["text", "image"] : ["text"];
@@ -47546,6 +47595,7 @@ var CommandCodeAdapter = class extends LlmAdapter6 {
    */
   providerRetryPolicy() {
     return {
+      mode: "normal",
       // AUTH 不在列：Key 失效重试多少次都是 401。
       // 429 不在列：同一轮重试只会继续撞墙。
       retryableCodes: ["TRANSPORT", "TIMEOUT", "SERVER_ERROR"],
@@ -47567,6 +47617,7 @@ function registerCommandCodeLlm(ctx, options) {
 init_commandcode_product();
 init_commandcode();
 import { Service } from "@deepseek-ai/cordis";
+import { credentialRef as credentialRef2 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/commandcode-credits.ts
 init_commandcode_auth();
@@ -47614,7 +47665,7 @@ var CommandCodeAuth = class extends Service {
    * 是这个服务最正常的状态之一。
    */
   async credential() {
-    const resolved = await this.ctx.credentials.resolve(this.credentialRefName);
+    const resolved = await this.ctx.credentials.resolve(credentialRef2(this.credentialRefName));
     if (resolved === void 0) return void 0;
     try {
       const parsed = JSON.parse(resolved.value);
@@ -47627,11 +47678,11 @@ var CommandCodeAuth = class extends Service {
   }
   /** 写入凭据（覆盖）。 */
   async save(credential) {
-    await this.ctx.credentials.set(this.credentialRefName, JSON.stringify(credential));
+    await this.ctx.credentials.set(credentialRef2(this.credentialRefName), JSON.stringify(credential));
   }
   /** 删除凭据（登出）。 */
   async logout() {
-    await this.ctx.credentials.unset(this.credentialRefName);
+    await this.ctx.credentials.unset(credentialRef2(this.credentialRefName));
   }
   /**
    * 启动登录并返回授权 URL（**不等待**用户完成）。
@@ -47907,7 +47958,7 @@ var MonkeyCodeAdapter = class extends LlmAdapter7 {
       }
       throw new LlmError11(message2, "TRANSPORT");
     }
-    yield { type: "finish", reason: "stop" };
+    yield { type: "finish", reason: { kind: "stop" } };
   }
   /**
    * 退避策略：对话已可用，传输类错误值得重试。
@@ -47917,6 +47968,7 @@ var MonkeyCodeAdapter = class extends LlmAdapter7 {
    */
   providerRetryPolicy() {
     return {
+      mode: "normal",
       retryableCodes: ["TRANSPORT", "TIMEOUT"],
       maxRetries: 2,
       initialDelayMs: 900,
@@ -48296,7 +48348,7 @@ var OrcaTermAdapter = class extends LlmAdapter8 {
       }
       throw new LlmError12(message2, "TRANSPORT");
     }
-    yield { type: "finish", reason: "stop" };
+    yield { type: "finish", reason: { kind: "stop" } };
   }
   /**
    * 退避策略。
@@ -48305,6 +48357,7 @@ var OrcaTermAdapter = class extends LlmAdapter8 {
    */
   providerRetryPolicy() {
     return {
+      mode: "normal",
       retryableCodes: ["TRANSPORT", "TIMEOUT"],
       maxRetries: 2,
       initialDelayMs: 900,
@@ -48554,11 +48607,12 @@ var KukuAdapter = class extends LlmAdapter9 {
       }
       throw new LlmError13(message2, "TRANSPORT");
     }
-    yield { type: "finish", reason: "stop" };
+    yield { type: "finish", reason: { kind: "stop" } };
   }
   /** 扁平退避策略。 */
   providerRetryPolicy() {
     return {
+      mode: "normal",
       retryableCodes: ["TRANSPORT", "TIMEOUT"],
       maxRetries: 2,
       initialDelayMs: 900,
@@ -48750,11 +48804,12 @@ var AccioAdapter = class extends LlmAdapter10 {
       }
       throw new LlmError14(message2, "TRANSPORT");
     }
-    yield { type: "finish", reason: "stop" };
+    yield { type: "finish", reason: { kind: "stop" } };
   }
   /** 扁平退避策略。 */
   providerRetryPolicy() {
     return {
+      mode: "normal",
       retryableCodes: ["TRANSPORT", "TIMEOUT"],
       maxRetries: 2,
       initialDelayMs: 900,
@@ -48988,6 +49043,7 @@ var OfficeAceAdapter = class extends LlmAdapter11 {
   /** 扁平退避策略。 */
   providerRetryPolicy() {
     return {
+      mode: "normal",
       retryableCodes: ["TRANSPORT", "TIMEOUT", "SERVER_ERROR"],
       maxRetries: 2,
       initialDelayMs: 800,
@@ -49379,6 +49435,7 @@ var AutoClawAdapter = class extends LlmAdapter12 {
   /** 扁平退避策略。 */
   providerRetryPolicy() {
     return {
+      mode: "normal",
       retryableCodes: ["TRANSPORT", "TIMEOUT", "SERVER_ERROR"],
       maxRetries: 2,
       initialDelayMs: 800,
@@ -50384,7 +50441,7 @@ function registerRaccoonLlm(ctx, options) {
 init_login();
 init_oauth();
 import { Service as Service2 } from "@deepseek-ai/cordis";
-import { credentialRef as credentialRef2 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef3 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/serial-queue.ts
 var QueueAbortedError = class extends Error {
@@ -50529,7 +50586,7 @@ var CodeArtsAuth = class extends Service2 {
   }
   /** 读取某个凭据 ref 下的当前凭据；缺失或不可解析时 undefined。 */
   async readCredential(refName) {
-    const resolved = await this.ctx.credentials.resolve(credentialRef2(refName));
+    const resolved = await this.ctx.credentials.resolve(credentialRef3(refName));
     if (!resolved) return void 0;
     return parseCredential2(resolved.value);
   }
@@ -50584,7 +50641,7 @@ var CodeArtsAuth = class extends Service2 {
    */
   async persistLogin(flow, options = {}) {
     const refName = options.refName ?? CODEARTS_CREDENTIAL_REF;
-    const ref = credentialRef2(refName);
+    const ref = credentialRef3(refName);
     await this.ctx.credentials.set(ref, flow.access);
     if (options.pool) {
       void this.refreshModels(options.pool).catch(() => {
@@ -50634,7 +50691,7 @@ var CodeArtsAuth = class extends Service2 {
    */
   async refreshAccountCredential(refName, pool, accountId) {
     await this.queueFor(refName).run(async () => {
-      const ref = credentialRef2(refName);
+      const ref = credentialRef3(refName);
       const credential = await this.readCredential(refName);
       if (credential === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
       if (!isCodeArtsRefreshable(credential)) throw new Error("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
@@ -50740,7 +50797,7 @@ var CodeArtsAuth = class extends Service2 {
   async refreshAll(pool) {
     const accounts = await pool.listAccounts("codearts");
     for (const entry of accounts) {
-      const ref = credentialRef2(entry.credentialRef);
+      const ref = credentialRef3(entry.credentialRef);
       let credential;
       try {
         const resolved = await this.ctx.credentials.resolve(ref);
@@ -50871,7 +50928,7 @@ var CodeArtsAuth = class extends Service2 {
    */
   async firstUsableCredential(pool) {
     for (const entry of pool.listAccountsByProvider("codearts")) {
-      const resolved = await this.ctx.credentials.resolve(credentialRef2(entry.credentialRef));
+      const resolved = await this.ctx.credentials.resolve(credentialRef3(entry.credentialRef));
       if (!resolved) continue;
       const credential = parseCredential2(resolved.value);
       if (credential?.access_key_id && credential.secret_access_key) return credential;
@@ -50882,7 +50939,7 @@ var CodeArtsAuth = class extends Service2 {
 
 // vendor/channel-pack/src/buddy-auth.ts
 import { Service as Service3 } from "@deepseek-ai/cordis";
-import { credentialRef as credentialRef3 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef4 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/buddy-oauth.ts
 function responseCode(body) {
@@ -51260,7 +51317,7 @@ var BuddyAuth = class extends Service3 {
   /** 运行登录流程并持久化凭据。 */
   async login(flowOptions = {}) {
     this.active = true;
-    const ref = flowOptions.refName ? credentialRef3(flowOptions.refName) : credentialRef3(this.credentialRefName);
+    const ref = flowOptions.refName ? credentialRef4(flowOptions.refName) : credentialRef4(this.credentialRefName);
     const flow = await runBuddyLoginFlow({
       ...this.options.fetcher !== void 0 ? { fetcher: this.options.fetcher } : {},
       ...flowOptions,
@@ -51299,7 +51356,7 @@ var BuddyAuth = class extends Service3 {
    */
   async saveCredential(credentialJson, refName, accountId, pool) {
     this.active = true;
-    const ref = credentialRef3(refName);
+    const ref = credentialRef4(refName);
     await this.ctx.credentials.set(ref, credentialJson);
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
@@ -51315,7 +51372,7 @@ var BuddyAuth = class extends Service3 {
   }
   /** 报告凭据是否已配置、过期时间、是否可刷新以及最近刷新错误。 */
   async status() {
-    const ref = credentialRef3(this.credentialRefName);
+    const ref = credentialRef4(this.credentialRefName);
     const info = await this.ctx.credentials.describe(ref);
     if (!info.configured) return { configured: false, refreshable: false };
     let expiresAt;
@@ -51338,7 +51395,7 @@ var BuddyAuth = class extends Service3 {
   }
   /** 静默续期：refresh_token 换取；无 refresh_token 时明确报错（由命令提示重新登录）。 */
   async refresh() {
-    const ref = credentialRef3(this.credentialRefName);
+    const ref = credentialRef4(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
     const credential = parseCredential3(resolved.value);
@@ -51392,7 +51449,7 @@ var BuddyAuth = class extends Service3 {
    * 只更新凭据会让「已过期」的红字在续期成功后依然挂着，用户无处自救。
    */
   async refreshAccountCredential(refName, pool, accountId) {
-    const ref = credentialRef3(refName);
+    const ref = credentialRef4(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
     const credential = parseCredential3(resolved.value);
@@ -51436,7 +51493,7 @@ var BuddyAuth = class extends Service3 {
     for (const entry of accounts) {
       if (!entry.refreshable) continue;
       try {
-        const ref = credentialRef3(entry.credentialRef);
+        const ref = credentialRef4(entry.credentialRef);
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) {
           await pool.updateAccount(entry.id, { refreshable: false });
@@ -51480,7 +51537,7 @@ var BuddyAuth = class extends Service3 {
   async logout() {
     this.active = false;
     this.scheduler.stop();
-    await this.ctx.credentials.unset(credentialRef3(this.credentialRefName));
+    await this.ctx.credentials.unset(credentialRef4(this.credentialRefName));
   }
   /** 停止刷新调度（不清理凭据）。 */
   stop() {
@@ -51489,7 +51546,7 @@ var BuddyAuth = class extends Service3 {
   }
   /** 启动时若已有可刷新凭据则安排续期（由 apply 调用）。 */
   scheduleRefresh() {
-    void this.ctx.credentials.resolve(credentialRef3(this.credentialRefName)).then((resolved) => {
+    void this.ctx.credentials.resolve(credentialRef4(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
       const credential = parseCredential3(resolved.value);
       if (!credential || !isRefreshable(credential)) return;
@@ -51499,7 +51556,7 @@ var BuddyAuth = class extends Service3 {
   }
   /** 从存储重载凭据，返回是否已过期（供 UI 判断是否需要提示重新登录）。 */
   async checkExpired() {
-    const resolved = await this.ctx.credentials.resolve(credentialRef3(this.credentialRefName));
+    const resolved = await this.ctx.credentials.resolve(credentialRef4(this.credentialRefName));
     if (!resolved) return true;
     const credential = parseCredential3(resolved.value);
     return credential === void 0 ? true : isExpired(credential);
@@ -51520,7 +51577,7 @@ var BuddyAuth = class extends Service3 {
       const available2 = await pool.getAvailableAccount(this.product.id, "");
       if (available2) return fetchModels3(available2.credential, this.fetchImpl, void 0, this.product);
     }
-    const resolved = await this.ctx.credentials.resolve(credentialRef3(this.credentialRefName));
+    const resolved = await this.ctx.credentials.resolve(credentialRef4(this.credentialRefName));
     if (!resolved) return [];
     const credential = parseCredential3(resolved.value);
     if (!credential) return [];
@@ -51544,7 +51601,7 @@ function createPoolRefresh(pool, productId, auth) {
 
 // vendor/channel-pack/src/qoder-auth.ts
 import { Service as Service4 } from "@deepseek-ai/cordis";
-import { credentialRef as credentialRef4 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef5 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/qoder-oauth.ts
 function sleep2(ms, signal) {
@@ -51759,7 +51816,7 @@ var QoderAuth = class extends Service4 {
    * 两条路径的差别只在「何时返回 loginUrl」，落库逻辑必须完全一致。
    */
   async persistLogin(flow, flowOptions = {}) {
-    const ref = flowOptions.refName ? credentialRef4(flowOptions.refName) : credentialRef4(this.credentialRefName);
+    const ref = flowOptions.refName ? credentialRef5(flowOptions.refName) : credentialRef5(this.credentialRefName);
     await this.ctx.credentials.set(ref, flow.access);
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
@@ -51787,7 +51844,7 @@ var QoderAuth = class extends Service4 {
   }
   /** 报告凭据是否已配置、过期时间、是否可刷新以及最近刷新错误。 */
   async status() {
-    const ref = credentialRef4(this.credentialRefName);
+    const ref = credentialRef5(this.credentialRefName);
     const info = await this.ctx.credentials.describe(ref);
     if (!info.configured) return { configured: false, refreshable: false };
     let expiresAt;
@@ -51817,7 +51874,7 @@ var QoderAuth = class extends Service4 {
    * - 其余错误（网络抖动、5xx、429）→ 抛普通 Error，走调度器的可重试路径。
    */
   async refresh() {
-    const ref = credentialRef4(this.credentialRefName);
+    const ref = credentialRef5(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
     const credential = parseCredential4(resolved.value);
@@ -51859,7 +51916,7 @@ var QoderAuth = class extends Service4 {
    *   否则只能按凭据内容反查（代价高，且反查会跳过已停用账号）。
    */
   async refreshAccountCredential(refName, pool, accountId) {
-    const ref = credentialRef4(refName);
+    const ref = credentialRef5(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
     const credential = parseCredential4(resolved.value);
@@ -51939,7 +51996,7 @@ var QoderAuth = class extends Service4 {
     for (const entry of accounts) {
       if (!entry.refreshable) continue;
       try {
-        const ref = credentialRef4(entry.credentialRef);
+        const ref = credentialRef5(entry.credentialRef);
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) {
           await pool.updateAccount(entry.id, { refreshable: false });
@@ -51984,7 +52041,7 @@ var QoderAuth = class extends Service4 {
   async logout() {
     this.active = false;
     this.scheduler.stop();
-    await this.ctx.credentials.unset(credentialRef4(this.credentialRefName));
+    await this.ctx.credentials.unset(credentialRef5(this.credentialRefName));
   }
   /** 停止刷新调度（不清理凭据）。 */
   stop() {
@@ -51993,7 +52050,7 @@ var QoderAuth = class extends Service4 {
   }
   /** 启动时若已有可刷新凭据则安排续期（由 apply 调用）。 */
   scheduleRefresh() {
-    void this.ctx.credentials.resolve(credentialRef4(this.credentialRefName)).then((resolved) => {
+    void this.ctx.credentials.resolve(credentialRef5(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
       const credential = parseCredential4(resolved.value);
       if (!credential || !isQoderRefreshable(credential)) return;
@@ -52003,7 +52060,7 @@ var QoderAuth = class extends Service4 {
   }
   /** 从存储重载凭据，返回是否已过期（供 UI 判断是否需要提示重新登录）。 */
   async checkExpired() {
-    const resolved = await this.ctx.credentials.resolve(credentialRef4(this.credentialRefName));
+    const resolved = await this.ctx.credentials.resolve(credentialRef5(this.credentialRefName));
     if (!resolved) return true;
     const credential = parseCredential4(resolved.value);
     return credential === void 0 ? true : isQoderExpired(credential);
@@ -52014,7 +52071,7 @@ var QoderAuth = class extends Service4 {
    * 供 e2e 探针与 `account-probe` 使用。
    */
   async resolveStoredCredential() {
-    const resolved = await this.ctx.credentials.resolve(credentialRef4(this.credentialRefName));
+    const resolved = await this.ctx.credentials.resolve(credentialRef5(this.credentialRefName));
     if (!resolved) return void 0;
     return parseCredential4(resolved.value);
   }
@@ -52022,7 +52079,7 @@ var QoderAuth = class extends Service4 {
 
 // vendor/channel-pack/src/trae-auth.ts
 import { Service as Service5 } from "@deepseek-ai/cordis";
-import { credentialRef as credentialRef5 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef6 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/trae-oauth.ts
 import { createServer as createServer4 } from "node:http";
@@ -52507,7 +52564,7 @@ var TraeAuth = class _TraeAuth extends Service5 {
    * 持久化一次登录结果。
    */
   async persistLogin(flow, flowOptions = {}) {
-    const ref = flowOptions.refName ? credentialRef5(flowOptions.refName) : credentialRef5(this.credentialRefName);
+    const ref = flowOptions.refName ? credentialRef6(flowOptions.refName) : credentialRef6(this.credentialRefName);
     await this.ctx.credentials.set(ref, flow.access);
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
@@ -52539,7 +52596,7 @@ var TraeAuth = class _TraeAuth extends Service5 {
   }
   /** 报告凭据状态。 */
   async status() {
-    const ref = credentialRef5(this.credentialRefName);
+    const ref = credentialRef6(this.credentialRefName);
     const info = await this.ctx.credentials.describe(ref);
     if (!info.configured) return { configured: false, refreshable: false };
     let expiresAt;
@@ -52568,7 +52625,7 @@ var TraeAuth = class _TraeAuth extends Service5 {
    * - 其余错误（网络抖动、5xx、429）→ 抛普通 Error，走可重试路径
    */
   async refresh() {
-    const ref = credentialRef5(this.credentialRefName);
+    const ref = credentialRef6(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
     const credential = parseCredential5(resolved.value);
@@ -52611,7 +52668,7 @@ var TraeAuth = class _TraeAuth extends Service5 {
    *   否则只能按凭据内容反查（代价高，且反查会跳过已停用账号）。
    */
   async refreshAccountCredential(refName, pool, accountId) {
-    const ref = credentialRef5(refName);
+    const ref = credentialRef6(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
     const credential = parseCredential5(resolved.value);
@@ -52690,7 +52747,7 @@ var TraeAuth = class _TraeAuth extends Service5 {
     for (const entry of accounts) {
       if (!entry.refreshable) continue;
       try {
-        const ref = credentialRef5(entry.credentialRef);
+        const ref = credentialRef6(entry.credentialRef);
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) {
           await pool.updateAccount(entry.id, { refreshable: false });
@@ -52763,7 +52820,7 @@ var TraeAuth = class _TraeAuth extends Service5 {
     }
     for (const entry of entries) {
       try {
-        const ref = credentialRef5(entry.credentialRef);
+        const ref = credentialRef6(entry.credentialRef);
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) continue;
         let credential = parseCredential5(resolved.value);
@@ -52820,7 +52877,7 @@ var TraeAuth = class _TraeAuth extends Service5 {
   async logout() {
     this.active = false;
     this.scheduler.stop();
-    await this.ctx.credentials.unset(credentialRef5(this.credentialRefName));
+    await this.ctx.credentials.unset(credentialRef6(this.credentialRefName));
     this.modelsCache = void 0;
   }
   /** 停止刷新调度（不清理凭据）。 */
@@ -52830,7 +52887,7 @@ var TraeAuth = class _TraeAuth extends Service5 {
   }
   /** 启动时若已有可刷新凭据则安排续期。 */
   scheduleRefresh() {
-    void this.ctx.credentials.resolve(credentialRef5(this.credentialRefName)).then((resolved) => {
+    void this.ctx.credentials.resolve(credentialRef6(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
       const credential = parseCredential5(resolved.value);
       if (!credential || !isTraeRefreshable(credential)) return;
@@ -52840,7 +52897,7 @@ var TraeAuth = class _TraeAuth extends Service5 {
   }
   /** 从存储重载凭据，返回是否已过期。 */
   async checkExpired() {
-    const resolved = await this.ctx.credentials.resolve(credentialRef5(this.credentialRefName));
+    const resolved = await this.ctx.credentials.resolve(credentialRef6(this.credentialRefName));
     if (!resolved) return true;
     const credential = parseCredential5(resolved.value);
     return credential === void 0 ? true : isTraeExpired(credential);
@@ -52877,7 +52934,7 @@ var TraeAuth = class _TraeAuth extends Service5 {
       if (available2) credential = available2.credential;
     }
     if (credential === void 0) {
-      const resolved = await this.ctx.credentials.resolve(credentialRef5(this.credentialRefName));
+      const resolved = await this.ctx.credentials.resolve(credentialRef6(this.credentialRefName));
       if (!resolved) return [];
       credential = parseCredential5(resolved.value);
       if (credential === void 0) return [];
@@ -52942,7 +52999,7 @@ var TraeAuth = class _TraeAuth extends Service5 {
 
 // vendor/channel-pack/src/cline-auth.ts
 import { Service as Service6 } from "@deepseek-ai/cordis";
-import { credentialRef as credentialRef6 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef7 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/cline-oauth.ts
 var CLINE_HTTP_TIMEOUT_MS = 3e4;
@@ -53255,7 +53312,7 @@ var ClineAuth = class extends Service6 {
    * 两条路径的差别只在「何时返回 loginUrl」，落库逻辑必须完全一致。
    */
   async persistLogin(flow, flowOptions = {}) {
-    const ref = flowOptions.refName ? credentialRef6(flowOptions.refName) : credentialRef6(this.credentialRefName);
+    const ref = flowOptions.refName ? credentialRef7(flowOptions.refName) : credentialRef7(this.credentialRefName);
     await this.ctx.credentials.set(ref, flow.access);
     this.refreshTokenInvalid = false;
     this.lastRefreshError = void 0;
@@ -53284,7 +53341,7 @@ var ClineAuth = class extends Service6 {
   }
   /** 报告凭据是否已配置、过期时间、是否可刷新以及最近刷新错误。 */
   async status() {
-    const ref = credentialRef6(this.credentialRefName);
+    const ref = credentialRef7(this.credentialRefName);
     const info = await this.ctx.credentials.describe(ref);
     if (!info.configured) return { configured: false, refreshable: false };
     let expiresAt;
@@ -53314,7 +53371,7 @@ var ClineAuth = class extends Service6 {
    * - 其余错误（网络抖动、5xx、429）→ 抛普通 Error，走调度器的可重试路径。
    */
   async refresh() {
-    const ref = credentialRef6(this.credentialRefName);
+    const ref = credentialRef7(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u672A\u914D\u7F6E\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55");
     const credential = parseCredential6(resolved.value);
@@ -53356,7 +53413,7 @@ var ClineAuth = class extends Service6 {
    *   否则只能按凭据内容反查（代价高，且反查会跳过已停用账号）。
    */
   async refreshAccountCredential(refName, pool, accountId) {
-    const ref = credentialRef6(refName);
+    const ref = credentialRef7(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
     const credential = parseCredential6(resolved.value);
@@ -53437,7 +53494,7 @@ var ClineAuth = class extends Service6 {
     for (const entry of accounts) {
       if (!entry.refreshable) continue;
       try {
-        const ref = credentialRef6(entry.credentialRef);
+        const ref = credentialRef7(entry.credentialRef);
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) {
           await pool.updateAccount(entry.id, { refreshable: false });
@@ -53481,7 +53538,7 @@ var ClineAuth = class extends Service6 {
   async logout() {
     this.active = false;
     this.scheduler.stop();
-    await this.ctx.credentials.unset(credentialRef6(this.credentialRefName));
+    await this.ctx.credentials.unset(credentialRef7(this.credentialRefName));
   }
   /** 停止刷新调度（不清理凭据）。 */
   stop() {
@@ -53490,7 +53547,7 @@ var ClineAuth = class extends Service6 {
   }
   /** 启动时若已有可刷新凭据则安排续期（由 apply 调用）。 */
   scheduleRefresh() {
-    void this.ctx.credentials.resolve(credentialRef6(this.credentialRefName)).then((resolved) => {
+    void this.ctx.credentials.resolve(credentialRef7(this.credentialRefName)).then((resolved) => {
       if (!resolved) return;
       const credential = parseCredential6(resolved.value);
       if (!credential || !isClineRefreshable(credential)) return;
@@ -53500,7 +53557,7 @@ var ClineAuth = class extends Service6 {
   }
   /** 从存储重载凭据，返回是否已过期（供 UI 判断是否需要提示重新登录）。 */
   async checkExpired() {
-    const resolved = await this.ctx.credentials.resolve(credentialRef6(this.credentialRefName));
+    const resolved = await this.ctx.credentials.resolve(credentialRef7(this.credentialRefName));
     if (!resolved) return true;
     const credential = parseCredential6(resolved.value);
     return credential === void 0 ? true : isClineExpired(credential);
@@ -53511,7 +53568,7 @@ var ClineAuth = class extends Service6 {
    * 供 e2e 探针与 `account-probe` 使用。
    */
   async resolveStoredCredential() {
-    const resolved = await this.ctx.credentials.resolve(credentialRef6(this.credentialRefName));
+    const resolved = await this.ctx.credentials.resolve(credentialRef7(this.credentialRefName));
     if (!resolved) return void 0;
     return parseCredential6(resolved.value);
   }
@@ -53519,7 +53576,7 @@ var ClineAuth = class extends Service6 {
 
 // vendor/channel-pack/src/loomy-auth.ts
 import { Service as Service7 } from "@deepseek-ai/cordis";
-import { credentialRef as credentialRef7 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef8 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/loomy-oauth.ts
 import { randomUUID as randomUUID10 } from "node:crypto";
@@ -54510,7 +54567,7 @@ var LoomyAuth = class extends Service7 {
       login.nickname
     );
     const refName = flowOptions.refName ?? this.credentialRefName;
-    const ref = credentialRef7(refName);
+    const ref = credentialRef8(refName);
     await this.ctx.credentials.set(ref, JSON.stringify(credential));
     this.lastRefreshError = void 0;
     try {
@@ -54537,7 +54594,7 @@ var LoomyAuth = class extends Service7 {
     const result = await loginLoomyBySmsCode(phone, code, msgid, this.product, this.fetchImpl);
     const credential = this.buildCredential(result.session, result.userid, phone);
     const refName = flowOptions.refName ?? this.credentialRefName;
-    const ref = credentialRef7(refName);
+    const ref = credentialRef8(refName);
     await this.ctx.credentials.set(ref, JSON.stringify(credential));
     this.lastRefreshError = void 0;
     try {
@@ -54572,7 +54629,7 @@ var LoomyAuth = class extends Service7 {
   }
   /** 解析当前单凭据（默认 ref）。 */
   async resolveDefaultCredential() {
-    const resolved = await this.ctx.credentials.resolve(credentialRef7(this.credentialRefName));
+    const resolved = await this.ctx.credentials.resolve(credentialRef8(this.credentialRefName));
     return resolved === void 0 ? void 0 : parseCredential7(resolved.value);
   }
   /** 只读登录状态。 */
@@ -54619,7 +54676,7 @@ var LoomyAuth = class extends Service7 {
    * 只回写 `expiresAt`，见 `LOOMY_EXPIRY_ACCESSORS` 的说明。
    */
   async refreshAccountCredential(refName, pool, accountId) {
-    const ref = credentialRef7(refName);
+    const ref = credentialRef8(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
     const credential = parseCredential7(resolved.value);
@@ -54684,7 +54741,7 @@ var LoomyAuth = class extends Service7 {
   async refreshAll(pool) {
     const accounts = await pool.listAccounts(this.product.id);
     for (const entry of accounts) {
-      const ref = credentialRef7(entry.credentialRef);
+      const ref = credentialRef8(entry.credentialRef);
       let credential;
       try {
         const resolved = await this.ctx.credentials.resolve(ref);
@@ -54725,7 +54782,7 @@ var LoomyAuth = class extends Service7 {
   /** 登出：清除默认单凭据。 */
   async logout() {
     this.active = false;
-    await this.ctx.credentials.unset(credentialRef7(this.credentialRefName));
+    await this.ctx.credentials.unset(credentialRef8(this.credentialRefName));
     this.lastRefreshError = void 0;
   }
   /**
@@ -54774,7 +54831,7 @@ var LoomyAuth = class extends Service7 {
 
 // vendor/channel-pack/src/raccoon-auth.ts
 import { Service as Service8 } from "@deepseek-ai/cordis";
-import { credentialRef as credentialRef8 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef9 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/raccoon-credits.ts
 var RACCOON_LOGIN_REWARD_POINTS = 3e3;
@@ -55366,7 +55423,7 @@ var RaccoonAuth = class extends Service8 {
         ...info.phone !== void 0 && credential.phone === void 0 ? { phone: info.phone } : {}
       };
     }
-    const ref = credentialRef8(refName);
+    const ref = credentialRef9(refName);
     await this.ctx.credentials.set(ref, JSON.stringify(enriched));
     this.lastRefreshError = void 0;
     try {
@@ -55399,7 +55456,7 @@ var RaccoonAuth = class extends Service8 {
   /** 解析默认 ref 的凭据。 */
   async resolveDefaultCredential() {
     try {
-      const resolved = await this.ctx.credentials.resolve(credentialRef8(this.credentialRefName));
+      const resolved = await this.ctx.credentials.resolve(credentialRef9(this.credentialRefName));
       return resolved === void 0 ? void 0 : parseRaccoonCredential(resolved.value);
     } catch {
       return void 0;
@@ -55418,7 +55475,7 @@ var RaccoonAuth = class extends Service8 {
     }
     try {
       const next = await refreshRaccoonCredential(this.product, credential, this.fetchImpl);
-      await this.ctx.credentials.set(credentialRef8(this.credentialRefName), JSON.stringify(next));
+      await this.ctx.credentials.set(credentialRef9(this.credentialRefName), JSON.stringify(next));
       this.lastRefreshError = void 0;
     } catch (error) {
       const message2 = error instanceof Error ? error.message : String(error);
@@ -55447,7 +55504,7 @@ var RaccoonAuth = class extends Service8 {
    *   逐个解析凭据比对，代价高且需要账号池具备凭据访问能力）。
    */
   async refreshAccountCredential(refName, pool, accountId) {
-    const ref = credentialRef8(refName);
+    const ref = credentialRef9(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
     const credential = parseRaccoonCredential(resolved.value);
@@ -55493,7 +55550,7 @@ var RaccoonAuth = class extends Service8 {
     const accounts = await pool.listAccounts(this.product.id);
     for (const entry of accounts) {
       if (!entry.refreshable) continue;
-      const resolved = await this.ctx.credentials.resolve(credentialRef8(entry.credentialRef));
+      const resolved = await this.ctx.credentials.resolve(credentialRef9(entry.credentialRef));
       if (!resolved) continue;
       const credential = parseRaccoonCredential(resolved.value);
       if (credential === void 0) continue;
@@ -55528,7 +55585,7 @@ var RaccoonAuth = class extends Service8 {
   }
   /** 登出：清除默认单凭据。 */
   async logout() {
-    await this.ctx.credentials.unset(credentialRef8(this.credentialRefName));
+    await this.ctx.credentials.unset(credentialRef9(this.credentialRefName));
     this.lastRefreshError = void 0;
   }
   /**
@@ -55622,7 +55679,7 @@ var RaccoonAuth = class extends Service8 {
     }
     for (const entry of entries) {
       try {
-        const ref = credentialRef8(entry.credentialRef);
+        const ref = credentialRef9(entry.credentialRef);
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) continue;
         const credential = parseRaccoonCredential(resolved.value);
@@ -55956,7 +56013,7 @@ function zcodeProductById(id) {
 }
 
 // vendor/channel-pack/src/zcode-captcha.ts
-import { spawn, spawnSync } from "node:child_process";
+import { spawn as spawn2, spawnSync } from "node:child_process";
 import { existsSync as existsSync6, mkdtempSync, rmSync, writeFileSync as writeFileSync7 } from "node:fs";
 import { createServer as createServer7 } from "node:net";
 import { homedir as homedir2, tmpdir } from "node:os";
@@ -56372,7 +56429,7 @@ Write-Output "hidden=$n"
     const file = join6(dir, "hide.ps1");
     dirCreated = dir;
     writeFileSync7(file, script, "ascii");
-    const child = spawn("powershell.exe", [
+    const child = spawn2("powershell.exe", [
       "-NoProfile",
       "-NonInteractive",
       "-ExecutionPolicy",
@@ -56393,7 +56450,7 @@ Write-Output "hidden=$n"
   }
 }
 function hideWindowLinux(pid) {
-  const list = spawn("wmctrl", ["-lp"], { stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
+  const list = spawn2("wmctrl", ["-lp"], { stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
   const chunks = [];
   list.stdout?.on("data", (c) => chunks.push(c));
   list.on("error", () => {
@@ -56402,7 +56459,7 @@ function hideWindowLinux(pid) {
     try {
       const ids = parseWmctrlList(Buffer.concat(chunks).toString("utf8"), pid);
       for (const id of ids) {
-        const child = spawn("wmctrl", buildLinuxSkipTaskbarArgs(id), {
+        const child = spawn2("wmctrl", buildLinuxSkipTaskbarArgs(id), {
           stdio: "ignore",
           windowsHide: true
         });
@@ -56427,7 +56484,7 @@ function warnMacosHideOnce(log, reason) {
   );
 }
 function hideWindowMacos(pid, log) {
-  const child = spawn("osascript", buildMacosMiniaturizeArgs(pid), {
+  const child = spawn2("osascript", buildMacosMiniaturizeArgs(pid), {
     stdio: "ignore",
     windowsHide: true
   });
@@ -56532,7 +56589,7 @@ var ZcodeCaptchaBrowser = class {
     this.profileDir = mkdtempSync(join6(tmpdir(), "zcode-captcha-"));
     this.port = this.options.debugPort ?? await pickFreePort();
     const hide = this.options.hideWindow !== false;
-    this.child = spawn(executable, [
+    this.child = spawn2(executable, [
       `--remote-debugging-port=${this.port}`,
       `--user-data-dir=${this.profileDir}`,
       "--no-first-run",
@@ -61148,7 +61205,7 @@ function registerZcodeLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/channel-pack-rpc.ts
-import { credentialRef as credentialRef12 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef13 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/openai-gateway/config.ts
 var DEFAULT_GATEWAY_HOST = "127.0.0.1";
@@ -62660,7 +62717,7 @@ function quotaRejectionHint(text) {
 }
 
 // vendor/channel-pack/src/qoder-machine.ts
-import { execFileSync, spawn as spawn2 } from "node:child_process";
+import { execFileSync, spawn as spawn3 } from "node:child_process";
 import { existsSync as existsSync7, readFileSync as readFileSync8, readdirSync } from "node:fs";
 import { homedir as homedir3 } from "node:os";
 import { join as join7 } from "node:path";
@@ -62780,7 +62837,7 @@ async function readFromRuntimeInfoAsync(override) {
     };
     let child;
     try {
-      child = spawn2(exe, [...runtimeInfoArgs()], { windowsHide: true });
+      child = spawn3(exe, [...runtimeInfoArgs()], { windowsHide: true });
     } catch {
       done(void 0);
       return;
@@ -63744,7 +63801,7 @@ async function fetchTraeCreditBalance(credential, _product, fetcher = fetch) {
 }
 
 // vendor/channel-pack/src/account-probe.ts
-import { credentialRef as credentialRef9 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef10 } from "@deepseek-ai/dsh-credentials";
 import { createUserMessage, LlmError as LlmError22 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/gemini-adapter.ts
@@ -63924,6 +63981,9 @@ function sanitizeParameters(parameters) {
   return sanitizeGeminiSchema(parameters);
 }
 function parseToolArguments2(raw) {
+  if (typeof raw !== "string") {
+    return typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
+  }
   if (raw.trim() === "") return {};
   try {
     const parsed = JSON.parse(raw);
@@ -63933,6 +63993,7 @@ function parseToolArguments2(raw) {
   }
 }
 function toolResultText(blocks) {
+  if (!Array.isArray(blocks)) return "";
   const out = [];
   for (const block of blocks) {
     if (block.type === "text") out.push(block.text);
@@ -64639,7 +64700,7 @@ function isRateLimitFailure(error) {
 }
 async function probeWithAdapter(entry, credential, modelId, timeoutMs) {
   const signal = AbortSignal.timeout(timeoutMs);
-  const ref = credentialRef9(entry.credentialRef);
+  const ref = credentialRef10(entry.credentialRef);
   const buddyProduct = productById(entry.provider);
   const qoderProduct = qoderProductById(entry.provider);
   const clineProduct = clineProductById(entry.provider);
@@ -64834,7 +64895,7 @@ async function resetAllAccounts(pool, provider) {
 }
 
 // vendor/channel-pack/src/backup.ts
-import { credentialRef as credentialRef10 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef11 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/types.ts
 var BACKUP_FORMAT = "dsh-codearts-auth/backup";
@@ -64849,7 +64910,7 @@ async function exportBackup(pool, credentials) {
   const warnings = [];
   for (const entry of state.accounts) {
     try {
-      const resolved = await credentials.resolve(credentialRef10(entry.credentialRef));
+      const resolved = await credentials.resolve(credentialRef11(entry.credentialRef));
       if (resolved === void 0) {
         warnings.push(`${entry.id}: \u51ED\u636E\u672A\u914D\u7F6E`);
       } else {
@@ -64925,7 +64986,7 @@ async function importBackup(credentials, pool, raw) {
       continue;
     }
     try {
-      await credentials.set(credentialRef10(refName), value);
+      await credentials.set(credentialRef11(refName), value);
       credentialsImported++;
     } catch (error) {
       skipped.push(refName);
@@ -64950,7 +65011,7 @@ async function importBackup(credentials, pool, raw) {
 }
 
 // vendor/channel-pack/src/opencode-rpc.ts
-import { credentialRef as credentialRef11 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef12 } from "@deepseek-ai/dsh-credentials";
 import { randomBytes as randomBytes12 } from "node:crypto";
 
 // vendor/channel-pack/src/opencode-auth.ts
@@ -65033,7 +65094,7 @@ async function handleOpencodeRpc(ctx, pool, method, payload) {
           return done({ accountId: id, existed: true });
         }
         const nickname = typeof req.nickname === "string" && req.nickname.trim().length > 0 ? req.nickname.trim() : `OpenCode ${apiKey.slice(-6)}`;
-        await ctx.credentials.set(credentialRef11(refName), JSON.stringify({
+        await ctx.credentials.set(credentialRef12(refName), JSON.stringify({
           api_key: apiKey,
           nickname,
           // 指纹在此**首次固化**，之后由池里的代次权威重算（见 index.ts 接线注释）。
@@ -65058,7 +65119,7 @@ async function handleOpencodeRpc(ctx, pool, method, payload) {
         const refName = `OPENCODE_ANON_${randomBytes12(4).toString("hex").toUpperCase()}`;
         const count2 = pool.listAccountsByProvider(OPENCODE.id).filter((a) => a.id.startsWith(`${OPENCODE.id}-anon-`)).length;
         const nickname = typeof req?.nickname === "string" && req.nickname.trim().length > 0 ? req.nickname.trim() : `\u533F\u540D\u901A\u9053 ${count2 + 1}`;
-        await ctx.credentials.set(credentialRef11(refName), JSON.stringify({
+        await ctx.credentials.set(credentialRef12(refName), JSON.stringify({
           api_key: OPENCODE.anonymousKey,
           nickname
         }));
@@ -66135,7 +66196,7 @@ async function collectCreditsStatus(accounts, product, deps) {
   for (const entry of accounts) {
     let status = null;
     try {
-      const resolved = await deps.resolve(credentialRef12(entry.credentialRef));
+      const resolved = await deps.resolve(credentialRef13(entry.credentialRef));
       if (resolved !== void 0) {
         const credential = JSON.parse(resolved.value);
         status = await fetchStatus(credential, product);
@@ -66166,7 +66227,7 @@ async function collectClaimResults(accounts, product, deps) {
   for (const entry of accounts) {
     let outcome;
     try {
-      const resolved = await deps.resolve(credentialRef12(entry.credentialRef));
+      const resolved = await deps.resolve(credentialRef13(entry.credentialRef));
       if (resolved === void 0) {
         outcome = { kind: "failed", code: -1, message: "\u51ED\u636E\u672A\u914D\u7F6E" };
       } else {
@@ -66211,7 +66272,7 @@ async function collectCreditBalances(accounts, product, deps) {
     let error;
     let extra;
     try {
-      const resolved = await deps.resolve(credentialRef12(entry.credentialRef));
+      const resolved = await deps.resolve(credentialRef13(entry.credentialRef));
       if (resolved === void 0) {
         error = "\u51ED\u636E\u672A\u914D\u7F6E";
       } else {
@@ -66496,7 +66557,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
     const out = [];
     for (const account of accounts) {
       try {
-        const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
+        const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
         if (!resolved) {
           out.push(account);
           continue;
@@ -66640,7 +66701,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         const id = `${provider}-${shortId()}`;
         const refName = `${provider.toUpperCase().replace(/-/g, "_")}_ACCOUNT_${shortId().toUpperCase()}`;
         try {
-          await ctx.credentials.set(credentialRef12(refName), JSON.stringify(parsed));
+          await ctx.credentials.set(credentialRef13(refName), JSON.stringify(parsed));
         } catch (error) {
           return { ok: false, error: { code: "internal", message: `\u51ED\u636E\u5199\u5165\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}` } };
         }
@@ -66746,7 +66807,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             const reason = error instanceof Error ? error.message : String(error);
             throw new Error(`\u65E0\u6CD5\u83B7\u53D6 ${product.displayName} \u767B\u5F55\u5730\u5740\uFF08Host \u7F51\u7EDC\u8BF7\u6C42\u5931\u8D25\uFF09\uFF1A${reason}`);
           }
-          const ref = credentialRef12(refName);
+          const ref = credentialRef13(refName);
           await pool.addAccount({
             id,
             provider: product.id,
@@ -66792,7 +66853,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           };
           flow.result.then(async (credential) => {
             cleanup();
-            await ctx.credentials.set(credentialRef12(refName), JSON.stringify(credential));
+            await ctx.credentials.set(credentialRef13(refName), JSON.stringify(credential));
             await pool.updateAccount(id, {
               nickname: credential.nickname ?? id,
               expiresAt: credential.expire_time,
@@ -66824,7 +66885,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           };
           flow.result.then(async (credential) => {
             cleanup();
-            await ctx.credentials.set(credentialRef12(refName), JSON.stringify(credential));
+            await ctx.credentials.set(credentialRef13(refName), JSON.stringify(credential));
             await pool.updateAccount(id, {
               nickname: credential.nickname ?? id,
               // Cookie 型渠道没有续期端点，只能重新扫码/粘贴。
@@ -66861,7 +66922,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             createdAt: Date.now()
           });
           started.result.then(async ({ credential }) => {
-            await ctx.credentials.set(credentialRef12(refName), JSON.stringify(credential));
+            await ctx.credentials.set(credentialRef13(refName), JSON.stringify(credential));
             await pool.updateAccount(id, {
               nickname: credential.nickname ?? credential.key_name ?? id
             });
@@ -66895,7 +66956,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             const sts = await oa.exchangeCodeForSts(codeartsFetcher, OFFICEACE2, code, pkce.verifier, dpopKey);
             stsPersisted = true;
             const dpopJwk = await dpop.exportDpopJwkPair(dpopKey);
-            await ctx.credentials.set(credentialRef12(refName), JSON.stringify({ ...sts, dpop: dpopJwk }));
+            await ctx.credentials.set(credentialRef13(refName), JSON.stringify({ ...sts, dpop: dpopJwk }));
             await pool.updateAccount(id, {
               refreshable: typeof sts.refresh_token === "string" && sts.refresh_token !== ""
             });
@@ -66917,7 +66978,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
               // 续期签 proof 必须用同一把私钥 —— 参考实现同款约束）。
               dpop: dpopJwk
             };
-            await ctx.credentials.set(credentialRef12(refName), JSON.stringify(credential));
+            await ctx.credentials.set(credentialRef13(refName), JSON.stringify(credential));
             await pool.updateAccount(id, {
               nickname: credential.nickname ?? id,
               expiresAt: credential.expire_time,
@@ -66945,7 +67006,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             createdAt: Date.now()
           });
           started.result.then(async (credential) => {
-            await ctx.credentials.set(credentialRef12(refName), JSON.stringify(credential));
+            await ctx.credentials.set(credentialRef13(refName), JSON.stringify(credential));
             await pool.updateAccount(id, {
               nickname: credential.nickname ?? credential.account_id ?? id,
               ...credential.expire_time === void 0 ? {} : { expiresAt: credential.expire_time },
@@ -67002,7 +67063,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
               nickname = await fetchQoderUserNickname(credential, product2);
               if (nickname !== void 0 && loginResult.access.length > 0) {
                 const updated = withQoderNickname(credential, nickname);
-                await ctx.credentials.set(credentialRef12(refName), JSON.stringify(updated));
+                await ctx.credentials.set(credentialRef13(refName), JSON.stringify(updated));
               }
             }
             await pool.updateAccount(id, {
@@ -67368,7 +67429,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
               await gemini.refreshAccountCredential(entry.credentialRef, pool, entry.id);
               break;
             case AUTOCLAW.id: {
-              const resolved = await ctx.credentials.resolve(credentialRef12(entry.credentialRef));
+              const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
               if (resolved === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
               const current = JSON.parse(resolved.value);
               const refreshed = await refreshAutoclawCredential({
@@ -67377,7 +67438,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
                 credential: current
               });
               if (!refreshed.ok) throw new Error(refreshed.error);
-              await ctx.credentials.set(credentialRef12(entry.credentialRef), JSON.stringify(refreshed.credential));
+              await ctx.credentials.set(credentialRef13(entry.credentialRef), JSON.stringify(refreshed.credential));
               await pool.updateAccount(entry.id, {
                 expiresAt: refreshed.credential.expire_time,
                 refreshable: typeof refreshed.credential.refresh_token === "string" && refreshed.credential.refresh_token !== ""
@@ -67385,7 +67446,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
               break;
             }
             case KUKU.id: {
-              const resolved = await ctx.credentials.resolve(credentialRef12(entry.credentialRef));
+              const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
               if (resolved === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
               let token = "";
               try {
@@ -67398,7 +67459,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
               break;
             }
             case MONKEYCODE.id: {
-              const resolved = await ctx.credentials.resolve(credentialRef12(entry.credentialRef));
+              const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
               if (resolved === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
               let cookie = "";
               try {
@@ -67411,7 +67472,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
               break;
             }
             case "orcaterm": {
-              const resolved = await ctx.credentials.resolve(credentialRef12(entry.credentialRef));
+              const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
               if (resolved === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
               let credential;
               try {
@@ -67423,7 +67484,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
               break;
             }
             case COMMANDCODE.id: {
-              const resolved = await ctx.credentials.resolve(credentialRef12(entry.credentialRef));
+              const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
               if (resolved === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
               let key = "";
               try {
@@ -67439,7 +67500,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             case ACCIO.id:
             case ACCIO_CN.id: {
               const product = entry.provider === ACCIO_CN.id ? ACCIO_CN : ACCIO;
-              const resolved = await ctx.credentials.resolve(credentialRef12(entry.credentialRef));
+              const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
               if (resolved === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
               const current = JSON.parse(resolved.value);
               if (current.refresh_token === void 0 || current.refresh_token === "") {
@@ -67447,7 +67508,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
               }
               const refreshed = await refreshCredential(codeartsFetcher, product, current);
               if (refreshed === void 0) throw new Error("Accio\uFF1A\u7EED\u671F\u8BF7\u6C42\u5931\u8D25\uFF08\u4E0A\u6E38\u62D2\u7EDD\u6216\u54CD\u5E94\u7F3A\u5C11 accessToken\uFF09");
-              await ctx.credentials.set(credentialRef12(entry.credentialRef), JSON.stringify(refreshed));
+              await ctx.credentials.set(credentialRef13(entry.credentialRef), JSON.stringify(refreshed));
               await pool.updateAccount(entry.id, {
                 expiresAt: refreshed.expire_time,
                 refreshable: typeof refreshed.refresh_token === "string" && refreshed.refresh_token !== ""
@@ -67457,7 +67518,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             case "officeace": {
               const { refreshOfficeAceCredential: refreshOfficeAceCredential2, validatePermission: validatePermission2 } = await Promise.resolve().then(() => (init_officeace(), officeace_exports));
               const { OFFICEACE: OFFICEACE2 } = await Promise.resolve().then(() => (init_officeace_product(), officeace_product_exports));
-              const resolved = await ctx.credentials.resolve(credentialRef12(entry.credentialRef));
+              const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
               if (resolved === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
               const current = JSON.parse(resolved.value);
               const refreshed = await refreshOfficeAceCredential2(codeartsFetcher, OFFICEACE2, current);
@@ -67480,7 +67541,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
                   `[channel-pack] officeace \u7EED\u671F\u540E\u7684\u6743\u9650\u6821\u9A8C\u5931\u8D25\uFF08\u4FDD\u7559\u539F\u7F51\u5173\u4FE1\u606F\uFF09\uFF1A${error instanceof Error ? error.message : String(error)}`
                 );
               }
-              await ctx.credentials.set(credentialRef12(entry.credentialRef), JSON.stringify(refreshed));
+              await ctx.credentials.set(credentialRef13(entry.credentialRef), JSON.stringify(refreshed));
               await pool.updateAccount(entry.id, {
                 expiresAt: refreshed.expire_time,
                 refreshable: typeof refreshed.refresh_token === "string" && refreshed.refresh_token !== ""
@@ -67511,7 +67572,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         const accounts = await pool.listAllAccounts();
         const entry = accounts.find((a) => a.id === req.accountId);
         if (!entry) return { ok: true, value: { done: false } };
-        const ref = credentialRef12(entry.credentialRef);
+        const ref = credentialRef13(entry.credentialRef);
         const resolved = await ctx.credentials.resolve(ref);
         if (!resolved) return { ok: true, value: { done: false } };
         if (entry.provider === ZCODE.id) {
@@ -67611,7 +67672,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         if (account === void 0) {
           return { ok: false, error: { code: "bad-request", message: "\u8D26\u53F7\u4E0D\u5B58\u5728" } };
         }
-        const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
+        const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
         if (!resolved) {
           return { ok: false, error: { code: "bad-request", message: "\u51ED\u636E\u672A\u914D\u7F6E" } };
         }
@@ -67711,7 +67772,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         if (account === void 0) {
           return { ok: false, error: { code: "bad-request", message: "\u8D26\u53F7\u4E0D\u5B58\u5728" } };
         }
-        const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
+        const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
         if (!resolved) {
           return { ok: false, error: { code: "bad-request", message: "\u51ED\u636E\u672A\u914D\u7F6E" } };
         }
@@ -67842,7 +67903,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           const accounts2 = await pool.listAccounts(req.provider);
           const rows = [];
           for (const entry of accounts2) {
-            const resolved = await ctx.credentials.resolve(credentialRef12(entry.credentialRef));
+            const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
             let status = null;
             if (resolved !== void 0) {
               try {
@@ -68028,7 +68089,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         if (req.provider === LOOMY.id) {
           const values = [];
           for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
+            const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
             if (!resolved) {
               values.push({
                 accountId: account.id,
@@ -68099,7 +68160,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           const results = [];
           const outcomes = [];
           for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
+            const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
             let accountOutcomes;
             if (!resolved) {
               accountOutcomes = [{ kind: "failed", code: -1, message: "\u51ED\u636E\u672A\u914D\u7F6E" }];
@@ -68195,7 +68256,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           const { product: product2 } = requireQoderFamily(req.provider);
           const values2 = [];
           for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
+            const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
             if (!resolved) {
               values2.push({
                 accountId: account.id,
@@ -68343,9 +68404,9 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           const values2 = await collectCreditBalances(accounts, KUKU_PRODUCT, {
             fetcher: codeartsFetcher,
             resolve: (ref) => ctx.credentials.resolve(ref),
-            fetchBalanceDetailed: async (credential) => {
+            fetchBalanceDetailed: async (credential, _product) => {
               const points = await fetchKukuPoints2(codeartsFetcher, KUKU_PRODUCT, credential);
-              return points === void 0 ? { balance: null, error: "\u672A\u8FD4\u56DE\u79EF\u5206\u6570\u636E\uFF08\u4E0A\u6E38\u4E1A\u52A1\u7801\u975E 0 \u6216\u7ED3\u6784\u4E0D\u8BA4\u8BC6\uFF09" } : { balance: { total: points, packages: [] } };
+              return points === void 0 ? { balance: null, error: "\u672A\u8FD4\u56DE\u79EF\u5206\u6570\u636E\uFF08\u4E0A\u6E38\u4E1A\u52A1\u7801\u975E 0 \u6216\u7ED3\u6784\u4E0D\u8BA4\u8BC6\uFF09" } : { balance: { total: points, packages: [], expiredTotal: 0 } };
             },
             warn: (msg) => ctx.logger?.warn?.(msg)
           });
@@ -68435,7 +68496,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         if (req.provider === CLINE.id) {
           const values2 = [];
           for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
+            const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
             if (!resolved) {
               values2.push({
                 accountId: account.id,
@@ -68473,7 +68534,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         if (req.provider === LOOMY.id) {
           const values2 = [];
           for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
+            const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
             if (!resolved) {
               values2.push({
                 accountId: account.id,
@@ -68509,7 +68570,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         if (req.provider === RACCOON.id) {
           const values2 = [];
           for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
+            const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
             if (!resolved) {
               values2.push({
                 accountId: account.id,
@@ -68546,7 +68607,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         if (req.provider === ZCODE.id) {
           const values2 = [];
           for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
+            const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
             if (!resolved) {
               values2.push({
                 accountId: account.id,
@@ -68649,7 +68710,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         const accounts = await pool.listAccounts(req.provider);
         const values = [];
         for (const account of accounts) {
-          const resolved = await ctx.credentials.resolve(credentialRef12(account.credentialRef));
+          const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
           if (!resolved) {
             values.push({
               accountId: account.id,
@@ -69854,11 +69915,15 @@ async function convertMessage(raw, provider, model, bridge, limits) {
     if (typeof value.tool_call_id !== "string" || value.tool_call_id.length === 0) {
       throw new OpenAiGatewayError("tool messages require tool_call_id");
     }
-    return createGatewayMessage("user", [{
+    const toolResult = {
       type: "tool-result",
       toolCallId: value.tool_call_id,
       content: await partsFromContent(value.content, bridge, limits)
-    }], { kind: "tool", callId: value.tool_call_id });
+    };
+    return createGatewayMessage("user", [toolResult], {
+      kind: "tool",
+      callId: value.tool_call_id
+    });
   }
   throw new OpenAiGatewayError(`unsupported message role: ${String(role)}`);
 }
@@ -70376,6 +70441,7 @@ async function toMessages(input, provider, model, bridge, limits) {
     if (blocks.length === 0) return;
     const last = messages[messages.length - 1];
     if (last !== void 0 && last.role === "assistant") {
+      ;
       last.content.push(...blocks);
       return;
     }
@@ -70422,11 +70488,16 @@ async function toMessages(input, provider, model, bridge, limits) {
     if (type === "function_call_output") {
       const callId = nonEmptyString2(raw.call_id);
       if (callId === void 0) throw new OpenAiGatewayError("function_call_output requires call_id");
-      messages.push(createGatewayMessage("user", [{
+      const toolResult = {
         type: "tool-result",
         toolCallId: callId,
         content: await outputParts(raw.output, bridge, limits)
-      }], { kind: "tool", callId }));
+      };
+      messages.push(createGatewayMessage("user", [toolResult], {
+        kind: "tool",
+        // ToolCallId 是宿主品牌类型；callId 已过 nonEmptyString 验证。
+        callId
+      }));
       continue;
     }
     if (type === "reasoning") {
@@ -71918,7 +71989,7 @@ init_autoclaw_product();
 
 // vendor/channel-pack/src/minimax-auth.ts
 import { Service as Service10 } from "@deepseek-ai/cordis";
-import { credentialRef as credentialRef13 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef14 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/minimax-oauth.ts
 import { createHash as createHash13, randomBytes as randomBytes14 } from "node:crypto";
@@ -72190,13 +72261,13 @@ var MinimaxAuth = class extends Service10 {
       ...credential,
       ...options.nickname === void 0 ? {} : { nickname: options.nickname }
     };
-    await this.ctx.credentials.set(credentialRef13(options.refName), JSON.stringify(payload));
+    await this.ctx.credentials.set(credentialRef14(options.refName), JSON.stringify(payload));
     this.lastRefreshError = void 0;
     return { ...credential.account_id === void 0 ? {} : { accountId: credential.account_id } };
   }
   /** 解析默认单凭据。 */
   async resolveDefaultCredential() {
-    const resolved = await this.ctx.credentials.resolve(credentialRef13(this.credentialRefName));
+    const resolved = await this.ctx.credentials.resolve(credentialRef14(this.credentialRefName));
     if (!resolved) return void 0;
     return parseMinimaxCredential(resolved.value);
   }
@@ -72215,7 +72286,7 @@ var MinimaxAuth = class extends Service10 {
         this.fetchImpl,
         this.product
       );
-      await this.ctx.credentials.set(credentialRef13(this.credentialRefName), JSON.stringify(next));
+      await this.ctx.credentials.set(credentialRef14(this.credentialRefName), JSON.stringify(next));
       this.lastRefreshError = void 0;
     } catch (error) {
       const message2 = error instanceof Error ? error.message : String(error);
@@ -72231,7 +72302,7 @@ var MinimaxAuth = class extends Service10 {
    * 也把池值对账（见 `refreshAll` 的注释）。
    */
   async refreshAccountCredential(refName, pool, accountId) {
-    const ref = credentialRef13(refName);
+    const ref = credentialRef14(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
     const credential = parseMinimaxCredential(resolved.value);
@@ -72273,7 +72344,7 @@ var MinimaxAuth = class extends Service10 {
     for (const entry of accounts) {
       if (!entry.refreshable) continue;
       try {
-        const ref = credentialRef13(entry.credentialRef);
+        const ref = credentialRef14(entry.credentialRef);
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) {
           await pool.updateAccount(entry.id, { refreshable: false });
@@ -72492,6 +72563,10 @@ function blockText(block) {
   if (block.type === "reasoning") return block.text;
   return "";
 }
+function blockTextOf(block) {
+  if (block.type === "text" || block.type === "reasoning") return block.text;
+  return "";
+}
 function serializeMinimaxMessages(messages, images) {
   const normalized = normalizeHarnessMessages(
     messages
@@ -72556,7 +72631,7 @@ function serializeMinimaxMessages(messages, images) {
         });
         continue;
       }
-      const text = blockText(block);
+      const text = blockTextOf(block);
       if (text === "") continue;
       if (message2.role === "assistant" && block.type === "reasoning") {
         continue;
@@ -72578,8 +72653,9 @@ function serializeMinimaxMessages(messages, images) {
   return out;
 }
 function serializeToolResultContent(blocks, images) {
+  const list = Array.isArray(blocks) ? blocks : [];
   const out = [];
-  for (const block of blocks) {
+  for (const block of list) {
     if (block.type === "image") {
       const ref = block.attachment;
       const attachmentId = typeof ref?.attachmentId === "string" ? ref.attachmentId : void 0;
@@ -72598,6 +72674,9 @@ function serializeToolResultContent(blocks, images) {
   return out;
 }
 function parseToolArguments3(raw) {
+  if (typeof raw !== "string") {
+    return typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
+  }
   if (raw.trim() === "") return {};
   try {
     const parsed = JSON.parse(raw);
@@ -73035,7 +73114,7 @@ function registerMinimaxLlm(ctx, options) {
 
 // vendor/channel-pack/src/gemini-auth.ts
 import { Service as Service11 } from "@deepseek-ai/cordis";
-import { credentialRef as credentialRef14 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef15 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/gemini-oauth.ts
 import { createServer as createServer9 } from "node:http";
@@ -73404,7 +73483,7 @@ var GeminiAuth = class extends Service11 {
     return queue;
   }
   async readCredential(refName) {
-    const resolved = await this.ctx.credentials.resolve(credentialRef14(refName));
+    const resolved = await this.ctx.credentials.resolve(credentialRef15(refName));
     if (!resolved) return void 0;
     return parseGeminiCredential(resolved.value);
   }
@@ -73444,7 +73523,7 @@ var GeminiAuth = class extends Service11 {
    * 展示名走 `geminiAccountLabel`（邮箱优先，回退 `sub`）。
    */
   async persistLogin(credential, options) {
-    await this.ctx.credentials.set(credentialRef14(options.refName), JSON.stringify(credential));
+    await this.ctx.credentials.set(credentialRef15(options.refName), JSON.stringify(credential));
     return credential.sub === void 0 ? {} : { accountId: credential.sub };
   }
   /** 解析默认单凭据。 */
@@ -73461,7 +73540,7 @@ var GeminiAuth = class extends Service11 {
       throw new GeminiRefreshTokenExpiredError("\u51ED\u636E\u7F3A\u5C11 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
     }
     const next = await this.refreshCredential(credential);
-    await this.ctx.credentials.set(credentialRef14(this.credentialRefName), JSON.stringify(next));
+    await this.ctx.credentials.set(credentialRef15(this.credentialRefName), JSON.stringify(next));
   }
   /**
    * 续期**指定 ref**（RPC `account.refresh` / 定时器）。
@@ -73477,7 +73556,7 @@ var GeminiAuth = class extends Service11 {
       if (!isGeminiRefreshable(credential)) {
         throw new GeminiRefreshTokenExpiredError("\u51ED\u636E\u7F3A\u5C11 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
       }
-      const ref = credentialRef14(refName);
+      const ref = credentialRef15(refName);
       if (pool === void 0) {
         const next = await this.refreshCredential(credential);
         await this.ctx.credentials.set(ref, JSON.stringify(next));
@@ -73511,7 +73590,7 @@ var GeminiAuth = class extends Service11 {
   async refreshAll(pool) {
     const accounts = await pool.listAccounts(this.product.id);
     for (const entry of accounts) {
-      const ref = credentialRef14(entry.credentialRef);
+      const ref = credentialRef15(entry.credentialRef);
       let credential;
       try {
         const resolved = await this.ctx.credentials.resolve(ref);
@@ -73613,7 +73692,7 @@ var GeminiAuth = class extends Service11 {
     }
     for (const entry of entries) {
       try {
-        const ref = credentialRef14(entry.credentialRef);
+        const ref = credentialRef15(entry.credentialRef);
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) continue;
         let credential = parseGeminiCredential(resolved.value);
@@ -74704,7 +74783,7 @@ function apply(ctx, config = {}) {
   });
   const codearts = registerCodeArtsLlm(ctx, {
     fetchImpl: signedNetwork.fetch,
-    credentialRef: credentialRef15(CODEARTS_CREDENTIAL_REF),
+    credentialRef: credentialRef16(CODEARTS_CREDENTIAL_REF),
     resolveCredential: async () => {
       const available2 = await pool.getAvailableAccount("codearts", "");
       return available2?.credential;
@@ -74720,7 +74799,7 @@ function apply(ctx, config = {}) {
     accountPool: pool
   });
   const resolveBuddyCredentialByRef = async (refName) => {
-    const resolved = await ctx.credentials.resolve(credentialRef15(refName));
+    const resolved = await ctx.credentials.resolve(credentialRef16(refName));
     if (!resolved) return void 0;
     try {
       return JSON.parse(resolved.value);
@@ -74796,7 +74875,7 @@ function apply(ctx, config = {}) {
   };
   const buddy = new BuddyAuth(ctx);
   const buddyAdapter = registerBuddyLlm(ctx, {
-    credentialRef: credentialRef15(BUDDY_CREDENTIAL_REF),
+    credentialRef: credentialRef16(BUDDY_CREDENTIAL_REF),
     resolveCredential: async (modelId) => {
       const picked = await pickBuddyCredential({
         product: CODEBUDDY,
@@ -74814,7 +74893,7 @@ function apply(ctx, config = {}) {
         return available2.credential;
       }
       throwIfAllAccountsRateLimited(CODEBUDDY, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef15(BUDDY_CREDENTIAL_REF));
+      const resolved = await ctx.credentials.resolve(credentialRef16(BUDDY_CREDENTIAL_REF));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -74835,7 +74914,7 @@ function apply(ctx, config = {}) {
   });
   const workbuddy = new BuddyAuth(ctx, { product: WORKBUDDY });
   const workbuddyAdapter = registerBuddyLlm(ctx, {
-    credentialRef: credentialRef15(WORKBUDDY.defaultCredentialRef),
+    credentialRef: credentialRef16(WORKBUDDY.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const picked = await pickBuddyCredential({
         product: WORKBUDDY,
@@ -74854,7 +74933,7 @@ function apply(ctx, config = {}) {
         return available2.credential;
       }
       throwIfAllAccountsRateLimited(WORKBUDDY, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef15(WORKBUDDY.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef16(WORKBUDDY.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -74874,7 +74953,7 @@ function apply(ctx, config = {}) {
   const qoder = new QoderAuth(ctx);
   const activeQoderAccountId = /* @__PURE__ */ new Map();
   const qoderAdapter = registerQoderLlm(ctx, {
-    credentialRef: credentialRef15(QODER.defaultCredentialRef),
+    credentialRef: credentialRef16(QODER.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(QODER.id, modelId ?? "");
       if (available2) {
@@ -74884,7 +74963,7 @@ function apply(ctx, config = {}) {
       }
       activeQoderAccountId.set(QODER.id, void 0);
       throwIfAllAccountsRateLimited(QODER, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef15(QODER.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef16(QODER.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -74910,7 +74989,7 @@ function apply(ctx, config = {}) {
   });
   const qoderCn = new QoderAuth(ctx, { product: QODER_CN });
   const qoderCnAdapter = registerQoderLlm(ctx, {
-    credentialRef: credentialRef15(QODER_CN.defaultCredentialRef),
+    credentialRef: credentialRef16(QODER_CN.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(QODER_CN.id, modelId ?? "");
       if (available2) {
@@ -74920,7 +74999,7 @@ function apply(ctx, config = {}) {
       }
       activeQoderAccountId.set(QODER_CN.id, void 0);
       throwIfAllAccountsRateLimited(QODER_CN, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef15(QODER_CN.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef16(QODER_CN.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -74946,14 +75025,14 @@ function apply(ctx, config = {}) {
   });
   const trae = new TraeAuth(ctx);
   const traeAdapter = registerTraeLlm(ctx, {
-    credentialRef: credentialRef15(TRAE.defaultCredentialRef),
+    credentialRef: credentialRef16(TRAE.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(TRAE.id, modelId ?? "");
       if (available2) {
         reportLedgerAccount(TRAE.id, available2.entry.id);
         return available2.credential;
       }
-      const resolved = await ctx.credentials.resolve(credentialRef15(TRAE.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef16(TRAE.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -74977,14 +75056,14 @@ function apply(ctx, config = {}) {
   let activeClineAccountId = "";
   const clineAdapter = registerClineLlm(ctx, {
     fetchImpl: network.fetch,
-    credentialRef: credentialRef15(CLINE.defaultCredentialRef),
+    credentialRef: credentialRef16(CLINE.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(CLINE.id, modelId ?? "");
       activeClineAccountId = available2?.entry.id ?? "";
       if (activeClineAccountId.length > 0) reportLedgerAccount(CLINE.id, activeClineAccountId);
       if (available2) return available2.credential;
       throwIfAllAccountsRateLimited(CLINE, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef15(CLINE.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef16(CLINE.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -75017,7 +75096,7 @@ function apply(ctx, config = {}) {
       activeCommandCodeAccountId = available2?.entry.id ?? "";
       if (activeCommandCodeAccountId.length > 0) reportLedgerAccount(COMMANDCODE.id, activeCommandCodeAccountId);
       if (available2) return available2.credential;
-      const resolved = await ctx.credentials.resolve(credentialRef15(COMMANDCODE.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef16(COMMANDCODE.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -75036,7 +75115,7 @@ function apply(ctx, config = {}) {
       activeMonkeyCodeAccountId = available2?.entry.id ?? "";
       if (activeMonkeyCodeAccountId.length > 0) reportLedgerAccount(MONKEYCODE.id, activeMonkeyCodeAccountId);
       if (available2) return available2.credential;
-      const resolved = await ctx.credentials.resolve(credentialRef15(MONKEYCODE.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef16(MONKEYCODE.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -75055,7 +75134,7 @@ function apply(ctx, config = {}) {
       activeOrcaTermAccountId = available2?.entry.id ?? "";
       if (activeOrcaTermAccountId.length > 0) reportLedgerAccount(ORCATERM.id, activeOrcaTermAccountId);
       if (available2) return available2.credential;
-      const resolved = await ctx.credentials.resolve(credentialRef15(ORCATERM.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef16(ORCATERM.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -75074,7 +75153,7 @@ function apply(ctx, config = {}) {
       activeKukuAccountId = available2?.entry.id ?? "";
       if (activeKukuAccountId.length > 0) reportLedgerAccount(KUKU.id, activeKukuAccountId);
       if (available2) return available2.credential;
-      const resolved = await ctx.credentials.resolve(credentialRef15(KUKU.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef16(KUKU.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -75091,7 +75170,7 @@ function apply(ctx, config = {}) {
     activeAccioAccountId = available2?.entry.id ?? "";
     if (activeAccioAccountId.length > 0) reportLedgerAccount(product.id, activeAccioAccountId);
     if (available2) return available2.credential;
-    const resolved = await ctx.credentials.resolve(credentialRef15(product.defaultCredentialRef));
+    const resolved = await ctx.credentials.resolve(credentialRef16(product.defaultCredentialRef));
     if (!resolved) return void 0;
     try {
       return JSON.parse(resolved.value);
@@ -75127,7 +75206,7 @@ function apply(ctx, config = {}) {
     credential,
     accountId,
     save: async (ref, next) => {
-      await ctx.credentials.set(credentialRef15(ref), JSON.stringify(next));
+      await ctx.credentials.set(credentialRef16(ref), JSON.stringify(next));
     },
     pool,
     log: ctx.logger
@@ -75150,7 +75229,7 @@ function apply(ctx, config = {}) {
           activeOfficeAceAccountId
         );
       }
-      const resolved = await ctx.credentials.resolve(credentialRef15(OFFICEACE.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef16(OFFICEACE.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return await ensureOfficeAceCredentialFresh(JSON.parse(resolved.value), "");
@@ -75194,7 +75273,7 @@ function apply(ctx, config = {}) {
       }
     );
     if (available2) return fresh(available2.credential);
-    const resolved = await ctx.credentials.resolve(credentialRef15(product.defaultCredentialRef));
+    const resolved = await ctx.credentials.resolve(credentialRef16(product.defaultCredentialRef));
     if (!resolved) return void 0;
     try {
       return await fresh(JSON.parse(resolved.value));
@@ -75210,7 +75289,7 @@ function apply(ctx, config = {}) {
   });
   const loomy = new LoomyAuth(ctx);
   const resolveLoomyCredentialByRef = async (refName) => {
-    const resolved = await ctx.credentials.resolve(credentialRef15(refName));
+    const resolved = await ctx.credentials.resolve(credentialRef16(refName));
     if (!resolved) return void 0;
     try {
       return JSON.parse(resolved.value);
@@ -75223,7 +75302,7 @@ function apply(ctx, config = {}) {
     resolveCredential: resolveLoomyCredentialByRef
   });
   const loomyAdapter = registerLoomyLlm(ctx, {
-    credentialRef: credentialRef15(LOOMY.defaultCredentialRef),
+    credentialRef: credentialRef16(LOOMY.defaultCredentialRef),
     /**
      * 解析本轮该用哪个账号的凭据。
      *
@@ -75261,7 +75340,7 @@ function apply(ctx, config = {}) {
         }
       }
       throwIfAllAccountsRateLimited(LOOMY, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef15(LOOMY.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef16(LOOMY.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -75274,7 +75353,7 @@ function apply(ctx, config = {}) {
       if (accountId !== void 0 && entry === void 0) throw new Error("loomy: account no longer exists");
       if (entry) await loomy.refreshAccountCredential(entry.credentialRef, pool, entry.id);
       else await loomy.refresh();
-      const resolved = await ctx.credentials.resolve(credentialRef15(entry?.credentialRef ?? LOOMY.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef16(entry?.credentialRef ?? LOOMY.defaultCredentialRef));
       if (!resolved) throw new Error("loomy: credential no longer exists");
       return JSON.parse(resolved.value);
     },
@@ -75293,7 +75372,7 @@ function apply(ctx, config = {}) {
     // 失败时返回空数组，由适配器回退兜底表。
     fetchRemoteModels: async () => {
       const available2 = await pool.getAvailableAccount(LOOMY.id, "");
-      const resolved = available2 !== null && available2 !== void 0 ? { value: JSON.stringify(available2.credential) } : await ctx.credentials.resolve(credentialRef15(LOOMY.defaultCredentialRef));
+      const resolved = available2 !== null && available2 !== void 0 ? { value: JSON.stringify(available2.credential) } : await ctx.credentials.resolve(credentialRef16(LOOMY.defaultCredentialRef));
       if (resolved === void 0) return [];
       let credential;
       try {
@@ -75315,7 +75394,7 @@ function apply(ctx, config = {}) {
   });
   const raccoon = new RaccoonAuth(ctx);
   const raccoonAdapter = registerRaccoonLlm(ctx, {
-    credentialRef: credentialRef15(RACCOON.defaultCredentialRef),
+    credentialRef: credentialRef16(RACCOON.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(RACCOON.id, modelId ?? "");
       if (available2) {
@@ -75323,7 +75402,7 @@ function apply(ctx, config = {}) {
         return available2.credential;
       }
       throwIfAllAccountsRateLimited(RACCOON, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef15(RACCOON.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef16(RACCOON.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -75336,7 +75415,7 @@ function apply(ctx, config = {}) {
       if (accountId !== void 0 && entry === void 0) throw new Error("raccoon: account no longer exists");
       if (entry) await raccoon.refreshAccountCredential(entry.credentialRef, pool, entry.id);
       else await raccoon.refresh();
-      const resolved = await ctx.credentials.resolve(credentialRef15(entry?.credentialRef ?? RACCOON.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef16(entry?.credentialRef ?? RACCOON.defaultCredentialRef));
       if (!resolved) throw new Error("raccoon: credential no longer exists");
       return JSON.parse(resolved.value);
     },
@@ -75360,14 +75439,14 @@ function apply(ctx, config = {}) {
   });
   const minimax = new MinimaxAuth(ctx);
   const minimaxAdapter = registerMinimaxLlm(ctx, {
-    credentialRef: credentialRef15(MINIMAX.defaultCredentialRef),
+    credentialRef: credentialRef16(MINIMAX.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(MINIMAX.id, modelId ?? "");
       if (available2) {
         reportLedgerAccount(MINIMAX.id, available2.entry.id);
         return available2.credential;
       }
-      const resolved = await ctx.credentials.resolve(credentialRef15(MINIMAX.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef16(MINIMAX.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -75410,14 +75489,14 @@ function apply(ctx, config = {}) {
   const geminiAdapter = registerGeminiLlm(ctx, {
     fetchImpl: network.fetch,
     projectFetcher: network.fetch,
-    credentialRef: credentialRef15(GEMINI.defaultCredentialRef),
+    credentialRef: credentialRef16(GEMINI.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(GEMINI.id, modelId ?? "");
       if (available2) {
         reportLedgerAccount(GEMINI.id, available2.entry.id);
         return available2.credential;
       }
-      const resolved = await ctx.credentials.resolve(credentialRef15(GEMINI.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef16(GEMINI.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -75450,8 +75529,8 @@ function apply(ctx, config = {}) {
     projectCache: geminiProjectCache,
     persistProject: async (value) => {
       const available2 = await pool.getAvailableAccount(GEMINI.id, "");
-      const ref = available2 ? available2.entry.credentialRef : credentialRef15(GEMINI.defaultCredentialRef);
-      await ctx.credentials.set(credentialRef15(ref), value);
+      const ref = available2 ? available2.entry.credentialRef : credentialRef16(GEMINI.defaultCredentialRef);
+      await ctx.credentials.set(credentialRef16(ref), value);
     },
     ...ctx.logger === void 0 ? {} : { logger: ctx.logger }
   });
@@ -75489,7 +75568,7 @@ function apply(ctx, config = {}) {
   };
   const activeZcodeAccountId = /* @__PURE__ */ new Map();
   const zcodeAdapter = registerZcodeLlm(ctx, {
-    credentialRef: credentialRef15(ZCODE.defaultCredentialRef),
+    credentialRef: credentialRef16(ZCODE.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(ZCODE.id, modelId ?? "");
       if (available2) {
@@ -75522,7 +75601,7 @@ function apply(ctx, config = {}) {
       for (const entry of entries) {
         if (entry.enabled === false) continue;
         try {
-          const resolved = await ctx.credentials.resolve(credentialRef15(entry.credentialRef));
+          const resolved = await ctx.credentials.resolve(credentialRef16(entry.credentialRef));
           if (resolved === void 0) continue;
           const parsed = JSON.parse(resolved.value);
           if (typeof parsed?.zcode_jwt === "string" && parsed.zcode_jwt !== "") credentials.push(parsed);
@@ -75693,7 +75772,7 @@ function apply(ctx, config = {}) {
       if (entry.refreshable === false) continue;
       let credential;
       try {
-        const resolved = await ctx.credentials.resolve(credentialRef15(entry.credentialRef));
+        const resolved = await ctx.credentials.resolve(credentialRef16(entry.credentialRef));
         if (resolved === void 0) continue;
         credential = JSON.parse(resolved.value);
       } catch {
@@ -75710,7 +75789,7 @@ function apply(ctx, config = {}) {
         continue;
       }
       try {
-        await ctx.credentials.set(credentialRef15(entry.credentialRef), JSON.stringify(next));
+        await ctx.credentials.set(credentialRef16(entry.credentialRef), JSON.stringify(next));
       } catch (error) {
         ctx.logger?.error?.(
           `[channel-pack] ${providerId} \u8D26\u53F7 ${entry.id} \u7EED\u671F\u5DF2\u6210\u529F\u4F46**\u843D\u76D8\u5931\u8D25**\uFF08\u65E7 refresh_token \u5DF2\u88AB\u4E0A\u6E38\u6D88\u8D39\uFF0C\u9700\u91CD\u65B0\u767B\u5F55\uFF09: ${String(error)}`
@@ -75817,7 +75896,7 @@ function apply(ctx, config = {}) {
     opencodeAdapter = registerOpencodeLlm(ctx, {
       identitySlots: async () => listIdentitySlots(
         await Promise.all(pool.listAccountsByProvider(OPENCODE.id).map(async (entry) => {
-          const resolved = await ctx.credentials.resolve(credentialRef15(entry.credentialRef)).catch(() => void 0);
+          const resolved = await ctx.credentials.resolve(credentialRef16(entry.credentialRef)).catch(() => void 0);
           let parsed = {};
           if (resolved !== void 0) {
             try {
@@ -75870,7 +75949,7 @@ function apply(ctx, config = {}) {
     });
     void ensureDefaultAnonymousSlot(
       (entry) => pool.addAccount(entry),
-      (refName, value) => ctx.credentials.set(credentialRef15(refName), value),
+      (refName, value) => ctx.credentials.set(credentialRef16(refName), value),
       () => pool.listAccountsByProvider(OPENCODE.id),
       // ⚠️ 判据是「池里有没有匿名条目」而不是「有没有账号」：用户若主动
       // 删光了匿名通道，那是明确选择，不该每次启动又塞回来（删除会像失灵）。

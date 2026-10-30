@@ -55,6 +55,22 @@ export interface AccioFallbackModel {
   name: string
   contextWindow: number
   maxTokens?: number
+  /**
+   * ⚠️ 以下可选字段与远端行对齐（适配器 `remoteModels` 的行形状，2026-10-31
+   * tsc 门禁）：适配器把「远端行 | 兜底行」做联合，收窄后只见公共字段 ——
+   * 兜底行缺字段时 `usageDesc` / `supportsThinking` 在联合上「不存在」
+   * （TS2339/TS2559 ×3）。全可选，兜底表不填即无该信息。
+   */
+  /** 消耗系数（倍率；拼 name 用 `· xN`）。 */
+  priceFactor?: number
+  /** 免费标记（模型列表按「计费/来源」分组用）。 */
+  isFree?: boolean
+  /** 中文展示名（zh locale 优先用）。 */
+  nameCn?: string
+  /** 是否支持思考（accioReasoningInfo 的判据输入）。 */
+  supportsThinking?: boolean
+  /** 上游用量说明（用作 description）。 */
+  usageDesc?: string
 }
 
 /**
