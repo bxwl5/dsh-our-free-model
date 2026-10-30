@@ -9,6 +9,9 @@
 
 import { createServer } from 'node:http'
 import { spawn } from 'node:child_process'
+// `startOAuthFlow` 用 hex 票号（32 字节随机）；2026-10-30 实测缺它会 ReferenceError
+// ——tsc 只覆盖 adapter/**，vendor/ 不在其范围，所以只能靠回归用例兜。
+import { randomBytes } from 'node:crypto'
 import type { CodeArtsCredential, LoginFlowOptions, LoginFlowResult } from './types.js'
 import {
   CLIENT_ID, REDIRECT_PATH, credentialFromTokenResponse, exchangeAuthorizationCode,
@@ -23,6 +26,14 @@ export function expiresFromCredential(credential: CodeArtsCredential): number {
     if (!Number.isNaN(parsed)) return parsed
   }
   return Date.now() + 86_400_000
+}
+
+/** 回调服务器的 CORS 头（302/307 重定向同样需要，浏览器才肯跟）。 */
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+  'Access-Control-Max-Age': '86400',
 }
 
 /** 新式 IAM OAuth 的 portal 授权端点（对齐真实插件的 getPortalHost + /authorize）。 */

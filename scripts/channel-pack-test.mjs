@@ -404,6 +404,11 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   const { verifyKukuQrPage, verifyKukuEmbeddedRoute } = await import('./kuku-qr-page-test.mjs')
   await verifyKukuQrPage()
   await verifyKukuEmbeddedRoute({ routes })
+  // CodeArts 登录启动路径（2026-10-30 真实缺陷：清理旧 ticket 流程时误删
+  // randomBytes / CORS_HEADERS，点「添加账号」立刻 ReferenceError；
+  // tsc 只覆盖 adapter/**，vendor/ 靠这条用例兜）。
+  const { verifyCodeArtsLogin } = await import('./codearts-login-test.mjs')
+  await verifyCodeArtsLogin()
   const { verifyRaccoonLogin } = await import('./raccoon-login-test.mjs')
   await verifyRaccoonLogin()
   // 用户实测的真实 Cookie 形状（字段名随上游改名）：OrcaTerm 用 ot_sid、MonkeyCode 用 monkeycode_ai_session。

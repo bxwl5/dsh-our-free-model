@@ -28467,14 +28467,14 @@ var init_monkeycode = __esm({
 });
 
 // vendor/channel-pack/src/monkeycode-ws.ts
-import { createHash as createHash5, randomBytes as randomBytes5 } from "node:crypto";
+import { createHash as createHash5, randomBytes as randomBytes4 } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 function wsAcceptKey(key) {
   return createHash5("sha1").update(`${key}${WS_GUID}`).digest("base64");
 }
 function createWsKey() {
-  return randomBytes5(16).toString("base64");
+  return randomBytes4(16).toString("base64");
 }
 function parseFrame2(buffer, maxPayload = WS_MAX_PAYLOAD) {
   if (buffer.length < 2) return void 0;
@@ -28527,7 +28527,7 @@ function encodeFrame(opcode, payload, options = {}) {
   }
   const headBuffer = Buffer.from(head);
   if (!mask) return Buffer.concat([headBuffer, body]);
-  const maskKey = randomBytes5(4);
+  const maskKey = randomBytes4(4);
   const masked = Buffer.allocUnsafe(body.length);
   for (let index = 0; index < body.length; index += 1) masked[index] = body[index] ^ maskKey[index & 3];
   return Buffer.concat([headBuffer, maskKey, masked]);
@@ -29613,7 +29613,7 @@ var init_kuku = __esm({
 });
 
 // vendor/channel-pack/src/kuku-qr-login.ts
-import { createHash as createHash7, randomBytes as randomBytes6 } from "node:crypto";
+import { createHash as createHash7, randomBytes as randomBytes5 } from "node:crypto";
 function createKukuCookieJar(initial = {}) {
   const cookies = new Map(Object.entries(initial));
   return {
@@ -29647,7 +29647,7 @@ function readSetCookie(response) {
   return joined.split(/,(?=\s*[A-Za-z0-9_\-]+=)/);
 }
 function jsonpName() {
-  return `bd__cbs__${randomBytes6(4).toString("hex")}`;
+  return `bd__cbs__${randomBytes5(4).toString("hex")}`;
 }
 function unwrapJsonp(text) {
   const match = /^[^(]*\(([\s\S]*)\)\s*;?\s*$/.exec(text);
@@ -33594,9 +33594,9 @@ var init_webapi = __esm({
 });
 
 // vendor/channel-pack/src/oauth.ts
-import { createHash as createHash10, randomBytes as randomBytes8 } from "node:crypto";
+import { createHash as createHash10, randomBytes as randomBytes7 } from "node:crypto";
 function generatePkcePair() {
-  const codeVerifier = randomBytes8(48).toString("base64url");
+  const codeVerifier = randomBytes7(48).toString("base64url");
   const codeChallenge = createHash10("sha256").update(codeVerifier).digest("base64url");
   return { codeVerifier, codeChallenge };
 }
@@ -33613,7 +33613,7 @@ async function signDpopJws(keyPair, htm, htu) {
     htm,
     htu,
     iat: Math.floor(Date.now() / 1e3),
-    jti: randomBytes8(32).toString("hex")
+    jti: randomBytes7(32).toString("hex")
   };
   return new SignJWT(payload).setProtectedHeader({ alg: "ES256", typ: "dpop+jwt", jwk: keyPair.publicKeyJwk }).sign(key);
 }
@@ -33721,6 +33721,7 @@ __export(login_exports, {
   startOAuthFlow: () => startOAuthFlow
 });
 import { createServer as createServer3 } from "node:http";
+import { randomBytes as randomBytes8 } from "node:crypto";
 function expiresFromCredential(credential) {
   if (credential.expires_at) {
     const parsed = Date.parse(credential.expires_at);
@@ -33793,7 +33794,7 @@ function listenOnCallbackPort(server) {
   });
 }
 async function startOAuthFlow(options = {}) {
-  const ticketId = randomBytes(32).toString("hex");
+  const ticketId = randomBytes8(32).toString("hex");
   const pkce = generatePkcePair();
   const keyPair = await generateDpopKeyPair();
   const { port, server, result } = await startOAuthCallbackServer(ticketId, pkce, keyPair, options);
@@ -33827,11 +33828,17 @@ async function runOAuthFlow(options = {}) {
     await started.close();
   }
 }
-var PORTAL_AUTHORIZE_BASE, PORTAL_LOGIN_BASE, LOGIN_PLUGIN_NAME, LOGIN_PLUGIN_VERSION, OAUTH_THEME, OAUTH_LOCALE, OAUTH_CALLBACK_TIMEOUT_MS, MIN_CALLBACK_PORT;
+var CORS_HEADERS, PORTAL_AUTHORIZE_BASE, PORTAL_LOGIN_BASE, LOGIN_PLUGIN_NAME, LOGIN_PLUGIN_VERSION, OAUTH_THEME, OAUTH_LOCALE, OAUTH_CALLBACK_TIMEOUT_MS, MIN_CALLBACK_PORT;
 var init_login = __esm({
   "vendor/channel-pack/src/login.ts"() {
     "use strict";
     init_oauth();
+    CORS_HEADERS = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+      "Access-Control-Max-Age": "86400"
+    };
     PORTAL_AUTHORIZE_BASE = "https://codearts.huaweicloud.com/portal/authorize";
     PORTAL_LOGIN_BASE = "https://codearts.huaweicloud.com/portal/login";
     LOGIN_PLUGIN_NAME = "snap_AIIDE";
@@ -35697,7 +35704,7 @@ import { promisify } from "node:util";
 import path from "node:path";
 
 // vendor/channel-pack/src/opencode.ts
-import { createHash, randomBytes as randomBytes2 } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 // vendor/channel-pack/src/retry-after.ts
 function parseRetryAfterMs(raw, nowMs = Date.now()) {
@@ -35826,7 +35833,7 @@ var BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 var SESSION_TAIL_LENGTH = 26;
 var SESSION_RANDOM_LENGTH = SESSION_TAIL_LENGTH - 12;
 function randomBase62(length) {
-  const bytes = randomBytes2(length);
+  const bytes = randomBytes(length);
   let out = "";
   for (let i = 0; i < length; i++) out += BASE62[bytes[i] % BASE62.length];
   return out;
@@ -41308,7 +41315,7 @@ function registerBuddyLlm(ctx, options) {
 import { LlmAdapter as LlmAdapter3, LlmError as LlmError6, ReasoningEffortId as ReasoningEffortId3 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/qoder.ts
-import { createHash as createHash2, randomUUID, randomBytes as randomBytes3 } from "node:crypto";
+import { createHash as createHash2, randomUUID, randomBytes as randomBytes2 } from "node:crypto";
 var QODER_REQUEST_TIMEOUT_MS = 3e4;
 var QODER_LOGIN_TIMEOUT_MS = 3e5;
 var QODER_POLL_INTERVAL_MS = 1e3;
@@ -41320,7 +41327,7 @@ var QODER_USERINFO_PATH = "/api/v1/userinfo";
 var PKCE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
 function createQoderPkce() {
   const length = 43 + Math.floor(86 * Math.random());
-  const bytes = randomBytes3(length);
+  const bytes = randomBytes2(length);
   let verifier = "";
   for (let i = 0; i < length; i++) {
     verifier += PKCE_ALPHABET[bytes[i] % PKCE_ALPHABET.length];
@@ -42237,7 +42244,7 @@ function qoderProductById(id) {
 }
 
 // vendor/channel-pack/src/qoder-cosy.ts
-import { createCipheriv, createHash as createHash3, randomBytes as randomBytes4, randomUUID as randomUUID2 } from "node:crypto";
+import { createCipheriv, createHash as createHash3, randomBytes as randomBytes3, randomUUID as randomUUID2 } from "node:crypto";
 var QODER_COSY_VERSION = "1.1.38";
 var CLIENT_TYPE = "5";
 var DATA_POLICY = "disagree";
@@ -42277,7 +42284,7 @@ function rsaEncryptBase64(plaintext) {
   const message2 = Buffer.from(plaintext, "utf8");
   if (message2.length + 11 > keyLength) throw new Error("Qoder \u7B7E\u540D\u5185\u5BB9\u8FC7\u957F");
   const psLength = keyLength - 3 - message2.length;
-  const ps = randomBytes4(psLength);
+  const ps = randomBytes3(psLength);
   for (let i = 0; i < ps.length; i++) if (ps[i] === 0) ps[i] = 1;
   const encoded = Buffer.concat([
     Buffer.from([0, 2]),
@@ -42296,7 +42303,7 @@ function cosySignaturePath(requestUrl) {
 function buildCosyHeaders(body, requestUrl, identity, now = Date.now()) {
   if (identity.userId === "") throw new Error("Qoder \u8D26\u53F7\u7F3A\u5C11\u7528\u6237\u6807\u8BC6\uFF0C\u65E0\u6CD5\u7B7E\u540D");
   if (identity.authToken === "") throw new Error("Qoder \u8D26\u53F7\u7F3A\u5C11\u8BBF\u95EE\u4EE4\u724C\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
-  const aesKey = randomBytes4(32).toString("hex").slice(0, 16);
+  const aesKey = randomBytes3(32).toString("hex").slice(0, 16);
   const userInfo = `{"uid":${jsonText(identity.userId)},"security_oauth_token":${jsonText(identity.authToken)},"name":${jsonText(identity.name)},"aid":"","email":${jsonText(identity.email)}}`;
   const info = aes128CbcBase64(aesKey, Buffer.from(userInfo, "utf8"));
   const cosyKey = rsaEncryptBase64(aesKey);
@@ -49766,7 +49773,7 @@ function registerLoomyLlm(ctx, options) {
 import { LlmAdapter as LlmAdapter14, LlmError as LlmError18, ReasoningEffortId as ReasoningEffortId11 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/raccoon.ts
-import { createCipheriv as createCipheriv2, randomBytes as randomBytes7 } from "node:crypto";
+import { createCipheriv as createCipheriv2, randomBytes as randomBytes6 } from "node:crypto";
 var RACCOON_API_BASE = "https://xiaohuanxiong.com";
 var RACCOON_POINTS_PREFIX = "/api/web/points/v1";
 var RACCOON_DESKTOP_PREFIX = "/api/web/desktop/v1";
