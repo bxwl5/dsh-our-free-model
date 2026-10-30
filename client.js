@@ -1466,13 +1466,9 @@ window.__ModuleLoader__.load({
   background:color-mix(in srgb,var(--chan-accent,var(--dsw-alias-state-business-primary)) 10%,transparent)}
 .ofm_actbtn.accent:hover:not(:disabled){background:color-mix(in srgb,var(--chan-accent,var(--dsw-alias-state-business-primary)) 17%,transparent);
   border-color:var(--chan-accent,var(--dsw-alias-state-business-primary));color:var(--dsw-alias-label-primary)}
-/*
- * 折叠开关独立成行：顶上一条淡分隔线，与操作按钮分开，
- * 这样按钮再多、怎么换行都不会把「账号 / 模型」挤变形。
- */
-.ofm_chanfolds{display:flex;align-items:center;gap:16px;flex-wrap:wrap;
-  margin-top:2px;padding-top:9px;
-  border-top:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 45%,transparent)}
+/* 折叠开关（账号 / 模型）：与操作按钮同行、排在行尾。
+   2026-10-30 用户要求从「独立成行 + 分隔线」改为同行内联。 */
+.ofm_chanfolds{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-left:auto}
 /* 粘贴型渠道的输入区：独立成块、占满卡片宽度（不再挤在按钮行里）。 */
 .ofm_chanacts + .chan-paste{margin-top:-2px}
 .chan-paste{display:flex;flex-direction:column;gap:8px;width:100%;
@@ -3679,9 +3675,15 @@ window.__ModuleLoader__.load({
             type: 'button', className: 'ofm_actbtn', disabled: busy !== '' || !rpc, 'aria-busy': busy === 'claim' ? 'true' : undefined,
             onClick: claim,
           }, busy === 'claim' ? '…' : t('chan.act.claim')) : null,
-          // ⚠️ 两个折叠开关**移出** `ofm_chanacts`（见该 div 的注释）：
-          // 它们被夹在操作按钮之间，一换行就被挤到边角、还容易误点。
-          // 现在单独一行，左边是「账号 / 模型」，右边留给账本/额度等长文本。
+          // 2026-10-30（用户要求）：账号 / 模型两个折叠按钮**与操作按钮同一行**，
+          // 排在行尾。原先它们独立成行、顶上有分隔线（现已去掉）。
+          h('div', { className: 'ofm_chanfolds' },
+            h('button', { type: 'button', className: 'ofm_foldtoggle', 'data-open': open === 'accounts' ? 'true' : 'false', onClick: () => void toggle('accounts') },
+              h('svg', { viewBox: '0 0 12 12', 'aria-hidden': 'true' }, h('path', { d: 'M3 1.5l6 4.5-6 4.5z' })),
+              t('chan.fold.accounts'), accounts === undefined ? null : ` (${accounts.length})`),
+            h('button', { type: 'button', className: 'ofm_foldtoggle', 'data-open': open === 'models' ? 'true' : 'false', onClick: () => void toggle('models') },
+              h('svg', { viewBox: '0 0 12 12', 'aria-hidden': 'true' }, h('path', { d: 'M3 1.5l6 4.5-6 4.5z' })),
+              t('chan.fold.models'), models === undefined ? null : ` (${models.length})`)),
           ),
         /*
          * 粘贴输入区**移出** `ofm_chanacts`。
@@ -3723,13 +3725,6 @@ window.__ModuleLoader__.load({
                 type: 'button', className: 'ofm_actbtn',
                 onClick: () => { setPasteText(''); setPasteOpen(false) },
               }, t('chan.paste.cancel')))) : null,
-        h('div', { className: 'ofm_chanfolds' },
-          h('button', { type: 'button', className: 'ofm_foldtoggle', 'data-open': open === 'accounts' ? 'true' : 'false', onClick: () => void toggle('accounts') },
-            h('svg', { viewBox: '0 0 12 12', 'aria-hidden': 'true' }, h('path', { d: 'M3 1.5l6 4.5-6 4.5z' })),
-            t('chan.fold.accounts'), accounts === undefined ? null : ` (${accounts.length})`),
-          h('button', { type: 'button', className: 'ofm_foldtoggle', 'data-open': open === 'models' ? 'true' : 'false', onClick: () => void toggle('models') },
-            h('svg', { viewBox: '0 0 12 12', 'aria-hidden': 'true' }, h('path', { d: 'M3 1.5l6 4.5-6 4.5z' })),
-            t('chan.fold.models'), models === undefined ? null : ` (${models.length})`)),
         notice !== '' ? h('p', { className: 'ofm_note' }, notice) : null,
         balanceError !== '' ? h('p', { className: 'ofm_balanceerror', role: 'alert' },
           t('chan.credits.failed').replace('{reason}', balanceError))
