@@ -44,12 +44,22 @@ console.log(`ok  login-failure-reporting: ${checked} 处后台登录失败均会
 // 倍率/签到全部 APIG.0602）。这里做静态守卫，防止字段名再次写错。
 {
   const indexSource = readFileSync(new URL('../vendor/channel-pack/src/index.ts', import.meta.url), 'utf8')
-  const start = indexSource.indexOf('const refreshOfficeAceAccounts')
-  assert.ok(start > 0, 'refreshOfficeAceAccounts 不见了')
-  const block = indexSource.slice(start, start + 2000)
-  assert.match(block, /expire_time/, 'OfficeAce 续期判据必须读 expire_time')
-  assert.doesNotMatch(block, /\?\.expires_at/, 'OfficeAce 凭据没有 expires_at 字段（写错会让 lead 判据失效）')
+  // 2026-10-30：去重逻辑从 refreshOfficeAceAccounts 抽到 refreshOneOfficeAceCredential
+  // （定时轮与「用时续期」共用同一张 in-flight 表），守卫跟着新结构走。
+  const start = indexSource.indexOf('const refreshOneOfficeAceCredential')
+  assert.ok(start > 0, 'refreshOneOfficeAceCredential 不见了')
+  const block = indexSource.slice(start, start + 1200)
   assert.match(block, /officeAceRefreshInFlight/, 'refresh_token 一次性轮换必须有并发去重闸')
   assert.match(block, /refresh_token \?\? ''/, '去重键必须是凭据身份（refresh_token）而不是渠道 id')
-  console.log('ok  officeace 续期：判据读 expire_time、去重键用 refresh_token')
+
+  // 字段名守卫：判据读 expire_time（不是不存在的 expires_at）
+  const accounts = indexSource.slice(indexSource.indexOf('const refreshOfficeAceAccounts'), indexSource.indexOf('const refreshOfficeAceAccounts') + 1600)
+  assert.match(accounts, /expire_time/, 'OfficeAce 续期判据必须读 expire_time')
+  assert.doesNotMatch(accounts, /\?\.expires_at/, 'OfficeAce 凭据没有 expires_at 字段（写错会让 lead 判据失效）')
+
+  // 用时续期必须存在且被适配器解析器调用（2026-10-30 修复点）
+  assert.match(indexSource, /const ensureCredentialFresh = /, '缺少用时续期通用实现')
+  assert.match(indexSource, /ensureOfficeAceCredentialFresh\(/, 'OfficeAce 解析器必须走用时续期')
+  assert.match(indexSource, /refreshOne: refreshOneAutoClawCredential/, 'AutoClaw 也必须走用时续期')
+  console.log('ok  officeace/autoclaw 续期：expire_time 判据、refresh_token 去重键、用时续期已接入')
 }

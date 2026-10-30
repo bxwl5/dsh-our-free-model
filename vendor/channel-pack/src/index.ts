@@ -1081,17 +1081,137 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
   // 推理是 OpenAI 兼容 + **Basic** 鉴权（与 CodeArts 的 SDK-HMAC 不同）；
   // 登录是自助 OAuth + 轮询授权码（回调不落本机）。
   let activeOfficeAceAccountId = ''
+  /**
+   * **用时续期**（2026-10-30，用户报「OfficeAce 老是凭证过期」的根治）。
+   *
+   * ## 为什么光有 30 分钟定时器不够
+   * OfficeAce 的 STS 寿命约 **2 小时**，而定时器是「每 30 分钟检查一次、
+   * 距过期不足 1 小时才续」（`REFRESH_LEAD_MS`）。于是这些窗口必然过期：
+   * - DSH 关闭 / 重启期间（定时器不存在）；
+   * - 重启后的第一轮还没跑到的空档；
+   * - 机器休眠后醒来（定时器被挂起）。
+   * 过期期间签到 / 余额 / 倍率全部 `APIG.0602 security token has expired`，
+   * 用户看到的就是「老是凭证过期」。
+   *
+   * ## 做法
+   * 每次**取凭据之前**判一次：临期（≤ lead 窗口）或已过期就先续，续完再返回。
+   * 续期走 `refreshOneOfficeAceCredential`（与定时器共用 in-flight 去重表，
+   * 避免同一份一次性 refresh_token 被并发消费 → `STS5.1806` 打死续期链）。
+   * 续期失败**不阻断**：仍返回旧凭据让调用方按上游错误走原有归因
+   * （与「只读接口失败不阻断签到」的既有取舍一致）。
+   */
+  /**
+   * OfficeAce refresh_token 一次性轮换的**并发去重闸**。
+   *
+   * ⚠ 键必须是**凭据身份**（refresh_token 本身），不是渠道 id：同渠道多账号
+   * 并发续期时按渠道键控会让 B 共享 A 的结果（magpie officeace-auth 的实测教训）。
+   * 同一份 token 被两条路径同时续期 ⇒ 后一个撞 `STS5.1806 token has been used`，
+   * 而服务端已经消费掉它 ⇒ 续期链被打死、只能重新登录。
+   */
+  const officeAceRefreshInFlight = new Map<string, Promise<unknown>>()
+
+  /**
+   * 续期一份 OfficeAce 凭据（**带并发去重**）。
+   *
+   * 抽出来供两条路径共用：① 30 分钟定时轮；② **用时续期**（见
+   * {@link ensureOfficeAceCredentialFresh}）。两处必须走同一个 in-flight 表，
+   * 否则同一份一次性 refresh_token 被并发消费 ⇒ `STS5.1806`，续期链被打死。
+   */
+  const refreshOneOfficeAceCredential = async (value: unknown): Promise<unknown> => {
+    const credential = value as OfficeAceCredential
+    const key = credential.refresh_token ?? ''
+    const pending = officeAceRefreshInFlight.get(key)
+    if (pending !== undefined) return pending
+    const task = refreshOfficeAceCredential(fetch, OFFICEACE, credential)
+      .finally(() => officeAceRefreshInFlight.delete(key))
+    officeAceRefreshInFlight.set(key, task)
+    return task
+  }
+
+  /**
+   * **用时续期**通用实现（2026-10-30，用户报「OfficeAce 老是凭证过期」的根治）。
+   *
+   * ## 为什么光有 30 分钟定时器不够
+   * OfficeAce 的 STS 寿命约 **2 小时**（AutoClaw 约 5.7 小时），而定时器是
+   * 「每 30 分钟检查一次、距过期不足 1 小时才续」（`REFRESH_LEAD_MS`）。于是
+   * 这些窗口必然过期：
+   * - DSH 关闭 / 重启期间（定时器不存在）；
+   * - 重启后第一轮还没跑到的空档；
+   * - 机器休眠后醒来（定时器被挂起）。
+   * 过期期间签到 / 余额 / 倍率全部 `APIG.0602 security token has expired`，
+   * 用户看到的就是「老是凭证过期」。
+   *
+   * ## 做法
+   * 每次**取凭据之前**判一次：临期（≤ lead 窗口）或已过期就先续，续完再返回。
+   * 续期走各自的 in-flight 去重表（与定时器共用，避免同一份一次性
+   * refresh_token 被并发消费 → `STS5.1806` 打死续期链）。
+   * 续期失败**不阻断**：仍返回旧凭据，让上游错误按既有归因呈现。
+   */
+  const ensureCredentialFresh = async <T extends { refresh_token?: string; expire_time?: number }>(options: {
+    providerId: string
+    defaultCredentialRef: string
+    credential: T
+    accountId: string
+    refreshOne: (value: unknown) => Promise<unknown>
+    logTag: string
+  }): Promise<T> => {
+    const { providerId, defaultCredentialRef, credential, accountId, refreshOne, logTag } = options
+    if (typeof credential.refresh_token !== 'string' || credential.refresh_token === '') return credential
+    const expiresAt = typeof credential.expire_time === 'number' ? credential.expire_time : undefined
+    if (expiresAt !== undefined && !shouldRefreshNow(expiresAt)) return credential
+    try {
+      const next = await refreshOne(credential) as T
+      // 落盘：账号池条目按**它自己的** ref 写回（多账号各写各的）；没有账号条目
+      // 时才落到单凭据的默认 ref。
+      const entry = accountId === '' ? undefined : pool.listAccounts(providerId).find((row) => row.id === accountId)
+      const targetRef = entry?.credentialRef ?? defaultCredentialRef
+      await ctx.credentials.set(credentialRef(targetRef), JSON.stringify(next))
+      if (entry !== undefined) {
+        const nextExpiry = typeof next.expire_time === 'number' ? next.expire_time : undefined
+        if (nextExpiry !== undefined && nextExpiry !== entry.expiresAt) {
+          await pool.updateAccount(entry.id, { expiresAt: nextExpiry })
+        }
+      }
+      ctx.logger?.info?.(`[channel-pack] ${logTag} 用时续期成功（新到期 ${new Date(next.expire_time ?? 0).toISOString()}）`)
+      return next
+    } catch (error) {
+      // 不阻断：返回旧凭据，让上游错误按既有归因呈现（用户仍能看到真实原因）。
+      ctx.logger?.warn?.(
+        `[channel-pack] ${logTag} 用时续期失败（继续用旧凭据）: ${error instanceof Error ? error.message : String(error)}`,
+      )
+      return credential
+    }
+  }
+
+  /** OfficeAce 的用时续期（薄封装，固定 provider 与去重函数）。 */
+  const ensureOfficeAceCredentialFresh = async (
+    credential: OfficeAceCredential,
+    accountId: string,
+  ): Promise<OfficeAceCredential> => ensureCredentialFresh({
+    providerId: OFFICEACE.id,
+    defaultCredentialRef: OFFICEACE.defaultCredentialRef,
+    credential,
+    accountId,
+    refreshOne: refreshOneOfficeAceCredential,
+    logTag: 'officeace',
+  })
+
   const officeAceAdapter = registerOfficeAceLlm(ctx, {
     fetchImpl: network.fetch,
     resolveCredential: async () => {
       const available = await pool.getAvailableAccount(OFFICEACE.id, '')
       activeOfficeAceAccountId = available?.entry.id ?? ''
       if (activeOfficeAceAccountId.length > 0) reportLedgerAccount(OFFICEACE.id, activeOfficeAceAccountId)
-      if (available) return available.credential as OfficeAceCredential
+      if (available) {
+        return await ensureOfficeAceCredentialFresh(
+          available.credential as OfficeAceCredential,
+          activeOfficeAceAccountId,
+        )
+      }
       const resolved = await ctx.credentials.resolve(credentialRef(OFFICEACE.defaultCredentialRef))
       if (!resolved) return undefined
       try {
-        return JSON.parse(resolved.value) as OfficeAceCredential
+        return await ensureOfficeAceCredentialFresh(JSON.parse(resolved.value) as OfficeAceCredential, '')
       } catch {
         return undefined
       }
@@ -1104,15 +1224,43 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
   // 对话是 OpenAI 兼容；⚠️ 认证头是 **X-Authorization**（不是 Authorization）。
   // 模型目录在 /proxy/autoclaw-model-config（不在 /autoclaw 那级）。
   let activeAutoClawAccountId = ''
+  /** AutoClaw 续期的并发去重闸（键 = refresh_token，理由同 OfficeAce）。 */
+  const autoClawRefreshInFlight = new Map<string, Promise<unknown>>()
+
+  const refreshOneAutoClawCredential = async (value: unknown): Promise<unknown> => {
+    const credential = value as AutoClawCredential
+    const key = credential.refresh_token ?? ''
+    const pending = autoClawRefreshInFlight.get(key)
+    if (pending !== undefined) return pending
+    const task = refreshAutoclawCredential({
+      product: AUTOCLAW,
+      fetcher: fetch,
+      credential,
+    }).then((result) => {
+      if (!result.ok) throw new Error(result.error)
+      return result.credential
+    }).finally(() => autoClawRefreshInFlight.delete(key))
+    autoClawRefreshInFlight.set(key, task)
+    return task
+  }
+
   const makeAutoClawResolver = (product: typeof AUTOCLAW) => async () => {
     const available = await pool.getAvailableAccount(product.id, '')
     activeAutoClawAccountId = available?.entry.id ?? ''
     if (activeAutoClawAccountId.length > 0) reportLedgerAccount(product.id, activeAutoClawAccountId)
-    if (available) return available.credential as AutoClawCredential
+    const fresh = (credential: AutoClawCredential): Promise<AutoClawCredential> => ensureCredentialFresh({
+      providerId: product.id,
+      defaultCredentialRef: product.defaultCredentialRef,
+      credential,
+      accountId: activeAutoClawAccountId,
+      refreshOne: refreshOneAutoClawCredential,
+      logTag: product.id,
+    })
+    if (available) return fresh(available.credential as AutoClawCredential)
     const resolved = await ctx.credentials.resolve(credentialRef(product.defaultCredentialRef))
     if (!resolved) return undefined
     try {
-      return JSON.parse(resolved.value) as AutoClawCredential
+      return await fresh(JSON.parse(resolved.value) as AutoClawCredential)
     } catch {
       return undefined
     }
@@ -1959,16 +2107,6 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
     }
   }
 
-  /**
-   * OfficeAce refresh_token 一次性轮换的**并发去重闸**。
-   *
-   * ⚠ 键必须是**凭据身份**（refresh_token 本身），不是渠道 id：同渠道多账号
-   * 并发续期时按渠道键控会让 B 共享 A 的结果（magpie officeace-auth 的实测教训）。
-   * 同一份 token 被两条路径同时续期 ⇒ 后一个撞 `STS5.1806 token has been used`，
-   * 而服务端已经消费掉它 ⇒ 续期链被打死、只能重新登录。
-   */
-  const officeAceRefreshInFlight = new Map<string, Promise<unknown>>()
-
   const refreshOfficeAceAccounts = (p: AccountPool) => refreshExpiringAccounts(
     p,
     OFFICEACE.id,
@@ -1982,16 +2120,7 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
       const raw = (value as OfficeAceCredential | undefined)?.expire_time
       return typeof raw === 'number' ? raw : undefined
     },
-    async (value) => {
-      const credential = value as OfficeAceCredential
-      const key = credential.refresh_token ?? ''
-      const pending = officeAceRefreshInFlight.get(key)
-      if (pending !== undefined) return pending
-      const task = refreshOfficeAceCredential(fetch, OFFICEACE, credential)
-        .finally(() => officeAceRefreshInFlight.delete(key))
-      officeAceRefreshInFlight.set(key, task)
-      return task
-    },
+    refreshOneOfficeAceCredential,
   )
 
   const refreshAutoclawAccounts = (p: AccountPool) => refreshExpiringAccounts(
@@ -2003,15 +2132,7 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
       const raw = (value as AutoClawCredential | undefined)?.expire_time
       return typeof raw === 'number' ? raw : undefined
     },
-    async (value) => {
-      const result = await refreshAutoclawCredential({
-        product: AUTOCLAW,
-        fetcher: fetch,
-        credential: value as AutoClawCredential,
-      })
-      if (!result.ok) throw new Error(result.error)
-      return result.credential
-    },
+    refreshOneAutoClawCredential,
   )
 
   async function refreshAllCredentials(): Promise<void> {

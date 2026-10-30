@@ -74993,17 +74993,65 @@ function apply(ctx, config = {}) {
     product: ACCIO_CN
   });
   let activeOfficeAceAccountId = "";
+  const officeAceRefreshInFlight = /* @__PURE__ */ new Map();
+  const refreshOneOfficeAceCredential = async (value) => {
+    const credential = value;
+    const key = credential.refresh_token ?? "";
+    const pending = officeAceRefreshInFlight.get(key);
+    if (pending !== void 0) return pending;
+    const task = refreshOfficeAceCredential(fetch, OFFICEACE, credential).finally(() => officeAceRefreshInFlight.delete(key));
+    officeAceRefreshInFlight.set(key, task);
+    return task;
+  };
+  const ensureCredentialFresh = async (options) => {
+    const { providerId, defaultCredentialRef, credential, accountId, refreshOne, logTag } = options;
+    if (typeof credential.refresh_token !== "string" || credential.refresh_token === "") return credential;
+    const expiresAt = typeof credential.expire_time === "number" ? credential.expire_time : void 0;
+    if (expiresAt !== void 0 && !shouldRefreshNow(expiresAt)) return credential;
+    try {
+      const next = await refreshOne(credential);
+      const entry = accountId === "" ? void 0 : pool.listAccounts(providerId).find((row) => row.id === accountId);
+      const targetRef = entry?.credentialRef ?? defaultCredentialRef;
+      await ctx.credentials.set(credentialRef15(targetRef), JSON.stringify(next));
+      if (entry !== void 0) {
+        const nextExpiry = typeof next.expire_time === "number" ? next.expire_time : void 0;
+        if (nextExpiry !== void 0 && nextExpiry !== entry.expiresAt) {
+          await pool.updateAccount(entry.id, { expiresAt: nextExpiry });
+        }
+      }
+      ctx.logger?.info?.(`[channel-pack] ${logTag} \u7528\u65F6\u7EED\u671F\u6210\u529F\uFF08\u65B0\u5230\u671F ${new Date(next.expire_time ?? 0).toISOString()}\uFF09`);
+      return next;
+    } catch (error) {
+      ctx.logger?.warn?.(
+        `[channel-pack] ${logTag} \u7528\u65F6\u7EED\u671F\u5931\u8D25\uFF08\u7EE7\u7EED\u7528\u65E7\u51ED\u636E\uFF09: ${error instanceof Error ? error.message : String(error)}`
+      );
+      return credential;
+    }
+  };
+  const ensureOfficeAceCredentialFresh = async (credential, accountId) => ensureCredentialFresh({
+    providerId: OFFICEACE.id,
+    defaultCredentialRef: OFFICEACE.defaultCredentialRef,
+    credential,
+    accountId,
+    refreshOne: refreshOneOfficeAceCredential,
+    logTag: "officeace"
+  });
   const officeAceAdapter = registerOfficeAceLlm(ctx, {
     fetchImpl: network.fetch,
     resolveCredential: async () => {
       const available2 = await pool.getAvailableAccount(OFFICEACE.id, "");
       activeOfficeAceAccountId = available2?.entry.id ?? "";
       if (activeOfficeAceAccountId.length > 0) reportLedgerAccount(OFFICEACE.id, activeOfficeAceAccountId);
-      if (available2) return available2.credential;
+      if (available2) {
+        return await ensureOfficeAceCredentialFresh(
+          available2.credential,
+          activeOfficeAceAccountId
+        );
+      }
       const resolved = await ctx.credentials.resolve(credentialRef15(OFFICEACE.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
-        return JSON.parse(resolved.value);
+        return await ensureOfficeAceCredentialFresh(JSON.parse(resolved.value), "");
       } catch {
         return void 0;
       }
@@ -75012,15 +75060,40 @@ function apply(ctx, config = {}) {
     product: OFFICEACE
   });
   let activeAutoClawAccountId = "";
+  const autoClawRefreshInFlight = /* @__PURE__ */ new Map();
+  const refreshOneAutoClawCredential = async (value) => {
+    const credential = value;
+    const key = credential.refresh_token ?? "";
+    const pending = autoClawRefreshInFlight.get(key);
+    if (pending !== void 0) return pending;
+    const task = refreshAutoclawCredential({
+      product: AUTOCLAW,
+      fetcher: fetch,
+      credential
+    }).then((result) => {
+      if (!result.ok) throw new Error(result.error);
+      return result.credential;
+    }).finally(() => autoClawRefreshInFlight.delete(key));
+    autoClawRefreshInFlight.set(key, task);
+    return task;
+  };
   const makeAutoClawResolver = (product) => async () => {
     const available2 = await pool.getAvailableAccount(product.id, "");
     activeAutoClawAccountId = available2?.entry.id ?? "";
     if (activeAutoClawAccountId.length > 0) reportLedgerAccount(product.id, activeAutoClawAccountId);
-    if (available2) return available2.credential;
+    const fresh = (credential) => ensureCredentialFresh({
+      providerId: product.id,
+      defaultCredentialRef: product.defaultCredentialRef,
+      credential,
+      accountId: activeAutoClawAccountId,
+      refreshOne: refreshOneAutoClawCredential,
+      logTag: product.id
+    });
+    if (available2) return fresh(available2.credential);
     const resolved = await ctx.credentials.resolve(credentialRef15(product.defaultCredentialRef));
     if (!resolved) return void 0;
     try {
-      return JSON.parse(resolved.value);
+      return await fresh(JSON.parse(resolved.value));
     } catch {
       return void 0;
     }
@@ -75537,7 +75610,6 @@ function apply(ctx, config = {}) {
       }
     }
   }
-  const officeAceRefreshInFlight = /* @__PURE__ */ new Map();
   const refreshOfficeAceAccounts = (p) => refreshExpiringAccounts(
     p,
     OFFICEACE.id,
@@ -75550,15 +75622,7 @@ function apply(ctx, config = {}) {
       const raw = value?.expire_time;
       return typeof raw === "number" ? raw : void 0;
     },
-    async (value) => {
-      const credential = value;
-      const key = credential.refresh_token ?? "";
-      const pending = officeAceRefreshInFlight.get(key);
-      if (pending !== void 0) return pending;
-      const task = refreshOfficeAceCredential(fetch, OFFICEACE, credential).finally(() => officeAceRefreshInFlight.delete(key));
-      officeAceRefreshInFlight.set(key, task);
-      return task;
-    }
+    refreshOneOfficeAceCredential
   );
   const refreshAutoclawAccounts = (p) => refreshExpiringAccounts(
     p,
@@ -75568,15 +75632,7 @@ function apply(ctx, config = {}) {
       const raw = value?.expire_time;
       return typeof raw === "number" ? raw : void 0;
     },
-    async (value) => {
-      const result = await refreshAutoclawCredential({
-        product: AUTOCLAW,
-        fetcher: fetch,
-        credential: value
-      });
-      if (!result.ok) throw new Error(result.error);
-      return result.credential;
-    }
+    refreshOneAutoClawCredential
   );
   async function refreshAllCredentials() {
     for (const [tag2, refreshAll] of refreshTargets) {

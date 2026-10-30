@@ -410,6 +410,9 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   // tsc 只覆盖 adapter/**，vendor/ 靠这条用例兜）。
   const { verifyCodeArtsLogin } = await import('./codearts-login-test.mjs')
   await verifyCodeArtsLogin()
+  // 用时续期判据（OfficeAce/AutoClaw 的「老是过期」根治点）
+  const { verifyCredentialFreshness } = await import('./credential-freshness-test.mjs')
+  await verifyCredentialFreshness()
   const { verifyRaccoonLogin } = await import('./raccoon-login-test.mjs')
   await verifyRaccoonLogin()
   // 用户实测的真实 Cookie 形状（字段名随上游改名）：OrcaTerm 用 ot_sid、MonkeyCode 用 monkeycode_ai_session。
