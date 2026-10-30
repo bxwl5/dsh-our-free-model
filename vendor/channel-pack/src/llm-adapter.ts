@@ -976,7 +976,15 @@ export class CodeArtsAdapter extends LlmAdapter {
     if (this.remoteModels !== undefined) return
     const cached = availableCodeArtsModels()
     if (cached === undefined || cached.length === 0) return
-    this.remoteModels = cached.map((model) => ({ id: model.id, name: model.name }))
+    // ⚠ 必须带上 `rate`（2026-10-30 用户实测「倍率消失」）：这里早期只挑了
+    // id/name 两个字段，于是**冷启动/重启后读磁盘快照的路径把消耗系数全丢了**
+    // —— 面板只剩裸模型名，直到下一次远端拉取成功才恢复。快照里本来就存了 rate
+    // （writeModelCatalog 是整份落盘），恢复时不该裁剪。
+    this.remoteModels = cached.map((model) => ({
+      id: model.id,
+      name: model.name,
+      ...(model.rate === undefined ? {} : { rate: model.rate }),
+    }))
   }
 
   /** 目录来源：内存 → 磁盘快照 → 编译期默认表。 */

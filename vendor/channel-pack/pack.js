@@ -38272,7 +38272,11 @@ var CodeArtsAdapter = class extends LlmAdapter {
     if (this.remoteModels !== void 0) return;
     const cached2 = availableCodeArtsModels();
     if (cached2 === void 0 || cached2.length === 0) return;
-    this.remoteModels = cached2.map((model) => ({ id: model.id, name: model.name }));
+    this.remoteModels = cached2.map((model) => ({
+      id: model.id,
+      name: model.name,
+      ...model.rate === void 0 ? {} : { rate: model.rate }
+    }));
   }
   /** 目录来源：内存 → 磁盘快照 → 编译期默认表。 */
   catalogSource() {

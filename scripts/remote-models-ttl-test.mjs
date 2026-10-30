@@ -1039,6 +1039,46 @@ export async function verifyCodeArtsCatalogFallbackBoundary() {
   console.log('ok  codearts 目录边界：远端整份替换（不混入兜底）／无远端才用兜底表')
 }
 
+/**
+ * CodeArts 磁盘快照恢复：**必须带上 rate**（2026-10-30 用户实测「倍率消失」）。
+ *
+ * `restoreFromDisk()` 早期只挑 id/name 两个字段，于是冷启动/重启后读快照的
+ * 路径把消耗系数全丢了，面板只剩裸模型名（直到下一次远端拉取成功才恢复）。
+ * 快照里本来就存了 rate（writeModelCatalog 整份落盘），恢复时不该裁剪。
+ */
+export async function verifyCodeArtsSnapshotKeepsRate() {
+  const assert = (await import('node:assert/strict')).default
+  const os = await import('node:os')
+  const fsMod = await import('node:fs')
+  const pathMod = await import('node:path')
+  const cacheDir = fsMod.mkdtempSync(pathMod.join(os.tmpdir(), 'ofm-rate-'))
+  process.env.DSH_CODEARTS_CACHE_DIR = cacheDir
+  // ⚠ 必须清模块级 memoryCache：同一套件内前面的用例已经填充过它，
+  // 而 `availableCodeArtsModels()` 先看内存再看磁盘 —— 不清就会读到别的用例的
+  // 目录（本用例因此误判为「rate 丢失」，2026-10-30 实测）。
+  const modelsMod = await import('../vendor/channel-pack/src/models.ts')
+  modelsMod.setMemoryCache(undefined)
+  // 铺一份带 rate 的快照（= 上次远端成功的结果）
+  fsMod.writeFileSync(pathMod.join(cacheDir, 'codearts_models.json'), JSON.stringify([
+    { id: 'snap-a', name: 'Snap A', rate: 0.79 },
+    { id: 'snap-b', name: 'Snap B' },
+    { id: 'snap-c', name: 'Snap C', rate: 2.38 },
+  ]))
+  const { CodeArtsAdapter } = await import('../vendor/channel-pack/src/llm-adapter.ts')
+  // 不给 fetchRemoteModels：ensureRemoteModels 什么都不做 → 纯走磁盘恢复路径
+  const adapter = new CodeArtsAdapter({
+    credentialRef: 'FIXTURE',
+    resolveCredential: async () => ({ access_key_id: 'a', secret_access_key: 's', security_token: 't', expires_at: '' }),
+    refresh: async () => {},
+  })
+  const models = await adapter.listModels('codearts')
+  const byId = new Map(models.map((m) => [m.id, m.name]))
+  assert.equal(byId.get('snap-a'), 'Snap A · x0.79', '快照恢复必须保留 rate')
+  assert.equal(byId.get('snap-c'), 'Snap C · x2.38', '快照恢复必须保留 rate')
+  assert.equal(byId.get('snap-b'), 'Snap B', '没有 rate 的条目不标倍率')
+  console.log('ok  codearts 快照恢复：磁盘快照里的 rate 不丢（冷启动也显示倍率）')
+}
+
 export async function verifyRemoteCatalogFields() {
   const assert = (await import('node:assert/strict')).default
   const { parseKukuCatalog, kukuDisplayName } = await import('../vendor/channel-pack/src/kuku-adapter.ts')
