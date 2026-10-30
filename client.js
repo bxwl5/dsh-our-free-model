@@ -234,7 +234,8 @@ window.__ModuleLoader__.load({
         'chan.act.recheck': '校验凭据',
         'chan.act.test': '测试',
         'chan.act.delete': '移除',
-        'chan.act.claim': '一键领取',
+        // 2026-10-30（用户要求）：按钮文案从「签到」改为「签到」，更短、更贴切
+        'chan.act.claim': '签到',
         'chan.fold.accounts': '账号',
         'chan.fold.models': '模型',
         'chan.noAccount': '还没有账号——点「添加账号」开始登录。',
@@ -726,7 +727,7 @@ window.__ModuleLoader__.load({
         'chan.act.recheck': 'Recheck credential',
         'chan.act.test': 'Test',
         'chan.act.delete': 'Remove',
-        'chan.act.claim': 'Claim daily',
+        'chan.act.claim': 'Check in',
         'chan.fold.accounts': 'Accounts',
         'chan.fold.models': 'Models',
         'chan.noAccount': 'No account yet — press “Add account” to sign in.',
@@ -1437,7 +1438,7 @@ window.__ModuleLoader__.load({
 .ofm_chanstate{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--dsw-alias-label-secondary);padding:3px 10px;border-radius:999px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l1) 90%,transparent);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 70%,transparent);white-space:nowrap}
 .ofm_chanmeta{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--dsw-alias-label-tertiary)}
 .ofm_chanmeta b{color:var(--dsw-alias-label-secondary);font-weight:650;font-variant-numeric:tabular-nums}
-.ofm_chanacts{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.ofm_chanacts{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
 /*
  * 渠道卡片操作按钮（用户 2026-10-27：太丑、样式不统一、太大把「账号/模型」挤走）。
  *
@@ -1450,7 +1451,8 @@ window.__ModuleLoader__.load({
  */
 .ofm_actbtn{display:inline-flex;align-items:center;justify-content:center;gap:5px;
   font:inherit;font-size:11.5px;font-weight:560;line-height:1;
-  padding:6px 10px;border-radius:7px;white-space:nowrap;
+  /* 2026-10-30（用户：这一排太宽）：左右内边距 10→7px，行内 gap 6→5px。 */
+  padding:6px 7px;border-radius:7px;white-space:nowrap;
   border:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 82%,transparent);
   background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 55%,transparent);
   color:var(--dsw-alias-label-secondary);cursor:pointer;
@@ -3583,7 +3585,7 @@ window.__ModuleLoader__.load({
        * ⚠️ 数据源是**自动签到的逐账号台账**（`usage.autoCheckin().results`），
        * 不是各渠道自己的 credits API —— 后者只有 `buddy` / `minimax` 会回
        * `today_credit`，其余渠道恒为 0，于是以前只有这两个渠道有徽标。
-       * 台账写在 `credits.claimAll` 的统一出口，**手动「一键领取」与自动签到都写它**
+       * 台账写在 `credits.claimAll` 的统一出口，**手动「签到」与自动签到都写它**
        * （见 `auto-checkin.ts` 的 `recordClaimResult`），所以能覆盖全部可签到渠道。
        *
        * 顺序：台账优先（它记录的是**本插件今天真的领到的**），没有台账行时才回落到

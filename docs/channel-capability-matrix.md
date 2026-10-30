@@ -305,7 +305,7 @@
 - 模型目录：远端 `GET /api/v1/users/models/available`（+ 兜底表）。
 - 额度 / 签到：**已接入**共享 credits RPC —— `GET /api/v1/users/wallet` 读积分余额，
   `GET|POST /api/v1/users/wallet/checkin` 做状态查询与每日签到（每次 100 积分）；
-  面板上因此有「剩余额度 / 刷新余额 / 一键领取」。上游只给 `checkedIn`/`streak`/`reward`，
+  面板上因此有「剩余额度 / 刷新余额 / 签到」。上游只给 `checkedIn`/`streak`/`reward`，
   其余 CheckinStatus 字段如实留空（不编数字）。
 - 图片：未接字节桥。
 
