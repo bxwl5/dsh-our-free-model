@@ -10,7 +10,7 @@ async function main() {
     buildGenerateBody, parseAdkFrame, createPkcePair, buildAccioAuthUrl,
   } = await import('../vendor/channel-pack/src/accio.ts')
   const { ACCIO, ACCIO_CN, ACCIO_REGION_HEADER } = await import('../vendor/channel-pack/src/accio-product.ts')
-  const { streamChat, fetchModels, fetchQuota, exchangeCode, startAccioLogin, ACCIO_CALLBACK_PATH } = await import('../vendor/channel-pack/src/accio-auth.ts')
+  const { streamChat, fetchModels, fetchQuota, exchangeCode, startAccioLogin, ACCIO_CALLBACK_PATH, refreshCredential, AccioRefreshRejectedError } = await import('../vendor/channel-pack/src/accio-auth.ts')
   const { AccioAdapter } = await import('../vendor/channel-pack/src/accio-adapter.ts')
   const { fetch: realFetch } = await import('undici')
 
@@ -123,6 +123,27 @@ async function main() {
   // challenge 是 verifier 的 SHA-256 base64url
   const { createHash } = await import('node:crypto')
   assert.equal(pkce.challenge, createHash('sha256').update(pkce.verifier).digest('base64url'))
+
+  // ── 续期（2026-10-31 审查 P1 补充）：上游拒绝的形态是 HTTP 200 + success:false ──
+  // 登录态被上游整体吊销时实测两账号都回
+  // {"success":false,"code":"502","message":"auth not pass"} —— 必须抛
+  // AccioRefreshRejectedError（终态，提示重新登录），不能静默 undefined。
+  {
+    const rejectFetch = async () => Response.json({ success: false, code: '502', message: 'auth not pass', data: null })
+    await assert.rejects(
+      refreshCredential(rejectFetch, ACCIO, { access_token: 'a', refresh_token: 'r' }),
+      (error) => error instanceof AccioRefreshRejectedError && /重新登录/.test(error.message),
+      '上游 success:false 拒绝必须抛终态信号并带「重新登录」指引',
+    )
+    // 正常路径仍工作：200 + accessToken → 沿用旧 refresh_token
+    const okFetch = async () => Response.json({ success: true, data: { accessToken: 'new-a', expiresAt: Date.now() + 86400_000 } })
+    const ok = await refreshCredential(okFetch, ACCIO, { access_token: 'a', refresh_token: 'r' })
+    assert.equal(ok?.access_token, 'new-a')
+    assert.equal(ok?.refresh_token, 'r', '响应不带 refresh_token 时沿用旧值')
+    // 网络异常仍按 undefined 兜底（不抛）
+    const netFail = async () => { throw new Error('网络断') }
+    assert.equal(await refreshCredential(netFail, ACCIO, { access_token: 'a', refresh_token: 'r' }), undefined)
+  }
 
   // ── 授权 URL ──
   const authUrl = buildAccioAuthUrl(ACCIO, 'http://localhost:5960/callback', 'st', pkce.challenge)

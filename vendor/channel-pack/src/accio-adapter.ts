@@ -23,7 +23,7 @@ import {
   isCredentialUsable,
   type AccioCredential,
 } from './accio.js'
-import { fetchModels, refreshCredential, streamChat } from './accio-auth.js'
+import { AccioRefreshRejectedError, fetchModels, refreshCredential, streamChat } from './accio-auth.js'
 import { providerCatalogVisible } from './account-pool.js'
 import { registerAdapterIdempotent } from './llm-register-compat.js'
 import { emitDeltaBlocks } from './delta-blocks.js'
@@ -261,10 +261,20 @@ export class AccioAdapter extends LlmAdapter {
       throw new LlmError(`Accio：没有可用凭据，请先登录 ${this.product.displayName}`, 'MISSING_CREDENTIAL')
     }
     if (isCredentialExpired(credential) && credential.refresh_token !== undefined) {
-      const refreshed = await refreshCredential(this.fetchImpl, this.product, credential)
-      if (refreshed !== undefined) {
-        await this.options.saveCredential?.(refreshed)
-        credential = refreshed
+      // ⚠️ 上游明确拒绝（AccioRefreshRejectedError）是终态：把它翻成 AUTH
+      // 错误码（重试无意义）并带上「重新登录」人话，而不是静默继续用旧
+      // token —— 那只会让用户看到 unauthorized 一头雾水。
+      try {
+        const refreshed = await refreshCredential(this.fetchImpl, this.product, credential)
+        if (refreshed !== undefined) {
+          await this.options.saveCredential?.(refreshed)
+          credential = refreshed
+        }
+      } catch (error) {
+        if (error instanceof AccioRefreshRejectedError) {
+          throw new LlmError(error.message, 'AUTH')
+        }
+        throw error
       }
     }
     return credential

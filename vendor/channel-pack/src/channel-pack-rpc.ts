@@ -2744,8 +2744,11 @@ function registerChannelPackEndpoints(
             case ACCIO_CN.id: {
               // Accio 家族**有真续期端点**（`POST {gatewayBase}/api/auth/refresh_token`，
               // 审计实测 200 且幂等：token 不轮换、expiresAt 顺延 30 天）。
-              // `refreshCredential` 返回 undefined 表示「没有 refresh_token 或续期失败」——
-              // 失败要如实报错（不能装成复核成功），成功则回写凭据与账号池。
+              // 上游**明确拒绝**（HTTP 200 + success:false，登录态被整体吊销）
+              // 时 refreshCredential 抛 AccioRefreshRejectedError —— 终态，如实
+              // 上抛给前端（「请重新登录」），不让用户反复点续期。
+              // 其余 undefined 形态（无 refresh_token / 网络 / 响应形状不认识）
+              // 仍按笼统失败报错。成功则回写凭据与账号池。
               const product = entry.provider === ACCIO_CN.id ? ACCIO_CN : ACCIO
               const resolved = await ctx.credentials.resolve(credentialRef(entry.credentialRef))
               if (resolved === undefined) throw new Error('凭据未配置')

@@ -59,6 +59,36 @@ export async function exchangeCode(
 }
 
 /** 续期。 */
+/**
+ * 「上游明确拒绝续期」的终态信号（refresh_token 已作废，重试无意义）。
+ *
+ * 上游 `refresh_token` 端点的拒绝形态是 **HTTP 200 + 业务码**：
+ * `{"success":false,"code":"502","message":"auth not pass"}` —— 2026-10-31
+ * 实测：登录态被上游整体吊销时（access_token 与 refresh_token 同时作废，
+ * 对话回 `error_code:402 unauthorized`、额度回 `401 NOT_LOGIN`），refresh
+ * 两种路径（`/api/auth/refresh_token` 与 `/api/auth/safe/refresh_token`）
+ * 都回这一形态，与「请求形态不对」无关（用上游 Agent2API 同款头族复测同样
+ * 被拒）。调用方据此提示**重新登录**，而不是让用户反复点续期。
+ */
+export class AccioRefreshRejectedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AccioRefreshRejectedError'
+  }
+}
+
+/** 读上游 JSON 的 `message` 字段（拒绝原因原文）。 */
+async function upstreamRejectMessage(response: Response): Promise<string | undefined> {
+  try {
+    const body = (await response.json()) as { message?: unknown; code?: unknown }
+    const message = typeof body.message === 'string' && body.message !== '' ? body.message : undefined
+    const code = typeof body.code === 'string' || typeof body.code === 'number' ? String(body.code) : undefined
+    return message === undefined ? undefined : code === undefined ? message : `${message}（code ${code}）`
+  } catch {
+    return undefined
+  }
+}
+
 export async function refreshCredential(
   fetcher: typeof fetch,
   product: AccioProduct,
@@ -77,7 +107,18 @@ export async function refreshCredential(
       ...(signal === undefined ? {} : { signal }),
     })
     if (!response.ok) return undefined
-    const refreshed = parseTokenResponse(await response.json().catch(() => undefined))
+    // ⚠️ 上游拒绝是 **HTTP 200 + `success:false`**（见 AccioRefreshRejectedError
+    // 注释）：必须在这里显式区分「拒绝」与「响应形状不认识」—— 前者是终态
+    //（重新登录），后者才值得笼统重试。
+    const body: unknown = await response.json().catch(() => undefined)
+    if (typeof body === 'object' && body !== null && !Array.isArray(body)
+      && (body as { success?: unknown }).success === false) {
+      const detail = await upstreamRejectMessage(response).catch(() => undefined)
+      throw new AccioRefreshRejectedError(
+        `Accio：续期被上游拒绝（${detail ?? 'auth not pass'}）。登录态已被上游作废，请到渠道面板重新登录`,
+      )
+    }
+    const refreshed = parseTokenResponse(body)
     if (refreshed === undefined) return undefined
     // 续期响应可能不带 refresh_token —— 沿用旧的。
     return {
@@ -86,7 +127,9 @@ export async function refreshCredential(
       ...(credential.account_id === undefined ? {} : { account_id: credential.account_id }),
       ...(credential.nickname === undefined ? {} : { nickname: credential.nickname }),
     }
-  } catch {
+  } catch (error) {
+    // 拒绝信号原样上抛（终态，调用方要如实展示）；网络异常等仍按 undefined 兜底。
+    if (error instanceof AccioRefreshRejectedError) throw error
     return undefined
   }
 }

@@ -30599,6 +30599,7 @@ var init_accio = __esm({
 var accio_auth_exports = {};
 __export(accio_auth_exports, {
   ACCIO_CALLBACK_PATH: () => ACCIO_CALLBACK_PATH2,
+  AccioRefreshRejectedError: () => AccioRefreshRejectedError,
   exchangeCode: () => exchangeCode,
   fetchModels: () => fetchModels2,
   fetchQuota: () => fetchQuota,
@@ -30629,6 +30630,16 @@ async function exchangeCode(fetcher, product, code, verifier, redirectUri, signa
   if (credential === void 0) throw new Error("Accio\uFF1A\u6362 token \u54CD\u5E94\u7F3A\u5C11 accessToken");
   return credential;
 }
+async function upstreamRejectMessage(response) {
+  try {
+    const body = await response.json();
+    const message2 = typeof body.message === "string" && body.message !== "" ? body.message : void 0;
+    const code = typeof body.code === "string" || typeof body.code === "number" ? String(body.code) : void 0;
+    return message2 === void 0 ? void 0 : code === void 0 ? message2 : `${message2}\uFF08code ${code}\uFF09`;
+  } catch {
+    return void 0;
+  }
+}
 async function refreshCredential(fetcher, product, credential, signal) {
   if (credential.refresh_token === void 0) return void 0;
   try {
@@ -30642,7 +30653,14 @@ async function refreshCredential(fetcher, product, credential, signal) {
       ...signal === void 0 ? {} : { signal }
     });
     if (!response.ok) return void 0;
-    const refreshed = parseTokenResponse(await response.json().catch(() => void 0));
+    const body = await response.json().catch(() => void 0);
+    if (typeof body === "object" && body !== null && !Array.isArray(body) && body.success === false) {
+      const detail = await upstreamRejectMessage(response).catch(() => void 0);
+      throw new AccioRefreshRejectedError(
+        `Accio\uFF1A\u7EED\u671F\u88AB\u4E0A\u6E38\u62D2\u7EDD\uFF08${detail ?? "auth not pass"}\uFF09\u3002\u767B\u5F55\u6001\u5DF2\u88AB\u4E0A\u6E38\u4F5C\u5E9F\uFF0C\u8BF7\u5230\u6E20\u9053\u9762\u677F\u91CD\u65B0\u767B\u5F55`
+      );
+    }
+    const refreshed = parseTokenResponse(body);
     if (refreshed === void 0) return void 0;
     return {
       ...refreshed,
@@ -30650,7 +30668,8 @@ async function refreshCredential(fetcher, product, credential, signal) {
       ...credential.account_id === void 0 ? {} : { account_id: credential.account_id },
       ...credential.nickname === void 0 ? {} : { nickname: credential.nickname }
     };
-  } catch {
+  } catch (error) {
+    if (error instanceof AccioRefreshRejectedError) throw error;
     return void 0;
   }
 }
@@ -30948,7 +30967,7 @@ async function startAccioLogin(options) {
   });
   return { loginUrl, port, result: withTimeout2, close };
 }
-var ACCIO_CALLBACK_PATH2, PORT_ATTEMPTS, LOGIN_TIMEOUT_MS2;
+var AccioRefreshRejectedError, ACCIO_CALLBACK_PATH2, PORT_ATTEMPTS, LOGIN_TIMEOUT_MS2;
 var init_accio_auth = __esm({
   "vendor/channel-pack/src/accio-auth.ts"() {
     "use strict";
@@ -30956,6 +30975,12 @@ var init_accio_auth = __esm({
     init_accio();
     init_accio_product();
     init_accio();
+    AccioRefreshRejectedError = class extends Error {
+      constructor(message2) {
+        super(message2);
+        this.name = "AccioRefreshRejectedError";
+      }
+    };
     ACCIO_CALLBACK_PATH2 = "/callback";
     PORT_ATTEMPTS = 10;
     LOGIN_TIMEOUT_MS2 = 3e5;
@@ -48857,10 +48882,17 @@ var AccioAdapter = class extends LlmAdapter10 {
       throw new LlmError14(`Accio\uFF1A\u6CA1\u6709\u53EF\u7528\u51ED\u636E\uFF0C\u8BF7\u5148\u767B\u5F55 ${this.product.displayName}`, "MISSING_CREDENTIAL");
     }
     if (isCredentialExpired2(credential) && credential.refresh_token !== void 0) {
-      const refreshed = await refreshCredential(this.fetchImpl, this.product, credential);
-      if (refreshed !== void 0) {
-        await this.options.saveCredential?.(refreshed);
-        credential = refreshed;
+      try {
+        const refreshed = await refreshCredential(this.fetchImpl, this.product, credential);
+        if (refreshed !== void 0) {
+          await this.options.saveCredential?.(refreshed);
+          credential = refreshed;
+        }
+      } catch (error) {
+        if (error instanceof AccioRefreshRejectedError) {
+          throw new LlmError14(error.message, "AUTH");
+        }
+        throw error;
       }
     }
     return credential;
