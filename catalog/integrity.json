@@ -49,8 +49,8 @@
     },
     {
       "path": "package.json",
-      "size": 2874,
-      "sha256": "a61b733ce57f8fdbd5611a74fb1d405a6909957a44027d1fdd889ea97901f825"
+      "size": 2853,
+      "sha256": "6e36d6da4a192a5b242eae1c83121f969749db16906ad9144f22048192bf96f1"
     },
     {
       "path": "src/adapter.js",
@@ -319,13 +319,13 @@
     },
     {
       "path": "vendor/channel-pack/NOTICE.md",
-      "size": 3542,
-      "sha256": "a6cad78e702a992511f24863350eef53bda78773c868d933f3dc44dbb5931ab9"
+      "size": 3844,
+      "sha256": "72e1095271dd3c9044fb84e062fa84dc572c69dff7f2a6cf6bf8370f939ac25f"
     },
     {
       "path": "vendor/channel-pack/pack.js",
-      "size": 3225528,
-      "sha256": "728789cb7ca6e86eb5747e53720633ef8ba27d6360e6f1e45e8680a08dbbf328"
+      "size": 3230133,
+      "sha256": "16f160721f8709a25c31c20d774f8675537c35e0f6dd7ae2b2e4431ee8334780"
     },
     {
       "path": "vendor/channel-pack/qoder-auth-wasm.wasm",
