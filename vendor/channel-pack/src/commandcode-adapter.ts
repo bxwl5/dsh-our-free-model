@@ -377,7 +377,9 @@ export class CommandCodeAdapter extends LlmAdapter {
       mode: 'normal',
       // AUTH 不在列：Key 失效重试多少次都是 401。
       // 429 不在列：同一轮重试只会继续撞墙。
-      retryableCodes: ['TRANSPORT', 'TIMEOUT', 'SERVER_ERROR'],
+      // ⚠️ 5xx 的真实错误码是 `'SERVER'`（`httpErrorCode`，openai-compat.ts）——
+      // 早期写 `'SERVER_ERROR'` 是死码，5xx 因此从不重试（2026-10-31 审查 P2-3）。
+      retryableCodes: ['TRANSPORT', 'TIMEOUT', 'SERVER'],
       maxRetries: 2,
       initialDelayMs: 800,
       maxDelayMs: 4_000,

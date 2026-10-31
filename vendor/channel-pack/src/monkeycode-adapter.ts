@@ -368,6 +368,9 @@ export class MonkeyCodeAdapter extends LlmAdapter {
   } {
     return {
       mode: 'normal',
+      // ⚠️ SERVER_ERROR **有意不在列**：它承载的是上游业务终态（10811 已有
+      // 运行中任务、建任务被拒等 —— 见上方 catch 的分类注释），重试只会
+      // 原样再失败一次；2026-10-31 审查 P2-3 复核后确认保持现状。
       retryableCodes: ['TRANSPORT', 'TIMEOUT'],
       maxRetries: 2,
       initialDelayMs: 900,

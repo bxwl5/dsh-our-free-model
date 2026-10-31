@@ -439,25 +439,31 @@ export class AccountPool {
   /**
    * 打开/关闭某个模型。
    *
-   * 关闭时写入 `true`；打开时**删除该键**而不是写 `false` —— 保持黑名单
-   * 里只留真正被关闭的模型，`disabledModelsFor` 的语义因此始终是
-   * "键存在且为 true 即隐藏"，配置文件也不会随开关操作无限膨胀。
+   * 关闭时写入 `true`；打开时写 `false` 而**不是删除该键** ——
+   * `false` 是「用户显式打开过」的持久记录：模型自动关闭逻辑
+   * （`model-catalog-cache` 的 `writeModelCatalogClosingNew`）据此把该 id
+   * 排除在「要关闭的新增模型」之外，上游目录抖动（下架→再上架）也不会把
+   * 用户手动打开的模型悄悄关回去（2026-10-31 审查 P1-1：删键语义下
+   * 「打开过」在磁盘上不可判定，实测复现）。
+   *
+   * `disabledModelsFor` 只认 `=== true`，`false` 键不参与隐藏判定，行为不变；
+   * 配置文件会多留一些 `false` 键（每个用户打开过的模型一条），这是
+   * 可接受的小体积换语义正确。
    */
   async setModelDisabled(provider: string, modelId: string, disabled: boolean): Promise<void> {
     const next: ModelDisableMap = { ...this.modelCache }
     const perProvider = { ...(next[provider] ?? {}) }
     if (disabled) perProvider[modelId] = true
-    else delete perProvider[modelId]
-    if (Object.keys(perProvider).length === 0) delete next[provider]
-    else next[provider] = perProvider
+    else perProvider[modelId] = false
+    next[provider] = perProvider
     await this.writeModels(next)
   }
 
   /**
-   * ⚠⚠ **修改黑名单前必须先调 `withDisabledSnapshot(provider, ids)`**，
-   * 它会在原列表之外把**新增**的 id 一起算进「要关闭的集合」
-   * （用户 2026-10-30 规则：模型刷新后新出现的模型**默认关闭**）。
-   * 直接调 {@link setModelsDisabled} 只会关你传入的那几个。
+   * ⚠⚠ **批量关闭/打开改用 {@link setModelsDisabled} / {@link clearModelsDisabled}**：
+   * 「新增模型默认关闭」（用户 2026-10-30 规则）的统一收口在
+   * `model-catalog-cache.ts` 的 `writeModelCatalogClosingNew`（15 处写快照的
+   * 必经之路），适配器刷新目录后自动调用，**不要**在各处手工拼「关闭集合」。
    */
 
   /**
@@ -490,12 +496,13 @@ export class AccountPool {
    *
    * ## 与 {@link clearDisabledModels} 的区别是**范围**（勿混）
    *
-   * 后者清空该 provider 的**全部**键，并刻意顺带清掉「已下线模型」的历史死键；
-   * 本方法**只删传入的 id**。分组开关必须用本方法 —— 用「清空」会把用户特意
+   * 后者清空该 provider 的**全部**键（含 `false` 记录）；本方法**只动传入的
+   * id**，且把它们写成 `false`（「用户显式打开过」的持久记录，见
+   * {@link setModelDisabled}）。分组开关必须用本方法 —— 用「清空」会把用户特意
    * 关着的其它组一起打开（那正是分组开关要避免的事）。
    *
-   * ⚠️ **无实际变更不落盘**：传进来的 id 若本来就不在黑名单里（例如该组已经
-   * 全开），删不掉任何键，此时不该产生一次文档重写与目录广播 ——
+   * ⚠️ **无实际变更不落盘**：传进来的 id 若本来就不在黑名单里或已是 `false`
+   * （例如该组已经全开），没有状态变化，此时不该产生一次文档重写与目录广播 ——
    * 与 {@link setModelsDisabled} 的「空列表不落盘」是同一条精神。
    */
   async clearModelsDisabled(provider: string, modelIds: readonly string[]): Promise<void> {
@@ -509,16 +516,13 @@ export class AccountPool {
     let changed = false
     for (const id of modelIds) {
       if (nextPerProvider[id] === true) {
-        delete nextPerProvider[id]
+        nextPerProvider[id] = false
         changed = true
       }
     }
     if (!changed) return
     const next: ModelDisableMap = { ...this.modelCache }
-    // 与 setModelDisabled 同约定：该 provider 一个关闭项都不剩时删掉整个键，
-    // 配置文件不随开关操作膨胀。
-    if (Object.keys(nextPerProvider).length === 0) delete next[provider]
-    else next[provider] = nextPerProvider
+    next[provider] = nextPerProvider
     await this.writeModels(next)
   }
 
@@ -582,10 +586,12 @@ export class AccountPool {
   /**
    * 清空某 provider 的全部关闭项（Channel Pack 模型列表的「打开全部」）。
    *
-   * ⚠️ **刻意不看模型目录**：直接删掉该 provider 在黑名单里的**全部**键，
-   * 而不是按当前目录逐个删。理由是「曾被关闭、后来从服务端目录里下线」的
-   * 历史遗留键 —— 按目录删的话它们永远清不掉，黑名单会积累死键，残留键
-   * 将来若被同名模型复用还会莫名隐藏它。
+   * ⚠️ **刻意不看模型目录**：直接删掉该 provider 在黑名单里的**全部**键
+   * （`true` 关闭项与 `false`「显式打开过」记录都清），而不是按当前目录逐个删。
+   * 理由是「曾被关闭、后来从服务端目录里下线」的历史遗留键 —— 按目录删的话
+   * 它们永远清不掉，黑名单会积累死键，残留键将来若被同名模型复用还会莫名隐藏它。
+   * `false` 记录一并清是**有意的**：「打开全部」意味着用户对该渠道所有模型
+   * 的显式决定回到「未决定」，此后自动关闭规则重新适用于新增模型。
    *
    * 该 provider 本就无关闭项时直接返回、不落盘。
    */

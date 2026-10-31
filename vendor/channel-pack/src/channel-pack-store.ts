@@ -220,8 +220,10 @@ export function mergeLegacyLoomyLock(
  * 把读到的原始值归一化为 {@link ModelDisableMap}。
  *
  * 文档可能被手工编辑过、或残留老版本格式（如数组），因此逐层校验：任何一层
- * 不是对象就丢弃那一层，只保留「provider → 模型 → true」。**只把显式 `true`
- * 视为关闭**，其余值一律忽略，避免与 `disabledModelsFor` 的判定产生分歧。
+ * 不是对象就丢弃那一层。**`true` 视为关闭，`false` 视为「用户显式打开过」**：
+ * 后者是自动关闭逻辑（`writeModelCatalogClosingNew`）判定「用户已决定过、
+ * 不因目录刷新翻转」的持久依据，必须与 `true` 同等保留（2026-10-31 审查
+ * P1-1）。其余值（字符串/数字/缺省）一律忽略，避免产生未定义状态。
  */
 export function sanitizeDisabledModels(raw: unknown): ModelDisableMap {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {}
@@ -231,6 +233,7 @@ export function sanitizeDisabledModels(raw: unknown): ModelDisableMap {
     const perProvider: Record<string, boolean> = {}
     for (const [modelId, flag] of Object.entries(value as Record<string, unknown>)) {
       if (flag === true) perProvider[modelId] = true
+      else if (flag === false) perProvider[modelId] = false
     }
     // 空表不保留：不让文档里留下 `{ provider: {} }` 这类无意义噪音。
     if (Object.keys(perProvider).length > 0) result[provider] = perProvider

@@ -186,6 +186,10 @@ const hooks = registerHooks({
 
     // 10c) 用户显式设置过的 id 不翻转：m4 已被用户关着（true）、m5 被用户开着（false），
     //      刷新后两者都不得再动。
+    //      （2026-10-31 审查 P1-1 后语义收紧：`false` 现在是 setModelDisabled(false)
+    //      真正写进磁盘的「显式打开过」记录，不再是测试替身专属状态；
+    //      sanitizeDisabledModels 同步保留 false。本用例保留替身形态——它模拟的
+    //      正是修复后真实存储里的键值。）
     const poolC = makePool()
     poolC._map['alpha'] = { m4: true, m5: false }
     await mod.writeModelCatalogClosingNew('alpha', [
@@ -193,6 +197,35 @@ const hooks = registerHooks({
     ], poolC)
     assert.deepEqual(poolC.calls.closed, [{ p: 'alpha', ids: ['m6'] }],
       '用户显式关/开的模型不得被目录刷新翻转，只关无记录的新增')
+
+    // 10c-b) P1-1 的核心场景（真实链路）：用户在面板打开一个曾被自动关闭的模型
+    //      （setModelDisabled(false) 写 false），随后该模型下架再上架 ——
+    //      **不得**被再次自动关闭。修复前「打开」是删键，这条链会把 m3 重新关掉。
+    {
+      const poolE = makePool()
+      // 第一轮：m1 在、m3 新增 → m3 被自动关闭。
+      await mod.writeModelCatalogClosingNew('alpha', [{ id: 'm1' }, { id: 'm3' }], poolE)
+      assert.deepEqual(poolE.calls.closed, [{ p: 'alpha', ids: ['m3'] }], '前置：m3 是新增，被关闭')
+      // 用户打开 m3（修复后的真实实现写 false；等价于直接置替身状态）。
+      poolE._map['alpha'] = { m3: false }
+      // 上游把 m3 下架一次再上架（下架不写快照，基准仍含 m3）。重放上架后的刷新：
+      await mod.writeModelCatalogClosingNew('alpha', [{ id: 'm1' }, { id: 'm3' }], poolE)
+      assert.deepEqual(poolE.calls.closed, [{ p: 'alpha', ids: ['m3'] }],
+        '用户显式打开过（false 记录）的模型再次出现时不得被重新自动关闭')
+    }
+
+    // 10c-c) P2-2 收口：池读取抛错时**整条链不许 reject**（22 处调用点全是
+    //      `void ...` 且无 .catch，reject 即未捕获 rejection 可终止 host），
+    //      只 warn；快照已写好且不回滚。
+    {
+      const brokenPool = {
+        listDisabledModels() { throw new Error('state.json 读取失败（模拟）') },
+        async setModelsDisabled() { throw new Error('不应走到这里') },
+      }
+      await mod.writeModelCatalogClosingNew('delta', [{ id: 'd1' }, { id: 'd2' }], brokenPool)
+      assert.deepEqual(readModelCatalog('delta')?.map((m) => m.id), ['d1', 'd2'],
+        '池读抛错时快照必须已落好（先写快照后关模型，绝不回滚）')
+    }
 
     // 10d) 下架（旧条目消失）不产生任何关闭动作；同进程第二次刷新的基准是上一份。
     const poolD = makePool()

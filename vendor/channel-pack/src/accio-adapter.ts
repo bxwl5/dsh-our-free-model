@@ -272,18 +272,20 @@ export class AccioAdapter extends LlmAdapter {
 
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     const credential = await this.credentialForUse()
+    // ⚠️⚠️ **刻意不把 `options.tools` 下发给上游**（2026-10-31 审查 P2-5）：
+    // 本适配器的 ADK 帧解析器（`accio.ts` 的 `parseAdkFrame`）只读
+    // `part.text`/`part.thought`，上游按 Gemini 风格返回的
+    // `{ parts: [{ function_call: {...} }] }` 帧会被**整帧丢弃**，finish 又恒为
+    // `{kind:'stop'}` ⇒ 宿主看到「stop + 无内容」，任务静默中断。在解析器
+    // 支持 function_call 之前下发 tools 等于向模型承诺一种交付不出的能力，
+    // 而宿主 agent 循环几乎总带 tools —— 因此这里**直接不传**：模型不会
+    // 尝试发起工具调用，行为可预期（等解析器支持后再放开）。
+    void options.tools
     try {
       yield* emitDeltaBlocks(streamChat(this.fetchImpl, this.product, credential, {
         model: options.model,
         messages: options.messages,
         ...(options.system === undefined ? {} : { system: options.system }),
-        ...(options.tools === undefined || options.tools.length === 0 ? {} : {
-          tools: options.tools.map((tool) => ({
-            name: tool.name,
-            ...(tool.description === undefined ? {} : { description: tool.description }),
-            ...(tool.parameters === undefined ? {} : { parameters: tool.parameters }),
-          })),
-        }),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
       }))    } catch (error) {
       if (options.signal?.aborted === true) throw new LlmError('Accio：请求已取消', 'ABORTED')
@@ -298,7 +300,8 @@ export class AccioAdapter extends LlmAdapter {
     //（`agent-loop` 检查 `finish.kind` 时 undefined 不命中任何分支，
     // fallthrough 到 stop），但宿主哪天加一个 kind 检查就会全炸。
     // 本适配器的 delta 流只有 text/reasoning（`emitDeltaBlocks` 契约），
-    // 不会产出 tool-call 块，故 finish 恒为 `{kind:'stop'}`。
+    // 且 tools 已刻意不下发（见 stream 开头），不会产出 tool-call 块，
+    // 故 finish 恒为 `{kind:'stop'}`。
     yield { type: 'finish', reason: { kind: 'stop' } }
   }
 

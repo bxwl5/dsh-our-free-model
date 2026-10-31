@@ -1,10 +1,14 @@
 # vendor/channel-pack — 上游免费渠道包的来源与再构建
 
-本目录是 **[dsh-codearts-auth](https://gitee.com/iJetLi/deepseek-harness-codearts)**
-的完整拷贝，由 `dsh-our-free-model` 的 Host 半身在独立 fiber 上挂载，
-使 CodeArts、CodeBuddy、WorkBuddy、LobsterAI、Qoder、Qoder 中国版、TRAE、
-Cline、Loomy、Raccoon、MiniMax Code、ZCode、Gemini 这十三个账号渠道的
-登录流程、账号池、积分领取、模型黑名单与本地 OpenAI 网关可用。OFM 挂载时关闭上游 OpenCode 账号接入，原有匿名免费车道保持独立。
+本目录源自 **[dsh-codearts-auth](https://gitee.com/iJetLi/deepseek-harness-codearts)**
+（吸收时为完整拷贝，此后由 `dsh-our-free-model` 持续演化），由 Host 半身在独立
+fiber 上挂载，使 CodeArts、CodeBuddy（WorkBuddy）、Qoder、Qoder 中国版、TRAE、
+Cline、Loomy、Raccoon、MiniMax Code、ZCode、Gemini、Command Code、OfficeAce、
+Accio / Accio 国内版、OrcaTerm、KukuAI、MonkeyCode、AutoClaw、OpenCode 这些
+账号渠道的登录流程、账号池、积分领取、模型黑名单与本地 OpenAI 网关可用
+（以 `src/index.ts` 的注册段为准，现 20 个账号渠道；LobsterAI 与 AutoClaw
+国际版已按需求整渠道移除，OpenCode 仅保留匿名免费车道）。OFM 挂载时关闭上游
+OpenCode 账号接入，原有匿名免费车道保持独立。
 目录名与内部标识符在本插件的再构建中统一改为 channel-pack；出处与许可证不变。
 
 - 上游仓库：`https://gitee.com/iJetLi/deepseek-harness-codearts`

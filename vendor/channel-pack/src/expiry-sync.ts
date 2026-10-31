@@ -3,6 +3,21 @@ import type { ProviderAccountEntry } from './types.js'
 import { REFRESH_LEAD_MS } from './refresh.js'
 
 /**
+ * 「续期成功但落盘失败」的终态信号。
+ *
+ * 与网络/凭据异常严格区分：refresh_token 是一次性轮换的，续期成功即旧值作废，
+ * 落盘失败后**任何重试都不可能成功** —— 账号已进入「需重新登录」终态。
+ * 调用方据此把它与「网络抖动（可重试）」走不同的日志与账号标记分支
+ * （2026-10-31 审查 P2-1：此前混为一谈，用户被误导去等一个不存在的重试）。
+ */
+export class SaveFailedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SaveFailedError'
+  }
+}
+
+/**
  * 账号池「有效期」的共享回写与 lead-time 判据。
  *
  * ## 为什么需要这个模块（issue !IKIRTT 的真实缺陷）
@@ -204,7 +219,20 @@ export async function refreshAccountWithReconcile<TCredential>(params: {
   if (refreshed === undefined) {
     throw new Error(`${tag} 续期响应缺少访问令牌，凭据未更新`)
   }
-  await save(refreshed)
+  // ⚠️⚠️ 落盘必须**独立 try** 且失败要走 error 级「需重新登录」措辞 —— 与
+  // `ensureCredentialFresh` 的 ② 段是**同一条契约**：refresh_token 一次性轮换，
+  // 续期成功即旧值作废，落盘失败后「重试续期」永远不可能成功。此前这句裸抛，
+  // 调用方把异常当网络抖动记成「将按调度器策略重试」，用户会一直等一个
+  // 永远不成功的重试（2026-10-31 审查 P2-1）。失败后把异常改写成
+  // `SaveFailedError` 继续抛：调用方的终态分支（RefreshTokenExpiredError /
+  // 不可续期标记）兜不住它，但能如实落进 catch 日志，而不是伪装成网络问题。
+  try {
+    await save(refreshed)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    params.warn?.(`${tag} 账号 ${accountId} 续期已成功但**落盘失败**（一次性 refresh_token 已被上游消费，需重新登录）: ${detail}`)
+    throw new SaveFailedError(`${tag} 账号 ${accountId} 续期后落盘失败: ${detail}`)
+  }
   await syncAccountExpiry({
     pool,
     provider,
@@ -306,7 +334,19 @@ export async function ensureCredentialFresh<T extends { refresh_token?: string; 
   }
 
   // 账号条目用**同步**方法查（见 FreshnessPool 的注释）；查不到只是记账降级，不影响落盘。
-  const entry = accountId === '' ? undefined : pool.listAccountsByProvider(providerId).find((row) => row.id === accountId)
+  // ⚠️⚠️ 这一步本身也**绝不能抛**：它夹在 ① 续期 与 ② 落盘 之间，而续期成功
+  // 即意味着旧 refresh_token 已被上游消费 —— 这句若把异常冒出去，`save` 一次
+  // 都不会执行，磁盘上留下死 token 且**日志 0 条**（2026-10-30 officeace 事故
+  // 的同形态残留缝，2026-10-31 审查发现并实测复现）。失败 ⇒ 降级用默认 ref
+  // 并告警，落盘照做：写错 ref 的代价是「凭据存进一份可发现的多余位置」，
+  // 远小于整条续期链被打死。
+  let entry: ReturnType<FreshnessPool['listAccountsByProvider']>[number] | undefined
+  try {
+    entry = accountId === '' ? undefined : pool.listAccountsByProvider(providerId).find((row) => row.id === accountId)
+  } catch (error) {
+    entry = undefined
+    log?.warn?.(`[channel-pack] ${tag} 反查账号条目失败，凭据落盘降级到默认 ref: ${describeError(error)}`)
+  }
   const targetRef = entry?.credentialRef ?? defaultCredentialRef
 
   // ② 落盘：紧跟续期，且不与任何其它步骤共用 try

@@ -41,6 +41,7 @@ import { RefreshScheduler } from './refresh.js'
 import { AccountPool } from './account-pool.js'
 import {
   refreshAccountWithReconcile,
+  SaveFailedError,
   syncAccountExpiry,
   type ExpiryAccessors,
 } from './expiry-sync.js'
@@ -486,6 +487,19 @@ export class ClineAuth extends Service {
           }
           this.ctx.logger?.warn?.(
             `[cline] 账号 ${entry.id} 的 refresh_token 已失效，已标记为不可续期（需重新登录）`,
+          )
+        } else if (error instanceof SaveFailedError) {
+          // 落盘失败 = 一次性 refresh_token 已被上游消费，与网络抖动**不是一回事**：
+          // 重试永远不可能成功，必须按终态处理并明说「需重新登录」
+          //（与 ensureCredentialFresh 的 ② 段同一条契约，2026-10-31 审查 P2-1）。
+          try {
+            await pool.updateAccount(entry.id, { refreshable: false })
+          } catch {
+            // 忽略 updateAccount 本身的错误
+          }
+          this.ctx.logger?.error?.(
+            `[cline] 账号 ${entry.id} 续期已成功但凭据落盘失败（需重新登录）: `
+            + `${error instanceof Error ? error.message : String(error)}`,
           )
         } else {
           // 非终态失败（网络抖动、5xx、429…）：**必须留下日志**。

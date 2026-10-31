@@ -92,7 +92,10 @@ async function verifyPersistContract() {
       // ⚠ 就是这一句：真实的 AccountPool 里它是 async。任何 `.find` / `for...of`
       // 都会抛 TypeError，从而复现事故。
       async listAccounts() { return [{ id: 'officeace-1', credentialRef: 'OFFICEACE_ACCOUNT_1' }] },
-      listAccountsByProvider() { return [{ id: 'officeace-1', credentialRef: 'OFFICEACE_ACCOUNT_1', expiresAt: 1 }] },
+      listAccountsByProvider() {
+        if (options.listThrows === true) throw new Error('state.json 读取失败（模拟存储层异常）')
+        return [{ id: 'officeace-1', credentialRef: 'OFFICEACE_ACCOUNT_1', expiresAt: 1 }]
+      },
       async updateAccount(id, patch) {
         if (options.updateThrows === true) throw new Error('池写盘失败（模拟）')
         calls.updates.push({ id, patch })
@@ -147,6 +150,33 @@ async function verifyPersistContract() {
     assert.equal(next.refresh_token, 'rt-new', '落盘成功应返回新凭据')
     assert.ok(warns.some((m) => m.includes('回写账号池有效期失败')), '记账失败要告警')
     console.log('ok  credential-freshness: 记账失败不影响落盘（事故复现位）')
+  }
+
+  // ── ②b 事故残留缝（2026-10-31 审查 P1-2）：续期与落盘**之间**的池反查抛错，
+  //    绝不能让 save 一次都不执行、异常冒出且 0 日志 —— 那正是
+  //    「旧 refresh_token 已被上游消费却不落盘」的事故形态。契约：反查失败
+  //    ⇒ 降级默认 ref，落盘照做，且必须留 warn。──
+  {
+    const { pool } = makePool({ listThrows: true })
+    const saved = []
+    const notes = []
+    const next = await ensureCredentialFresh({
+      providerId: 'officeace',
+      defaultCredentialRef: 'OFFICEACE_CREDENTIAL',
+      credential: expired,
+      accountId: 'officeace-1',
+      refreshOne: async () => refreshed,
+      save: async (ref, value) => { saved.push({ ref, value }) },
+      pool,
+      log: { warn: (m) => notes.push(m), error: (m) => notes.push(m) },
+      tag: 'officeace',
+    })
+    assert.equal(saved.length, 1, '反查失败时**仍然必须落盘**（否则一次性 refresh_token 白烧）')
+    assert.deepEqual(saved.map((row) => row.ref), ['OFFICEACE_CREDENTIAL'], '反查失败要降级到默认 ref，而不是不落盘')
+    assert.equal(saved[0].value.refresh_token, 'rt-new')
+    assert.equal(next.refresh_token, 'rt-new', '降级路径同样返回新凭据（本次请求可用）')
+    assert.ok(notes.some((m) => m.includes('反查账号条目失败')), '反查失败要留 warn（不能 0 日志）')
+    console.log('ok  credential-freshness: 反查抛错不阻断落盘（降级默认 ref + warn）')
   }
 
   // ── ③ 落盘失败：按 error 级别报出来，并仍返回新凭据（内存这份可用）──

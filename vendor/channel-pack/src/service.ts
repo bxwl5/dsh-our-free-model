@@ -53,6 +53,16 @@ const CODEARTS_EXPIRY_ACCESSORS: ExpiryAccessors<CodeArtsCredential> = {
   refreshableOf: isCodeArtsRefreshable,
   identityOf: (credential) => credential.access_key_id ?? '',
 }
+
+/**
+ * CodeArts 远端目录的**进程内** id 基准（上次成功刷新的模型 id 集）。
+ *
+ * 磁盘快照（`~/.cache/deveco/codearts_models.json`）是权威基准，但
+ * `saveModelsCache` 写失败是静默的 —— 只认磁盘时，同一批新模型会每轮
+ * 被判「新增」重复自动关闭（2026-10-31 审查 P3）。与 model-catalog-cache 的
+ * `previousIds` 同精神：基准 = max(磁盘, 本进程上次成功刷新)。
+ */
+let previousIdsForCodeArts: ReadonlySet<string> | undefined
 import {
   fetchCodeArtsRemoteModels,
   loadModelsCache,
@@ -539,11 +549,20 @@ export class CodeArtsAuth extends Service {
       // 就只看得到新表，「上一份有哪些模型」再也算不出来。
       // CodeArts 的快照走自己的 `~/.cache/deveco/codearts_models.json`
       // （saveModelsCache），不走 model-catalog-cache 的 per-provider 快照，
-      // 故这里的旧基准要用同一份磁盘缓存（loadModelsCache）还原。
+      // 故这里的旧基准先用同一份磁盘缓存（loadModelsCache）还原。
+      // ⚠️ 磁盘之外还要**进程内兜底**（2026-10-31 审查 P3）：saveModelsCache
+      // 失败是静默的（models.ts:411 的 catch），若只有磁盘基准，下一轮
+      // loadModelsCache() 仍返回旧表 ⇒ 同一批新模型每轮都被判「新增」重复
+      // setModelsDisabled（幂等但每轮多一次全量 state.json 重写 + 目录广播）。
+      // `previousIdsForCodeArts` 与 model-catalog-cache 的 previousIds 同精神：
+      // 读基准 = max(磁盘快照, 进程内上次成功刷新)。
       const previous = loadModelsCache()
-      const known = previous === undefined ? undefined : new Set(previous.map((m) => m.id))
+      const diskKnown = previous === undefined ? undefined : new Set(previous.map((m) => m.id))
+      const known = previousIdsForCodeArts ?? diskKnown
       setMemoryCache(models)
       saveModelsCache(models)
+      // 本次成功刷新即成为下一轮的进程内基准（先算 fresh 再覆盖）。
+      previousIdsForCodeArts = new Set(models.map((m) => m.id))
       if (known !== undefined) {
         const recorded = pool.listDisabledModels('codearts')
         const fresh = models

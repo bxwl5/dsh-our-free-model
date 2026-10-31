@@ -277,9 +277,17 @@ export class OpencodeAdapter extends LlmAdapter {
    * 接口是同步的且消费者**不 await**（`catalog = [...all]`），
    * 返回 Promise 会抛 `TypeError: all is not iterable`
    * （minimax 的同款真实缺陷，见 `minimax-adapter.ts` 的注释）。
+   *
+   * 取**内存里的远端目录**（`catalogCache`，由 `loadOpencodeCatalog` 维护，
+   * 与 `listModels` 同源）而非恒兜底表 —— 否则「关闭全部」用的全量目录
+   * 不含远端独有模型，远端独有的模型关不掉、模型数恒显示兜底条数
+   * （2026-10-31 审查 P3）。缓存未热（进程刚启动还没拉过目录）时退回
+   * 兜底表：与旧行为一致，可接受 —— 首次拉目录由 `listModels` 触发。
    */
   listAllModels(): readonly { id: string; name: string; isFree?: boolean }[] {
-    return OPENCODE_FALLBACK_MODELS.map((m) => ({ id: m.id, name: m.name, isFree: m.isFree }))
+    const cached = [...catalogCache.values()].at(-1)
+    const source = cached !== undefined ? cached.entries : OPENCODE_FALLBACK_MODELS
+    return source.map((m) => ({ id: m.id, name: m.name, isFree: m.isFree }))
   }
 
   /**

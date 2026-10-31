@@ -213,27 +213,6 @@ export function rememberCatalogIds(provider: string, models: readonly unknown[])
 }
 
 /**
- * 找出 `models` 里**上一份目录没有的** id（新增模型）。
- *
- * 没有旧基准（`rememberCatalogIds` 从未调过、且磁盘无快照）时返回空集：
- * 首次拉到目录的全部条目都算「原有的」—— 冷启动就该是全量可见，
- * 把整张表判成「新增」会让新用户面对一个全关的渠道。
- */
-export function newModelIdsSinceLastCatalog(
-  provider: string,
-  models: readonly unknown[],
-): string[] {
-  const previous = previousIds.get(provider)
-  if (previous === undefined) return []
-  const fresh: string[] = []
-  for (const item of models) {
-    const id = (item as { id?: unknown } | null)?.id
-    if (typeof id === 'string' && id.length > 0 && !previous.has(id)) fresh.push(id)
-  }
-  return fresh
-}
-
-/**
  * 把一次**成功的**远端目录整份写入快照（覆盖旧文件，绝不合并）。
  *
  * 失败只 warn 不抛：目录已经在内存里生效，落盘只是「下次启动更快更准」的增强，
@@ -311,10 +290,16 @@ export async function writeModelCatalogClosingNew(
   if (fresh.length === 0) return
   // ④ 只关「用户从未设置过」的：黑名单里已有记录的 id（无论开或关）是用户的
   //    显式决定，不因目录刷新而翻转 —— 否则「关了又拉 → 又被关回去」。
-  const recorded = pool.listDisabledModels(provider)
-  const toClose = fresh.filter((id) => recorded[id] !== true && recorded[id] !== false)
-  if (toClose.length === 0) return
+  //    （`false` = 用户显式打开过，2026-10-31 起由 setModelDisabled 持久化。）
+  // ⚠️⚠️ 整个「关闭」段（含池**读**）都在同一个 try 里：调用方 22 处全是
+  //  `void writeModelCatalogClosingNew(...)` 且无 .catch —— 本函数若 reject
+  //  就是未捕获 rejection，而 cordis 没有全局处理器，可直接终止 host
+  //  （zcode-captcha.ts:1446 记录的事实；2026-10-31 审查 P2-2，实测复现）。
+  //  关闭失败只 warn，快照已在 ② 落好，绝不回滚。
   try {
+    const recorded = pool.listDisabledModels(provider)
+    const toClose = fresh.filter((id) => recorded[id] !== true && recorded[id] !== false)
+    if (toClose.length === 0) return
     await pool.setModelsDisabled(provider, toClose)
     logger?.info?.(
       `[channel-pack] ${provider}：新增 ${toClose.length} 个模型已默认关闭（${toClose.join(', ')}），需在渠道面板手动打开`,

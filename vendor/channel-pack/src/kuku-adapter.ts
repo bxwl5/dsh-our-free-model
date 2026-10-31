@@ -391,6 +391,9 @@ export class KukuAdapter extends LlmAdapter {
   } {
     return {
       mode: 'normal',
+      // ⚠️ SERVER_ERROR **有意不在列**：它承载的是上游业务终态（session_id
+      // 失效、任务不存在、上游错误帧 —— 见上方 catch 的分类注释），重试只会
+      // 原样再失败一次；2026-10-31 审查 P2-3 复核后确认保持现状。
       retryableCodes: ['TRANSPORT', 'TIMEOUT'],
       maxRetries: 2,
       initialDelayMs: 900,

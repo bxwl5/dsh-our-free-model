@@ -21,6 +21,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { AccountPool } from './account-pool.js'
 import {
   refreshAccountWithReconcile,
+  SaveFailedError,
   shouldRefreshNow,
   syncAccountExpiry,
   type ExpiryAccessors,
@@ -334,6 +335,18 @@ export class GeminiAuth extends Service {
               + `；服务端原文：${detail}`,
             )
           }
+        } else if (error instanceof SaveFailedError) {
+          // 落盘失败 = 一次性 refresh_token 已被上游消费，重试永远不可能成功，
+          // 按终态处理并明说「需重新登录」（与 ensureCredentialFresh ② 段同契约）。
+          try {
+            await pool.updateAccount(entry.id, { refreshable: false })
+          } catch {
+            // 忽略 updateAccount 本身的错误
+          }
+          this.ctx.logger?.error?.(
+            `[gemini] 账号 ${entry.id} 续期已成功但凭据落盘失败（需重新登录）: `
+            + `${error instanceof Error ? error.message : String(error)}`,
+          )
         } else {
           // 非终态失败（网络抖动、5xx…）**必须留下日志**。
           this.ctx.logger?.warn?.(

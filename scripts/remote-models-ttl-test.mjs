@@ -1329,8 +1329,18 @@ export async function verifyNewModelAutoDisableWiring() {
  * `mode` 为 undefined ⇒ 这个**重试上限检查恒 false** ⇒ 这 7 个渠道的失败重试
  * **没有次数上限** —— 网络故障时同一请求会被无限重试，白烧配额。
  *
- * 守卫：全仓静态扫描，任何 `providerRetryPolicy` 的返回值缺 `mode: 'normal'`
- * （或缺 `mode: 'always'`）都会红。
+ * 守卫：全仓静态扫描，任何含 `providerRetryPolicy` 的源文件，剥注释后
+ * 必须出现 `mode: 'normal'`（或 `mode: 'always'`）。
+ *
+ * ## 为什么是**文件级粗断言**而不是逐方法正则（2026-10-31 审查 P2-4）
+ *
+ * 旧守卫用正则匹配「`providerRetryPolicy(): {...} {...}` 的返回类型+方法体」，
+ * 实测三种**完全合法**的写法全部漏判：带参数签名 `(_provider: string)`、
+ * 返回类型用宿主别名 `ResolvedRetryPolicy`、写成属性箭头函数。守卫一旦
+ * 静默失效，「mode 缺失 → 无限重试烧配额」就重新裸奔。宁可假阳性
+ * （一个文件里写多个策略时逐个看）也不能假阴性 —— 何况 CI 已有
+ * `tsc -p vendor/channel-pack/tsconfig.json` 类型门禁兜底（`mode` 是必需字段，
+ * 类型层写不出来），这里的粗断言只是防「绕开类型的运行时对象」。
  */
 export async function verifyRetryPolicyModeWiring() {
   const { readFileSync, readdirSync } = await import('node:fs')
@@ -1340,13 +1350,14 @@ export async function verifyRetryPolicyModeWiring() {
     if (!name.endsWith('.ts')) continue
     const src = readFileSync(new URL(name, srcDir), 'utf8')
     if (!src.includes('providerRetryPolicy')) continue
-    // 剥注释再判（教训：注释里引用错误写法会假阳性）。
-    const code = src.split('\n').map((line) => line.replace(/\/\/.*$/, '')).join('\n')
-    for (const m of code.matchAll(/providerRetryPolicy\(\)\s*:\s*\{([\s\S]{0,300}?)\}\s*\{([\s\S]{0,400}?)\n  \}/g)) {
-      const returnType = m[1]
-      const body = m[2]
-      if (!/mode:\s*'normal'|mode:\s*'always'/.test(returnType)) offenders.push(`${name}: 返回类型缺 mode`)
-      if (!/mode:\s*'normal'|mode:\s*'always'/.test(body)) offenders.push(`${name}: 返回值缺 mode`)
+    // 剥行注释**和块注释**再判（教训：注释里引用写法会假阳性）。
+    const code = src
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .map((line) => line.replace(/\/\/.*$/, ''))
+      .join('\n')
+    if (!/mode:\s*'normal'|mode:\s*'always'/.test(code)) {
+      offenders.push(`${name}: 含 providerRetryPolicy 但全文件无 mode 声明`)
     }
   }
   assert.deepEqual(offenders, [], 'providerRetryPolicy 缺 mode（重试上限会失效 → 无限重试）：\n' + offenders.join('\n'))
