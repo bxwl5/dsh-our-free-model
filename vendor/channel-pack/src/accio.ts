@@ -73,6 +73,32 @@ export function isCredentialExpired(credential: AccioCredential, nowMs: number =
  * 带了反而可能被当成冲突凭据。
  */
 /**
+ * 设备指纹（`utdid` 头）—— **推理请求必带**（2026-10-31 实测定罪）。
+ *
+ * 上游 `phoenix-gw` 新增了渠道风控：`generateContent` 缺 `utdid` 头时
+ * **不报错**，HTTP 200 回一段 `{"rgv587_flag":"sm","url":"https://bixi-*.alicdn.com/punish/…"}`
+ * 的风控跳转 JSON（不是 SSE 帧）。`parseAdkFrame` 解不出 `content.parts`
+ * ⇒ 帧被静默丢弃 ⇒ 流以 `{kind:'stop'}` 收场 ⇒ 用户看到「空回答、正常结束」。
+ * 实测：补任意非空 `utdid`（对齐上游 `providers/accio/credentials.rs` 的
+ * `desktop-<uuid>` 形态）即恢复，与取值无关、跨账号/跨地区可复用；
+ * 目录 / 额度等 `gatewayBase` 端点不受影响（这也是此前没炸目录只炸对话的原因）。
+ *
+ * 每个进程持久一份（装机即固定），对齐上游「每台机器一个、落盘复用」的设计。
+ */
+let cachedDeviceId: string | undefined
+export function accioDeviceId(): string {
+  if (cachedDeviceId === undefined) {
+    cachedDeviceId = `desktop-${randomUUID().replace(/-/g, '')}`
+  }
+  return cachedDeviceId
+}
+
+/** 测试钩子：清空设备指纹缓存（让下一个请求重新生成）。 */
+export function resetAccioDeviceIdForTest(): void {
+  cachedDeviceId = undefined
+}
+
+/**
  * 推理 / 目录请求的公共头。
  *
  * ⚠️ `appKey` **必填**（上游 `aimod-cc/Agent2API` 的 `providers/accio/endpoints.rs`
@@ -81,6 +107,9 @@ export function isCredentialExpired(credential: AccioCredential, nowMs: number =
  * `data:` 帧，形态与正常回答完全一样，会被当成模型输出吐给下游。
  * 带上任意非空取值即恢复（实测 `35298846` / `12345678` 都通，空串等同于没带）
  * —— 上游只校验「有没有」，不校验取值。
+ *
+ * ⚠️ `utdid` **推理必带**（见 {@link accioDeviceId}）：缺了上游回 rgv587 风控
+ * 页（HTTP 200），表现为「空回答正常结束」。对全部端点无害，统一带上。
  *
  * 其余 `x-app-version` / `x-platform` / `x-os` / `x-language` /
  * `Accept-Language` 与上游 `api_headers()` 逐字段对齐（同一份客户端指纹）。
@@ -96,6 +125,7 @@ export function accioHeaders(product: AccioProduct): Record<string, string> {
     'x-app-version': ACCIO_APP_VERSION,
     [ACCIO_REGION_HEADER]: product.region,
     appKey: ACCIO_APP_KEY,
+    utdid: accioDeviceId(),
     Origin: product.loginBase,
     Referer: `${product.loginBase}/`,
   }
@@ -191,11 +221,21 @@ export function buildGenerateBody(options: {
  * - `{ content: { parts: [{ thought: true, text }] } }` —— 思考
  * - `{ content: { parts: [{ function_call: { name, args_json } }] } }` —— 工具调用
  * - `{ turn_complete: true, finish_reason, usage_metadata }` —— 结束
+ * - `{"rgv587_flag":"sm","url":"…punish…"}` —— **阿里风控跳转**（HTTP 200）：
+ *   必须显式报错而不是静默丢弃 —— 丢掉的后果就是「空回答正常结束」，
+ *   用户完全无从排查（2026-10-31 accio 对话异常的根因）。
  */
 export function parseAdkFrame(
   value: unknown,
 ): { kind: 'delta'; text?: string; reasoning?: string } | { kind: 'done'; finishReason?: string } | { kind: 'error'; message: string } | undefined {
   if (!isRecord(value)) return undefined
+  // 阿里云风控（bixi punish 页）：出现即整条流作废，报可读原因。
+  if (value.rgv587_flag !== undefined) {
+    return {
+      kind: 'error',
+      message: '上游风控拦截（rgv587，punish 页）。Accio 渠道请求头不完整或设备指纹缺失，请更新插件版本；若仍复现请到渠道面板重新登录后重试',
+    }
+  }
   // 业务错误常在 200 的帧里（不是 HTTP 状态码）。
   const errorCode = value.error_code ?? value.errorCode
   if (errorCode !== undefined && errorCode !== 0 && errorCode !== '0') {
@@ -206,6 +246,48 @@ export function parseAdkFrame(
   }
   if (value.turn_complete === true) {
     return { kind: 'done', ...(stringValue(value.finish_reason) === undefined ? {} : { finishReason: stringValue(value.finish_reason) }) }
+  }
+  // ⚠️ 2026-10 起上游对部分后端（Bedrock 承载的 Claude 系 / Azure 承载的
+  // OpenAI 系）改用 `raw_response_json` 封装：外层 ADK 帧只剩
+  // `{partial:true, raw_response_json:"<内层协议的 JSON 字符串>"}`，
+  // `content.parts` 不再出现 —— 只认旧形态会把整条流静默丢成空回答
+  //（2026-10-31 accio 对话异常的第二个根因）。两种内层协议实测：
+  // - Bedrock 事件流：`{type:"content_block_delta", delta:{type:"text_delta", text}}`
+  // - OpenAI chunk：`{choices:[{delta:{content}}]}`（`finish_reason` 也在 choices 里）
+  if (typeof value.raw_response_json === 'string') {
+    let inner: unknown
+    try { inner = JSON.parse(value.raw_response_json) } catch { return undefined }
+    if (!isRecord(inner)) return undefined
+    // 内层 Bedrock 事件流
+    const innerType = stringValue(inner.type)
+    if (innerType === 'content_block_delta' && isRecord(inner.delta) && inner.delta.type === 'text_delta') {
+      const text = stringValue(inner.delta.text)
+      return text === undefined || text === '' ? undefined : { kind: 'delta', text }
+    }
+    if (innerType === 'content_block_delta' && isRecord(inner.delta) && inner.delta.type === 'thinking_delta') {
+      const text = stringValue(inner.delta.thinking)
+      return text === undefined || text === '' ? undefined : { kind: 'delta', reasoning: text }
+    }
+    if (innerType === 'message_stop' || innerType === 'message_delta' && isRecord(inner.delta) && inner.delta.stop_reason === 'end_turn') {
+      return { kind: 'done' }
+    }
+    // 内层 OpenAI chunk（⚠️ 先判 finish_reason 再判 delta：结束帧也带空
+    // `delta:{}`，顺序反了会被 delta 分支吞成 undefined）
+    const choices = inner.choices
+    if (Array.isArray(choices)) {
+      const first = choices[0]
+      if (isRecord(first)) {
+        if (stringValue(first.finish_reason) !== undefined) return { kind: 'done' }
+        if (isRecord(first.delta)) {
+          const text = stringValue(first.delta.content)
+          if (text !== undefined && text !== '') return { kind: 'delta', text }
+          const reasoning = stringValue(first.delta.reasoning_content)
+          if (reasoning !== undefined && reasoning !== '') return { kind: 'delta', reasoning }
+        }
+        return undefined
+      }
+    }
+    return undefined
   }
   const content = value.content
   if (!isRecord(content) || !Array.isArray(content.parts)) return undefined

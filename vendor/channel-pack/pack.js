@@ -30414,6 +30414,12 @@ function isCredentialExpired2(credential, nowMs = Date.now()) {
   if (credential.expire_time === void 0) return false;
   return credential.expire_time - 6e4 <= nowMs;
 }
+function accioDeviceId() {
+  if (cachedDeviceId === void 0) {
+    cachedDeviceId = `desktop-${randomUUID6().replace(/-/g, "")}`;
+  }
+  return cachedDeviceId;
+}
 function accioHeaders(product) {
   return {
     Accept: "application/json",
@@ -30425,6 +30431,7 @@ function accioHeaders(product) {
     "x-app-version": ACCIO_APP_VERSION,
     [ACCIO_REGION_HEADER]: product.region,
     appKey: ACCIO_APP_KEY,
+    utdid: accioDeviceId(),
     Origin: product.loginBase,
     Referer: `${product.loginBase}/`
   };
@@ -30482,6 +30489,12 @@ function buildGenerateBody(options) {
 }
 function parseAdkFrame(value) {
   if (!isRecord8(value)) return void 0;
+  if (value.rgv587_flag !== void 0) {
+    return {
+      kind: "error",
+      message: "\u4E0A\u6E38\u98CE\u63A7\u62E6\u622A\uFF08rgv587\uFF0Cpunish \u9875\uFF09\u3002Accio \u6E20\u9053\u8BF7\u6C42\u5934\u4E0D\u5B8C\u6574\u6216\u8BBE\u5907\u6307\u7EB9\u7F3A\u5931\uFF0C\u8BF7\u66F4\u65B0\u63D2\u4EF6\u7248\u672C\uFF1B\u82E5\u4ECD\u590D\u73B0\u8BF7\u5230\u6E20\u9053\u9762\u677F\u91CD\u65B0\u767B\u5F55\u540E\u91CD\u8BD5"
+    };
+  }
   const errorCode = value.error_code ?? value.errorCode;
   if (errorCode !== void 0 && errorCode !== 0 && errorCode !== "0") {
     return {
@@ -30491,6 +30504,42 @@ function parseAdkFrame(value) {
   }
   if (value.turn_complete === true) {
     return { kind: "done", ...stringValue7(value.finish_reason) === void 0 ? {} : { finishReason: stringValue7(value.finish_reason) } };
+  }
+  if (typeof value.raw_response_json === "string") {
+    let inner;
+    try {
+      inner = JSON.parse(value.raw_response_json);
+    } catch {
+      return void 0;
+    }
+    if (!isRecord8(inner)) return void 0;
+    const innerType = stringValue7(inner.type);
+    if (innerType === "content_block_delta" && isRecord8(inner.delta) && inner.delta.type === "text_delta") {
+      const text = stringValue7(inner.delta.text);
+      return text === void 0 || text === "" ? void 0 : { kind: "delta", text };
+    }
+    if (innerType === "content_block_delta" && isRecord8(inner.delta) && inner.delta.type === "thinking_delta") {
+      const text = stringValue7(inner.delta.thinking);
+      return text === void 0 || text === "" ? void 0 : { kind: "delta", reasoning: text };
+    }
+    if (innerType === "message_stop" || innerType === "message_delta" && isRecord8(inner.delta) && inner.delta.stop_reason === "end_turn") {
+      return { kind: "done" };
+    }
+    const choices = inner.choices;
+    if (Array.isArray(choices)) {
+      const first = choices[0];
+      if (isRecord8(first)) {
+        if (stringValue7(first.finish_reason) !== void 0) return { kind: "done" };
+        if (isRecord8(first.delta)) {
+          const text = stringValue7(first.delta.content);
+          if (text !== void 0 && text !== "") return { kind: "delta", text };
+          const reasoning = stringValue7(first.delta.reasoning_content);
+          if (reasoning !== void 0 && reasoning !== "") return { kind: "delta", reasoning };
+        }
+        return void 0;
+      }
+    }
+    return void 0;
   }
   const content = value.content;
   if (!isRecord8(content) || !Array.isArray(content.parts)) return void 0;
@@ -30538,6 +30587,7 @@ function buildAccioAuthUrl(product, redirectUri, state, challenge) {
   });
   return `${product.loginBase}/login?${query.toString()}`;
 }
+var cachedDeviceId;
 var init_accio = __esm({
   "vendor/channel-pack/src/accio.ts"() {
     "use strict";

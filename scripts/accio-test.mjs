@@ -65,6 +65,56 @@ async function main() {
   assert.equal(parseAdkFrame({ error_code: 0 }), undefined, 'error_code=0 不是错误')
   assert.equal(parseAdkFrame({}), undefined)
 
+  // ── 2026-10-31 审查修复：上游新形态 ──
+  // ① rgv587 风控帧（HTTP 200 + punish 页）：必须显式报错，不能静默丢弃 ——
+  //    丢掉的后果就是「空回答正常结束」，用户无从排查。
+  const punish = parseAdkFrame({ rgv587_flag: 'sm', url: 'https://bixi-intl.alicdn.com/punish/x' })
+  assert.equal(punish.kind, 'error', '风控帧必须显式报错')
+  assert.match(punish.message, /风控/, '报错文案要说明是风控')
+  // ② utdid 设备指纹：推理请求必带（缺了上游回风控页），进程内稳定。
+  assert.match(h.utdid, /^desktop-[0-9a-f]{32}$/, 'utdid 形态对齐上游 desktop-<uuid 无连字符>')
+  assert.equal(accioHeaders(ACCIO).utdid, h.utdid, '同进程 utdid 稳定（设备指纹不能每次变）')
+  assert.notEqual(accioHeaders(ACCIO_CN).utdid, undefined, '国内版同样带 utdid')
+  // ③ raw_response_json 封装（上游 2026-10 起新增，只认旧 ADK 帧会整条流丢成空回答）：
+  //    Bedrock 事件流（Claude 系）
+  assert.deepEqual(
+    parseAdkFrame({ partial: true, raw_response_json: JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '收到' } }) }),
+    { kind: 'delta', text: '收到' },
+    '内层 Bedrock text_delta 必须解析出正文',
+  )
+  assert.deepEqual(
+    parseAdkFrame({ partial: true, raw_response_json: JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '想' } }) }),
+    { kind: 'delta', reasoning: '想' },
+    '内层 Bedrock thinking_delta 必须解析出思考',
+  )
+  assert.deepEqual(
+    parseAdkFrame({ partial: true, raw_response_json: JSON.stringify({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }) }),
+    { kind: 'done' },
+    '内层 Bedrock message_delta(end_turn) 是结束帧',
+  )
+  assert.deepEqual(
+    parseAdkFrame({ partial: true, raw_response_json: JSON.stringify({ type: 'message_stop', 'amazon-bedrock-invocationMetrics': {} }) }),
+    { kind: 'done' },
+    '内层 Bedrock message_stop 是结束帧',
+  )
+  //    OpenAI chunk（OpenAI 系）
+  assert.deepEqual(
+    parseAdkFrame({ partial: true, raw_response_json: JSON.stringify({ choices: [{ delta: { content: '收到' }, finish_reason: null, index: 0 }] }) }),
+    { kind: 'delta', text: '收到' },
+    '内层 OpenAI delta.content 必须解析出正文',
+  )
+  assert.deepEqual(
+    parseAdkFrame({ partial: true, raw_response_json: JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop', index: 0 }] }) }),
+    { kind: 'done' },
+    '内层 OpenAI finish_reason=stop 是结束帧',
+  )
+  assert.equal(
+    parseAdkFrame({ partial: true, raw_response_json: JSON.stringify({ choices: [{ delta: {}, finish_reason: null, index: 0 }] }) }),
+    undefined,
+    '内层 OpenAI 空心跳帧不算正文',
+  )
+  assert.equal(parseAdkFrame({ partial: true, raw_response_json: 'not-json' }), undefined, '内层坏 JSON 静默跳过')
+
   // ── PKCE ──
   const pkce = await createPkcePair()
   assert.ok(pkce.verifier.length > 20)
