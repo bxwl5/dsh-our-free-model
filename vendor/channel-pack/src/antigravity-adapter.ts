@@ -37,6 +37,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type { ModelQuota } from './types.js'
 import { providerCatalogVisible, type AccountPool } from './account-pool.js'
+import { cachedGroupBuckets } from './antigravity-credits.js'
 import { collectImages, httpErrorCode } from './openai-compat.js'
 import { projectRequestImage } from './image-budget.js'
 import { registerAdapterIdempotent } from './llm-register-compat.js'
@@ -281,6 +282,15 @@ export class AntigravityAdapter extends LlmAdapter {
   /** 目录加载闸门：并发去重 + 失败/空结果冷却（与 minimax 同款）。 */
   private readonly catalogGate: RemoteCatalogGate
 
+  /**
+   * 最后已知凭据的 access_token（组桶快照的缓存键）。
+   *
+   * `quotaFor` 是同步接口、拿不到凭据，故由异步路径（`listModels` /
+   * `stream`）顺路记下最近一次解析的 token —— 组桶余量按 token 键缓存在
+   * `antigravity-credits.ts`，两处键一致才能读到。空串 = 还没解析过凭据。
+   */
+  private lastKnownToken = ''
+
   constructor(private readonly options: AntigravityAdapterOptions) {
     super()
     this.product = options.product ?? ANTIGRAVITY
@@ -354,16 +364,43 @@ export class AntigravityAdapter extends LlmAdapter {
   /**
    * 单个模型的剩余额度（用户 2026-11-01 要求：模型名后面学 zcode 加剩余%）。
    *
-   * 数据来自远端目录 `quotaInfo.remainingFraction`（`fetchAvailableModels`
-   * 每模型下发，0-1 浮点；分段合并条目取族内最保守值）。静态兜底表没有
-   * 该字段 → `undefined`，客户端就不渲染标签（不编造 100%）。
+   * ## 数据源优先级（2026-11-01 第二次修正）
+   *
+   * 1. **分组桶**（`retrieveUserQuotaSummary` 的组桶快照，`cachedGroupBuckets`）
+   *    —— 上游按「Gemini 组 / Claude·GPT 组」独立计数（同 token 实测
+   *    gemini-weekly 99.9% / 3p-weekly 95.8%），这是**精确值**。模型 → 组：
+   *    - `claude-*` / `gpt-oss-*` → 3p 组（桶 `3p-weekly` / `3p-5h`）；
+   *    - 其余 `gemini-*` → Gemini 组（`gemini-weekly` / `gemini-5h`）。
+   *    同组内 5 小时窗与周窗取**较小**者（两个窗口任一耗尽都不可用）。
+   * 2. **模型级 `remainingFraction`**（`fetchAvailableModels` 粗快照）——
+   *    实测归一到 1/0 两态（1 = 有余量），只在没有组桶数据时兜底（此时
+   *    100% 至少表示「未用尽」，与「不知道」有区别）；0 仍表达「已用尽」红标。
+   *
+   * 静态兜底表两者都没有 → `undefined`，客户端不渲染标签（不编造 100%）。
    */
   quotaFor(modelId: string): ModelQuota | undefined {
+    // ① 组桶精确值（credits.balances 面板刷新时顺路写入的快照）。
+    if (this.lastKnownToken !== '') {
+      const buckets = cachedGroupBuckets(this.lastKnownToken)
+      if (buckets !== undefined) {
+        const isThreeP = modelId.startsWith('claude-') || modelId.startsWith('gpt-oss-')
+        const windows = isThreeP
+          ? [buckets.threePFiveHour, buckets.threePWeekly]
+          : [buckets.geminiFiveHour, buckets.geminiWeekly]
+        const known = windows.filter((w) => w !== undefined)
+        if (known.length > 0) {
+          // 任一窗口用尽（fraction=0）→ 红标；否则取最小剩余（最保守）。
+          if (known.some((w) => w.remainingFraction <= 0)) return { kind: 'exhausted' }
+          const fraction = Math.min(...known.map((w) => w.remainingFraction))
+          return { kind: 'remaining', amount: Math.round(fraction * 100), unit: 'percent' }
+        }
+      }
+    }
+    // ② 模型级粗快照回落（1 = 有余量 → 100%；0 = 用尽 → 红标）。
     const entry = this.currentModels().find((item) => item.id === modelId)
     const remaining = entry && 'remainingFraction' in entry ? entry.remainingFraction : undefined
     if (typeof remaining !== 'number' || !Number.isFinite(remaining)) return undefined
     if (remaining <= 0) return { kind: 'exhausted' }
-    // percent 单位：amount = 0-1 比例 × 100 取整（85.4% → 85）。
     return { kind: 'remaining', amount: Math.round(remaining * 100), unit: 'percent' }
   }
 
@@ -474,6 +511,14 @@ export class AntigravityAdapter extends LlmAdapter {
     if (!await providerCatalogVisible(this.options.accountPool, this.product.id)) return []
 
     const all = await this.loadModels()
+    // 顺路记下「最后已知凭据 token」：`quotaFor` 是**同步**接口读不了凭据
+    //（异步会破坏 `listAllModels` 的同步契约），而组桶快照按 token 键存
+    //（`cachedGroupBuckets`）。失败吞掉 —— token 只是绿标数据的键，拿不到
+    // 就回落模型级粗快照。
+    try {
+      const credential = await this.options.resolveCredential()
+      if (credential?.access_token) this.lastKnownToken = credential.access_token
+    } catch { /* 绿标降级，不影响列表 */ }
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id)
     const listed = disabled === undefined || disabled.size === 0
       ? all
@@ -654,6 +699,8 @@ export class AntigravityAdapter extends LlmAdapter {
     if (credential === undefined || credential.access_token === '') {
       throw new LlmError('antigravity: no usable credential; log in first', 'MISSING_CREDENTIAL')
     }
+    // 顺路记 token（组桶快照的缓存键，`quotaFor` 同步读它，见字段注释）。
+    this.lastKnownToken = credential.access_token
 
     const requested = options.reasoningEffort === undefined
       ? undefined

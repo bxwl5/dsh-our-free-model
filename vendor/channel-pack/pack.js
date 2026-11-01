@@ -62886,6 +62886,39 @@ function parseGeminiQuotaWindows(payload) {
     ...weekly === void 0 ? {} : { weekly }
   };
 }
+function parseGeminiGroupBuckets(payload) {
+  if (typeof payload !== "object" || payload === null) return {};
+  const groups = payload.groups;
+  if (!Array.isArray(groups)) return {};
+  const out = {};
+  for (const group of groups) {
+    if (typeof group !== "object" || group === null || Array.isArray(group)) continue;
+    const buckets = group.buckets;
+    if (!Array.isArray(buckets)) continue;
+    for (const bucket of buckets) {
+      const parsed = parseGeminiQuotaWindow(bucket);
+      if (parsed === void 0) continue;
+      const kind = bucketWindowOf(parsed.bucketId);
+      if (kind === void 0) continue;
+      const isThreeP = parsed.bucketId.startsWith("3p-");
+      const slot2 = kind === "weekly" ? isThreeP ? "threePWeekly" : "geminiWeekly" : isThreeP ? "threePFiveHour" : "geminiFiveHour";
+      if (out[slot2] === void 0) out[slot2] = parsed;
+    }
+  }
+  return out;
+}
+var groupBucketCache = /* @__PURE__ */ new Map();
+function rememberGroupBuckets(token, buckets) {
+  if (Object.keys(buckets).length === 0) return;
+  groupBucketCache.set(token, { at: Date.now(), buckets });
+}
+var ANTIGRAVITY_GROUP_BUCKET_TTL_MS = ANTIGRAVITY_QUOTA_CACHE_TTL_MS;
+function cachedGroupBuckets(token, maxAgeMs = ANTIGRAVITY_GROUP_BUCKET_TTL_MS) {
+  const cached2 = groupBucketCache.get(token);
+  if (cached2 === void 0) return void 0;
+  if (Date.now() - cached2.at > maxAgeMs) return void 0;
+  return cached2.buckets;
+}
 function percentOf(window) {
   const clamped = Math.min(1, Math.max(0, window.remainingFraction));
   return Math.round(clamped * 100);
@@ -62971,6 +63004,7 @@ async function requestQuotaSummary(credential, fetcher, project) {
   if (fiveHour === void 0 && weekly === void 0) {
     return { balance: null, error: "\u914D\u989D\u54CD\u5E94\u91CC\u6CA1\u6709 Gemini \u914D\u989D\u6876" };
   }
+  rememberGroupBuckets(credential.access_token ?? "", parseGeminiGroupBuckets(payload));
   return { balance: toGeminiCreditBalance(fiveHour, weekly) };
 }
 async function requestAccountTier(credential, fetcher) {
@@ -64609,6 +64643,14 @@ var AntigravityAdapter = class extends LlmAdapter16 {
   remoteModels;
   /** 目录加载闸门：并发去重 + 失败/空结果冷却（与 minimax 同款）。 */
   catalogGate;
+  /**
+   * 最后已知凭据的 access_token（组桶快照的缓存键）。
+   *
+   * `quotaFor` 是同步接口、拿不到凭据，故由异步路径（`listModels` /
+   * `stream`）顺路记下最近一次解析的 token —— 组桶余量按 token 键缓存在
+   * `antigravity-credits.ts`，两处键一致才能读到。空串 = 还没解析过凭据。
+   */
+  lastKnownToken = "";
   providerInfo(provider) {
     const id = typeof provider === "string" && provider.length > 0 ? provider : this.product.id;
     return { id, name: this.product.displayName };
@@ -64667,11 +64709,34 @@ var AntigravityAdapter = class extends LlmAdapter16 {
   /**
    * 单个模型的剩余额度（用户 2026-11-01 要求：模型名后面学 zcode 加剩余%）。
    *
-   * 数据来自远端目录 `quotaInfo.remainingFraction`（`fetchAvailableModels`
-   * 每模型下发，0-1 浮点；分段合并条目取族内最保守值）。静态兜底表没有
-   * 该字段 → `undefined`，客户端就不渲染标签（不编造 100%）。
+   * ## 数据源优先级（2026-11-01 第二次修正）
+   *
+   * 1. **分组桶**（`retrieveUserQuotaSummary` 的组桶快照，`cachedGroupBuckets`）
+   *    —— 上游按「Gemini 组 / Claude·GPT 组」独立计数（同 token 实测
+   *    gemini-weekly 99.9% / 3p-weekly 95.8%），这是**精确值**。模型 → 组：
+   *    - `claude-*` / `gpt-oss-*` → 3p 组（桶 `3p-weekly` / `3p-5h`）；
+   *    - 其余 `gemini-*` → Gemini 组（`gemini-weekly` / `gemini-5h`）。
+   *    同组内 5 小时窗与周窗取**较小**者（两个窗口任一耗尽都不可用）。
+   * 2. **模型级 `remainingFraction`**（`fetchAvailableModels` 粗快照）——
+   *    实测归一到 1/0 两态（1 = 有余量），只在没有组桶数据时兜底（此时
+   *    100% 至少表示「未用尽」，与「不知道」有区别）；0 仍表达「已用尽」红标。
+   *
+   * 静态兜底表两者都没有 → `undefined`，客户端不渲染标签（不编造 100%）。
    */
   quotaFor(modelId) {
+    if (this.lastKnownToken !== "") {
+      const buckets = cachedGroupBuckets(this.lastKnownToken);
+      if (buckets !== void 0) {
+        const isThreeP = modelId.startsWith("claude-") || modelId.startsWith("gpt-oss-");
+        const windows = isThreeP ? [buckets.threePFiveHour, buckets.threePWeekly] : [buckets.geminiFiveHour, buckets.geminiWeekly];
+        const known = windows.filter((w) => w !== void 0);
+        if (known.length > 0) {
+          if (known.some((w) => w.remainingFraction <= 0)) return { kind: "exhausted" };
+          const fraction = Math.min(...known.map((w) => w.remainingFraction));
+          return { kind: "remaining", amount: Math.round(fraction * 100), unit: "percent" };
+        }
+      }
+    }
     const entry = this.currentModels().find((item) => item.id === modelId);
     const remaining = entry && "remainingFraction" in entry ? entry.remainingFraction : void 0;
     if (typeof remaining !== "number" || !Number.isFinite(remaining)) return void 0;
@@ -64766,6 +64831,11 @@ var AntigravityAdapter = class extends LlmAdapter16 {
   async listModels(_provider) {
     if (!await providerCatalogVisible(this.options.accountPool, this.product.id)) return [];
     const all = await this.loadModels();
+    try {
+      const credential = await this.options.resolveCredential();
+      if (credential?.access_token) this.lastKnownToken = credential.access_token;
+    } catch {
+    }
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id);
     const listed = disabled === void 0 || disabled.size === 0 ? all : all.filter((model) => !disabled.has(model.id));
     return listed.map((model) => ({
@@ -64899,6 +64969,7 @@ var AntigravityAdapter = class extends LlmAdapter16 {
     if (credential === void 0 || credential.access_token === "") {
       throw new LlmError21("antigravity: no usable credential; log in first", "MISSING_CREDENTIAL");
     }
+    this.lastKnownToken = credential.access_token;
     const requested = options.reasoningEffort === void 0 ? void 0 : String(options.reasoningEffort);
     const declared = entry === void 0 ? void 0 : antigravityReasoningInfo(entry);
     const effort = requested !== void 0 && declared?.efforts.some((item) => String(item.id) === requested) === true ? requested : void 0;

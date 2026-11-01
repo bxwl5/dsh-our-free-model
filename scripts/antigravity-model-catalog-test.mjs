@@ -230,4 +230,67 @@ export async function verifyAntigravityModelCatalog() {
   assert.deepEqual(adapter.quotaFor('gpt-oss-120b-medium'), { kind: 'remaining', amount: 46, unit: 'percent' })
   assert.deepEqual(adapter.quotaFor('claude-opus-4-6-thinking'), { kind: 'exhausted' }, 'remainingFraction=0 → 红标')
   assert.equal(adapter.quotaFor('gemini-2.5-pro')?.amount, 100, 'remainingFraction=1 → 100%')
+
+  // ── 9. 组桶优先（用户 2026-11-01 追问：claude/gpt 走另一个桶，余量不是 100%）──
+  // 上游两组独立计数（同 token 实测 gemini-weekly 99.9% / 3p-weekly 95.8%），
+  // 模型级 remainingFraction 是恒 1/0 的粗快照。quotaFor 必须按模型 id 家族
+  // 映射到对应组桶：claude-*/gpt-oss-* → 3p 组，gemini-* → Gemini 组。
+  const credits = await import('../vendor/channel-pack/src/antigravity-credits.ts')
+  credits.clearGeminiGroupBucketCache()
+  // 无桶快照时：回落模型级粗快照（上面的断言即此路径）。
+  // 写入组桶快照后：3p 组 → claude/gpt 用 3p-weekly（95.84%→96）；
+  // Gemini 组 → gemini-* 用 gemini-weekly（99.94%→100）。
+  // 构造一次真实桶查询把快照写进缓存（requestQuotaSummary 成功路径 rememberGroupBuckets）。
+  const calls = []
+  const fakeFetch = async (url, init) => {
+    calls.push(String(url))
+    if (String(url).includes(':retrieveUserQuotaSummary')) {
+      return new Response(JSON.stringify({
+        groups: [
+          { displayName: 'Gemini Models', buckets: [
+            { bucketId: 'gemini-weekly', window: 'weekly', resetTime: '2026-11-08T09:56:54Z', remainingFraction: 0.9994016 },
+          ] },
+          { displayName: 'Claude and GPT models', buckets: [
+            { bucketId: '3p-weekly', window: 'weekly', resetTime: '2026-11-08T08:22:28Z', remainingFraction: 0.958389 },
+          ] },
+        ],
+      }), { status: 200 })
+    }
+    // loadCodeAssist（档位）失败无妨——档位是附注。
+    return new Response('{}', { status: 403 })
+  }
+  const balance = await credits.fetchGeminiCreditBalance(
+    { access_token: 'tok-test', refresh_token: 'r' }, undefined, { fetcher: fakeFetch, force: true },
+  )
+  assert.equal(balance.balance === null, false, '桶查询必须成功（fixture）')
+  // adapter 记 token 后（listModels 内解析凭据失败无池环境跳过 → 手动置）：
+  adapter.lastKnownToken = 'tok-test'
+  // 3p 组：claude/gpt 用 3p-weekly = 95.84% → 96（不再是粗快照的 85/46/100）
+  assert.deepEqual(adapter.quotaFor('claude-sonnet-4-6'), { kind: 'remaining', amount: 96, unit: 'percent' },
+    'claude 走 3p 组桶（95.84% → 96）')
+  assert.deepEqual(adapter.quotaFor('gpt-oss-120b-medium'), { kind: 'remaining', amount: 96, unit: 'percent' },
+    'gpt-oss 走 3p 组桶')
+  assert.deepEqual(adapter.quotaFor('claude-opus-4-6-thinking'), { kind: 'remaining', amount: 96, unit: 'percent' },
+    '有组桶数据时 0 粗快照被覆盖（不再红标）')
+  // Gemini 组：合并主模型用 gemini-weekly = 99.94% → 100
+  assert.deepEqual(adapter.quotaFor('gemini-3.8-flash'), { kind: 'remaining', amount: 100, unit: 'percent' },
+    'gemini 走 Gemini 组桶')
+  // 未知家族 id：按 Gemini 组兜底（同上游分组语义：非 3p 即 Gemini 组）
+  assert.deepEqual(adapter.quotaFor('gemini-2.5-pro'), { kind: 'remaining', amount: 100, unit: 'percent' })
+  // 5h + weekly 并存时取较小者；任一 =0 → 红标
+  credits.clearGeminiGroupBucketCache()
+  const fakeFetch2 = async (url) => new Response(JSON.stringify({
+    groups: [
+      { displayName: 'Gemini Models', buckets: [
+        { bucketId: 'gemini-5h', window: '5h', resetTime: '2026-11-01T18:00:00Z', remainingFraction: 0.4 },
+        { bucketId: 'gemini-weekly', window: 'weekly', resetTime: '2026-11-08T09:56:54Z', remainingFraction: 0.9 },
+      ] },
+    ],
+  }), { status: 200 })
+  await credits.fetchGeminiCreditBalance({ access_token: 'tok-2', refresh_token: 'r' }, undefined, { fetcher: fakeFetch2, force: true })
+  adapter.lastKnownToken = 'tok-2'
+  assert.deepEqual(adapter.quotaFor('gemini-3.8-flash'), { kind: 'remaining', amount: 40, unit: 'percent' },
+    '5h(40%) 与 weekly(90%) 取最小 = 40')
+  credits.clearGeminiGroupBucketCache()
+  adapter.lastKnownToken = ''
 }

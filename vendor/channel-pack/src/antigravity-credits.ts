@@ -275,6 +275,92 @@ export function parseGeminiQuotaWindows(payload: unknown): {
   }
 }
 
+/**
+ * 分组桶解析（2026-11-01 起：模型绿标需要**按组**的余量）。
+ *
+ * `retrieveUserQuotaSummary` 实测下发两个分组桶：Gemini 组（`gemini-weekly` /
+ * `gemini-5h`）与 Claude/GPT 组（`3p-weekly` / `3p-5h`），两组**独立计数**
+ *（同 token 实测：gemini-weekly 99.9% / 3p-weekly 95.8%）。而
+ * `fetchAvailableModels` 的模型级 `quotaInfo.remainingFraction` 是**粗粒度
+ * 快照**（归一到 1/0 两态），永远显示 100% —— 模型名后面的「剩 N%」绿标
+ * 必须用组桶的精确值。
+ *
+ * 组别判据用 `bucketId` 前缀（`gemini-*` / `3p-*`），窗口语义仍走
+ * {@link bucketWindowOf}。
+ */
+export interface AntigravityGroupBuckets {
+  /** Gemini 组周窗（`gemini-weekly`）。 */
+  geminiWeekly?: AntigravityQuotaWindow
+  /** Gemini 组 5 小时窗（`gemini-5h`）。 */
+  geminiFiveHour?: AntigravityQuotaWindow
+  /** Claude/GPT 组周窗（`3p-weekly`）。 */
+  threePWeekly?: AntigravityQuotaWindow
+  /** Claude/GPT 组 5 小时窗（`3p-5h`）。 */
+  threePFiveHour?: AntigravityQuotaWindow
+}
+
+export function parseGeminiGroupBuckets(payload: unknown): AntigravityGroupBuckets {
+  if (typeof payload !== 'object' || payload === null) return {}
+  const groups = (payload as Record<string, unknown>).groups
+  if (!Array.isArray(groups)) return {}
+  const out: AntigravityGroupBuckets = {}
+  for (const group of groups) {
+    if (typeof group !== 'object' || group === null || Array.isArray(group)) continue
+    const buckets = (group as Record<string, unknown>).buckets
+    if (!Array.isArray(buckets)) continue
+    for (const bucket of buckets) {
+      const parsed = parseGeminiQuotaWindow(bucket)
+      if (parsed === undefined) continue
+      const kind = bucketWindowOf(parsed.bucketId)
+      if (kind === undefined) continue
+      const isThreeP = parsed.bucketId.startsWith('3p-')
+      const slot =
+        kind === 'weekly' ? (isThreeP ? 'threePWeekly' : 'geminiWeekly')
+        : isThreeP ? 'threePFiveHour' : 'geminiFiveHour'
+      if (out[slot] === undefined) out[slot] = parsed
+    }
+  }
+  return out
+}
+
+/**
+ * 模型绿标的**组桶快照缓存**（按 token）。
+ *
+ * `credits.balances` RPC（面板刷新/打开渠道卡）每次都会真查桶；把组桶余量
+ * 存在这里，`model.list` 的同步 `quotaFor` 就能读到精确值而不必自己发请求
+ *（quotaFor 是同步接口，见 adapter 注释的 `[...all]` 崩溃先例）。
+ *
+ * ⚠️ 缓存与余额缓存同 TTL：过期后 adapter 读到的值可能偏旧，但「偏旧的
+ * 百分比」仍远好于粗快照的恒 100%（用户报障的根因）；下一次
+ * `credits.balances` 会自然刷新。
+ */
+const groupBucketCache = new Map<string, { at: number; buckets: AntigravityGroupBuckets }>()
+
+/** 写组桶快照（`requestQuotaSummary` 成功路径调用）。 */
+function rememberGroupBuckets(token: string, buckets: AntigravityGroupBuckets): void {
+  if (Object.keys(buckets).length === 0) return
+  groupBucketCache.set(token, { at: Date.now(), buckets })
+}
+
+/** 组桶快照的有效期（与面板余额缓存同量级）。 */
+export const ANTIGRAVITY_GROUP_BUCKET_TTL_MS = ANTIGRAVITY_QUOTA_CACHE_TTL_MS
+
+/** 读组桶快照（`quotaFor` 用）。过期/无数据返回 `undefined`。 */
+export function cachedGroupBuckets(
+  token: string,
+  maxAgeMs: number = ANTIGRAVITY_GROUP_BUCKET_TTL_MS,
+): AntigravityGroupBuckets | undefined {
+  const cached = groupBucketCache.get(token)
+  if (cached === undefined) return undefined
+  if (Date.now() - cached.at > maxAgeMs) return undefined
+  return cached.buckets
+}
+
+/** 清空组桶缓存（测试用）。 */
+export function clearGeminiGroupBucketCache(): void {
+  groupBucketCache.clear()
+}
+
 /** 剩余比例 → 百分比整数（0..100，越界收敛）。 */
 function percentOf(window: AntigravityQuotaWindow): number {
   const clamped = Math.min(1, Math.max(0, window.remainingFraction))
@@ -418,6 +504,11 @@ async function requestQuotaSummary(
   if (fiveHour === undefined && weekly === undefined) {
     return { balance: null, error: '配额响应里没有 Gemini 配额桶' }
   }
+  // 顺路把**分组桶**余量存进快照缓存：`model.list` 的同步 `quotaFor` 读它
+  // 给模型名后面的「剩 N%」绿标（模型级 remainingFraction 是恒 1/0 的粗快照，
+  // 用户 2026-11-01 报障「claude 和 gpt 走另外一个桶，余量也是 100% 吗」）。
+  // 同 token 实测：gemini-weekly 99.9% / 3p-weekly 95.8%，两组独立计数。
+  rememberGroupBuckets(credential.access_token ?? '', parseGeminiGroupBuckets(payload))
   return { balance: toGeminiCreditBalance(fiveHour, weekly) }
 }
 
