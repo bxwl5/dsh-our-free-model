@@ -424,10 +424,18 @@ export async function runCommandCodeLogin(options: CommandCodeLoginOptions): Pro
  * 实测上游 `/alpha/billing/credits` 约四成请求挂起 18-30s（Cloudflare → 源站
  * 链路波动，`/alpha/whoami` 同样不稳）。旧实现既无超时也无重试 —— 挂起时
  * 由调用方的外层兜底（或永不返回），失败一次就显示「余额查询失败」。
- * 15s + 重试一次后，单次调用成功率从 ~60% 提到 ~95%（10 次实测样本）。
  * 明确的 HTTP 4xx（如 401 吊销）不重试 —— 重试没有意义且拖慢反馈。
+ *
+ * ⚠️ 参数依据（2026-11-01 换节点后复测）：上游丢包是**长突发**形态 ——
+ * 直连单次成功率 ~50%，但失败可连续 8+ 次（分钟级突发窗口）。15s×1 次重试
+ * 实测只把 RPC 成功率提到 5/10（两次尝试都落进同一突发窗口）；超时提到
+ * 25s、重试 2 次（总预算 75s < credits.balances 的 90s 客户端超时）后，
+ * 跨过突发窗口的概率显著提高。重试间隔 2s：突发是秒级-分钟级，紧贴重试
+ * 大概率撞同一窗口，2s 是「不拖死反馈 × 给突发一点时间过去」的折中。
  */
-const COMMANDCODE_CREDITS_TIMEOUT_MS = 15_000
+const COMMANDCODE_CREDITS_TIMEOUT_MS = 25_000
+const COMMANDCODE_CREDITS_RETRIES = 2
+const COMMANDCODE_CREDITS_RETRY_DELAY_MS = 2_000
 
 export async function fetchCredits(
   fetcher: typeof fetch,
@@ -451,14 +459,21 @@ export async function fetchCredits(
       return {} // 超时 / 网络失败 / 调用方取消 → 归入「无法得知」
     }
   }
-  const first = await attempt()
-  if (first.value !== undefined) return first.value
-  // 首次失败：明确 4xx 不重试（key 吊销等终态，重试只拖时间）；
-  // 5xx / 超时 / 网络错误重试一次。调用方主动取消（signal.aborted）也不重试。
-  if (signal?.aborted === true) return undefined
-  if (first.status !== undefined && first.status >= 400 && first.status < 500) return undefined
-  const second = await attempt()
-  return second.value
+  let lastStatus: number | undefined
+  for (let round = 0; round <= COMMANDCODE_CREDITS_RETRIES; round += 1) {
+    if (round > 0) {
+      // 调用方取消 → 立即停；明确 4xx（key 吊销等终态）→ 重试无意义。
+      if (signal?.aborted) return undefined
+      if (lastStatus !== undefined && lastStatus >= 400 && lastStatus < 500) return undefined
+      await new Promise(resolve => setTimeout(resolve, COMMANDCODE_CREDITS_RETRY_DELAY_MS))
+      // 睡眠期间调用方可能取消（await 后窄化失效，重新检查）。
+      if (signal?.aborted) return undefined
+    }
+    const result = await attempt()
+    if (result.value !== undefined) return result.value
+    lastStatus = result.status
+  }
+  return undefined
 }
 
 /**

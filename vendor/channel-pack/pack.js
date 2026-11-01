@@ -28241,12 +28241,19 @@ async function fetchCredits(fetcher, product, credential, signal) {
       return {};
     }
   };
-  const first = await attempt();
-  if (first.value !== void 0) return first.value;
-  if (signal?.aborted === true) return void 0;
-  if (first.status !== void 0 && first.status >= 400 && first.status < 500) return void 0;
-  const second = await attempt();
-  return second.value;
+  let lastStatus;
+  for (let round = 0; round <= COMMANDCODE_CREDITS_RETRIES; round += 1) {
+    if (round > 0) {
+      if (signal?.aborted) return void 0;
+      if (lastStatus !== void 0 && lastStatus >= 400 && lastStatus < 500) return void 0;
+      await new Promise((resolve2) => setTimeout(resolve2, COMMANDCODE_CREDITS_RETRY_DELAY_MS));
+      if (signal?.aborted) return void 0;
+    }
+    const result = await attempt();
+    if (result.value !== void 0) return result.value;
+    lastStatus = result.status;
+  }
+  return void 0;
 }
 async function fetchModelCatalog(fetcher, product, credential, signal) {
   const response = await fetcher(`${product.apiBase}${COMMANDCODE_MODELS_PATH}`, {
@@ -28277,14 +28284,16 @@ async function fetchModelCatalog(fetcher, product, credential, signal) {
   if (rows.length === 0) throw new Error("Command Code\uFF1A\u6A21\u578B\u76EE\u5F55\u4E3A\u7A7A");
   return rows;
 }
-var COMMANDCODE_CALLBACK_PATH, COMMANDCODE_CREDITS_TIMEOUT_MS;
+var COMMANDCODE_CALLBACK_PATH, COMMANDCODE_CREDITS_TIMEOUT_MS, COMMANDCODE_CREDITS_RETRIES, COMMANDCODE_CREDITS_RETRY_DELAY_MS;
 var init_commandcode_auth = __esm({
   "vendor/channel-pack/src/commandcode-auth.ts"() {
     "use strict";
     init_commandcode_product();
     init_commandcode();
     COMMANDCODE_CALLBACK_PATH = "/callback";
-    COMMANDCODE_CREDITS_TIMEOUT_MS = 15e3;
+    COMMANDCODE_CREDITS_TIMEOUT_MS = 25e3;
+    COMMANDCODE_CREDITS_RETRIES = 2;
+    COMMANDCODE_CREDITS_RETRY_DELAY_MS = 2e3;
   }
 });
 
