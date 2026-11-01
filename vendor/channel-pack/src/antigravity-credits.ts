@@ -574,12 +574,16 @@ function quotaRejectionHint(text: string): string {
           // 用户报障原话：「配额查询被拒（HTTP 403）（UNSUPPORTED_LOCATION）：
           // Your current account is not eligible … not currently available in your location.」
           // 光把原文抛出来，用户会以为是账号/登录坏了 —— 这里补一条**可操作**的指引：
-          // 渠道包的请求走 `network.fetch`，而它接的就是本插件的「出口代理」
-          // （`pack.apply(..., { outlet })`），所以开出口即可换到支持的地区。
+          // 渠道包的请求走 `network.fetch`，接的是本插件的出口（`pack.apply(..., { outlet })`），
+          // 换一个出口地址即可换到支持的地区。
+          //
+          // ⚠️ 2026-11-02 用户修正文案：旧版写「可在本插件设置页开启『出口代理』」，
+          // 但设置页里并没有叫这个名字的页面（实际是「出口代理（订阅分流）」区块），
+          // 用户照着找不到入口；且渠道早就不叫 Gemini。现改成直说「请更改出口地址」，
+          // 不再指向具体页面。
           const locationHint = reason === 'UNSUPPORTED_LOCATION'
-            ? '。这是 Google 的地区限制（Antigravity 个人版在你所在地区不可用），'
-              + '不是凭据或额度问题；可在本插件设置页开启「出口代理」，'
-              + '让请求从 Gemini 支持的地区发出后重试'
+            ? '。Antigravity 个人版在你所在地区不可用，'
+              + '不是凭据或额度问题；请更改出口地址'
             : ''
           return `（${reason}）：${message.slice(0, 160)}${locationHint}`
         }

@@ -38,8 +38,11 @@ export async function verifyGeminiLocationHint() {
     assert.equal(result.balance, null, '拒绝时应返回 null balance')
     const error = result.error ?? ''
     assert.ok(error.includes('UNSUPPORTED_LOCATION'), '必须保留原始 reason 便于排查')
-    assert.ok(/地区限制/.test(error), '必须点明这是地区限制（不是凭据问题）')
-    assert.ok(/出口代理/.test(error), '必须给出可操作建议：开启出口代理')
+    // 2026-11-02 用户定稿文案：不再指向「代理页面」（设置页里没有这个名字的页面），
+    // 也不再沿用改名前的「Gemini」称谓。
+    assert.ok(/所在地区不可用/.test(error), '必须点明该地区不可用（不是凭据问题）')
+    assert.ok(/更改出口地址/.test(error), '必须给出可操作建议：更改出口地址')
+    assert.ok(!/出口代理/.test(error), '不得再指向不存在的「出口代理」页面')
     assert.ok(!/凭据已失效/.test(error), '不得误导成凭据失效')
   }
 
@@ -56,7 +59,7 @@ export async function verifyGeminiLocationHint() {
     assert.ok(!/地区限制/.test(error), '非地区限制不得附带地区指引')
   }
 
-  console.log('ok  antigravity: UNSUPPORTED_LOCATION 给出地区限制 + 出口代理指引，其它 reason 不污染')
+  console.log('ok  antigravity: UNSUPPORTED_LOCATION 给出地区不可用 + 更改出口地址指引，其它 reason 不污染')
 }
 
 exitIfDirectRun(import.meta.url, 'antigravity-location-hint-test')
