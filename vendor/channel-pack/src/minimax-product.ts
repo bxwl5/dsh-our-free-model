@@ -63,28 +63,31 @@ export interface MinimaxFallbackModel {
 }
 
 /**
- * 兜底模型目录（4 条，顺序**照抄远端 `model_order`**）。
+ * 兜底模型目录（**2 条**，与 2026-11-01 远端实测一致）。
  *
- * ⚠️ **必须含 `MiniMax-M3.1-Flash-Preview`** —— 它**不在**客户端内置静态表里
- * （asar `config.js` 的 `MINIMAX_MODELS` 只有 3 个：M3 / M2.7-highspeed / M2.7）。
- * 若兜底表也漏掉它，远端一失败用户就**看不到自己在用的模型**。
+ * ⚠️ **远端已下架 3 条**（2026-11-01 直连 `agent.minimax.cn/mavis/api/v1/models`
+ * 实测：`models` 只有 M3 / M3.1-Flash 两 key）。旧兜底表里的
+ * `MiniMax-M3.1-Flash-Preview` / `MiniMax-M2.7-highspeed` / `MiniMax-M2.7`
+ * 全部不再下发 —— 留在表里会让「远端失败回兜底」时显示**点进去就 404 的幽灵
+ * 模型**，且黑名单补回逻辑（channel-pack-rpc 的 model.list）会把用户黑名单里
+ * 的下架 id 捞回面板。故只保留远端在售的两条；哪天远端改目录，以远端为准。
  *
- * ⚠️ **只有 M3.1-Flash-Preview 有 `effortOptions`** —— 其余三个远端
- * **没有 `effort_options` 字段**。给它们编档位就是凭空猜测
+ * ⚠️ **只有 M3.1-Flash 有 `effortOptions`**（2026-11-01 实测远端条目：
+ * `effort_options: [default,low,medium,high,xhigh,max]`；M3 没有）。
+ * 给没有档位的模型编档位就是凭空猜测
  * （与 Qoder「`qmodel` 没有档位就是没有，不要按截图猜」同型教训）。
  */
 const MINIMAX_FALLBACK_MODELS: readonly MinimaxFallbackModel[] = [
   {
-    id: 'MiniMax-M3.1-Flash-Preview',
-    name: 'M3.1-Flash-Preview',
+    id: 'MiniMax-M3.1-Flash',
+    name: 'M3.1-Flash',
     contextWindow: 1_000_000,
     maxTokens: 128_000,
     supportsImage: true,
     effortOptions: ['default', 'low', 'medium', 'high', 'xhigh', 'max'],
     defaultEffort: 'default',
     // ⚠️ forced_on：传 disabled 会被服务端**硬拒**（400 `requires adaptive
-    // thinking ... (2013)`，实测）。它与 M2.7 的 forced_on 不同形态：
-    // M2.7 是**静默忽略**，M3.1 是**报错**。
+    // thinking ... (2013)`，实测）。
     thinkingMode: 'forced_on',
   },
   {
@@ -94,27 +97,10 @@ const MINIMAX_FALLBACK_MODELS: readonly MinimaxFallbackModel[] = [
     maxTokens: 128_000,
     supportsImage: true,
     // ⚠️ 实测可开关思考（`switchable`）：不传/disabled → 0 思考块，
-    // adaptive → 有思考块。官方形态见远端 `variants`。
+    // adaptive → 有思考块。远端 `thinking_config.mode = 'switchable'`。
     // ⚠️ 但它**没有 `effort_options`** ⇒ 没有「档位」可选，
     // 只有「开/关」两态 —— 与 Qoder `qmodel` 的「只有关闭思考」同型。
     thinkingMode: 'switchable',
-  },
-  {
-    id: 'MiniMax-M2.7-highspeed',
-    name: 'M2.7-highspeed',
-    contextWindow: 200_000,
-    maxTokens: 128_000,
-    supportsImage: false,
-    // ⚠️ forced_on：传 disabled 被**静默忽略**（实测仍产出思考块）
-    thinkingMode: 'forced_on',
-  },
-  {
-    id: 'MiniMax-M2.7',
-    name: 'M2.7',
-    contextWindow: 200_000,
-    maxTokens: 128_000,
-    supportsImage: false,
-    thinkingMode: 'forced_on',
   },
 ]
 

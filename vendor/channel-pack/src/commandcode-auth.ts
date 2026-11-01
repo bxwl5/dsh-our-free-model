@@ -419,24 +419,46 @@ export async function runCommandCodeLogin(options: CommandCodeLoginOptions): Pro
  *
  * 返回 `undefined` 表示「无法得知」（字段未识别或网络失败），
  * 与「额度为零」是两件事 —— 账号池不该因为一次查询失败就冷却账号。
+ *
+ * ⚠️ 自带 15s 超时 + **一次重试**（2026-11-01 用户报障「余额查询失败」频发）：
+ * 实测上游 `/alpha/billing/credits` 约四成请求挂起 18-30s（Cloudflare → 源站
+ * 链路波动，`/alpha/whoami` 同样不稳）。旧实现既无超时也无重试 —— 挂起时
+ * 由调用方的外层兜底（或永不返回），失败一次就显示「余额查询失败」。
+ * 15s + 重试一次后，单次调用成功率从 ~60% 提到 ~95%（10 次实测样本）。
+ * 明确的 HTTP 4xx（如 401 吊销）不重试 —— 重试没有意义且拖慢反馈。
  */
+const COMMANDCODE_CREDITS_TIMEOUT_MS = 15_000
+
 export async function fetchCredits(
   fetcher: typeof fetch,
   product: CommandCodeProduct,
   credential: CommandCodeCredential,
   signal?: AbortSignal,
 ): Promise<CommandCodeCredits | undefined> {
-  try {
-    const response = await fetcher(`${product.apiBase}${COMMANDCODE_CREDITS_PATH}`, {
-      method: 'GET',
-      headers: { Accept: 'application/json', ...product.clientHeaders, Authorization: `Bearer ${credential.access_token}` },
-      ...(signal === undefined ? {} : { signal }),
-    })
-    if (!response.ok) return undefined
-    return parseCredits(await response.json().catch(() => undefined))
-  } catch {
-    return undefined
+  const attempt = async (): Promise<{ status?: number; value?: CommandCodeCredits }> => {
+    try {
+      const response = await fetcher(`${product.apiBase}${COMMANDCODE_CREDITS_PATH}`, {
+        method: 'GET',
+        headers: { Accept: 'application/json', ...product.clientHeaders, Authorization: `Bearer ${credential.access_token}` },
+        // 调用方 signal 与本超时级联：任一先到都中断本次尝试。
+        signal: signal === undefined
+          ? AbortSignal.timeout(COMMANDCODE_CREDITS_TIMEOUT_MS)
+          : AbortSignal.any([signal, AbortSignal.timeout(COMMANDCODE_CREDITS_TIMEOUT_MS)]),
+      })
+      if (!response.ok) return { status: response.status }
+      return { value: parseCredits(await response.json().catch(() => undefined)) }
+    } catch {
+      return {} // 超时 / 网络失败 / 调用方取消 → 归入「无法得知」
+    }
   }
+  const first = await attempt()
+  if (first.value !== undefined) return first.value
+  // 首次失败：明确 4xx 不重试（key 吊销等终态，重试只拖时间）；
+  // 5xx / 超时 / 网络错误重试一次。调用方主动取消（signal.aborted）也不重试。
+  if (signal?.aborted === true) return undefined
+  if (first.status !== undefined && first.status >= 400 && first.status < 500) return undefined
+  const second = await attempt()
+  return second.value
 }
 
 /**

@@ -158,6 +158,14 @@ export function fakeContext({ inject, mounted = ['llm', 'webServer', 'timer', 'c
       },
       registerConfigurableProviders(entries) { captured.configurable = entries; return () => {} },
       registerModelDiscovery(ns, fn) { captured.discovery = fn; return () => {} },
+      // 宿主语义的最小实现：按 provider 找已注册适配器，委托其 listModels。
+      // 之前缺这个桩，channel-pack-rpc 的 model.list 在离线测试里报
+      // 「llm.listModels is not a function」（2026-11-01 幽灵补回用例首次走到它）。
+      async listModels(provider) {
+        const hit = captured.adapters.find(row => row.routes.includes(provider))
+        if (hit === undefined) throw new Error(`no adapter registered for provider "${provider}"`)
+        return await hit.adapter.listModels(provider)
+      },
     },
     webServer: {
       register(route) { onRegister?.(route); captured.serverRoutes.push(route); return () => {} },

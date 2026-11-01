@@ -66,6 +66,7 @@ import type { LoomyAuth } from './loomy-auth.js'
 import type { LoomyCredential } from './loomy.js'
 import { RACCOON } from './raccoon-product.js'
 import type { RaccoonAuth } from './raccoon-auth.js'
+import { validateApiKey } from './commandcode-auth.js'
 import type { ZcodeAuth } from './zcode-auth.js'
 import { ZCODE } from './zcode-product.js'
 import type { ZcodeCredential } from './zcode.js'
@@ -2726,9 +2727,12 @@ function registerChannelPackEndpoints(
             }
             case COMMANDCODE.id: {
               // Command Code 是长期 API Key 型渠道（**没有 refresh_token**，key 不轮换），
-              // 与 kuku / monkeycode 同为「刷新即复核」：重读凭据、确认 key 形状可用，
-              // 如实保持 `refreshable: false`；不可用就报错引导重新粘贴。
-              // 缺了本分支时点刷新会抛 `Unknown provider: commandcode`（用户报障形态）。
+              // 「刷新」即**真探活复核**：重读凭据后调 `/alpha/whoami`（validateApiKey），
+              // 401 → key 已被上游吊销，如实报错引导重新粘贴（2026-11-01 用户报障：
+              // 旧实现只查 key 形状，吊销后面板显示一切正常、直到对话 401）。
+              // ⚠️ 该分支在 handleMethod 内，codeartsFetcher（含出口绑定与取消级联）
+              // 就在作用域里，直接用 —— 与 credits.balances 的取数同一网络栈。
+              // 缺了本分支时点刷新会抛 `Unknown provider: commandcode`（历史报障形态）。
               const resolved = await ctx.credentials.resolve(credentialRef(entry.credentialRef))
               if (resolved === undefined) throw new Error('凭据未配置')
               let key = ''
@@ -2737,6 +2741,20 @@ function registerChannelPackEndpoints(
                 key = typeof parsed.access_token === 'string' ? parsed.access_token : ''
               } catch { key = '' }
               if (key === '') throw new Error('凭据不可用，请重新粘贴 API Key')
+              const verdict = await validateApiKey(codeartsFetcher, COMMANDCODE, key)
+              if (verdict.ok === false) {
+                if (verdict.reason === 'invalid_key') {
+                  // 终态：key 被吊销/不存在。上抛给调用方（「重新粘贴」引导）。
+                  throw new Error('Key 已失效（上游 401），请到 Command Code 面板重新登录或粘贴新 Key')
+                }
+                // server_error / network_error：上游波动（该端点实测约 40% 挂起），
+                // 不定罪 key —— 报可重试的临时性错误。
+                throw new Error(
+                  verdict.reason === 'server_error'
+                    ? `上游状态异常（HTTP ${verdict.status ?? '非 2xx'}），稍后重试`
+                    : '上游网络超时，稍后重试',
+                )
+              }
               await pool.updateAccount(entry.id, { refreshable: false })
               break
             }
@@ -4491,13 +4509,27 @@ function registerChannelPackEndpoints(
          * 直接显示内部编码。兜底表对这些旧 id 仍有本地化名，故问它即可。
          */
         const nameOf = (id: string): string => catalogSource?.displayNameFor?.(id) ?? id
+        /**
+         * ⚠️ **幽灵 id 不得补回**（2026-11-01 用户报障：MiniMax 面板出现
+         * `MiniMax-M2.7-highspeed`，远端早已下架）：黑名单里的 id 若**同时**
+         * 不在「全量目录」与「dead 表」里，说明它只是历史遗留的黑名单键 ——
+         * 上游下架后目录快照换了、dead 表也没它（dead 表记录的是「插件曾见过
+         * 后来失效的」，而黑名单键可以在目录更新前就存在）。把它补进目录会让
+         * 面板出现一条点进去推理必 404 的可选模型。
+         *
+         * 判据用「dead 表认识它」：认识 → 补回（有恢复路径，客户端灰显 +
+         * `model.clearDead`）；只有黑名单认识 → 丢弃（键留着无害）。
+         */
+        const deadIds = deadModelIdsFor(req.provider)
         let catalog: Array<{ id: string; name: string; isFree?: boolean }>
         if (all !== undefined) {
           catalog = [...all]
-          // 全量目录里若仍有黑名单命中却缺失者，一并补上（保底，正常不会发生）。
+          // 黑名单命中且缺失者：dead 表认识才补（见上方幽灵 id 说明）。
           const known = new Set(catalog.map((model) => model.id))
           for (const id of Object.keys(disabledMap)) {
-            if (disabledMap[id] === true && !known.has(id)) catalog.push({ id, name: nameOf(id) })
+            if (disabledMap[id] === true && !known.has(id) && deadIds.has(id)) {
+              catalog.push({ id, name: nameOf(id) })
+            }
           }
         } else {
           const listedIds = new Set(models.map((model) => model.id))
@@ -4520,10 +4552,10 @@ function registerChannelPackEndpoints(
         // ⇒ 这里把 dead 表里的 id 补回目录，并带上 `dead: true` 让客户端灰显 +
         // 提供「重新显示」入口（`model.clearDead`）。**方向必须与黑名单相反**：
         // 失效模型**永远**列出（哪怕被用户关着），否则用户没有恢复路径。
-        const dead = deadModelIdsFor(req.provider)
-        if (dead.size > 0) {
+        // （deadIds 已在上方幽灵 id 过滤处取过，直接复用。）
+        if (deadIds.size > 0) {
           const known = new Set(catalog.map((model) => model.id))
-          for (const id of dead) {
+          for (const id of deadIds) {
             if (!known.has(id)) catalog.push({ id, name: nameOf(id) })
           }
         }
@@ -4534,7 +4566,7 @@ function registerChannelPackEndpoints(
             disabled: disabledMap[model.id] === true,
             // ⚠️ **照实透传**：缺失即 false，**不推导**（黑名单命中也算用户主动关的，
             // 不是失效）。客户端据它灰显并显示「重新显示」按钮。
-            dead: dead.has(model.id),
+            dead: deadIds.has(model.id),
             // ⚠️ 免费标记**照原样透传，缺失就不写**（不编造 `false`）：Channel Pack 的
             // 模型列表按「计费/来源」分组，把「适配器没报」当成「按量计费」是
             // 保守归组，但字段本身仍保持「未知」语义（与全仓约定一致）。

@@ -86,6 +86,12 @@ const services = {
   llm: {
     registerAdapter(providers, adapter) { for (const provider of providers) adapters.set(provider, adapter) },
     listProviders: () => [...adapters.keys()].map(id => ({ id })),
+    // model.list RPC 会经 llmServiceOf 调到这里（幽灵补回用例首次走到它）。
+    async listModels(provider) {
+      const adapter = adapters.get(provider)
+      if (adapter === undefined) throw new Error(`no adapter registered for provider "${provider}"`)
+      return await adapter.listModels(provider)
+    },
   },
   connection: { fetch: { register: route => { routes.push(route) } } },
 }

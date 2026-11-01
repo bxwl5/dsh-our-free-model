@@ -200,6 +200,11 @@ async function verifyNewProviderRefreshDispatch({ ctx, call, creds }) {
   const standIn = async (input, init = {}) => {
     const url = new URL(String(input instanceof Request ? input.url : input))
     seen.push({ method: init.method ?? 'GET', url: url.href, body: String(init.body ?? '') })
+    if (url.pathname === '/alpha/whoami') {
+      // commandcode 探活替身：默认 2xx；测试可置 standIn.ccWhoamiStatus 模拟吊销。
+      const status = standIn.ccWhoamiStatus ?? 200
+      return Response.json(status === 200 ? { success: true, user: { id: 'u-1' } } : { error: 'denied' }, { status })
+    }
     if (url.pathname === '/api/auth/refresh_token') {
       return Response.json({ accessToken: 'accio-new-at', refreshToken: 'accio-rt', expiresAt: expires })
     }
@@ -309,7 +314,7 @@ async function verifyNewProviderRefreshDispatch({ ctx, call, creds }) {
         dropCredential(ref)
       }
     }
-    // ── commandcode：复核（无网络调用）──
+    // ── commandcode：真探活复核（2026-11-01：刷新分支调 /alpha/whoami）──
     {
       const accountId = 'fixture-refresh-commandcode', ref = 'FIXTURE_REFRESH_COMMANDCODE'
       try {
@@ -320,10 +325,18 @@ async function verifyNewProviderRefreshDispatch({ ctx, call, creds }) {
         await setCredential(ref, { access_token: 'cc-key-123' })
         seen.length = 0
         const result = await call('account.refresh', { accountId })
-        assert.equal(result.ok, true, 'commandcode: 不再抛 Unknown provider，复核成功')
-        assert.equal(seen.length, 0, 'commandcode: 复核不发任何网络请求')
+        assert.equal(result.ok, true, 'commandcode: whoami 2xx → 复核成功')
+        assert.equal(seen.filter(s => s.url.includes('/alpha/whoami')).length, 1, 'commandcode: 复核必须真调 /alpha/whoami')
         const entry = (await ctx.accountPool.listAllAccounts()).find(a => a.id === accountId)
         assert.equal(entry.refreshable, false, 'commandcode: 长期 key 如实保持 refreshable:false')
+        // key 被吊销（whoami 401）→ ok:false 且文案引导重新登录（2026-11-01 报障形态）
+        standIn.ccWhoamiStatus = 401
+        seen.length = 0
+        const revoked = await call('account.refresh', { accountId })
+        assert.equal(revoked.ok, false, 'commandcode: whoami 401 必须失败')
+        assert.match(revoked.error.message, /Key 已失效/)
+        assert.equal(seen.filter(s => s.url.includes('/alpha/whoami')).length, 1, 'commandcode: 401 不重试（终态）')
+        standIn.ccWhoamiStatus = undefined
         // 凭据不可用 → ok:false（如实报错）
         await setCredential(ref, { access_token: '' })
         const rejected = await call('account.refresh', { accountId })
@@ -374,11 +387,41 @@ async function verifyNewProviderRefreshDispatch({ ctx, call, creds }) {
         dropCredential(ref)
       }
     }
+    // ── model.list 幽灵补回（2026-11-01 用户报障：MiniMax 面板出现已下架的
+    //    MiniMax-M2.7-highspeed）：黑名单里的 id 只有 dead 表也认识才补回 ──
+    {
+      const accountId = 'fixture-ghost-minimax', ref = 'FIXTURE_GHOST_MINIMAX'
+      try {
+        await ctx.accountPool.addAccount({
+          id: accountId, provider: 'minimax', nickname: 'ghost-check', credentialRef: ref,
+          enabled: true, refreshable: true, createdAt: 1,
+        })
+        await setCredential(ref, { access_token: 'mm-token', refresh_token: 'mm-rt' })
+        // 黑名单埋两个"只有黑名单认识"的 id：一个历史上用户关过的下架 id、
+        // 一个 dead 表认识的（模拟：先在目录里、后失效）。
+        await ctx.accountPool.setModelDisabled('minimax', 'MiniMax-M2.7-highspeed', true)
+        await ctx.accountPool.setModelDisabled('minimax', 'MiniMax-M3', true)
+        const list = await call('model.list', { provider: 'minimax' })
+        if (!list.ok) console.error('DEBUG model.list:', JSON.stringify(list).slice(0, 300))
+        assert.equal(list.ok, true)
+        const ids = list.value.models.map(row => row.id)
+        assert.ok(!ids.includes('MiniMax-M2.7-highspeed'),
+          '幽灵 id（仅黑名单认识、目录与 dead 表都没有）不得补回 —— 点进去推理必 404')
+        assert.ok(ids.includes('MiniMax-M3'), '黑名单命中的在售模型必须出现在面板（带开关）')
+        const m3 = list.value.models.find(row => row.id === 'MiniMax-M3')
+        assert.equal(m3.disabled, true, '黑名单命中的在售模型如实标 disabled')
+      } finally {
+        await ctx.accountPool.removeAccount(accountId)
+        dropCredential(ref)
+        // 清黑名单，不污染其它用例（清 = 恢复未决定态）
+        await ctx.accountPool.clearDisabledModels?.('minimax')
+      }
+    }
   } finally {
     globalThis.fetch = originalFetch
     if (directLane) directLane.fetch = savedLane
   }
-  console.log('ok  refresh RPC (t4): commandcode/accio/accio-cn/officeace 四分支 — accio 家族与 officeace 走真续期并回写池，commandcode 走复核')
+  console.log('ok  refresh RPC (t4): commandcode/accio/accio-cn/officeace 四分支 — accio 家族与 officeace 走真续期并回写池，commandcode 走真探活；幽灵模型不补回')
 }
 
 // 单独运行没有任何断言会执行（由汇总套件 import 调用）⇒ 明确失败，别伪装成通过。
