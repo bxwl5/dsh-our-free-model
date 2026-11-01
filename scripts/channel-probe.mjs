@@ -262,7 +262,7 @@ const CHANNELS = [
     name: 'Gemini',
     loginMode: '浏览器授权（Google OAuth · PKCE）',
     notes: [
-      '模型目录是**静态兜底表**（gemini.ts GEMINI_FALLBACK_MODELS），没有 HTTP 目录端点。',
+      '模型目录 2026-11-01 起走远端 `POST /v1internal:fetchAvailableModels`（三环境轮流）；拉不到回落 gemini.ts GEMINI_FALLBACK_MODELS。',
       '⚠️ 额度/项目端点必须 POST：GET 返回 404（2026-10-23 实测）。',
       '授权 URL 的 client_id / scope 见 gemini-oauth.ts buildGeminiAuthUrl；这里用默认客户端拼一个只验存活的 URL。',
     ],

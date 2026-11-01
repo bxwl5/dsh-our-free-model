@@ -30,12 +30,21 @@ import { SerialQueue } from './serial-queue.js'
 import { ChannelNetworkError } from './channel-fetch.js'
 import {
   GEMINI,
+  GEMINI_CREDITS_TIMEOUT_MS,
+  GEMINI_ENDPOINT_DAILY,
+  GEMINI_ENDPOINT_PROD,
+  GEMINI_ENDPOINT_SANDBOX,
+  GEMINI_FETCH_AVAILABLE_MODELS_PATH,
+  geminiHeaders,
   geminiAccountLabel,
   geminiCredentialExpiresAtMs,
+  isGeminiExpired,
   isGeminiRefreshable,
+  parseGeminiAvailableModels,
   parseGeminiCredential,
   type GeminiCredential,
   type GeminiProduct,
+  type GeminiRemoteModelEntry,
 } from './gemini.js'
 import {
   credentialFromGeminiGrant,
@@ -471,5 +480,55 @@ export class GeminiAuth extends Service {
       }
       throw error
     }
+  }
+
+  /**
+   * 拉取**裸**远端模型目录（`fetchAvailableModels`，2026-11-01 接入）。
+   *
+   * 「接线侧」语义（与 minimax 的 `fetchRemoteModelsOnly` 同型）：拿不到一律
+   * 返回 `[]`，**不**回退兜底表 —— 兜底回落只由适配器展示侧做一次。
+   *
+   * ## 三环境轮流（Agent2API 规格 §3.1）
+   *
+   * `sandbox → daily → prod`，429/5xx/传输失败换下一条；4xx（403/404）不换
+   * —— 那是「这次请求本身不对」。头用**五头形态**（`geminiHeaders`，
+   * 实测与推理同款头即通，无需 vscode 形 UA）。
+   *
+   * 凭据取值：账号池可用账号优先（与推理同源），回退默认单凭据 ref。
+   * 无可用凭据 → `[]`（不抛错 —— 目录是展示信息，不该让 provider 报错）。
+   */
+  async fetchAvailableModelsOnly(pool?: AccountPool): Promise<readonly GeminiRemoteModelEntry[]> {
+    let credential: GeminiCredential | undefined
+    if (pool !== undefined) {
+      const available = await pool.getAvailableAccount(this.product.id, '')
+      if (available) credential = available.credential as unknown as GeminiCredential
+    }
+    if (credential === undefined) {
+      const resolved = await this.ctx.credentials.resolve(credentialRef(this.product.defaultCredentialRef))
+      if (resolved) credential = parseGeminiCredential(resolved.value)
+    }
+    if (credential === undefined || isGeminiExpired(credential)) return []
+    // 三环境按序尝试：4xx 不换域名（同 Agent2API models.rs 的轮换策略）。
+    for (const base of [GEMINI_ENDPOINT_SANDBOX, GEMINI_ENDPOINT_DAILY, GEMINI_ENDPOINT_PROD]) {
+      try {
+        const response = await this.fetchImpl(`${base}${GEMINI_FETCH_AVAILABLE_MODELS_PATH}`, {
+          method: 'POST',
+          headers: geminiHeaders(credential),
+          body: '{}',
+          signal: AbortSignal.timeout(GEMINI_CREDITS_TIMEOUT_MS),
+        })
+        if (!response.ok) {
+          if (response.status >= 400 && response.status < 500) return []
+          continue // 429/5xx → 换下一条
+        }
+        const body: unknown = await response.json().catch(() => undefined)
+        const entries = parseGeminiAvailableModels(body)
+        // 解析 0 条视为失败（换下一条）；全部环境都空 → `[]`，由展示侧兜底。
+        if (entries.length > 0) return entries
+      } catch {
+        // 传输失败 → 换下一条
+      }
+    }
+    return []
   }
 }

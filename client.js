@@ -3036,9 +3036,9 @@ window.__ModuleLoader__.load({
       { id: 'raccoon', name: 'Raccoon', org: '商汤', accent: '#00A6A6', note: '手机号登录', login: 'browser' },
       { id: 'minimax', name: 'MiniMax Code', org: 'MiniMax', accent: '#E4007F', note: '设备码 + PKCE，每日签到', login: 'browser' },
       { id: 'zcode', name: 'ZCode', org: '智谱', accent: '#3B6EF6', note: '浏览器登录（需本机可开浏览器）', login: 'browser' },
-      // noRemoteCatalog: Cloud Code 没有模型列表端点（用户拍板用静态表），
-      // 故不显示「刷新模型」按钮 —— 点了也只会报「暂不支持」。
-      { id: 'gemini', name: 'Gemini', org: 'Google Code Assist', accent: '#4285F4', note: '本地回调 OAuth 免费线', login: 'browser', noRemoteCatalog: true },
+      // 2026-11-01：接入远端模型目录（fetchAvailableModels，Antigravity 规格），
+      // 卡片恢复「刷新模型」按钮；首拉失败时适配器回落静态兜底表。
+      { id: 'gemini', name: 'Gemini', org: 'Google Antigravity', accent: '#4285F4', note: '本地回调 OAuth 免费线', login: 'browser' },
       { id: 'commandcode', name: 'Command Code', org: 'Command Code', accent: '#111827', note: '浏览器授权，自动回调', login: 'browser' },
       { id: 'monkeycode', name: 'MonkeyCode', org: '长亭科技', accent: '#F97316', note: '粘贴 Cookie；每日签到 100 积分', login: 'cookie', loginPage: 'https://monkeycode-ai.com', cookieName: 'baizhi_session（百智云，推荐·自动换出 MonkeyCode 会话）或 monkeycode_ai_session（旧版 nebula_session 也收）' },
       // noRemoteCatalog: OrcaTerm 没有模型目录端点（模型表是静态白名单）。

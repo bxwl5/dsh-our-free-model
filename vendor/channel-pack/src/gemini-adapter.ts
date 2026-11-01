@@ -61,7 +61,10 @@ import {
   type GeminiCredential,
   type GeminiModelEntry,
   type GeminiProduct,
+  type GeminiRemoteModelEntry,
 } from './gemini.js'
+import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
+import { RemoteCatalogGate } from './remote-catalog-gate.js'
 import { consumeGeminiSse, translateGeminiRequest } from './gemini-messages.js'
 import { persistGeminiProject, resolveGeminiProject } from './gemini-project.js'
 import type { GeminiSigStore } from './gemini-sigstore.js'
@@ -257,15 +260,29 @@ export interface GeminiAdapterOptions {
   logger?: { warn(message: string): void }
   /** 产品配置；默认 {@link GEMINI}。 */
   product?: GeminiProduct
+  /**
+   * **强制**重拉远端模型目录（`fetchAvailableModels`）。
+   *
+   * 由接线侧提供（`geminiAuth.fetchAvailableModelsOnly(pool)`）；缺省 = 该部署
+   * 不支持远端目录，`loadModels` 退回静态兜底表（与旧形态等价）。
+   */
+  fetchRemoteModels?: () => Promise<readonly GeminiRemoteModelEntry[]>
+  /** 远端目录冷却闸门（并发去重 + 失败冷却）；测试可注入。 */
+  catalogGate?: RemoteCatalogGate
 }
 
 /** Gemini（Cloud Code Assist）模型适配器。 */
 export class GeminiAdapter extends LlmAdapter {
   private readonly product: GeminiProduct
+  /** 远端目录（拉到即缓存；undefined = 尚未拉到，用兜底表）。 */
+  private remoteModels: readonly GeminiModelEntry[] | undefined
+  /** 目录加载闸门：并发去重 + 失败/空结果冷却（与 minimax 同款）。 */
+  private readonly catalogGate: RemoteCatalogGate
 
   constructor(private readonly options: GeminiAdapterOptions) {
     super()
     this.product = options.product ?? GEMINI
+    this.catalogGate = options.catalogGate ?? new RemoteCatalogGate()
   }
 
   providerInfo(provider: string): LlmProviderInfo {
@@ -274,13 +291,68 @@ export class GeminiAdapter extends LlmAdapter {
   }
 
   /**
-   * 静态模型表（用户拍板：不拉远端目录）。
+   * 模型表：**远端目录优先**（`fetchAvailableModels`，2026-11-01 接入），
+   * 拉不到时依次回落「上次成功落盘的快照」→「静态兜底表」。
    *
-   * ⚠️ 静态表**每次现算**（纯本地、零成本），不做任何缓存 —— 缓存只会带来
-   * 「表被改过但进程还拿着旧值」这一种故障。
+   * ## 三级回落的依据
+   *
+   * - 远端缓存与快照都按 minimax-adapter 同款语义：只缓存**真实远端结果**，
+   *   兜底表每次现算（纯本地零成本），避免「一次瞬时失败永久钉死兜底表」。
+   * - 快照恢复走 `restoreModelCatalog`（与 writeModelCatalogClosingNew 的
+   *   新模型自动关闭规则衔接 —— 远端新 id 照样进黑名单，需要用户手动打开）。
+   *
+   * ⚠️ 远端请求经 {@link RemoteCatalogGate}：并发去重 + 失败/空结果冷却
+   * （30s），挡住「每个模型重试一次」的放大。
    */
-  private loadModels(): readonly GeminiModelEntry[] {
+  private async loadModels(): Promise<readonly GeminiModelEntry[]> {
+    if (this.remoteModels !== undefined) return this.remoteModels
+    const fetchRemote = this.options.fetchRemoteModels
+    if (fetchRemote !== undefined) {
+      await this.catalogGate.run(async () => {
+        const fetched = await fetchRemote()
+        if (fetched.length === 0) return false
+        this.remoteModels = fetched
+        void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool)
+        return true
+      })
+      if (this.remoteModels !== undefined) return this.remoteModels
+    }
+    // 远端这次没拉到：用上次成功落盘的快照顶替编译期兜底表（minimax 同款）。
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels)
+    if (this.remoteModels !== undefined) return this.remoteModels
     return geminiFallbackEntries()
+  }
+
+  /**
+   * **强制**重拉远端目录（「重新获取模型」按钮）。
+   *
+   * 绕过内存缓存与闸门冷却，直接打远端；失败保留上次目录（返回 false）。
+   */
+  async refreshCatalog(): Promise<boolean> {
+    const fetchRemote = this.options.fetchRemoteModels
+    if (fetchRemote === undefined) return false
+    try {
+      const fetched = await fetchRemote()
+      if (fetched.length === 0) return false
+      this.remoteModels = fetched
+      void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * 当前目录的**同步**读取（不触发远端拉取）。
+   *
+   * 三级：内存远端缓存 → 落盘快照 → 静态兜底。与 {@link loadModels} 的差别只在
+   * 「要不要发请求」—— 供必须同步的消费者用（`listAllModels` / `displayNameFor`，
+   * 见 minimax-adapter.ts:218-242 记录的同类约束：写成 async 会让
+   * `channel-pack-rpc.ts` 的 `[...all]` / `all.map` 抛 TypeError）。
+   */
+  private currentModels(): readonly GeminiModelEntry[] {
+    if (this.remoteModels !== undefined) return this.remoteModels
+    return restoreModelCatalog(this.product.id, this.remoteModels) ?? geminiFallbackEntries()
   }
 
   /**
@@ -291,7 +363,7 @@ export class GeminiAdapter extends LlmAdapter {
    * `:2125 all.map` 抛 `TypeError: all is not iterable`）。
    */
   listAllModels(): readonly { id: string; name: string }[] {
-    return this.loadModels().map((model) => ({ id: model.id, name: model.name }))
+    return this.currentModels().map((model) => ({ id: model.id, name: model.name }))
   }
 
   /**
@@ -301,7 +373,7 @@ export class GeminiAdapter extends LlmAdapter {
    * 把裸 id 当展示名（用户 2026-10-26 报障的同类问题）。
    */
   displayNameFor(modelId: string): string | undefined {
-    return this.loadModels().find((model) => model.id === modelId)?.name
+    return this.currentModels().find((model) => model.id === modelId)?.name
   }
 
   private inputModalitiesFor(
@@ -315,7 +387,7 @@ export class GeminiAdapter extends LlmAdapter {
     // **必须返回空数组而不能抛错**（抛错会多一条 provider 报错）。
     if (!await providerCatalogVisible(this.options.accountPool, this.product.id)) return []
 
-    const all = this.loadModels()
+    const all = await this.loadModels()
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id)
     const listed = disabled === undefined || disabled.size === 0
       ? all
@@ -334,7 +406,7 @@ export class GeminiAdapter extends LlmAdapter {
     model: string,
     _signal?: AbortSignal,
   ): Promise<LlmResolvedModelInfo> {
-    const entry = this.loadModels().find((item) => item.id === model)
+    const entry = this.currentModels().find((item) => item.id === model)
     const resolved: LlmResolvedModelInfo = {
       provider,
       id: model,
@@ -478,7 +550,7 @@ export class GeminiAdapter extends LlmAdapter {
     // ⚠️ 限流标记 / `account.test` 探测链路传来的是**带档位的名字**
     // （写标记用请求原始 id），先归一化再查表 —— 否则「测一下被限流的
     // 档位」会被误拒（探测功能回归）。
-    const entry = this.loadModels().find((item) => item.id === geminiCanonicalModelId(options.model))
+    const entry = this.currentModels().find((item) => item.id === geminiCanonicalModelId(options.model))
     if (entry === undefined) {
       throw new LlmError(
         `gemini: 模型 "${options.model}" 不在本 provider 目录中（仅支持 ${GEMINI_UPSTREAM_FLASH}）`,

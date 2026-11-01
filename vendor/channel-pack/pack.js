@@ -62389,9 +62389,11 @@ import { randomBytes as randomBytes10 } from "node:crypto";
 import { LlmError as LlmError20, ReasoningEffortId as ReasoningEffortId13 } from "@deepseek-ai/dsh-llm";
 var GEMINI_ENDPOINT_DAILY = "https://daily-cloudcode-pa.googleapis.com";
 var GEMINI_ENDPOINT_SANDBOX = "https://daily-cloudcode-pa.sandbox.googleapis.com";
+var GEMINI_ENDPOINT_PROD = "https://cloudcode-pa.googleapis.com";
 var GEMINI_ENDPOINTS = [GEMINI_ENDPOINT_DAILY, GEMINI_ENDPOINT_SANDBOX];
 var GEMINI_STREAM_PATH = "/v1internal:streamGenerateContent?alt=sse";
 var GEMINI_QUOTA_PATH = "/v1internal:retrieveUserQuotaSummary";
+var GEMINI_FETCH_AVAILABLE_MODELS_PATH = "/v1internal:fetchAvailableModels";
 var GEMINI_LOAD_CODE_ASSIST_PATH = "/v1internal:loadCodeAssist";
 var GEMINI_LOAD_CODE_ASSIST_BODY = '{"metadata":{"ideType":"ANTIGRAVITY"}}';
 var GEMINI_IDENTITY_HEADERS = Object.freeze({
@@ -62527,6 +62529,39 @@ var GEMINI_FALLBACK_MODELS = [
 function geminiFallbackEntries() {
   return GEMINI_FALLBACK_MODELS;
 }
+function parseGeminiAvailableModels(payload) {
+  if (typeof payload !== "object" || payload === null) return [];
+  const models = payload.models;
+  if (typeof models !== "object" || models === null || Array.isArray(models)) return [];
+  const out = [];
+  for (const [id, raw] of Object.entries(models)) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const entry = raw;
+    if (!id.startsWith("gemini-")) continue;
+    const displayName = typeof entry.displayName === "string" ? entry.displayName : "";
+    if (displayName === "") continue;
+    const contextWindow = positiveIntField(entry.maxTokens) ?? GEMINI_CONTEXT_WINDOW;
+    const maxOutput = positiveIntField(entry.maxOutputTokens) ?? GEMINI.maxOutputTokens;
+    const supportsThinking = entry.supportsThinking === true;
+    const quota = typeof entry.quotaInfo === "object" && entry.quotaInfo !== null ? entry.quotaInfo : {};
+    const remaining = typeof quota.remainingFraction === "number" && Number.isFinite(quota.remainingFraction) ? quota.remainingFraction : void 0;
+    out.push({
+      id,
+      name: displayName,
+      contextWindow,
+      maxTokens: maxOutput,
+      supportsImage: entry.supportsImages === true,
+      ...supportsThinking ? { effortOptions: GEMINI_EFFORT_IDS, defaultEffort: GEMINI_DEFAULT_EFFORT } : {},
+      ...remaining === void 0 ? {} : { remainingFraction: remaining },
+      ...typeof entry.thinkingBudget === "number" && Number.isFinite(entry.thinkingBudget) ? { thinkingBudget: entry.thinkingBudget } : {}
+    });
+  }
+  return out;
+}
+function positiveIntField(value) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return void 0;
+  return Math.round(value);
+}
 function geminiEffortToTier(effort) {
   if (effort === "low" || effort === "medium" || effort === "high" || effort === "tiered") {
     return effort;
@@ -62546,20 +62581,28 @@ function geminiCanonicalModelId(modelId) {
   return modelId;
 }
 function geminiModelSpec(modelId, effort) {
-  if (geminiCanonicalModelId(modelId) !== GEMINI_UPSTREAM_FLASH) {
+  if (!modelId.startsWith("gemini-")) {
     throw new LlmError20(
-      `gemini: \u6A21\u578B "${modelId}" \u4E0D\u5728\u672C provider \u76EE\u5F55\u4E2D\uFF08\u4EC5\u652F\u6301 ${GEMINI_UPSTREAM_FLASH}\uFF09`,
+      `gemini: \u6A21\u578B "${modelId}" \u4E0D\u5728\u672C provider \u76EE\u5F55\u4E2D\uFF08\u4EC5\u652F\u6301 gemini- \u524D\u7F00\u6A21\u578B\uFF09`,
       "INVALID_REQUEST",
       // ⚠️ `status` 只落在 `LlmError.failure`（不是顶层属性），且网关的
       // `failureToOpenAiError` 两处都要读 —— 见 `openai-gateway/stream.ts`。
       { status: 404 }
     );
   }
-  const tier = geminiEffortToTier(effort);
+  if (geminiCanonicalModelId(modelId) === GEMINI_UPSTREAM_FLASH && modelId === GEMINI_UPSTREAM_FLASH) {
+    const tier = geminiEffortToTier(effort);
+    return {
+      upstream: `${GEMINI_UPSTREAM_FLASH}-${tier}`,
+      tier,
+      thinkingBudget: geminiThinkingBudget(tier),
+      includeThoughts: true
+    };
+  }
   return {
-    upstream: `${GEMINI_UPSTREAM_FLASH}-${tier}`,
-    tier,
-    thinkingBudget: geminiThinkingBudget(tier),
+    upstream: modelId,
+    tier: "medium",
+    thinkingBudget: geminiThinkingBudget("medium"),
     includeThoughts: true
   };
 }
@@ -64425,21 +64468,78 @@ var GeminiAdapter = class extends LlmAdapter16 {
     super();
     this.options = options;
     this.product = options.product ?? GEMINI;
+    this.catalogGate = options.catalogGate ?? new RemoteCatalogGate();
   }
   options;
   product;
+  /** 远端目录（拉到即缓存；undefined = 尚未拉到，用兜底表）。 */
+  remoteModels;
+  /** 目录加载闸门：并发去重 + 失败/空结果冷却（与 minimax 同款）。 */
+  catalogGate;
   providerInfo(provider) {
     const id = typeof provider === "string" && provider.length > 0 ? provider : this.product.id;
     return { id, name: this.product.displayName };
   }
   /**
-   * 静态模型表（用户拍板：不拉远端目录）。
+   * 模型表：**远端目录优先**（`fetchAvailableModels`，2026-11-01 接入），
+   * 拉不到时依次回落「上次成功落盘的快照」→「静态兜底表」。
    *
-   * ⚠️ 静态表**每次现算**（纯本地、零成本），不做任何缓存 —— 缓存只会带来
-   * 「表被改过但进程还拿着旧值」这一种故障。
+   * ## 三级回落的依据
+   *
+   * - 远端缓存与快照都按 minimax-adapter 同款语义：只缓存**真实远端结果**，
+   *   兜底表每次现算（纯本地零成本），避免「一次瞬时失败永久钉死兜底表」。
+   * - 快照恢复走 `restoreModelCatalog`（与 writeModelCatalogClosingNew 的
+   *   新模型自动关闭规则衔接 —— 远端新 id 照样进黑名单，需要用户手动打开）。
+   *
+   * ⚠️ 远端请求经 {@link RemoteCatalogGate}：并发去重 + 失败/空结果冷却
+   * （30s），挡住「每个模型重试一次」的放大。
    */
-  loadModels() {
+  async loadModels() {
+    if (this.remoteModels !== void 0) return this.remoteModels;
+    const fetchRemote = this.options.fetchRemoteModels;
+    if (fetchRemote !== void 0) {
+      await this.catalogGate.run(async () => {
+        const fetched = await fetchRemote();
+        if (fetched.length === 0) return false;
+        this.remoteModels = fetched;
+        void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool);
+        return true;
+      });
+      if (this.remoteModels !== void 0) return this.remoteModels;
+    }
+    this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels);
+    if (this.remoteModels !== void 0) return this.remoteModels;
     return geminiFallbackEntries();
+  }
+  /**
+   * **强制**重拉远端目录（「重新获取模型」按钮）。
+   *
+   * 绕过内存缓存与闸门冷却，直接打远端；失败保留上次目录（返回 false）。
+   */
+  async refreshCatalog() {
+    const fetchRemote = this.options.fetchRemoteModels;
+    if (fetchRemote === void 0) return false;
+    try {
+      const fetched = await fetchRemote();
+      if (fetched.length === 0) return false;
+      this.remoteModels = fetched;
+      void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * 当前目录的**同步**读取（不触发远端拉取）。
+   *
+   * 三级：内存远端缓存 → 落盘快照 → 静态兜底。与 {@link loadModels} 的差别只在
+   * 「要不要发请求」—— 供必须同步的消费者用（`listAllModels` / `displayNameFor`，
+   * 见 minimax-adapter.ts:218-242 记录的同类约束：写成 async 会让
+   * `channel-pack-rpc.ts` 的 `[...all]` / `all.map` 抛 TypeError）。
+   */
+  currentModels() {
+    if (this.remoteModels !== void 0) return this.remoteModels;
+    return restoreModelCatalog(this.product.id, this.remoteModels) ?? geminiFallbackEntries();
   }
   /**
    * 完整目录（**不套黑名单**），供 Channel Pack「显示列表」用。
@@ -64449,7 +64549,7 @@ var GeminiAdapter = class extends LlmAdapter16 {
    * `:2125 all.map` 抛 `TypeError: all is not iterable`）。
    */
   listAllModels() {
-    return this.loadModels().map((model) => ({ id: model.id, name: model.name }));
+    return this.currentModels().map((model) => ({ id: model.id, name: model.name }));
   }
   /**
    * 单个 id 的友好展示名（供 `model.list` 补回被关闭/已失效的模型用）。
@@ -64458,14 +64558,14 @@ var GeminiAdapter = class extends LlmAdapter16 {
    * 把裸 id 当展示名（用户 2026-10-26 报障的同类问题）。
    */
   displayNameFor(modelId) {
-    return this.loadModels().find((model) => model.id === modelId)?.name;
+    return this.currentModels().find((model) => model.id === modelId)?.name;
   }
   inputModalitiesFor(entry) {
     return entry?.supportsImage === true ? ["text", "image"] : ["text"];
   }
   async listModels(_provider) {
     if (!await providerCatalogVisible(this.options.accountPool, this.product.id)) return [];
-    const all = this.loadModels();
+    const all = await this.loadModels();
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id);
     const listed = disabled === void 0 || disabled.size === 0 ? all : all.filter((model) => !disabled.has(model.id));
     return listed.map((model) => ({
@@ -64476,7 +64576,7 @@ var GeminiAdapter = class extends LlmAdapter16 {
     }));
   }
   async resolveModel(provider, model, _signal) {
-    const entry = this.loadModels().find((item) => item.id === model);
+    const entry = this.currentModels().find((item) => item.id === model);
     const resolved = {
       provider,
       id: model,
@@ -64582,7 +64682,7 @@ var GeminiAdapter = class extends LlmAdapter16 {
    * 6. 全部试完 → 抛 `QUOTA_EXCEEDED`（不无限切）。
    */
   async *stream(options) {
-    const entry = this.loadModels().find((item) => item.id === geminiCanonicalModelId(options.model));
+    const entry = this.currentModels().find((item) => item.id === geminiCanonicalModelId(options.model));
     if (entry === void 0) {
       throw new LlmError21(
         `gemini: \u6A21\u578B "${options.model}" \u4E0D\u5728\u672C provider \u76EE\u5F55\u4E2D\uFF08\u4EC5\u652F\u6301 ${GEMINI_UPSTREAM_FLASH}\uFF09`,
@@ -73916,6 +74016,52 @@ var GeminiAuth = class extends Service11 {
       throw error;
     }
   }
+  /**
+   * 拉取**裸**远端模型目录（`fetchAvailableModels`，2026-11-01 接入）。
+   *
+   * 「接线侧」语义（与 minimax 的 `fetchRemoteModelsOnly` 同型）：拿不到一律
+   * 返回 `[]`，**不**回退兜底表 —— 兜底回落只由适配器展示侧做一次。
+   *
+   * ## 三环境轮流（Agent2API 规格 §3.1）
+   *
+   * `sandbox → daily → prod`，429/5xx/传输失败换下一条；4xx（403/404）不换
+   * —— 那是「这次请求本身不对」。头用**五头形态**（`geminiHeaders`，
+   * 实测与推理同款头即通，无需 vscode 形 UA）。
+   *
+   * 凭据取值：账号池可用账号优先（与推理同源），回退默认单凭据 ref。
+   * 无可用凭据 → `[]`（不抛错 —— 目录是展示信息，不该让 provider 报错）。
+   */
+  async fetchAvailableModelsOnly(pool) {
+    let credential;
+    if (pool !== void 0) {
+      const available2 = await pool.getAvailableAccount(this.product.id, "");
+      if (available2) credential = available2.credential;
+    }
+    if (credential === void 0) {
+      const resolved = await this.ctx.credentials.resolve(credentialRef15(this.product.defaultCredentialRef));
+      if (resolved) credential = parseGeminiCredential(resolved.value);
+    }
+    if (credential === void 0 || isGeminiExpired(credential)) return [];
+    for (const base of [GEMINI_ENDPOINT_SANDBOX, GEMINI_ENDPOINT_DAILY, GEMINI_ENDPOINT_PROD]) {
+      try {
+        const response = await this.fetchImpl(`${base}${GEMINI_FETCH_AVAILABLE_MODELS_PATH}`, {
+          method: "POST",
+          headers: geminiHeaders(credential),
+          body: "{}",
+          signal: AbortSignal.timeout(GEMINI_CREDITS_TIMEOUT_MS)
+        });
+        if (!response.ok) {
+          if (response.status >= 400 && response.status < 500) return [];
+          continue;
+        }
+        const body = await response.json().catch(() => void 0);
+        const entries = parseGeminiAvailableModels(body);
+        if (entries.length > 0) return entries;
+      } catch {
+      }
+    }
+    return [];
+  }
 };
 
 // vendor/channel-pack/src/gemini-sigstore.ts
@@ -75681,8 +75827,10 @@ function apply(ctx, config = {}) {
         await gemini.refresh();
       }
     },
-    // 模型表是**静态**的（用户拍板：不拉远端目录，Cloud Code 没有模型列表端点）。
-    // 故这里不传 `fetchRemoteModels`。
+    // 模型表：**远端目录优先**（`fetchAvailableModels`，2026-11-01 接入 ——
+    // Agent2API `models.rs` 同款规格实测可用，个人 free-tier 也下发全量清单）；
+    // 拉不到时适配器内回落「上次快照 → 静态兜底表」（旧形态等价保留）。
+    fetchRemoteModels: () => gemini.fetchAvailableModelsOnly(pool),
     // 图片两跳：先按 640,000 px 预算取缩放版，拿不到才发原图。
     readImage: makeReadImage(ctx),
     readImageRequest: makeReadImageRequest(ctx),

@@ -66,6 +66,14 @@ export const GEMINI_ENDPOINT_DAILY = 'https://daily-cloudcode-pa.googleapis.com'
 /** 沙箱端点（`client.go` 的 `EndpointSandbox`）。 */
 export const GEMINI_ENDPOINT_SANDBOX = 'https://daily-cloudcode-pa.sandbox.googleapis.com'
 /**
+ * prod 端点（Agent2API `V1_BASE_URL_PROD`；2026-11-01 补）。
+ *
+ * ⚠️ project 发现（loadCodeAssist / onboardUser）**固定走 prod**：规格坑 #16 +
+ * Agent2API `PROJECT_BASE_URL` 的注释原话「the daily host rejects these
+ * auth/onboarding calls」—— 之前只登记 daily/sandbox 两条是缺口。
+ */
+export const GEMINI_ENDPOINT_PROD = 'https://cloudcode-pa.googleapis.com'
+/**
  * 端点轮换顺序（原版 `NewClient` 的初始 `endpoints`）。
  *
  * ⚠️ 用户 2026-10-03 澄清：**两端点的差异未获实验支持**（404 与 project 两类
@@ -78,6 +86,14 @@ export const GEMINI_ENDPOINTS: readonly string[] = [GEMINI_ENDPOINT_DAILY, GEMIN
 export const GEMINI_STREAM_PATH = '/v1internal:streamGenerateContent?alt=sse'
 /** 配额查询路径（**Summary 变体**，请求体见 `gemini-credits.ts`）。 */
 export const GEMINI_QUOTA_PATH = '/v1internal:retrieveUserQuotaSummary'
+/**
+ * 远端模型目录路径（`fetchAvailableModels`，2026-11-01 接入）。
+ *
+ * 三环境轮流（Agent2API 规格 §3.1：sandbox → daily → prod，429/5xx/传输失败
+ * 才换下一条；4xx 不换 —— 那是「这次请求本身不对」）。实测个人 free-tier
+ * 账号三个环境都下发全量清单。
+ */
+export const GEMINI_FETCH_AVAILABLE_MODELS_PATH = '/v1internal:fetchAvailableModels'
 /**
  * 账号档位 / 项目探测路径。
  *
@@ -427,11 +443,19 @@ export interface GeminiModelEntry {
 }
 
 /**
- * 静态模型表（用户拍板：**静态表**，不拉远端目录）。
+ * 静态兜底表（**远端目录拉不到时的回落**，2026-11-01 更正）。
  *
- * 暴露 1 条：主模型带 4 档 efforts。
- * ⚠️ **不暴露 4 个带后缀的模型名** —— 档位走 efforts 下拉框。
- * ⚠️ **不暴露 lite**（用户 2026-10-03 拍板）：上游恒 404，暴露即坑。
+ * ## 2026-11-01 起主路径是**远端目录**
+ *
+ * `fetchAvailableModels` 端点实测可用（Agent2API `models.rs` 同款规格：
+ * 五头 + 空 body 即可，个人 free-tier 账号也下发全量清单 + 每模型配额）。
+ * 静态表退居「远端失败时的兜底」，内容收敛到实测在售的核心 id。
+ *
+ * ## 兜底表为何只有主模型
+ *
+ * - ⚠️ **不暴露 4 个带后缀的模型名** —— 档位走 efforts 下拉框。
+ * - ⚠️ **不暴露 lite**（用户 2026-10-03 拍板）：旧通道实测恒 404，暴露即坑。
+ *   （远端目录里新通道的 lite 系条目由远端路径负责，与本表无关。）
  */
 export const GEMINI_FALLBACK_MODELS: readonly GeminiModelEntry[] = [
   {
@@ -445,9 +469,90 @@ export const GEMINI_FALLBACK_MODELS: readonly GeminiModelEntry[] = [
   },
 ]
 
-/** 取静态模型表。 */
+/** 取静态兜底表。 */
 export function geminiFallbackEntries(): readonly GeminiModelEntry[] {
   return GEMINI_FALLBACK_MODELS
+}
+
+// ---------------------------------------------------------------------------
+// 远端模型目录（fetchAvailableModels，2026-11-01 接入）
+// ---------------------------------------------------------------------------
+
+/** 远端目录条目（`fetchAvailableModels` 的 `models` 值，字段按需归一）。 */
+export interface GeminiRemoteModelEntry extends GeminiModelEntry {
+  /** 远端配额剩余比例（0-1）；缺省 = 未下发。 */
+  readonly remainingFraction?: number
+  /** 远端思考预算建议值（非本插件档位表）。 */
+  readonly thinkingBudget?: number
+}
+
+/**
+ * 解析 `fetchAvailableModels` 响应。
+ *
+ * 上游形态（Agent2API `models.rs` §5.1 同款实测）：
+ *
+ * ```json
+ * { "models": { "<id>": { displayName, supportsImages, supportsThinking,
+ *   thinkingBudget, recommended, maxTokens, maxOutputTokens, quotaInfo:
+ *   { remainingFraction, resetTime } } }, "deprecatedModelIds": {...} }
+ * ```
+ *
+ * ⚠️ `models` 是**以 id 为键的对象**（不是数组）。
+ *
+ * ⚠️ **过滤两类噪音 id**（实测响应里确实有）：`chat_23310` / `tab_jump_flash_lite_preview`
+ * 这类内部占位条目（无 displayName、无 quotaInfo）不进目录。
+ * ⚠️ **只接 Gemini 家族**（id 前缀 `gemini-`）：响应里还有 `claude-sonnet-4-6` /
+ * `claude-opus-4-6-thinking` / `gpt-oss-120b-medium`，但本插件的推理协议/工具
+ * 语义按 Gemini 信封实现，未实现的通道不广告（Agent2API 同款前缀白名单策略）。
+ */
+export function parseGeminiAvailableModels(payload: unknown): readonly GeminiRemoteModelEntry[] {
+  if (typeof payload !== 'object' || payload === null) return []
+  const models = (payload as Record<string, unknown>).models
+  if (typeof models !== 'object' || models === null || Array.isArray(models)) return []
+  const out: GeminiRemoteModelEntry[] = []
+  for (const [id, raw] of Object.entries(models as Record<string, unknown>)) {
+    if (typeof raw !== 'object' || raw === null) continue
+    const entry = raw as Record<string, unknown>
+    // ⚠️ 白名单（2026-11-01 实测后放宽）：
+    // - `gemini-` 前缀：远端 id 就是上游真名，逐 id 推理探针验证 3.8 系 /
+    //   gemini-3-flash 均 200（2.5-pro 一次 503 为上游临时），全部放行。
+    // - `claude-*` / `gpt-oss-*` 不接：本插件的推理信封是 Gemini 形态，
+    //   未实现的通道不广告（Agent2API 同款前缀白名单策略）。
+    // - 占位 id（chat_NNN / tab_*）无 displayName，由下面判挡。
+    if (!id.startsWith('gemini-')) continue
+    const displayName = typeof entry.displayName === 'string' ? entry.displayName : ''
+    if (displayName === '') continue
+    const contextWindow = positiveIntField(entry.maxTokens) ?? GEMINI_CONTEXT_WINDOW
+    const maxOutput = positiveIntField(entry.maxOutputTokens) ?? GEMINI.maxOutputTokens
+    // 思考档位：上游只给 supportsThinking / thinkingBudget，档位表由本插件
+    // 的 efforts 统一表达（远端 thinkingBudget 仅记录）。
+    const supportsThinking = entry.supportsThinking === true
+    const quota = typeof entry.quotaInfo === 'object' && entry.quotaInfo !== null
+      ? entry.quotaInfo as Record<string, unknown>
+      : {}
+    const remaining = typeof quota.remainingFraction === 'number' && Number.isFinite(quota.remainingFraction)
+      ? quota.remainingFraction
+      : undefined
+    out.push({
+      id,
+      name: displayName,
+      contextWindow,
+      maxTokens: maxOutput,
+      supportsImage: entry.supportsImages === true,
+      ...(supportsThinking ? { effortOptions: GEMINI_EFFORT_IDS, defaultEffort: GEMINI_DEFAULT_EFFORT } : {}),
+      ...(remaining === undefined ? {} : { remainingFraction: remaining }),
+      ...(typeof entry.thinkingBudget === 'number' && Number.isFinite(entry.thinkingBudget)
+        ? { thinkingBudget: entry.thinkingBudget }
+        : {}),
+    })
+  }
+  return out
+}
+
+/** 正整数字段提取（`parseGeminiAvailableModels` 内部用）。 */
+function positiveIntField(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined
+  return Math.round(value)
 }
 
 /** 档位 id 归一（未知/缺省一律 medium，同原版 `EffortToTier` 默认分支）。 */
@@ -496,35 +601,50 @@ export function geminiCanonicalModelId(modelId: string): string {
 /**
  * 由「模型 id + 用户选的档位」得出上游模型规格。
  *
- * ⚠️ 模型名必须带档位后缀 —— 它是上游的准入钥匙（见文件头实测）。
+ * ## 2026-11-01 起支持远端目录的**全 Gemini 家族**
  *
- * ⚠️ **`modelId` 严格校验**：静态表（{@link GEMINI_FALLBACK_MODELS}）只暴露
- * `gemini-3.8-flash` 一个模型，upstream 恒为 `gemini-3.8-flash-<tier>`。
- * 曾经「任何 id 都放行」是有意的宽容（网关实测 `gemini/gemini-9.9-fake`、
- * `gemini/totally-bogus` 均 200 并正常作答 —— 名字根本没参与上游请求），
- * 但宽容的代价是**用户写错模型名时静默跑出 3.8 的答案且无任何征兆**
- * （不报错、不降级、答案就是不对，极难排查），故改为拒绝：未知 id 直接抛
- * `INVALID_REQUEST`，不发上游请求。带档位的 3.8 名（`gemini-3.8-flash-high`
- * 等，来自限流标记 / 探测链路）经 {@link geminiCanonicalModelId} 归一化后
- * 放行。
- * **加第二个模型时必须先用 `modelId` 选 upstream** —— 否则表里两个模型会撞车
- * （用户选 A、实际跑 B），症状与上述宽容完全相同。
+ * `fetchAvailableModels` 实测（Agent2API 规格）：远端下发的 id 就是上游真名，
+ * 逐 id 推理探针验证 `gemini-3.8-flash-medium` / `-tiered` / `gemini-3-flash`
+ * 均 200 —— **上游按请求体的 `model` 原样路由，名字本身不参与准入校验**
+ * （这与文件头「模型名是准入钥匙」的旧结论并不矛盾：那是旧通道/旧凭据时期
+ * 的现象，Antigravity free-tier 新通道实测不再卡名字）。
+ *
+ * 规则：
+ * - **裸 `gemini-3.8-flash`**（静态兜底表条目）：拼档位后缀（`-<tier>`）——
+ *   档位是用户在 UI 下拉框选的，efforts 表也只在它身上声明。
+ * - **其余 `gemini-` 前缀 id**（远端目录原样名，如 `gemini-3.8-flash-medium` /
+ *   `gemini-3-flash` / `gemini-2.5-pro`）：**原样透传**，不吃档位 —— 这些 id
+ *   已是上游真名，拼后缀反而 404。
+ * - **非 `gemini-` 前缀 / 目录外 id**：拒绝（保留旧「写错名静默跑 3.8」的防线）。
+ *
+ * ⚠️ 远端条目的档位不映射 effort：它们的 supportsThinking 只影响
+ * `inputModalities` 展示，思考预算由上游默认值决定（Agent2API 同口径）。
  */
 export function geminiModelSpec(modelId: string, effort?: string): GeminiModelSpec {
-  if (geminiCanonicalModelId(modelId) !== GEMINI_UPSTREAM_FLASH) {
+  if (!modelId.startsWith('gemini-')) {
     throw new LlmError(
-      `gemini: 模型 "${modelId}" 不在本 provider 目录中（仅支持 ${GEMINI_UPSTREAM_FLASH}）`,
+      `gemini: 模型 "${modelId}" 不在本 provider 目录中（仅支持 gemini- 前缀模型）`,
       'INVALID_REQUEST',
       // ⚠️ `status` 只落在 `LlmError.failure`（不是顶层属性），且网关的
       // `failureToOpenAiError` 两处都要读 —— 见 `openai-gateway/stream.ts`。
       { status: 404 },
     )
   }
-  const tier = geminiEffortToTier(effort)
+  // 静态兜底表的裸主模型：档位后缀是准入钥匙，走档位表。
+  if (geminiCanonicalModelId(modelId) === GEMINI_UPSTREAM_FLASH && modelId === GEMINI_UPSTREAM_FLASH) {
+    const tier = geminiEffortToTier(effort)
+    return {
+      upstream: `${GEMINI_UPSTREAM_FLASH}-${tier}`,
+      tier,
+      thinkingBudget: geminiThinkingBudget(tier),
+      includeThoughts: true,
+    }
+  }
+  // 远端目录原样名（含分段档 / tiered / 其它家族）：原样透传。
   return {
-    upstream: `${GEMINI_UPSTREAM_FLASH}-${tier}`,
-    tier,
-    thinkingBudget: geminiThinkingBudget(tier),
+    upstream: modelId,
+    tier: 'medium',
+    thinkingBudget: geminiThinkingBudget('medium'),
     includeThoughts: true,
   }
 }

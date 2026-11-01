@@ -1630,8 +1630,10 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
         await gemini.refresh()
       }
     },
-    // 模型表是**静态**的（用户拍板：不拉远端目录，Cloud Code 没有模型列表端点）。
-    // 故这里不传 `fetchRemoteModels`。
+    // 模型表：**远端目录优先**（`fetchAvailableModels`，2026-11-01 接入 ——
+    // Agent2API `models.rs` 同款规格实测可用，个人 free-tier 也下发全量清单）；
+    // 拉不到时适配器内回落「上次快照 → 静态兜底表」（旧形态等价保留）。
+    fetchRemoteModels: () => gemini.fetchAvailableModelsOnly(pool),
     // 图片两跳：先按 640,000 px 预算取缩放版，拿不到才发原图。
     readImage: makeReadImage(ctx),
     readImageRequest: makeReadImageRequest(ctx),
