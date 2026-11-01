@@ -414,6 +414,14 @@ export const ANTIGRAVITY_CONTEXT_WINDOW = 1_000_000
 
 /** 一个可选档位的 id（与 `reasoningEffort` 同域）。 */
 export const ANTIGRAVITY_EFFORT_IDS: readonly string[] = ['low', 'medium', 'high', 'tiered']
+/**
+ * Claude / GPT-OSS 条目的档位表：**无 tiered**。
+ *
+ * 这些家族走 `thinkingConfig.thinkingBudget`（明确预算制），「自适应」
+ *（tiered = 不发预算）对它们语义弱，且 `antigravityModelSpec` 对它们的
+ * tiered 分支也只是退回 medium 预算 —— 不如不声明。
+ */
+export const NON_GEMINI_EFFORT_IDS: readonly string[] = ['low', 'medium', 'high']
 /** 默认档位。 */
 export const ANTIGRAVITY_DEFAULT_EFFORT = 'medium'
 
@@ -567,7 +575,15 @@ export function parseGeminiAvailableModels(payload: unknown): readonly Antigravi
       contextWindow,
       maxTokens: maxOutput,
       supportsImage: entry.supportsImages === true,
-      ...(supportsThinking ? { effortOptions: ANTIGRAVITY_EFFORT_IDS, defaultEffort: ANTIGRAVITY_DEFAULT_EFFORT } : {}),
+      // 档位表：Gemini 条目用全档（含 tiered 自适应）；claude/gpt-oss 是明确
+      // 预算制（thinkingConfig.thinkingBudget），「自适应」（不发预算）语义弱，
+      // 只声明 low/medium/high 三档。
+      ...(supportsThinking
+        ? {
+          effortOptions: id.startsWith('gemini-') ? ANTIGRAVITY_EFFORT_IDS : NON_GEMINI_EFFORT_IDS,
+          defaultEffort: ANTIGRAVITY_DEFAULT_EFFORT,
+        }
+        : {}),
       ...(remaining === undefined ? {} : { remainingFraction: remaining }),
       ...(typeof entry.thinkingBudget === 'number' && Number.isFinite(entry.thinkingBudget)
         ? { thinkingBudget: entry.thinkingBudget }

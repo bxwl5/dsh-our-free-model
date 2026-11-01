@@ -73,6 +73,10 @@ export async function verifyAntigravityModelCatalog() {
   assert.equal(byId.has('claude-sonnet-4-6'), true, 'claude-sonnet-4-6 必须在目录里')
   assert.equal(byId.has('claude-opus-4-6-thinking'), true, 'claude-opus-4-6-thinking 必须在目录里')
   assert.equal(byId.has('gpt-oss-120b-medium'), true, 'gpt-oss-120b-medium 必须在目录里')
+  // 非 Gemini 条目档位表无 tiered（明确预算制，「自适应」语义弱）
+  assert.deepEqual([...byId.get('claude-sonnet-4-6').effortOptions], ['low', 'medium', 'high'],
+    'claude 档位表 = low/medium/high（无 tiered）')
+  assert.deepEqual([...byId.get('gpt-oss-120b-medium').effortOptions], ['low', 'medium', 'high'])
   // 占位 id 仍然挡掉
   assert.equal(byId.has('tab_jump_flash_lite_preview'), false, '占位 tab_* 仍要挡')
   assert.equal(byId.has('chat_23310'), false, '占位 chat_* 仍要挡')

@@ -62510,6 +62510,7 @@ var ANTIGRAVITY_BUDGET_HIGH = 1e4;
 var ANTIGRAVITY_BUDGET_TIERED = -1;
 var ANTIGRAVITY_CONTEXT_WINDOW = 1e6;
 var ANTIGRAVITY_EFFORT_IDS = ["low", "medium", "high", "tiered"];
+var NON_GEMINI_EFFORT_IDS = ["low", "medium", "high"];
 var ANTIGRAVITY_DEFAULT_EFFORT = "medium";
 function antigravityEffortLabel(id) {
   if (id === "low") return "\u4F4E";
@@ -62555,7 +62556,13 @@ function parseGeminiAvailableModels(payload) {
       contextWindow,
       maxTokens: maxOutput,
       supportsImage: entry.supportsImages === true,
-      ...supportsThinking ? { effortOptions: ANTIGRAVITY_EFFORT_IDS, defaultEffort: ANTIGRAVITY_DEFAULT_EFFORT } : {},
+      // 档位表：Gemini 条目用全档（含 tiered 自适应）；claude/gpt-oss 是明确
+      // 预算制（thinkingConfig.thinkingBudget），「自适应」（不发预算）语义弱，
+      // 只声明 low/medium/high 三档。
+      ...supportsThinking ? {
+        effortOptions: id.startsWith("gemini-") ? ANTIGRAVITY_EFFORT_IDS : NON_GEMINI_EFFORT_IDS,
+        defaultEffort: ANTIGRAVITY_DEFAULT_EFFORT
+      } : {},
       ...remaining === void 0 ? {} : { remainingFraction: remaining },
       ...typeof entry.thinkingBudget === "number" && Number.isFinite(entry.thinkingBudget) ? { thinkingBudget: entry.thinkingBudget } : {}
     };
