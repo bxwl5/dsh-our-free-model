@@ -57,7 +57,9 @@ const { buildKiloCatalog, isKiloEntry, kiloDisplayName, reviveKiloCatalog } = aw
   check('only free rows build catalog entries', catalog.map(entry => entry.id), [
     'nvidia/nemotron-3-ultra-550b-a55b:free', 'stepfun/step-3.7-flash:free', 'kilo-auto/free',
   ])
-  check('every entry carries the channel tag end to end', catalog.every(entry => isKiloEntry(entry) && entry.wire === 'chat'), true)
+  // entry.wire 死字段已删（2026-11-01 审计）：写而不读，adapter.js 用重算的
+  // wireOf(entry)；channel 标签仍是路由依据，继续断言。
+  check('every entry carries the channel tag end to end', catalog.every(entry => isKiloEntry(entry)), true)
   check('the picker name drops the vendor prefix and the (free) tail',
     catalog[0].name, 'Kilo Nemotron 3 Ultra')
   check('capacities come from the listing with fallbacks',
