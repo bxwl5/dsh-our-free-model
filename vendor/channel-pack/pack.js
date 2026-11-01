@@ -62537,6 +62537,32 @@ function parseGeminiAvailableModels(payload) {
   if (typeof payload !== "object" || payload === null) return [];
   const models = payload.models;
   if (typeof models !== "object" || models === null || Array.isArray(models)) return [];
+  const referencedIds = [];
+  const root = payload;
+  const pushRef = (value) => {
+    if (typeof value === "string") referencedIds.push(value);
+    else if (Array.isArray(value)) {
+      for (const item of value) if (typeof item === "string") referencedIds.push(item);
+    }
+  };
+  pushRef(root.defaultAgentModelId);
+  pushRef(root.commandModelIds);
+  pushRef(root.mqueryModelIds);
+  pushRef(root.webSearchModelIds);
+  pushRef(root.commitMessageModelIds);
+  pushRef(root.imageGenerationModelIds);
+  pushRef(root.tieredModelIds);
+  const sorts = root.agentModelSorts;
+  if (Array.isArray(sorts)) {
+    for (const sort of sorts) {
+      if (typeof sort !== "object" || sort === null) continue;
+      const groups = sort.groups;
+      if (!Array.isArray(groups)) continue;
+      for (const group of groups) {
+        if (typeof group === "object" && group !== null) pushRef(group.modelIds);
+      }
+    }
+  }
   const out = [];
   const segments = /* @__PURE__ */ new Map();
   for (const [id, raw] of Object.entries(models)) {
@@ -62598,6 +62624,36 @@ function parseGeminiAvailableModels(payload) {
       // remainingFraction 取最小（=最保守的桶）。
       ...entries.some((item) => item.remainingFraction !== void 0) ? { remainingFraction: Math.min(...entries.map((item) => item.remainingFraction ?? 1)) } : {}
     });
+  }
+  return disambiguateDuplicateNames(out, referencedIds);
+}
+function disambiguateDuplicateNames(entries, referencedIds = []) {
+  const byName = /* @__PURE__ */ new Map();
+  for (const entry of entries) {
+    const bucket = byName.get(entry.name) ?? [];
+    bucket.push(entry);
+    byName.set(entry.name, bucket);
+  }
+  const referenced = new Set(referencedIds);
+  const out = [];
+  for (const [name2, bucket] of byName) {
+    if (bucket.length <= 1) {
+      out.push(...bucket);
+      continue;
+    }
+    const sorted = [...bucket].sort((a, b) => a.id.localeCompare(b.id));
+    const canonical = sorted.find((item) => referenced.has(item.id)) ?? sorted[0];
+    for (const entry of bucket) {
+      if (entry.id === canonical.id) {
+        out.push(entry);
+        continue;
+      }
+      const suffix = entry.id.replace(/^(gemini|claude|gpt-oss)-/, "");
+      out.push({
+        ...entry,
+        name: suffix !== "" && !name2.endsWith(`(${suffix})`) ? `${name2} (${suffix})` : name2
+      });
+    }
   }
   return out;
 }

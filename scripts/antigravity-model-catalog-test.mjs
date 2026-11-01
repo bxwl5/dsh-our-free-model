@@ -14,6 +14,7 @@
  * - claude 400：`max_tokens must be greater than thinking.budget_tokens`。
  */
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { exitIfDirectRun } from './lib/direct-run.mjs'
 
 exitIfDirectRun(import.meta.url, 'antigravity-model-catalog-test')
@@ -107,6 +108,53 @@ export async function verifyAntigravityModelCatalog() {
   })
   assert.equal(partial.length, 2, '两档齐全度不足不合并，原样透传')
   assert.ok(partial.every((item) => item.id.startsWith('gemini-x-')), '未合并条目保留原始 id')
+
+  // ── 2b. 同名消歧（用户报障「Gemini 3.5 Flash Lite 出现多个」）──
+  // 上游把四个不同模型（modelVersion 各异，直连探针证实）都标成
+  // 「Gemini 3.5 Flash Lite」。不能合并（丢模型），只消歧显示名：
+  // 权威 id（agentModelSorts/mquery 引用的 gemini-3.5-flash-lite）保留原名。
+  const dupPayload = {
+    defaultAgentModelId: 'gemini-3.8-flash-high',
+    agentModelSorts: [{ displayName: 'Recommended', groups: [{ modelIds: ['gemini-3.5-flash-lite'] }] }],
+    mqueryModelIds: ['gemini-3.5-flash-lite'],
+    webSearchModelIds: ['gemini-3.5-flash-lite'],
+    models: {
+      'gemini-3.5-flash-lite': { displayName: 'Gemini 3.5 Flash Lite', supportsThinking: true },
+      'gemini-2.5-flash-lite': { displayName: 'Gemini 3.5 Flash Lite', supportsThinking: true },
+      'gemini-2.5-flash': { displayName: 'Gemini 3.5 Flash Lite', supportsThinking: true },
+      'gemini-2.5-flash-thinking': { displayName: 'Gemini 3.5 Flash Lite', supportsThinking: true },
+      // 不同名条目不受影响
+      'gemini-2.5-pro': { displayName: 'Gemini 2.5 Pro', supportsThinking: true },
+    },
+  }
+  const disambiguated = parseGeminiAvailableModels(dupPayload)
+  const dupById = new Map(disambiguated.map((item) => [item.id, item]))
+  assert.equal(disambiguated.length, 5, '四个撞名模型全保留（不合并丢弃）')
+  assert.equal(dupById.get('gemini-3.5-flash-lite')?.name, 'Gemini 3.5 Flash Lite',
+    '权威 id（被推荐面引用）保留原名')
+  assert.equal(dupById.get('gemini-2.5-flash-lite')?.name, 'Gemini 3.5 Flash Lite (2.5-flash-lite)')
+  assert.equal(dupById.get('gemini-2.5-flash')?.name, 'Gemini 3.5 Flash Lite (2.5-flash)')
+  assert.equal(dupById.get('gemini-2.5-flash-thinking')?.name, 'Gemini 3.5 Flash Lite (2.5-flash-thinking)')
+  assert.equal(dupById.get('gemini-2.5-pro')?.name, 'Gemini 2.5 Pro', '非撞名条目不动')
+  // 消歧只改 name：id 与能力字段（effortOptions）原样
+  assert.deepEqual([...dupById.get('gemini-2.5-flash')?.effortOptions ?? []], ['low', 'medium', 'high', 'tiered'])
+
+  // ── 2c. 真实抓包 fixture（scripts/antigravity-catalog-fixture.json，2026-11-01）──
+  // 锁死消歧在**真实上游响应**上的输出；fixture 不在时不跑（CI 环境无此文件也绿）。
+  try {
+    const fixture = JSON.parse(readFileSync(new URL('./antigravity-catalog-fixture.json', import.meta.url), 'utf8'))
+    const real = parseGeminiAvailableModels(fixture)
+    const realById = new Map(real.map((item) => [item.id, item]))
+    assert.equal(realById.get('gemini-3.5-flash-lite')?.name, 'Gemini 3.5 Flash Lite')
+    assert.equal(realById.get('gemini-2.5-flash-lite')?.name, 'Gemini 3.5 Flash Lite (2.5-flash-lite)')
+    assert.equal(realById.get('gemini-2.5-flash')?.name, 'Gemini 3.5 Flash Lite (2.5-flash)')
+    assert.equal(realById.get('gemini-2.5-flash-thinking')?.name, 'Gemini 3.5 Flash Lite (2.5-flash-thinking)')
+    // 消歧后不应再有同名重复
+    const names = real.map((item) => item.name)
+    assert.equal(new Set(names).size, names.length, '消歧后显示名无重复')
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+  }
 
   // ── 3. 剩余额度 ──
   assert.equal(byId.get('claude-sonnet-4-6')?.remainingFraction, 0.85)

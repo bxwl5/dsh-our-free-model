@@ -539,6 +539,32 @@ export function parseGeminiAvailableModels(payload: unknown): readonly Antigravi
   if (typeof payload !== 'object' || payload === null) return []
   const models = (payload as Record<string, unknown>).models
   if (typeof models !== 'object' || models === null || Array.isArray(models)) return []
+  // 顶层引用集合（撞名消歧的权威条目判据）：上游推荐面 / 专用功能点名了哪些
+  // id。收集失败不影响主流程（回落字典序最小）。
+  const referencedIds: string[] = []
+  const root = payload as Record<string, unknown>
+  const pushRef = (value: unknown): void => {
+    if (typeof value === 'string') referencedIds.push(value)
+    else if (Array.isArray(value)) for (const item of value) if (typeof item === 'string') referencedIds.push(item)
+  }
+  pushRef(root.defaultAgentModelId)
+  pushRef(root.commandModelIds)
+  pushRef(root.mqueryModelIds)
+  pushRef(root.webSearchModelIds)
+  pushRef(root.commitMessageModelIds)
+  pushRef(root.imageGenerationModelIds)
+  pushRef(root.tieredModelIds)
+  const sorts = root.agentModelSorts
+  if (Array.isArray(sorts)) {
+    for (const sort of sorts) {
+      if (typeof sort !== 'object' || sort === null) continue
+      const groups = (sort as Record<string, unknown>).groups
+      if (!Array.isArray(groups)) continue
+      for (const group of groups) {
+        if (typeof group === 'object' && group !== null) pushRef((group as Record<string, unknown>).modelIds)
+      }
+    }
+  }
   type Seg = {
     base: string
     displayName: string
@@ -628,6 +654,65 @@ export function parseGeminiAvailableModels(payload: unknown): readonly Antigravi
         ? { remainingFraction: Math.min(...entries.map((item) => item.remainingFraction ?? 1)) }
         : {}),
     })
+  }
+  return disambiguateDuplicateNames(out, referencedIds)
+}
+
+/**
+ * 同名条目消歧（2026-11-01 用户报障「Gemini 3.5 Flash Lite 出现多个」）。
+ *
+ * ## 上游事实（直连推理探针，2026-11-01）
+ *
+ * `fetchAvailableModels` 把**四个不同的真实模型**都标成了同一个 displayName
+ * 「Gemini 3.5 Flash Lite」：`gemini-3.5-flash-lite` / `gemini-2.5-flash-lite` /
+ * `gemini-2.5-flash` / `gemini-2.5-flash-thinking`。直连逐 id 推理，响应的
+ * `modelVersion` **各不相同** —— 是四个不同模型，上游撞名是它的数据错误；
+ * `deprecatedModelIds` 为空，不能按「废弃」剔除（会丢可用模型）。
+ *
+ * ⚠️ **不能合并**：合并 = 把四个不同模型折成一个（其余三个 id 从此不可选）。
+ * 正确做法是**消歧显示名**：同 displayName 组内保留「上游推荐面引用的权威
+ * id」（`agentModelSorts` / `mqueryModelIds` 等引用的 `gemini-3.5-flash-lite`）
+ * 原名不动，其余条目追加 id 特征尾段 —— `Gemini 3.5 Flash Lite (2.5-flash)`。
+ *
+ * 规则：
+ * - 组内权威条目：被 `referencedIds` 点名者优先；无引用信息时保留**字典序
+ *   最小**的 id（稳定，不依赖顶层字段是否存在）。
+ * - 区分标签取 id 去掉家族前缀的**特征尾段**（`gemini-2.5-flash-thinking`
+ *   → `2.5-flash-thinking`），组内可读且互不相同。
+ */
+function disambiguateDuplicateNames(
+  entries: readonly AntigravityRemoteModelEntry[],
+  referencedIds: readonly string[] = [],
+): AntigravityRemoteModelEntry[] {
+  const byName = new Map<string, AntigravityRemoteModelEntry[]>()
+  for (const entry of entries) {
+    const bucket = byName.get(entry.name) ?? []
+    bucket.push(entry)
+    byName.set(entry.name, bucket)
+  }
+  const referenced = new Set(referencedIds)
+  const out: AntigravityRemoteModelEntry[] = []
+  for (const [name, bucket] of byName) {
+    if (bucket.length <= 1) {
+      out.push(...bucket)
+      continue
+    }
+    const sorted = [...bucket].sort((a, b) => a.id.localeCompare(b.id))
+    const canonical = sorted.find((item) => referenced.has(item.id)) ?? sorted[0]
+    for (const entry of bucket) {
+      if (entry.id === canonical.id) {
+        out.push(entry)
+        continue
+      }
+      // 特征尾段：剥掉家族前缀（gemini-/claude-/gpt-oss-）。
+      const suffix = entry.id.replace(/^(gemini|claude|gpt-oss)-/, '')
+      out.push({
+        ...entry,
+        name: suffix !== '' && !name.endsWith(`(${suffix})`)
+          ? `${name} (${suffix})`
+          : name,
+      })
+    }
   }
   return out
 }
