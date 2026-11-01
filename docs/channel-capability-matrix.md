@@ -78,7 +78,7 @@
 | 9 | `raccoon` · Raccoon Work | 本地页微信扫码 + 短信双路径（不依赖官方客户端回调） | ✅ | ✅ 远端 | ✅ | ❌（每日积分由服务端自动发放；另有新手任务领取） | ✅ 双桥 |
 | 10 | `minimax` · MiniMax Code | OAuth 设备码 + PKCE | ✅（Anthropic Messages 协议族） | ✅ 远端 | ✅ | ✅ | ✅ 单桥 |
 | 11 | `zcode` · ZCode | 浏览器授权（官方 CLI 设备授权流 `/oauth/cli/init` → 轮询） | ✅（Anthropic Messages 协议族） | ✅ 静态白名单（远端接口保留） | ✅（单位 tokens） | ✅ | ✅ 双桥 |
-| 12 | `gemini` · Gemini | 浏览器授权（Google OAuth，本地回调；只做 OAuth） | ✅ | ❌ 静态（Cloud Code 无目录端点） | ✅（配额窗口） | ❌（无每日签到） | ✅ 双桥 |
+| 12 | `antigravity` · Antigravity（原 `gemini`，2026-11-01 改名） | 浏览器授权（Google OAuth，本地回调；只做 OAuth） | ✅ | ✅ 远端（`fetchAvailableModels`；claude/gpt-oss 家族放行，3.8 系分段合并，同名条目消歧） | ✅（分组配额桶：Gemini 组 + Claude·GPT 组） | ❌（无每日签到） | ✅ 双桥 |
 | 13 | `commandcode` · Command Code | 浏览器授权（自动回调；授权页 `/studio/auth/cli`） | ✅ | ✅ 远端 | ✅（`/alpha/billing/credits`，`readCredits`） | ❌ | ❌ |
 | 14 | `officeace` · OfficeAce 果办 | 浏览器授权（自助 OAuth + 轮询授权码，回调不落本机） | ✅ | ✅ 远端 | ❌ | ❌ | ❌ |
 | 15 | `accio` · Accio | 浏览器授权（国际站） | ✅ | ✅ 远端 | ✅（配额百分比，`fetchQuota`） | ❌ | ❌ |
@@ -93,10 +93,10 @@
 | 维度 | 已接入 | 未接入 / 不支持 |
 | --- | --- | --- |
 | 对话 | 20（全部） | — |
-| 模型目录 | 非静态目录 20 条（其中 `qoder`/`qodercn` 来自官方客户端本机解密文件 `catalog-v6`） | 仅静态兜底表 2 条：`gemini`、`orcaterm` |
+| 模型目录 | 非静态目录 20 条（其中 `qoder`/`qodercn` 来自官方客户端本机解密文件 `catalog-v6`） | 仅静态兜底表 1 条：`orcaterm`（`antigravity` 于 2026-11-01 接入远端目录，静态表降为兜底） |
 | 额度查询 | **17 条** | 3 条：`orcaterm` `autoclaw` `officeace` |
-| 签到 | **10 条**（原 9 条 + `monkeycode`） | 服务端显式守卫「无签到端点」3 条（`workbuddy` `cline` `raccoon`）+ `gemini`/`commandcode`/`accio`/`accio-cn`（无 claim 能力）+ 上游无签到 5 条 |
-| 图片（双桥） | 8 条：`buddy` `workbuddy` `qoder` `qodercn` `cline` `raccoon` `gemini` `zcode` | 单桥 3 条：`trae` `loomy` `minimax`；未接 9 条 |
+| 签到 | **10 条**（原 9 条 + `monkeycode`） | 服务端显式守卫「无签到端点」3 条（`workbuddy` `cline` `raccoon`）+ `antigravity`/`commandcode`/`accio`/`accio-cn`（无 claim 能力）+ 上游无签到 5 条 |
+| 图片（双桥） | 8 条：`buddy` `workbuddy` `qoder` `qodercn` `cline` `raccoon` `antigravity` `zcode` | 单桥 3 条：`trae` `loomy` `minimax`；未接 9 条 |
 | 粘贴型登录 | 纯粘贴 2 条（`monkeycode` `orcaterm`）；扫码/短信 3 条中 `kuku` `autoclaw` 已改卡片内嵌（无本地页），`loomy` `raccoon` 仍为本地页 | — |
 
 ---
@@ -231,13 +231,17 @@
 - 图片：双桥（不接会在序列化时退化成 `[image unavailable]`，实测症状是模型回
   「我在当前对话中没有收到任何图片」）。
 
-### 3.11 Gemini（`gemini`）
+### 3.11 Antigravity（`antigravity`，原名 `gemini`，2026-11-01 改名）
 
 - 登录：**只做 OAuth**（Google，本地回调）；API key / AI Studio 两条线不做。
-- 模型目录：**静态**（用户拍板：Cloud Code 没有模型列表端点）；暴露 1 个
-  `gemini-3.8-flash` + 4 档 effort，不暴露带后缀名与 lite。
-- 额度：`POST /v1internal:retrieveUserQuotaSummary` 两个窗口（`gemini-5h` / `gemini-weekly`）
-  的剩余比例；同时带回账号档位（Pro / Free / Ultra）。
+- 模型目录：**远端优先**（`fetchAvailableModels`，2026-11-01 接入；静态表降为
+  远端失败时的兜底）。放行 Gemini / Claude / GPT-OSS 三族；3.8 系的
+  `{low,medium,high}` 分段条目合并成单条 `gemini-3.8-flash`（档位走 efforts
+  下拉）；上游撞名的 2.5 系条目按公开名消歧（`Gemini 2.5 Flash` 等）。
+- 额度：`POST /v1internal:retrieveUserQuotaSummary` **两个独立分组桶**
+  （Gemini 组 `gemini-5h`/`gemini-weekly`；Claude·GPT 组 `3p-5h`/`3p-weekly`，
+  2026-11-01 实测确认两组独立计数）+ 模型级 `quotaInfo`（粗快照，仅兜底）；
+  同时带回账号档位（Pro / Free / Ultra）。模型名后的绿标用组桶精确值。
 - 签到：**无每日签到**（额度按窗口滚动刷新）。
 - 图片：双桥（按 640,000 px 预算取缩放版）。
 

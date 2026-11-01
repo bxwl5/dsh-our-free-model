@@ -41,7 +41,9 @@
  * ## 实测确认的三条事实（计划 §七）
  *
  * - **模型名是准入钥匙**：发裸 `gemini-3.8-flash` 上游 404，必须带档位后缀
- *   （`gemini-3.8-flash-high`）。
+ *   （`gemini-3.8-flash-high`）。（⚠️ 2026-11-01 起免费层新通道实测改为按
+ *   `body.model` 原样路由，见 {@link antigravityModelSpec} 的注释 —— 旧结论
+ *   只对旧通道/旧凭据成立，两处结论不矛盾。）
  * - **lite 已整体移除**（用户 2026-10-03 拍板「不要 lite 模型」）：真机实测
  *   `gemini-3.8-flash-lite` 在两端点上**恒 404**
  *   （`{"error":{"code":404,"message":"Requested entity was not found.","status":"NOT_FOUND"}}`），
@@ -566,7 +568,6 @@ export function parseGeminiAvailableModels(payload: unknown): readonly Antigravi
     }
   }
   type Seg = {
-    base: string
     displayName: string
     entry: AntigravityRemoteModelEntry
   }
@@ -623,10 +624,14 @@ export function parseGeminiAvailableModels(payload: unknown): readonly Antigravi
       continue
     }
     const bucket = segments.get(seg.base) ?? []
-    bucket.push({ base: seg.base, displayName, entry: parsed })
+    bucket.push({ displayName, entry: parsed })
     segments.set(seg.base, bucket)
   }
   // 分段合并：三档齐全才合并成一条（族名即裸名，显示名去掉强度后缀）。
+  // ⚠️ **裸名条目可能同时存在于响应**（t1 审查实证的混合下发形态）：
+  // 此时合并条目与裸名条目 id 相同，而 dsh-llm 的 listModels 对重复 id 抛
+  // INVALID_CATALOG（整个 provider 模型列表失败）—— 必须把三档**并进已有的
+  // 裸名条目**而不是再 push 一条。
   for (const [base, bucket] of segments) {
     if (bucket.length < 3) {
       out.push(...bucket.map((item) => item.entry))
@@ -638,24 +643,54 @@ export function parseGeminiAvailableModels(payload: unknown): readonly Antigravi
     const shortest = displayNames[0] ?? base
     const stripped = shortest.replace(/\s*\((?:Low|Medium|High)\)\s*$/i, '').trim()
     const entries = bucket.map((item) => item.entry)
-    out.push({
-      id: base,
-      name: stripped === '' ? base : stripped,
+    // 字段取「信息量最大」：窗口/输出取最大，图片任一为真，remainingFraction 取最小（=最保守）。
+    const mergedFields = {
       // 合并取各档最宽能力：窗口/输出取最大，图片/思考任一为真即真。
       contextWindow: Math.max(...entries.map((item) => item.contextWindow)),
       maxTokens: Math.max(...entries.map((item) => item.maxTokens)),
       supportsImage: entries.some((item) => item.supportsImage),
       // 分段族必然 supportsThinking（上游按档位拆分的前提），档位下拉用
       // low/medium/high —— **不含 tiered**：上游分段没有自适应档。
-      effortOptions: ['low', 'medium', 'high'],
+      effortOptions: ['low', 'medium', 'high'] as readonly string[],
       defaultEffort: ANTIGRAVITY_DEFAULT_EFFORT,
-      // remainingFraction 取最小（=最保守的桶）。
       ...(entries.some((item) => item.remainingFraction !== undefined)
         ? { remainingFraction: Math.min(...entries.map((item) => item.remainingFraction ?? 1)) }
         : {}),
+    }
+    const existingBare = out.find((item) => item.id === base)
+    if (existingBare !== undefined) {
+      // 裸名条目已在（上游混合下发）：把三档能力**并入**它，不再 push。
+      const idx = out.indexOf(existingBare)
+      out[idx] = {
+        ...existingBare,
+        contextWindow: Math.max(existingBare.contextWindow, mergedFields.contextWindow),
+        maxTokens: Math.max(existingBare.maxTokens, mergedFields.maxTokens),
+        supportsImage: existingBare.supportsImage || mergedFields.supportsImage,
+        // 裸名条目可能已带 tiered 档；分段档并入时保留超集。
+        effortOptions: dedupeEffortOptions([...(existingBare.effortOptions ?? []), ...mergedFields.effortOptions]),
+        ...(existingBare.remainingFraction !== undefined || mergedFields.remainingFraction !== undefined
+          ? {
+            remainingFraction: Math.min(
+              existingBare.remainingFraction ?? 1,
+              mergedFields.remainingFraction ?? 1,
+            ),
+          }
+          : {}),
+      }
+      continue
+    }
+    out.push({
+      id: base,
+      name: stripped === '' ? base : stripped,
+      ...mergedFields,
     })
   }
   return disambiguateDuplicateNames(out, referencedIds)
+}
+
+/** 档位表去重且保持声明顺序（合并裸名 + 分段档时的 effortOptions 超集）。 */
+function dedupeEffortOptions(ids: readonly string[]): readonly string[] {
+  return [...new Set(ids)]
 }
 
 /**
@@ -697,9 +732,11 @@ const KNOWN_DUPLICATE_PUBLIC_NAMES: Readonly<Record<string, string>> = {
  * ⚠️ **不能合并**：合并 = 把四个不同模型折成一个（其余三个 id 从此不可选）。
  * 消歧分两层：
  *
- * 1. **公开名映射**（{@link KNOWN_DUPLICATE_PUBLIC_NAMES}）：已证实的撞名 id
- *    直接换成 Google 的正式公开名（用户拍板；比 id 尾段可读）。
- * 2. **id 尾段保底**：映射表没有的撞名 id，同 displayName 组内保留「上游
+ * 1. **公开名预处理**（先于分组）：{@link KNOWN_DUPLICATE_PUBLIC_NAMES} 命中
+ *    的 id **先改名**（Google 正式发布名），再按改后的名字分组 —— 改名产生
+ *    的新名字也参与撞名检测，不会漏检（t1 审查实证的单遍缺陷：组内改名会
+ *    逃过检测，且权威判定与改名次序耦合）。
+ * 2. **id 尾段保底**：预处理后仍撞名的组，同 displayName 组内保留「上游
  *    推荐面引用的权威 id」（`agentModelSorts` / `mqueryModelIds` 等引用的
  *    条目）原名不动，其余追加 id 特征尾段 —— `Gemini X (2.5-flash)`。
  *
@@ -854,7 +891,7 @@ export function antigravityCanonicalModelId(modelId: string): string {
  * budget = min(档位预算, maxOutputTokens - 1)   // 严格小于，还要留 1 个输出位
  * ```
  *
- * `maxOutputTokens` 未传（`undefined`）时按信封构造的缺省 64_000 裁决，
+ * `maxOutputTokens` 未传（`undefined`）时按信封构造的缺省（ANTIGRAVITY.maxOutputTokens）裁决，
  * 档位预算原样生效。请求侧的 `buildGenerationConfig` 会拿到本函数返回的
  * budget 再组装 `thinkingConfig`，因此钳制只需在这里做一次。
  */
@@ -865,7 +902,7 @@ export function antigravityModelSpec(modelId: string, effort?: string, maxOutput
     const budget = antigravityThinkingBudget(tier)
     // ⚠️ maxOutputTokens 缺省 = 信封层默认 64k（与 buildGenerationConfig 同源）；
     // 传了就按它钳（max_tokens 由用户控制，可以远小于档位预算）。
-    const ceiling = (maxOutputTokens ?? 64_000) - 1
+    const ceiling = (maxOutputTokens ?? ANTIGRAVITY.maxOutputTokens) - 1
     const clamped = budget > ceiling ? Math.max(ceiling, 0) : budget
     return {
       upstream: modelId,

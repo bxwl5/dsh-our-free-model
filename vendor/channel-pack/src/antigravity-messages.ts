@@ -31,7 +31,6 @@
 import type {
   ContentBlock,
   FinishReason,
-  Message,
   StreamChunk,
   TokenUsage,
   ToolSchema,
@@ -42,6 +41,7 @@ import { readWithIdleTimeout, resolveToolPairing } from './sse.js'
 import type { AntigravityInlineImage, AntigravityModelSpec } from './antigravity.js'
 import {
   deriveGeminiSessionId,
+  ANTIGRAVITY,
   ANTIGRAVITY_DEFAULT_PROJECT,
   ANTIGRAVITY_IDLE_TIMEOUT_MS,
   ANTIGRAVITY_SESSION_LANE_INFER,
@@ -222,12 +222,20 @@ export function translateGeminiRequest(options: TranslateGeminiRequestOptions): 
   // ⚠️ 步骤 2：剔除无法配对的 tool_use / tool_result（孤儿块上游同样 400）。
   const { keepCallIds, keepResultIds } = resolveToolPairing(normalized)
 
-  // ⚠️ 步骤 3：先扫全消息建 `tool_use.id → name` 映射。上游的
-  // `functionResponse` 只认 name（没有 id 字段），故回填时必须靠这张表。
+  // ⚠️ 步骤 3：先扫全消息建 `tool_use.id → name` 映射。**配对语义按家族**：
+  // Gemini 忽略 id、按 name 配对；Claude/GPT-OSS 按 id 配对（tool_use_id，
+  // 缺 id 直接 400），见 {@link AntigravityPart.functionResponse} 的 id 注释。
+  // name 表用于回填 functionResponse.name（两族都需要），id 表用于 Claude/
+  // GPT-OSS 的 tool_use_id。⚠️ **空 id 的块跳过**：`String(undefined)`
+  // 会得到字面量 "undefined"，两个缺 id 的工具会在表里撞键互相覆盖，
+  // functionResponse 的 name 全被错配成最后一个工具名（t2 审查实证）。
   const toolNames = new Map<string, string>()
   for (const message of normalized) {
     for (const block of message.content) {
-      if (block.type === 'tool-call') toolNames.set(String(block.id), block.name)
+      if (block.type !== 'tool-call') continue
+      const blockId = String(block.id ?? '')
+      if (blockId === '') continue
+      toolNames.set(blockId, block.name)
     }
   }
 
@@ -250,13 +258,16 @@ export function translateGeminiRequest(options: TranslateGeminiRequestOptions): 
         // 查不到就**不带签名发**：上游会拒（`IsSignatureError` 命中），
         // 适配器据此走「去签重试一次」路径。
         const signature = options.lookupSignature?.(block.name, argsJson)
+        // ⚠️ id 只在**非空**时下发：缺 id 的历史块发 `id: "undefined"` 会让
+        // Claude/GPT-OSS 两个 tool_use 共用一个配对键（t2 审查实证），Gemini
+        // 虽忽略 id 但多发垃圾字段同样无益。缺失 = 上游按 name 配对（Gemini
+        // 语义），Claude/GPT-OSS 的孤立 tool_use 本就会被 resolveToolPairing 剔除。
+        const blockId = String(block.id ?? '')
         const part: AntigravityPart = {
           functionCall: {
             name: block.name,
             args,
-            // ⚠️ Claude/GPT-OSS 按 id 配对 tool_use ↔ tool_result（Gemini 忽略
-            // 该字段）。用 DSH 本地 id：同一对话内稳定，结果回传时能对上。
-            id: String(block.id),
+            ...(blockId === '' ? {} : { id: blockId }),
           },
         }
         if (signature !== undefined && signature !== '') part.thoughtSignature = signature
@@ -266,7 +277,8 @@ export function translateGeminiRequest(options: TranslateGeminiRequestOptions): 
 
       if (block.type === 'tool-result') {
         if (!keepResultIds.has(String(block.toolCallId))) continue
-        const name = toolNames.get(String(block.toolCallId)) ?? ''
+        const toolCallId = String(block.toolCallId ?? '')
+        const name = toolNames.get(toolCallId) ?? ''
         // ⚠️ name 为空时**整块丢弃**：上游的 functionResponse 以 name 配对，
         // 空 name 会 400。丢了顶多少一轮工具上下文，不会打死整轮。
         if (name === '') continue
@@ -274,8 +286,15 @@ export function translateGeminiRequest(options: TranslateGeminiRequestOptions): 
           content: toolResultText(block.content),
         }
         if (block.isError === true) response.error = true
-        // ⚠️ id 同上：Claude/GPT-OSS 必须与 functionCall.id 一致才能配上对。
-        parts.push({ functionResponse: { name, response, id: String(block.toolCallId) } })
+        // ⚠️ id 同上：Claude/GPT-OSS 必须与 functionCall.id 一致才能配上对；
+        // 空 id 不发（同 functionCall 侧的 "undefined" 退化防御）。
+        parts.push({
+          functionResponse: {
+            name,
+            response,
+            ...(toolCallId === '' ? {} : { id: toolCallId }),
+          },
+        })
         continue
       }
 
@@ -377,7 +396,7 @@ function buildGenerationConfig(
   maxTokens: number | undefined,
   temperature: number | undefined,
 ): Record<string, unknown> {
-  const config: Record<string, unknown> = { maxOutputTokens: maxTokens ?? 64_000 }
+  const config: Record<string, unknown> = { maxOutputTokens: maxTokens ?? ANTIGRAVITY.maxOutputTokens }
   // ⚠️ `includeThoughts` **恒 true**（「关闭思考」是假关：关掉照样思考照样计费）。
   const thinkingConfig: Record<string, unknown> = { includeThoughts: spec.includeThoughts }
   // ⚠️ tiered 档**只带 includeThoughts**，不发 thinkingBudget（预算交给上游自适应）。
@@ -462,61 +481,6 @@ function toolResultText(blocks: unknown): string {
     else if (block.type === 'reasoning') out.push(block.text)
   }
   return out.join('\n')
-}
-
-// ---------------------------------------------------------------------------
-// 响应翻译（非流式）
-// ---------------------------------------------------------------------------
-
-/** {@link translateGeminiResponse} 的入参。 */
-export interface TranslateGeminiResponseOptions {
-  response: AntigravityResponse
-  /** 签名收集（上游下发了签名时调用）。 */
-  onSignature?: AntigravitySignatureSink
-}
-
-/** 非流式响应 → DSH 的块列表 + 结束原因 + 用量。 */
-export interface TranslatedGeminiResponse {
-  blocks: ContentBlock[]
-  reason: FinishReason
-  usage: Partial<TokenUsage>
-}
-
-/** 把上游非流式响应翻成 DSH 形状。 */
-export function translateGeminiResponse(
-  options: TranslateGeminiResponseOptions,
-): TranslatedGeminiResponse {
-  const candidate = options.response.candidates?.[0]
-  const blocks: ContentBlock[] = []
-  let toolCalls = 0
-  for (const part of candidate?.content?.parts ?? []) {
-    if (part.functionCall !== undefined) {
-      const args = part.functionCall.args ?? {}
-      const argsJson = canonicalArgs(args)
-      if (typeof part.thoughtSignature === 'string' && part.thoughtSignature !== '') {
-        options.onSignature?.(part.functionCall.name, argsJson, part.thoughtSignature)
-      }
-      blocks.push({
-        type: 'tool-call',
-        id: ToolCallId(newToolCallId(toolCalls)),
-        name: part.functionCall.name,
-        arguments: argsJson,
-      })
-      toolCalls++
-      continue
-    }
-    if (typeof part.text !== 'string' || part.text === '') continue
-    if (part.thought === true) {
-      blocks.push({ type: 'reasoning', text: part.text })
-      continue
-    }
-    blocks.push({ type: 'text', text: part.text })
-  }
-  return {
-    blocks,
-    reason: mapGeminiFinish(candidate?.finishReason, toolCalls),
-    usage: readGeminiUsage(options.response.usageMetadata),
-  }
 }
 
 /**

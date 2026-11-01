@@ -407,14 +407,18 @@ export class AntigravityAdapter extends LlmAdapter {
   /**
    * 模型目录**合并迁移**（一次性，幂等）：
    *
-   * 1. **分段条目 → 合并条目**：远端目录 2026-11-01 起把
-   *    `gemini-3.8-flash-{low,medium,high}` 合并成 `gemini-3.8-flash` 一条。
-   *    合并后用户在**旧分段条目**上的开/关状态要搬到合并条目上
-   *   （任一分段开过 = 打开；全部关 = 关闭），否则升级后主模型默认关着，
-   *    对话框里直接消失。旧分段 id 从黑名单清掉（目录里已不存在，留着是垃圾）。
+   * 1. **分段条目 → 合并条目**：2026-11-01 起 `parseGeminiAvailableModels`
+   *    把远端的 `gemini-3.8-flash-{low,medium,high}` 三条合并成
+   *    `gemini-3.8-flash` 一条（裸名）。合并后用户在**旧分段条目**上的
+   *    开/关状态要搬到合并条目上（任一分段开过 = 打开；全部关 = 关闭），
+   *    否则升级后主模型在黑名单无记录 → 被 {@link writeModelCatalogClosingNew}
+   *    的「新增默认关闭」规则关掉，对话框里直接消失。
+   *    ⚠️ 迭代对象是**合并后的裸名条目**（`this.remoteModels` 是解析产物，
+   *    里头已没有分段 id），逐个查 `裸名-{low,medium,high}` 三键的**历史
+   *    黑名单记录**——t1 审查实证过反写法（迭代分段 id 再拼裸名）是死代码。
    * 2. **claude/gpt-oss 首次放行**：这两族 id 是本次新增，若走
-   *    `writeModelCatalogClosingNew` 的「新增自动关闭」规则会被默认关掉，
-   *    用户点名要的模型反而看不见 —— 显式打开。
+   *    {@link writeModelCatalogClosingNew} 的「新增自动关闭」规则会被默认
+   *    关掉，用户点名要的模型反而看不见 —— 显式打开。
    *
    * ⚠️ 只在**远端目录成功加载后**跑（`loadModels`/`refreshCatalog` 拿到数据时）；
    * 静态兜底表不触发。
@@ -431,16 +435,13 @@ export class AntigravityAdapter extends LlmAdapter {
       const writes: Array<{ id: string; disabled: boolean }> = []
 
       // ① 分段 → 合并的开关继承（只在合并 id 没有用户显式记录时搬状态）。
-      const mergedIds = new Set(models.map((item) => item.id))
+      //     黑名单里的旧分段键（目录里已不存在）是**历史记录**，从那里读。
       for (const model of models) {
-        if (matchSegmentSuffix(model.id) === undefined) continue
-        const segments = ['low', 'medium', 'high']
-          .map((segment) => `${model.id}-${segment}`)
-          .filter((id) => !mergedIds.has(id))
-        if (segments.length === 0) continue
+        if (matchSegmentSuffix(model.id) !== undefined) continue // 分段条目自身不参与（上游回滚形态）
+        if (disabled[model.id] === true || disabled[model.id] === false) continue // 用户已显式决定过
+        const segments = ['low', 'medium', 'high'].map((segment) => `${model.id}-${segment}`)
         // 黑名单里有旧分段记录才迁移；没有就什么都不动（首次使用）。
         if (!segments.some((id) => disabled[id] === true || disabled[id] === false)) continue
-        if (disabled[model.id] === true || disabled[model.id] === false) continue
         // 任一分段是显式打开（false）→ 打开；否则（全部关闭）→ 关闭。
         const opened = segments.some((id) => disabled[id] === false)
         writes.push({ id: model.id, disabled: !opened })

@@ -166,6 +166,58 @@ export async function verifyAntigravityModelCatalog() {
     if (error?.code !== 'ENOENT') throw error
   }
 
+  // ── 2d. 混合下发不产生重复 id（t1 审查 H2：dsh-llm 对重复 id 抛 INVALID_CATALOG）──
+  const mixed = parseGeminiAvailableModels({
+    models: {
+      'gemini-3.8-flash': { displayName: 'X', supportsThinking: true },
+      'gemini-3.8-flash-low': { displayName: 'X (Low)', supportsThinking: true },
+      'gemini-3.8-flash-medium': { displayName: 'X (Medium)', supportsThinking: true, supportsImages: true },
+      'gemini-3.8-flash-high': { displayName: 'X (High)', supportsThinking: true },
+    },
+  })
+  const mixedIds = mixed.map((item) => item.id)
+  assert.equal(new Set(mixedIds).size, mixedIds.length, '混合下发不得产生重复 id')
+  const bare = mixed.find((item) => item.id === 'gemini-3.8-flash')
+  assert.notEqual(bare, undefined)
+  assert.equal(bare.supportsImage, true, '三档能力并入已有裸名条目')
+  assert.ok(bare.effortOptions.includes('low') && bare.effortOptions.includes('tiered'),
+    '裸名条目档位表为超集（分段档 + 原 tiered）')
+
+  // ── 2e. 公开名映射是预处理步（改名后的名字参与撞名检测，t1 审查 B3）──
+  const collide = parseGeminiAvailableModels({
+    models: {
+      'gemini-3.5-flash-lite': { displayName: 'Gemini 3.5 Flash Lite' },
+      'gemini-2.5-flash': { displayName: 'Gemini 3.5 Flash Lite' },
+      'gemini-2.5-flash-new': { displayName: 'Gemini 2.5 Flash' },
+    },
+  })
+  const collideNames = collide.map((item) => item.name)
+  assert.equal(new Set(collideNames).size, collideNames.length, '改名后的新名字也要参与撞名检测（输出无重名）')
+
+  // ── 2f. 缺 id 的历史块不发字面量 "undefined"（t2 审查 H1）──
+  const { translateGeminiRequest: translateForNoId } = await import('../vendor/channel-pack/src/antigravity-messages.ts')
+  const noIdEnvelope = translateForNoId({
+    modelId: 'claude-sonnet-4-6',
+    spec: { upstream: 'claude-sonnet-4-6', tier: 'medium', thinkingBudget: 4000, includeThoughts: true },
+    messages: [
+      { role: 'user', content: 'a' },
+      { role: 'assistant', content: [
+        { type: 'tool-call', id: 'call_with_id', name: 'read_file', arguments: '{}' },
+        { type: 'tool-call', name: 'grep', arguments: '{}' },
+      ] },
+      { role: 'tool', toolCallId: 'call_with_id', content: [{ type: 'text', text: 'ok' }] },
+      { role: 'tool', content: [{ type: 'text', text: 'ok' }] },
+    ],
+    project: 'aicode-consumers',
+    requestId: 'agent/1/x',
+  })
+  for (const c of noIdEnvelope.request.contents) {
+    for (const part of c.parts) {
+      assert.notEqual(part.functionCall?.id, 'undefined', '缺 id 不得发字面量 "undefined"')
+      assert.notEqual(part.functionResponse?.id, 'undefined')
+    }
+  }
+
   // ── 3. 剩余额度 ──
   assert.equal(byId.get('claude-sonnet-4-6')?.remainingFraction, 0.85)
   assert.equal(byId.get('gpt-oss-120b-medium')?.remainingFraction, 0.455)

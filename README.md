@@ -96,7 +96,7 @@ docker logs ofm | head -5     # 拿一次性的面板登录链接
 | 渠道 | 登录方式 | 对话 |
 |---|---|---|
 | CodeArts / CodeBuddy / WorkBuddy | 浏览器授权 | ✅ |
-| Qoder / Qoder 中国版 / TRAE / Cline / Gemini | 浏览器授权 | ✅ |
+| Qoder / Qoder 中国版 / TRAE / Cline / Antigravity（原 Gemini） | 浏览器授权 | ✅ |
 | Loomy / Raccoon / MiniMax Code / ZCode | 浏览器授权 | ✅ |
 | Command Code | 浏览器授权（自动回调） | ✅ |
 | OfficeAce 果办 | 浏览器授权（轮询授权码） | ✅ |
