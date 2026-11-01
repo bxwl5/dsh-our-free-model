@@ -25,7 +25,7 @@
  * 计费打折），不是虚构量；`stats.json` 原本也按模型记了 `cacheRead` 字段，
  * 只是历史口径把它排除在总计之外，这里一并纠正。
  */
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { dayKey, MIN_DECODE_MS, MAX_CREDIBLE_TPS } from '../store.js'
 
@@ -80,8 +80,26 @@ function parseLedgerKey(key) {
  *
  * 返回 `undefined` 表示没有可合并的数据（文件不存在 / 解析失败 / 空表）——
  * 调用方应当原样返回未合并的统计，绝不能让看板因为台账异常而空掉。
+ *
+ * ⚠️ 结果按 (mtimeMs, size) 缓存（2026-11-01 复审）：`/stats` 是 60 秒轮询的
+ * 热路径，而全量 `readFileSync + JSON.parse` 每次同步阻塞（台账是
+ * 「天×渠道×账号×模型」全量文档，vendor 自己的注释实测 500 桶/天约 132ms）。
+ * 缓存键是文件身份 —— 台账被写（节流落盘）后 mtime 变化自动失效，无 staleness
+ * 窗口风险；解析失败不缓存（下次重读）。
  */
+let usageCache = undefined
 export function readChannelUsage(file) {
+  let stat
+  try {
+    stat = statSync(file)
+  } catch {
+    usageCache = undefined
+    return undefined
+  }
+  const identity = `${stat.mtimeMs}:${stat.size}`
+  if (usageCache !== undefined && usageCache.file === file && usageCache.identity === identity) {
+    return usageCache.value
+  }
   let parsed
   try {
     parsed = JSON.parse(readFileSync(file, 'utf8'))
@@ -147,7 +165,9 @@ export function readChannelUsage(file) {
     }
     out.days[day] = { models: modelRows }
   }
-  return touched ? out : undefined
+  const value = touched ? out : undefined
+  usageCache = { file, identity, value }
+  return value
 }
 
 const rowTps = (row) => {

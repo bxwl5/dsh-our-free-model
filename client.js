@@ -3195,6 +3195,14 @@ window.__ModuleLoader__.load({
 
     function ChannelCard(props) {
       const { channel, status, rpc, t, onError, onChanged, auto, onAutoRefresh } = props
+      // ⚠️ 卡片侧「通知其它组件」的统一出口（2026-11-01 复审）：事件带
+      // provider —— 广播原本在页面层且不带载荷，20 张卡全部响应，一次动作
+      // 最多 20 个并发 credits.balances（各 90s 超时）。守卫在卡片的
+      // ofm:channels 监听器里；无 detail 的旧事件（测试桩）保持全量刷新。
+      const notifyChanged = () => {
+        onChanged()
+        try { window.dispatchEvent(new CustomEvent('ofm:channels', { detail: { provider: channel.id } })) } catch { /* no window */ }
+      }
       const [open, setOpen] = useState(null)
       const [accounts, setAccounts] = useState(undefined)
       const [models, setModels] = useState(undefined)
@@ -3273,6 +3281,11 @@ window.__ModuleLoader__.load({
         } catch { setCredits([]) }
       }, [rpc, channel.id])
       const loadBalances = useCallback((afterWrite = false) => {
+        // （2026-11-01 复审曾在此加「空对象不发请求」守卫，回退：后端
+        // credits.balances 对 workbuddy/raccoon/commandcode 都有真实分支
+        // （productById buddy 系 / 4214 / 3934），channel-credits-ui-test
+        // 也把它们列为「必须查询余额」的契约面。空对象 `{}` 只表示
+        // 无 claim/status 能力，balances 能力在后端分派表里。）
         if (!CHANNEL_CREDITS[channel.id] || !rpc) return Promise.resolve()
         const pending = balancePending.current
         if (!afterWrite && pending?.provider === channel.id && pending.rpc === rpc) return pending.promise
@@ -3321,14 +3334,17 @@ window.__ModuleLoader__.load({
       // channel: an account added in another tab, a completed background login,
       // a claim that moved the numbers.
       useEffect(() => {
-        const onEvent = () => {
+        const onEvent = event => {
+          // 事件带 provider 时只刷对应卡片；无 provider（兼容旧调用）才全刷。
+          const provider = event?.detail?.provider
+          if (typeof provider === 'string' && provider !== '' && provider !== channel.id) return
           if (open === 'accounts') { void loadAccounts(); void loadCredits() }
           if (open === 'models') void loadModels()
           void loadBalances()
         }
         window.addEventListener('ofm:channels', onEvent)
         return () => window.removeEventListener('ofm:channels', onEvent)
-      }, [open, loadAccounts, loadModels, loadCredits, loadBalances])
+      }, [open, loadAccounts, loadModels, loadCredits, loadBalances, channel.id])
 
       const toggle = async fold => {
         if (open === fold) { setOpen(null); return }
@@ -3376,7 +3392,7 @@ window.__ModuleLoader__.load({
           if (typeof accountId !== 'string' || accountId === '') throw new Error('bad-answer')
           setPasteText(''); setPasteOpen(false)
           flashNotice(t('chan.login.done').replace('{login}', channel.name))
-          onChanged(); void loadAccounts(); void loadCredits(); void loadBalances(true)
+          notifyChanged(); void loadAccounts(); void loadCredits(); void loadBalances(true)
         } catch (error) {
           onError(channel, error)
         } finally { setBusy('') }
@@ -3468,7 +3484,7 @@ window.__ModuleLoader__.load({
                 setNotice(t('chan.login.failed').replace('{reason}', value.error ?? '未知原因'))
               } else {
                 flashNotice(t('chan.login.done').replace('{login}', value.login ?? ''))
-                onChanged()
+                notifyChanged()
                 void loadAccounts()
                 void loadCredits()
                 void loadBalances(true)
@@ -3521,7 +3537,7 @@ window.__ModuleLoader__.load({
           await accountAction(disabled ? 'models:hide' : 'models:show', '', async () => {
             await rpc('model.setAllDisabled', { provider: channel.id, disabled })
             await loadModels()
-            onChanged()
+            notifyChanged()
           })
         } finally { modelBatchPending.current = false }
       }
@@ -3559,7 +3575,7 @@ window.__ModuleLoader__.load({
           await accountAction('models:refetch', '', async () => {
             const value = await rpc('model.refresh', { provider: channel.id }, 60_000)
             await loadModels()
-            onChanged()
+            notifyChanged()
             setNotice(value?.refreshed === false
               ? t('chan.model.refetchNoChange')
               : t('chan.model.refetchDone'))
@@ -3573,7 +3589,7 @@ window.__ModuleLoader__.load({
           && !window.confirm(t('chan.confirm.delete').replace('{name}', entry?.nickname ?? accountId))) return
         await accountAction('del:' + accountId, accountId, async () => {
           await rpc('account.delete', { accountId })
-          onChanged(); await loadAccounts(); void loadBalances(true)
+          notifyChanged(); await loadAccounts(); void loadBalances(true)
         })
       }
 
@@ -3691,7 +3707,7 @@ window.__ModuleLoader__.load({
               for (const row of accounts ?? await rpc('account.list', { provider: channel.id }).then(v => v?.accounts ?? [])) {
                 try { await rpc('account.refresh', { accountId: row.id }, 90_000) } catch (error) { onError(channel, error) }
               }
-              onChanged(); await loadAccounts(); void loadBalances(true)
+              notifyChanged(); await loadAccounts(); void loadBalances(true)
             }),
           }, busy === 'refreshAll' ? '…' : recheckOnly ? t('chan.act.recheck') : t('chan.act.refresh')) : null,
           creditCapability ? h('button', {
@@ -3798,14 +3814,14 @@ window.__ModuleLoader__.load({
                       type: 'button', className: 'ofm_minibtn', disabled: busy !== '' || !rpc,
                       onClick: () => accountAction('refresh:' + row.id, row.id, async () => {
                         await rpc('account.refresh', { accountId: row.id }, 90_000)
-                        onChanged(); await loadAccounts(); void loadBalances(true)
+                        notifyChanged(); await loadAccounts(); void loadBalances(true)
                       }),
                     }, recheckOnly ? t('chan.act.recheck') : t('chan.act.refresh')),
                     h('button', {
                       type: 'button', className: 'ofm_minibtn', disabled: busy !== '' || !rpc,
                       onClick: () => accountAction('toggle:' + row.id, row.id, async () => {
                         await rpc('account.update', { accountId: row.id, patch: { enabled: row.enabled === false } })
-                        onChanged(); await loadAccounts()
+                        notifyChanged(); await loadAccounts()
                       }),
                     }, row.enabled === false ? t('chan.act.enable') : t('chan.act.disable')),
                     h('button', {
@@ -3859,7 +3875,7 @@ window.__ModuleLoader__.load({
                   onClick: () => accountAction('model:' + model.id, '', async () => {
                     if (model.dead === true) await rpc('model.clearDead', { provider: channel.id, modelId: model.id })
                     else await rpc('model.setDisabled', { provider: channel.id, modelId: model.id, disabled: model.disabled !== true })
-                    await loadModels(); onChanged()
+                    await loadModels(); notifyChanged()
                   }),
                 }, model.dead === true ? t('chan.model.restore') : model.disabled === true ? t('chan.model.on') : t('chan.model.off'))))))) : null)
 
@@ -4041,9 +4057,11 @@ window.__ModuleLoader__.load({
         return () => clearInterval(timer)
       }, [available, loadStatus, loadAuto])
 
+      // onChanged 下传给 20 张 ChannelCard；真正的广播在卡片里发（那里才有
+      // channel 闭包），且事件带 provider —— 一次登录/领赏只有本渠道卡片响应，
+      // 其余 19 张不再各自发起 credits.balances（2026-11-01 复审）。
       const onChanged = useCallback(() => {
         void loadStatus()
-        try { window.dispatchEvent(new CustomEvent('ofm:channels')) } catch { /* no window */ }
       }, [loadStatus])
 
       const onError = useCallback((channel, err) => {
@@ -5638,12 +5656,34 @@ window.__ModuleLoader__.load({
       ctx.effect(() => ctx.locale.register(NS, { zh: DICT.zh, en: DICT.en }), 'our-free-model: dictionaries')
 
       ctx.effect(() => {
-        const style = document.createElement('style')
-        style.setAttribute('data-plugin', 'dsh-our-free-model')
-        style.textContent = CSS
-        document.head.appendChild(style)
-        return () => style.remove()
-      }, 'our-free-model: styles')
+        // ⚠️ CSS 延迟到 settings.section 首次渲染才注入（2026-11-01 复审）：
+        // 84KB 的样式表插在 head 里只为本插件的页面服务，而本插件页面是七个
+        // tab 之一 —— 用户停在别的插件页面时这 84KB 是纯浪费的解析+样式计算。
+        // slots.inject 的回调在 section 挂载时才跑，正好做注入点；卸载仍由
+        // effect 清理（style 元素挂在 head，重载时随 effect dispose 移除）。
+        let style = null
+        const ensureStyles = () => {
+          if (style !== null && style.isConnected) return
+          style = document.createElement('style')
+          style.setAttribute('data-plugin', 'dsh-our-free-model')
+          style.textContent = CSS
+          document.head.appendChild(style)
+        }
+        const disposeStyles = () => {
+          if (style !== null) { style.remove(); style = null }
+        }
+        ctx.slots.inject('settings.section', () => {
+          ensureStyles()
+          return ctx.slots.register({
+            name: 'settings.section',
+            id: 'our-free-model',
+            order: 35,
+            label: () => t('nav'),
+            locale: NS,
+          }, props => h(SettingsPage, { ...props, locale: localeTag(ctx), ctx }))
+        })
+        return disposeStyles
+      }, 'our-free-model: styles (lazy)')
 
       // A hot reload or in-app upgrade swaps this bundle while the page stays
       // open. The only durable marker across that swap is localStorage, so the
@@ -5669,13 +5709,8 @@ window.__ModuleLoader__.load({
         return () => {}
       }, 'our-free-model: reload notice')
 
-      ctx.slots.inject('settings.section', () => ctx.slots.register({
-        name: 'settings.section',
-        id: 'our-free-model',
-        order: 35,
-        label: () => t('nav'),
-        locale: NS,
-      }, props => h(SettingsPage, { ...props, locale: localeTag(ctx), ctx })))
+      // （settings.section 的注册已并入上方「styles (lazy)」effect：
+      //  注入回调正是首次挂载点，在那里同时补样式。）
 
     }
     exports.apply = apply
