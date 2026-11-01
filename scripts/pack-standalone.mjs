@@ -35,7 +35,7 @@ const sourceFiles = [
   ...['completion', 'runtime', 'stats'].map(name => `src/core/${name}.js`),
   'src/route/classify.js',
   ...['index', 'inject', 'prompts'].map(name => `src/token-saver/${name}.js`),
-  ...['index', 'constants', 'autodetect', 'applyFilter', 'hitLine', 'registry']
+  ...['index', 'constants', 'autodetect', 'applyFilter', 'hitLine']
     .map(name => `src/token-saver/rtk/${name}.js`),
   ...['buildOutput', 'dedupLog', 'find', 'gitDiff', 'gitLog', 'gitStatus', 'grep', 'ls',
     'readNumbered', 'searchList', 'smartTruncate', 'tree']
