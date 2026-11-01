@@ -26,14 +26,15 @@
  * sits between the user's turn and the provider, so its worst acceptable
  * outcome is saving nothing.
  *
- * Two entry points exist:
+ * Two facts about this module's surface:
  *
- * - {@link module:src/token-saver/rtk/index.js~compressMessages} — the original
- *   wire-agnostic walk (OpenAI chat/responses items, Anthropic blocks, and the
- *   Kiro conversationState shape), kept for parity.
- * - {@link module:src/token-saver/rtk/index.js~compressRequest} — the same
- *   compaction addressed by the three wires this plugin actually builds:
+ * - {@link module:src/token-saver/rtk/index.js~compressRequest} — the only
+ *   production entry point, addressed by the three wires this plugin builds:
  *   `chat`, `messages`, `responses`.
+ * - The original wire-agnostic `compressMessages` walk (OpenAI chat/responses
+ *   items, Anthropic blocks, the Kiro conversationState shape) was removed on
+ *   2026-11-01: nothing in production ever called it — the plugin only ever
+ *   goes through `compressRequest`（审计确认）.
  *
  * @module src/token-saver/rtk/index.js
  */
@@ -42,132 +43,6 @@ import { RAW_CAP, MIN_COMPRESS_SIZE } from './constants.js'
 import { autoDetectFilter } from './autodetect.js'
 import { safeApply } from './applyFilter.js'
 
-// ── wire-agnostic entry (source parity) ──────────────────────────────────────
-
-/**
- * Compress tool-result content in place, walking every shape the source tool
- * understood.
- *
- * Returns `null` when disabled, when the body has no recognisable message list,
- * or when the walk itself failed — the caller's signal to send the body as-is.
- * On success the stats are `{ bytesBefore, bytesAfter, hits }`, where the byte
- * counts cover only the tool-output text that was considered (not the whole
- * request) and `hits` names the shape and filter behind each saving.
- *
- * @param {object} body - a request body carrying `messages`, `input`, or `conversationState`
- * @param {boolean} enabled - per-request switch
- */
-export function compressMessages(body, enabled) {
-  if (!enabled) return null
-  if (!body) return null
-
-  // Kiro format: conversationState.history + conversationState.currentMessage
-  if (body.conversationState) {
-    return compressKiroFormat(body, enabled)
-  }
-
-  // Support both OpenAI/Claude "messages" and OpenAI Responses "input"
-  const items = Array.isArray(body.messages) ? body.messages
-    : Array.isArray(body.input) ? body.input
-    : null
-  if (!items) return null
-
-  const stats = { bytesBefore: 0, bytesAfter: 0, hits: [] }
-  try {
-    for (let i = 0; i < items.length; i++) {
-      const msg = items[i]
-      if (!msg) continue
-
-      // Shape 4: OpenAI Responses — top-level { type:"function_call_output", output: string | [{type:"input_text", text}] }
-      if (msg.type === 'function_call_output') {
-        if (typeof msg.output === 'string') {
-          msg.output = compressText(msg.output, stats, 'openai-responses-string')
-        } else if (Array.isArray(msg.output)) {
-          for (let k = 0; k < msg.output.length; k++) {
-            const part = msg.output[k]
-            if (part && part.type === 'input_text' && typeof part.text === 'string') {
-              part.text = compressText(part.text, stats, 'openai-responses-array')
-            }
-          }
-        }
-        continue
-      }
-
-      // Shape 1: OpenAI tool message — { role:"tool", content: "string" }
-      if (msg.role === 'tool' && typeof msg.content === 'string') {
-        msg.content = compressText(msg.content, stats, 'openai-tool')
-        continue
-      }
-
-      if (!Array.isArray(msg.content)) continue
-
-      // Shape 1b: OpenAI tool message — { role:"tool", content:[{type:"text", text:"..."}] }
-      if (msg.role === 'tool') {
-        for (let k = 0; k < msg.content.length; k++) {
-          const part = msg.content[k]
-          if (part && part.type === 'text' && typeof part.text === 'string') {
-            part.text = compressText(part.text, stats, 'openai-tool-array')
-          }
-        }
-        continue
-      }
-
-      // Shape 2/3: blocks array with tool_result entries
-      for (let j = 0; j < msg.content.length; j++) {
-        const block = msg.content[j]
-        if (!block || block.type !== 'tool_result') continue
-        if (block.is_error === true) continue // preserve error traces
-
-        if (typeof block.content === 'string') {
-          // Shape 2: claude string form
-          block.content = compressText(block.content, stats, 'claude-string')
-        } else if (Array.isArray(block.content)) {
-          // Shape 3: claude array form — compress each text part
-          for (let k = 0; k < block.content.length; k++) {
-            const part = block.content[k]
-            if (part && part.type === 'text' && typeof part.text === 'string') {
-              part.text = compressText(part.text, stats, 'claude-array')
-            }
-          }
-        }
-      }
-    }
-  } catch (e) {
-    console.warn('[RTK] compressMessages error:', e.message)
-    return null
-  }
-  return stats
-}
-
-// Compress Kiro format: conversationState.history[].userInputMessage.userInputMessageContext.toolResults[].content[].text
-function compressKiroFormat(body, enabled) {
-  const stats = { bytesBefore: 0, bytesAfter: 0, hits: [] }
-  try {
-    const state = body.conversationState
-    const allMessages = [...(Array.isArray(state?.history) ? state.history : [])]
-    if (state?.currentMessage) allMessages.push(state.currentMessage)
-
-    for (const msg of allMessages) {
-      const toolResults = msg?.userInputMessage?.userInputMessageContext?.toolResults
-      if (!Array.isArray(toolResults)) continue
-
-      for (const tr of toolResults) {
-        if (tr.status === 'error') continue // preserve error traces
-        if (!Array.isArray(tr.content)) continue
-
-        for (const part of tr.content) {
-          if (part && typeof part.text === 'string') {
-            part.text = compressText(part.text, stats, 'kiro-tool-result')
-          }
-        }
-      }
-    }
-  } catch (e) {
-    console.warn('[RTK] compressKiroFormat error:', e.message)
-    return null
-  }
-  return stats
-}
 
 /**
  * Compact one text blob, adding the outcome to `stats`.
@@ -215,20 +90,10 @@ export function compressText(text, stats, shape) {
   return out
 }
 
-/**
- * One log line for a completed pass, or `null` when there is nothing to report.
- *
- * Kept from the source tool: the caller logs this and moves on. It names the
- * byte counts and the filters that fired, which is the only visibility anyone
- * has into why a request got smaller.
- */
-export function formatRtkLog(stats) {
-  if (!stats || !stats.hits || stats.hits.length === 0) return null
-  const saved = stats.bytesBefore - stats.bytesAfter
-  const pct = stats.bytesBefore > 0 ? ((saved / stats.bytesBefore) * 100).toFixed(1) : '0'
-  const filters = Array.from(new Set(stats.hits.map(h => h.filter))).join(',')
-  return `[RTK] saved ${saved}B / ${stats.bytesBefore}B (${pct}%) via [${filters}] hits=${stats.hits.length}`
-}
+// ── the host plugin's three wires ────────────────────────────────────────────
+// （原 wire-agnostic 入口 compressMessages / compressKiroFormat 与日志辅助
+// formatRtkLog 已于 2026-11-01 死代码清理中删除：生产只用 compressRequest，
+// 看板汇总文案由 token-saver/index.js 的 describeSavingsTotal 负责。）
 
 // ── the host plugin's three wires ────────────────────────────────────────────
 
@@ -338,38 +203,6 @@ function compressResponsesPayload(payload, stats) {
       }
     }
   }
-}
-
-// ── reporting helpers ────────────────────────────────────────────────────────
-
-/**
- * A one-line human summary of a pass, for a UI or a log line the user reads.
- *
- * Returns `null` only when there is nothing to say — no stats, or the pass was
- * switched off — so a caller can treat null as "do not print". An enabled pass
- * with no hits still gets a line: "(0%) — no tool output compacted" is a useful
- * fact (the saver ran and found nothing), and silence would look like the
- * saver never ran at all.
- */
-export function describeSavings(stats) {
-  if (!stats || stats.enabled === false) return null
-  const before = Number.isFinite(stats.bytesBefore) ? stats.bytesBefore : 0
-  const after = Number.isFinite(stats.bytesAfter) ? stats.bytesAfter : 0
-  const saved = before - after
-  const pct = before > 0 ? Math.round((saved / before) * 100) : 0
-  const hits = Array.isArray(stats.hits) ? stats.hits : []
-  const filters = Array.from(new Set(hits.map(hit => hit.filter)))
-  if (hits.length === 0) {
-    return `[token-saver] ${humanBytes(before)} -> ${humanBytes(after)} (0%) — no tool output compacted`
-  }
-  return `[token-saver] ${humanBytes(before)} -> ${humanBytes(after)} (${pct}%) via ${filters.join(', ')} (${hits.length} blocks)`
-}
-
-/** Byte count as a human would read it: B below 1 KiB, one decimal above. */
-function humanBytes(bytes) {
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${bytes} B`
 }
 
 /**

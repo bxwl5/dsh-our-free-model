@@ -50,14 +50,25 @@ export function buildStats(stats, catalog, options = {}) {
   const named = [...modelIds].map(model => {
     const row = totals[model] ?? empty(model)
     const lifetime = lifetimeModels[model] ?? {}
+    // ⚠️ 判据是「生命周期字段存在且有限」，不是 isSafeInteger：
+    // isSafeInteger(0) === true，会让「生命周期为 0」**覆盖** days 里有真实
+    // 记账的值（实测：days 有 input:100/calls:3、lifetime 为 0 → 输出全 0，
+    // 整天数据被抹掉）。正常写入路径里 lifetime ≥ days 累计恒成立；lifetime
+    // 比 days 小只可能是字段缺失（旧数据迁移）或损坏 —— 所以取
+    // max(lifetime, days聚合)：缺字段回退到 days，0 不会抹掉真实值，正常
+    // 情况（lifetime 更大，跨天累计）也不受影响。
+    const largerOr = (value, fallback) => {
+      const lifetimeValue = Number.isFinite(value) ? value : 0
+      return lifetimeValue > fallback ? lifetimeValue : fallback
+    }
     const physical = {
       ...row,
-      input: Number.isSafeInteger(lifetime.input) ? lifetime.input : row.input,
-      output: Number.isSafeInteger(lifetime.output) ? lifetime.output : row.output,
-      reasoning: Number.isSafeInteger(lifetime.reasoning) ? lifetime.reasoning : row.reasoning,
-      cacheRead: Number.isSafeInteger(lifetime.cacheRead) ? lifetime.cacheRead : row.cacheRead,
-      calls: Number.isSafeInteger(lifetime.calls) ? lifetime.calls : row.calls,
-      failed: Number.isSafeInteger(lifetime.failed) ? lifetime.failed : row.failed,
+      input: largerOr(lifetime.input, row.input),
+      output: largerOr(lifetime.output, row.output),
+      reasoning: largerOr(lifetime.reasoning, row.reasoning),
+      cacheRead: largerOr(lifetime.cacheRead, row.cacheRead),
+      calls: largerOr(lifetime.calls, row.calls),
+      failed: largerOr(lifetime.failed, row.failed),
     }
     return {
       ...physical,

@@ -125,7 +125,6 @@ export function buildComboCatalog(combos, catalog) {
       maxOutput: Math.min(...members.map(entry => number(entry.maxOutput) ?? 32768)),
       canDisableThinking: members.every(entry => entry.canDisableThinking !== false),
       regionSensitive: false,
-      wire: 'chat',
       /** Which lanes this chain can reach, for the detail line. */
       lanes: [...new Set(members.map(entry => entry.channel ?? 'free'))],
     })

@@ -27,7 +27,7 @@
  */
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { MIN_DECODE_MS, MAX_CREDIBLE_TPS } from '../store.js'
+import { dayKey, MIN_DECODE_MS, MAX_CREDIBLE_TPS } from '../store.js'
 
 /** 台账文件名（与 `vendor/channel-pack/src/token-ledger-store.ts` 一致）。 */
 export const CHANNEL_LEDGER_FILE = 'token-ledger.json'
@@ -43,6 +43,27 @@ export function resolveChannelLedgerPath(home) {
 }
 
 const int = (value) => (Number.isFinite(value) ? Math.round(value) : 0)
+
+/**
+ * 台账日键 → 插件日键的换算。
+ *
+ * ⚠️ 两边的日键语义不同源（2026-11-01 审计实测）：台账用 **UTC+8 算术日**
+ * （vendor/channel-pack/src/token-ledger.ts 的 `utc8DayKey`，各渠道每日额度
+ * 都按 UTC+8 结算），而插件 stats 的 `dayKey` 用**本机日历**。`mergeChannelStats`
+ * 直接拿台账日字符串做 `byDay` 键，非 UTC+8 机器上同一时刻会被劈成两个日桶
+ * （本机 UTC+0、时刻 20:00Z：stats 记 10-30，台账记 10-31）。
+ *
+ * 换算方向：把「UTC+8 算术日」还原成该日的**代表时刻**，再用本机日历取键，
+ * 与 `dayKey` 的语义对齐。代表时刻取该日 12:00 UTC+8（正午，离两侧日界最远，
+ * 本机时区在 ±11h 内都能落在同一日）。
+ */
+export function ledgerDayToDayKey(ledgerDay) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ledgerDay))
+  if (match === null) return String(ledgerDay)
+  const [, y, m, d] = match
+  const noonUtc8 = Date.UTC(Number(y), Number(m) - 1, Number(d), 12 - 8)
+  return dayKey(noonUtc8)
+}
 
 /** 台账键 `direct|<provider>|<accountId>|<model>` → `{ provider, model }`。 */
 function parseLedgerKey(key) {
@@ -153,7 +174,9 @@ export function mergeChannelStats(payload, usage, { includeCacheRead = false } =
 
   const days = payload.days.map((row) => ({ ...row, models: [...row.models] }))
   const byDay = new Map(days.map((row) => [row.day, row]))
-  for (const [day, bucket] of Object.entries(usage.days)) {
+  for (const [ledgerDay, bucket] of Object.entries(usage.days)) {
+    // 台账的 UTC+8 日键换算成本机日历键，与 stats 的 dayKey 同源（见函数头）。
+    const day = ledgerDayToDayKey(ledgerDay)
     let target = byDay.get(day)
     if (target === undefined) {
       target = { day, total: 0, models: [] }
@@ -215,7 +238,11 @@ export function mergeChannelStats(payload, usage, { includeCacheRead = false } =
     reasoning: sum('reasoning'),
     cacheRead: sum('cacheRead'),
     calls: sum('calls'),
-    failed: sum('failed'),
+    // ⚠️ 不能用 sum('failed') 重算：buildStats 的 `grand.failed` 来自生命周期
+    // 计数（stats.failedRequests），**可以大于**任何模型行之和（计入失败在
+    // 无法归到某个模型时的情况）。与 `requestFailures` 一样按「原值 + 渠道
+    // 增量」累加，否则同一份载荷里两个失败数自相矛盾（实测 5→1 与 6 并存）。
+    failed: (payload.grand?.failed ?? 0) + usage.failures,
   }
   return {
     ...payload,

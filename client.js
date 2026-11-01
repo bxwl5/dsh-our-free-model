@@ -24,7 +24,6 @@ window.__ModuleLoader__.load({
     const module = { exports: {} }
     const exports = module.exports
     const React = require('react')
-    const ReactDOM = require('react-dom')
     const { createElement: h, Fragment, useState, useEffect, useMemo, useRef, useCallback } = React
 
     const NS = 'settings.ourFreeModel'
@@ -161,6 +160,8 @@ window.__ModuleLoader__.load({
         'forward.hide': '隐藏',
         'forward.rotate': '重新生成',
         'forward.rotateWarn': '重新生成后，所有使用旧 Key 的工具都会失效。',
+        'forward.rotateDone': '已生成新的转发密钥',
+        'forward.rotateFail': '重新生成密钥失败',
         'forward.copy': '复制',
         'forward.copied': '已复制',
         'forward.example': '调用示例',
@@ -243,6 +244,7 @@ window.__ModuleLoader__.load({
         'chan.act.enable': '启用',
         'chan.act.disable': '停用',
         'chan.expires.never': '长效',
+        'chan.expires.expired': '已到期，请续期',
         'chan.disabled': '已停用',
         'chan.login.title': '登录 {name}',
         'chan.login.step1': '在浏览器中完成登录（若没有自动打开，点下面的按钮）。',
@@ -654,6 +656,8 @@ window.__ModuleLoader__.load({
         'forward.hide': 'Hide',
         'forward.rotate': 'Regenerate',
         'forward.rotateWarn': 'Regenerating invalidates the old key for every tool using it.',
+        'forward.rotateDone': 'New forward key generated',
+        'forward.rotateFail': 'Failed to regenerate the forward key',
         'forward.copy': 'Copy',
         'forward.copied': 'Copied',
         'forward.example': 'Example',
@@ -735,6 +739,7 @@ window.__ModuleLoader__.load({
         'chan.act.enable': 'Enable',
         'chan.act.disable': 'Disable',
         'chan.expires.never': 'Long-lived',
+        'chan.expires.expired': 'Expired — refresh needed',
         'chan.disabled': 'Disabled',
         'chan.login.title': 'Sign in to {name}',
         'chan.login.step1': 'Finish the sign-in in your browser (if it did not open, use the button below).',
@@ -2263,13 +2268,6 @@ window.__ModuleLoader__.load({
       return root.children
     }
 
-    /** Materialize the virtual tree as React elements (keys are positional). */
-    function htmlToReact(nodes) {
-      return nodes.map((node, index) => typeof node === 'string'
-        ? node
-        : h(node.tag, { key: index, ...node.props }, ...htmlToReact(node.children ?? [])))
-    }
-
     /** Materialize the virtual tree as DOM nodes (for toasts and modals). */
     function htmlToDom(nodes) {
       return nodes.map(node => {
@@ -2835,7 +2833,18 @@ window.__ModuleLoader__.load({
             h('code', { className: 'ofm_mono', style: { padding: '4px 8px', flex: 1, minWidth: 200, letterSpacing: shown ? 0 : 1 } }, key === '' ? '…' : shown ? key : '•'.repeat(24)),
             h(Button, { kind: 'ghost', onClick: () => setShown(value => !value) }, shown ? t('forward.hide') : t('forward.show')),
             h(Button, { kind: 'ghost', onClick: () => doCopy('key', key) }, copied === 'key' ? t('forward.copied') : t('forward.copy')),
-            h(Button, { kind: 'ghost', title: t('forward.rotateWarn'), onClick: async () => { const payload = await post('/forward/rotate'); setKey(payload.key ?? ''); setShown(true) } }, t('forward.rotate'))),
+            h(Button, { kind: 'ghost', title: t('forward.rotateWarn'), onClick: async () => {
+              // 失败必须给反馈：api() 超时/后端异常会 reject，不兜底就是
+              // unhandled rejection，按钮点了没反应（2026-11-01 审计）。
+              try {
+                const payload = await post('/forward/rotate')
+                setKey(payload.key ?? '')
+                setShown(true)
+                showToast({ title: t('forward.rotateDone'), tone: 'ok', holdMs: 4000 })
+              } catch (error) {
+                showToast({ title: t('forward.rotateFail'), body: String(error?.message ?? error).slice(0, 160), tone: 'warn' })
+              }
+            } }, t('forward.rotate'))),
           h('div', { className: 'ofm_sec', style: { gap: 4 } }, h('span', { className: 'ofm_note' }, t('forward.example')),
             h('pre', { className: 'ofm_mono' }, curl),
             h('div', null, h(Button, { kind: 'ghost', onClick: () => doCopy('curl', curl) }, copied === 'curl' ? t('forward.copied') : t('forward.copy'))))) : null,
@@ -3145,10 +3154,26 @@ window.__ModuleLoader__.load({
       try { if (popup && !popup.closed) popup.close() } catch { /* best effort */ }
     }
 
+    /** 未来的毫秒时刻 → 「剩余 x 天/x 小时/x 分钟」人读文本。 */
+    function remainingText(ts, locale) {
+      const zh = String(locale ?? '').toLowerCase().startsWith('zh')
+      const seconds = Math.max(1, Math.round((ts - Date.now()) / 1000))
+      if (seconds < 60) return zh ? `${seconds} 秒后到期` : `expires in ${seconds}s`
+      const minutes = Math.round(seconds / 60)
+      if (minutes < 60) return zh ? `${minutes} 分钟后到期` : `expires in ${minutes}m`
+      const hours = Math.round(minutes / 60)
+      if (hours < 48) return zh ? `${hours} 小时后到期` : `expires in ${hours}h`
+      return zh ? `${Math.round(hours / 24)} 天后到期` : `expires in ${Math.round(hours / 24)}d`
+    }
+
     /** Human text for a millisecond timestamp, or the long-lived marker. */
     function expiryText(entry, t) {
       if (!Number.isFinite(entry?.expiresAt) || entry.expiresAt <= 0) return t('chan.expires.never')
-      return ago(entry.expiresAt, t.locale)
+      // expiresAt 是**未来**的到期时刻（凭据 expire_time），不能用 ago()：
+      // ago 算 Date.now()-ts 且 Math.max(1,…)，未来时刻差为负 → 恒显示
+      // 「1 秒前」（2026-11-01 审计实测）。已过期/临近的按剩余时长展示。
+      if (entry.expiresAt <= Date.now()) return t('chan.expires.expired')
+      return remainingText(entry.expiresAt, t.locale)
     }
 
     /**
@@ -3892,9 +3917,12 @@ window.__ModuleLoader__.load({
               onClick: async () => {
                 setSmsBusy(true); setSmsMessage('')
                 try {
+                  // 15s 超时兜底：api() 的 8s 兜底不覆盖这里的裸 fetch，
+                  // 挂起会让 smsBusy 永久 true、按钮锁死（2026-11-01 审计）。
                   const response = await fetch(`/api/channel-pack/login/autoclaw/send?flow=${encodeURIComponent(embeddedLogin.flowId)}`, {
                     method: 'POST', headers: { 'content-type': 'application/json' },
                     body: JSON.stringify({ phone: smsPhone }),
+                    signal: AbortSignal.timeout(15_000),
                   })
                   const value = await response.json().catch(() => null)
                   if (value?.ok === true) { setSmsSentAt(Date.now()); setSmsMessage('') }
@@ -3909,9 +3937,11 @@ window.__ModuleLoader__.load({
             onClick: async () => {
               setSmsBusy(true); setSmsMessage('')
               try {
+                // 同 send：15s 超时兜底，防止按钮永久锁死。
                 const response = await fetch(`/api/channel-pack/login/autoclaw/verify?flow=${encodeURIComponent(embeddedLogin.flowId)}`, {
                   method: 'POST', headers: { 'content-type': 'application/json' },
                   body: JSON.stringify({ code: smsCode }),
+                  signal: AbortSignal.timeout(15_000),
                 })
                 const value = await response.json().catch(() => null)
                 if (value?.ok !== true) setSmsMessage(value?.message ?? '登录失败')
@@ -4538,7 +4568,11 @@ window.__ModuleLoader__.load({
           h('div', { className: 'ofm_callout' }, h('div', null, t('chan.rpc.unavailable'))))
       }
       return h('div', { className: 'ofm_page' },
-        h(PageHero, { t, titleKey: 'dash.title', subKey: 'dash.sub' },
+        // ⚠️ PageHero 只解构 {title, sub}（见其定义），传 t/titleKey 会让
+        // 标题渲染为空 —— standalone 构建脚本曾为此打 replaceOnce 补丁
+        // （scripts/lib/standalone-shared-ui.mjs），主文件直接写对后应同步
+        // 删掉那份补丁。
+        h(PageHero, { title: t('dash.title'), sub: t('dash.sub') },
           h('div', { className: 'ofm_seg', role: 'tablist' },
             ['today', 'all'].map(key => h('button', {
               key, type: 'button', 'aria-pressed': scope === key ? 'true' : 'false',
@@ -4901,14 +4935,6 @@ window.__ModuleLoader__.load({
         kind: 'ghost',
         onClick: () => copy(text, ok => { if (ok) setDone(true) }),
       }, done ? t('gateway.copied') : t('gateway.copy'))
-    }
-
-    /** A switch with its one-line explanation underneath. */
-    function ToggleRow(props) {
-      const { label, hint, checked, disabled, onChange } = props
-      return h('div', { className: 'ofm_field' },
-        h(Switch, { checked, label, disabled, onChange }),
-        hint === undefined ? null : h('span', null, hint))
     }
 
     const SAVER_LEVEL = t => ({
@@ -5586,7 +5612,7 @@ window.__ModuleLoader__.load({
                 h(Button, { disabled: busy || catalogBusy, onClick: reprobe }, t('reprobe')))))),
         h(Section, { title: t('section.models'), hint: t('section.modelsHint') }, h(Roster, { summary: data, t, onBench: bench, benches, onApply: apply, busy })),
         h(Section, { title: t('section.dash'), hint: t('section.dashHint') },
-          stats.status === 'ready' && stats.data !== undefined ? h(Dashboard, { stats: stats.data, summary: data, t })
+          stats.status === 'ready' && stats.data !== undefined ? h(Dashboard, { stats: stats.data, t })
             : h('p', { className: 'ofm_note' }, t('loading'))),
         h(Section, { title: t('section.forward'), hint: t('section.forwardHint') }, h(Forward, { settings: data.settings, t, onApply: apply, busy })),
         h(Section, { title: t('section.egress'), hint: t('section.egressHint') }, h(Egress, { settings: data.settings, t, onApply: apply, busy })),

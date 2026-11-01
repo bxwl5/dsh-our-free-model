@@ -24,9 +24,8 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { compressMessages, compressRequest, compressText, describeSavings, formatRtkLog } from '../src/token-saver/rtk/index.js'
+import { compressRequest, compressText } from '../src/token-saver/rtk/index.js'
 import { autoDetectFilter } from '../src/token-saver/rtk/autodetect.js'
-import { allFilters, resolveFilter } from '../src/token-saver/rtk/registry.js'
 import { safeApply } from '../src/token-saver/rtk/applyFilter.js'
 import { MIN_COMPRESS_SIZE } from '../src/token-saver/rtk/constants.js'
 import { gitDiff } from '../src/token-saver/rtk/filters/gitDiff.js'
@@ -685,7 +684,6 @@ check('enabled: false returns the payload untouched with stats.enabled false', (
   assert.equal(JSON.stringify(payload), before)
   assert.equal(stats.enabled, false)
   assert.deepEqual(stats, { enabled: false, bytesBefore: 0, bytesAfter: 0, saved: 0, hits: [] })
-  assert.equal(describeSavings(stats), null)
 })
 
 check('a boolean false works as the off switch too', () => {
@@ -712,75 +710,12 @@ check('bytesBefore - bytesAfter === saved, and hits sum to saved', () => {
   }
 })
 
-check('formatRtkLog renders the source-format line', () => {
-  const { stats } = compressRequest(chatBody(GIT_DIFF), 'chat')
-  assert.match(formatRtkLog(stats), /^\[RTK\] saved \d+B \/ \d+B \(\d+\.\d%\) via \[git-diff\] hits=1$/)
-  assert.equal(formatRtkLog({ bytesBefore: 0, bytesAfter: 0, hits: [] }), null)
-  assert.equal(formatRtkLog(null), null)
-})
+// formatRtkLog 与 describeSavings 已删（见上方 compressMessages 注释）：
+// 生产日志走 src/token-saver/index.js 的 describeSavingsTotal。
 
-check('describeSavings renders the documented one-liner', () => {
-  const synthetic = {
-    enabled: true,
-    bytesBefore: 12595,
-    bytesAfter: 4198,
-    saved: 8397,
-    hits: [
-      { shape: 'openai-tool', filter: 'git-diff', saved: 5000 },
-      { shape: 'openai-tool', filter: 'grep', saved: 3397 },
-    ],
-  }
-  assert.equal(describeSavings(synthetic), '[token-saver] 12.3 KB -> 4.1 KB (67%) via git-diff, grep (2 blocks)')
-})
-
-check('describeSavings names an empty pass and returns null when disabled', () => {
-  const empty = describeSavings({ enabled: true, bytesBefore: 500, bytesAfter: 500, saved: 0, hits: [] })
-  assert.match(empty, /^\[token-saver\] 500 B -> 500 B \(0%\) — no tool output compacted$/)
-  assert.equal(describeSavings({ enabled: false, bytesBefore: 0, bytesAfter: 0, saved: 0, hits: [] }), null)
-  assert.equal(describeSavings(undefined), null)
-})
-
-// ── the raw wire-agnostic export (source parity) ─────────────────────────────
-console.log('\ncompressMessages (raw export)')
-
-check('compressMessages compacts chat and responses items, and honours the switch', () => {
-  const body = {
-    messages: [
-      { role: 'tool', tool_call_id: 'c1', content: GIT_DIFF },
-      { type: 'function_call_output', call_id: 'c2', output: LS_SAMPLE },
-    ],
-  }
-  const stats = compressMessages(body, true)
-  assert.ok(stats !== null)
-  assert.ok(body.messages[0].content.length < GIT_DIFF.length)
-  assert.ok(body.messages[1].output.length < LS_SAMPLE.length)
-  assert.equal(stats.bytesBefore - stats.bytesAfter, stats.hits.reduce((sum, hit) => sum + hit.saved, 0))
-  assert.equal(compressMessages(chatBody(GIT_DIFF), false), null)
-  assert.equal(compressMessages(null, true), null)
-  assert.equal(compressMessages({ model: 'm' }, true), null)
-})
-
-check('compressMessages still walks the Kiro conversationState shape', () => {
-  const body = {
-    conversationState: {
-      history: [{
-        userInputMessage: {
-          userInputMessageContext: {
-            toolResults: [
-              { status: 'success', content: [{ text: GIT_DIFF }] },
-              { status: 'error', content: [{ text: GIT_DIFF }] },
-            ],
-          },
-        },
-      }],
-    },
-  }
-  const stats = compressMessages(body, true)
-  const results = body.conversationState.history[0].userInputMessage.userInputMessageContext.toolResults
-  assert.ok(results[0].content[0].text.length < GIT_DIFF.length)
-  assert.equal(results[1].content[0].text, GIT_DIFF, 'error tool results preserved')
-  assert.deepEqual(stats.hits.map(hit => hit.shape), ['kiro-tool-result'])
-})
+// compressMessages / formatRtkLog / describeSavings 已随死代码清理删除
+// （2026-11-01 审计：生产路径只用 compressRequest / describeSavingsTotal，
+// 这三个是上游兼容层的残留导出）。
 
 check('compressText refuses to return empty or larger output', () => {
   const stats = { bytesBefore: 0, bytesAfter: 0, hits: [] }
@@ -836,14 +771,8 @@ check('repeated passes reach a fixed point without corrupting the body', () => {
 // ── registry and the dependency-free tree ────────────────────────────────────
 console.log('\nmodule shape')
 
-check('registry resolves names and Rust aliases', () => {
-  assert.equal(resolveFilter('git-diff'), gitDiff)
-  assert.equal(resolveFilter('rg'), grep)
-  assert.equal(resolveFilter('fd'), find)
-  assert.equal(resolveFilter('build-output'), null, 'build-output is autodetect-only, as in the source')
-  assert.equal(resolveFilter('no-such-filter'), null)
-  assert.equal(Object.keys(allFilters()).length, 11)
-})
+// registry.js 已删（2026-11-01 审计：生产零引用，功能由 autodetect.js 吸收），
+// 名字→过滤器的解析只存在于 autodetector 的形状猜测里。
 
 check('the module tree imports nothing but its own relative files', () => {
   const root = fileURLToPath(new URL('../src/token-saver/rtk/', import.meta.url))
@@ -852,7 +781,7 @@ check('the module tree imports nothing but its own relative files', () => {
     return entry.isDirectory() ? walk(absolute) : [absolute]
   })
   const files = walk(root)
-  assert.equal(files.length, 18, '12 filters + 6 top-level modules')
+  assert.equal(files.length, 17, '12 filters + 5 top-level modules (registry.js removed 2026-11-01)')
   const offenders = []
   for (const file of files) {
     const body = fs.readFileSync(file, 'utf8')

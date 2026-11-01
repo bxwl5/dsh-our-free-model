@@ -27,9 +27,6 @@ import { compressRequest } from './rtk/index.js'
 import { activePrompts } from './prompts.js'
 import { injectSystem } from './inject.js'
 
-/** Prompt families this pipeline knows, for the settings schema and the UI. */
-export const PROMPT_FAMILIES = ['caveman', 'ponytail']
-
 /**
  * Read the `tokenSaver` settings section into the shape the pipeline wants.
  *
@@ -45,7 +42,7 @@ export function saverConfig(settings) {
   return {
     enabled: section.enabled !== false,
     rtk: section.rtk !== false,
-    caveman: PROMPT_FAMILIES.includes('caveman') ? String(prompts.caveman ?? 'off') : 'off',
+    caveman: String(prompts.caveman ?? 'off'),
     ponytail: String(prompts.ponytail ?? 'off'),
     /** Per-request header/query opt-out is handled by the caller; this is the
      *  stored preference only. */

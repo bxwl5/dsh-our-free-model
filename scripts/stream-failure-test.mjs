@@ -113,7 +113,8 @@ await test('classified stream failures survive every local forwarding protocol',
   const protocols = { chat: '/v1/chat/completions', responses: '/v1/responses', messages: '/v1/messages' }
   const cases = [
     ['LANE_LOCKED', 403], ['PERMISSION_DENIED', 403], ['INVALID_CREDENTIAL', 401],
-    ['QUOTA_EXHAUSTED', 429], ['RATE_LIMIT', 429], ['TIMEOUT', 504], ['ABORTED', 400], ['EAC_UPSTREAM_FAILED', 502], ['NO_PROGRESS', 504],
+    ['QUOTA_EXHAUSTED', 429], ['RATE_LIMIT', 429], ['TIMEOUT', 504], ['ABORTED', 400],
+    // EAC_UPSTREAM_FAILED / NO_PROGRESS 已删（2026-11-01 审计：EAC 移植残骸，无产生点）。
   ]
   for (const [protocol, path] of Object.entries(protocols)) for (const stream of [false, true]) {
     await t.test(`${protocol} stream=${stream}: a thrown permission refusal is not an empty answer`, async () => {
@@ -142,7 +143,7 @@ await test('classified stream failures survive every local forwarding protocol',
       assert.equal(value.error.code, code)
       assert.equal(value.error.privateField, undefined)
       if (code === 'RATE_LIMIT') assert.equal(response.headers.get('retry-after'), '3')
-      if (['LANE_LOCKED', 'QUOTA_EXHAUSTED', 'NO_PROGRESS'].includes(code)) assert.equal(response.headers.get('x-should-retry'), 'false')
+      if (['LANE_LOCKED', 'QUOTA_EXHAUSTED'].includes(code)) assert.equal(response.headers.get('x-should-retry'), 'false')
     })
     if (stream) await t.test(`${protocol}: a failure after content stays an error event`, async () => {
       chunks = [{ type: 'text-delta', text: 'partial', index: 0 }, { type: 'finish', reason: { kind: 'error', failure: { code: 'LANE_LOCKED', message: 'rejected' } } }]

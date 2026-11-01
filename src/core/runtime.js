@@ -102,10 +102,7 @@ export function createModelRuntime({
     }
     catalog = merged
   }
-  const mergeCatalogs = () => {
-    rebuildCatalog()
-  }
-  mergeCatalogs()
+  rebuildCatalog()
   const state = () => ({
     catalog,
     membership: computeMembership(catalog, availability.get(), settings.get()),
@@ -178,7 +175,7 @@ export function createModelRuntime({
     }
     await refreshKiloRoster()
     if (disposed) return catalog
-    mergeCatalogs()
+    rebuildCatalog()
     if (probe) await refreshAvailability(force)
     emitTopology()
     return catalog
@@ -332,7 +329,7 @@ export function createModelRuntime({
     // merged view without a listing round.
     syncAggregateCatalog() {
       if (disposed) return catalog
-      mergeCatalogs()
+      rebuildCatalog()
       emitTopology()
       return catalog
     },

@@ -159,7 +159,9 @@ function openAiError(res, status, type, message, code = null) {
 function failureReply(res, outcome, anthropic = false, force = false) {
   const failure = forwardFailure(outcome, anthropic)
   if (res.headersSent || (!force && !failure.classified)) return false
-  if (['EAC_UPSTREAM_FAILED', 'NO_PROGRESS'].includes(failure.error.code) || (failure.status >= 400 && failure.status < 500 && failure.error.type !== 'rate_limit_error')) res.setHeader('x-should-retry', 'false')
+  // x-should-retry: 4xx（限流除外）不重试。原表里的 EAC_UPSTREAM_FAILED /
+  // NO_PROGRESS 是 EAC 项目移植残骸（2026-11-01 审计），本仓库无产生点，已删。
+  if (failure.status >= 400 && failure.status < 500 && failure.error.type !== 'rate_limit_error') res.setHeader('x-should-retry', 'false')
   if (failure.retryAfterMs !== undefined) res.setHeader('retry-after', String(Math.ceil(failure.retryAfterMs / 1000)))
   json(res, failure.status, anthropic ? { type: 'error', error: failure.error } : { error: { ...failure.error, param: null } })
   return true
@@ -1266,7 +1268,11 @@ async function messagesEndpoint(req, res, complete, options = {}) {
   try {
     result = await complete(request, chunk => {
       foldAnthropicOutcome(outcome, chunk)
-      if (chunk.type === 'finish' && outcome.error !== undefined && !res.headersSent && forwardFailure(outcome).classified) return
+      // 头已在 openStreamHeaders 发出，`!res.headersSent` 恒为 false（死分支，
+      // 2026-11-01 审计）。这里真正的判据是「流尚未写出任何终止帧」：
+      // state.finished 只在 message_stop 写出后置位，此时跳过 finish 帧、
+      // 把失败留给下方 1289 行的错误事件路径。
+      if (chunk.type === 'finish' && outcome.error !== undefined && state.finished !== true && forwardFailure(outcome).classified) return
       for (const frame of anthropicFrames(chunk, state)) write(frame)
     })
   } catch (error) {

@@ -14,8 +14,8 @@ if (source.split(api).length !== 2) throw new Error('共享页面 API 位置改�
 source = source.replace(api, "return '/api/management'")
 // 原页面 POST 空 body；独立管理接口要求 JSON 对象。
 replaceOnce("...body === undefined ? {} : { body: JSON.stringify(body) },", "body: JSON.stringify(body ?? {}),")
-replaceOnce("h(PageHero, { t, titleKey: 'dash.title', subKey: 'dash.sub' },",
-  "h(PageHero, { title: t('dash.title'), sub: t('dash.sub') },")
+// PageHero 主文件已直接传 {title, sub}（2026-11-01 修复台账页空标题），
+// 这里不再需要 replaceOnce 补丁。
 // 独立端把「页面永远拿不到明文」换成「导出备份包含凭据」的如实说明：
 // 独立端没有宿主凭据库，凭据随它的数据文件一起导出，措辞必须与事实一致。
 replaceOnce("'chan.sub': '把各家的渠道接进来：登录一次，模型就出现在对话框的模型选择器里。凭据只写入本机凭据库，页面永远拿不到明文。',",

@@ -32,18 +32,17 @@ import { externalUrl, openExternal } from './src/open-external.js'
 import { ROUTE_LABELS, ROUTE_MAIN, ROUTE_REGION } from './src/adapter.js'
 import { DATA_DIR_NAME, resolveDshHome, publicModelVisibility, validateModelVisibility, isModelHidden } from './src/store.js'
 import { isKiloEntry } from './src/catalog.js'
-import { STATE } from './src/probe.js'
 import { generateKey, rankLanAddresses, startForwardServer, startLanRelay } from './src/forward.js'
 import { chanGatewayCredential, chanGatewayEnabled, chanGatewayPort, startChanRelay } from './src/chan-relay.js'
 import { CODE, UpstreamError } from './src/http.js'
 import { egressActive, egressFetch, outletLabel, readOutletSelection, startEgressRelay } from './src/egress.js'
-import { DEFAULT_LEVEL, budgetLadder, hasDeclaredEffortMenu } from './src/effort.js'
+import { budgetLadder } from './src/effort.js'
 import { modelAvailability } from './src/model-test.js'
 import { createPushHub } from './src/push.js'
 import { rejectionFor, isLoopbackHost, connectionAdmissionView } from './src/trust.js'
 import { resolveAttributionUserAgent } from './adapter/kernel.js'
-import { buildComboCatalog, isComboEntry, normalizeCombos, pruneRotation } from './src/combos.js'
-import { addSavings, describeSavingsTotal, emptySavings, saverConfig, savingsPercent } from './src/token-saver/index.js'
+import { buildComboCatalog, isComboEntry, normalizeCombos } from './src/combos.js'
+import { saverConfig } from './src/token-saver/index.js'
 import { CAVEMAN_LEVELS, PONYTAIL_LEVELS } from './src/token-saver/prompts.js'
 import { OPTIMIZATIONS } from './src/local-optimize.js'
 import { createModelRuntime, createRuntimeStores } from './src/core/runtime.js'
@@ -450,8 +449,27 @@ export function apply(ctx, config) {
     return {
       port: chanGatewayPort(process.env),
       enabledByEnv: chanGatewayEnabled(process.env),
-      credential: chanGatewayCredential({ profileContext: optional('profileContext'), env: process.env }),
+      credential: chanGatewayCredentialCached(),
     }
+  }
+
+  /**
+   * chanGatewayCredential 的 5 秒微缓存：它内部是 readFileSync（api-key 文件），
+   * 而中继的 `config()` 每请求都会调到这里 —— 不缓存就是**每个转发请求一次
+   * 同步盘 IO**（2026-11-01 审计 P1）。密钥的变更路径只有 rotateChanRelayKey
+   * （写 settings，不写这个文件）与 gateway 侧生成（罕见），5 秒内生效完全
+   * 可接受；环境变量优先路径不读盘，缓存同样无害。
+   */
+  let chanGatewayCredentialCache = null
+  let chanGatewayCredentialAt = 0
+  const CHAN_GATEWAY_CREDENTIAL_TTL_MS = 5_000
+  function chanGatewayCredentialCached() {
+    const now = Date.now()
+    if (chanGatewayCredentialCache === null || now - chanGatewayCredentialAt >= CHAN_GATEWAY_CREDENTIAL_TTL_MS) {
+      chanGatewayCredentialCache = chanGatewayCredential({ profileContext: optional('profileContext'), env: process.env })
+      chanGatewayCredentialAt = now
+    }
+    return chanGatewayCredentialCache
   }
 
   async function syncChanRelay() {
@@ -990,6 +1008,9 @@ export function apply(ctx, config) {
     // reads have been disposed (the rejection gets swallowed, quota burned).
     modelRuntime.dispose()
     push.dispose()
+    // 出口重拉退避定时器同样属于本 generation：不清理的话，热重载后旧
+    // timer 仍会触发 syncEgress() 去碰新 generation 的状态。
+    if (outletRestartTimer !== null) { clearTimeout(outletRestartTimer); outletRestartTimer = null }
   }, 'our-free-model: push + stores')
 
   ctx.effect(() => {
@@ -1157,6 +1178,7 @@ function imageResolver(ctx, logger) {
   if (typeof ctx.get !== 'function') return undefined
   const cache = new Map()
   const MAX_IMAGE_BYTES = 8 * 1024 * 1024
+  const MAX_IMAGE_CACHE = 48
   return ref => {
     // Looked up per call, not once at apply time: this is the third instance of
     // the same cordis trap the release note describes for `webServer` and
@@ -1176,7 +1198,13 @@ function imageResolver(ctx, logger) {
       if (size > MAX_IMAGE_BYTES) { logger.warn?.(`our-free-model: image ${id} is ${size} bytes, above the ${MAX_IMAGE_BYTES} send limit`); return undefined }
       const media = typeof ref.mediaType === 'string' ? ref.mediaType : 'image/png'
       const url = `data:${media};base64,${fs.readFileSync(hostPath).toString('base64')}`
-      if (cache.size > 48) cache.clear()
+      // 超限逐出最旧条目（Map 迭代序 = 插入序），不要整表 clear ——
+      // 否则第 49 张图会一次丢掉前 48 张的缓存（2026-11-01 审计）。
+      while (cache.size >= MAX_IMAGE_CACHE) {
+        const oldest = cache.keys().next().value
+        if (oldest === undefined) break
+        cache.delete(oldest)
+      }
       cache.set(id, url)
       return url
     } catch (error) {
@@ -1195,19 +1223,26 @@ function imageResolver(ctx, logger) {
  * prefix outranks `/api` in webServer's longest-prefix dispatch, so without
  * this fence these routes would answer callers the app itself would refuse.
  */
-/** The fixed failure classes the pool proxy may surface to the client. */
 
 export function createApiRoutes(deps) {
   return async function handler(req, res) {
-    const url = new URL(req.url ?? '/', 'http://localhost')
-    const routePath = url.pathname.replace(/^\/api\/our-free-model/, '').replace(/\/+$/, '') || '/'
-    const method = String(req.method ?? 'GET').toUpperCase()
-    const rejection = rejectionFor(req, deps.connection, deps.onAdmissionRejection)
     const send = (status, payload) => {
       const body = JSON.stringify(payload)
       res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
       res.end(body)
     }
+    // ⚠️ URL 解析必须在围栏（rejectionFor）之前完成且能兜底：畸形 URL
+    //（`//`、`///`、`//[` 等）会让 `new URL` 直接抛 ERR_INVALID_URL，
+    // 异常若在围栏之前逃逸，请求就绕过了信任围栏的判定路径。
+    let routePath = '/'
+    try {
+      const url = new URL(req.url ?? '/', 'http://localhost')
+      routePath = url.pathname.replace(/^\/api\/our-free-model/, '').replace(/\/+$/, '') || '/'
+    } catch {
+      return send(400, { error: 'bad request url' })
+    }
+    const method = String(req.method ?? 'GET').toUpperCase()
+    const rejection = rejectionFor(req, deps.connection, deps.onAdmissionRejection)
     if (rejection !== undefined) return send(rejection, {
       error: rejection === 401 ? 'unauthorized' : rejection === 503 ? 'admission unavailable' : 'forbidden',
     })

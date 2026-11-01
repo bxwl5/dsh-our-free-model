@@ -78,63 +78,6 @@ export function injectSystem(payload, wire, text) {
   }
 }
 
-/**
- * Remove every injected region, restoring what `injectSystem` was given.
- *
- * This is the user-facing off switch and the round-trip half of the tests.
- * `reason` is `'stripped'`, `'not-injected'`, `'shape-not-recognised'` or
- * `'strip-failed'`.
- *
- * @param {object} payload
- * @param {'chat'|'messages'|'responses'} wire
- * @returns {{payload: object, stripped: boolean, reason: string}}
- */
-export function stripInjected(payload, wire) {
-  try {
-    if (payload === null || typeof payload !== 'object') return { payload, stripped: false, reason: 'shape-not-recognised' }
-    if (wire === 'chat') return stripChat(payload)
-    if (wire === 'messages') return stripMessages(payload)
-    if (wire === 'responses') return stripResponses(payload)
-    return { payload, stripped: false, reason: 'shape-not-recognised' }
-  } catch {
-    return { payload, stripped: false, reason: 'strip-failed' }
-  }
-}
-
-/**
- * Does the body carry a complete injected region?
- *
- * A lone marker without its end is not a region — it is text someone else
- * wrote, and neither `stripInjected` nor this predicate will touch it.
- *
- * @param {object} payload
- * @param {'chat'|'messages'|'responses'} wire
- * @returns {boolean}
- */
-export function hasInjected(payload, wire) {
-  try {
-    if (payload === null || typeof payload !== 'object') return false
-    if (wire === 'chat') {
-      const messages = payload.messages
-      if (!Array.isArray(messages)) return false
-      return messages.some(message => isSystem(message) && contentHasRegion(message.content))
-    }
-    if (wire === 'messages') {
-      if (!Array.isArray(payload.messages)) return false
-      return contentHasRegion(payload.system)
-    }
-    if (wire === 'responses') {
-      if (hasRegion(payload.instructions)) return true
-      const input = payload.input
-      if (!Array.isArray(input)) return false
-      return input.some(item => isResponsesSystem(item) && contentHasRegion(item.content))
-    }
-    return false
-  } catch {
-    return false
-  }
-}
-
 // ── shared helpers ───────────────────────────────────────────────────────────
 
 const isSystem = message => message !== null && typeof message === 'object'
@@ -153,48 +96,6 @@ function contentHasSegment(content, segment) {
 }
 
 /** Is a complete marker region present in a string or block content? */
-function contentHasRegion(content) {
-  if (typeof content === 'string') return hasRegion(content)
-  if (Array.isArray(content)) {
-    return content.some(block => block !== null && typeof block === 'object'
-      && typeof block.text === 'string' && hasRegion(block.text))
-  }
-  return false
-}
-
-function hasRegion(text) {
-  if (typeof text !== 'string') return false
-  const start = text.indexOf(INJECT_MARKER)
-  return start !== -1 && text.indexOf(MARKER_END, start + INJECT_MARKER.length) !== -1
-}
-
-/**
- * Remove every marker-delimited region from a string.
- *
- * Returns `null` when there is no complete region (nothing to do); otherwise
- * the string with each `INJECT_MARKER … MARKER_END` span gone, including the
- * `\n\n` that joined it to its neighbours — that separator is what makes
- * `stripInjected` restore the body byte-for-byte. A lone marker is left alone:
- * it is not provably ours, and cutting to an assumed boundary could eat user
- * text.
- */
-function cutMarked(content) {
-  let next = content
-  let cut = false
-  for (;;) {
-    const start = next.indexOf(INJECT_MARKER)
-    if (start === -1) break
-    const end = next.indexOf(MARKER_END, start + INJECT_MARKER.length)
-    if (end === -1) break
-    let from = start
-    let to = end + MARKER_END.length
-    if (next.startsWith(SEP, to)) to += SEP.length
-    else if (next.endsWith(SEP, from)) from -= SEP.length
-    next = next.slice(0, from) + next.slice(to)
-    cut = true
-  }
-  return cut ? next : null
-}
 
 // ── chat (OpenAI Chat Completions) ───────────────────────────────────────────
 
@@ -239,46 +140,6 @@ function appendChatSegment(message, segment) {
   }
   message.content = segment
 }
-
-function stripChat(payload) {
-  const messages = payload.messages
-  if (!Array.isArray(messages)) return { payload, stripped: false, reason: 'shape-not-recognised' }
-  let stripped = false
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const message = messages[i]
-    if (!isSystem(message)) continue
-    const content = message.content
-    if (typeof content === 'string') {
-      const cut = cutMarked(content)
-      if (cut === null) continue
-      stripped = true
-      // An emptied system message is the shell a whole-message injection
-      // leaves behind; removing it restores "no system message" exactly. An
-      // original empty-string system message is indistinguishable, and no
-      // projector in this project emits one.
-      if (cut === '') messages.splice(i, 1)
-      else message.content = cut
-      continue
-    }
-    if (!Array.isArray(content)) continue
-    let changed = false
-    for (let j = content.length - 1; j >= 0; j -= 1) {
-      const block = content[j]
-      if (block === null || typeof block !== 'object' || typeof block.text !== 'string') continue
-      const cut = cutMarked(block.text)
-      if (cut === null) continue
-      changed = true
-      if (cut === '') content.splice(j, 1)
-      else block.text = cut
-    }
-    if (!changed) continue
-    stripped = true
-    if (content.length === 0) messages.splice(i, 1)
-  }
-  return { payload, stripped, reason: stripped ? 'stripped' : 'not-injected' }
-}
-
-// ── messages (Anthropic Messages) ────────────────────────────────────────────
 
 function injectMessages(payload, segment) {
   // An Anthropic body is identified by its `messages` list; the `system` field
@@ -384,51 +245,4 @@ function appendResponsesSegment(item, segment) {
     return
   }
   item.content = [{ type: 'input_text', text: segment }]
-}
-
-function stripResponses(payload) {
-  let stripped = false
-  if (typeof payload.instructions === 'string') {
-    const cut = cutMarked(payload.instructions)
-    if (cut !== null) {
-      stripped = true
-      if (cut === '') delete payload.instructions
-      else payload.instructions = cut
-    }
-  }
-  const input = payload.input
-  if (Array.isArray(input)) {
-    for (let i = input.length - 1; i >= 0; i -= 1) {
-      const item = input[i]
-      if (!isResponsesSystem(item)) continue
-      const content = item.content
-      if (typeof content === 'string') {
-        const cut = cutMarked(content)
-        if (cut === null) continue
-        stripped = true
-        if (cut === '') input.splice(i, 1)
-        else item.content = cut
-        continue
-      }
-      if (!Array.isArray(content)) continue
-      let changed = false
-      for (let j = content.length - 1; j >= 0; j -= 1) {
-        const part = content[j]
-        if (part === null || typeof part !== 'object' || typeof part.text !== 'string') continue
-        const cut = cutMarked(part.text)
-        if (cut === null) continue
-        changed = true
-        if (cut === '') content.splice(j, 1)
-        else part.text = cut
-      }
-      if (!changed) continue
-      stripped = true
-      if (content.length === 0) input.splice(i, 1)
-    }
-  }
-  if (stripped) return { payload, stripped: true, reason: 'stripped' }
-  if (typeof payload.instructions !== 'string' && !Array.isArray(input)) {
-    return { payload, stripped: false, reason: 'shape-not-recognised' }
-  }
-  return { payload, stripped: false, reason: 'not-injected' }
 }

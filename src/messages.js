@@ -42,10 +42,6 @@ function blocksOf(content) {
   return []
 }
 
-function hasBlocks(blocks, type) {
-  return Array.isArray(blocks) && blocks.some(block => block?.type === type)
-}
-
 /** A user image block's data URL, or undefined when it cannot travel. */
 function imageDataUrl(block, resolveImage) {
   if (block?.offloaded === true) return undefined

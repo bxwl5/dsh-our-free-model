@@ -11,7 +11,7 @@
  * @module src/catalog.js
  */
 
-import { baseModelId, isResponsesModel } from './upstream.js'
+import { baseModelId } from './upstream.js'
 
 /** Ids that are free-tier without carrying the `-free` suffix. */
 /** Free-tier ids the listing does not mark with a `-free` suffix. `big-pickle`
@@ -221,7 +221,6 @@ export function buildCatalog(ids) {
     entries.push({
       id: base,
       name: displayModelName(base),
-      wire: isResponsesModel(base) ? 'responses' : 'chat',
       vision: caps.vision === true,
       reasoning: caps.reasoning !== false,
       contextWindow: number(caps.contextWindow) ?? 131072,
@@ -346,7 +345,6 @@ function kiloEntryOf(row) {
     id: String(row.id).trim(),
     name: kiloDisplayName(row),
     channel: KILO_CHANNEL,
-    wire: 'chat',
     vision: modalities.includes('image'),
     reasoning: true,
     contextWindow: context,

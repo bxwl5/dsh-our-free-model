@@ -16,7 +16,6 @@
 import assert from 'node:assert/strict'
 import {
   OPTIMIZATIONS,
-  detectOptimization,
   extractCommandPrefix,
   extractFilepathsFromCommand,
   toMessagesResponse,
@@ -280,12 +279,9 @@ check('the first matching optimization in order wins', () => {
   assert.equal(tryOptimizations(overlapRequest, { enabled: { quota: false } })?.text, 'git status')
 })
 
-check('detectOptimization names the same optimization as tryOptimizations', () => {
-  assert.equal(detectOptimization(overlapRequest), 'quota')
-  assert.equal(detectOptimization(prefixRequest), 'prefix')
-  assert.equal(detectOptimization(claudeRequest()), null)
-  assert.equal(detectOptimization(overlapRequest, { quota: false }), 'prefix')
-})
+// detectOptimization 已随生产死代码删除（2026-11-01 审计）：它只是
+// tryOptimizations 的只读包装，生产从不调用。等价断言保留在下方
+// 「disabling one optimization lets its request through」等 tryOptimizations 用例中。
 
 check('disabling one optimization lets its request through', () => {
   const cases = [
@@ -298,7 +294,6 @@ check('disabling one optimization lets its request through', () => {
   for (const [kind, request] of cases) {
     assert.equal(tryOptimizations(request)?.kind, kind, `${kind} must fire when enabled`)
     assert.equal(tryOptimizations(request, { enabled: { [kind]: false } }), null, `${kind} must not fire when disabled`)
-    assert.equal(detectOptimization(request, { [kind]: false }), null, `${kind} detection must respect the switch`)
   }
 })
 
@@ -313,7 +308,6 @@ check('a normal coding request is forwarded untouched', () => {
     tools: [READ_TOOL],
   })
   assert.equal(tryOptimizations(request), null)
-  assert.equal(detectOptimization(request), null)
 })
 
 check('every optimization can be switched off at once', () => {

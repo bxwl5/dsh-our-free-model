@@ -171,8 +171,10 @@ export async function startChanRelay({ config, log = () => {} }) {
   }
 
   function bearerOf(req) {
+    // RFC 7235：scheme 大小写不敏感。与 forward.js 的解析保持一致，
+    // 否则客户端发 `bearer xxx` 会被误判为无凭据。
     const header = String(req.headers.authorization ?? '')
-    return header.startsWith('Bearer ') ? header.slice(7).trim() : String(req.headers['x-api-key'] ?? '')
+    return /^bearer\s+/i.test(header) ? header.replace(/^bearer\s+/i, '').trim() : String(req.headers['x-api-key'] ?? '')
   }
 
   // The bind comes from the caller's snapshot of the settings: a changed
@@ -188,6 +190,13 @@ export async function startChanRelay({ config, log = () => {} }) {
   return {
     host: address?.address ?? host,
     port: address?.port ?? 0,
-    async close() { await new Promise(resolve => server.close(resolve)) },
+    // ⚠️ 必须先 closeAllConnections：keep-alive 长连接（SSE/长轮询）存续时
+    // `server.close(cb)` 的回调**永不执行**，`await closing.close()` 会永久
+    // 挂起，把 syncChanRelay 的串行闸焊死（`POST /chan-gateway/apply` 不再
+    // 返回）。与 forward.js / egress.js 的收尾保持同一形态。
+    close: () => new Promise(resolve => {
+      server.closeAllConnections?.()
+      server.close(() => resolve())
+    }),
   }
 }

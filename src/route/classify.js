@@ -413,38 +413,6 @@ function applyProviderReset(verdict, retryAfterMs) {
 }
 
 /**
- * The ported ERROR_RULES evaluation, in 9router's own vocabulary.
- *
- * Text rules are checked before status rules; the returned `cooldownLevel` is
- * the level after this failure (the source's `newBackoffLevel`), so a caller
- * that stores it can escalate the next cooldown. `shouldFallback` reproduces
- * the source's own answer exactly — false only for the unmatched-4xx
- * carve-out — which is also how `shouldAdvance` reads the merged verdict.
- *
- * @param {{status?: number|string, message?: string|object, backoffLevel?: number}} [failure]
- * @returns {{shouldFallback: boolean, cooldownMs: number, cooldownLevel: number, matched: string}}
- */
-export function cooldownVerdict({ status, message, backoffLevel = 0 } = {}) {
-  const normalizedStatus = normalizeStatus(status)
-  const text = failureText(message, undefined, undefined)
-  const level = normalizeLevel(backoffLevel)
-  const hit = textRuleVerdict(text, level) ?? statusRuleVerdict(normalizedStatus, level)
-  if (hit !== null) {
-    return {
-      shouldFallback: true,
-      cooldownMs: hit.cooldownMs,
-      cooldownLevel: hit.cooldownLevel,
-      matched: hit.rule,
-    }
-  }
-  if (normalizedStatus >= 400 && normalizedStatus < 500
-    && normalizedStatus !== 401 && normalizedStatus !== 402 && normalizedStatus !== 403 && normalizedStatus !== 429) {
-    return { shouldFallback: false, cooldownMs: 0, cooldownLevel: 0, matched: `request:${normalizedStatus}` }
-  }
-  return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS, cooldownLevel: 0, matched: 'transient' }
-}
-
-/**
  * Classify one upstream failure into the merged vocabulary.
  *
  * Evaluation order, and why it is this order:

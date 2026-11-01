@@ -185,8 +185,6 @@ function base62Fixed(bytes, width) {
   return out.join('')
 }
 
-const ANTHROPIC_API_VERSION = '2023-06-01'
-
 function base62From(bytes) {
   let out = ''
   for (const byte of bytes) out += BASE62[byte % 62]
@@ -226,6 +224,11 @@ export function mintRequestId(timestamp = Date.now()) {
 }
 
 const SESSION_MAP_FILE = 'session-map.json'
+/** session-map 的条目上限：seed 是下游会话 id，只增不减，不设上限会无限
+ * 堆积（每条 ~100B，且 rememberSession 每次全量重写文件）。会话的上游 id
+ * 是 seed 的**确定性**哈希（canonicalizeSession），被淘汰的条目下次访问会
+ * 重新派生出同一个 id —— 淘汰只是丢缓存，不改变映射结果。 */
+const SESSION_MAP_LIMIT = 4096
 let sessions
 
 function sessionStorePath() {
@@ -247,7 +250,15 @@ function loadSessions() {
 }
 
 function rememberSession(seed, id) {
-  loadSessions().set(seed, id)
+  const map = loadSessions()
+  // 刷新访问位置 + 超 4096 条时淘汰最旧的（Map 迭代序 = 插入序）。
+  if (map.has(seed)) map.delete(seed)
+  map.set(seed, id)
+  while (map.size > SESSION_MAP_LIMIT) {
+    const oldest = map.keys().next().value
+    if (oldest === undefined) break
+    map.delete(oldest)
+  }
   try {
     const file = sessionStorePath()
     if (file === undefined) return
@@ -579,4 +590,4 @@ function truncateSession(value) {
   return trimmed.length > MAX_SESSION_LENGTH ? trimmed.slice(0, MAX_SESSION_LENGTH) : trimmed
 }
 
-export { truncateSession, ANTHROPIC_API_VERSION, MAX_TOOL_NAME_LEN }
+export { truncateSession, MAX_TOOL_NAME_LEN }

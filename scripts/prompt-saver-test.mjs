@@ -15,8 +15,9 @@
  *   builds (`chat`, `messages`, `responses`), including Anthropic's
  *   string-vs-block `system` and Responses' `instructions`;
  * - a second injection is a no-op, and two different prompts coexist;
- * - `stripInjected` restores the body byte-for-byte, which is what lets the
- *   off switch be honest;
+ * - `stripInjected`/`hasInjected` 及其往返测试已随生产死代码删除
+ *   （2026-11-01 审计）：两者在生产路径零引用，关闭开关实际由
+ *   `saverConfig` 返回 off 实现；
  * - Anthropic's cache breakpoint keeps terminating the block list — the
  *   injected block lands before the last `cache_control`, never after it;
  * - the sealed lane's pacing hint and an injected prompt survive each other;
@@ -30,7 +31,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { CAVEMAN_LEVELS, PONYTAIL_LEVELS, activePrompts, cavemanPrompt, ponytailPrompt } from '../src/token-saver/prompts.js'
-import { INJECT_MARKER, hasInjected, injectSystem, stripInjected } from '../src/token-saver/inject.js'
+import { INJECT_MARKER, injectSystem } from '../src/token-saver/inject.js'
 
 let failures = 0
 const check = (name, fn) => {
@@ -287,29 +288,6 @@ const ROUND_TRIP = [
   ] })],
 ]
 
-check('stripInjected restores every body byte-for-byte', () => {
-  for (const [wire, make] of ROUND_TRIP) {
-    const body = make()
-    const before = JSON.parse(JSON.stringify(body))
-    injectSystem(body, wire, CAVEMAN)
-    assert.equal(hasInjected(body, wire), true, `${wire}: the body must look injected after inject`)
-    const out = stripInjected(body, wire)
-    assert.equal(out.payload, body, `${wire}: strip mutates in place`)
-    assert.equal(out.stripped, true, `${wire}: strip must report the removal`)
-    assert.equal(hasInjected(body, wire), false, `${wire}: no region may survive the strip`)
-    assert.deepEqual(body, before, `${wire}: strip must restore the exact body`)
-  }
-})
-
-check('stripInjected removes every injected prompt at once', () => {
-  const body = { messages: [{ role: 'system', content: 'You are helpful.' }, { role: 'user', content: 'hi' }] }
-  const before = JSON.parse(JSON.stringify(body))
-  injectSystem(body, 'chat', CAVEMAN)
-  injectSystem(body, 'chat', PONYTAIL)
-  stripInjected(body, 'chat')
-  assert.deepEqual(body, before)
-})
-
 // ── the Anthropic cache breakpoint ───────────────────────────────────────────
 
 check('the injected block lands before the last cache_control breakpoint', () => {
@@ -377,45 +355,6 @@ check('a non-object payload and a missing text are refused without a throw', () 
   assert.equal(injectSystem({}, 'chat', '').reason, 'no-text')
   assert.equal(injectSystem({}, 'chat', undefined).reason, 'no-text')
   assert.equal(injectSystem({}, 'chat', 42).reason, 'no-text')
-})
-
-check('strip on a body that was never injected is a no-op', () => {
-  for (const [wire, body] of ROUND_TRIP.map(([wire, make]) => [wire, make()])) {
-    const before = JSON.parse(JSON.stringify(body))
-    const out = stripInjected(body, wire)
-    assert.equal(out.payload, body)
-    assert.equal(out.stripped, false, `${wire}: nothing was injected, nothing may be stripped`)
-    assert.equal(out.reason, 'not-injected')
-    assert.deepEqual(body, before)
-  }
-  assert.equal(stripInjected({ messages: [] }, 'kiro').reason, 'shape-not-recognised')
-  assert.equal(stripInjected(null, 'chat').reason, 'shape-not-recognised')
-})
-
-check('a lone marker is left alone rather than cut to a guess', () => {
-  const body = { messages: [{ role: 'system', content: `You are helpful. ${INJECT_MARKER} not ours` }, { role: 'user', content: 'hi' }] }
-  const before = JSON.parse(JSON.stringify(body))
-  assert.equal(hasInjected(body, 'chat'), false, 'an unterminated marker is not a region')
-  assert.equal(stripInjected(body, 'chat').stripped, false)
-  assert.deepEqual(body, before)
-})
-
-check('hasInjected reports each wire and shape', () => {
-  assert.equal(hasInjected(null, 'chat'), false)
-  assert.equal(hasInjected({}, 'messages'), false)
-  assert.equal(hasInjected({ messages: [] }, 'kiro'), false)
-  const chat = { messages: [{ role: 'user', content: 'hi' }] }
-  assert.equal(hasInjected(chat, 'chat'), false)
-  injectSystem(chat, 'chat', CAVEMAN)
-  assert.equal(hasInjected(chat, 'chat'), true)
-  const messages = { messages: [], system: [{ type: 'text', text: 'a' }] }
-  assert.equal(hasInjected(messages, 'messages'), false)
-  injectSystem(messages, 'messages', CAVEMAN)
-  assert.equal(hasInjected(messages, 'messages'), true)
-  const responses = { input: [] }
-  assert.equal(hasInjected(responses, 'responses'), false)
-  injectSystem(responses, 'responses', CAVEMAN)
-  assert.equal(hasInjected(responses, 'responses'), true)
 })
 
 if (failures > 0) console.error(`prompt-saver-test: ${failures} failure(s)`)

@@ -440,8 +440,14 @@ export async function readSse(source, onData, signal, timeoutMs = 300000) {
   const iterator = reader === null ? (typeof source?.[Symbol.asyncIterator] === 'function' ? source[Symbol.asyncIterator]() : source) : null
   const decoder = new TextDecoder()
   let buffer = ''
+  /** 已消费的字节偏移：大缓冲下 `slice` 每行重分配是 O(n²)，改用偏移读、
+   * 整块收缩（每轮最多一次）。 */
+  let bufferOffset = 0
   let data = []
   let rawJson = ''
+  /** rawJson 累积上限：正文行恰好以 `{` 开头时会被误并进 rawJson（历史
+   * 行为），无上限的病态流可无限吃内存 —— 超限按传输错误断流。 */
+  const RAW_JSON_LIMIT = 32 * 1024 * 1024
   let deadline = Date.now() + timeoutMs
   let stopped = false
   const stop = () => {
@@ -497,6 +503,9 @@ export async function readSse(source, onData, signal, timeoutMs = 300000) {
     const text = value.replace(/\r$/, '').replace(/^\uFEFF/, '')
     if (rawJson || text.trimStart().startsWith('{')) {
       if (!rawJson && dispatch()) return true
+      if (rawJson.length > RAW_JSON_LIMIT) {
+        throw new UpstreamError('upstream raw-JSON accumulation exceeded its size limit', CODE.transport)
+      }
       rawJson += (rawJson ? '\n' : '') + text
       let payload
       try { payload = JSON.parse(rawJson) } catch { return false }
@@ -524,13 +533,16 @@ export async function readSse(source, onData, signal, timeoutMs = 300000) {
       if (done) break
       if (Date.now() > deadline) throw new UpstreamError('our-free-model: upstream stream idle past its deadline', CODE.timeout)
       if (value !== undefined) buffer += decoder.decode(value, { stream: true })
-      let newline = buffer.indexOf('\n')
+      let newline = buffer.indexOf('\n', bufferOffset)
       while (newline !== -1) {
-        const row = buffer.slice(0, newline)
-        buffer = buffer.slice(newline + 1)
+        const row = buffer.slice(bufferOffset, newline)
+        bufferOffset = newline + 1
         if (line(row)) return
-        newline = buffer.indexOf('\n')
+        newline = buffer.indexOf('\n', bufferOffset)
       }
+      // 整块收缩：保留未消费的尾巴，把已消费的前缀一次性丢掉。
+      if (bufferOffset > 0) buffer = buffer.slice(bufferOffset)
+      bufferOffset = 0
       deadline = Date.now() + timeoutMs
     }
     // Flush the decoder so a multi-byte character split over the last two chunks

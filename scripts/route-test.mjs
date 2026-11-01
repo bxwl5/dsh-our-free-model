@@ -22,7 +22,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import assert from 'node:assert/strict'
 import {
-  FAILURE_KIND, FAILURE_SCOPE, backoffFor, classifyFailure, cooldownVerdict, describeVerdict, shouldAdvance,
+  FAILURE_KIND, FAILURE_SCOPE, backoffFor, classifyFailure, describeVerdict, shouldAdvance,
 } from '../src/route/classify.js'
 
 let failures = 0
@@ -31,94 +31,9 @@ const check = (name, fn) => {
   catch (error) { failures += 1; console.error(`FAIL  ${name} — ${error.message}`) }
 }
 
-// ── the ported ERROR_RULES table: text rules ─────────────────────────────────
-// Each row: [phrase, cooldownMs, cooldownLevel]. The backoff rows read level 1
-// (the first hit) at 2 s — the source's getQuotaCooldown(1) — and the fixed
-// rows report level 0 because they never read or advance a level.
-const TEXT_RULES = [
-  ['no credentials', 120000, 0],
-  ['request not allowed', 5000, 0],
-  ['improperly formed request', 120000, 0],
-  ['rate limit', 2000, 1],
-  ['too many requests', 2000, 1],
-  ['quota exceeded', 2000, 1],
-  ['capacity', 2000, 1],
-  ['overloaded', 2000, 1],
-]
-for (const [phrase, cooldownMs, cooldownLevel] of TEXT_RULES) {
-  check(`text rule "${phrase}" benches for exactly ${cooldownMs}ms`, () => {
-    const verdict = cooldownVerdict({ message: `Upstream answered: ${phrase.toUpperCase()}` })
-    assert.equal(verdict.shouldFallback, true)
-    assert.equal(verdict.cooldownMs, cooldownMs)
-    assert.equal(verdict.cooldownLevel, cooldownLevel)
-  })
-}
-
-check('a text rule matches as a substring, case-insensitively, in JSON stringified messages', () => {
-  assert.equal(cooldownVerdict({ message: 'upstream said TOO MANY REQUESTS, back off' }).cooldownMs, 2000)
-  assert.equal(cooldownVerdict({ message: { error: 'too many requests' } }).cooldownMs, 2000)
-  assert.equal(cooldownVerdict({ message: 'no credentials for model x' }).matched, 'text:no credentials')
-})
-
-// ── the ported ERROR_RULES table: status rules ───────────────────────────────
-const STATUS_RULES = [
-  [401, 120000, 0],
-  [402, 120000, 0],
-  [403, 120000, 0],
-  [404, 120000, 0],
-  [429, 2000, 1],
-]
-for (const [status, cooldownMs, cooldownLevel] of STATUS_RULES) {
-  check(`status rule ${status} benches for exactly ${cooldownMs}ms`, () => {
-    const verdict = cooldownVerdict({ status, message: '' })
-    assert.equal(verdict.shouldFallback, true)
-    assert.equal(verdict.cooldownMs, cooldownMs)
-    assert.equal(verdict.cooldownLevel, cooldownLevel)
-    assert.equal(verdict.matched, `status:${status}`)
-  })
-}
-
-check('text rules win over status rules, in table order', () => {
-  // The source's loop checks every text rule before every status rule: a 429
-  // whose body says "no credentials" is a credential problem, not a rate limit.
-  const credentials = cooldownVerdict({ status: 429, message: 'no credentials' })
-  assert.equal(credentials.cooldownMs, 120000)
-  assert.equal(credentials.cooldownLevel, 0)
-  assert.equal(credentials.matched, 'text:no credentials')
-  // A 400 whose wording says rate limit is a rate limit, not request-scoped.
-  const limited = cooldownVerdict({ status: 400, message: 'rate limit exceeded' })
-  assert.equal(limited.shouldFallback, true)
-  assert.equal(limited.cooldownMs, 2000)
-  // A 404 whose wording says capacity is provider pressure, not a dead route.
-  assert.equal(cooldownVerdict({ status: 404, message: 'at capacity' }).cooldownMs, 2000)
-})
-
-check('backoff escalates from the account level and clamps at level 15', () => {
-  assert.equal(cooldownVerdict({ status: 429, backoffLevel: 0 }).cooldownMs, 2000)
-  assert.equal(cooldownVerdict({ status: 429, backoffLevel: 1 }).cooldownMs, 4000)
-  assert.equal(cooldownVerdict({ status: 429, backoffLevel: 3 }).cooldownMs, 16000)
-  const clamped = cooldownVerdict({ status: 429, backoffLevel: 20 })
-  assert.equal(clamped.cooldownLevel, 15)
-  assert.equal(clamped.cooldownMs, 300000)
-})
-
-check('an unmatched 4xx is request-scoped and does not cool the account', () => {
-  const verdict = cooldownVerdict({ status: 400, message: 'unknown parameter: temperature' })
-  assert.equal(verdict.shouldFallback, false)
-  assert.equal(verdict.cooldownMs, 0)
-  assert.equal(verdict.cooldownLevel, 0)
-  assert.equal(verdict.matched, 'request:400')
-  // The carve-out names exactly the statuses the rules above already own.
-  assert.equal(cooldownVerdict({ status: 418, message: '' }).shouldFallback, false)
-})
-
-check('an unmatched 5xx and an error with no status get the 30s transient default', () => {
-  const server = cooldownVerdict({ status: 503, message: 'upstream exploded' })
-  assert.equal(server.shouldFallback, true)
-  assert.equal(server.cooldownMs, 30000)
-  assert.equal(server.matched, 'transient')
-  assert.equal(cooldownVerdict({ message: 'something odd happened' }).cooldownMs, 30000)
-})
+// cooldownVerdict 已随生产死代码删除（2026-11-01 审计）：其规则表与判定
+// 逻辑完全内含于 classifyFailure（textRuleVerdict/statusRuleVerdict 的唯一
+// 生产调用者），这批只针对 cooldownVerdict 的规则表测试一并移除。
 
 // ── backoff arithmetic ───────────────────────────────────────────────────────
 check('backoffFor is 2000 * 2^(level-1), capped at 300s, max level 15', () => {

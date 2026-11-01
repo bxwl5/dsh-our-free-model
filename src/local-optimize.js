@@ -389,18 +389,6 @@ function firstAnswer(request, enabled) {
 }
 
 /**
- * Which optimization would answer this request, if any.
- *
- * @param {object} request - Anthropic Messages-shaped body
- * @param {{quota?: boolean, prefix?: boolean, title?: boolean, suggestion?: boolean, filepath?: boolean}} [enabled]
- *   - omit an entry to leave that optimization on; `false` disables it
- * @returns {'quota'|'prefix'|'title'|'suggestion'|'filepath'|null}
- */
-export function detectOptimization(request, enabled) {
-  return firstAnswer(request, enabled)?.kind ?? null
-}
-
-/**
  * Answer the request locally when one of the five optimizations applies.
  *
  * @param {object} request - Anthropic Messages-shaped body
