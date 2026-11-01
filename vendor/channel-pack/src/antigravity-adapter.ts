@@ -665,7 +665,7 @@ export class AntigravityAdapter extends LlmAdapter {
       && declared?.efforts.some((item) => String(item.id) === requested) === true
       ? requested
       : undefined
-    const spec = antigravityModelSpec(options.model, effort)
+    const spec = antigravityModelSpec(options.model, effort, options.maxTokens)
 
     const images = await this.collectInlineImages(options.messages, entry, options.model)
 

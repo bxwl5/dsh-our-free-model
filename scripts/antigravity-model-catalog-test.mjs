@@ -115,13 +115,21 @@ export async function verifyAntigravityModelCatalog() {
     'gemini- 前缀的分段名照旧剥')
   assert.equal(antigravityCanonicalModelId('gemini-3.8-flash-tiered'), 'gemini-3.8-flash')
 
-  // ── 5. model spec：原样透传 + 档位 ──
+  // ── 5. model spec：原样透传 + 档位 + claude 预算钳制 ──
   const gpt = antigravityModelSpec('gpt-oss-120b-medium', 'high')
   assert.equal(gpt.upstream, 'gpt-oss-120b-medium', 'gpt-oss 原样透传，不拼档位后缀')
-  assert.equal(gpt.thinkingBudget, 10_000, 'high 档预算 10k（< maxOutputTokens，claude 校验通过）')
+  assert.equal(gpt.thinkingBudget, 10_000, 'high 档预算 10k（< 缺省 64k，claude 校验通过）')
   const claude = antigravityModelSpec('claude-sonnet-4-6', undefined)
   assert.equal(claude.upstream, 'claude-sonnet-4-6')
   assert.equal(claude.thinkingBudget, 4_000)
+  // 实调踩过的 400：用户/网关传小 max_tokens（100）< 默认预算 4000 → 上游
+  // `max_tokens must be greater than thinking.budget_tokens`。必须钳到 99。
+  assert.equal(antigravityModelSpec('claude-sonnet-4-6', undefined, 100).thinkingBudget, 99,
+    'maxOutputTokens=100 时预算钳到 99（严格小于）')
+  assert.equal(antigravityModelSpec('claude-sonnet-4-6', 'high', 8192).thinkingBudget, 8_191,
+    'high 档 10k > 8192 时也钳')
+  assert.equal(antigravityModelSpec('claude-sonnet-4-6', 'high', 100_000).thinkingBudget, 10_000,
+    'maxOutputTokens 足够大时预算原样')
   assert.equal(antigravityModelSpec('gemini-3.8-flash', 'high').upstream, 'gemini-3.8-flash-high')
   assert.equal(antigravityModelSpec('gemini-2.5-pro').upstream, 'gemini-2.5-pro')
   assert.throws(() => antigravityModelSpec('not-a-model'), /不在本 provider 目录中/)

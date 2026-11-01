@@ -62626,13 +62626,16 @@ function antigravityCanonicalModelId(modelId) {
   }
   return modelId;
 }
-function antigravityModelSpec(modelId, effort) {
+function antigravityModelSpec(modelId, effort, maxOutputTokens) {
   if (modelId.startsWith("claude-") || modelId.startsWith("gpt-oss-")) {
     const tier = antigravityEffortToTier(effort);
+    const budget = antigravityThinkingBudget(tier);
+    const ceiling = (maxOutputTokens ?? 64e3) - 1;
+    const clamped = budget > ceiling ? Math.max(ceiling, 0) : budget;
     return {
       upstream: modelId,
       tier,
-      thinkingBudget: antigravityThinkingBudget(tier),
+      thinkingBudget: clamped,
       includeThoughts: true
     };
   }
@@ -64836,7 +64839,7 @@ var AntigravityAdapter = class extends LlmAdapter16 {
     const requested = options.reasoningEffort === void 0 ? void 0 : String(options.reasoningEffort);
     const declared = entry === void 0 ? void 0 : antigravityReasoningInfo(entry);
     const effort = requested !== void 0 && declared?.efforts.some((item) => String(item.id) === requested) === true ? requested : void 0;
-    const spec = antigravityModelSpec(options.model, effort);
+    const spec = antigravityModelSpec(options.model, effort, options.maxTokens);
     const images = await this.collectInlineImages(options.messages, entry, options.model);
     const sessionLane = this.options.sessionLane ?? ANTIGRAVITY_SESSION_LANE_INFER;
     const sigStore = this.options.sigStore;

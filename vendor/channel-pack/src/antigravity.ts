@@ -706,24 +706,38 @@ export function antigravityCanonicalModelId(modelId: string): string {
  *   `gemini-3-flash` / `gemini-2.5-pro`）：**原样透传**，不吃档位 —— 这些 id
  *   已是上游真名，拼后缀反而 404。
  * - **`claude-` / `gpt-oss-` 前缀 id**：原样透传，**不发档位后缀** ——
- *   `gpt-oss-120b-medium` 的 `-medium` 是名字的一部分；claude 的思考预算由
- *   `thinkingConfig` 表达（探针实测：budget 必须 < maxOutputTokens，故
- *   `antigravityThinkingBudget` 的 1k/4k/10k 对它们是安全的）。
+ *   `gpt-oss-120b-medium` 的 `-medium` 是名字的一部分；思考预算走
+ *   `thinkingConfig` 并按请求的 `maxOutputTokens` **钳制**（见下）。
  * - **其它前缀 / 目录外 id**：拒绝（保留旧「写错名静默跑 3.8」的防线）。
  *
- * ⚠️ 思考档位的传递方式：档位仍然只影响 `thinkingConfig.thinkingBudget`
- *（Claude 家族上游会校验 `budget < max_tokens`，本插件的 1k/4k/10k 档在
- * 默认 64k 输出上限下恒成立）；对**不接受**思考预算的远端条目（如
- * `gpt-oss-120b-medium` 上游建议 8192），档位同样只改预算值 —— 上游自行取整。
+ * ## ⚠️ Claude 家族的思考预算钳制（实调踩过的 400）
+ *
+ * 上游把信封翻成 Anthropic 请求时校验 **`max_tokens > thinking.budget_tokens`**
+ *（`invalid_request_error`，实测 `max_tokens=100` + 默认预算 4000 直接 400）。
+ * 而 DSH 的 `options.maxTokens` 是**用户/网关逐请求传的输出上限**（可以小到
+ * 100），与档位预算（1k/4k/10k）无关 —— 两者必须在本层求和裁决：
+ *
+ * ```
+ * budget = min(档位预算, maxOutputTokens - 1)   // 严格小于，还要留 1 个输出位
+ * ```
+ *
+ * `maxOutputTokens` 未传（`undefined`）时按信封构造的缺省 64_000 裁决，
+ * 档位预算原样生效。请求侧的 `buildGenerationConfig` 会拿到本函数返回的
+ * budget 再组装 `thinkingConfig`，因此钳制只需在这里做一次。
  */
-export function antigravityModelSpec(modelId: string, effort?: string): AntigravityModelSpec {
+export function antigravityModelSpec(modelId: string, effort?: string, maxOutputTokens?: number): AntigravityModelSpec {
   // claude / gpt-oss：原样透传（不吃档位后缀），思考走 thinkingConfig。
   if (modelId.startsWith('claude-') || modelId.startsWith('gpt-oss-')) {
     const tier = antigravityEffortToTier(effort)
+    const budget = antigravityThinkingBudget(tier)
+    // ⚠️ maxOutputTokens 缺省 = 信封层默认 64k（与 buildGenerationConfig 同源）；
+    // 传了就按它钳（max_tokens 由用户控制，可以远小于档位预算）。
+    const ceiling = (maxOutputTokens ?? 64_000) - 1
+    const clamped = budget > ceiling ? Math.max(ceiling, 0) : budget
     return {
       upstream: modelId,
       tier,
-      thinkingBudget: antigravityThinkingBudget(tier),
+      thinkingBudget: clamped,
       includeThoughts: true,
     }
   }
