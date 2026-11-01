@@ -62702,8 +62702,11 @@ function normalizeBase64(data) {
 
 // vendor/channel-pack/src/antigravity-credits.ts
 var ANTIGRAVITY_UNAUTHORIZED_MESSAGE = "\u5C1A\u672A\u6388\u6743 Google \u8D26\u53F7";
-var ANTIGRAVITY_BUCKET_FIVE_HOUR = "antigravity-5h";
-var ANTIGRAVITY_BUCKET_WEEKLY = "antigravity-weekly";
+function bucketWindowOf(bucketId) {
+  if (bucketId === "gemini-5h" || bucketId === "3p-5h" || bucketId.endsWith("-5h")) return "fiveHour";
+  if (bucketId === "gemini-weekly" || bucketId === "3p-weekly" || bucketId.endsWith("-weekly")) return "weekly";
+  return void 0;
+}
 var ANTIGRAVITY_WINDOW_LABEL_FIVE_HOUR = "5 \u5C0F\u65F6\u7A97\u53E3";
 var ANTIGRAVITY_WINDOW_LABEL_WEEKLY = "\u5468\u7A97\u53E3";
 var ANTIGRAVITY_QUOTA_UNIT = "%";
@@ -62755,8 +62758,9 @@ function parseGeminiQuotaWindows(payload) {
     for (const bucket of buckets) {
       const parsed = parseGeminiQuotaWindow(bucket);
       if (parsed === void 0) continue;
-      if (parsed.bucketId === ANTIGRAVITY_BUCKET_FIVE_HOUR && fiveHour === void 0) fiveHour = parsed;
-      if (parsed.bucketId === ANTIGRAVITY_BUCKET_WEEKLY && weekly === void 0) weekly = parsed;
+      const windowKind = bucketWindowOf(parsed.bucketId);
+      if (windowKind === "fiveHour" && fiveHour === void 0) fiveHour = parsed;
+      if (windowKind === "weekly" && weekly === void 0) weekly = parsed;
     }
   }
   return {

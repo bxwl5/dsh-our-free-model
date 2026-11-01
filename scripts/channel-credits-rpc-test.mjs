@@ -69,8 +69,9 @@ export async function verifyChannelCreditsRpc({ ctx, call, creds }) {
         quotaRequests++
         if (quotaFailed) return new Response('本机配额查询失败', { status: 502 })
         body = { groups: [{ buckets: [
-          { bucketId: 'antigravity-5h', window: '5h', remainingFraction: 0.8, resetTime: new Date(Date.now() + 3600000).toISOString() },
-          { bucketId: 'antigravity-weekly', window: 'weekly', remainingFraction: 0.4, resetTime: new Date(Date.now() + 86400000).toISOString() },
+          // 2026-11-01 按上游实测更正桶 id：gemini-5h / gemini-weekly（旧 antigravity-* 是臆测值）
+          { bucketId: 'gemini-5h', window: '5h', remainingFraction: 0.8, resetTime: new Date(Date.now() + 3600000).toISOString() },
+          { bucketId: 'gemini-weekly', window: 'weekly', remainingFraction: 0.4, resetTime: new Date(Date.now() + 86400000).toISOString() },
         ] }] }
       } else throw new Error(`未预期的替身端点：${pathname}`)
       return Response.json(body)

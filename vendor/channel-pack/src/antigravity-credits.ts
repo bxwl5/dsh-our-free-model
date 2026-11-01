@@ -81,10 +81,25 @@ import {
 /** 未授权时的文案（原版 `MessageUnauthorized`，面板据此区分「没登录」）。 */
 export const ANTIGRAVITY_UNAUTHORIZED_MESSAGE = '尚未授权 Google 账号'
 
-/** 5 小时窗口的桶 id。 */
-export const ANTIGRAVITY_BUCKET_FIVE_HOUR = 'antigravity-5h'
-/** 周窗口的桶 id。 */
-export const ANTIGRAVITY_BUCKET_WEEKLY = 'antigravity-weekly'
+/**
+ * 窗口桶 id（2026-11-01 按上游实测更正）。
+ *
+ * ⚠️ 旧值 `antigravity-5h` / `antigravity-weekly` 是**臆测**——上游从未下发过
+ * 这两个 id。个人 free-tier 实测（Antigravity 2.28.2 凭据 + `project:
+ * aicode-consumers`）：Gemini 组桶 id 为 `gemini-5h` / `gemini-weekly`，三方
+ * 模型组（Claude/GPT）为 `3p-5h` / `3p-weekly`（Agent2API `balance.rs` 模块头
+ * 同款清单）。匹配按**后缀语义**而非全等：`5h` 结尾 → 五小时窗，`weekly` 结尾
+ * → 周窗，Gemini 组优先于 3p 组（面板只展示 Gemini 桶）。
+ */
+export const ANTIGRAVITY_BUCKET_FIVE_HOUR = 'gemini-5h'
+export const ANTIGRAVITY_BUCKET_WEEKLY = 'gemini-weekly'
+
+/** 桶 id → 窗口语义（None = 不是配额窗桶，如三方组按需扩展时再接）。 */
+function bucketWindowOf(bucketId: string): 'fiveHour' | 'weekly' | undefined {
+  if (bucketId === 'gemini-5h' || bucketId === '3p-5h' || bucketId.endsWith('-5h')) return 'fiveHour'
+  if (bucketId === 'gemini-weekly' || bucketId === '3p-weekly' || bucketId.endsWith('-weekly')) return 'weekly'
+  return undefined
+}
 
 /** 面板里两个窗口的显示名（**不是**积分，故不写「积分」二字）。 */
 export const ANTIGRAVITY_WINDOW_LABEL_FIVE_HOUR = '5 小时窗口'
@@ -246,8 +261,12 @@ export function parseGeminiQuotaWindows(payload: unknown): {
     for (const bucket of buckets) {
       const parsed = parseGeminiQuotaWindow(bucket)
       if (parsed === undefined) continue
-      if (parsed.bucketId === ANTIGRAVITY_BUCKET_FIVE_HOUR && fiveHour === undefined) fiveHour = parsed
-      if (parsed.bucketId === ANTIGRAVITY_BUCKET_WEEKLY && weekly === undefined) weekly = parsed
+      // 按 bucketId 的**窗口语义**匹配（实测桶 id 为 gemini-5h / gemini-weekly /
+      // 3p-5h / 3p-weekly；旧的 antigravity-* 全等匹配永远落空 —— 用户报障
+      // 「配额响应里没有 Gemini 配额桶」的根因）。
+      const windowKind = bucketWindowOf(parsed.bucketId)
+      if (windowKind === 'fiveHour' && fiveHour === undefined) fiveHour = parsed
+      if (windowKind === 'weekly' && weekly === undefined) weekly = parsed
     }
   }
   return {
