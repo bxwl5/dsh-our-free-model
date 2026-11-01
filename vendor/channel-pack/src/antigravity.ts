@@ -40,10 +40,10 @@
  *
  * ## 实测确认的三条事实（计划 §七）
  *
- * - **模型名是准入钥匙**：发裸 `antigravity-3.8-flash` 上游 404，必须带档位后缀
- *   （`antigravity-3.8-flash-high`）。
+ * - **模型名是准入钥匙**：发裸 `gemini-3.8-flash` 上游 404，必须带档位后缀
+ *   （`gemini-3.8-flash-high`）。
  * - **lite 已整体移除**（用户 2026-10-03 拍板「不要 lite 模型」）：真机实测
- *   `antigravity-3.8-flash-lite` 在两端点上**恒 404**
+ *   `gemini-3.8-flash-lite` 在两端点上**恒 404**
  *   （`{"error":{"code":404,"message":"Requested entity was not found.","status":"NOT_FOUND"}}`），
  *   与是否传档位无关 ⇒ 该模型名不在本账号的准入表里，暴露它只会让用户选中即失败。
  * - **思考预算是自由旋钮**：名字叫 `medium` 但预算给 10000 → 实测 213 token；
@@ -401,7 +401,7 @@ export function newGeminiRequestId(nowMs: number = Date.now()): string {
 export type AntigravityTier = 'low' | 'medium' | 'high' | 'tiered'
 
 /** 主模型上游名（**不带**档位后缀，后缀由 {@link antigravityModelSpec} 拼）。 */
-export const ANTIGRAVITY_UPSTREAM_FLASH = 'antigravity-3.8-flash'
+export const ANTIGRAVITY_UPSTREAM_FLASH = 'gemini-3.8-flash'
 
 export const ANTIGRAVITY_BUDGET_LOW = 1_000
 export const ANTIGRAVITY_BUDGET_MEDIUM = 4_000
@@ -515,11 +515,11 @@ export function parseGeminiAvailableModels(payload: unknown): readonly Antigravi
     const entry = raw as Record<string, unknown>
     // ⚠️ 白名单（2026-11-01 实测后放宽）：
     // - `antigravity-` 前缀：远端 id 就是上游真名，逐 id 推理探针验证 3.8 系 /
-    //   antigravity-3-flash 均 200（2.5-pro 一次 503 为上游临时），全部放行。
+    //   gemini-3-flash 均 200（2.5-pro 一次 503 为上游临时），全部放行。
     // - `claude-*` / `gpt-oss-*` 不接：本插件的推理信封是 Gemini 形态，
     //   未实现的通道不广告（Agent2API 同款前缀白名单策略）。
     // - 占位 id（chat_NNN / tab_*）无 displayName，由下面判挡。
-    if (!id.startsWith('antigravity-')) continue
+    if (!id.startsWith('gemini-')) continue
     const displayName = typeof entry.displayName === 'string' ? entry.displayName : ''
     if (displayName === '') continue
     const contextWindow = positiveIntField(entry.maxTokens) ?? ANTIGRAVITY_CONTEXT_WINDOW
@@ -604,16 +604,16 @@ export function antigravityCanonicalModelId(modelId: string): string {
  * ## 2026-11-01 起支持远端目录的**全 Gemini 家族**
  *
  * `fetchAvailableModels` 实测（Agent2API 规格）：远端下发的 id 就是上游真名，
- * 逐 id 推理探针验证 `antigravity-3.8-flash-medium` / `-tiered` / `antigravity-3-flash`
+ * 逐 id 推理探针验证 `gemini-3.8-flash-medium` / `-tiered` / `gemini-3-flash`
  * 均 200 —— **上游按请求体的 `model` 原样路由，名字本身不参与准入校验**
  * （这与文件头「模型名是准入钥匙」的旧结论并不矛盾：那是旧通道/旧凭据时期
  * 的现象，Antigravity free-tier 新通道实测不再卡名字）。
  *
  * 规则：
- * - **裸 `antigravity-3.8-flash`**（静态兜底表条目）：拼档位后缀（`-<tier>`）——
+ * - **裸 `gemini-3.8-flash`**（静态兜底表条目）：拼档位后缀（`-<tier>`）——
  *   档位是用户在 UI 下拉框选的，efforts 表也只在它身上声明。
- * - **其余 `antigravity-` 前缀 id**（远端目录原样名，如 `antigravity-3.8-flash-medium` /
- *   `antigravity-3-flash` / `antigravity-2.5-pro`）：**原样透传**，不吃档位 —— 这些 id
+ * - **其余 `gemini-` 前缀 id**（远端目录原样名，如 `gemini-3.8-flash-medium` /
+ *   `gemini-3-flash` / `gemini-2.5-pro`）：**原样透传**，不吃档位 —— 这些 id
  *   已是上游真名，拼后缀反而 404。
  * - **非 `antigravity-` 前缀 / 目录外 id**：拒绝（保留旧「写错名静默跑 3.8」的防线）。
  *
@@ -621,7 +621,7 @@ export function antigravityCanonicalModelId(modelId: string): string {
  * `inputModalities` 展示，思考预算由上游默认值决定（Agent2API 同口径）。
  */
 export function antigravityModelSpec(modelId: string, effort?: string): AntigravityModelSpec {
-  if (!modelId.startsWith('antigravity-')) {
+  if (!modelId.startsWith('gemini-')) {
     throw new LlmError(
       `antigravity: 模型 "${modelId}" 不在本 provider 目录中（仅支持 antigravity- 前缀模型）`,
       'INVALID_REQUEST',

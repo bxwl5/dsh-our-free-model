@@ -543,7 +543,7 @@ export class AntigravityAdapter extends LlmAdapter {
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     // ⚠️ 模型名**先查表再取凭据**：未知 id 立即拒绝（纯本地判定，零网络、
     // 零凭据成本）。放行的后果是上游对未知模型名**静默接受并落回
-    // antigravity-3.8-flash**（实测假名 200、正常作答 —— 名字根本不参与上游
+    // gemini-3.8-flash**（实测假名 200、正常作答 —— 名字根本不参与上游
     // 路由），用户选错模型时拿到的是错误模型的答案且无任何征兆，比报错
     // 难查得多。错误码用 INVALID_REQUEST：不在 harness 可重试集合（不白
     // 退避），也不是 AUTH/QUOTA（不触发换号/续期）。

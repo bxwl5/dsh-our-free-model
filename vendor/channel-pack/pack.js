@@ -62503,7 +62503,7 @@ function marshalAlphabetical(value) {
 function newGeminiRequestId(nowMs = Date.now()) {
   return `agent/${nowMs}/${randomBytes10(4).toString("hex")}`;
 }
-var ANTIGRAVITY_UPSTREAM_FLASH = "antigravity-3.8-flash";
+var ANTIGRAVITY_UPSTREAM_FLASH = "gemini-3.8-flash";
 var ANTIGRAVITY_BUDGET_LOW = 1e3;
 var ANTIGRAVITY_BUDGET_MEDIUM = 4e3;
 var ANTIGRAVITY_BUDGET_HIGH = 1e4;
@@ -62540,7 +62540,7 @@ function parseGeminiAvailableModels(payload) {
   for (const [id, raw] of Object.entries(models)) {
     if (typeof raw !== "object" || raw === null) continue;
     const entry = raw;
-    if (!id.startsWith("antigravity-")) continue;
+    if (!id.startsWith("gemini-")) continue;
     const displayName = typeof entry.displayName === "string" ? entry.displayName : "";
     if (displayName === "") continue;
     const contextWindow = positiveIntField(entry.maxTokens) ?? ANTIGRAVITY_CONTEXT_WINDOW;
@@ -62584,7 +62584,7 @@ function antigravityCanonicalModelId(modelId) {
   return modelId;
 }
 function antigravityModelSpec(modelId, effort) {
-  if (!modelId.startsWith("antigravity-")) {
+  if (!modelId.startsWith("gemini-")) {
     throw new LlmError20(
       `antigravity: \u6A21\u578B "${modelId}" \u4E0D\u5728\u672C provider \u76EE\u5F55\u4E2D\uFF08\u4EC5\u652F\u6301 antigravity- \u524D\u7F00\u6A21\u578B\uFF09`,
       "INVALID_REQUEST",

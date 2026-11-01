@@ -1577,7 +1577,7 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
   //      下一轮按「工具名 + 规范化参数」回填，否则多轮工具调用必被上游拒。
   //      故这里建一个独立的 `antigravity-sigs.json` 缓存（**不放 state.json** ——
   //      那是整体替换语义，会被别的写入覆盖掉）。
-  //   4. 模型暴露 1 个 `antigravity-3.8-flash` + 4 档 efforts（低/中/高/自适应）；
+  //   4. 模型暴露 1 个 `gemini-3.8-flash` + 4 档 efforts（低/中/高/自适应）；
   //      **不**暴露带后缀的模型名，也**不**暴露 lite（上游恒 404，用户
   //      2026-10-03 拍板移除）。
   //
