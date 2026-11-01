@@ -382,7 +382,10 @@ const REF_PREFIX_TO_PROVIDER: ReadonlyArray<readonly [string, string]> = [
   // 本表与客户端 `PROVIDERS` 的一致性由
   // `tests/unit/channel-pack-store.spec.ts` 的「恢复表覆盖客户端 PROVIDERS 的全部
   // provider（从真实清单派生）」用例锁死 —— 合并新增 provider 前**先跑它**。
-  ['GEMINI', 'gemini'],
+  // ⚠️ 2026-11-01 渠道改名 gemini → antigravity：旧前缀 GEMINI 仍保留映射到
+  // antigravity，保证改名前的备份（`GEMINI_ACCOUNT_*`）在恢复时还能被认出。
+  ['GEMINI', 'antigravity'],
+  ['ANTIGRAVITY', 'antigravity'],
 ]
 
 /** 账号凭据 ref 形态：`{PREFIX}_ACCOUNT_{HEX}`（前缀由单一真相源派生）。 */

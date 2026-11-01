@@ -29,7 +29,7 @@ export async function verifyChannelPrFixes() {
 }
 
 async function verifySystemPrompts() {
-  const { translateGeminiRequest } = await import('../vendor/channel-pack/src/gemini-messages.ts')
+  const { translateGeminiRequest } = await import('../vendor/channel-pack/src/antigravity-messages.ts')
   const { buildMinimaxMessagesPayload } = await import('../vendor/channel-pack/src/minimax-messages.ts')
   const { collectHarnessSystem } = await import('../vendor/channel-pack/src/message-shape.ts')
   assert.equal(collectHarnessSystem([
@@ -49,18 +49,18 @@ async function verifySystemPrompts() {
     ['absent carriers', [user], undefined, undefined],
   ]) {
     const before = structuredClone(messages)
-    const gemini = translateGeminiRequest({
+    const antigravity = translateGeminiRequest({
       modelId: 'fixture', spec: { upstream: 'fixture', includeThoughts: false, thinkingBudget: -1 },
       messages, system, requestId: 'fixture-request',
     }).request
     const minimax = buildMinimaxMessagesPayload({ model: 'fixture', messages, system })
-    assert.equal(gemini.systemInstruction?.parts.map(part => part.text).join('\n'), expected, `Gemini ${name}`)
+    assert.equal(antigravity.systemInstruction?.parts.map(part => part.text).join('\n'), expected, `Gemini ${name}`)
     assert.equal(minimax.system, expected, `MiniMax ${name}`)
-    assert.deepEqual(gemini.contents, [{ role: 'user', parts: [{ text: 'hello' }] }], `Gemini ${name}: conversation`)
+    assert.deepEqual(antigravity.contents, [{ role: 'user', parts: [{ text: 'hello' }] }], `Gemini ${name}: conversation`)
     assert.deepEqual(minimax.messages, [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }], `MiniMax ${name}: conversation`)
     assert.deepEqual(messages, before, `${name}: input is preserved`)
     if (expected === undefined) {
-      assert.equal('systemInstruction' in gemini, false)
+      assert.equal('systemInstruction' in antigravity, false)
       assert.equal('system' in minimax, false)
     }
   }

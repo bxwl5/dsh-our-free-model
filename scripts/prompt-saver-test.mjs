@@ -322,7 +322,7 @@ check('the last of several breakpoints is the anchor', () => {
 check('an unknown wire changes nothing and reports the reason', () => {
   const body = { messages: [{ role: 'user', content: 'hi' }] }
   const before = JSON.parse(JSON.stringify(body))
-  for (const wire of ['kiro', 'gemini', 'CHAT', '', undefined, null]) {
+  for (const wire of ['kiro', 'antigravity', 'CHAT', '', undefined, null]) {
     const out = injectSystem(body, wire, CAVEMAN)
     assert.equal(out.payload, body)
     assert.equal(out.injected, false, `wire ${String(wire)} must not inject`)

@@ -34388,7 +34388,10 @@ var REF_PREFIX_TO_PROVIDER = [
   // 本表与客户端 `PROVIDERS` 的一致性由
   // `tests/unit/channel-pack-store.spec.ts` 的「恢复表覆盖客户端 PROVIDERS 的全部
   // provider（从真实清单派生）」用例锁死 —— 合并新增 provider 前**先跑它**。
-  ["GEMINI", "gemini"]
+  // ⚠️ 2026-11-01 渠道改名 gemini → antigravity：旧前缀 GEMINI 仍保留映射到
+  // antigravity，保证改名前的备份（`GEMINI_ACCOUNT_*`）在恢复时还能被认出。
+  ["GEMINI", "antigravity"],
+  ["ANTIGRAVITY", "antigravity"]
 ];
 var ACCOUNT_REF_RE = new RegExp(
   // ⚠️ 按前缀长度**降序**排列：`QODERCN` 必须排在 `QODER` 之前。虽然正则的
@@ -62384,28 +62387,28 @@ async function fetchMinimaxCreditBalance(credential, fetcher = fetch, product = 
   return { total: roundCredits(total), packages: [], expiredTotal: 0 };
 }
 
-// vendor/channel-pack/src/gemini.ts
+// vendor/channel-pack/src/antigravity.ts
 import { randomBytes as randomBytes10 } from "node:crypto";
 import { LlmError as LlmError20, ReasoningEffortId as ReasoningEffortId13 } from "@deepseek-ai/dsh-llm";
-var GEMINI_ENDPOINT_DAILY = "https://daily-cloudcode-pa.googleapis.com";
-var GEMINI_ENDPOINT_SANDBOX = "https://daily-cloudcode-pa.sandbox.googleapis.com";
-var GEMINI_ENDPOINT_PROD = "https://cloudcode-pa.googleapis.com";
-var GEMINI_ENDPOINTS = [GEMINI_ENDPOINT_DAILY, GEMINI_ENDPOINT_SANDBOX];
-var GEMINI_STREAM_PATH = "/v1internal:streamGenerateContent?alt=sse";
-var GEMINI_QUOTA_PATH = "/v1internal:retrieveUserQuotaSummary";
-var GEMINI_FETCH_AVAILABLE_MODELS_PATH = "/v1internal:fetchAvailableModels";
-var GEMINI_LOAD_CODE_ASSIST_PATH = "/v1internal:loadCodeAssist";
-var GEMINI_LOAD_CODE_ASSIST_BODY = '{"metadata":{"ideType":"ANTIGRAVITY"}}';
-var GEMINI_IDENTITY_HEADERS = Object.freeze({
+var ANTIGRAVITY_ENDPOINT_DAILY = "https://daily-cloudcode-pa.googleapis.com";
+var ANTIGRAVITY_ENDPOINT_SANDBOX = "https://daily-cloudcode-pa.sandbox.googleapis.com";
+var ANTIGRAVITY_ENDPOINT_PROD = "https://cloudcode-pa.googleapis.com";
+var ANTIGRAVITY_ENDPOINTS = [ANTIGRAVITY_ENDPOINT_DAILY, ANTIGRAVITY_ENDPOINT_SANDBOX];
+var ANTIGRAVITY_STREAM_PATH = "/v1internal:streamGenerateContent?alt=sse";
+var ANTIGRAVITY_QUOTA_PATH = "/v1internal:retrieveUserQuotaSummary";
+var ANTIGRAVITY_FETCH_AVAILABLE_MODELS_PATH = "/v1internal:fetchAvailableModels";
+var ANTIGRAVITY_LOAD_CODE_ASSIST_PATH = "/v1internal:loadCodeAssist";
+var ANTIGRAVITY_LOAD_CODE_ASSIST_BODY = '{"metadata":{"ideType":"ANTIGRAVITY"}}';
+var ANTIGRAVITY_IDENTITY_HEADERS = Object.freeze({
   "User-Agent": "antigravity/4.3.0 (cmdc-pak)",
   "x-client-name": "antigravity",
   "x-client-version": "4.3.0",
   "x-machine-id": "cmdc-pak",
   "x-vscode-sessionid": "proxy"
 });
-var GEMINI_DEFAULT_PROJECT = "aicode-consumers";
-var GEMINI_SESSION_LANE_INFER = "infer";
-var GEMINI_SESSION_LANE_SMOKE = "smoke";
+var ANTIGRAVITY_DEFAULT_PROJECT = "aicode-consumers";
+var ANTIGRAVITY_SESSION_LANE_INFER = "infer";
+var ANTIGRAVITY_SESSION_LANE_SMOKE = "smoke";
 function deriveGeminiSessionId(project, firstUserText, lane, generation = 0) {
   let hash = 0xcbf29ce484222325n;
   const prime = 0x100000001b3n;
@@ -62418,14 +62421,14 @@ function deriveGeminiSessionId(project, firstUserText, lane, generation = 0) {
   }
   return BigInt.asIntN(64, hash).toString();
 }
-var GEMINI_IDLE_TIMEOUT_MS = 12e4;
-var GEMINI_CREDITS_TIMEOUT_MS = 3e4;
-var GEMINI_QUOTA_CACHE_TTL_MS = 6e4;
-var GEMINI_EXPIRY_LEAD_MS = 6e4;
-var GEMINI = {
-  id: "gemini",
-  displayName: "Gemini Code Assist",
-  defaultCredentialRef: "GEMINI_ACCESS_TOKEN",
+var ANTIGRAVITY_IDLE_TIMEOUT_MS = 12e4;
+var ANTIGRAVITY_CREDITS_TIMEOUT_MS = 3e4;
+var ANTIGRAVITY_QUOTA_CACHE_TTL_MS = 6e4;
+var ANTIGRAVITY_EXPIRY_LEAD_MS = 6e4;
+var ANTIGRAVITY = {
+  id: "antigravity",
+  displayName: "Google Antigravity",
+  defaultCredentialRef: "ANTIGRAVITY_ACCESS_TOKEN",
   imagePixelBudget: DEFAULT_IMAGE_PIXEL_BUDGET,
   maxOutputTokens: 64e3
 };
@@ -62456,30 +62459,30 @@ function parseGeminiCredential(value) {
   }
   return out;
 }
-function geminiCredentialExpiresAtMs(credential) {
+function antigravityCredentialExpiresAtMs(credential) {
   const expiry = credential.expiry;
   if (typeof expiry !== "string" || expiry === "") return void 0;
   const parsed = Date.parse(expiry);
   return Number.isFinite(parsed) ? parsed : void 0;
 }
 function isGeminiExpired(credential, nowMs = Date.now()) {
-  const expiresAt = geminiCredentialExpiresAtMs(credential);
+  const expiresAt = antigravityCredentialExpiresAtMs(credential);
   if (expiresAt === void 0) return false;
-  return expiresAt - nowMs <= GEMINI_EXPIRY_LEAD_MS;
+  return expiresAt - nowMs <= ANTIGRAVITY_EXPIRY_LEAD_MS;
 }
 function isGeminiRefreshable(credential) {
   return typeof credential.refresh_token === "string" && credential.refresh_token !== "";
 }
-function geminiAccountLabel(credential) {
+function antigravityAccountLabel(credential) {
   if (typeof credential.email === "string" && credential.email !== "") return credential.email;
   if (typeof credential.sub === "string" && credential.sub !== "") return credential.sub;
   return void 0;
 }
-function geminiHeaders(credential, options = {}) {
+function antigravityHeaders(credential, options = {}) {
   const headers = new Headers();
   headers.set("Authorization", `Bearer ${credential.access_token}`);
   headers.set("Content-Type", "application/json");
-  for (const [key, value] of Object.entries(GEMINI_IDENTITY_HEADERS)) headers.set(key, value);
+  for (const [key, value] of Object.entries(ANTIGRAVITY_IDENTITY_HEADERS)) headers.set(key, value);
   if (options.includeAccept === true) headers.set("Accept", "application/json");
   return headers;
 }
@@ -62500,34 +62503,34 @@ function marshalAlphabetical(value) {
 function newGeminiRequestId(nowMs = Date.now()) {
   return `agent/${nowMs}/${randomBytes10(4).toString("hex")}`;
 }
-var GEMINI_UPSTREAM_FLASH = "gemini-3.8-flash";
-var GEMINI_BUDGET_LOW = 1e3;
-var GEMINI_BUDGET_MEDIUM = 4e3;
-var GEMINI_BUDGET_HIGH = 1e4;
-var GEMINI_BUDGET_TIERED = -1;
-var GEMINI_CONTEXT_WINDOW = 1e6;
-var GEMINI_EFFORT_IDS = ["low", "medium", "high", "tiered"];
-var GEMINI_DEFAULT_EFFORT = "medium";
-function geminiEffortLabel(id) {
+var ANTIGRAVITY_UPSTREAM_FLASH = "antigravity-3.8-flash";
+var ANTIGRAVITY_BUDGET_LOW = 1e3;
+var ANTIGRAVITY_BUDGET_MEDIUM = 4e3;
+var ANTIGRAVITY_BUDGET_HIGH = 1e4;
+var ANTIGRAVITY_BUDGET_TIERED = -1;
+var ANTIGRAVITY_CONTEXT_WINDOW = 1e6;
+var ANTIGRAVITY_EFFORT_IDS = ["low", "medium", "high", "tiered"];
+var ANTIGRAVITY_DEFAULT_EFFORT = "medium";
+function antigravityEffortLabel(id) {
   if (id === "low") return "\u4F4E";
   if (id === "medium") return "\u4E2D";
   if (id === "high") return "\u9AD8";
   if (id === "tiered") return "\u81EA\u9002\u5E94";
   return id;
 }
-var GEMINI_FALLBACK_MODELS = [
+var ANTIGRAVITY_FALLBACK_MODELS = [
   {
-    id: GEMINI_UPSTREAM_FLASH,
+    id: ANTIGRAVITY_UPSTREAM_FLASH,
     name: "Gemini 3.8 Flash",
-    contextWindow: GEMINI_CONTEXT_WINDOW,
-    maxTokens: GEMINI.maxOutputTokens,
+    contextWindow: ANTIGRAVITY_CONTEXT_WINDOW,
+    maxTokens: ANTIGRAVITY.maxOutputTokens,
     supportsImage: true,
-    effortOptions: GEMINI_EFFORT_IDS,
-    defaultEffort: GEMINI_DEFAULT_EFFORT
+    effortOptions: ANTIGRAVITY_EFFORT_IDS,
+    defaultEffort: ANTIGRAVITY_DEFAULT_EFFORT
   }
 ];
-function geminiFallbackEntries() {
-  return GEMINI_FALLBACK_MODELS;
+function antigravityFallbackEntries() {
+  return ANTIGRAVITY_FALLBACK_MODELS;
 }
 function parseGeminiAvailableModels(payload) {
   if (typeof payload !== "object" || payload === null) return [];
@@ -62537,11 +62540,11 @@ function parseGeminiAvailableModels(payload) {
   for (const [id, raw] of Object.entries(models)) {
     if (typeof raw !== "object" || raw === null) continue;
     const entry = raw;
-    if (!id.startsWith("gemini-")) continue;
+    if (!id.startsWith("antigravity-")) continue;
     const displayName = typeof entry.displayName === "string" ? entry.displayName : "";
     if (displayName === "") continue;
-    const contextWindow = positiveIntField(entry.maxTokens) ?? GEMINI_CONTEXT_WINDOW;
-    const maxOutput = positiveIntField(entry.maxOutputTokens) ?? GEMINI.maxOutputTokens;
+    const contextWindow = positiveIntField(entry.maxTokens) ?? ANTIGRAVITY_CONTEXT_WINDOW;
+    const maxOutput = positiveIntField(entry.maxOutputTokens) ?? ANTIGRAVITY.maxOutputTokens;
     const supportsThinking = entry.supportsThinking === true;
     const quota = typeof entry.quotaInfo === "object" && entry.quotaInfo !== null ? entry.quotaInfo : {};
     const remaining = typeof quota.remainingFraction === "number" && Number.isFinite(quota.remainingFraction) ? quota.remainingFraction : void 0;
@@ -62551,7 +62554,7 @@ function parseGeminiAvailableModels(payload) {
       contextWindow,
       maxTokens: maxOutput,
       supportsImage: entry.supportsImages === true,
-      ...supportsThinking ? { effortOptions: GEMINI_EFFORT_IDS, defaultEffort: GEMINI_DEFAULT_EFFORT } : {},
+      ...supportsThinking ? { effortOptions: ANTIGRAVITY_EFFORT_IDS, defaultEffort: ANTIGRAVITY_DEFAULT_EFFORT } : {},
       ...remaining === void 0 ? {} : { remainingFraction: remaining },
       ...typeof entry.thinkingBudget === "number" && Number.isFinite(entry.thinkingBudget) ? { thinkingBudget: entry.thinkingBudget } : {}
     });
@@ -62562,58 +62565,58 @@ function positiveIntField(value) {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return void 0;
   return Math.round(value);
 }
-function geminiEffortToTier(effort) {
+function antigravityEffortToTier(effort) {
   if (effort === "low" || effort === "medium" || effort === "high" || effort === "tiered") {
     return effort;
   }
   return "medium";
 }
-function geminiThinkingBudget(tier) {
-  if (tier === "low") return GEMINI_BUDGET_LOW;
-  if (tier === "high") return GEMINI_BUDGET_HIGH;
-  if (tier === "tiered") return GEMINI_BUDGET_TIERED;
-  return GEMINI_BUDGET_MEDIUM;
+function antigravityThinkingBudget(tier) {
+  if (tier === "low") return ANTIGRAVITY_BUDGET_LOW;
+  if (tier === "high") return ANTIGRAVITY_BUDGET_HIGH;
+  if (tier === "tiered") return ANTIGRAVITY_BUDGET_TIERED;
+  return ANTIGRAVITY_BUDGET_MEDIUM;
 }
-function geminiCanonicalModelId(modelId) {
-  for (const tier of GEMINI_EFFORT_IDS) {
+function antigravityCanonicalModelId(modelId) {
+  for (const tier of ANTIGRAVITY_EFFORT_IDS) {
     if (modelId.endsWith(`-${tier}`)) return modelId.slice(0, modelId.length - tier.length - 1);
   }
   return modelId;
 }
-function geminiModelSpec(modelId, effort) {
-  if (!modelId.startsWith("gemini-")) {
+function antigravityModelSpec(modelId, effort) {
+  if (!modelId.startsWith("antigravity-")) {
     throw new LlmError20(
-      `gemini: \u6A21\u578B "${modelId}" \u4E0D\u5728\u672C provider \u76EE\u5F55\u4E2D\uFF08\u4EC5\u652F\u6301 gemini- \u524D\u7F00\u6A21\u578B\uFF09`,
+      `antigravity: \u6A21\u578B "${modelId}" \u4E0D\u5728\u672C provider \u76EE\u5F55\u4E2D\uFF08\u4EC5\u652F\u6301 antigravity- \u524D\u7F00\u6A21\u578B\uFF09`,
       "INVALID_REQUEST",
       // ⚠️ `status` 只落在 `LlmError.failure`（不是顶层属性），且网关的
       // `failureToOpenAiError` 两处都要读 —— 见 `openai-gateway/stream.ts`。
       { status: 404 }
     );
   }
-  if (geminiCanonicalModelId(modelId) === GEMINI_UPSTREAM_FLASH && modelId === GEMINI_UPSTREAM_FLASH) {
-    const tier = geminiEffortToTier(effort);
+  if (antigravityCanonicalModelId(modelId) === ANTIGRAVITY_UPSTREAM_FLASH && modelId === ANTIGRAVITY_UPSTREAM_FLASH) {
+    const tier = antigravityEffortToTier(effort);
     return {
-      upstream: `${GEMINI_UPSTREAM_FLASH}-${tier}`,
+      upstream: `${ANTIGRAVITY_UPSTREAM_FLASH}-${tier}`,
       tier,
-      thinkingBudget: geminiThinkingBudget(tier),
+      thinkingBudget: antigravityThinkingBudget(tier),
       includeThoughts: true
     };
   }
   return {
     upstream: modelId,
     tier: "medium",
-    thinkingBudget: geminiThinkingBudget("medium"),
+    thinkingBudget: antigravityThinkingBudget("medium"),
     includeThoughts: true
   };
 }
-function geminiReasoningInfo(entry) {
+function antigravityReasoningInfo(entry) {
   const options = entry.effortOptions;
   if (options === void 0 || options.length === 0) return void 0;
-  const efforts = options.map((id) => ({ id: ReasoningEffortId13(id), name: geminiEffortLabel(id) }));
+  const efforts = options.map((id) => ({ id: ReasoningEffortId13(id), name: antigravityEffortLabel(id) }));
   const defaultEffort = entry.defaultEffort !== void 0 && options.includes(entry.defaultEffort) ? ReasoningEffortId13(entry.defaultEffort) : void 0;
   return { efforts, ...defaultEffort === void 0 ? {} : { defaultEffort } };
 }
-var GEMINI_SCHEMA_KEYS = /* @__PURE__ */ new Set([
+var ANTIGRAVITY_SCHEMA_KEYS = /* @__PURE__ */ new Set([
   "type",
   "format",
   "description",
@@ -62637,7 +62640,7 @@ var GEMINI_SCHEMA_KEYS = /* @__PURE__ */ new Set([
 function sanitizeGeminiSchema(schema) {
   const out = {};
   for (const [key, value] of Object.entries(schema)) {
-    if (!GEMINI_SCHEMA_KEYS.has(key)) continue;
+    if (!ANTIGRAVITY_SCHEMA_KEYS.has(key)) continue;
     if (key === "properties") {
       if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
       const properties = {};
@@ -62686,8 +62689,8 @@ function sanitizeGeminiSchema(schema) {
   }
   return out;
 }
-var GEMINI_MAX_IMAGE_BYTES_INLINE = 10 * 1024 * 1024;
-var GEMINI_MAX_REQUEST_BODY_BYTES = 64 * 1024 * 1024;
+var ANTIGRAVITY_MAX_IMAGE_BYTES_INLINE = 10 * 1024 * 1024;
+var ANTIGRAVITY_MAX_REQUEST_BODY_BYTES = 64 * 1024 * 1024;
 function normalizeBase64(data) {
   if (data === "") return void 0;
   const cleaned = data.replace(/[\n\r\s]/g, "");
@@ -62697,13 +62700,13 @@ function normalizeBase64(data) {
   return cleaned;
 }
 
-// vendor/channel-pack/src/gemini-credits.ts
-var GEMINI_UNAUTHORIZED_MESSAGE = "\u5C1A\u672A\u6388\u6743 Google \u8D26\u53F7";
-var GEMINI_BUCKET_FIVE_HOUR = "gemini-5h";
-var GEMINI_BUCKET_WEEKLY = "gemini-weekly";
-var GEMINI_WINDOW_LABEL_FIVE_HOUR = "5 \u5C0F\u65F6\u7A97\u53E3";
-var GEMINI_WINDOW_LABEL_WEEKLY = "\u5468\u7A97\u53E3";
-var GEMINI_QUOTA_UNIT = "%";
+// vendor/channel-pack/src/antigravity-credits.ts
+var ANTIGRAVITY_UNAUTHORIZED_MESSAGE = "\u5C1A\u672A\u6388\u6743 Google \u8D26\u53F7";
+var ANTIGRAVITY_BUCKET_FIVE_HOUR = "antigravity-5h";
+var ANTIGRAVITY_BUCKET_WEEKLY = "antigravity-weekly";
+var ANTIGRAVITY_WINDOW_LABEL_FIVE_HOUR = "5 \u5C0F\u65F6\u7A97\u53E3";
+var ANTIGRAVITY_WINDOW_LABEL_WEEKLY = "\u5468\u7A97\u53E3";
+var ANTIGRAVITY_QUOTA_UNIT = "%";
 function tierLabel(id, name2) {
   const combined = `${id} ${name2}`.toLowerCase();
   if (combined.includes("ultra")) return "Ultra";
@@ -62752,8 +62755,8 @@ function parseGeminiQuotaWindows(payload) {
     for (const bucket of buckets) {
       const parsed = parseGeminiQuotaWindow(bucket);
       if (parsed === void 0) continue;
-      if (parsed.bucketId === GEMINI_BUCKET_FIVE_HOUR && fiveHour === void 0) fiveHour = parsed;
-      if (parsed.bucketId === GEMINI_BUCKET_WEEKLY && weekly === void 0) weekly = parsed;
+      if (parsed.bucketId === ANTIGRAVITY_BUCKET_FIVE_HOUR && fiveHour === void 0) fiveHour = parsed;
+      if (parsed.bucketId === ANTIGRAVITY_BUCKET_WEEKLY && weekly === void 0) weekly = parsed;
     }
   }
   return {
@@ -62769,7 +62772,7 @@ function makeQuotaPackage(label, window) {
   const remaining = percentOf(window);
   return {
     name: label,
-    unit: GEMINI_QUOTA_UNIT,
+    unit: ANTIGRAVITY_QUOTA_UNIT,
     remaining,
     total: 100,
     used: 100 - remaining,
@@ -62781,8 +62784,8 @@ function makeQuotaPackage(label, window) {
 }
 function toGeminiCreditBalance(fiveHour, weekly) {
   const packages = [];
-  if (fiveHour !== void 0) packages.push(makeQuotaPackage(GEMINI_WINDOW_LABEL_FIVE_HOUR, fiveHour));
-  if (weekly !== void 0) packages.push(makeQuotaPackage(GEMINI_WINDOW_LABEL_WEEKLY, weekly));
+  if (fiveHour !== void 0) packages.push(makeQuotaPackage(ANTIGRAVITY_WINDOW_LABEL_FIVE_HOUR, fiveHour));
+  if (weekly !== void 0) packages.push(makeQuotaPackage(ANTIGRAVITY_WINDOW_LABEL_WEEKLY, weekly));
   if (packages.length === 0) return { total: 0, packages: [], expiredTotal: 0 };
   const sum = packages.reduce((acc, item) => acc + item.remaining, 0);
   return {
@@ -62791,20 +62794,20 @@ function toGeminiCreditBalance(fiveHour, weekly) {
     expiredTotal: 0
   };
 }
-async function fetchGeminiCreditBalance(credential, _product = GEMINI, options = {}) {
+async function fetchGeminiCreditBalance(credential, _product = ANTIGRAVITY, options = {}) {
   const token = credential.access_token ?? "";
-  if (token === "") return { balance: null, error: GEMINI_UNAUTHORIZED_MESSAGE };
+  if (token === "") return { balance: null, error: ANTIGRAVITY_UNAUTHORIZED_MESSAGE };
   const now = options.now?.() ?? Date.now();
   if (options.force !== true) {
     const cached2 = cache4.get(token);
-    if (cached2 !== void 0 && now - cached2.at < GEMINI_QUOTA_CACHE_TTL_MS) return cached2.result;
+    if (cached2 !== void 0 && now - cached2.at < ANTIGRAVITY_QUOTA_CACHE_TTL_MS) return cached2.result;
   }
   const result = await requestQuota(credential, options.fetcher ?? fetch);
   cache4.set(token, { at: now, result });
   return result;
 }
 async function requestQuota(credential, fetcher) {
-  const project = credential.cloudaicompanionProject ?? GEMINI_DEFAULT_PROJECT;
+  const project = credential.cloudaicompanionProject ?? ANTIGRAVITY_DEFAULT_PROJECT;
   const [quota, tier] = await Promise.all([
     requestQuotaSummary(credential, fetcher, project),
     requestAccountTier(credential, fetcher).catch(() => void 0)
@@ -62814,14 +62817,14 @@ async function requestQuota(credential, fetcher) {
 async function requestQuotaSummary(credential, fetcher, project) {
   let response;
   try {
-    response = await fetcher(`${GEMINI_ENDPOINT_SANDBOX}${GEMINI_QUOTA_PATH}`, {
+    response = await fetcher(`${ANTIGRAVITY_ENDPOINT_SANDBOX}${ANTIGRAVITY_QUOTA_PATH}`, {
       method: "POST",
       // ⚠️ 身份头与推理请求**完全一致**（含五个伪装头）；流式才刻意不带 Accept，
       // 配额是普通 JSON 请求，`includeAccept` 保持默认 false 与抓包一致。
-      headers: geminiHeaders(credential),
+      headers: antigravityHeaders(credential),
       // ⚠️ 必须带 `project`（见文件头注释）：空对象 `{}` 对第二个账号会 403。
       body: JSON.stringify({ project }),
-      signal: AbortSignal.timeout(GEMINI_CREDITS_TIMEOUT_MS)
+      signal: AbortSignal.timeout(ANTIGRAVITY_CREDITS_TIMEOUT_MS)
     });
   } catch (error) {
     return { balance: null, error: `\u914D\u989D\u67E5\u8BE2\u7F51\u7EDC\u5931\u8D25\uFF1A${describe(error)}` };
@@ -62849,11 +62852,11 @@ async function requestQuotaSummary(credential, fetcher, project) {
   return { balance: toGeminiCreditBalance(fiveHour, weekly) };
 }
 async function requestAccountTier(credential, fetcher) {
-  const response = await fetcher(`${GEMINI_ENDPOINT_SANDBOX}${GEMINI_LOAD_CODE_ASSIST_PATH}`, {
+  const response = await fetcher(`${ANTIGRAVITY_ENDPOINT_SANDBOX}${ANTIGRAVITY_LOAD_CODE_ASSIST_PATH}`, {
     method: "POST",
-    headers: geminiHeaders(credential),
-    body: GEMINI_LOAD_CODE_ASSIST_BODY,
-    signal: AbortSignal.timeout(GEMINI_CREDITS_TIMEOUT_MS)
+    headers: antigravityHeaders(credential),
+    body: ANTIGRAVITY_LOAD_CODE_ASSIST_BODY,
+    signal: AbortSignal.timeout(ANTIGRAVITY_CREDITS_TIMEOUT_MS)
   });
   if (!response.ok) return void 0;
   const text = await response.text().catch(() => "");
@@ -62878,7 +62881,7 @@ function quotaRejectionHint(text) {
         const reason = details.map((item) => typeof item === "object" && item !== null ? item.reason : void 0).find((value) => typeof value === "string" && value !== "");
         const message2 = typeof record.message === "string" ? record.message : "";
         if (reason !== void 0) {
-          const locationHint = reason === "UNSUPPORTED_LOCATION" ? "\u3002\u8FD9\u662F Google \u7684\u5730\u533A\u9650\u5236\uFF08Gemini Code Assist \u4E2A\u4EBA\u7248\u5728\u4F60\u6240\u5728\u5730\u533A\u4E0D\u53EF\u7528\uFF09\uFF0C\u4E0D\u662F\u51ED\u636E\u6216\u989D\u5EA6\u95EE\u9898\uFF1B\u53EF\u5728\u672C\u63D2\u4EF6\u8BBE\u7F6E\u9875\u5F00\u542F\u300C\u51FA\u53E3\u4EE3\u7406\u300D\uFF0C\u8BA9\u8BF7\u6C42\u4ECE Gemini \u652F\u6301\u7684\u5730\u533A\u53D1\u51FA\u540E\u91CD\u8BD5" : "";
+          const locationHint = reason === "UNSUPPORTED_LOCATION" ? "\u3002\u8FD9\u662F Google \u7684\u5730\u533A\u9650\u5236\uFF08Antigravity \u4E2A\u4EBA\u7248\u5728\u4F60\u6240\u5728\u5730\u533A\u4E0D\u53EF\u7528\uFF09\uFF0C\u4E0D\u662F\u51ED\u636E\u6216\u989D\u5EA6\u95EE\u9898\uFF1B\u53EF\u5728\u672C\u63D2\u4EF6\u8BBE\u7F6E\u9875\u5F00\u542F\u300C\u51FA\u53E3\u4EE3\u7406\u300D\uFF0C\u8BA9\u8BF7\u6C42\u4ECE Gemini \u652F\u6301\u7684\u5730\u533A\u53D1\u51FA\u540E\u91CD\u8BD5" : "";
           return `\uFF08${reason}\uFF09\uFF1A${message2.slice(0, 160)}${locationHint}`;
         }
         if (message2 !== "") return `\uFF1A${message2.slice(0, 160)}`;
@@ -63977,7 +63980,7 @@ async function fetchTraeCreditBalance(credential, _product, fetcher = fetch) {
 import { credentialRef as credentialRef10 } from "@deepseek-ai/dsh-credentials";
 import { createUserMessage, LlmError as LlmError22 } from "@deepseek-ai/dsh-llm";
 
-// vendor/channel-pack/src/gemini-adapter.ts
+// vendor/channel-pack/src/antigravity-adapter.ts
 import {
   CONTEXT_WINDOW_EXCEEDED_CODE as CONTEXT_WINDOW_EXCEEDED_CODE3,
   isContextWindowExceededError as isContextWindowExceededError3,
@@ -63986,14 +63989,14 @@ import {
   ReasoningEffortId as ReasoningEffortId14
 } from "@deepseek-ai/dsh-llm";
 
-// vendor/channel-pack/src/gemini-messages.ts
+// vendor/channel-pack/src/antigravity-messages.ts
 import { ToolCallId as ToolCallId6 } from "@deepseek-ai/dsh-llm";
 function canonicalArgs(args) {
   if (args === void 0 || args === null) return "{}";
   if (typeof args !== "object" || Array.isArray(args)) return sortedStringify(args);
   return sortedStringify(args);
 }
-function geminiFirstUserText(contents) {
+function antigravityFirstUserText(contents) {
   for (const content of contents) {
     if (content.role !== "" && content.role !== "user") continue;
     for (const part of content.parts) {
@@ -64045,7 +64048,7 @@ function translateGeminiRequest(options) {
         const attachmentId = typeof ref?.attachmentId === "string" ? ref.attachmentId : void 0;
         const inline = attachmentId === void 0 ? void 0 : options.images?.get(attachmentId);
         if (inline === void 0) {
-          throw new Error("gemini: \u56FE\u7247\u672A\u80FD\u5185\u8054\uFF08\u9644\u4EF6\u670D\u52A1\u4E0D\u53EF\u7528\u6216\u8BFB\u53D6\u5931\u8D25\uFF09\uFF0C\u62D2\u7EDD\u53D1\u51FA\u7F3A\u5C11\u56FE\u7247\u7684\u8BF7\u6C42");
+          throw new Error("antigravity: \u56FE\u7247\u672A\u80FD\u5185\u8054\uFF08\u9644\u4EF6\u670D\u52A1\u4E0D\u53EF\u7528\u6216\u8BFB\u53D6\u5931\u8D25\uFF09\uFF0C\u62D2\u7EDD\u53D1\u51FA\u7F3A\u5C11\u56FE\u7247\u7684\u8BF7\u6C42");
         }
         parts.push({ inlineData: { mimeType: inline.mediaType, data: inline.data } });
         continue;
@@ -64062,20 +64065,20 @@ function translateGeminiRequest(options) {
     if (parts.length === 0) continue;
     contents.push({ role, parts });
   }
-  if (contents.length === 0) throw new Error("gemini: messages \u91CC\u6CA1\u6709\u53EF\u7528\u5185\u5BB9");
-  const project = options.project ?? GEMINI_DEFAULT_PROJECT;
+  if (contents.length === 0) throw new Error("antigravity: messages \u91CC\u6CA1\u6709\u53EF\u7528\u5185\u5BB9");
+  const project = options.project ?? ANTIGRAVITY_DEFAULT_PROJECT;
   let sessionId = options.sessionId;
   if (sessionId === void 0) {
     const base = deriveGeminiSessionId(
       project,
-      geminiFirstUserText(contents),
-      options.sessionLane ?? GEMINI_SESSION_LANE_INFER
+      antigravityFirstUserText(contents),
+      options.sessionLane ?? ANTIGRAVITY_SESSION_LANE_INFER
     );
     const generation = options.sessionGeneration?.(base) ?? 0;
     sessionId = generation > 0 ? deriveGeminiSessionId(
       project,
-      geminiFirstUserText(contents),
-      options.sessionLane ?? GEMINI_SESSION_LANE_INFER,
+      antigravityFirstUserText(contents),
+      options.sessionLane ?? ANTIGRAVITY_SESSION_LANE_INFER,
       generation
     ) : base;
   }
@@ -64102,7 +64105,7 @@ function translateGeminiRequest(options) {
   if (toolConfig !== void 0) request2.toolConfig = toolConfig;
   return {
     model: options.spec.upstream,
-    project: options.project ?? GEMINI_DEFAULT_PROJECT,
+    project: options.project ?? ANTIGRAVITY_DEFAULT_PROJECT,
     request: request2,
     requestId: options.requestId,
     userAgent: "antigravity"
@@ -64207,7 +64210,7 @@ function newToolCallId(index) {
 async function* consumeGeminiSse(options) {
   const reader = options.body.getReader();
   const decoder2 = new TextDecoder();
-  const idleTimeoutMs = options.idleTimeoutMs ?? GEMINI_IDLE_TIMEOUT_MS;
+  const idleTimeoutMs = options.idleTimeoutMs ?? ANTIGRAVITY_IDLE_TIMEOUT_MS;
   const firstTokenTimeoutMs = options.firstTokenTimeoutMs ?? idleTimeoutMs;
   let buffer = "";
   let block;
@@ -64321,7 +64324,7 @@ async function* consumeGeminiSse(options) {
       const { done, value } = await readWithIdleTimeout(
         reader,
         sawAnyChunk ? idleTimeoutMs : firstTokenTimeoutMs,
-        "gemini",
+        "antigravity",
         options.signal,
         sawAnyChunk ? "chunk" : "first-token"
       );
@@ -64349,7 +64352,7 @@ async function* consumeGeminiSse(options) {
     reader.releaseLock?.();
   }
   yield* closeBlock();
-  if (!sawAnyChunk) throw new Error("gemini: \u6A21\u578B\u672A\u8FD4\u56DE\u4EFB\u4F55\u5185\u5BB9\u5757");
+  if (!sawAnyChunk) throw new Error("antigravity: \u6A21\u578B\u672A\u8FD4\u56DE\u4EFB\u4F55\u5185\u5BB9\u5757");
   yield { type: "usage", usage: { inputTokens: 0, outputTokens: 0, ...usage } };
   yield { type: "finish", reason: mapGeminiFinish(finishReason2, toolCount) };
 }
@@ -64362,8 +64365,8 @@ function consumeSseLine(rawLine) {
   return line2.slice(5).trim();
 }
 
-// vendor/channel-pack/src/gemini-project.ts
-function geminiCredentialIdentity(credential) {
+// vendor/channel-pack/src/antigravity-project.ts
+function antigravityCredentialIdentity(credential) {
   if (typeof credential.email === "string" && credential.email !== "") return credential.email;
   if (typeof credential.sub === "string" && credential.sub !== "") return credential.sub;
   return credential.access_token;
@@ -64382,7 +64385,7 @@ function parseGeminiProject(payload) {
 }
 async function resolveGeminiProject(options) {
   const cache5 = options.cache;
-  const identity = geminiCredentialIdentity(options.credential);
+  const identity = antigravityCredentialIdentity(options.credential);
   const cached2 = cache5?.get(identity);
   if (cached2 !== void 0 && cached2 !== "") return { project: cached2 };
   const fromCredential = options.credential.cloudaicompanionProject;
@@ -64391,17 +64394,17 @@ async function resolveGeminiProject(options) {
     return { project: fromCredential };
   }
   const fetcher = options.fetcher ?? fetch;
-  const timeoutMs = options.timeoutMs ?? GEMINI_CREDITS_TIMEOUT_MS;
-  const endpoints = options.endpoints ?? [GEMINI_ENDPOINT_SANDBOX, GEMINI_ENDPOINT_DAILY];
+  const timeoutMs = options.timeoutMs ?? ANTIGRAVITY_CREDITS_TIMEOUT_MS;
+  const endpoints = options.endpoints ?? [ANTIGRAVITY_ENDPOINT_SANDBOX, ANTIGRAVITY_ENDPOINT_DAILY];
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const signal = options.signal === void 0 ? timeoutSignal : AbortSignal.any([options.signal, timeoutSignal]);
   let lastError = "";
   for (const endpoint of endpoints) {
     try {
-      const response = await fetcher(`${endpoint}${GEMINI_LOAD_CODE_ASSIST_PATH}`, {
+      const response = await fetcher(`${endpoint}${ANTIGRAVITY_LOAD_CODE_ASSIST_PATH}`, {
         method: "POST",
-        headers: geminiHeaders(options.credential),
-        body: GEMINI_LOAD_CODE_ASSIST_BODY,
+        headers: antigravityHeaders(options.credential),
+        body: ANTIGRAVITY_LOAD_CODE_ASSIST_BODY,
         signal
       });
       if (!response.ok) {
@@ -64418,7 +64421,7 @@ async function resolveGeminiProject(options) {
         cache5?.set(identity, project);
         return { project, probed: true };
       }
-      return { project: GEMINI_DEFAULT_PROJECT, probed: true };
+      return { project: ANTIGRAVITY_DEFAULT_PROJECT, probed: true };
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
     }
@@ -64426,7 +64429,7 @@ async function resolveGeminiProject(options) {
   return { project: "", error: lastError === "" ? "loadCodeAssist \u63A2\u6D4B\u5931\u8D25" : lastError };
 }
 async function persistGeminiProject(options) {
-  if (options.project === "" || options.project === GEMINI_DEFAULT_PROJECT) return;
+  if (options.project === "" || options.project === ANTIGRAVITY_DEFAULT_PROJECT) return;
   if (options.credential.cloudaicompanionProject === options.project) return;
   try {
     await options.write(JSON.stringify({
@@ -64434,14 +64437,14 @@ async function persistGeminiProject(options) {
       cloudaicompanionProject: options.project
     }));
   } catch (error) {
-    options.logger?.warn(`[gemini] \u9879\u76EE\u53F7\u56DE\u5199\u51ED\u636E\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u63A8\u7406\uFF09: ${String(error)}`);
+    options.logger?.warn(`[antigravity] \u9879\u76EE\u53F7\u56DE\u5199\u51ED\u636E\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u63A8\u7406\uFF09: ${String(error)}`);
   }
 }
 
-// vendor/channel-pack/src/gemini-adapter.ts
-var GEMINI_MAX_ROTATE = 3;
-var GEMINI_RATE_LIMIT_COOLDOWN_MS = 6e4;
-var GEMINI_AUTH_COOLDOWN_MS = 3e5;
+// vendor/channel-pack/src/antigravity-adapter.ts
+var ANTIGRAVITY_MAX_ROTATE = 3;
+var ANTIGRAVITY_RATE_LIMIT_COOLDOWN_MS = 6e4;
+var ANTIGRAVITY_AUTH_COOLDOWN_MS = 3e5;
 function isGeminiSignatureError(text) {
   const lower = text.toLowerCase();
   if (lower.includes("signature")) return true;
@@ -64458,16 +64461,16 @@ function isGeminiQuotaText(text) {
 function isGeminiSessionOverflow(text) {
   return text.toLowerCase().includes("exceeds the maximum number of tokens");
 }
-var GEMINI_MAX_SESSION_BUMPS = 1;
-var GEMINI_TOKEN_COUNT_OVERFLOW = /\btoken\s+count\b[\s\S]{0,60}?\bexceeds?\s+the\s+maximum\b/i;
+var ANTIGRAVITY_MAX_SESSION_BUMPS = 1;
+var ANTIGRAVITY_TOKEN_COUNT_OVERFLOW = /\btoken\s+count\b[\s\S]{0,60}?\bexceeds?\s+the\s+maximum\b/i;
 function isGeminiContextOverflow(text) {
-  return isContextWindowExceededError3(text) || GEMINI_TOKEN_COUNT_OVERFLOW.test(text);
+  return isContextWindowExceededError3(text) || ANTIGRAVITY_TOKEN_COUNT_OVERFLOW.test(text);
 }
-var GeminiAdapter = class extends LlmAdapter16 {
+var AntigravityAdapter = class extends LlmAdapter16 {
   constructor(options) {
     super();
     this.options = options;
-    this.product = options.product ?? GEMINI;
+    this.product = options.product ?? ANTIGRAVITY;
     this.catalogGate = options.catalogGate ?? new RemoteCatalogGate();
   }
   options;
@@ -64509,7 +64512,7 @@ var GeminiAdapter = class extends LlmAdapter16 {
     }
     this.remoteModels = restoreModelCatalog(this.product.id, this.remoteModels);
     if (this.remoteModels !== void 0) return this.remoteModels;
-    return geminiFallbackEntries();
+    return antigravityFallbackEntries();
   }
   /**
    * **强制**重拉远端目录（「重新获取模型」按钮）。
@@ -64539,7 +64542,7 @@ var GeminiAdapter = class extends LlmAdapter16 {
    */
   currentModels() {
     if (this.remoteModels !== void 0) return this.remoteModels;
-    return restoreModelCatalog(this.product.id, this.remoteModels) ?? geminiFallbackEntries();
+    return restoreModelCatalog(this.product.id, this.remoteModels) ?? antigravityFallbackEntries();
   }
   /**
    * 完整目录（**不套黑名单**），供 Channel Pack「显示列表」用。
@@ -64591,7 +64594,7 @@ var GeminiAdapter = class extends LlmAdapter16 {
       resolved.defaultMaxTokens = maxTokens;
     }
     if (entry !== void 0) {
-      const reasoning = geminiReasoningInfo(entry);
+      const reasoning = antigravityReasoningInfo(entry);
       if (reasoning !== void 0) resolved.reasoning = reasoning;
     }
     return resolved;
@@ -64624,7 +64627,7 @@ var GeminiAdapter = class extends LlmAdapter16 {
     if (imageRefs.size === 0) return void 0;
     if (entry?.supportsImage !== true) {
       throw new LlmError21(
-        `gemini: \u6A21\u578B "${model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`,
+        `antigravity: \u6A21\u578B "${model}" \u4E0D\u652F\u6301\u56FE\u7247\u8F93\u5165`,
         "UNSUPPORTED_CONTENT"
       );
     }
@@ -64636,7 +64639,7 @@ var GeminiAdapter = class extends LlmAdapter16 {
         const readImage = this.options.readImage;
         if (readImage === void 0) {
           throw new LlmError21(
-            "gemini: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1\uFF08readImage / readImageRequest \u5747\u672A\u63D0\u4F9B\uFF09",
+            "antigravity: \u56FE\u7247\u8F93\u5165\u9700\u8981\u9644\u4EF6\u670D\u52A1\uFF08readImage / readImageRequest \u5747\u672A\u63D0\u4F9B\uFF09",
             "UNSUPPORTED_CONTENT"
           );
         }
@@ -64644,7 +64647,7 @@ var GeminiAdapter = class extends LlmAdapter16 {
           inline = await readImage(ref);
         } catch (error) {
           throw new LlmError21(
-            "gemini: \u56FE\u7247\u9644\u4EF6\u8BFB\u53D6\u5931\u8D25\uFF1B\u9644\u4EF6\u670D\u52A1\u53EF\u80FD\u672A\u5C31\u7EEA\uFF0C\u6216\u8BE5\u5BF9\u8C61\u5DF2\u4E0D\u5B58\u5728\u3002",
+            "antigravity: \u56FE\u7247\u9644\u4EF6\u8BFB\u53D6\u5931\u8D25\uFF1B\u9644\u4EF6\u670D\u52A1\u53EF\u80FD\u672A\u5C31\u7EEA\uFF0C\u6216\u8BE5\u5BF9\u8C61\u5DF2\u4E0D\u5B58\u5728\u3002",
             "UNSUPPORTED_CONTENT",
             { cause: error }
           );
@@ -64652,19 +64655,19 @@ var GeminiAdapter = class extends LlmAdapter16 {
       }
       if (inline === void 0) {
         throw new LlmError21(
-          "gemini: \u56FE\u7247\u9644\u4EF6\u8BFB\u53D6\u4E0D\u5230\u5185\u5BB9\uFF1B\u9644\u4EF6\u670D\u52A1\u53EF\u80FD\u672A\u5C31\u7EEA\uFF0C\u6216\u8BE5\u5BF9\u8C61\u5DF2\u4E0D\u5B58\u5728\u3002",
+          "antigravity: \u56FE\u7247\u9644\u4EF6\u8BFB\u53D6\u4E0D\u5230\u5185\u5BB9\uFF1B\u9644\u4EF6\u670D\u52A1\u53EF\u80FD\u672A\u5C31\u7EEA\uFF0C\u6216\u8BE5\u5BF9\u8C61\u5DF2\u4E0D\u5B58\u5728\u3002",
           "UNSUPPORTED_CONTENT"
         );
       }
-      if (inline.data.byteLength > GEMINI_MAX_IMAGE_BYTES_INLINE) {
+      if (inline.data.byteLength > ANTIGRAVITY_MAX_IMAGE_BYTES_INLINE) {
         throw new LlmError21(
-          `gemini: \u56FE\u7247\u4F53\u79EF ${inline.data.byteLength} \u5B57\u8282\u8D85\u8FC7\u4E0A\u6E38\u5185\u8054\u4E0A\u9650 ${GEMINI_MAX_IMAGE_BYTES_INLINE} \u5B57\u8282`,
+          `antigravity: \u56FE\u7247\u4F53\u79EF ${inline.data.byteLength} \u5B57\u8282\u8D85\u8FC7\u4E0A\u6E38\u5185\u8054\u4E0A\u9650 ${ANTIGRAVITY_MAX_IMAGE_BYTES_INLINE} \u5B57\u8282`,
           "UNSUPPORTED_CONTENT"
         );
       }
       const data = normalizeBase64(Buffer.from(inline.data).toString("base64"));
       if (data === void 0) {
-        throw new LlmError21("gemini: \u56FE\u7247\u7F16\u7801\u4E0D\u662F\u5408\u6CD5 base64", "UNSUPPORTED_CONTENT");
+        throw new LlmError21("antigravity: \u56FE\u7247\u7F16\u7801\u4E0D\u662F\u5408\u6CD5 base64", "UNSUPPORTED_CONTENT");
       }
       images.set(id, { mediaType: inline.mediaType === "" ? "image/png" : inline.mediaType, data });
     }
@@ -64682,10 +64685,10 @@ var GeminiAdapter = class extends LlmAdapter16 {
    * 6. 全部试完 → 抛 `QUOTA_EXCEEDED`（不无限切）。
    */
   async *stream(options) {
-    const entry = this.currentModels().find((item) => item.id === geminiCanonicalModelId(options.model));
+    const entry = this.currentModels().find((item) => item.id === antigravityCanonicalModelId(options.model));
     if (entry === void 0) {
       throw new LlmError21(
-        `gemini: \u6A21\u578B "${options.model}" \u4E0D\u5728\u672C provider \u76EE\u5F55\u4E2D\uFF08\u4EC5\u652F\u6301 ${GEMINI_UPSTREAM_FLASH}\uFF09`,
+        `antigravity: \u6A21\u578B "${options.model}" \u4E0D\u5728\u672C provider \u76EE\u5F55\u4E2D\uFF08\u4EC5\u652F\u6301 ${ANTIGRAVITY_UPSTREAM_FLASH}\uFF09`,
         "INVALID_REQUEST",
         // 模型名写错是确定性失败：带上 404，网关才不会把它当 502 让客户端白重试。
         { status: 404 }
@@ -64697,14 +64700,14 @@ var GeminiAdapter = class extends LlmAdapter16 {
       credential = await this.options.resolveCredential(options.model);
     }
     if (credential === void 0 || credential.access_token === "") {
-      throw new LlmError21("gemini: no usable credential; log in first", "MISSING_CREDENTIAL");
+      throw new LlmError21("antigravity: no usable credential; log in first", "MISSING_CREDENTIAL");
     }
     const requested = options.reasoningEffort === void 0 ? void 0 : String(options.reasoningEffort);
-    const declared = entry === void 0 ? void 0 : geminiReasoningInfo(entry);
+    const declared = entry === void 0 ? void 0 : antigravityReasoningInfo(entry);
     const effort = requested !== void 0 && declared?.efforts.some((item) => String(item.id) === requested) === true ? requested : void 0;
-    const spec = geminiModelSpec(options.model, effort);
+    const spec = antigravityModelSpec(options.model, effort);
     const images = await this.collectInlineImages(options.messages, entry, options.model);
-    const sessionLane = this.options.sessionLane ?? GEMINI_SESSION_LANE_INFER;
+    const sessionLane = this.options.sessionLane ?? ANTIGRAVITY_SESSION_LANE_INFER;
     const sigStore = this.options.sigStore;
     const pool = this.options.accountPool;
     let currentAccountId = "";
@@ -64740,7 +64743,7 @@ var GeminiAdapter = class extends LlmAdapter16 {
           });
           if (probe.error !== void 0) {
             throw new LlmError21(
-              `gemini: \u9879\u76EE\u53F7\u63A2\u6D4B\u5931\u8D25\uFF0C\u672A\u53D1\u63A8\u7406\uFF08\u4E0E\u539F\u7248\u4E00\u81F4\uFF09\u2014 ${probe.error}`,
+              `antigravity: \u9879\u76EE\u53F7\u63A2\u6D4B\u5931\u8D25\uFF0C\u672A\u53D1\u63A8\u7406\uFF08\u4E0E\u539F\u7248\u4E00\u81F4\uFF09\u2014 ${probe.error}`,
               "SERVER"
             );
           }
@@ -64774,12 +64777,12 @@ var GeminiAdapter = class extends LlmAdapter16 {
             }
           }
         });
-        const url = `${GEMINI_ENDPOINTS[endpointIdx] ?? GEMINI_ENDPOINTS[0]}${GEMINI_STREAM_PATH}`;
+        const url = `${ANTIGRAVITY_ENDPOINTS[endpointIdx] ?? ANTIGRAVITY_ENDPOINTS[0]}${ANTIGRAVITY_STREAM_PATH}`;
         const wire = marshalAlphabetical(envelope);
         const wireBytes = Buffer.byteLength(wire, "utf8");
-        if (wireBytes > GEMINI_MAX_REQUEST_BODY_BYTES) {
+        if (wireBytes > ANTIGRAVITY_MAX_REQUEST_BODY_BYTES) {
           throw new LlmError21(
-            `gemini: \u8BF7\u6C42\u4F53 ${wireBytes} \u5B57\u8282\u8D85\u8FC7\u4E0A\u9650 ${GEMINI_MAX_REQUEST_BODY_BYTES} \u5B57\u8282`,
+            `antigravity: \u8BF7\u6C42\u4F53 ${wireBytes} \u5B57\u8282\u8D85\u8FC7\u4E0A\u9650 ${ANTIGRAVITY_MAX_REQUEST_BODY_BYTES} \u5B57\u8282`,
             CONTEXT_WINDOW_EXCEEDED_CODE3
           );
         }
@@ -64787,29 +64790,29 @@ var GeminiAdapter = class extends LlmAdapter16 {
         try {
           response = await (this.options.fetchImpl ?? fetch)(url, {
             method: "POST",
-            // ⚠️ 流式**刻意不带 `Accept`**（抓包一致，见 `geminiHeaders`）。
-            headers: geminiHeaders(credential),
+            // ⚠️ 流式**刻意不带 `Accept`**（抓包一致，见 `antigravityHeaders`）。
+            headers: antigravityHeaders(credential),
             body: wire,
             signal: options.signal
           });
         } catch (error) {
           if (error instanceof LlmError21) throw error;
           throw new LlmError21(
-            `gemini: \u8BF7\u6C42\u53D1\u9001\u5931\u8D25 \u2014 ${error instanceof Error ? error.message : String(error)}`,
+            `antigravity: \u8BF7\u6C42\u53D1\u9001\u5931\u8D25 \u2014 ${error instanceof Error ? error.message : String(error)}`,
             "TRANSPORT",
             { cause: error }
           );
         }
         if (response.ok) {
           if (response.body === null) {
-            throw new LlmError21("gemini: \u54CD\u5E94\u7F3A\u5C11 body", "EMPTY_RESPONSE");
+            throw new LlmError21("antigravity: \u54CD\u5E94\u7F3A\u5C11 body", "EMPTY_RESPONSE");
           }
           const body = response.body;
           try {
             yield* consumeGeminiSse({
               body,
               ...options.signal === void 0 ? {} : { signal: options.signal },
-              idleTimeoutMs: GEMINI_IDLE_TIMEOUT_MS,
+              idleTimeoutMs: ANTIGRAVITY_IDLE_TIMEOUT_MS,
               ...sigStore === void 0 ? {} : { onSignature: (name2, argsJson, sig) => sigStore.put(name2, argsJson, sig) }
             });
           } finally {
@@ -64827,7 +64830,7 @@ var GeminiAdapter = class extends LlmAdapter16 {
         }
         if (status === 400 && isGeminiSessionOverflow(text) && this.options.sessionId === void 0) {
           const bumped = sessionBumps.get(lastBaseSessionId) ?? 0;
-          if (bumped < GEMINI_MAX_SESSION_BUMPS) {
+          if (bumped < ANTIGRAVITY_MAX_SESSION_BUMPS) {
             sessionBumps.set(lastBaseSessionId, bumped + 1);
             continue;
           }
@@ -64855,11 +64858,11 @@ var GeminiAdapter = class extends LlmAdapter16 {
         const rotatable = quotaLike || status === 401 || endpointFirst;
         if (rotatable && pool !== void 0) {
           if (currentAccountId !== "") {
-            const cooldown = status === 401 ? GEMINI_AUTH_COOLDOWN_MS : GEMINI_RATE_LIMIT_COOLDOWN_MS;
+            const cooldown = status === 401 ? ANTIGRAVITY_AUTH_COOLDOWN_MS : ANTIGRAVITY_RATE_LIMIT_COOLDOWN_MS;
             await pool.updateModelRateLimit(currentAccountId, options.model, Date.now() + cooldown).catch(() => {
             });
           }
-          if (rotations < GEMINI_MAX_ROTATE - 1) {
+          if (rotations < ANTIGRAVITY_MAX_ROTATE - 1) {
             const next = await pool.getAvailableAccount(this.product.id, options.model, tried);
             if (next !== null && next !== void 0 && !tried.has(next.entry.id)) {
               rotations++;
@@ -64874,7 +64877,7 @@ var GeminiAdapter = class extends LlmAdapter16 {
             }
           }
           throw new LlmError21(
-            `gemini: \u6A21\u578B ${options.model} \u7684\u6240\u6709\u8D26\u53F7\u5747\u4E0D\u53EF\u7528\uFF08\u9650\u6D41\u6216\u989D\u5EA6\u8017\u5C3D\uFF09\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5`,
+            `antigravity: \u6A21\u578B ${options.model} \u7684\u6240\u6709\u8D26\u53F7\u5747\u4E0D\u53EF\u7528\uFF08\u9650\u6D41\u6216\u989D\u5EA6\u8017\u5C3D\uFF09\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5`,
             "QUOTA_EXCEEDED",
             { status }
           );
@@ -64896,7 +64899,7 @@ var GeminiAdapter = class extends LlmAdapter16 {
    */
   classifyFailure(status, text) {
     const detail = text === "" ? "" : ` \u2014 ${text.slice(0, 500)}`;
-    const message2 = `gemini: HTTP ${status}${detail}`;
+    const message2 = `antigravity: HTTP ${status}${detail}`;
     if (status === 400 && isGeminiContextOverflow(text)) {
       return new LlmError21(message2, CONTEXT_WINDOW_EXCEEDED_CODE3, { status });
     }
@@ -64909,9 +64912,9 @@ var GeminiAdapter = class extends LlmAdapter16 {
     return new LlmError21(message2, httpErrorCode3(status), { status });
   }
 };
-function registerGeminiLlm(ctx, options) {
-  const product = options.product ?? GEMINI;
-  const adapter = new GeminiAdapter(options);
+function registerAntigravityLlm(ctx, options) {
+  const product = options.product ?? ANTIGRAVITY;
+  const adapter = new AntigravityAdapter(options);
   registerAdapterIdempotent(ctx.llm, [product.id], adapter);
   return adapter;
 }
@@ -64975,15 +64978,15 @@ async function probeWithAdapter(entry, credential, modelId, timeoutMs) {
       refresh: async () => {
       }
     });
-  } else if (entry.provider === GEMINI.id) {
-    adapter = new GeminiAdapter({
+  } else if (entry.provider === ANTIGRAVITY.id) {
+    adapter = new AntigravityAdapter({
       credentialRef: ref,
       resolveCredential: async () => credential,
       refresh: async () => {
       },
-      sessionLane: GEMINI_SESSION_LANE_SMOKE,
-      project: GEMINI_DEFAULT_PROJECT,
-      product: GEMINI
+      sessionLane: ANTIGRAVITY_SESSION_LANE_SMOKE,
+      project: ANTIGRAVITY_DEFAULT_PROJECT,
+      product: ANTIGRAVITY
     });
   } else if (entry.provider === "codearts") {
     adapter = new CodeArtsAdapter({
@@ -66562,7 +66565,7 @@ function providerIdsOf(llm, modelAdapters) {
   const keys = Object.keys(modelAdapters ?? {});
   return keys.length > 0 ? keys.map((id) => ({ id })) : void 0;
 }
-function registerChannelPackRpc(ctx, pool, codearts, buddy, workbuddy, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, config = {}) {
+function registerChannelPackRpc(ctx, pool, codearts, buddy, workbuddy, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, antigravity, modelAdapters, config = {}) {
   ctx.inject(["connection"], (connectionCtx) => {
     registerChannelPackEndpoints(
       connectionCtx,
@@ -66578,7 +66581,7 @@ function registerChannelPackRpc(ctx, pool, codearts, buddy, workbuddy, qoder, qo
       raccoon,
       minimax,
       zcode,
-      gemini,
+      antigravity,
       modelAdapters,
       config
     );
@@ -66603,7 +66606,7 @@ async function fullCatalogIds(ctx, modelAdapters, provider) {
     return { error: `\u8BFB\u53D6\u6A21\u578B\u5217\u8868\u5931\u8D25\uFF1A${reason}` };
   }
 }
-function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, config = {}) {
+function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, antigravity, modelAdapters, config = {}) {
   const connection = ctx.connection ?? ctx.get("connection");
   if (!connection || typeof connection.fetch?.register !== "function") {
     ctx.logger.warn("[channel-pack] connection.fetch not available, RPC endpoints not registered");
@@ -67534,10 +67537,10 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             });
           });
           return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } };
-        } else if (provider === GEMINI.id) {
+        } else if (provider === ANTIGRAVITY.id) {
           await pool.addAccount({
             id,
-            provider: GEMINI.id,
+            provider: ANTIGRAVITY.id,
             nickname: id,
             enabled: true,
             credentialRef: refName,
@@ -67545,28 +67548,28 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             createdAt: Date.now()
           });
           pendingLoginFailures.delete(id);
-          let geminiStarted;
+          let antigravityStarted;
           try {
-            geminiStarted = await gemini.startLogin();
+            antigravityStarted = await antigravity.startLogin();
           } catch (error) {
             void pool.removeAccount(id).catch(() => {
             });
             const reason = error instanceof Error ? error.message : String(error);
             throw new Error(`\u65E0\u6CD5\u542F\u52A8 Gemini \u767B\u5F55\uFF08\u672C\u5730\u56DE\u8C03\u670D\u52A1\u542F\u52A8\u5931\u8D25\uFF09\uFF1A${reason}`);
           }
-          geminiStarted.result.then(async (credential) => {
-            await gemini.persistLogin(credential, { refName });
+          antigravityStarted.result.then(async (credential) => {
+            await antigravity.persistLogin(credential, { refName });
             await pool.updateAccount(id, {
-              // ⚠️ 用 `geminiAccountLabel`（邮箱优先）而非 `accountId.slice(0, 8)`：
+              // ⚠️ 用 `antigravityAccountLabel`（邮箱优先）而非 `accountId.slice(0, 8)`：
               // `sub` 是 21 位数字，截前 8 位得到 `Gemini 10500520` 这种**不可辨认**
               // 的展示名（用户报障 2026-10-03）。`sub` 的价值是「稳定标识」，不是
               // 「显示名」—— 展示要的是可辨识，邮箱正好。
               // 取不到邮箱时该函数回退 `sub`，两者都无则退化为池 id。
-              nickname: geminiAccountLabel(credential) ?? id,
-              // ⚠️ **必须用 `geminiCredentialExpiresAtMs`**：它认 `expiry`
+              nickname: antigravityAccountLabel(credential) ?? id,
+              // ⚠️ **必须用 `antigravityCredentialExpiresAtMs`**：它认 `expiry`
               //（RFC3339）与 `expires_in`，取不到就返回 `undefined` ——
               // 传 `undefined` 是「不知道」，不会被写成 0 而让 UI 显示「已过期」。
-              expiresAt: geminiCredentialExpiresAtMs(credential),
+              expiresAt: antigravityCredentialExpiresAtMs(credential),
               // ⚠️ Google OAuth 默认 `access_type=offline`，故 refresh_token
               // 必定下发；这里仍按凭据本体如实判定，不写死 true。
               refreshable: isGeminiRefreshable(credential)
@@ -67574,12 +67577,12 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             pendingLoginFailures.delete(id);
           }).catch((error) => {
             const reason = error instanceof Error ? error.message : String(error);
-            ctx.logger.warn(`[channel-pack] background ${GEMINI.id} login failed for ${id}: ${reason}`);
+            ctx.logger.warn(`[channel-pack] background ${ANTIGRAVITY.id} login failed for ${id}: ${reason}`);
             pendingLoginFailures.set(id, reason.slice(0, 500));
             void pool.removeAccount(id).catch(() => {
             });
           });
-          return { ok: true, value: { accountId: id, loginUrl: geminiStarted.loginUrl } };
+          return { ok: true, value: { accountId: id, loginUrl: antigravityStarted.loginUrl } };
         } else {
           return { ok: false, error: { code: "bad-request", message: `unknown provider: ${provider}` } };
         }
@@ -67655,8 +67658,8 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             case ZCODE.id:
               await zcode.refreshAccountCredential(entry.credentialRef, pool, entry.id);
               break;
-            case GEMINI.id:
-              await gemini.refreshAccountCredential(entry.credentialRef, pool, entry.id);
+            case ANTIGRAVITY.id:
+              await antigravity.refreshAccountCredential(entry.credentialRef, pool, entry.id);
               break;
             case AUTOCLAW.id: {
               const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
@@ -68716,11 +68719,11 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           });
           return { ok: true, value: { accounts: values2 } };
         }
-        if (req.provider === GEMINI.id) {
-          const values2 = await collectCreditBalances(accounts, GEMINI, {
+        if (req.provider === ANTIGRAVITY.id) {
+          const values2 = await collectCreditBalances(accounts, ANTIGRAVITY, {
             resolve: (ref) => ctx.credentials.resolve(ref),
             fetchBalanceDetailed: async (credential) => {
-              const { balance, error, tier } = await fetchGeminiCreditBalance(credential, GEMINI, { force: req.force === true });
+              const { balance, error, tier } = await fetchGeminiCreditBalance(credential, ANTIGRAVITY, { force: req.force === true });
               const extra = tier === void 0 ? void 0 : { accountTier: { label: tier.label, title: `${tier.name}\uFF08${tier.id}\uFF09` } };
               return {
                 balance,
@@ -73361,22 +73364,22 @@ function registerMinimaxLlm(ctx, options) {
   return adapter;
 }
 
-// vendor/channel-pack/src/gemini-auth.ts
+// vendor/channel-pack/src/antigravity-auth.ts
 import { Service as Service11 } from "@deepseek-ai/cordis";
 import { credentialRef as credentialRef15 } from "@deepseek-ai/dsh-credentials";
 
-// vendor/channel-pack/src/gemini-oauth.ts
+// vendor/channel-pack/src/antigravity-oauth.ts
 import { createServer as createServer9 } from "node:http";
 import { randomBytes as randomBytes15 } from "node:crypto";
-var GEMINI_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
-var GEMINI_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
-var GEMINI_USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v2/userinfo";
-var GEMINI_DEFAULT_CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
-var GEMINI_DEFAULT_CLIENT_SECRET = "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";
-var GEMINI_CALLBACK_PATH = "/oauth-callback";
-var GEMINI_REDIRECT_HOST = "localhost";
-var GEMINI_AUTH_FLOW_TIMEOUT_MS = 36e4;
-var GEMINI_SCOPES = [
+var ANTIGRAVITY_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
+var ANTIGRAVITY_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
+var ANTIGRAVITY_USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v2/userinfo";
+var ANTIGRAVITY_DEFAULT_CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
+var ANTIGRAVITY_DEFAULT_CLIENT_SECRET = "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";
+var ANTIGRAVITY_CALLBACK_PATH = "/oauth-callback";
+var ANTIGRAVITY_REDIRECT_HOST = "localhost";
+var ANTIGRAVITY_AUTH_FLOW_TIMEOUT_MS = 36e4;
+var ANTIGRAVITY_SCOPES = [
   "openid",
   "https://www.googleapis.com/auth/cloud-platform",
   "https://www.googleapis.com/auth/userinfo.email",
@@ -73384,38 +73387,38 @@ var GEMINI_SCOPES = [
   "https://www.googleapis.com/auth/cclog",
   "https://www.googleapis.com/auth/experimentsandconfigs"
 ];
-var GeminiLoginCancelledError = class extends Error {
+var AntigravityLoginCancelledError = class extends Error {
   constructor(message2 = "Google \u6388\u6743\u5DF2\u53D6\u6D88") {
     super(message2);
-    this.name = "GeminiLoginCancelledError";
+    this.name = "AntigravityLoginCancelledError";
   }
 };
-var GeminiLoginExpiredError = class extends Error {
+var AntigravityLoginExpiredError = class extends Error {
   constructor(message2 = "Google \u6388\u6743\u8D85\u65F6\uFF0C\u8BF7\u91CD\u65B0\u53D1\u8D77") {
     super(message2);
-    this.name = "GeminiLoginExpiredError";
+    this.name = "AntigravityLoginExpiredError";
   }
 };
-function geminiClientId() {
+function antigravityClientId() {
   const fromEnv = process.env.CMDC_PAK_GOOGLE_CLIENT_ID?.trim();
-  return fromEnv !== void 0 && fromEnv !== "" ? fromEnv : GEMINI_DEFAULT_CLIENT_ID;
+  return fromEnv !== void 0 && fromEnv !== "" ? fromEnv : ANTIGRAVITY_DEFAULT_CLIENT_ID;
 }
-function geminiClientSecret() {
+function antigravityClientSecret() {
   const fromEnv = process.env.CMDC_PAK_GOOGLE_CLIENT_SECRET?.trim();
-  return fromEnv !== void 0 && fromEnv !== "" ? fromEnv : GEMINI_DEFAULT_CLIENT_SECRET;
+  return fromEnv !== void 0 && fromEnv !== "" ? fromEnv : ANTIGRAVITY_DEFAULT_CLIENT_SECRET;
 }
 function buildGeminiAuthUrl(flow) {
   const query = new URLSearchParams({
-    client_id: geminiClientId(),
+    client_id: antigravityClientId(),
     response_type: "code",
     redirect_uri: flow.redirectUri,
-    scope: GEMINI_SCOPES.join(" "),
+    scope: ANTIGRAVITY_SCOPES.join(" "),
     state: flow.state,
     access_type: "offline",
     include_granted_scopes: "true",
     prompt: "consent"
   });
-  return `${GEMINI_AUTH_ENDPOINT}?${query.toString()}`;
+  return `${ANTIGRAVITY_AUTH_ENDPOINT}?${query.toString()}`;
 }
 function parseGeminiTokenGrant(payload, previousRefreshToken) {
   if (typeof payload !== "object" || payload === null) {
@@ -73445,7 +73448,7 @@ function parseGeminiTokenGrant(payload, previousRefreshToken) {
   if (idToken !== "") grant.id_token = idToken;
   return grant;
 }
-function geminiIdentityFromIdToken(idToken) {
+function antigravityIdentityFromIdToken(idToken) {
   if (typeof idToken !== "string" || idToken === "") return {};
   const parts = idToken.split(".");
   if (parts.length < 2) return {};
@@ -73462,7 +73465,7 @@ function geminiIdentityFromIdToken(idToken) {
   if (typeof record.email === "string" && record.email !== "") out.email = record.email;
   return out;
 }
-function geminiExpiryFrom(expiresIn, nowMs = Date.now()) {
+function antigravityExpiryFrom(expiresIn, nowMs = Date.now()) {
   const seconds = expiresIn > 0 ? expiresIn : 3600;
   return new Date(nowMs + seconds * 1e3).toISOString();
 }
@@ -73471,13 +73474,13 @@ function credentialFromGeminiGrant(grant, previous = {}, nowMs = Date.now()) {
     access_token: grant.access_token,
     token_type: grant.token_type,
     expires_in: grant.expires_in,
-    expiry: geminiExpiryFrom(grant.expires_in, nowMs)
+    expiry: antigravityExpiryFrom(grant.expires_in, nowMs)
   };
   const refreshToken2 = grant.refresh_token ?? previous.refresh_token;
   if (refreshToken2 !== void 0 && refreshToken2 !== "") credential.refresh_token = refreshToken2;
   const scope = grant.scope ?? previous.scope;
   if (scope !== void 0 && scope !== "") credential.scope = scope;
-  const identity = grant.id_token === void 0 ? {} : geminiIdentityFromIdToken(grant.id_token);
+  const identity = grant.id_token === void 0 ? {} : antigravityIdentityFromIdToken(grant.id_token);
   const sub = identity.sub ?? previous.sub;
   if (sub !== void 0 && sub !== "") credential.sub = sub;
   const email = identity.email ?? previous.email;
@@ -73514,10 +73517,10 @@ async function postGeminiForm(endpoint, form, fetcher, signal) {
 async function exchangeGeminiCode(code, redirectUri, options = {}) {
   const fetcher = options.fetcher ?? fetch;
   const payload = await postGeminiForm(
-    GEMINI_TOKEN_ENDPOINT,
+    ANTIGRAVITY_TOKEN_ENDPOINT,
     {
-      client_id: geminiClientId(),
-      client_secret: geminiClientSecret(),
+      client_id: antigravityClientId(),
+      client_secret: antigravityClientSecret(),
       code,
       grant_type: "authorization_code",
       redirect_uri: redirectUri
@@ -73531,10 +73534,10 @@ async function refreshGeminiCredential(refreshToken2, options = {}) {
   if (refreshToken2 === "") throw new Error("\u6CA1\u6709 refresh_token\uFF0C\u9700\u8981\u91CD\u65B0\u6388\u6743");
   const fetcher = options.fetcher ?? fetch;
   const payload = await postGeminiForm(
-    GEMINI_TOKEN_ENDPOINT,
+    ANTIGRAVITY_TOKEN_ENDPOINT,
     {
-      client_id: geminiClientId(),
-      client_secret: geminiClientSecret(),
+      client_id: antigravityClientId(),
+      client_secret: antigravityClientSecret(),
       refresh_token: refreshToken2,
       grant_type: "refresh_token"
     },
@@ -73548,7 +73551,7 @@ async function fetchGeminiUserInfo(accessToken, options = {}) {
   const init = { headers: { Authorization: `Bearer ${accessToken}` } };
   if (options.signal !== void 0) init.signal = options.signal;
   try {
-    const response = await fetcher(GEMINI_USERINFO_ENDPOINT, init);
+    const response = await fetcher(ANTIGRAVITY_USERINFO_ENDPOINT, init);
     if (!response.ok) {
       options.onFailure?.(`userinfo \u8FD4\u56DE HTTP ${response.status}`);
       return {};
@@ -73565,7 +73568,7 @@ async function fetchGeminiUserInfo(accessToken, options = {}) {
     return {};
   }
 }
-var GEMINI_CALLBACK_HTML = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>\u6388\u6743\u5B8C\u6210</title><style>body{font:15px/1.7 -apple-system,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f1115;color:#e6e8eb}.b{text-align:center}.k{font-size:34px;margin-bottom:8px}</style></head><body><div class="b"><div class="k">\u2713</div><div>\u6388\u6743\u5DF2\u5B8C\u6210\uFF0C\u53EF\u4EE5\u5173\u95ED\u6B64\u9875\u56DE\u5230\u9762\u677F\u3002</div></div></body></html>`;
+var ANTIGRAVITY_CALLBACK_HTML = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>\u6388\u6743\u5B8C\u6210</title><style>body{font:15px/1.7 -apple-system,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f1115;color:#e6e8eb}.b{text-align:center}.k{font-size:34px;margin-bottom:8px}</style></head><body><div class="b"><div class="k">\u2713</div><div>\u6388\u6743\u5DF2\u5B8C\u6210\uFF0C\u53EF\u4EE5\u5173\u95ED\u6B64\u9875\u56DE\u5230\u9762\u677F\u3002</div></div></body></html>`;
 function pickFreePort2() {
   return new Promise((resolve2, reject) => {
     const probe = createServer9();
@@ -73617,8 +73620,8 @@ async function startGeminiOAuthFlow(options = {}) {
     rejectCode = reject;
   });
   const handler = (req, res) => {
-    const url = new URL(req.url ?? "/", `http://${GEMINI_REDIRECT_HOST}`);
-    if (url.pathname !== GEMINI_CALLBACK_PATH) {
+    const url = new URL(req.url ?? "/", `http://${ANTIGRAVITY_REDIRECT_HOST}`);
+    if (url.pathname !== ANTIGRAVITY_CALLBACK_PATH) {
       res.writeHead(404).end("Not found");
       return;
     }
@@ -73626,7 +73629,7 @@ async function startGeminiOAuthFlow(options = {}) {
     if (failure !== null && failure !== "") {
       const description = url.searchParams.get("error_description") ?? "";
       res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" }).end(`\u6388\u6743\u88AB\u62D2\u7EDD: ${failure}`);
-      rejectCode(new GeminiLoginCancelledError(description === "" ? failure : `${failure}: ${description}`));
+      rejectCode(new AntigravityLoginCancelledError(description === "" ? failure : `${failure}: ${description}`));
       return;
     }
     if (url.searchParams.get("state") !== state) {
@@ -73640,12 +73643,12 @@ async function startGeminiOAuthFlow(options = {}) {
       rejectCode(new Error("\u56DE\u8C03\u7F3A\u5C11 authorization code"));
       return;
     }
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(GEMINI_CALLBACK_HTML);
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(ANTIGRAVITY_CALLBACK_HTML);
     resolveCode(code);
   };
   const preferred = options.callbackPort ?? 0;
   const { port, servers } = await listenCallback(handler, preferred);
-  const redirectUri = `http://${GEMINI_REDIRECT_HOST}:${port}${GEMINI_CALLBACK_PATH}`;
+  const redirectUri = `http://${ANTIGRAVITY_REDIRECT_HOST}:${port}${ANTIGRAVITY_CALLBACK_PATH}`;
   const loginUrl = buildGeminiAuthUrl({ state, redirectUri });
   let closed = false;
   const close = async () => {
@@ -73656,12 +73659,12 @@ async function startGeminiOAuthFlow(options = {}) {
     );
   };
   const fetcher = options.fetcher ?? fetch;
-  const timeoutMs = options.timeoutMs ?? GEMINI_AUTH_FLOW_TIMEOUT_MS;
+  const timeoutMs = options.timeoutMs ?? ANTIGRAVITY_AUTH_FLOW_TIMEOUT_MS;
   const result = Promise.race([
     codePromise,
     new Promise((_, reject) => {
       const timer = setTimeout(
-        () => reject(new GeminiLoginExpiredError()),
+        () => reject(new AntigravityLoginExpiredError()),
         timeoutMs
       );
       timer.unref?.();
@@ -73685,21 +73688,21 @@ async function startGeminiOAuthFlow(options = {}) {
   return { loginUrl, result, close };
 }
 
-// vendor/channel-pack/src/gemini-auth.ts
-var GEMINI_EXPIRY_ACCESSORS = {
-  expiresAtOf: (credential) => geminiCredentialExpiresAtMs(credential),
+// vendor/channel-pack/src/antigravity-auth.ts
+var ANTIGRAVITY_EXPIRY_ACCESSORS = {
+  expiresAtOf: (credential) => antigravityCredentialExpiresAtMs(credential),
   refreshableOf: (credential) => isGeminiRefreshable(credential),
   identityOf: (credential) => credential.access_token
 };
-var GeminiRefreshTokenExpiredError = class extends Error {
+var AntigravityRefreshTokenExpiredError = class extends Error {
   constructor(message2) {
     super(message2);
     this.name = "RefreshTokenExpiredError";
   }
 };
-var GeminiAuth = class extends Service11 {
+var AntigravityAuth = class extends Service11 {
   constructor(ctx, options = {}) {
-    const product = options.product ?? GEMINI;
+    const product = options.product ?? ANTIGRAVITY;
     super(ctx, options.serviceName ?? `${product.id}Auth`);
     this.options = options;
     this.product = product;
@@ -73755,7 +73758,7 @@ var GeminiAuth = class extends Service11 {
       // 「昵称退化成池 id」时，失败被静默吞成 `{}`，现场零线索可查。
       onIdentityFailure: (reason) => {
         this.ctx.logger?.warn?.(
-          `[gemini] \u767B\u5F55\u65F6\u515C\u5E95\u62C9\u53D6\u8D26\u53F7\u8EAB\u4EFD\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u767B\u5F55\uFF0C\u4F46\u6635\u79F0\u53EF\u80FD\u9000\u5316\u6210\u8D26\u53F7 id\uFF09\uFF1A${reason}`
+          `[antigravity] \u767B\u5F55\u65F6\u515C\u5E95\u62C9\u53D6\u8D26\u53F7\u8EAB\u4EFD\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u767B\u5F55\uFF0C\u4F46\u6635\u79F0\u53EF\u80FD\u9000\u5316\u6210\u8D26\u53F7 id\uFF09\uFF1A${reason}`
         );
       }
     });
@@ -73769,7 +73772,7 @@ var GeminiAuth = class extends Service11 {
    * ⚠️ 返回的 `accountId` 是 OIDC `sub` —— 它只适合当**稳定标识**
    *（换邮箱、改昵称都不影响），**不要**拿它拼展示名：`sub` 是 21 位数字，
    * 截前 8 位得到 `Gemini 10500520` 这种用户认不出的名字（2026-10-03 报障）。
-   * 展示名走 `geminiAccountLabel`（邮箱优先，回退 `sub`）。
+   * 展示名走 `antigravityAccountLabel`（邮箱优先，回退 `sub`）。
    */
   async persistLogin(credential, options) {
     await this.ctx.credentials.set(credentialRef15(options.refName), JSON.stringify(credential));
@@ -73783,10 +73786,10 @@ var GeminiAuth = class extends Service11 {
   async refresh() {
     const credential = await this.resolveDefaultCredential();
     if (credential === void 0) {
-      throw new GeminiRefreshTokenExpiredError("\u51ED\u636E\u672A\u914D\u7F6E\uFF0C\u8BF7\u5148\u767B\u5F55");
+      throw new AntigravityRefreshTokenExpiredError("\u51ED\u636E\u672A\u914D\u7F6E\uFF0C\u8BF7\u5148\u767B\u5F55");
     }
     if (!isGeminiRefreshable(credential)) {
-      throw new GeminiRefreshTokenExpiredError("\u51ED\u636E\u7F3A\u5C11 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+      throw new AntigravityRefreshTokenExpiredError("\u51ED\u636E\u7F3A\u5C11 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
     }
     const next = await this.refreshCredential(credential);
     await this.ctx.credentials.set(credentialRef15(this.credentialRefName), JSON.stringify(next));
@@ -73803,7 +73806,7 @@ var GeminiAuth = class extends Service11 {
       const credential = await this.readCredential(refName);
       if (credential === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
       if (!isGeminiRefreshable(credential)) {
-        throw new GeminiRefreshTokenExpiredError("\u51ED\u636E\u7F3A\u5C11 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+        throw new AntigravityRefreshTokenExpiredError("\u51ED\u636E\u7F3A\u5C11 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
       }
       const ref = credentialRef15(refName);
       if (pool === void 0) {
@@ -73817,7 +73820,7 @@ var GeminiAuth = class extends Service11 {
         tag: `[${this.product.id}]`,
         accountId: accountId ?? "",
         credential,
-        accessors: GEMINI_EXPIRY_ACCESSORS,
+        accessors: ANTIGRAVITY_EXPIRY_ACCESSORS,
         refresh: (c) => this.refreshCredential(c),
         save: (c) => this.ctx.credentials.set(ref, JSON.stringify(c)),
         warn: (message2) => this.ctx.logger?.warn?.(message2),
@@ -73854,7 +73857,7 @@ var GeminiAuth = class extends Service11 {
         }
         if (!entry.refreshable) {
           this.ctx.logger?.info?.(
-            `[gemini] \u8D26\u53F7 ${entry.id} \u7684\u51ED\u636E\u5177\u5907\u7EED\u671F\u6750\u6599\uFF0C\u672C\u8F6E\u6062\u590D\u81EA\u52A8\u7EED\u671F\uFF08\u6B64\u524D\u7684\u6807\u8BB0\u4E0E\u51ED\u636E\u4E0D\u7B26\uFF09`
+            `[antigravity] \u8D26\u53F7 ${entry.id} \u7684\u51ED\u636E\u5177\u5907\u7EED\u671F\u6750\u6599\uFF0C\u672C\u8F6E\u6062\u590D\u81EA\u52A8\u7EED\u671F\uFF08\u6B64\u524D\u7684\u6807\u8BB0\u4E0E\u51ED\u636E\u4E0D\u7B26\uFF09`
           );
         }
         await refreshAccountWithReconcile({
@@ -73863,7 +73866,7 @@ var GeminiAuth = class extends Service11 {
           tag: `[${this.product.id}]`,
           accountId: entry.id,
           credential,
-          accessors: GEMINI_EXPIRY_ACCESSORS,
+          accessors: ANTIGRAVITY_EXPIRY_ACCESSORS,
           current: entry,
           refresh: (c) => this.refreshCredentialUnderLock(entry.credentialRef, c),
           save: (c) => this.ctx.credentials.set(ref, JSON.stringify(c)),
@@ -73871,18 +73874,18 @@ var GeminiAuth = class extends Service11 {
           info: (message2) => this.ctx.logger?.info?.(message2)
         });
       } catch (error) {
-        if (error instanceof GeminiRefreshTokenExpiredError) {
+        if (error instanceof AntigravityRefreshTokenExpiredError) {
           const detail = error instanceof Error ? error.message : String(error);
           const latest = await this.readCredential(entry.credentialRef).catch(() => void 0);
           if (latest !== void 0 && isGeminiRefreshable(latest) && credential !== void 0 && latest.refresh_token !== credential.refresh_token) {
             this.ctx.logger?.info?.(
-              `[gemini] \u8D26\u53F7 ${entry.id} \u7EED\u671F\u88AB\u62D2\u4F46\u51ED\u636E\u5DF2\u88AB\u4ED6\u5904\u66F4\u65B0\uFF08\u5E76\u53D1\u91CD\u653E\uFF09\uFF0C\u6309\u6700\u65B0\u51ED\u636E\u5BF9\u8D26\uFF0C\u4E0D\u6807\u8BB0\u4E3A\u4E0D\u53EF\u7EED\u671F`
+              `[antigravity] \u8D26\u53F7 ${entry.id} \u7EED\u671F\u88AB\u62D2\u4F46\u51ED\u636E\u5DF2\u88AB\u4ED6\u5904\u66F4\u65B0\uFF08\u5E76\u53D1\u91CD\u653E\uFF09\uFF0C\u6309\u6700\u65B0\u51ED\u636E\u5BF9\u8D26\uFF0C\u4E0D\u6807\u8BB0\u4E3A\u4E0D\u53EF\u7EED\u671F`
             );
             await syncAccountExpiry({
               pool,
               provider: this.product.id,
               credential: latest,
-              accessors: GEMINI_EXPIRY_ACCESSORS,
+              accessors: ANTIGRAVITY_EXPIRY_ACCESSORS,
               accountId: entry.id,
               current: entry,
               tag: `[${this.product.id}]`,
@@ -73900,7 +73903,7 @@ var GeminiAuth = class extends Service11 {
           if (last !== detail) {
             this.terminalWarned.set(entry.credentialRef, detail);
             this.ctx.logger?.warn?.(
-              `[gemini] \u8D26\u53F7 ${entry.id} \u7684 refresh_token \u5DF2\u5931\u6548\uFF0C\u5DF2\u6807\u8BB0\u4E3A\u4E0D\u53EF\u7EED\u671F\uFF08\u9700\u91CD\u65B0\u767B\u5F55\uFF09\uFF1B\u670D\u52A1\u7AEF\u539F\u6587\uFF1A${detail}`
+              `[antigravity] \u8D26\u53F7 ${entry.id} \u7684 refresh_token \u5DF2\u5931\u6548\uFF0C\u5DF2\u6807\u8BB0\u4E3A\u4E0D\u53EF\u7EED\u671F\uFF08\u9700\u91CD\u65B0\u767B\u5F55\uFF09\uFF1B\u670D\u52A1\u7AEF\u539F\u6587\uFF1A${detail}`
             );
           }
         } else if (error instanceof SaveFailedError) {
@@ -73909,11 +73912,11 @@ var GeminiAuth = class extends Service11 {
           } catch {
           }
           this.ctx.logger?.error?.(
-            `[gemini] \u8D26\u53F7 ${entry.id} \u7EED\u671F\u5DF2\u6210\u529F\u4F46\u51ED\u636E\u843D\u76D8\u5931\u8D25\uFF08\u9700\u91CD\u65B0\u767B\u5F55\uFF09: ${error instanceof Error ? error.message : String(error)}`
+            `[antigravity] \u8D26\u53F7 ${entry.id} \u7EED\u671F\u5DF2\u6210\u529F\u4F46\u51ED\u636E\u843D\u76D8\u5931\u8D25\uFF08\u9700\u91CD\u65B0\u767B\u5F55\uFF09: ${error instanceof Error ? error.message : String(error)}`
           );
         } else {
           this.ctx.logger?.warn?.(
-            `[gemini] \u8D26\u53F7 ${entry.id} \u7EED\u671F\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`
+            `[antigravity] \u8D26\u53F7 ${entry.id} \u7EED\u671F\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`
           );
         }
       }
@@ -73924,8 +73927,8 @@ var GeminiAuth = class extends Service11 {
    *
    * 成因：2026-10-03 之前的版本在解析令牌响应时丢掉了 `id_token`，身份只剩
    * 「userinfo 那次跨域请求」这一个失败面；它一失败（且当时**静默吞异常**），
-   * 凭据就只落了 token 而无 `sub`/`email`，`geminiAccountLabel` 返 `undefined`，
-   * 账号昵称于是退化成一串池 id（`gemini-6a53dbca`），用户认不出是谁。
+   * 凭据就只落了 token 而无 `sub`/`email`，`antigravityAccountLabel` 返 `undefined`，
+   * 账号昵称于是退化成一串池 id（`antigravity-6a53dbca`），用户认不出是谁。
    *
    * 光改代码只影响**新登录**的账号，故这里在启动时主动补一次。
    *
@@ -73954,7 +73957,7 @@ var GeminiAuth = class extends Service11 {
         if (!resolved) continue;
         let credential = parseGeminiCredential(resolved.value);
         if (credential === void 0) continue;
-        if (geminiAccountLabel(credential) === void 0) {
+        if (antigravityAccountLabel(credential) === void 0) {
           const info = await fetchGeminiUserInfo(credential.access_token, { fetcher: this.fetchImpl });
           if (info.sub === void 0 && info.email === void 0) continue;
           credential = { ...credential };
@@ -73962,14 +73965,14 @@ var GeminiAuth = class extends Service11 {
           if (info.email !== void 0) credential.email = info.email;
           await this.ctx.credentials.set(ref, JSON.stringify(credential));
         }
-        const target = geminiAccountLabel(credential);
+        const target = antigravityAccountLabel(credential);
         if (target !== void 0 && target !== entry.nickname) {
           await pool.updateAccount(entry.id, { nickname: target });
           repaired.push(entry.id);
         }
       } catch (error) {
         this.ctx.logger?.warn?.(
-          `[gemini] \u4FEE\u590D\u8D26\u53F7 ${entry.id} \u7684\u663E\u793A\u540D\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u4F7F\u7528\uFF09\uFF1A${error instanceof Error ? error.message : String(error)}`
+          `[antigravity] \u4FEE\u590D\u8D26\u53F7 ${entry.id} \u7684\u663E\u793A\u540D\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u4F7F\u7528\uFF09\uFF1A${error instanceof Error ? error.message : String(error)}`
         );
       }
     }
@@ -73984,9 +73987,9 @@ var GeminiAuth = class extends Service11 {
   async refreshCredentialUnderLock(refName, credential) {
     return await this.queueFor(refName).run(async () => {
       const latest = await this.readCredential(refName) ?? credential;
-      if (!this.sameCredential(latest, credential) && !shouldRefreshNow(GEMINI_EXPIRY_ACCESSORS.expiresAtOf(latest))) {
+      if (!this.sameCredential(latest, credential) && !shouldRefreshNow(ANTIGRAVITY_EXPIRY_ACCESSORS.expiresAtOf(latest))) {
         this.ctx.logger?.info?.(
-          "[gemini] \u51ED\u636E\u5DF2\u88AB\u4ED6\u5904\u7EED\u671F\uFF0C\u8DF3\u8FC7\u672C\u6B21\u7EED\u671F\u8BF7\u6C42\uFF08\u907F\u514D\u91CD\u590D\u6D88\u8D39 refresh_token\uFF09"
+          "[antigravity] \u51ED\u636E\u5DF2\u88AB\u4ED6\u5904\u7EED\u671F\uFF0C\u8DF3\u8FC7\u672C\u6B21\u7EED\u671F\u8BF7\u6C42\uFF08\u907F\u514D\u91CD\u590D\u6D88\u8D39 refresh_token\uFF09"
         );
         return latest;
       }
@@ -74002,7 +74005,7 @@ var GeminiAuth = class extends Service11 {
   async refreshCredential(credential) {
     const refreshToken2 = credential.refresh_token;
     if (!refreshToken2) {
-      throw new GeminiRefreshTokenExpiredError("\u51ED\u636E\u7F3A\u5C11 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+      throw new AntigravityRefreshTokenExpiredError("\u51ED\u636E\u7F3A\u5C11 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
     }
     try {
       const grant = await refreshGeminiCredential(refreshToken2, { fetcher: this.fetchImpl });
@@ -74011,7 +74014,7 @@ var GeminiAuth = class extends Service11 {
       if (error instanceof ChannelNetworkError) throw error;
       const message2 = error instanceof Error ? error.message : String(error);
       if (/invalid_grant|invalid_client|expired|revoked|unauthorized/i.test(message2)) {
-        throw new GeminiRefreshTokenExpiredError("refresh_token \u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+        throw new AntigravityRefreshTokenExpiredError("refresh_token \u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
       }
       throw error;
     }
@@ -74025,7 +74028,7 @@ var GeminiAuth = class extends Service11 {
    * ## 三环境轮流（Agent2API 规格 §3.1）
    *
    * `sandbox → daily → prod`，429/5xx/传输失败换下一条；4xx（403/404）不换
-   * —— 那是「这次请求本身不对」。头用**五头形态**（`geminiHeaders`，
+   * —— 那是「这次请求本身不对」。头用**五头形态**（`antigravityHeaders`，
    * 实测与推理同款头即通，无需 vscode 形 UA）。
    *
    * 凭据取值：账号池可用账号优先（与推理同源），回退默认单凭据 ref。
@@ -74042,13 +74045,13 @@ var GeminiAuth = class extends Service11 {
       if (resolved) credential = parseGeminiCredential(resolved.value);
     }
     if (credential === void 0 || isGeminiExpired(credential)) return [];
-    for (const base of [GEMINI_ENDPOINT_SANDBOX, GEMINI_ENDPOINT_DAILY, GEMINI_ENDPOINT_PROD]) {
+    for (const base of [ANTIGRAVITY_ENDPOINT_SANDBOX, ANTIGRAVITY_ENDPOINT_DAILY, ANTIGRAVITY_ENDPOINT_PROD]) {
       try {
-        const response = await this.fetchImpl(`${base}${GEMINI_FETCH_AVAILABLE_MODELS_PATH}`, {
+        const response = await this.fetchImpl(`${base}${ANTIGRAVITY_FETCH_AVAILABLE_MODELS_PATH}`, {
           method: "POST",
-          headers: geminiHeaders(credential),
+          headers: antigravityHeaders(credential),
           body: "{}",
-          signal: AbortSignal.timeout(GEMINI_CREDITS_TIMEOUT_MS)
+          signal: AbortSignal.timeout(ANTIGRAVITY_CREDITS_TIMEOUT_MS)
         });
         if (!response.ok) {
           if (response.status >= 400 && response.status < 500) return [];
@@ -74064,24 +74067,24 @@ var GeminiAuth = class extends Service11 {
   }
 };
 
-// vendor/channel-pack/src/gemini-sigstore.ts
+// vendor/channel-pack/src/antigravity-sigstore.ts
 import { createHash as createHash14 } from "node:crypto";
 import { existsSync as existsSync12, mkdirSync as mkdirSync11, readFileSync as readFileSync13, renameSync as renameSync10, writeFileSync as writeFileSync12 } from "node:fs";
 import { dirname as dirname2, join as join13 } from "node:path";
-var GEMINI_SIG_FILE = "gemini-sigs.json";
-var GEMINI_SIG_MAX_ENTRIES = 2e3;
+var ANTIGRAVITY_SIG_FILE = "antigravity-sigs.json";
+var ANTIGRAVITY_SIG_MAX_ENTRIES = 2e3;
 var SIG_KEY_BODY_LIMIT = 512;
-function geminiSigKey(role, text) {
+function antigravitySigKey(role, text) {
   const body = text.length > SIG_KEY_BODY_LIMIT ? text.slice(0, SIG_KEY_BODY_LIMIT) : text;
   return createHash14("sha256").update(`${role}\0${body}`, "utf8").digest("hex").slice(0, 16);
 }
-function geminiToolSigKey(name2, argsJson) {
-  return geminiSigKey(`tool:${name2}`, argsJson);
+function antigravityToolSigKey(name2, argsJson) {
+  return antigravitySigKey(`tool:${name2}`, argsJson);
 }
 function trimGeminiSignature(signature) {
   return signature.trim();
 }
-var GeminiSigStore = class {
+var AntigravitySigStore = class {
   constructor(path2, logger3) {
     this.path = path2;
     this.logger = logger3;
@@ -74097,7 +74100,7 @@ var GeminiSigStore = class {
   }
   /** 按工具名 + 规范化参数查签名。 */
   get(name2, argsJson) {
-    const entry = this.entries.get(geminiToolSigKey(name2, argsJson));
+    const entry = this.entries.get(antigravityToolSigKey(name2, argsJson));
     if (entry === void 0 || entry.sig === "") return void 0;
     return entry.sig;
   }
@@ -74137,10 +74140,10 @@ var GeminiSigStore = class {
   put(name2, argsJson, signature) {
     const sig = trimGeminiSignature(signature);
     if (sig === "") return;
-    const key = geminiToolSigKey(name2, argsJson);
+    const key = antigravityToolSigKey(name2, argsJson);
     if (key === "") return;
     this.entries.set(key, { sig, at: Math.floor(Date.now() / 1e3), name: name2 });
-    if (this.entries.size > GEMINI_SIG_MAX_ENTRIES) this.evict();
+    if (this.entries.size > ANTIGRAVITY_SIG_MAX_ENTRIES) this.evict();
     this.dirty = true;
   }
   /**
@@ -74183,7 +74186,7 @@ var GeminiSigStore = class {
       writeFileSync12(tmp, payload, "utf-8");
       renameSync10(tmp, this.path);
     } catch (error) {
-      this.logger?.warn(`[gemini] \u7B7E\u540D\u7F13\u5B58\u5199\u5165\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u63A8\u7406\uFF09: ${String(error)}`);
+      this.logger?.warn(`[antigravity] \u7B7E\u540D\u7F13\u5B58\u5199\u5165\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u63A8\u7406\uFF09: ${String(error)}`);
     }
   }
   /** 载入；文件不存在/损坏都按空缓存处理（**不抛错**）。 */
@@ -74204,7 +74207,7 @@ var GeminiSigStore = class {
         out.set(key, name2 === void 0 ? { sig, at } : { sig, at, name: name2 });
       }
     } catch (error) {
-      this.logger?.warn(`[gemini] \u7B7E\u540D\u7F13\u5B58\u6587\u4EF6\u635F\u574F\uFF0C\u5DF2\u91CD\u7F6E: ${String(error)}`);
+      this.logger?.warn(`[antigravity] \u7B7E\u540D\u7F13\u5B58\u6587\u4EF6\u635F\u574F\uFF0C\u5DF2\u91CD\u7F6E: ${String(error)}`);
       return /* @__PURE__ */ new Map();
     }
     return out;
@@ -74213,10 +74216,10 @@ var GeminiSigStore = class {
 function createGeminiSigStore(ctx) {
   const home = resolveChannelPackHome(ctx);
   if (home === void 0) {
-    ctx.logger?.warn?.("[gemini] \u65E0\u6CD5\u5B9A\u4F4D DSH home\uFF0C\u7B7E\u540D\u7F13\u5B58\u4EC5\u5B58\u5728\u4E8E\u5185\u5B58\u4E2D\uFF08\u547D\u4E2D\u7387\u4F1A\u5728\u91CD\u542F\u540E\u5F52\u96F6\uFF09");
-    return new GeminiSigStore(void 0, ctx.logger);
+    ctx.logger?.warn?.("[antigravity] \u65E0\u6CD5\u5B9A\u4F4D DSH home\uFF0C\u7B7E\u540D\u7F13\u5B58\u4EC5\u5B58\u5728\u4E8E\u5185\u5B58\u4E2D\uFF08\u547D\u4E2D\u7387\u4F1A\u5728\u91CD\u542F\u540E\u5F52\u96F6\uFF09");
+    return new AntigravitySigStore(void 0, ctx.logger);
   }
-  return new GeminiSigStore(join13(home, "channel-pack", GEMINI_SIG_FILE), ctx.logger);
+  return new AntigravitySigStore(join13(home, "channel-pack", ANTIGRAVITY_SIG_FILE), ctx.logger);
 }
 
 // vendor/channel-pack/src/opencode-adapter.ts
@@ -75068,7 +75071,7 @@ function apply(ctx, config = {}) {
     "llm-raccoon",
     "llm-minimax",
     "llm-zcode",
-    "llm-gemini"
+    "llm-antigravity"
   );
   const service = new CodeArtsAuth(ctx, { fetcher: signedNetwork.fetch });
   const pool = new AccountPool(ctx);
@@ -75794,20 +75797,20 @@ function apply(ctx, config = {}) {
     accountPool: pool,
     product: MINIMAX
   });
-  const gemini = new GeminiAuth(ctx, { fetchImpl: network.fetch });
-  const geminiSigStore = createGeminiSigStore(ctx);
-  const geminiProjectCache = /* @__PURE__ */ new Map();
-  const geminiAdapter = registerGeminiLlm(ctx, {
+  const antigravity = new AntigravityAuth(ctx, { fetchImpl: network.fetch });
+  const antigravitySigStore = createGeminiSigStore(ctx);
+  const antigravityProjectCache = /* @__PURE__ */ new Map();
+  const antigravityAdapter = registerAntigravityLlm(ctx, {
     fetchImpl: network.fetch,
     projectFetcher: network.fetch,
-    credentialRef: credentialRef16(GEMINI.defaultCredentialRef),
+    credentialRef: credentialRef16(ANTIGRAVITY.defaultCredentialRef),
     resolveCredential: async (modelId) => {
-      const available2 = await pool.getAvailableAccount(GEMINI.id, modelId ?? "");
+      const available2 = await pool.getAvailableAccount(ANTIGRAVITY.id, modelId ?? "");
       if (available2) {
-        reportLedgerAccount(GEMINI.id, available2.entry.id);
+        reportLedgerAccount(ANTIGRAVITY.id, available2.entry.id);
         return available2.credential;
       }
-      const resolved = await ctx.credentials.resolve(credentialRef16(GEMINI.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef16(ANTIGRAVITY.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -75816,33 +75819,33 @@ function apply(ctx, config = {}) {
       }
     },
     refresh: async () => {
-      const available2 = await pool.getAvailableAccount(GEMINI.id, "");
+      const available2 = await pool.getAvailableAccount(ANTIGRAVITY.id, "");
       if (available2) {
-        await gemini.refreshAccountCredential(
+        await antigravity.refreshAccountCredential(
           available2.entry.credentialRef,
           pool,
           available2.entry.id
         );
       } else {
-        await gemini.refresh();
+        await antigravity.refresh();
       }
     },
     // 模型表：**远端目录优先**（`fetchAvailableModels`，2026-11-01 接入 ——
     // Agent2API `models.rs` 同款规格实测可用，个人 free-tier 也下发全量清单）；
     // 拉不到时适配器内回落「上次快照 → 静态兜底表」（旧形态等价保留）。
-    fetchRemoteModels: () => gemini.fetchAvailableModelsOnly(pool),
+    fetchRemoteModels: () => antigravity.fetchAvailableModelsOnly(pool),
     // 图片两跳：先按 640,000 px 预算取缩放版，拿不到才发原图。
     readImage: makeReadImage(ctx),
     readImageRequest: makeReadImageRequest(ctx),
-    sigStore: geminiSigStore,
+    sigStore: antigravitySigStore,
     accountPool: pool,
-    product: GEMINI,
+    product: ANTIGRAVITY,
     // 项目号：缺省**自动探测**（`loadCodeAssist` 的 `cloudaicompanionProject`），
     // 不是恒为 `aicode-consumers`（那只是探测为空时的兜底）。
-    projectCache: geminiProjectCache,
+    projectCache: antigravityProjectCache,
     persistProject: async (value) => {
-      const available2 = await pool.getAvailableAccount(GEMINI.id, "");
-      const ref = available2 ? available2.entry.credentialRef : credentialRef16(GEMINI.defaultCredentialRef);
+      const available2 = await pool.getAvailableAccount(ANTIGRAVITY.id, "");
+      const ref = available2 ? available2.entry.credentialRef : credentialRef16(ANTIGRAVITY.defaultCredentialRef);
       await ctx.credentials.set(credentialRef16(ref), value);
     },
     ...ctx.logger === void 0 ? {} : { logger: ctx.logger }
@@ -76038,7 +76041,7 @@ function apply(ctx, config = {}) {
   }).catch((error) => {
     ctx.logger.warn(`[channel-pack] \u4FEE\u6B63 TRAE \u8D26\u53F7\u663E\u793A\u540D\u5931\u8D25\uFF1A${String(error)}`);
   });
-  void gemini.repairAccountNicknames(pool).then((repaired) => {
+  void antigravity.repairAccountNicknames(pool).then((repaired) => {
     if (repaired.length > 0) {
       ctx.logger.info(
         `[channel-pack] \u5DF2\u4FEE\u6B63 ${repaired.length} \u4E2A Gemini \u8D26\u53F7\u7684\u663E\u793A\u540D\uFF08\u6539\u7528 Google \u8D26\u53F7\u90AE\u7BB1\uFF09\uFF1A${repaired.join(", ")}`
@@ -76070,7 +76073,7 @@ function apply(ctx, config = {}) {
     // ⚠️ Gemini **可续期**（Google OAuth 的 refresh_token，且会轮换）。
     // ⚠️ 漏了这一行定时器不武装：凭据到期后**不会自动续期**，
     // 用户会看到「每隔一小时就要重新登录」，且日志里一个字都没有。
-    ["gemini", (p) => gemini.refreshAll(p)],
+    ["antigravity", (p) => antigravity.refreshAll(p)],
     // ⚠️ OfficeAce / AutoClaw **可续期**（2026-10-26 审计发现的 P0）：
     // 两者都有 refresh_token 续期实现（refreshOfficeAceCredential /
     // refreshAutoclawCredential），但此前**只在 account.refresh RPC 里**
@@ -76305,7 +76308,7 @@ function apply(ctx, config = {}) {
     loomy: pruned(LOOMY.id, loomyAdapter),
     raccoon: pruned(RACCOON.id, raccoonAdapter),
     minimax: pruned(MINIMAX.id, minimaxAdapter),
-    gemini: pruned(GEMINI.id, geminiAdapter),
+    antigravity: pruned(ANTIGRAVITY.id, antigravityAdapter),
     zcode: pruned(ZCODE.id, zcodeAdapter),
     // 后加的两个渠道也要有「显示列表」的完整目录，否则卡片模型数恒为「—」。
     kuku: pruned(KUKU.id, kukuAdapter),
@@ -76321,10 +76324,10 @@ function apply(ctx, config = {}) {
     ...opencodeAdapter === void 0 ? {} : { opencode: pruned(OPENCODE.id, opencodeAdapter) }
   };
   ctx.effect(() => () => {
-    void geminiSigStore.flush().catch(() => {
+    void antigravitySigStore.flush().catch(() => {
     });
   });
-  registerChannelPackRpc(ctx, pool, service, buddy, workbuddy, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, {
+  registerChannelPackRpc(ctx, pool, service, buddy, workbuddy, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, antigravity, modelAdapters, {
     ...config,
     codeartsFetcher: signedNetwork.fetch,
     // 「异常汇总」扫描**全部已注册渠道**：`modelAdapters` 的键恰好就是它们

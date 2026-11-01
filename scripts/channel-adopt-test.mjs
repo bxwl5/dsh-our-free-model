@@ -42,7 +42,7 @@ async function main() {
     assert.equal(adoptableChannelHint(provider), undefined, `${provider} 应走 OAuth，不应在粘贴表里`)
   }
   // 既有 OAuth 渠道同样不应误入。
-  for (const provider of ['buddy', 'workbuddy', 'codearts', 'cline', 'gemini', 'qoder']) {
+  for (const provider of ['buddy', 'workbuddy', 'codearts', 'cline', 'antigravity', 'qoder']) {
     assert.equal(adoptableChannelHint(provider), undefined, `${provider} 不应支持粘贴`)
   }
 

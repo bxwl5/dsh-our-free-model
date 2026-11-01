@@ -4,10 +4,10 @@
  * ## 为什么单独一个文件
  *
  * 与 `minimax-messages.ts` 同一理由：本层是**纯函数 + 纯翻译**，与网络、凭据、
- * 账号池无关，拆开后可用单测逐字节锁死形状（`tests/unit/gemini-payload.spec.ts`
- * 与 `gemini-stream.spec.ts` 就吃这一层）。
+ * 账号池无关，拆开后可用单测逐字节锁死形状（`tests/unit/antigravity-payload.spec.ts`
+ * 与 `antigravity-stream.spec.ts` 就吃这一层）。
  *
- * 逐点移植自 `cmdc-pak-align-wb/internal/upstream/gemini/translate.go`
+ * 逐点移植自 `cmdc-pak-align-wb/internal/upstream/antigravity/translate.go`
  * 与 `stream.go`。**不做**「通用 Gemini 层」抽象 —— 目前只有一个消费者。
  *
  * ## 三条必须保留的上游对齐细节
@@ -39,22 +39,22 @@ import type {
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { collectHarnessSystem, normalizeHarnessMessages, type HarnessMessageInput, type NormalizedHarnessMessage } from './message-shape.js'
 import { readWithIdleTimeout, resolveToolPairing } from './sse.js'
-import type { GeminiInlineImage, GeminiModelSpec } from './gemini.js'
+import type { AntigravityInlineImage, AntigravityModelSpec } from './antigravity.js'
 import {
   deriveGeminiSessionId,
-  GEMINI_DEFAULT_PROJECT,
-  GEMINI_IDLE_TIMEOUT_MS,
-  GEMINI_SESSION_LANE_INFER,
+  ANTIGRAVITY_DEFAULT_PROJECT,
+  ANTIGRAVITY_IDLE_TIMEOUT_MS,
+  ANTIGRAVITY_SESSION_LANE_INFER,
   sanitizeGeminiSchema,
   sortedStringify,
-} from './gemini.js'
+} from './antigravity.js'
 
 // ---------------------------------------------------------------------------
 // 上游类型（`types.go`）
 // ---------------------------------------------------------------------------
 
 /** 一个 `part`。字段名与上游逐字一致。 */
-export interface GeminiPart {
+export interface AntigravityPart {
   text?: string
   thought?: boolean
   thoughtSignature?: string
@@ -64,13 +64,13 @@ export interface GeminiPart {
 }
 
 /** 一条 `content`（role + parts）。 */
-export interface GeminiContent {
+export interface AntigravityContent {
   role: string
-  parts: GeminiPart[]
+  parts: AntigravityPart[]
 }
 
 /** 上游 `usageMetadata`。 */
-export interface GeminiUsageMetadata {
+export interface AntigravityUsageMetadata {
   promptTokenCount?: number
   candidatesTokenCount?: number
   thoughtsTokenCount?: number
@@ -79,26 +79,26 @@ export interface GeminiUsageMetadata {
 }
 
 /** 上游响应壳里的 `candidate`。 */
-export interface GeminiCandidate {
-  content?: { role?: string; parts?: GeminiPart[] }
+export interface AntigravityCandidate {
+  content?: { role?: string; parts?: AntigravityPart[] }
   finishReason?: string
 }
 
 /** 上游 `Response`（信封内层）。 */
-export interface GeminiResponse {
-  candidates?: GeminiCandidate[]
-  usageMetadata?: GeminiUsageMetadata
+export interface AntigravityResponse {
+  candidates?: AntigravityCandidate[]
+  usageMetadata?: AntigravityUsageMetadata
   modelVersion?: string
   responseId?: string
 }
 
 /** 请求信封（`Envelope`）。 */
-export interface GeminiEnvelope {
+export interface AntigravityEnvelope {
   model: string
   project: string
   request: {
-    contents: GeminiContent[]
-    systemInstruction?: { role: string; parts: GeminiPart[] }
+    contents: AntigravityContent[]
+    systemInstruction?: { role: string; parts: AntigravityPart[] }
     tools?: Array<{ functionDeclarations: Array<Record<string, unknown>> }>
     toolConfig?: Record<string, unknown>
     generationConfig?: Record<string, unknown>
@@ -113,9 +113,9 @@ export interface GeminiEnvelope {
 // ---------------------------------------------------------------------------
 
 /** 签名查表回调（命中返回签名）。 */
-export type GeminiSignatureLookup = (name: string, argsJson: string) => string | undefined
+export type AntigravitySignatureLookup = (name: string, argsJson: string) => string | undefined
 /** 签名收集回调（上游下发了签名时调用）。 */
-export type GeminiSignatureSink = (name: string, argsJson: string, signature: string) => void
+export type AntigravitySignatureSink = (name: string, argsJson: string, signature: string) => void
 
 /**
  * 参数规范化：按键名升序的紧凑 JSON。
@@ -137,7 +137,7 @@ export function canonicalArgs(args: unknown): string {
 /** {@link translateGeminiRequest} 的入参。 */
 export interface TranslateGeminiRequestOptions {
   modelId: string
-  spec: GeminiModelSpec
+  spec: AntigravityModelSpec
   /**
    * ⚠️ 入参用**形状宽松**的消息（归一化在函数体内做：`normalizeHarnessMessages`
    * 会处理 0.1.7 的 `role:'tool'` 一等消息与 `developer` 剥离）。此前写
@@ -158,7 +158,7 @@ export interface TranslateGeminiRequestOptions {
    * 不是常量 —— 见 `deriveGeminiSessionId`。要复刻历史抓包才显式钉住。
    */
   sessionId?: string
-  /** 会话派生标签（推理 / 冒烟），缺省 {@link GEMINI_SESSION_LANE_INFER}。 */
+  /** 会话派生标签（推理 / 冒烟），缺省 {@link ANTIGRAVITY_SESSION_LANE_INFER}。 */
   sessionLane?: string
   /**
    * 取该**基础 sessionId 的当前代数**（会话升代自愈用）。
@@ -170,9 +170,9 @@ export interface TranslateGeminiRequestOptions {
   project?: string
   requestId: string
   /** 已内联的图片（attachmentId → base64）。缺失时遇图**抛错**。 */
-  images?: ReadonlyMap<string, GeminiInlineImage>
+  images?: ReadonlyMap<string, AntigravityInlineImage>
   /** 签名查表（回填 functionCall 的 `thoughtSignature`）。 */
-  lookupSignature?: GeminiSignatureLookup
+  lookupSignature?: AntigravitySignatureLookup
 }
 
 /**
@@ -182,7 +182,7 @@ export interface TranslateGeminiRequestOptions {
  * 参与，且只看其中的文本 part —— `["AAA"]` 与 `["AAA","ZZZ"]` 同值、
  * `["ZZZ","AAA"]` 与 `["ZZZ"]` 同值（后续文本不进哈希）。
  */
-export function geminiFirstUserText(contents: readonly GeminiContent[]): string {
+export function antigravityFirstUserText(contents: readonly AntigravityContent[]): string {
   for (const content of contents) {
     if (content.role !== '' && content.role !== 'user') continue
     for (const part of content.parts) {
@@ -196,9 +196,9 @@ export function geminiFirstUserText(contents: readonly GeminiContent[]): string 
  * 把 DSH 请求翻译成上游信封。
  *
  * ⚠️ 返回的是**字母序已排好的普通对象**；序列化必须走
- * `marshalAlphabetical`（`gemini.ts`），否则与上游看到的字节不同。
+ * `marshalAlphabetical`（`antigravity.ts`），否则与上游看到的字节不同。
  */
-export function translateGeminiRequest(options: TranslateGeminiRequestOptions): GeminiEnvelope {
+export function translateGeminiRequest(options: TranslateGeminiRequestOptions): AntigravityEnvelope {
   // ⚠️ 步骤 1：归一化「一等 tool 消息」形状（0.1.7+ 的 `role:'tool'` + 顶层
   // `toolCallId`）。漏掉会让 `tool-result` 判定恒不命中，工具结果被当成普通
   // 用户文本下发 —— 模型看不到工具输出，表现为提前结束或循环思考。
@@ -222,14 +222,14 @@ export function translateGeminiRequest(options: TranslateGeminiRequestOptions): 
     }
   }
 
-  const contents: GeminiContent[] = []
+  const contents: AntigravityContent[] = []
   for (const message of normalized) {
     // System text is collected into systemInstruction, never a user turn.
     // `developer`（只承载工具增删元数据）由归一化层一并丢弃。
     if (message.role === 'system') continue
 
     const role = message.role === 'assistant' ? 'model' : 'user'
-    const parts: GeminiPart[] = []
+    const parts: AntigravityPart[] = []
 
     for (const block of message.content) {
       if (block.type === 'tool-call') {
@@ -237,11 +237,11 @@ export function translateGeminiRequest(options: TranslateGeminiRequestOptions): 
         const args = parseToolArguments(block.arguments)
         const argsJson = canonicalArgs(args)
         // ⚠️ 签名只能从**本地缓存**查（DSH 的 `ReasoningBlock` 只有 text，
-        // 不携带签名 —— 所以签名必须靠 `gemini-sigstore.ts` 落盘持久化）。
+        // 不携带签名 —— 所以签名必须靠 `antigravity-sigstore.ts` 落盘持久化）。
         // 查不到就**不带签名发**：上游会拒（`IsSignatureError` 命中），
         // 适配器据此走「去签重试一次」路径。
         const signature = options.lookupSignature?.(block.name, argsJson)
-        const part: GeminiPart = { functionCall: { name: block.name, args } }
+        const part: AntigravityPart = { functionCall: { name: block.name, args } }
         if (signature !== undefined && signature !== '') part.thoughtSignature = signature
         parts.push(part)
         continue
@@ -267,7 +267,7 @@ export function translateGeminiRequest(options: TranslateGeminiRequestOptions): 
         const inline = attachmentId === undefined ? undefined : options.images?.get(attachmentId)
         if (inline === undefined) {
           // ⚠️ **显式抛错，不静默丢弃**：静默丢弃会让用户以为图片被模型看到了。
-          throw new Error('gemini: 图片未能内联（附件服务不可用或读取失败），拒绝发出缺少图片的请求')
+          throw new Error('antigravity: 图片未能内联（附件服务不可用或读取失败），拒绝发出缺少图片的请求')
         }
         parts.push({ inlineData: { mimeType: inline.mediaType, data: inline.data } })
         continue
@@ -291,9 +291,9 @@ export function translateGeminiRequest(options: TranslateGeminiRequestOptions): 
 
   // ⚠️ 空 contents 必须抛错：发空请求上游会 400，且错误信息与「工具配对失败」
   // 完全无关，排查成本极高。
-  if (contents.length === 0) throw new Error('gemini: messages 里没有可用内容')
+  if (contents.length === 0) throw new Error('antigravity: messages 里没有可用内容')
 
-  const project = options.project ?? GEMINI_DEFAULT_PROJECT
+  const project = options.project ?? ANTIGRAVITY_DEFAULT_PROJECT
   // ⚠️ sessionId **不是常量**：缺省按 (project, 首条 user 文本, lane) 派生。
   // 写成固定值会让所有用户、所有对话共用一个会话 —— 上游的会话归并与
   // thoughtSignature 回填都挂在它上面（见 `deriveGeminiSessionId` 注释）。
@@ -304,21 +304,21 @@ export function translateGeminiRequest(options: TranslateGeminiRequestOptions): 
   if (sessionId === undefined) {
     const base = deriveGeminiSessionId(
       project,
-      geminiFirstUserText(contents),
-      options.sessionLane ?? GEMINI_SESSION_LANE_INFER,
+      antigravityFirstUserText(contents),
+      options.sessionLane ?? ANTIGRAVITY_SESSION_LANE_INFER,
     )
     const generation = options.sessionGeneration?.(base) ?? 0
     sessionId = generation > 0
       ? deriveGeminiSessionId(
         project,
-        geminiFirstUserText(contents),
-        options.sessionLane ?? GEMINI_SESSION_LANE_INFER,
+        antigravityFirstUserText(contents),
+        options.sessionLane ?? ANTIGRAVITY_SESSION_LANE_INFER,
         generation,
       )
       : base
   }
 
-  const request: GeminiEnvelope['request'] = {
+  const request: AntigravityEnvelope['request'] = {
     contents,
     generationConfig: buildGenerationConfig(options.spec, options.maxTokens, options.temperature),
     sessionId,
@@ -346,7 +346,7 @@ export function translateGeminiRequest(options: TranslateGeminiRequestOptions): 
 
   return {
     model: options.spec.upstream,
-    project: options.project ?? GEMINI_DEFAULT_PROJECT,
+    project: options.project ?? ANTIGRAVITY_DEFAULT_PROJECT,
     request,
     requestId: options.requestId,
     userAgent: 'antigravity',
@@ -355,7 +355,7 @@ export function translateGeminiRequest(options: TranslateGeminiRequestOptions): 
 
 /** 构造 `generationConfig`。 */
 function buildGenerationConfig(
-  spec: GeminiModelSpec,
+  spec: AntigravityModelSpec,
   maxTokens: number | undefined,
   temperature: number | undefined,
 ): Record<string, unknown> {
@@ -452,9 +452,9 @@ function toolResultText(blocks: unknown): string {
 
 /** {@link translateGeminiResponse} 的入参。 */
 export interface TranslateGeminiResponseOptions {
-  response: GeminiResponse
+  response: AntigravityResponse
   /** 签名收集（上游下发了签名时调用）。 */
-  onSignature?: GeminiSignatureSink
+  onSignature?: AntigravitySignatureSink
 }
 
 /** 非流式响应 → DSH 的块列表 + 结束原因 + 用量。 */
@@ -527,7 +527,7 @@ export function mapGeminiFinish(reason: unknown, toolCalls: number): FinishReaso
  * ⚠️ `thoughtsTokenCount` 是 output 的**子集**，映射到 `reasoningTokens`，
  * **不加**到 `outputTokens` 上。
  */
-export function readGeminiUsage(raw: GeminiUsageMetadata | undefined): Partial<TokenUsage> {
+export function readGeminiUsage(raw: AntigravityUsageMetadata | undefined): Partial<TokenUsage> {
   if (raw === undefined || raw === null) return {}
   const out: Partial<TokenUsage> = {}
   const prompt = nonNegativeInt(raw.promptTokenCount)
@@ -564,9 +564,9 @@ export interface ConsumeGeminiSseOptions {
   body: ReadableStream<Uint8Array>
   signal?: AbortSignal
   /** 签名收集（thought / functionCall part 上带签名时调用）。 */
-  onSignature?: GeminiSignatureSink
+  onSignature?: AntigravitySignatureSink
   /**
-   * 空闲超时（毫秒）。缺省用 {@link GEMINI_IDLE_TIMEOUT_MS}。
+   * 空闲超时（毫秒）。缺省用 {@link ANTIGRAVITY_IDLE_TIMEOUT_MS}。
    *
    * ⚠️ **必须主动掐**：上游在生成大 functionCall 参数期间可能长时间不 flush
    * 任何字节，裸 `reader.read()` 会**无限期挂起** —— 适配器的 generator
@@ -601,7 +601,7 @@ export async function* consumeGeminiSse(
 ): AsyncGenerator<StreamChunk> {
   const reader = options.body.getReader()
   const decoder = new TextDecoder()
-  const idleTimeoutMs = options.idleTimeoutMs ?? GEMINI_IDLE_TIMEOUT_MS
+  const idleTimeoutMs = options.idleTimeoutMs ?? ANTIGRAVITY_IDLE_TIMEOUT_MS
   const firstTokenTimeoutMs = options.firstTokenTimeoutMs ?? idleTimeoutMs
   let buffer = ''
   let block: OpenBlock | undefined
@@ -654,8 +654,8 @@ export async function* consumeGeminiSse(
     const frame = parsed as Record<string, unknown>
     // ⚠️ 先试信封形态 `{"response":{…}}`，再试裸 `Response`（原版同序）。
     const inner = typeof frame.response === 'object' && frame.response !== null
-      ? frame.response as GeminiResponse
-      : frame as GeminiResponse
+      ? frame.response as AntigravityResponse
+      : frame as AntigravityResponse
 
     const candidates = inner.candidates
     if (!Array.isArray(candidates) || candidates.length === 0) {
@@ -665,7 +665,7 @@ export async function* consumeGeminiSse(
     }
     noteUsage(inner.usageMetadata)
 
-    const candidate = candidates[0] as GeminiCandidate
+    const candidate = candidates[0] as AntigravityCandidate
     if (typeof candidate.finishReason === 'string' && candidate.finishReason !== '') {
       finishReason = candidate.finishReason
     }
@@ -724,7 +724,7 @@ export async function* consumeGeminiSse(
   }
 
   /** 记用量（保留最大 total 的那一份）。 */
-  function noteUsage(raw: GeminiUsageMetadata | undefined): void {
+  function noteUsage(raw: AntigravityUsageMetadata | undefined): void {
     if (raw === undefined || raw === null) return
     const total = nonNegativeInt(raw.totalTokenCount) ?? -1
     if (total < usageTotal) return
@@ -741,7 +741,7 @@ export async function* consumeGeminiSse(
       const { done, value } = await readWithIdleTimeout(
         reader,
         sawAnyChunk ? idleTimeoutMs : firstTokenTimeoutMs,
-        'gemini',
+        'antigravity',
         options.signal,
         sawAnyChunk ? 'chunk' : 'first-token',
       )
@@ -775,7 +775,7 @@ export async function* consumeGeminiSse(
 
   // ⚠️ 空响应必须报错：静默结束会让 harness 认为「模型正常回答但没内容」，
   // **不会重试**。
-  if (!sawAnyChunk) throw new Error('gemini: 模型未返回任何内容块')
+  if (!sawAnyChunk) throw new Error('antigravity: 模型未返回任何内容块')
 
   yield { type: 'usage', usage: { inputTokens: 0, outputTokens: 0, ...usage } }
   yield { type: 'finish', reason: mapGeminiFinish(finishReason, toolCount) }

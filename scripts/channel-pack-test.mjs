@@ -191,7 +191,7 @@ try {
     // 全部 20 个账号渠道都必须能报出模型目录 —— 缺 listAllModels 的渠道卡片会显示「—」。
     const allProviders = [
       'codearts', 'buddy', 'workbuddy', 'qoder', 'qodercn', 'trae', 'cline',
-      'gemini', 'loomy', 'raccoon', 'minimax', 'zcode', 'commandcode', 'officeace',
+      'antigravity', 'loomy', 'raccoon', 'minimax', 'zcode', 'commandcode', 'officeace',
       'accio', 'accio-cn', 'orcaterm', 'kuku', 'monkeycode', 'autoclaw',
     ]
     const status = await call('provider.status', { providers: allProviders })
@@ -233,7 +233,7 @@ try {
     return savedFetch(input, init)
   }
   try {
-    const started = (await call('account.create', { provider: 'gemini' })).value
+    const started = (await call('account.create', { provider: 'antigravity' })).value
     assert.ok(started.accountId && started.loginUrl)
     const authorization = new URL(started.loginUrl)
     const callback = new URL(authorization.searchParams.get('redirect_uri'))
@@ -245,12 +245,12 @@ try {
       tokenStarted,
       new Promise((_, reject) => setTimeout(() => reject(new Error('fixture token exchange did not start')), 5000).unref()),
     ])
-    assert.deepEqual((await call('login.poll', { accountId: started.accountId, provider: 'gemini' })).value, { done: false },
+    assert.deepEqual((await call('login.poll', { accountId: started.accountId, provider: 'antigravity' })).value, { done: false },
       'callback HTTP 200 precedes asynchronous token settlement')
     releaseToken()
     let failed
     for (let i = 0; i < 100; i++) {
-      failed = (await call('login.poll', { accountId: started.accountId, provider: 'gemini' })).value
+      failed = (await call('login.poll', { accountId: started.accountId, provider: 'antigravity' })).value
       if (failed.done) break
       await new Promise(resolve => setTimeout(resolve, 10))
     }
@@ -295,7 +295,7 @@ try {
    * 「刷新模型」按钮只对**有远端目录端点**的渠道显示（用户 2026-10-27 要求：
    * 没有的渠道直接删掉按钮，不要点了才报「暂不支持」）。
    *
-  * 目前无远端的只有 orcaterm（静态白名单）；gemini 已于 2026-11-01 接入
+  * 目前无远端的只有 orcaterm（静态白名单）；antigravity 已于 2026-11-01 接入
   * 远端目录（fetchAvailableModels）。此外还需与后端**实有**的 refreshCatalog
   * 保持一致 —— 只在 UI 藏按钮而适配器其实支持（或反之）会让两端口径漂移。
   */
@@ -303,7 +303,7 @@ try {
   const clientSource = fs.readFileSync(new URL('../client.js', import.meta.url), 'utf8')
   const marked = [...clientSource.matchAll(/\{ id: '([a-z-]+)'[^}]*noRemoteCatalog: true/g)].map(m => m[1])
   assert.deepEqual(marked.sort(), ['orcaterm'],
-    '⚠️ noRemoteCatalog 只应是 orcaterm（gemini 已接远端目录）')
+    '⚠️ noRemoteCatalog 只应是 orcaterm（antigravity 已接远端目录）')
   assert.ok(clientSource.includes("channel.noRemoteCatalog === true ? null : h('button'"),
     '⚠️ 刷新按钮必须受 noRemoteCatalog 判断约束')
   assert.deepEqual([...cards].sort(), [...adapters.keys()].sort(), 'UI and mounted account providers agree')
@@ -357,7 +357,7 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
     await verifyAccountPoolCache()
   }
   {
-    const { verifyGeminiLocationHint } = await import('./gemini-location-hint-test.mjs')
+    const { verifyGeminiLocationHint } = await import('./antigravity-location-hint-test.mjs')
     await verifyGeminiLocationHint()
   }
   const { verifyChannelPrFixes } = await import('./channel-pr-fixes-test.mjs')

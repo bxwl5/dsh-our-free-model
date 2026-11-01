@@ -22,7 +22,7 @@
  * | 情形 | 处置 |
  * |---|---|
  * | LCA 返回 200，project **非空** | 用探测值 |
- * | LCA 返回 200，project **为空**（免费档常态） | 回落 {@link GEMINI_DEFAULT_PROJECT}，**照常发推理** |
+ * | LCA 返回 200，project **为空**（免费档常态） | 回落 {@link ANTIGRAVITY_DEFAULT_PROJECT}，**照常发推理** |
  * | LCA 失败（网络 / 非 2xx / 空响应） | 返回 `error` ⇒ 调用方**不发推理** |
  *
  * 第三行是原版实测行为（2026-10-05 注入 500 验证：原版**不发**
@@ -31,18 +31,18 @@
  */
 
 import {
-  GEMINI_CREDITS_TIMEOUT_MS,
-  GEMINI_DEFAULT_PROJECT,
-  GEMINI_ENDPOINT_DAILY,
-  GEMINI_ENDPOINT_SANDBOX,
-  GEMINI_LOAD_CODE_ASSIST_BODY,
-  GEMINI_LOAD_CODE_ASSIST_PATH,
-  geminiHeaders,
-  type GeminiCredential,
-} from './gemini.js'
+  ANTIGRAVITY_CREDITS_TIMEOUT_MS,
+  ANTIGRAVITY_DEFAULT_PROJECT,
+  ANTIGRAVITY_ENDPOINT_DAILY,
+  ANTIGRAVITY_ENDPOINT_SANDBOX,
+  ANTIGRAVITY_LOAD_CODE_ASSIST_BODY,
+  ANTIGRAVITY_LOAD_CODE_ASSIST_PATH,
+  antigravityHeaders,
+  type AntigravityCredential,
+} from './antigravity.js'
 
 /** 探测结果。`error` 非空表示**探测失败**（不是「探测到空」）。 */
-export interface GeminiProjectProbe {
+export interface AntigravityProjectProbe {
   /** 可用的项目号；探测失败时为空串。 */
   project: string
   /** 非空 = 探测失败 ⇒ 调用方**不发推理**。 */
@@ -57,7 +57,7 @@ export interface GeminiProjectProbe {
  * ⚠️ 用 `email` / `sub` 而不是 `access_token`：后者每次续期都会变，
  * 用它当键会让缓存**每次续期后失效**，白白多打一次 LCA。
  */
-export function geminiCredentialIdentity(credential: GeminiCredential): string {
+export function antigravityCredentialIdentity(credential: AntigravityCredential): string {
   if (typeof credential.email === 'string' && credential.email !== '') return credential.email
   if (typeof credential.sub === 'string' && credential.sub !== '') return credential.sub
   return credential.access_token
@@ -84,8 +84,8 @@ export function parseGeminiProject(payload: unknown): string {
 
 /** {@link resolveGeminiProject} 的入参。 */
 export interface ResolveGeminiProjectOptions {
-  credential: GeminiCredential
-  /** 进程内缓存（键 = {@link geminiCredentialIdentity}）。 */
+  credential: AntigravityCredential
+  /** 进程内缓存（键 = {@link antigravityCredentialIdentity}）。 */
   cache?: Map<string, string>
   fetcher?: typeof fetch
   timeoutMs?: number
@@ -100,7 +100,7 @@ export interface ResolveGeminiProjectOptions {
    * 探测端点顺序。
    *
    * ⚠️ **sandbox 优先**：原版 `baseFor(path)` 把 `loadCodeAssistPath` /
-   * `retrieveQuotaPath` 这两条路径固定路由到 sandbox（见 `gemini-credits.ts`
+   * `retrieveQuotaPath` 这两条路径固定路由到 sandbox（见 `antigravity-credits.ts`
    * 的同类注释）。daily 作兜底。
    */
   endpoints?: readonly string[]
@@ -113,9 +113,9 @@ export interface ResolveGeminiProjectOptions {
  */
 export async function resolveGeminiProject(
   options: ResolveGeminiProjectOptions,
-): Promise<GeminiProjectProbe> {
+): Promise<AntigravityProjectProbe> {
   const cache = options.cache
-  const identity = geminiCredentialIdentity(options.credential)
+  const identity = antigravityCredentialIdentity(options.credential)
 
   // 一级：进程内
   const cached = cache?.get(identity)
@@ -130,8 +130,8 @@ export async function resolveGeminiProject(
 
   // 三级：现探
   const fetcher = options.fetcher ?? fetch
-  const timeoutMs = options.timeoutMs ?? GEMINI_CREDITS_TIMEOUT_MS
-  const endpoints = options.endpoints ?? [GEMINI_ENDPOINT_SANDBOX, GEMINI_ENDPOINT_DAILY]
+  const timeoutMs = options.timeoutMs ?? ANTIGRAVITY_CREDITS_TIMEOUT_MS
+  const endpoints = options.endpoints ?? [ANTIGRAVITY_ENDPOINT_SANDBOX, ANTIGRAVITY_ENDPOINT_DAILY]
   // 自带超时与调用方信号取交集（调用方的更短超时必须能提前打断）。
   const timeoutSignal = AbortSignal.timeout(timeoutMs)
   const signal = options.signal === undefined
@@ -141,10 +141,10 @@ export async function resolveGeminiProject(
 
   for (const endpoint of endpoints) {
     try {
-      const response = await fetcher(`${endpoint}${GEMINI_LOAD_CODE_ASSIST_PATH}`, {
+      const response = await fetcher(`${endpoint}${ANTIGRAVITY_LOAD_CODE_ASSIST_PATH}`, {
         method: 'POST',
-        headers: geminiHeaders(options.credential),
-        body: GEMINI_LOAD_CODE_ASSIST_BODY,
+        headers: antigravityHeaders(options.credential),
+        body: ANTIGRAVITY_LOAD_CODE_ASSIST_BODY,
         signal,
       })
       if (!response.ok) {
@@ -163,7 +163,7 @@ export async function resolveGeminiProject(
       }
       // ⚠️ 探测**成功但项目号为空** = 免费档常态，**不是失败** ——
       // 回落兜底串继续发推理（原版历次抓包都是这个值）。
-      return { project: GEMINI_DEFAULT_PROJECT, probed: true }
+      return { project: ANTIGRAVITY_DEFAULT_PROJECT, probed: true }
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error)
     }
@@ -181,12 +181,12 @@ export async function resolveGeminiProject(
  * 后续请求跳过探测，而该账号将来若拿到真实 project 就会被这个陈旧值钉死。
  */
 export async function persistGeminiProject(options: {
-  credential: GeminiCredential
+  credential: AntigravityCredential
   project: string
   write: (value: string) => Promise<void>
   logger?: { warn(message: string): void }
 }): Promise<void> {
-  if (options.project === '' || options.project === GEMINI_DEFAULT_PROJECT) return
+  if (options.project === '' || options.project === ANTIGRAVITY_DEFAULT_PROJECT) return
   if (options.credential.cloudaicompanionProject === options.project) return
   try {
     await options.write(JSON.stringify({
@@ -194,6 +194,6 @@ export async function persistGeminiProject(options: {
       cloudaicompanionProject: options.project,
     }))
   } catch (error) {
-    options.logger?.warn(`[gemini] 项目号回写凭据失败（不影响推理）: ${String(error)}`)
+    options.logger?.warn(`[antigravity] 项目号回写凭据失败（不影响推理）: ${String(error)}`)
   }
 }

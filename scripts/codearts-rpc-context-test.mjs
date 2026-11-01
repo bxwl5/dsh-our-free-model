@@ -232,7 +232,7 @@ try {
     for (const host of [first, second]) {
       const disabled = await host.call('opencode.addAnonymous', {})
       assert.equal(disabled.error.code, 'provider-disabled')
-      assert.ok(host.ctx.geminiAuth && host.ctx.zcodeAuth)
+      assert.ok(host.ctx.antigravityAuth && host.ctx.zcodeAuth)
     }
   })
   await check('并发查询积分与完整签到流程分别走所属出口且独立验签通过', async () => {
@@ -280,7 +280,7 @@ try {
     const detach = attachDirectFetch(network.fetch)
     try {
       const offset = first.routes.length
-      const auths = ['codearts', 'buddy', 'workbuddy', 'lobsterai', 'qoder', 'qodercn', 'trae', 'cline', 'loomy', 'raccoon', 'minimax', 'zcode', 'gemini'].map(provider => first.ctx[provider + 'Auth'])
+      const auths = ['codearts', 'buddy', 'workbuddy', 'lobsterai', 'qoder', 'qodercn', 'trae', 'cline', 'loomy', 'raccoon', 'minimax', 'zcode', 'antigravity'].map(provider => first.ctx[provider + 'Auth'])
       registerChannelPackRpc(first.ctx, first.ctx.accountPool, ...auths)
       const route = first.routes.slice(offset).find(row => row.path === '/api/channel-pack')
       assert.ok(route)

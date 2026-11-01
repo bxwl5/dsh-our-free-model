@@ -714,7 +714,7 @@ export function apply(ctx, config) {
   /**
    * The account channels — CodeArts (华为云), CodeBuddy / WorkBuddy (腾讯), LobsterAI
    * (有道), Qoder / Qoder CN (阿里系), TRAE (字节), Cline, Loomy (讯飞), Raccoon
-   * (商汤), MiniMax Code, ZCode (智谱) and Gemini (Google) — are
+   * (商汤), MiniMax Code, ZCode (智谱) and Antigravity (Google) — are
    * carried with local integration adaptations from the plugin that shipped them, vendored under
    * `vendor/channel-pack` (provenance in `vendor/channel-pack/NOTICE.md`). Mounting the
    * pack keeps every login flow, account pool, credit claim, model blacklist

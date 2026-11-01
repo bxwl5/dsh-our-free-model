@@ -79,11 +79,11 @@ import { MinimaxAuth } from './minimax-auth.js'
 import { registerMinimaxLlm } from './minimax-adapter.js'
 import { MINIMAX } from './minimax-product.js'
 import type { MinimaxCredential } from './minimax.js'
-import { GeminiAuth } from './gemini-auth.js'
-import { registerGeminiLlm } from './gemini-adapter.js'
-import { GEMINI } from './gemini.js'
-import type { GeminiCredential } from './gemini.js'
-import { createGeminiSigStore } from './gemini-sigstore.js'
+import { AntigravityAuth } from './antigravity-auth.js'
+import { registerAntigravityLlm } from './antigravity-adapter.js'
+import { ANTIGRAVITY } from './antigravity.js'
+import type { AntigravityCredential } from './antigravity.js'
+import { createGeminiSigStore } from './antigravity-sigstore.js'
 import { registerOpencodeLlm } from './opencode-adapter.js'
 // ⚠️ opencode 的 RPC 由 `channel-pack-rpc.ts` 的 handleMethod 统一分派
 // （它调 handleOpencodeRpc），本文件**不再**单独注册端点 —— 详见
@@ -319,7 +319,7 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
   registerProviderSettings(
     ctx, 'llm-buddy', 'llm-workbuddy', 'llm-codearts',
     'llm-qoder', 'llm-qodercn', 'llm-trae', 'llm-cline', 'llm-loomy', 'llm-raccoon',
-    'llm-minimax', 'llm-zcode', 'llm-gemini',
+    'llm-minimax', 'llm-zcode', 'llm-antigravity',
   )
   const service = new CodeArtsAuth(ctx, { fetcher: signedNetwork.fetch })
   const pool = new AccountPool(ctx)
@@ -1565,49 +1565,49 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
   // ⚠️ **只做 OAuth**（用户拍板）：API key / AI Studio 两条线不做 —— 免费线
   // 是 Cloud Code 项目制，凭据就是 Google OAuth 的 access_token + refresh_token。
   //
-  // 与其余 provider 的四处**形态差异**（全部来自 `docs/GEMINI-PORT-PLAN.md`
+  // 与其余 provider 的四处**形态差异**（全部来自 `docs/ANTIGRAVITY-PORT-PLAN.md`
   // §2.2 的抓包实测，**不许"顺手统一"**）：
   //   1. 请求走**双层信封**（`{model, project, request:{contents,…}}`），且
   //      **必须逐层字母序序列化** —— 上游对字段顺序敏感，原版靠 Go 的 map
   //      键自动排序实现；TS 的 `JSON.stringify` 按插入序，故走
-  //      `marshalAlphabetical`（见 `gemini.ts`）。
-  //   2. 五个身份头**逐字写死**（`geminiHeaders`），且流式请求**刻意不带
+  //      `marshalAlphabetical`（见 `antigravity.ts`）。
+  //   2. 五个身份头**逐字写死**（`antigravityHeaders`），且流式请求**刻意不带
   //      `Accept`**（与抓包一致）。
   //   3. `thoughtSignature` 是**跨轮状态**：`functionCall` 上的签名要落盘、
   //      下一轮按「工具名 + 规范化参数」回填，否则多轮工具调用必被上游拒。
-  //      故这里建一个独立的 `gemini-sigs.json` 缓存（**不放 state.json** ——
+  //      故这里建一个独立的 `antigravity-sigs.json` 缓存（**不放 state.json** ——
   //      那是整体替换语义，会被别的写入覆盖掉）。
-  //   4. 模型暴露 1 个 `gemini-3.8-flash` + 4 档 efforts（低/中/高/自适应）；
+  //   4. 模型暴露 1 个 `antigravity-3.8-flash` + 4 档 efforts（低/中/高/自适应）；
   //      **不**暴露带后缀的模型名，也**不**暴露 lite（上游恒 404，用户
   //      2026-10-03 拍板移除）。
   //
-  // 服务名由 GeminiAuth 依 product.id 派生，注册为 ctx.geminiAuth。
+  // 服务名由 AntigravityAuth 依 product.id 派生，注册为 ctx.antigravityAuth。
   // 不注册斜杠命令：入口在 Channel Pack 的 Gemini 面板。
-  const gemini = new GeminiAuth(ctx, { fetchImpl: network.fetch })
-  const geminiSigStore = createGeminiSigStore(ctx)
+  const antigravity = new AntigravityAuth(ctx, { fetchImpl: network.fetch })
+  const antigravitySigStore = createGeminiSigStore(ctx)
   // ⚠️ 项目号探测缓存必须**在这里建一次、长期复用** —— 每次 `stream()` 现造
   // 等于没有跨请求缓存，每轮推理都会多打一次 `loadCodeAssist`。
-  const geminiProjectCache = new Map<string, string>()
-  const geminiAdapter = registerGeminiLlm(ctx, {
+  const antigravityProjectCache = new Map<string, string>()
+  const antigravityAdapter = registerAntigravityLlm(ctx, {
     fetchImpl: network.fetch,
     projectFetcher: network.fetch,
-    credentialRef: credentialRef(GEMINI.defaultCredentialRef),
+    credentialRef: credentialRef(ANTIGRAVITY.defaultCredentialRef),
     resolveCredential: async (modelId?: string) => {
-      // ⚠️ provider 实参用 GEMINI.id 而非字面量（同 minimax 的既有约定：
+      // ⚠️ provider 实参用 ANTIGRAVITY.id 而非字面量（同 minimax 的既有约定：
       // 写死字面量在改名/多产品场景下会静默查不到账号）。
-      const available = await pool.getAvailableAccount(GEMINI.id, modelId ?? '')
+      const available = await pool.getAvailableAccount(ANTIGRAVITY.id, modelId ?? '')
       // `getAvailableAccount` 的凭据类型是历史遗留的联合类型，与
-      // `GeminiCredential` 无充分重叠，故经 `unknown` 转换；运行时安全性由
-      // provider 过滤保证（查询用 `GEMINI.id`，取到的必是 gemini 凭据）。
+      // `AntigravityCredential` 无充分重叠，故经 `unknown` 转换；运行时安全性由
+      // provider 过滤保证（查询用 `ANTIGRAVITY.id`，取到的必是 antigravity 凭据）。
       if (available) {
         // Token 账本（第 2 期）：回报「本笔请求解析出的账号」。
-        reportLedgerAccount(GEMINI.id, available.entry.id)
-        return available.credential as unknown as GeminiCredential
+        reportLedgerAccount(ANTIGRAVITY.id, available.entry.id)
+        return available.credential as unknown as AntigravityCredential
       }
-      const resolved = await ctx.credentials.resolve(credentialRef(GEMINI.defaultCredentialRef))
+      const resolved = await ctx.credentials.resolve(credentialRef(ANTIGRAVITY.defaultCredentialRef))
       if (!resolved) return undefined
       try {
-        return JSON.parse(resolved.value) as GeminiCredential
+        return JSON.parse(resolved.value) as AntigravityCredential
       } catch {
         return undefined
       }
@@ -1615,7 +1615,7 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
     refresh: async () => {
       // ⚠️ 必须刷新**解析凭据时所用的那一个**账号，而不是默认单凭据 ref ——
       // 否则续期的是另一份凭据，用户会看到「刚登录好却一直认证失败」。
-      const available = await pool.getAvailableAccount(GEMINI.id, '')
+      const available = await pool.getAvailableAccount(ANTIGRAVITY.id, '')
       if (available) {
         // ⚠️ **必须传 pool + entry.id**：续期成功后要把新的 `expiresAt` 写回
         // 账号池，否则 UI 一直显示「已过期」而实际能正常发消息。
@@ -1623,33 +1623,33 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
         // 账号 id 与 credentialRef 在 **`available.entry`** 里，**不是**
         // `available.id` / `available.credentialRef`（那是 `undefined`，
         // 会让续期**静默写不回账号池**）。
-        await gemini.refreshAccountCredential(
+        await antigravity.refreshAccountCredential(
           available.entry.credentialRef, pool, available.entry.id,
         )
       } else {
-        await gemini.refresh()
+        await antigravity.refresh()
       }
     },
     // 模型表：**远端目录优先**（`fetchAvailableModels`，2026-11-01 接入 ——
     // Agent2API `models.rs` 同款规格实测可用，个人 free-tier 也下发全量清单）；
     // 拉不到时适配器内回落「上次快照 → 静态兜底表」（旧形态等价保留）。
-    fetchRemoteModels: () => gemini.fetchAvailableModelsOnly(pool),
+    fetchRemoteModels: () => antigravity.fetchAvailableModelsOnly(pool),
     // 图片两跳：先按 640,000 px 预算取缩放版，拿不到才发原图。
     readImage: makeReadImage(ctx),
     readImageRequest: makeReadImageRequest(ctx),
-    sigStore: geminiSigStore,
+    sigStore: antigravitySigStore,
     accountPool: pool,
-    product: GEMINI,
+    product: ANTIGRAVITY,
     // 项目号：缺省**自动探测**（`loadCodeAssist` 的 `cloudaicompanionProject`），
     // 不是恒为 `aicode-consumers`（那只是探测为空时的兜底）。
-    projectCache: geminiProjectCache,
+    projectCache: antigravityProjectCache,
     persistProject: async (value: string) => {
       // ⚠️ 回写到**解析凭据时所用的那个账号**，不是默认单凭据 ref ——
       // 写错对象会让另一个账号的凭据被污染。
-      const available = await pool.getAvailableAccount(GEMINI.id, '')
+      const available = await pool.getAvailableAccount(ANTIGRAVITY.id, '')
       const ref = available
         ? available.entry.credentialRef
-        : credentialRef(GEMINI.defaultCredentialRef)
+        : credentialRef(ANTIGRAVITY.defaultCredentialRef)
       await ctx.credentials.set(credentialRef(ref), value)
     },
     ...ctx.logger === undefined ? {} : { logger: ctx.logger },
@@ -1978,13 +1978,13 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
     ctx.logger.warn(`[channel-pack] 修正 TRAE 账号显示名失败：${String(error)}`)
   })
 
-  // 一次性修复**老 Gemini 账号**的展示名（同类，成因见 `gemini-auth.ts` 的
+  // 一次性修复**老 Gemini 账号**的展示名（同类，成因见 `antigravity-auth.ts` 的
   // `repairAccountNicknames`）：旧版本解析令牌响应时丢掉了 `id_token`，身份只剩
-  // userinfo 一次可静默失败的跨域请求，失败即让昵称退化成池 id（`gemini-6a53dbca`）。
+  // userinfo 一次可静默失败的跨域请求，失败即让昵称退化成池 id（`antigravity-6a53dbca`）。
   // 光改代码只影响新登录的账号，故这里主动补一次。
   //
   // ⚠️ 幂等 + 失败不阻塞启动（`repairAccountNicknames` 内部逐账号 catch）。
-  void gemini.repairAccountNicknames(pool).then((repaired) => {
+  void antigravity.repairAccountNicknames(pool).then((repaired) => {
     if (repaired.length > 0) {
       ctx.logger.info(
         `[channel-pack] 已修正 ${repaired.length} 个 Gemini 账号的显示名（改用 Google 账号邮箱）：${repaired.join(', ')}`,
@@ -2027,7 +2027,7 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
     // ⚠️ Gemini **可续期**（Google OAuth 的 refresh_token，且会轮换）。
     // ⚠️ 漏了这一行定时器不武装：凭据到期后**不会自动续期**，
     // 用户会看到「每隔一小时就要重新登录」，且日志里一个字都没有。
-    ['gemini', (p) => gemini.refreshAll(p)],
+    ['antigravity', (p) => antigravity.refreshAll(p)],
     // ⚠️ OfficeAce / AutoClaw **可续期**（2026-10-26 审计发现的 P0）：
     // 两者都有 refresh_token 续期实现（refreshOfficeAceCredential /
     // refreshAutoclawCredential），但此前**只在 account.refresh RPC 里**
@@ -2420,7 +2420,7 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
     loomy: pruned(LOOMY.id, loomyAdapter),
     raccoon: pruned(RACCOON.id, raccoonAdapter),
     minimax: pruned(MINIMAX.id, minimaxAdapter),
-    gemini: pruned(GEMINI.id, geminiAdapter),
+    antigravity: pruned(ANTIGRAVITY.id, antigravityAdapter),
     zcode: pruned(ZCODE.id, zcodeAdapter),
     // 后加的两个渠道也要有「显示列表」的完整目录，否则卡片模型数恒为「—」。
     kuku: pruned(KUKU.id, kukuAdapter),
@@ -2439,9 +2439,9 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
   // 插件卸载前把签名缓存落盘：`stream()` 每次结束都 flush，但用户可能
   // 直接关掉 DSH 而上一轮的 flush 还在排队 —— 落一次盘几乎零成本，
   // 丢的却是「下一轮工具调用能不能带上签名」。
-  ctx.effect(() => () => { void geminiSigStore.flush().catch(() => {}) })
+  ctx.effect(() => () => { void antigravitySigStore.flush().catch(() => {}) })
 
-  registerChannelPackRpc(ctx, pool, service, buddy, workbuddy, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, {
+  registerChannelPackRpc(ctx, pool, service, buddy, workbuddy, qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, antigravity, modelAdapters, {
     ...config,
     codeartsFetcher: signedNetwork.fetch,
     // 「异常汇总」扫描**全部已注册渠道**：`modelAdapters` 的键恰好就是它们

@@ -115,7 +115,7 @@ export async function verifyChannelCreditsUi() {
     return { calls, errors, cells, button, text, tree, cleanup, events }
   }
   const claimable = new Set(['codearts', 'buddy', 'qoder', 'qodercn', 'trae', 'loomy', 'minimax', 'zcode', 'monkeycode'])
-  for (const provider of [...claimable, 'workbuddy', 'cline', 'raccoon', 'gemini', 'commandcode', 'accio', 'accio-cn']) {
+  for (const provider of [...claimable, 'workbuddy', 'cline', 'raccoon', 'antigravity', 'commandcode', 'accio', 'accio-cn']) {
     const app = mount(provider, async () => ({ accounts: [] }))
     await settle()
     assert.equal(app.calls[0].method, 'credits.balances', `${provider} 必须查询已有后端余额能力`)
@@ -124,7 +124,7 @@ export async function verifyChannelCreditsUi() {
     assert.equal(Boolean(app.button('签到')), claimable.has(provider), `${provider} 必须单独判断签到能力`)
     if (provider === 'zcode') assert.ok(app.text().includes('剩余 Token'))
     if (provider === 'cline') assert.ok(app.text().includes('USD'))
-    if (provider === 'gemini') assert.ok(app.text().includes('剩余配额'))
+    if (provider === 'antigravity') assert.ok(app.text().includes('剩余配额'))
     if (provider === 'accio' || provider === 'accio-cn') assert.ok(app.text().includes('剩余配额'))
     app.cleanup()
   }
@@ -222,7 +222,7 @@ export async function verifyChannelCreditsUi() {
     assert.ok(guarded !== null && guarded.length >= 1, '回包必须比对 generation 才写状态')
   }
 
-  const quota = mount('gemini', async method => method === 'account.list'
+  const quota = mount('antigravity', async method => method === 'account.list'
     ? { accounts: [accountRows[0]] }
     : { accounts: [{ accountId: 'one', balance: { total: 60, packages: [{ name: '5 小时', remaining: 80 }, { name: '每周', remaining: 40 }] } }] })
   await settle()

@@ -1,7 +1,7 @@
 /**
  * Gemini（Cloud Code Assist）认证服务。
  *
- * 登录走**浏览器回调式 OAuth**（见 `gemini-oauth.ts`：本地 `createServer` 起回调、
+ * 登录走**浏览器回调式 OAuth**（见 `antigravity-oauth.ts`：本地 `createServer` 起回调、
  * 立即返回 `loginUrl`），续期走 `refresh_token` grant。
  *
  * ## ⚠️ `refreshAll` 照 `src/service.ts:406`（codearts）范式，**不照** `minimax-auth.ts:281`
@@ -29,30 +29,30 @@ import {
 import { SerialQueue } from './serial-queue.js'
 import { ChannelNetworkError } from './channel-fetch.js'
 import {
-  GEMINI,
-  GEMINI_CREDITS_TIMEOUT_MS,
-  GEMINI_ENDPOINT_DAILY,
-  GEMINI_ENDPOINT_PROD,
-  GEMINI_ENDPOINT_SANDBOX,
-  GEMINI_FETCH_AVAILABLE_MODELS_PATH,
-  geminiHeaders,
-  geminiAccountLabel,
-  geminiCredentialExpiresAtMs,
+  ANTIGRAVITY,
+  ANTIGRAVITY_CREDITS_TIMEOUT_MS,
+  ANTIGRAVITY_ENDPOINT_DAILY,
+  ANTIGRAVITY_ENDPOINT_PROD,
+  ANTIGRAVITY_ENDPOINT_SANDBOX,
+  ANTIGRAVITY_FETCH_AVAILABLE_MODELS_PATH,
+  antigravityHeaders,
+  antigravityAccountLabel,
+  antigravityCredentialExpiresAtMs,
   isGeminiExpired,
   isGeminiRefreshable,
   parseGeminiAvailableModels,
   parseGeminiCredential,
-  type GeminiCredential,
-  type GeminiProduct,
-  type GeminiRemoteModelEntry,
-} from './gemini.js'
+  type AntigravityCredential,
+  type AntigravityProduct,
+  type AntigravityRemoteModelEntry,
+} from './antigravity.js'
 import {
   credentialFromGeminiGrant,
   fetchGeminiUserInfo,
   refreshGeminiCredential,
   startGeminiOAuthFlow,
-  type StartedGeminiLoginFlow,
-} from './gemini-oauth.js'
+  type StartedAntigravityLoginFlow,
+} from './antigravity-oauth.js'
 
 /**
  * 过期信息提取器（供共享实现 `refreshAccountWithReconcile` 用）。
@@ -63,14 +63,14 @@ import {
  * `refreshableOf` 是**诚实**的：Gemini 确实有 refresh 端点（`oauth2.googleapis.com/token`
  * 的 `refresh_token` grant），故提供它，让共享实现据此把池里的 `refreshable` 对账。
  */
-export const GEMINI_EXPIRY_ACCESSORS: ExpiryAccessors<GeminiCredential> = {
-  expiresAtOf: (credential) => geminiCredentialExpiresAtMs(credential),
+export const ANTIGRAVITY_EXPIRY_ACCESSORS: ExpiryAccessors<AntigravityCredential> = {
+  expiresAtOf: (credential) => antigravityCredentialExpiresAtMs(credential),
   refreshableOf: (credential) => isGeminiRefreshable(credential),
   identityOf: (credential) => credential.access_token,
 }
 
 /** refresh_token 已失效，需要重新登录。 */
-export class GeminiRefreshTokenExpiredError extends Error {
+export class AntigravityRefreshTokenExpiredError extends Error {
   constructor(message: string) {
     super(message)
     // ⚠️ `name` **必须**是 `'RefreshTokenExpiredError'`（与其余九个 provider 一致）。
@@ -79,7 +79,7 @@ export class GeminiRefreshTokenExpiredError extends Error {
     //   `if (error.name === 'RefreshTokenExpiredError') return true`
     //   `return /refresh[_ ]?token/i.test(error.message)`
     //
-    // 写成类名（`'GeminiRefreshTokenExpiredError'`）会让第一个分支**恒不命中**，
+    // 写成类名（`'AntigravityRefreshTokenExpiredError'`）会让第一个分支**恒不命中**，
     // 只能靠第二个分支的**文案正则**兜底 —— 文案一改即静默退化成「可重试」，
     // `RefreshScheduler` 会无限重试一个永远不可能成功的续期。
     this.name = 'RefreshTokenExpiredError'
@@ -87,10 +87,10 @@ export class GeminiRefreshTokenExpiredError extends Error {
 }
 
 /** 认证服务选项。 */
-export interface GeminiAuthOptions {
-  /** 产品配置；默认 {@link GEMINI}。 */
-  product?: GeminiProduct
-  /** 服务名覆盖（默认由产品 id 派生为 `geminiAuth`）。 */
+export interface AntigravityAuthOptions {
+  /** 产品配置；默认 {@link ANTIGRAVITY}。 */
+  product?: AntigravityProduct
+  /** 服务名覆盖（默认由产品 id 派生为 `antigravityAuth`）。 */
   serviceName?: string
   /** 注入的 fetch（测试用）。 */
   fetchImpl?: typeof fetch
@@ -98,13 +98,13 @@ export interface GeminiAuthOptions {
   callbackPort?: number
 }
 
-/** 登录流程句柄（与 `gemini-oauth.ts` 同形，此处直接复用其类型）。 */
-export type { StartedGeminiLoginFlow } from './gemini-oauth.js'
+/** 登录流程句柄（与 `antigravity-oauth.ts` 同形，此处直接复用其类型）。 */
+export type { StartedAntigravityLoginFlow } from './antigravity-oauth.js'
 
 /** Gemini 认证服务。 */
-export class GeminiAuth extends Service {
+export class AntigravityAuth extends Service {
   /** 本实例所属的产品配置。 */
-  readonly product: GeminiProduct
+  readonly product: AntigravityProduct
   /** 本实例默认读写的凭据 ref 名称。 */
   readonly credentialRefName: string
 
@@ -119,8 +119,8 @@ export class GeminiAuth extends Service {
   /** 终态告警去重：同账号同服务端原因只告警一次。 */
   private readonly terminalWarned = new Map<string, string>()
 
-  constructor(ctx: Context, private readonly options: GeminiAuthOptions = {}) {
-    const product = options.product ?? GEMINI
+  constructor(ctx: Context, private readonly options: AntigravityAuthOptions = {}) {
+    const product = options.product ?? ANTIGRAVITY
     super(ctx, options.serviceName ?? `${product.id}Auth`)
     this.product = product
     this.credentialRefName = product.defaultCredentialRef
@@ -139,14 +139,14 @@ export class GeminiAuth extends Service {
     return queue
   }
 
-  private async readCredential(refName: string): Promise<GeminiCredential | undefined> {
+  private async readCredential(refName: string): Promise<AntigravityCredential | undefined> {
     const resolved = await this.ctx.credentials.resolve(credentialRef(refName))
     if (!resolved) return undefined
     return parseGeminiCredential(resolved.value)
   }
 
   /** 按值比较两份凭据（引用比较恒不相等）。 */
-  private sameCredential(a: GeminiCredential, b: GeminiCredential): boolean {
+  private sameCredential(a: AntigravityCredential, b: AntigravityCredential): boolean {
     return a.access_token === b.access_token
       && a.refresh_token === b.refresh_token
       && a.expiry === b.expiry
@@ -158,7 +158,7 @@ export class GeminiAuth extends Service {
    * ⚠️ 不能在这里阻塞等授权完成 —— 前端 `window.open` 只在
    * transient activation 窗口内有效（见 AGENTS.md「两步式登录」）。
    */
-  async startLogin(): Promise<StartedGeminiLoginFlow> {
+  async startLogin(): Promise<StartedAntigravityLoginFlow> {
     const started = await startGeminiOAuthFlow({
       fetcher: this.fetchImpl,
       ...this.options.callbackPort === undefined ? {} : { callbackPort: this.options.callbackPort },
@@ -167,7 +167,7 @@ export class GeminiAuth extends Service {
       // 「昵称退化成池 id」时，失败被静默吞成 `{}`，现场零线索可查。
       onIdentityFailure: (reason) => {
         this.ctx.logger?.warn?.(
-          `[gemini] 登录时兜底拉取账号身份失败（不影响登录，但昵称可能退化成账号 id）：${reason}`,
+          `[antigravity] 登录时兜底拉取账号身份失败（不影响登录，但昵称可能退化成账号 id）：${reason}`,
         )
       },
     })
@@ -184,10 +184,10 @@ export class GeminiAuth extends Service {
    * ⚠️ 返回的 `accountId` 是 OIDC `sub` —— 它只适合当**稳定标识**
    *（换邮箱、改昵称都不影响），**不要**拿它拼展示名：`sub` 是 21 位数字，
    * 截前 8 位得到 `Gemini 10500520` 这种用户认不出的名字（2026-10-03 报障）。
-   * 展示名走 `geminiAccountLabel`（邮箱优先，回退 `sub`）。
+   * 展示名走 `antigravityAccountLabel`（邮箱优先，回退 `sub`）。
    */
   async persistLogin(
-    credential: GeminiCredential,
+    credential: AntigravityCredential,
     options: { refName: string },
   ): Promise<{ accountId?: string }> {
     await this.ctx.credentials.set(credentialRef(options.refName), JSON.stringify(credential))
@@ -195,7 +195,7 @@ export class GeminiAuth extends Service {
   }
 
   /** 解析默认单凭据。 */
-  private async resolveDefaultCredential(): Promise<GeminiCredential | undefined> {
+  private async resolveDefaultCredential(): Promise<AntigravityCredential | undefined> {
     return await this.readCredential(this.credentialRefName)
   }
 
@@ -203,10 +203,10 @@ export class GeminiAuth extends Service {
   async refresh(): Promise<void> {
     const credential = await this.resolveDefaultCredential()
     if (credential === undefined) {
-      throw new GeminiRefreshTokenExpiredError('凭据未配置，请先登录')
+      throw new AntigravityRefreshTokenExpiredError('凭据未配置，请先登录')
     }
     if (!isGeminiRefreshable(credential)) {
-      throw new GeminiRefreshTokenExpiredError('凭据缺少 refresh_token，请重新登录')
+      throw new AntigravityRefreshTokenExpiredError('凭据缺少 refresh_token，请重新登录')
     }
     const next = await this.refreshCredential(credential)
     await this.ctx.credentials.set(credentialRef(this.credentialRefName), JSON.stringify(next))
@@ -228,7 +228,7 @@ export class GeminiAuth extends Service {
       const credential = await this.readCredential(refName)
       if (credential === undefined) throw new Error('凭据未配置')
       if (!isGeminiRefreshable(credential)) {
-        throw new GeminiRefreshTokenExpiredError('凭据缺少 refresh_token，请重新登录')
+        throw new AntigravityRefreshTokenExpiredError('凭据缺少 refresh_token，请重新登录')
       }
       const ref = credentialRef(refName)
       // 无账号池时退化为「直接续期 + 落盘」（单凭据路径）。
@@ -243,7 +243,7 @@ export class GeminiAuth extends Service {
         tag: `[${this.product.id}]`,
         accountId: accountId ?? '',
         credential,
-        accessors: GEMINI_EXPIRY_ACCESSORS,
+        accessors: ANTIGRAVITY_EXPIRY_ACCESSORS,
         refresh: (c) => this.refreshCredential(c),
         save: (c) => this.ctx.credentials.set(ref, JSON.stringify(c)),
         warn: (message) => this.ctx.logger?.warn?.(message),
@@ -267,7 +267,7 @@ export class GeminiAuth extends Service {
     const accounts = await pool.listAccounts(this.product.id)
     for (const entry of accounts) {
       const ref = credentialRef(entry.credentialRef)
-      let credential: GeminiCredential | undefined
+      let credential: AntigravityCredential | undefined
       try {
         const resolved = await this.ctx.credentials.resolve(ref)
         if (!resolved) {
@@ -285,7 +285,7 @@ export class GeminiAuth extends Service {
           // 下面 `refreshAccountWithReconcile` 的有效期对账本来就会把它改回来，
           // 多写一次只会让账号列表多一次无谓的整体落盘。
           this.ctx.logger?.info?.(
-            `[gemini] 账号 ${entry.id} 的凭据具备续期材料，本轮恢复自动续期（此前的标记与凭据不符）`,
+            `[antigravity] 账号 ${entry.id} 的凭据具备续期材料，本轮恢复自动续期（此前的标记与凭据不符）`,
           )
         }
         await refreshAccountWithReconcile({
@@ -294,7 +294,7 @@ export class GeminiAuth extends Service {
           tag: `[${this.product.id}]`,
           accountId: entry.id,
           credential,
-          accessors: GEMINI_EXPIRY_ACCESSORS,
+          accessors: ANTIGRAVITY_EXPIRY_ACCESSORS,
           current: entry,
           refresh: (c) => this.refreshCredentialUnderLock(entry.credentialRef, c),
           save: (c) => this.ctx.credentials.set(ref, JSON.stringify(c)),
@@ -302,7 +302,7 @@ export class GeminiAuth extends Service {
           info: (message) => this.ctx.logger?.info?.(message),
         })
       } catch (error) {
-        if (error instanceof GeminiRefreshTokenExpiredError) {
+        if (error instanceof AntigravityRefreshTokenExpiredError) {
           const detail = error instanceof Error ? error.message : String(error)
           // ⚠️ **判终态前先确认「我刚才用的那一份 refresh_token 还是不是当前那一份」**。
           // 并发下服务端拒的是**旧的**那一份（它已因别人的成功请求而失效），
@@ -314,14 +314,14 @@ export class GeminiAuth extends Service {
             && credential !== undefined
             && latest.refresh_token !== credential.refresh_token) {
             this.ctx.logger?.info?.(
-              `[gemini] 账号 ${entry.id} 续期被拒但凭据已被他处更新（并发重放），`
+              `[antigravity] 账号 ${entry.id} 续期被拒但凭据已被他处更新（并发重放），`
               + `按最新凭据对账，不标记为不可续期`,
             )
             await syncAccountExpiry({
               pool,
               provider: this.product.id,
               credential: latest,
-              accessors: GEMINI_EXPIRY_ACCESSORS,
+              accessors: ANTIGRAVITY_EXPIRY_ACCESSORS,
               accountId: entry.id,
               current: entry,
               tag: `[${this.product.id}]`,
@@ -340,7 +340,7 @@ export class GeminiAuth extends Service {
           if (last !== detail) {
             this.terminalWarned.set(entry.credentialRef, detail)
             this.ctx.logger?.warn?.(
-              `[gemini] 账号 ${entry.id} 的 refresh_token 已失效，已标记为不可续期（需重新登录）`
+              `[antigravity] 账号 ${entry.id} 的 refresh_token 已失效，已标记为不可续期（需重新登录）`
               + `；服务端原文：${detail}`,
             )
           }
@@ -353,13 +353,13 @@ export class GeminiAuth extends Service {
             // 忽略 updateAccount 本身的错误
           }
           this.ctx.logger?.error?.(
-            `[gemini] 账号 ${entry.id} 续期已成功但凭据落盘失败（需重新登录）: `
+            `[antigravity] 账号 ${entry.id} 续期已成功但凭据落盘失败（需重新登录）: `
             + `${error instanceof Error ? error.message : String(error)}`,
           )
         } else {
           // 非终态失败（网络抖动、5xx…）**必须留下日志**。
           this.ctx.logger?.warn?.(
-            `[gemini] 账号 ${entry.id} 续期失败：`
+            `[antigravity] 账号 ${entry.id} 续期失败：`
             + `${error instanceof Error ? error.message : String(error)}`,
           )
         }
@@ -372,8 +372,8 @@ export class GeminiAuth extends Service {
    *
    * 成因：2026-10-03 之前的版本在解析令牌响应时丢掉了 `id_token`，身份只剩
    * 「userinfo 那次跨域请求」这一个失败面；它一失败（且当时**静默吞异常**），
-   * 凭据就只落了 token 而无 `sub`/`email`，`geminiAccountLabel` 返 `undefined`，
-   * 账号昵称于是退化成一串池 id（`gemini-6a53dbca`），用户认不出是谁。
+   * 凭据就只落了 token 而无 `sub`/`email`，`antigravityAccountLabel` 返 `undefined`，
+   * 账号昵称于是退化成一串池 id（`antigravity-6a53dbca`），用户认不出是谁。
    *
    * 光改代码只影响**新登录**的账号，故这里在启动时主动补一次。
    *
@@ -406,7 +406,7 @@ export class GeminiAuth extends Service {
 
         // 缺身份时补一次 userinfo（只读 GET）。注意此处**不写日志失败**——
         // 老账号的 access_token 可能早已过期，拿不到是常态，不值得刷告警。
-        if (geminiAccountLabel(credential) === undefined) {
+        if (antigravityAccountLabel(credential) === undefined) {
           const info = await fetchGeminiUserInfo(credential.access_token, { fetcher: this.fetchImpl })
           if (info.sub === undefined && info.email === undefined) continue
           credential = { ...credential }
@@ -415,7 +415,7 @@ export class GeminiAuth extends Service {
           await this.ctx.credentials.set(ref, JSON.stringify(credential))
         }
 
-        const target = geminiAccountLabel(credential)
+        const target = antigravityAccountLabel(credential)
         // ⚠️ 只在**确实变化**时写账号池：`updateAccount` 是整体 replace，
         // 每次启动都写会平白落盘一次（同 Raccoon / Trae 的处理）。
         if (target !== undefined && target !== entry.nickname) {
@@ -424,7 +424,7 @@ export class GeminiAuth extends Service {
         }
       } catch (error) {
         this.ctx.logger?.warn?.(
-          `[gemini] 修复账号 ${entry.id} 的显示名失败（不影响使用）：`
+          `[antigravity] 修复账号 ${entry.id} 的显示名失败（不影响使用）：`
           + `${error instanceof Error ? error.message : String(error)}`,
         )
       }
@@ -440,14 +440,14 @@ export class GeminiAuth extends Service {
    */
   private async refreshCredentialUnderLock(
     refName: string,
-    credential: GeminiCredential,
-  ): Promise<GeminiCredential> {
+    credential: AntigravityCredential,
+  ): Promise<AntigravityCredential> {
     return await this.queueFor(refName).run(async () => {
       const latest = (await this.readCredential(refName)) ?? credential
       if (!this.sameCredential(latest, credential)
-        && !shouldRefreshNow(GEMINI_EXPIRY_ACCESSORS.expiresAtOf(latest))) {
+        && !shouldRefreshNow(ANTIGRAVITY_EXPIRY_ACCESSORS.expiresAtOf(latest))) {
         this.ctx.logger?.info?.(
-          '[gemini] 凭据已被他处续期，跳过本次续期请求（避免重复消费 refresh_token）',
+          '[antigravity] 凭据已被他处续期，跳过本次续期请求（避免重复消费 refresh_token）',
         )
         return latest
       }
@@ -461,10 +461,10 @@ export class GeminiAuth extends Service {
    * 抽出来供 `refresh` / `refreshAccountCredential` / `refreshAll` 共用 ——
    * 一旦字段合并逻辑分叉，就会出现「某条路径丢了 sub/email」。
    */
-  private async refreshCredential(credential: GeminiCredential): Promise<GeminiCredential> {
+  private async refreshCredential(credential: AntigravityCredential): Promise<AntigravityCredential> {
     const refreshToken = credential.refresh_token
     if (!refreshToken) {
-      throw new GeminiRefreshTokenExpiredError('凭据缺少 refresh_token，请重新登录')
+      throw new AntigravityRefreshTokenExpiredError('凭据缺少 refresh_token，请重新登录')
     }
     try {
       const grant = await refreshGeminiCredential(refreshToken, { fetcher: this.fetchImpl })
@@ -476,7 +476,7 @@ export class GeminiAuth extends Service {
       if (error instanceof ChannelNetworkError) throw error
       const message = error instanceof Error ? error.message : String(error)
       if (/invalid_grant|invalid_client|expired|revoked|unauthorized/i.test(message)) {
-        throw new GeminiRefreshTokenExpiredError('refresh_token 已失效，请重新登录')
+        throw new AntigravityRefreshTokenExpiredError('refresh_token 已失效，请重新登录')
       }
       throw error
     }
@@ -491,17 +491,17 @@ export class GeminiAuth extends Service {
    * ## 三环境轮流（Agent2API 规格 §3.1）
    *
    * `sandbox → daily → prod`，429/5xx/传输失败换下一条；4xx（403/404）不换
-   * —— 那是「这次请求本身不对」。头用**五头形态**（`geminiHeaders`，
+   * —— 那是「这次请求本身不对」。头用**五头形态**（`antigravityHeaders`，
    * 实测与推理同款头即通，无需 vscode 形 UA）。
    *
    * 凭据取值：账号池可用账号优先（与推理同源），回退默认单凭据 ref。
    * 无可用凭据 → `[]`（不抛错 —— 目录是展示信息，不该让 provider 报错）。
    */
-  async fetchAvailableModelsOnly(pool?: AccountPool): Promise<readonly GeminiRemoteModelEntry[]> {
-    let credential: GeminiCredential | undefined
+  async fetchAvailableModelsOnly(pool?: AccountPool): Promise<readonly AntigravityRemoteModelEntry[]> {
+    let credential: AntigravityCredential | undefined
     if (pool !== undefined) {
       const available = await pool.getAvailableAccount(this.product.id, '')
-      if (available) credential = available.credential as unknown as GeminiCredential
+      if (available) credential = available.credential as unknown as AntigravityCredential
     }
     if (credential === undefined) {
       const resolved = await this.ctx.credentials.resolve(credentialRef(this.product.defaultCredentialRef))
@@ -509,13 +509,13 @@ export class GeminiAuth extends Service {
     }
     if (credential === undefined || isGeminiExpired(credential)) return []
     // 三环境按序尝试：4xx 不换域名（同 Agent2API models.rs 的轮换策略）。
-    for (const base of [GEMINI_ENDPOINT_SANDBOX, GEMINI_ENDPOINT_DAILY, GEMINI_ENDPOINT_PROD]) {
+    for (const base of [ANTIGRAVITY_ENDPOINT_SANDBOX, ANTIGRAVITY_ENDPOINT_DAILY, ANTIGRAVITY_ENDPOINT_PROD]) {
       try {
-        const response = await this.fetchImpl(`${base}${GEMINI_FETCH_AVAILABLE_MODELS_PATH}`, {
+        const response = await this.fetchImpl(`${base}${ANTIGRAVITY_FETCH_AVAILABLE_MODELS_PATH}`, {
           method: 'POST',
-          headers: geminiHeaders(credential),
+          headers: antigravityHeaders(credential),
           body: '{}',
-          signal: AbortSignal.timeout(GEMINI_CREDITS_TIMEOUT_MS),
+          signal: AbortSignal.timeout(ANTIGRAVITY_CREDITS_TIMEOUT_MS),
         })
         if (!response.ok) {
           if (response.status >= 400 && response.status < 500) return []

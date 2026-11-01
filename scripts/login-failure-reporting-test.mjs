@@ -2,7 +2,7 @@
  * 后台登录失败必须上报给前端（静态守卫）。
  *
  * 缺陷（2026-10-23 修）：17 个自动化渠道里只有 4 个（commandcode / officeace /
- * accio / gemini）把失败原因写进 `pendingLoginFailures`；其余 12 个只
+ * accio / antigravity）把失败原因写进 `pendingLoginFailures`；其余 12 个只
  * `logger.warn` + 删除占位账号，于是前端 `login.poll` 恒返回 `{done:false}`，
  * 只能干等 10 分钟超时，用户永远看不到「端口被占 / 授权被拒 / 网络失败」。
  *

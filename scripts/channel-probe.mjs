@@ -258,24 +258,24 @@ const CHANNELS = [
 
   // ───────────────────────────── Gemini ────────────────────────────
   {
-    id: 'gemini',
+    id: 'antigravity',
     name: 'Gemini',
     loginMode: '浏览器授权（Google OAuth · PKCE）',
     notes: [
-      '模型目录 2026-11-01 起走远端 `POST /v1internal:fetchAvailableModels`（三环境轮流）；拉不到回落 gemini.ts GEMINI_FALLBACK_MODELS。',
+      '模型目录 2026-11-01 起走远端 `POST /v1internal:fetchAvailableModels`（三环境轮流）；拉不到回落 antigravity.ts GEMINI_FALLBACK_MODELS。',
       '⚠️ 额度/项目端点必须 POST：GET 返回 404（2026-10-23 实测）。',
-      '授权 URL 的 client_id / scope 见 gemini-oauth.ts buildGeminiAuthUrl；这里用默认客户端拼一个只验存活的 URL。',
+      '授权 URL 的 client_id / scope 见 antigravity-oauth.ts buildGeminiAuthUrl；这里用默认客户端拼一个只验存活的 URL。',
     ],
     endpoints: [
       ep('登录入口', 'login', 'https://accounts.google.com/o/oauth2/v2/auth?client_id=1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com&response_type=code&redirect_uri=http%3A%2F%2Flocalhost%3A8845%2Foauth-callback&scope=openid%20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform&state=probe&access_type=offline&prompt=consent', {
-        source: 'gemini-oauth.ts GEMINI_AUTH_ENDPOINT + GEMINI_DEFAULT_CLIENT_ID',
+        source: 'antigravity-oauth.ts GEMINI_AUTH_ENDPOINT + GEMINI_DEFAULT_CLIENT_ID',
       }),
       ep('模型目录', 'models', null, { note: '静态 fallback 表，无 HTTP 目录端点' }),
       ep('额度', 'balance', 'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:retrieveUserQuotaSummary', {
-        method: 'POST', body: '{}', auth: 'Bearer', source: 'gemini.ts GEMINI_QUOTA_PATH（sandbox）',
+        method: 'POST', body: '{}', auth: 'Bearer', source: 'antigravity.ts GEMINI_QUOTA_PATH（sandbox）',
       }),
       ep('项目探测', 'identity', 'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:loadCodeAssist', {
-        method: 'POST', body: '{"metadata":{"ideType":"ANTIGRAVITY"}}', auth: 'Bearer', source: 'gemini.ts GEMINI_LOAD_CODE_ASSIST_PATH',
+        method: 'POST', body: '{"metadata":{"ideType":"ANTIGRAVITY"}}', auth: 'Bearer', source: 'antigravity.ts GEMINI_LOAD_CODE_ASSIST_PATH',
       }),
     ],
   },

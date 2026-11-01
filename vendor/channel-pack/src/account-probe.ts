@@ -41,14 +41,14 @@ import { productById } from './product.js'
 import { qoderProductById } from './qoder-product.js'
 import { clineProductById } from './cline-product.js'
 import { zcodeProductById } from './zcode-product.js'
-import { GeminiAdapter } from './gemini-adapter.js'
-import { GEMINI, GEMINI_DEFAULT_PROJECT, GEMINI_SESSION_LANE_SMOKE } from './gemini.js'
+import { AntigravityAdapter } from './antigravity-adapter.js'
+import { ANTIGRAVITY, ANTIGRAVITY_DEFAULT_PROJECT, ANTIGRAVITY_SESSION_LANE_SMOKE } from './antigravity.js'
 import type { BuddyCredential } from './buddy.js'
 import type { QoderCredential } from './qoder.js'
 import type { ClineCredential } from './cline.js'
 import type { ZcodeCredential } from './zcode.js'
 import type { TraeCredential } from './trae.js'
-import type { GeminiCredential } from './gemini.js'
+import type { AntigravityCredential } from './antigravity.js'
 import type {
   CodeArtsCredential,
   ProbeAccountResult,
@@ -80,7 +80,7 @@ type ProbeCredential =
   | ClineCredential
   | ZcodeCredential
   | TraeCredential
-  | GeminiCredential
+  | AntigravityCredential
 
 /** 探测请求的提示语（与 e2e 探针保持一致，最大化可比性）。 */
 const PROBE_PROMPT = '只回答两个字：收到'
@@ -229,7 +229,7 @@ async function probeWithAdapter(
   //
   // 命中者（除 `account-pool.ts` 的定义与 `account-probe.ts` 自身的回写）的每个
   // 适配器都必须在这里有分支：buddy（含 workbuddy）/ qoder（含
-  // qodercn）/ cline / zcode / trae / codearts / **gemini**。反例：loomy 的
+  // qodercn）/ cline / zcode / trae / codearts / **antigravity**。反例：loomy 的
   // 积分耗尽时静默降级、**不写**标记，故它落 else 无害（`retestAccount`
   // 取不到 modelId 时根本不构造适配器）。新增 provider 时务必同步本分支，
   // 并补 `tests/unit/account-probe-adapter.spec.ts` 的对应用例。
@@ -243,7 +243,7 @@ async function probeWithAdapter(
     | ClineAdapter
     | ZcodeAdapter
     | TraeAdapter
-    | GeminiAdapter
+    | AntigravityAdapter
     | CodeArtsAdapter
   if (buddyProduct !== undefined) {
     adapter = new BuddyAdapter({
@@ -299,11 +299,11 @@ async function probeWithAdapter(
       resolveCredential: async () => credential as TraeCredential,
       refresh: async () => {},
     })
-  } else if (entry.provider === GEMINI.id) {
-    // Gemini（Cloud Code Assist）→ GeminiAdapter。
+  } else if (entry.provider === ANTIGRAVITY.id) {
+    // Gemini（Cloud Code Assist）→ AntigravityAdapter。
     //
-    // ⚠️ 与 zcode 同因：GeminiAdapter 的限流/额度路径**会写** `modelRateLimits`
-    //（见 `gemini-adapter.ts` 的 `updateModelRateLimit` 调用），故必须有分支。
+    // ⚠️ 与 zcode 同因：AntigravityAdapter 的限流/额度路径**会写** `modelRateLimits`
+    //（见 `antigravity-adapter.ts` 的 `updateModelRateLimit` 调用），故必须有分支。
     // 落 else 会被交给**华为云 HMAC 签名**的 CodeArtsAdapter 去发 Google 凭据，
     // 探测必然失败，而账号卡片上的「重测」永远清不掉那个标记。
     //
@@ -319,13 +319,13 @@ async function probeWithAdapter(
     // 若走自动探测，会先多打一次 `loadCodeAssist`，且 LCA 失败（限流/网络抖动）
     // 会让探测报「项目号探测失败」而不是它真正要报的「账号仍受限」—— 反而掩盖
     // 了用户点「重测」想知道的答案。探测**不写**任何东西（不传 persistProject）。
-    adapter = new GeminiAdapter({
+    adapter = new AntigravityAdapter({
       credentialRef: ref,
-      resolveCredential: async () => credential as GeminiCredential,
+      resolveCredential: async () => credential as AntigravityCredential,
       refresh: async () => {},
-      sessionLane: GEMINI_SESSION_LANE_SMOKE,
-      project: GEMINI_DEFAULT_PROJECT,
-      product: GEMINI,
+      sessionLane: ANTIGRAVITY_SESSION_LANE_SMOKE,
+      project: ANTIGRAVITY_DEFAULT_PROJECT,
+      product: ANTIGRAVITY,
     })
   } else if (entry.provider === 'codearts') {
     adapter = new CodeArtsAdapter({

@@ -25,26 +25,26 @@
 
 import { createServer, type Server } from 'node:http'
 import { randomBytes } from 'node:crypto'
-import type { GeminiCredential } from './gemini.js'
+import type { AntigravityCredential } from './antigravity.js'
 
-export const GEMINI_AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth'
-export const GEMINI_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token'
-export const GEMINI_USERINFO_ENDPOINT = 'https://www.googleapis.com/oauth2/v2/userinfo'
-export const GEMINI_REVOKE_ENDPOINT = 'https://oauth2.googleapis.com/revoke'
+export const ANTIGRAVITY_AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth'
+export const ANTIGRAVITY_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token'
+export const ANTIGRAVITY_USERINFO_ENDPOINT = 'https://www.googleapis.com/oauth2/v2/userinfo'
+export const ANTIGRAVITY_REVOKE_ENDPOINT = 'https://oauth2.googleapis.com/revoke'
 
 /** 上游 Cloud Code 客户端的公开 client（env 可覆盖，用于自建凭据的场景）。 */
-export const GEMINI_DEFAULT_CLIENT_ID =
+export const ANTIGRAVITY_DEFAULT_CLIENT_ID =
   '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com'
-export const GEMINI_DEFAULT_CLIENT_SECRET = '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'
+export const ANTIGRAVITY_DEFAULT_CLIENT_SECRET = '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'
 
 /** 回调路径（与 client 注册值逐字一致，改了就 redirect_uri_mismatch）。 */
-export const GEMINI_CALLBACK_PATH = '/oauth-callback'
+export const ANTIGRAVITY_CALLBACK_PATH = '/oauth-callback'
 
 /** 重定向 URI 里的主机名。⚠️ 必须是 `localhost` 而不是 `127.0.0.1`。 */
-const GEMINI_REDIRECT_HOST = 'localhost'
+const ANTIGRAVITY_REDIRECT_HOST = 'localhost'
 
 /** 端口被占用时的兜底端口；默认走动态端口（0），与原版一致。 */
-export const GEMINI_DEFAULT_CALLBACK_PORT = 8845
+export const ANTIGRAVITY_DEFAULT_CALLBACK_PORT = 8845
 
 /**
  * 授权流程总预算。
@@ -53,10 +53,10 @@ export const GEMINI_DEFAULT_CALLBACK_PORT = 8845
  * `authFlowTimeout` 就是 6 分钟 —— Google 账号常带二次验证，3 分钟会把
  * 正常用户掐掉（面板亮「授权失败」，其实人家只是慢）。
  */
-export const GEMINI_AUTH_FLOW_TIMEOUT_MS = 360_000
+export const ANTIGRAVITY_AUTH_FLOW_TIMEOUT_MS = 360_000
 
 /** 六项 scope 逐字照抄（`cloud-platform` 必需，后两项是 Cloud Code 自己的通道）。 */
-export const GEMINI_SCOPES: readonly string[] = [
+export const ANTIGRAVITY_SCOPES: readonly string[] = [
   'openid',
   'https://www.googleapis.com/auth/cloud-platform',
   'https://www.googleapis.com/auth/userinfo.email',
@@ -66,56 +66,56 @@ export const GEMINI_SCOPES: readonly string[] = [
 ]
 
 /** 用户在浏览器里点了「取消」/拒绝授权。 */
-export class GeminiLoginCancelledError extends Error {
+export class AntigravityLoginCancelledError extends Error {
   constructor(message = 'Google 授权已取消') {
     super(message)
-    this.name = 'GeminiLoginCancelledError'
+    this.name = 'AntigravityLoginCancelledError'
   }
 }
 
 /** 授权窗口超时（没人来点）。 */
-export class GeminiLoginExpiredError extends Error {
+export class AntigravityLoginExpiredError extends Error {
   constructor(message = 'Google 授权超时，请重新发起') {
     super(message)
-    this.name = 'GeminiLoginExpiredError'
+    this.name = 'AntigravityLoginExpiredError'
   }
 }
 
 /** 生效的 client id（env 优先）。 */
-export function geminiClientId(): string {
+export function antigravityClientId(): string {
   const fromEnv = process.env.CMDC_PAK_GOOGLE_CLIENT_ID?.trim()
-  return fromEnv !== undefined && fromEnv !== '' ? fromEnv : GEMINI_DEFAULT_CLIENT_ID
+  return fromEnv !== undefined && fromEnv !== '' ? fromEnv : ANTIGRAVITY_DEFAULT_CLIENT_ID
 }
 
 /** 生效的 client secret（env 优先）。 */
-export function geminiClientSecret(): string {
+export function antigravityClientSecret(): string {
   const fromEnv = process.env.CMDC_PAK_GOOGLE_CLIENT_SECRET?.trim()
-  return fromEnv !== undefined && fromEnv !== '' ? fromEnv : GEMINI_DEFAULT_CLIENT_SECRET
+  return fromEnv !== undefined && fromEnv !== '' ? fromEnv : ANTIGRAVITY_DEFAULT_CLIENT_SECRET
 }
 
 /** 一次授权流程的固定参数。 */
-export interface GeminiAuthFlow {
+export interface AntigravityAuthFlow {
   state: string
   redirectUri: string
 }
 
 /** 构造授权 URL（参数顺序无关紧要，Google 不校验）。 */
-export function buildGeminiAuthUrl(flow: GeminiAuthFlow): string {
+export function buildGeminiAuthUrl(flow: AntigravityAuthFlow): string {
   const query = new URLSearchParams({
-    client_id: geminiClientId(),
+    client_id: antigravityClientId(),
     response_type: 'code',
     redirect_uri: flow.redirectUri,
-    scope: GEMINI_SCOPES.join(' '),
+    scope: ANTIGRAVITY_SCOPES.join(' '),
     state: flow.state,
     access_type: 'offline',
     include_granted_scopes: 'true',
     prompt: 'consent',
   })
-  return `${GEMINI_AUTH_ENDPOINT}?${query.toString()}`
+  return `${ANTIGRAVITY_AUTH_ENDPOINT}?${query.toString()}`
 }
 
 /** 一次令牌端点响应的解析结果。 */
-export interface GeminiTokenGrant {
+export interface AntigravityTokenGrant {
   access_token: string
   refresh_token?: string
   token_type: string
@@ -133,7 +133,7 @@ export interface GeminiTokenGrant {
  *
  * `sub` 是 OIDC 的稳定标识（邮箱可改、`sub` 不变）；`email` 只用于展示。
  */
-export interface GeminiUserInfo {
+export interface AntigravityUserInfo {
   sub?: string
   email?: string
 }
@@ -144,7 +144,7 @@ export interface GeminiUserInfo {
  * 三种失败形态都要给**能定位问题**的文案（原版口径）：
  * 解析不了 / `error` 字段 / 缺 `access_token`。
  */
-export function parseGeminiTokenGrant(payload: unknown, previousRefreshToken?: string): GeminiTokenGrant {
+export function parseGeminiTokenGrant(payload: unknown, previousRefreshToken?: string): AntigravityTokenGrant {
   if (typeof payload !== 'object' || payload === null) {
     throw new Error('令牌端点返回无法解析（非 JSON 对象）')
   }
@@ -164,7 +164,7 @@ export function parseGeminiTokenGrant(payload: unknown, previousRefreshToken?: s
     ? Math.floor(record.expires_in)
     : 3600
 
-  const grant: GeminiTokenGrant = {
+  const grant: AntigravityTokenGrant = {
     access_token: accessToken,
     token_type: rawTokenType === '' ? 'Bearer' : rawTokenType,
     expires_in: expiresIn,
@@ -184,7 +184,7 @@ export function parseGeminiTokenGrant(payload: unknown, previousRefreshToken?: s
  * `src/buddy.ts` 的 `jwtExpiresAtMs` 同口径）；令牌端点的响应本身已由 TLS 保护。
  * 任何解析失败返回 `{}` 而不抛错 —— 身份不该让授权失败。
  */
-export function geminiIdentityFromIdToken(idToken: string): GeminiUserInfo {
+export function antigravityIdentityFromIdToken(idToken: string): AntigravityUserInfo {
   if (typeof idToken !== 'string' || idToken === '') return {}
   const parts = idToken.split('.')
   if (parts.length < 2) return {}
@@ -196,29 +196,29 @@ export function geminiIdentityFromIdToken(idToken: string): GeminiUserInfo {
   }
   if (typeof payload !== 'object' || payload === null) return {}
   const record = payload as Record<string, unknown>
-  const out: GeminiUserInfo = {}
+  const out: AntigravityUserInfo = {}
   if (typeof record.sub === 'string' && record.sub !== '') out.sub = record.sub
   if (typeof record.email === 'string' && record.email !== '') out.email = record.email
   return out
 }
 
 /** 由 `expires_in`（秒）算出 RFC3339 过期时刻。 */
-export function geminiExpiryFrom(expiresIn: number, nowMs = Date.now()): string {
+export function antigravityExpiryFrom(expiresIn: number, nowMs = Date.now()): string {
   const seconds = expiresIn > 0 ? expiresIn : 3600
   return new Date(nowMs + seconds * 1000).toISOString()
 }
 
 /** 把令牌授予结果并成一条凭据（保留已有的 sub/email/project）。 */
 export function credentialFromGeminiGrant(
-  grant: GeminiTokenGrant,
-  previous: Partial<GeminiCredential> = {},
+  grant: AntigravityTokenGrant,
+  previous: Partial<AntigravityCredential> = {},
   nowMs = Date.now(),
-): GeminiCredential {
-  const credential: GeminiCredential = {
+): AntigravityCredential {
+  const credential: AntigravityCredential = {
     access_token: grant.access_token,
     token_type: grant.token_type,
     expires_in: grant.expires_in,
-    expiry: geminiExpiryFrom(grant.expires_in, nowMs),
+    expiry: antigravityExpiryFrom(grant.expires_in, nowMs),
   }
   const refreshToken = grant.refresh_token ?? previous.refresh_token
   if (refreshToken !== undefined && refreshToken !== '') credential.refresh_token = refreshToken
@@ -226,7 +226,7 @@ export function credentialFromGeminiGrant(
   if (scope !== undefined && scope !== '') credential.scope = scope
   // 身份优先取 `id_token`（与 `access_token` 同一次响应自带，零额外请求、
   // 无失败面），退到既有凭据 —— 后者覆盖「续期响应不带 id_token」的形态。
-  const identity = grant.id_token === undefined ? {} : geminiIdentityFromIdToken(grant.id_token)
+  const identity = grant.id_token === undefined ? {} : antigravityIdentityFromIdToken(grant.id_token)
   const sub = identity.sub ?? previous.sub
   if (sub !== undefined && sub !== '') credential.sub = sub
   const email = identity.email ?? previous.email
@@ -279,13 +279,13 @@ export async function exchangeGeminiCode(
   code: string,
   redirectUri: string,
   options: { fetcher?: typeof fetch; signal?: AbortSignal } = {},
-): Promise<GeminiTokenGrant> {
+): Promise<AntigravityTokenGrant> {
   const fetcher = options.fetcher ?? fetch
   const payload = await postGeminiForm(
-    GEMINI_TOKEN_ENDPOINT,
+    ANTIGRAVITY_TOKEN_ENDPOINT,
     {
-      client_id: geminiClientId(),
-      client_secret: geminiClientSecret(),
+      client_id: antigravityClientId(),
+      client_secret: antigravityClientSecret(),
       code,
       grant_type: 'authorization_code',
       redirect_uri: redirectUri,
@@ -305,14 +305,14 @@ export async function exchangeGeminiCode(
 export async function refreshGeminiCredential(
   refreshToken: string,
   options: { fetcher?: typeof fetch; signal?: AbortSignal } = {},
-): Promise<GeminiTokenGrant> {
+): Promise<AntigravityTokenGrant> {
   if (refreshToken === '') throw new Error('没有 refresh_token，需要重新授权')
   const fetcher = options.fetcher ?? fetch
   const payload = await postGeminiForm(
-    GEMINI_TOKEN_ENDPOINT,
+    ANTIGRAVITY_TOKEN_ENDPOINT,
     {
-      client_id: geminiClientId(),
-      client_secret: geminiClientSecret(),
+      client_id: antigravityClientId(),
+      client_secret: antigravityClientSecret(),
       refresh_token: refreshToken,
       grant_type: 'refresh_token',
     },
@@ -338,12 +338,12 @@ export async function fetchGeminiUserInfo(
     /** 失败原因上报口（默认静默，仅供诊断日志）。 */
     onFailure?: (reason: string) => void
   } = {},
-): Promise<GeminiUserInfo> {
+): Promise<AntigravityUserInfo> {
   const fetcher = options.fetcher ?? fetch
   const init: RequestInit = { headers: { Authorization: `Bearer ${accessToken}` } }
   if (options.signal !== undefined) init.signal = options.signal
   try {
-    const response = await fetcher(GEMINI_USERINFO_ENDPOINT, init)
+    const response = await fetcher(ANTIGRAVITY_USERINFO_ENDPOINT, init)
     if (!response.ok) {
       options.onFailure?.(`userinfo 返回 HTTP ${response.status}`)
       return {}
@@ -351,7 +351,7 @@ export async function fetchGeminiUserInfo(
     const payload = (await response.json()) as unknown
     if (typeof payload !== 'object' || payload === null) return {}
     const record = payload as Record<string, unknown>
-    const out: GeminiUserInfo = {}
+    const out: AntigravityUserInfo = {}
     if (typeof record.id === 'string' && record.id !== '') out.sub = record.id
     if (typeof record.email === 'string' && record.email !== '') out.email = record.email
     return out
@@ -369,29 +369,29 @@ export async function revokeGeminiToken(
   if (token === '') return
   const fetcher = options.fetcher ?? fetch
   try {
-    await postGeminiForm(GEMINI_REVOKE_ENDPOINT, { token }, fetcher, options.signal)
+    await postGeminiForm(ANTIGRAVITY_REVOKE_ENDPOINT, { token }, fetcher, options.signal)
   } catch {
     // 撤销是尽力而为：令牌过期后 revoke 会 400，不值得打断登出。
   }
 }
 
 /** 已启动但尚未完成的授权流程。 */
-export interface StartedGeminiLoginFlow {
+export interface StartedAntigravityLoginFlow {
   /** 展示给用户的授权 URL。 */
   loginUrl: string
   /** 用户完成授权后落定的凭据。 */
-  result: Promise<GeminiCredential>
+  result: Promise<AntigravityCredential>
   /** 关闭回调服务器；**幂等**。 */
   close: () => Promise<void>
 }
 
 /** `startGeminiOAuthFlow` 的选项。 */
-export interface GeminiOAuthOptions {
+export interface AntigravityOAuthOptions {
   /** 自定义 fetch（单测注入）。 */
   fetcher?: typeof fetch
   /** 固定回调端口；默认 0 = 动态。 */
   callbackPort?: number
-  /** 授权总预算，默认 {@link GEMINI_AUTH_FLOW_TIMEOUT_MS}。 */
+  /** 授权总预算，默认 {@link ANTIGRAVITY_AUTH_FLOW_TIMEOUT_MS}。 */
   timeoutMs?: number
   /**
    * 身份兜底（userinfo）失败时的上报口。
@@ -403,7 +403,7 @@ export interface GeminiOAuthOptions {
 }
 
 /** 回调成功后展示的页面（原版逐字）。 */
-const GEMINI_CALLBACK_HTML = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>授权完成</title><style>body{font:15px/1.7 -apple-system,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f1115;color:#e6e8eb}.b{text-align:center}.k{font-size:34px;margin-bottom:8px}</style></head><body><div class="b"><div class="k">✓</div><div>授权已完成，可以关闭此页回到面板。</div></div></body></html>`
+const ANTIGRAVITY_CALLBACK_HTML = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>授权完成</title><style>body{font:15px/1.7 -apple-system,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f1115;color:#e6e8eb}.b{text-align:center}.k{font-size:34px;margin-bottom:8px}</style></head><body><div class="b"><div class="k">✓</div><div>授权已完成，可以关闭此页回到面板。</div></div></body></html>`
 
 /** 先占一个空闲端口再释放 —— 用于让 v4/v6 两个监听器落在**同一个**端口上。 */
 function pickFreePort(): Promise<number> {
@@ -469,8 +469,8 @@ async function listenCallback(
  * `window.open`，阻塞式流程会让调用方拿到 URL 时手势已过期。
  */
 export async function startGeminiOAuthFlow(
-  options: GeminiOAuthOptions = {},
-): Promise<StartedGeminiLoginFlow> {
+  options: AntigravityOAuthOptions = {},
+): Promise<StartedAntigravityLoginFlow> {
   const state = randomBytes(16).toString('hex')
   let resolveCode: (code: string) => void = () => {}
   let rejectCode: (error: Error) => void = () => {}
@@ -480,8 +480,8 @@ export async function startGeminiOAuthFlow(
   })
 
   const handler: CallbackHandler = (req, res) => {
-    const url = new URL(req.url ?? '/', `http://${GEMINI_REDIRECT_HOST}`)
-    if (url.pathname !== GEMINI_CALLBACK_PATH) {
+    const url = new URL(req.url ?? '/', `http://${ANTIGRAVITY_REDIRECT_HOST}`)
+    if (url.pathname !== ANTIGRAVITY_CALLBACK_PATH) {
       res.writeHead(404).end('Not found')
       return
     }
@@ -489,7 +489,7 @@ export async function startGeminiOAuthFlow(
     if (failure !== null && failure !== '') {
       const description = url.searchParams.get('error_description') ?? ''
       res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }).end(`授权被拒绝: ${failure}`)
-      rejectCode(new GeminiLoginCancelledError(description === '' ? failure : `${failure}: ${description}`))
+      rejectCode(new AntigravityLoginCancelledError(description === '' ? failure : `${failure}: ${description}`))
       return
     }
     if (url.searchParams.get('state') !== state) {
@@ -503,13 +503,13 @@ export async function startGeminiOAuthFlow(
       rejectCode(new Error('回调缺少 authorization code'))
       return
     }
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(GEMINI_CALLBACK_HTML)
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(ANTIGRAVITY_CALLBACK_HTML)
     resolveCode(code)
   }
 
   const preferred = options.callbackPort ?? 0
   const { port, servers } = await listenCallback(handler, preferred)
-  const redirectUri = `http://${GEMINI_REDIRECT_HOST}:${port}${GEMINI_CALLBACK_PATH}`
+  const redirectUri = `http://${ANTIGRAVITY_REDIRECT_HOST}:${port}${ANTIGRAVITY_CALLBACK_PATH}`
   const loginUrl = buildGeminiAuthUrl({ state, redirectUri })
 
   let closed = false
@@ -522,13 +522,13 @@ export async function startGeminiOAuthFlow(
   }
 
   const fetcher = options.fetcher ?? fetch
-  const timeoutMs = options.timeoutMs ?? GEMINI_AUTH_FLOW_TIMEOUT_MS
+  const timeoutMs = options.timeoutMs ?? ANTIGRAVITY_AUTH_FLOW_TIMEOUT_MS
 
   const result = Promise.race([
     codePromise,
     new Promise<never>((_, reject) => {
       const timer = setTimeout(
-        () => reject(new GeminiLoginExpiredError()),
+        () => reject(new AntigravityLoginExpiredError()),
         timeoutMs,
       )
       timer.unref?.()

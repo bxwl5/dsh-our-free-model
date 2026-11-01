@@ -85,10 +85,10 @@ import {
   fetchMinimaxCreditBalance,
   fetchMinimaxSigninStatus,
 } from './minimax-credits.js'
-import { GEMINI, geminiAccountLabel, geminiCredentialExpiresAtMs, isGeminiRefreshable } from './gemini.js'
-import type { GeminiCredential } from './gemini.js'
-import type { GeminiAuth, StartedGeminiLoginFlow } from './gemini-auth.js'
-import { fetchGeminiCreditBalance } from './gemini-credits.js'
+import { ANTIGRAVITY, antigravityAccountLabel, antigravityCredentialExpiresAtMs, isGeminiRefreshable } from './antigravity.js'
+import type { AntigravityCredential } from './antigravity.js'
+import type { AntigravityAuth, StartedAntigravityLoginFlow } from './antigravity-auth.js'
+import { fetchGeminiCreditBalance } from './antigravity-credits.js'
 import { LOOMY_TASK_POINTS, LOOMY_TASK_TITLES } from './loomy-onboarding.js'
 import { QODER, QODER_CN, type QoderProduct } from './qoder-product.js'
 import { TRAE } from './trae-product.js'
@@ -903,7 +903,7 @@ export function registerChannelPackRpc(
    * 少传/插队错位复发 6 次。新 provider 一律**追加**在末尾，既有的 14 个调用点
    * 才不用逐个补占位。
    */
-  gemini: GeminiAuth,
+  antigravity: AntigravityAuth,
   /**
    * provider → 适配器实例（可选）。
    *
@@ -917,7 +917,7 @@ export function registerChannelPackRpc(
   ctx.inject(['connection'], (connectionCtx) => {
     registerChannelPackEndpoints(
       connectionCtx as Context, pool, codearts, buddy, workbuddy,
-      qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, gemini, modelAdapters, config,
+      qoder, qoderCn, trae, cline, loomy, raccoon, minimax, zcode, antigravity, modelAdapters, config,
     )
   })
 }
@@ -1034,7 +1034,7 @@ function registerChannelPackEndpoints(
   raccoon: RaccoonAuth,
   minimax: MinimaxAuth,
   zcode: ZcodeAuth,
-  gemini: GeminiAuth,
+  antigravity: AntigravityAuth,
   modelAdapters?: Readonly<Record<string, ModelCatalogSource>>,
   config: ChannelPackRpcConfig = {},
 ): void {
@@ -1109,7 +1109,7 @@ function registerChannelPackEndpoints(
    * ⚠️ 此前有 12 个渠道的分支只 `logger.warn` + 删除占位账号：前端 `login.poll`
    * 既看不到账号、也看不到失败表，只能干等 10 分钟超时并显示「登录已过期」，
    * 真实原因（回调端口被占 / 授权被拒 / 网络失败 / state 失效）永远到不了用户眼前。
-   * `commandcode` / `officeace` / `accio` / `gemini` 四个分支早已这么写，这里统一。
+   * `commandcode` / `officeace` / `accio` / `antigravity` 四个分支早已这么写，这里统一。
    */
   const recordLoginFailure = (accountId: string, error: unknown): void => {
     pendingLoginFailures.set(
@@ -1931,7 +1931,7 @@ function registerChannelPackEndpoints(
             ctx.logger.warn(`[channel-pack] background ${provider} login failed for ${id}: ${err}`)
             // ⚠️ 只写日志不够：占位条目随即被删除，前端 `login.poll` 就再也拿不到
             // 任何线索，只能干等到 10 分钟超时才显示「登录已过期」（本缺陷）。
-            // 与 codearts / gemini 同款：原因放进失败表，由下一次 poll 读走。
+            // 与 codearts / antigravity 同款：原因放进失败表，由下一次 poll 读走。
             pendingLoginFailures.set(id, (err instanceof Error ? err.message : String(err)).slice(0, 500))
             void pool.removeAccount(id).catch(() => {})
           })
@@ -2029,7 +2029,7 @@ function registerChannelPackEndpoints(
             ctx.logger.warn(`[channel-pack] background ${provider} login failed for ${id}: ${err}`)
             // ⚠️ 只写日志不够：占位条目随即被删除，前端 `login.poll` 就再也拿不到
             // 任何线索，只能干等到 10 分钟超时才显示「登录已过期」（本缺陷）。
-            // 与 codearts / gemini 同款：原因放进失败表，由下一次 poll 读走。
+            // 与 codearts / antigravity 同款：原因放进失败表，由下一次 poll 读走。
             pendingLoginFailures.set(id, (err instanceof Error ? err.message : String(err)).slice(0, 500))
             void pool.removeAccount(id).catch(() => {})
           })
@@ -2466,7 +2466,7 @@ function registerChannelPackEndpoints(
             void pool.removeAccount(id).catch(() => {})
           })
           return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } }
-        } else if (provider === GEMINI.id) {
+        } else if (provider === ANTIGRAVITY.id) {
           /**
            * Gemini（Cloud Code Assist）走**浏览器回调式 OAuth**（本地
            * `createServer` 监听 `127.0.0.1` 的 `/oauth-callback`）。
@@ -2474,7 +2474,7 @@ function registerChannelPackEndpoints(
            * ⚠️ 与 zcode / codearts 同型：**必须先返回 URL 再等结果** ——
            * `window.open` 只在用户手势窗口内有效，等授权完成才返回 URL
            * 会让弹窗被浏览器拦截（AGENTS.md 记过 CodeArts 的同类缺陷）。
-           * `GeminiAuth.startLogin` 内部已保证「立即返回」，这里不得 `await result`。
+           * `AntigravityAuth.startLogin` 内部已保证「立即返回」，这里不得 `await result`。
            *
            * ⚠️ 先登记**占位条目**（无凭据），使前端 `login.poll` 能立即看到
            * 该账号；登录成功后再回填昵称与 `expiresAt`。失败则删除占位条目，
@@ -2482,7 +2482,7 @@ function registerChannelPackEndpoints(
            */
           await pool.addAccount({
             id,
-            provider: GEMINI.id,
+            provider: ANTIGRAVITY.id,
             nickname: id,
             enabled: true,
             credentialRef: refName,
@@ -2491,9 +2491,9 @@ function registerChannelPackEndpoints(
           })
           pendingLoginFailures.delete(id)
 
-          let geminiStarted: StartedGeminiLoginFlow
+          let antigravityStarted: StartedAntigravityLoginFlow
           try {
-            geminiStarted = await gemini.startLogin()
+            antigravityStarted = await antigravity.startLogin()
           } catch (error) {
             // 回调端口占用/网络失败：删掉占位条目，不留幽灵账号。
             void pool.removeAccount(id).catch(() => {})
@@ -2501,21 +2501,21 @@ function registerChannelPackEndpoints(
             throw new Error(`无法启动 Gemini 登录（本地回调服务启动失败）：${reason}`)
           }
 
-          geminiStarted.result.then(async (credential) => {
+          antigravityStarted.result.then(async (credential) => {
             // ⚠️ 不接收 `persistLogin` 的返回值：它给的是 OIDC `sub`，只适合当稳定
-            // 标识。展示名一律走 `geminiAccountLabel`（见下）。
-            await gemini.persistLogin(credential, { refName })
+            // 标识。展示名一律走 `antigravityAccountLabel`（见下）。
+            await antigravity.persistLogin(credential, { refName })
             await pool.updateAccount(id, {
-              // ⚠️ 用 `geminiAccountLabel`（邮箱优先）而非 `accountId.slice(0, 8)`：
+              // ⚠️ 用 `antigravityAccountLabel`（邮箱优先）而非 `accountId.slice(0, 8)`：
               // `sub` 是 21 位数字，截前 8 位得到 `Gemini 10500520` 这种**不可辨认**
               // 的展示名（用户报障 2026-10-03）。`sub` 的价值是「稳定标识」，不是
               // 「显示名」—— 展示要的是可辨识，邮箱正好。
               // 取不到邮箱时该函数回退 `sub`，两者都无则退化为池 id。
-              nickname: geminiAccountLabel(credential) ?? id,
-              // ⚠️ **必须用 `geminiCredentialExpiresAtMs`**：它认 `expiry`
+              nickname: antigravityAccountLabel(credential) ?? id,
+              // ⚠️ **必须用 `antigravityCredentialExpiresAtMs`**：它认 `expiry`
               //（RFC3339）与 `expires_in`，取不到就返回 `undefined` ——
               // 传 `undefined` 是「不知道」，不会被写成 0 而让 UI 显示「已过期」。
-              expiresAt: geminiCredentialExpiresAtMs(credential),
+              expiresAt: antigravityCredentialExpiresAtMs(credential),
               // ⚠️ Google OAuth 默认 `access_type=offline`，故 refresh_token
               // 必定下发；这里仍按凭据本体如实判定，不写死 true。
               refreshable: isGeminiRefreshable(credential),
@@ -2523,13 +2523,13 @@ function registerChannelPackEndpoints(
             pendingLoginFailures.delete(id)
           }).catch((error: unknown) => {
             const reason = error instanceof Error ? error.message : String(error)
-            ctx.logger.warn(`[channel-pack] background ${GEMINI.id} login failed for ${id}: ${reason}`)
+            ctx.logger.warn(`[channel-pack] background ${ANTIGRAVITY.id} login failed for ${id}: ${reason}`)
             pendingLoginFailures.set(id, reason.slice(0, 500))
             // 登录失败：移除占位条目，避免留下无凭据的幽灵账号
             void pool.removeAccount(id).catch(() => {})
           })
 
-          return { ok: true, value: { accountId: id, loginUrl: geminiStarted.loginUrl } }
+          return { ok: true, value: { accountId: id, loginUrl: antigravityStarted.loginUrl } }
         } else {
           return { ok: false, error: { code: 'bad-request', message: `unknown provider: ${provider}` } }
         }
@@ -2653,13 +2653,13 @@ function registerChannelPackEndpoints(
                */
               await zcode.refreshAccountCredential(entry.credentialRef, pool, entry.id)
               break
-            case GEMINI.id:
+            case ANTIGRAVITY.id:
               // Gemini **有** refresh 端点（`oauth2.googleapis.com/token` 的
               // `refresh_token` grant），这里是真续期。
               // ⚠️ 必须传 pool + entry.id —— 续期后要把新的 `expiresAt` 写回
               // 账号池，否则 UI 一直显示「已过期」而实际能正常发消息。
-              // ⚠️ Google 会**轮换 refresh_token**，`GeminiAuth` 内部已回写新值。
-              await gemini.refreshAccountCredential(entry.credentialRef, pool, entry.id)
+              // ⚠️ Google 会**轮换 refresh_token**，`AntigravityAuth` 内部已回写新值。
+              await antigravity.refreshAccountCredential(entry.credentialRef, pool, entry.id)
               break
             case AUTOCLAW.id: {
               // AutoClaw **有** refresh 端点（`/userapi/v1/refresh`，失败退
@@ -3980,7 +3980,7 @@ function registerChannelPackEndpoints(
         }
         if (req.provider === ACCIO.id || req.provider === ACCIO_CN.id) {
           // Accio 家族：只有**配额百分比**（`fetchQuota` → usedPercent/resetAtMs），
-          // 与 gemini 同型 —— 换成「剩余百分比」，单位 percent。
+          // 与 antigravity 同型 —— 换成「剩余百分比」，单位 percent。
           const product = req.provider === ACCIO_CN.id ? ACCIO_CN : ACCIO
           const values = await collectCreditBalances<AccioCredential, typeof product>(accounts, product, {
             fetcher: codeartsFetcher,
@@ -4113,10 +4113,10 @@ function registerChannelPackEndpoints(
           })
           return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
         }
-        if (req.provider === GEMINI.id) {
+        if (req.provider === ANTIGRAVITY.id) {
           // 余额 = **配额窗口**（不是充值积分）：`POST
-          // /v1internal:retrieveUserQuotaSummary` 两个桶（`gemini-5h` /
-          // `gemini-weekly`）的剩余比例。
+          // /v1internal:retrieveUserQuotaSummary` 两个桶（`antigravity-5h` /
+          // `antigravity-weekly`）的剩余比例。
           //
           // ⚠️ 用 `fetchBalanceDetailed`（而非 `fetchBalance`）：Gemini 的
           // 「未授权」与「查询失败」是**两回事** —— 前者要显示「尚未授权 Google
@@ -4125,7 +4125,7 @@ function registerChannelPackEndpoints(
           // 卡片（helper 只在 `error` 缺失时才补「余额查询失败」），故这里
           // **不需要**像 CLINE 分支那样手写 for 循环。
           //
-          // ⚠️ 第二实参传 `GEMINI` 而不是 minimax 那样的 `undefined`：
+          // ⚠️ 第二实参传 `ANTIGRAVITY` 而不是 minimax 那样的 `undefined`：
           // `fetchGeminiCreditBalance` 的第二形参就是 product（端点/超时来自
           // 产品配置）。
           //
@@ -4134,10 +4134,10 @@ function registerChannelPackEndpoints(
           // 这里把它翻译成面板要的 `extra.accountTier` —— `label` 是短标签
           // （面板只放得下一个词），`title` 是上游原文（hover 才看得到）。
           // 档位取不到时 `extra` 缺席，面板不渲染那一行（**不是错误**）。
-          const values = await collectCreditBalances<GeminiCredential, typeof GEMINI>(accounts, GEMINI, {
+          const values = await collectCreditBalances<AntigravityCredential, typeof ANTIGRAVITY>(accounts, ANTIGRAVITY, {
             resolve: (ref) => ctx.credentials.resolve(ref),
             fetchBalanceDetailed: async (credential) => {
-              const { balance, error, tier } = await fetchGeminiCreditBalance(credential, GEMINI, { force: req.force === true })
+              const { balance, error, tier } = await fetchGeminiCreditBalance(credential, ANTIGRAVITY, { force: req.force === true })
               const extra: RpcCreditsBalanceExtra | undefined = tier === undefined
                 ? undefined
                 : { accountTier: { label: tier.label, title: `${tier.name}（${tier.id}）` } }

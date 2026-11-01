@@ -15,7 +15,7 @@
 | 6 | `qodercn` | 同 `qoder`（同族不同端点） | ✅ | 浏览器点授权/选账号 | 否 | 同上 |
 | 7 | `trae` | 浏览器授权 → 本地回调 | ✅ | 浏览器登录 | 是 | `trae-oauth.ts:99,263` |
 | 8 | `cline` | WorkOS 设备码轮询 | ✅ | 浏览器点授权 | 否 | `cline-oauth.ts:178,230` |
-| 9 | `gemini` | Google OAuth → 本地回调 | ✅ | Google 登录 | 是 | `gemini-auth.ts:4`、`gemini-oauth.ts:103` |
+| 9 | `antigravity` | Google OAuth → 本地回调 | ✅ | Google 登录 | 是 | `antigravity-auth.ts:4`、`antigravity-oauth.ts:103` |（原名 `gemini`，2026-11-01 改名）|
 | 10 | `minimax` | OAuth 设备码 + PKCE | ✅ | 浏览器点授权 | 否 | `minimax-oauth.ts:72,113` |
 | 11 | `zcode` | 服务端中介的设备授权 + 轮询 | ✅ | 浏览器登录 | 否 | `zcode-login.ts:1-40` |
 | 12 | `commandcode` | 浏览器 OAuth → 本地回调（5959 起，最多 10 个） | ✅ | 浏览器登录 | 是 | `commandcode-auth.ts:12`、`commandcode-product.ts:139` |
@@ -35,11 +35,11 @@
 
 - **设备码**（`qoder`/`qodercn`、`cline`、`minimax`、`zcode`）：插件只拿到 `verification_uri`
   与 `user_code`，不监听任何端口，因此不受本机端口冲突影响。
-- **本地回调**（`codearts`、`trae`、`gemini`、`commandcode`、`accio`）：在
+- **本地回调**（`codearts`、`trae`、`antigravity`、`commandcode`、`accio`）：在
   `127.0.0.1` 上起一次性 HTTP 服务接授权码。`commandcode` 从 5959 起逐个试 10 个端口
   （与官方 CLI 一致，`commandcode-product.ts:139`），`accio` 用 5960–5969（两段有重叠），
   其余用候选端口探测（`codearts` 只认 `code`，旧 ticket 轮询兜底已于 2026-10-29 删除），
-  `gemini` 的端口是动态 0（不是固定 8845）。
+  `antigravity` 的端口是动态 0（不是固定 8845）。
 - **轮询 token**（`buddy`/`workbuddy`、`officeace`）：浏览器授权在**上游服务端**完成，
   插件只用 `state` 或授权码轮询结果，所以不起本地端口。
 - **Accio 家族只走浏览器授权**：2026-10-24 真机确认可用后，按用户要求移除了「改用粘贴令牌」兜底

@@ -182,7 +182,7 @@ try {
         assert.ok(init?.dispatcher, 'Gemini 项目探测与推理必须携带代理')
         seen.push({ url, body: init.body })
         if (url.includes(':loadCodeAssist')) return Response.json({ cloudaicompanionProject: 'fixture-project' })
-        return new Response(`data: ${JSON.stringify({ response: { candidates: [{ content: { parts: [{ text: 'gemini-proxy-ok' }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 2 } } })}\n\n`, { headers: { 'content-type': 'text/event-stream' } })
+        return new Response(`data: ${JSON.stringify({ response: { candidates: [{ content: { parts: [{ text: 'antigravity-proxy-ok' }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 2 } } })}\n\n`, { headers: { 'content-type': 'text/event-stream' } })
       }
       if (url === 'https://api.cline.bot/api/v1/auth/refresh' || url === 'https://api.workos.com/user_management/authorize/device') {
         assert.ok(init?.dispatcher, 'Cline 登录与续期必须携带代理')
@@ -205,7 +205,7 @@ try {
         assert.equal(body.ok, true, JSON.stringify(body.error))
         return body.value
       }
-      const started = await rpc('account.create', { provider: 'gemini' })
+      const started = await rpc('account.create', { provider: 'antigravity' })
       const auth = new URL(started.loginUrl)
       const callback = new URL(auth.searchParams.get('redirect_uri'))
       callback.searchParams.set('state', auth.searchParams.get('state'))
@@ -213,25 +213,25 @@ try {
       assert.equal((await savedFetch(callback)).status, 200)
       let result
       for (let i = 0; i < 100; i++) {
-        result = await rpc('login.poll', { accountId: started.accountId, provider: 'gemini' })
+        result = await rpc('login.poll', { accountId: started.accountId, provider: 'antigravity' })
         if (result.done) break
         await new Promise(resolve => setTimeout(resolve, 10))
       }
       assert.equal(result.success, true, `授权未落定：${JSON.stringify(result)}`)
-      const account = ctx.accountPool.listAccountsByProvider('gemini').find(row => row.id === started.accountId)
+      const account = ctx.accountPool.listAccountsByProvider('antigravity').find(row => row.id === started.accountId)
       assert.ok(account)
       const credential = JSON.parse(creds.get(account.credentialRef))
       assert.equal(credential.access_token, 'fixture-access')
       assert.equal(credential.email, 'fixture@example.invalid')
-      await ctx.geminiAuth.refreshAccountCredential(account.credentialRef, ctx.accountPool, account.id)
+      await ctx.antigravityAuth.refreshAccountCredential(account.credentialRef, ctx.accountPool, account.id)
       assert.equal(seen.filter(row => row.url.includes('/token')).length, 2)
       assert.match(seen.at(-1).body, /grant_type=refresh_token/)
-      assert.equal(warnings.some(row => row.includes('background gemini login failed')), false)
-      const adapter = adapters.get('gemini')
+      assert.equal(warnings.some(row => row.includes('background antigravity login failed')), false)
+      const adapter = adapters.get('antigravity')
       const model = adapter.listAllModels()[0].id
       const chunks = []
-      for await (const chunk of adapter.stream({ provider: 'gemini', model, messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }] })) chunks.push(chunk)
-      assert.ok(chunks.some(chunk => chunk.type === 'text-delta' && chunk.text === 'gemini-proxy-ok'))
+      for await (const chunk of adapter.stream({ provider: 'antigravity', model, messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }] })) chunks.push(chunk)
+      assert.ok(chunks.some(chunk => chunk.type === 'text-delta' && chunk.text === 'antigravity-proxy-ok'))
       assert.ok(seen.some(row => row.url.includes(':loadCodeAssist')))
       assert.ok(seen.some(row => row.url.includes(':streamGenerateContent')))
       creds.set('CLINE_FIXTURE', JSON.stringify({ access_token: 'workos:fixture-old', refresh_token: 'fixture-refresh', expire_time: Date.now() + 60000 }))
@@ -243,7 +243,7 @@ try {
       await clineLogin.result.catch(() => {})
       transportCode = 'CERT_HAS_EXPIRED'
       const savedCredential = creds.get(account.credentialRef)
-      await assert.rejects(ctx.geminiAuth.refreshAccountCredential(account.credentialRef), error => {
+      await assert.rejects(ctx.antigravityAuth.refreshAccountCredential(account.credentialRef), error => {
         assert.equal(error.name, 'ChannelNetworkError', '网络证书问题不能废弃账号 refresh_token')
         assert.match(error.message, /CERT_HAS_EXPIRED/)
         return true

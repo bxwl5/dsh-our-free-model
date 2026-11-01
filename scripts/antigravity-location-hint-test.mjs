@@ -18,7 +18,7 @@ import assert from 'node:assert/strict'
 import { exitIfDirectRun } from './lib/direct-run.mjs'
 
 export async function verifyGeminiLocationHint() {
-  const { fetchGeminiCreditBalance } = await import('../vendor/channel-pack/src/gemini-credits.ts')
+  const { fetchGeminiCreditBalance } = await import('../vendor/channel-pack/src/antigravity-credits.ts')
 
   const MK = (reason, message) => JSON.stringify({
     error: { code: 403, status: 'PERMISSION_DENIED', message, details: [{ reason }] },
@@ -56,7 +56,7 @@ export async function verifyGeminiLocationHint() {
     assert.ok(!/地区限制/.test(error), '非地区限制不得附带地区指引')
   }
 
-  console.log('ok  gemini: UNSUPPORTED_LOCATION 给出地区限制 + 出口代理指引，其它 reason 不污染')
+  console.log('ok  antigravity: UNSUPPORTED_LOCATION 给出地区限制 + 出口代理指引，其它 reason 不污染')
 }
 
-exitIfDirectRun(import.meta.url, 'gemini-location-hint-test')
+exitIfDirectRun(import.meta.url, 'antigravity-location-hint-test')

@@ -4,18 +4,18 @@
  *
  * ## 来源与取证基准
  *
- * 逐点移植自 `F:\project\cmdc-pak-align-wb\internal\upstream\gemini\`
+ * 逐点移植自 `F:\project\cmdc-pak-align-wb\internal\upstream\antigravity\`
  * （`client.go` / `model.go` / `translate.go` / `types.go`）。
  * ⚠️ 常量基准 = cmdc-pak **0.8.6.1（两轮 MITM）+ 0.8.8（oracle 61 探针）**；
  * `cmdc-pak v0.8.9.exe` 已全量字符串加密（`x-machine-id` / `antigravity` /
  * 两个 sessionId / `aicode-consumers` / `v1internal` 全部 0 命明文），
- * 静态取证失效。详见 `docs/GEMINI-PORT-PLAN.md` §九。
+ * 静态取证失效。详见 `docs/ANTIGRAVITY-PORT-PLAN.md` §九。
  *
  * ## 三条必须保留的上游对齐细节（计划 §2.2）
  *
- * 1. **身份五头逐字写死、不许随机**（{@link GEMINI_IDENTITY_HEADERS}）。
+ * 1. **身份五头逐字写死、不许随机**（{@link ANTIGRAVITY_IDENTITY_HEADERS}）。
  *    ⚠️ 且**不带** `x-goog-api-key` / `x-goog-api-client`。
- * 2. **流式请求刻意不带 `Accept` 头** —— 抓包一致。见 {@link geminiHeaders}
+ * 2. **流式请求刻意不带 `Accept` 头** —— 抓包一致。见 {@link antigravityHeaders}
  *    的 `includeAccept` 开关（默认 false）。
  * 3. **信封逐层字母序序列化**（{@link marshalAlphabetical}）。Go 的
  *    `encoding/json` 对 `map` 键自动字母序排，而 TS 的 `JSON.stringify`
@@ -36,14 +36,14 @@
  * {@link deriveGeminiSessionId} 确定性派生（同对话稳定、跨对话隔离）。
  *
  * 注意：原版哈希本体尚未反推出来（已否证 50+ 种），故**取值不与原版逐字相同**，
- * 对齐的是依赖维度与"同输入同输出"。`GEMINI_SESSION_ID_*` 仅作覆盖示例保留。
+ * 对齐的是依赖维度与"同输入同输出"。`ANTIGRAVITY_SESSION_ID_*` 仅作覆盖示例保留。
  *
  * ## 实测确认的三条事实（计划 §七）
  *
- * - **模型名是准入钥匙**：发裸 `gemini-3.8-flash` 上游 404，必须带档位后缀
- *   （`gemini-3.8-flash-high`）。
+ * - **模型名是准入钥匙**：发裸 `antigravity-3.8-flash` 上游 404，必须带档位后缀
+ *   （`antigravity-3.8-flash-high`）。
  * - **lite 已整体移除**（用户 2026-10-03 拍板「不要 lite 模型」）：真机实测
- *   `gemini-3.8-flash-lite` 在两端点上**恒 404**
+ *   `antigravity-3.8-flash-lite` 在两端点上**恒 404**
  *   （`{"error":{"code":404,"message":"Requested entity was not found.","status":"NOT_FOUND"}}`），
  *   与是否传档位无关 ⇒ 该模型名不在本账号的准入表里，暴露它只会让用户选中即失败。
  * - **思考预算是自由旋钮**：名字叫 `medium` 但预算给 10000 → 实测 213 token；
@@ -62,9 +62,9 @@ import { DEFAULT_IMAGE_PIXEL_BUDGET } from './image-budget.js'
 // ---------------------------------------------------------------------------
 
 /** 主端点（`client.go` 的 `EndpointDaily`）。 */
-export const GEMINI_ENDPOINT_DAILY = 'https://daily-cloudcode-pa.googleapis.com'
+export const ANTIGRAVITY_ENDPOINT_DAILY = 'https://daily-cloudcode-pa.googleapis.com'
 /** 沙箱端点（`client.go` 的 `EndpointSandbox`）。 */
-export const GEMINI_ENDPOINT_SANDBOX = 'https://daily-cloudcode-pa.sandbox.googleapis.com'
+export const ANTIGRAVITY_ENDPOINT_SANDBOX = 'https://daily-cloudcode-pa.sandbox.googleapis.com'
 /**
  * prod 端点（Agent2API `V1_BASE_URL_PROD`；2026-11-01 补）。
  *
@@ -72,7 +72,7 @@ export const GEMINI_ENDPOINT_SANDBOX = 'https://daily-cloudcode-pa.sandbox.googl
  * Agent2API `PROJECT_BASE_URL` 的注释原话「the daily host rejects these
  * auth/onboarding calls」—— 之前只登记 daily/sandbox 两条是缺口。
  */
-export const GEMINI_ENDPOINT_PROD = 'https://cloudcode-pa.googleapis.com'
+export const ANTIGRAVITY_ENDPOINT_PROD = 'https://cloudcode-pa.googleapis.com'
 /**
  * 端点轮换顺序（原版 `NewClient` 的初始 `endpoints`）。
  *
@@ -80,12 +80,12 @@ export const GEMINI_ENDPOINT_PROD = 'https://cloudcode-pa.googleapis.com'
  * 失败在两端点上行为完全一致）。换端点**零成本无害**，但**不能当 quota 的
  * 有效解法** —— 主救场手段是**换账号**。
  */
-export const GEMINI_ENDPOINTS: readonly string[] = [GEMINI_ENDPOINT_DAILY, GEMINI_ENDPOINT_SANDBOX]
+export const ANTIGRAVITY_ENDPOINTS: readonly string[] = [ANTIGRAVITY_ENDPOINT_DAILY, ANTIGRAVITY_ENDPOINT_SANDBOX]
 
 /** 流式推理路径（SSE）。 */
-export const GEMINI_STREAM_PATH = '/v1internal:streamGenerateContent?alt=sse'
-/** 配额查询路径（**Summary 变体**，请求体见 `gemini-credits.ts`）。 */
-export const GEMINI_QUOTA_PATH = '/v1internal:retrieveUserQuotaSummary'
+export const ANTIGRAVITY_STREAM_PATH = '/v1internal:streamGenerateContent?alt=sse'
+/** 配额查询路径（**Summary 变体**，请求体见 `antigravity-credits.ts`）。 */
+export const ANTIGRAVITY_QUOTA_PATH = '/v1internal:retrieveUserQuotaSummary'
 /**
  * 远端模型目录路径（`fetchAvailableModels`，2026-11-01 接入）。
  *
@@ -93,22 +93,22 @@ export const GEMINI_QUOTA_PATH = '/v1internal:retrieveUserQuotaSummary'
  * 才换下一条；4xx 不换 —— 那是「这次请求本身不对」）。实测个人 free-tier
  * 账号三个环境都下发全量清单。
  */
-export const GEMINI_FETCH_AVAILABLE_MODELS_PATH = '/v1internal:fetchAvailableModels'
+export const ANTIGRAVITY_FETCH_AVAILABLE_MODELS_PATH = '/v1internal:fetchAvailableModels'
 /**
  * 账号档位 / 项目探测路径。
  *
  * 面板的「账号规格」一栏用它（原版 `project.go:15` 的 `loadCodeAssistPath`，
  * 但原版的 `loadCodeAssistResponse` **没有 `paidTier` 字段**，故原版区分不开
- * pro / free —— 见 `gemini-credits.ts` 的 `parseGeminiAccountTier`）。
+ * pro / free —— 见 `antigravity-credits.ts` 的 `parseGeminiAccountTier`）。
  */
-export const GEMINI_LOAD_CODE_ASSIST_PATH = '/v1internal:loadCodeAssist'
+export const ANTIGRAVITY_LOAD_CODE_ASSIST_PATH = '/v1internal:loadCodeAssist'
 /**
  * 档位探测的请求体（**逐字**，content-length 恰为 38）。
  *
  * ⚠️ 对齐原版 `project.go:97-103`：**不带** `platform` / `pluginType` /
  * `cloudaicompanionProject`，多一个字段就可能被上游识别成非官方客户端。
  */
-export const GEMINI_LOAD_CODE_ASSIST_BODY = '{"metadata":{"ideType":"ANTIGRAVITY"}}'
+export const ANTIGRAVITY_LOAD_CODE_ASSIST_BODY = '{"metadata":{"ideType":"ANTIGRAVITY"}}'
 
 // ---------------------------------------------------------------------------
 // 身份伪装（逐字常量，不许随机）
@@ -120,7 +120,7 @@ export const GEMINI_LOAD_CODE_ASSIST_BODY = '{"metadata":{"ideType":"ANTIGRAVITY
  * ⚠️ **逐字写死**：任何一个字符不同都可能被上游识别为非官方客户端。
  * ⚠️ **不要**加 `x-goog-api-key` / `x-goog-api-client` —— 原版不带。
  */
-export const GEMINI_IDENTITY_HEADERS: Readonly<Record<string, string>> = Object.freeze({
+export const ANTIGRAVITY_IDENTITY_HEADERS: Readonly<Record<string, string>> = Object.freeze({
   'User-Agent': 'antigravity/4.3.0 (cmdc-pak)',
   'x-client-name': 'antigravity',
   'x-client-version': '4.3.0',
@@ -140,7 +140,7 @@ export const GEMINI_IDENTITY_HEADERS: Readonly<Record<string, string>> = Object.
  * 信封里就是 `CCP-TWO`）。免费档账号的 LCA 返回空 project，才回落到这个串
  * —— 这也是历次抓包都看到 `aicode-consumers` 的原因。
  */
-export const GEMINI_DEFAULT_PROJECT = 'aicode-consumers'
+export const ANTIGRAVITY_DEFAULT_PROJECT = 'aicode-consumers'
 
 /**
  * 两条会话派生路径的标签。
@@ -152,13 +152,13 @@ export const GEMINI_DEFAULT_PROJECT = 'aicode-consumers'
  *
  * 因此标签不再参与**取值**，只用于区分两条派生路径（lane 进哈希）。
  */
-export const GEMINI_SESSION_LANE_INFER = 'infer'
-export const GEMINI_SESSION_LANE_SMOKE = 'smoke'
+export const ANTIGRAVITY_SESSION_LANE_INFER = 'infer'
+export const ANTIGRAVITY_SESSION_LANE_SMOKE = 'smoke'
 
 /**
  * 按 `(project, 首条 user 文本, lane)` **确定性派生** sessionId。
  *
- * ⚠️ 取"首条 user 文本"的规则见 `gemini-messages.ts` 的 `geminiFirstUserText`
+ * ⚠️ 取"首条 user 文本"的规则见 `antigravity-messages.ts` 的 `antigravityFirstUserText`
  * （只有 `contents[0]` 参与、且只看其中的文本 part）。
  *
  * 与原版的依赖维度对齐（2026-10-05 真机对照实验）：
@@ -215,20 +215,20 @@ export function deriveGeminiSessionId(
  * （表现为「发消息后永远转圈」）。超时归类为可重试的 `TIMEOUT`，
  * harness 才能重试该步骤。
  */
-export const GEMINI_IDLE_TIMEOUT_MS = 120_000
+export const ANTIGRAVITY_IDLE_TIMEOUT_MS = 120_000
 /** 配额查询超时。 */
-export const GEMINI_CREDITS_TIMEOUT_MS = 30_000
+export const ANTIGRAVITY_CREDITS_TIMEOUT_MS = 30_000
 /** 配额缓存 TTL（原版 `quotaCacheTTL`）。 */
-export const GEMINI_QUOTA_CACHE_TTL_MS = 60_000
+export const ANTIGRAVITY_QUOTA_CACHE_TTL_MS = 60_000
 /** 凭据过期余量（原版 `Credentials.Valid()` 留 60 秒）。 */
-export const GEMINI_EXPIRY_LEAD_MS = 60_000
+export const ANTIGRAVITY_EXPIRY_LEAD_MS = 60_000
 
 // ---------------------------------------------------------------------------
 // 产品
 // ---------------------------------------------------------------------------
 
 /** Gemini 产品描述（与 minimax 的 `MinimaxProduct` 同形态）。 */
-export interface GeminiProduct {
+export interface AntigravityProduct {
   readonly id: string
   readonly displayName: string
   readonly defaultCredentialRef: string
@@ -238,10 +238,10 @@ export interface GeminiProduct {
   readonly maxOutputTokens: number
 }
 
-export const GEMINI: GeminiProduct = {
-  id: 'gemini',
-  displayName: 'Gemini Code Assist',
-  defaultCredentialRef: 'GEMINI_ACCESS_TOKEN',
+export const ANTIGRAVITY: AntigravityProduct = {
+  id: 'antigravity',
+  displayName: 'Google Antigravity',
+  defaultCredentialRef: 'ANTIGRAVITY_ACCESS_TOKEN',
   imagePixelBudget: DEFAULT_IMAGE_PIXEL_BUDGET,
   maxOutputTokens: 64_000,
 }
@@ -256,7 +256,7 @@ export const GEMINI: GeminiProduct = {
  * ⚠️ 字段名与 OAuth 响应**逐字一致**（`access_token` / `expiry` …），
  * 因为整份 JSON 会被原样落盘并在刷新时回写。
  */
-export interface GeminiCredential {
+export interface AntigravityCredential {
   access_token: string
   refresh_token?: string
   token_type?: string
@@ -276,7 +276,7 @@ export interface GeminiCredential {
  * 凭据损坏是**可预期**的运行态（用户手工编辑过、旧版本格式），
  * 抛错会让整批 `refreshAll` 中断。
  */
-export function parseGeminiCredential(value: string): GeminiCredential | undefined {
+export function parseGeminiCredential(value: string): AntigravityCredential | undefined {
   let parsed: unknown
   try {
     parsed = JSON.parse(value)
@@ -286,7 +286,7 @@ export function parseGeminiCredential(value: string): GeminiCredential | undefin
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined
   const raw = parsed as Record<string, unknown>
   if (typeof raw.access_token !== 'string' || raw.access_token === '') return undefined
-  const out: GeminiCredential = { access_token: raw.access_token }
+  const out: AntigravityCredential = { access_token: raw.access_token }
   if (typeof raw.refresh_token === 'string' && raw.refresh_token !== '') {
     out.refresh_token = raw.refresh_token
   }
@@ -310,7 +310,7 @@ export function parseGeminiCredential(value: string): GeminiCredential | undefin
  * ⚠️ 取不到时返回 `undefined`（**不编造**）—— `shouldRefreshNow` 会把它当作
  * 「需要续期」，从而走一次真实的 refresh 请求；比假装没过期安全。
  */
-export function geminiCredentialExpiresAtMs(credential: GeminiCredential): number | undefined {
+export function antigravityCredentialExpiresAtMs(credential: AntigravityCredential): number | undefined {
   const expiry = credential.expiry
   if (typeof expiry !== 'string' || expiry === '') return undefined
   const parsed = Date.parse(expiry)
@@ -318,19 +318,19 @@ export function geminiCredentialExpiresAtMs(credential: GeminiCredential): numbe
 }
 
 /** 凭据是否已过期（含 60 秒余量，同原版 `Valid()`）。 */
-export function isGeminiExpired(credential: GeminiCredential, nowMs: number = Date.now()): boolean {
-  const expiresAt = geminiCredentialExpiresAtMs(credential)
+export function isGeminiExpired(credential: AntigravityCredential, nowMs: number = Date.now()): boolean {
+  const expiresAt = antigravityCredentialExpiresAtMs(credential)
   if (expiresAt === undefined) return false
-  return expiresAt - nowMs <= GEMINI_EXPIRY_LEAD_MS
+  return expiresAt - nowMs <= ANTIGRAVITY_EXPIRY_LEAD_MS
 }
 
 /** 凭据是否具备续期材料。 */
-export function isGeminiRefreshable(credential: GeminiCredential): boolean {
+export function isGeminiRefreshable(credential: AntigravityCredential): boolean {
   return typeof credential.refresh_token === 'string' && credential.refresh_token !== ''
 }
 
 /** 取用户身份显示名（昵称用）。 */
-export function geminiAccountLabel(credential: GeminiCredential): string | undefined {
+export function antigravityAccountLabel(credential: AntigravityCredential): string | undefined {
   if (typeof credential.email === 'string' && credential.email !== '') return credential.email
   if (typeof credential.sub === 'string' && credential.sub !== '') return credential.sub
   return undefined
@@ -343,14 +343,14 @@ export function geminiAccountLabel(credential: GeminiCredential): string | undef
  *（抓包一致）。调用方若要发非流式请求，可显式传 true。
  * ⚠️ 身份五头**逐字**注入，且**不注入** `x-goog-api-key`。
  */
-export function geminiHeaders(
-  credential: GeminiCredential,
+export function antigravityHeaders(
+  credential: AntigravityCredential,
   options: { includeAccept?: boolean } = {},
 ): Headers {
   const headers = new Headers()
   headers.set('Authorization', `Bearer ${credential.access_token}`)
   headers.set('Content-Type', 'application/json')
-  for (const [key, value] of Object.entries(GEMINI_IDENTITY_HEADERS)) headers.set(key, value)
+  for (const [key, value] of Object.entries(ANTIGRAVITY_IDENTITY_HEADERS)) headers.set(key, value)
   if (options.includeAccept === true) headers.set('Accept', 'application/json')
   return headers
 }
@@ -398,27 +398,27 @@ export function newGeminiRequestId(nowMs: number = Date.now()): string {
 // ---------------------------------------------------------------------------
 
 /** 思考档位。 */
-export type GeminiTier = 'low' | 'medium' | 'high' | 'tiered'
+export type AntigravityTier = 'low' | 'medium' | 'high' | 'tiered'
 
-/** 主模型上游名（**不带**档位后缀，后缀由 {@link geminiModelSpec} 拼）。 */
-export const GEMINI_UPSTREAM_FLASH = 'gemini-3.8-flash'
+/** 主模型上游名（**不带**档位后缀，后缀由 {@link antigravityModelSpec} 拼）。 */
+export const ANTIGRAVITY_UPSTREAM_FLASH = 'antigravity-3.8-flash'
 
-export const GEMINI_BUDGET_LOW = 1_000
-export const GEMINI_BUDGET_MEDIUM = 4_000
-export const GEMINI_BUDGET_HIGH = 10_000
+export const ANTIGRAVITY_BUDGET_LOW = 1_000
+export const ANTIGRAVITY_BUDGET_MEDIUM = 4_000
+export const ANTIGRAVITY_BUDGET_HIGH = 10_000
 /** tiered 档：只发 `includeThoughts`，**不发** `thinkingBudget`。 */
-export const GEMINI_BUDGET_TIERED = -1
+export const ANTIGRAVITY_BUDGET_TIERED = -1
 
 /** 上下文窗口（用户拍板填 1_000_000）。 */
-export const GEMINI_CONTEXT_WINDOW = 1_000_000
+export const ANTIGRAVITY_CONTEXT_WINDOW = 1_000_000
 
 /** 一个可选档位的 id（与 `reasoningEffort` 同域）。 */
-export const GEMINI_EFFORT_IDS: readonly string[] = ['low', 'medium', 'high', 'tiered']
+export const ANTIGRAVITY_EFFORT_IDS: readonly string[] = ['low', 'medium', 'high', 'tiered']
 /** 默认档位。 */
-export const GEMINI_DEFAULT_EFFORT = 'medium'
+export const ANTIGRAVITY_DEFAULT_EFFORT = 'medium'
 
 /** 档位 id → 中文显示名（用户拍板用中文）。 */
-export function geminiEffortLabel(id: string): string {
+export function antigravityEffortLabel(id: string): string {
   if (id === 'low') return '低'
   if (id === 'medium') return '中'
   if (id === 'high') return '高'
@@ -432,7 +432,7 @@ export function geminiEffortLabel(id: string): string {
  * ⚠️ `maxTokens` **必须**是安全正整数：DSH 校验不通过会抛
  * `INVALID_MODEL_MAX_TOKENS` 并让**整轮对话起不来**。
  */
-export interface GeminiModelEntry {
+export interface AntigravityModelEntry {
   readonly id: string
   readonly name: string
   readonly contextWindow: number
@@ -457,21 +457,21 @@ export interface GeminiModelEntry {
  * - ⚠️ **不暴露 lite**（用户 2026-10-03 拍板）：旧通道实测恒 404，暴露即坑。
  *   （远端目录里新通道的 lite 系条目由远端路径负责，与本表无关。）
  */
-export const GEMINI_FALLBACK_MODELS: readonly GeminiModelEntry[] = [
+export const ANTIGRAVITY_FALLBACK_MODELS: readonly AntigravityModelEntry[] = [
   {
-    id: GEMINI_UPSTREAM_FLASH,
+    id: ANTIGRAVITY_UPSTREAM_FLASH,
     name: 'Gemini 3.8 Flash',
-    contextWindow: GEMINI_CONTEXT_WINDOW,
-    maxTokens: GEMINI.maxOutputTokens,
+    contextWindow: ANTIGRAVITY_CONTEXT_WINDOW,
+    maxTokens: ANTIGRAVITY.maxOutputTokens,
     supportsImage: true,
-    effortOptions: GEMINI_EFFORT_IDS,
-    defaultEffort: GEMINI_DEFAULT_EFFORT,
+    effortOptions: ANTIGRAVITY_EFFORT_IDS,
+    defaultEffort: ANTIGRAVITY_DEFAULT_EFFORT,
   },
 ]
 
 /** 取静态兜底表。 */
-export function geminiFallbackEntries(): readonly GeminiModelEntry[] {
-  return GEMINI_FALLBACK_MODELS
+export function antigravityFallbackEntries(): readonly AntigravityModelEntry[] {
+  return ANTIGRAVITY_FALLBACK_MODELS
 }
 
 // ---------------------------------------------------------------------------
@@ -479,7 +479,7 @@ export function geminiFallbackEntries(): readonly GeminiModelEntry[] {
 // ---------------------------------------------------------------------------
 
 /** 远端目录条目（`fetchAvailableModels` 的 `models` 值，字段按需归一）。 */
-export interface GeminiRemoteModelEntry extends GeminiModelEntry {
+export interface AntigravityRemoteModelEntry extends AntigravityModelEntry {
   /** 远端配额剩余比例（0-1）；缺省 = 未下发。 */
   readonly remainingFraction?: number
   /** 远端思考预算建议值（非本插件档位表）。 */
@@ -501,29 +501,29 @@ export interface GeminiRemoteModelEntry extends GeminiModelEntry {
  *
  * ⚠️ **过滤两类噪音 id**（实测响应里确实有）：`chat_23310` / `tab_jump_flash_lite_preview`
  * 这类内部占位条目（无 displayName、无 quotaInfo）不进目录。
- * ⚠️ **只接 Gemini 家族**（id 前缀 `gemini-`）：响应里还有 `claude-sonnet-4-6` /
+ * ⚠️ **只接 Gemini 家族**（id 前缀 `antigravity-`）：响应里还有 `claude-sonnet-4-6` /
  * `claude-opus-4-6-thinking` / `gpt-oss-120b-medium`，但本插件的推理协议/工具
  * 语义按 Gemini 信封实现，未实现的通道不广告（Agent2API 同款前缀白名单策略）。
  */
-export function parseGeminiAvailableModels(payload: unknown): readonly GeminiRemoteModelEntry[] {
+export function parseGeminiAvailableModels(payload: unknown): readonly AntigravityRemoteModelEntry[] {
   if (typeof payload !== 'object' || payload === null) return []
   const models = (payload as Record<string, unknown>).models
   if (typeof models !== 'object' || models === null || Array.isArray(models)) return []
-  const out: GeminiRemoteModelEntry[] = []
+  const out: AntigravityRemoteModelEntry[] = []
   for (const [id, raw] of Object.entries(models as Record<string, unknown>)) {
     if (typeof raw !== 'object' || raw === null) continue
     const entry = raw as Record<string, unknown>
     // ⚠️ 白名单（2026-11-01 实测后放宽）：
-    // - `gemini-` 前缀：远端 id 就是上游真名，逐 id 推理探针验证 3.8 系 /
-    //   gemini-3-flash 均 200（2.5-pro 一次 503 为上游临时），全部放行。
+    // - `antigravity-` 前缀：远端 id 就是上游真名，逐 id 推理探针验证 3.8 系 /
+    //   antigravity-3-flash 均 200（2.5-pro 一次 503 为上游临时），全部放行。
     // - `claude-*` / `gpt-oss-*` 不接：本插件的推理信封是 Gemini 形态，
     //   未实现的通道不广告（Agent2API 同款前缀白名单策略）。
     // - 占位 id（chat_NNN / tab_*）无 displayName，由下面判挡。
-    if (!id.startsWith('gemini-')) continue
+    if (!id.startsWith('antigravity-')) continue
     const displayName = typeof entry.displayName === 'string' ? entry.displayName : ''
     if (displayName === '') continue
-    const contextWindow = positiveIntField(entry.maxTokens) ?? GEMINI_CONTEXT_WINDOW
-    const maxOutput = positiveIntField(entry.maxOutputTokens) ?? GEMINI.maxOutputTokens
+    const contextWindow = positiveIntField(entry.maxTokens) ?? ANTIGRAVITY_CONTEXT_WINDOW
+    const maxOutput = positiveIntField(entry.maxOutputTokens) ?? ANTIGRAVITY.maxOutputTokens
     // 思考档位：上游只给 supportsThinking / thinkingBudget，档位表由本插件
     // 的 efforts 统一表达（远端 thinkingBudget 仅记录）。
     const supportsThinking = entry.supportsThinking === true
@@ -539,7 +539,7 @@ export function parseGeminiAvailableModels(payload: unknown): readonly GeminiRem
       contextWindow,
       maxTokens: maxOutput,
       supportsImage: entry.supportsImages === true,
-      ...(supportsThinking ? { effortOptions: GEMINI_EFFORT_IDS, defaultEffort: GEMINI_DEFAULT_EFFORT } : {}),
+      ...(supportsThinking ? { effortOptions: ANTIGRAVITY_EFFORT_IDS, defaultEffort: ANTIGRAVITY_DEFAULT_EFFORT } : {}),
       ...(remaining === undefined ? {} : { remainingFraction: remaining }),
       ...(typeof entry.thinkingBudget === 'number' && Number.isFinite(entry.thinkingBudget)
         ? { thinkingBudget: entry.thinkingBudget }
@@ -556,7 +556,7 @@ function positiveIntField(value: unknown): number | undefined {
 }
 
 /** 档位 id 归一（未知/缺省一律 medium，同原版 `EffortToTier` 默认分支）。 */
-export function geminiEffortToTier(effort: string | undefined): GeminiTier {
+export function antigravityEffortToTier(effort: string | undefined): AntigravityTier {
   if (effort === 'low' || effort === 'medium' || effort === 'high' || effort === 'tiered') {
     return effort
   }
@@ -564,18 +564,18 @@ export function geminiEffortToTier(effort: string | undefined): GeminiTier {
 }
 
 /** 档位 → 思考预算。 */
-export function geminiThinkingBudget(tier: GeminiTier): number {
-  if (tier === 'low') return GEMINI_BUDGET_LOW
-  if (tier === 'high') return GEMINI_BUDGET_HIGH
-  if (tier === 'tiered') return GEMINI_BUDGET_TIERED
-  return GEMINI_BUDGET_MEDIUM
+export function antigravityThinkingBudget(tier: AntigravityTier): number {
+  if (tier === 'low') return ANTIGRAVITY_BUDGET_LOW
+  if (tier === 'high') return ANTIGRAVITY_BUDGET_HIGH
+  if (tier === 'tiered') return ANTIGRAVITY_BUDGET_TIERED
+  return ANTIGRAVITY_BUDGET_MEDIUM
 }
 
 /** 一次请求的模型规格。 */
-export interface GeminiModelSpec {
+export interface AntigravityModelSpec {
   /** 真正发给上游的模型名（带档位后缀）。 */
   readonly upstream: string
-  readonly tier: GeminiTier
+  readonly tier: AntigravityTier
   readonly thinkingBudget: number
   /** **恒 true**（「关闭思考」是假关，见文件头）。 */
   readonly includeThoughts: true
@@ -588,11 +588,11 @@ export interface GeminiModelSpec {
  * 传递的可能是**带档位的名字**（写标记时用的是请求原始 id），而静态表的 id
  * 是裸名 —— 两处校验都必须先归一化，否则「测一下被限流的档位」会被误拒。
  * ⚠️ 只剥**已知档位**后缀：未来加第二个模型时，若其真名恰好以档位词结尾
- * （如 `gemini-x-high`），这里会把它误剥成 `gemini-x` —— 届时必须改为
+ * （如 `antigravity-x-high`），这里会把它误剥成 `antigravity-x` —— 届时必须改为
  * 「按目录表全名优先匹配」再回落剥后缀。
  */
-export function geminiCanonicalModelId(modelId: string): string {
-  for (const tier of GEMINI_EFFORT_IDS) {
+export function antigravityCanonicalModelId(modelId: string): string {
+  for (const tier of ANTIGRAVITY_EFFORT_IDS) {
     if (modelId.endsWith(`-${tier}`)) return modelId.slice(0, modelId.length - tier.length - 1)
   }
   return modelId
@@ -604,26 +604,26 @@ export function geminiCanonicalModelId(modelId: string): string {
  * ## 2026-11-01 起支持远端目录的**全 Gemini 家族**
  *
  * `fetchAvailableModels` 实测（Agent2API 规格）：远端下发的 id 就是上游真名，
- * 逐 id 推理探针验证 `gemini-3.8-flash-medium` / `-tiered` / `gemini-3-flash`
+ * 逐 id 推理探针验证 `antigravity-3.8-flash-medium` / `-tiered` / `antigravity-3-flash`
  * 均 200 —— **上游按请求体的 `model` 原样路由，名字本身不参与准入校验**
  * （这与文件头「模型名是准入钥匙」的旧结论并不矛盾：那是旧通道/旧凭据时期
  * 的现象，Antigravity free-tier 新通道实测不再卡名字）。
  *
  * 规则：
- * - **裸 `gemini-3.8-flash`**（静态兜底表条目）：拼档位后缀（`-<tier>`）——
+ * - **裸 `antigravity-3.8-flash`**（静态兜底表条目）：拼档位后缀（`-<tier>`）——
  *   档位是用户在 UI 下拉框选的，efforts 表也只在它身上声明。
- * - **其余 `gemini-` 前缀 id**（远端目录原样名，如 `gemini-3.8-flash-medium` /
- *   `gemini-3-flash` / `gemini-2.5-pro`）：**原样透传**，不吃档位 —— 这些 id
+ * - **其余 `antigravity-` 前缀 id**（远端目录原样名，如 `antigravity-3.8-flash-medium` /
+ *   `antigravity-3-flash` / `antigravity-2.5-pro`）：**原样透传**，不吃档位 —— 这些 id
  *   已是上游真名，拼后缀反而 404。
- * - **非 `gemini-` 前缀 / 目录外 id**：拒绝（保留旧「写错名静默跑 3.8」的防线）。
+ * - **非 `antigravity-` 前缀 / 目录外 id**：拒绝（保留旧「写错名静默跑 3.8」的防线）。
  *
  * ⚠️ 远端条目的档位不映射 effort：它们的 supportsThinking 只影响
  * `inputModalities` 展示，思考预算由上游默认值决定（Agent2API 同口径）。
  */
-export function geminiModelSpec(modelId: string, effort?: string): GeminiModelSpec {
-  if (!modelId.startsWith('gemini-')) {
+export function antigravityModelSpec(modelId: string, effort?: string): AntigravityModelSpec {
+  if (!modelId.startsWith('antigravity-')) {
     throw new LlmError(
-      `gemini: 模型 "${modelId}" 不在本 provider 目录中（仅支持 gemini- 前缀模型）`,
+      `antigravity: 模型 "${modelId}" 不在本 provider 目录中（仅支持 antigravity- 前缀模型）`,
       'INVALID_REQUEST',
       // ⚠️ `status` 只落在 `LlmError.failure`（不是顶层属性），且网关的
       // `failureToOpenAiError` 两处都要读 —— 见 `openai-gateway/stream.ts`。
@@ -631,12 +631,12 @@ export function geminiModelSpec(modelId: string, effort?: string): GeminiModelSp
     )
   }
   // 静态兜底表的裸主模型：档位后缀是准入钥匙，走档位表。
-  if (geminiCanonicalModelId(modelId) === GEMINI_UPSTREAM_FLASH && modelId === GEMINI_UPSTREAM_FLASH) {
-    const tier = geminiEffortToTier(effort)
+  if (antigravityCanonicalModelId(modelId) === ANTIGRAVITY_UPSTREAM_FLASH && modelId === ANTIGRAVITY_UPSTREAM_FLASH) {
+    const tier = antigravityEffortToTier(effort)
     return {
-      upstream: `${GEMINI_UPSTREAM_FLASH}-${tier}`,
+      upstream: `${ANTIGRAVITY_UPSTREAM_FLASH}-${tier}`,
       tier,
-      thinkingBudget: geminiThinkingBudget(tier),
+      thinkingBudget: antigravityThinkingBudget(tier),
       includeThoughts: true,
     }
   }
@@ -644,7 +644,7 @@ export function geminiModelSpec(modelId: string, effort?: string): GeminiModelSp
   return {
     upstream: modelId,
     tier: 'medium',
-    thinkingBudget: geminiThinkingBudget('medium'),
+    thinkingBudget: antigravityThinkingBudget('medium'),
     includeThoughts: true,
   }
 }
@@ -655,10 +655,10 @@ export function geminiModelSpec(modelId: string, effort?: string): GeminiModelSp
  * ⚠️ 无档位时返回 `undefined`（**不声明**）—— 声明空数组会让面板显示一个
  * 点不开的空下拉框。与 `minimaxReasoningInfo` 同口径。
  */
-export function geminiReasoningInfo(entry: GeminiModelEntry): LlmModelReasoningInfo | undefined {
+export function antigravityReasoningInfo(entry: AntigravityModelEntry): LlmModelReasoningInfo | undefined {
   const options = entry.effortOptions
   if (options === undefined || options.length === 0) return undefined
-  const efforts = options.map((id) => ({ id: ReasoningEffortId(id), name: geminiEffortLabel(id) }))
+  const efforts = options.map((id) => ({ id: ReasoningEffortId(id), name: antigravityEffortLabel(id) }))
   const defaultEffort = entry.defaultEffort !== undefined && options.includes(entry.defaultEffort)
     ? ReasoningEffortId(entry.defaultEffort)
     : undefined
@@ -676,7 +676,7 @@ export function geminiReasoningInfo(entry: GeminiModelEntry): LlmModelReasoningI
  * `examples` / `$ref` …）必须整键删除 —— 上游对未知键是**硬 400**，
  * 而 harness 的工具 schema 由各工具自行声明，出现这些键是常态。
  */
-export const GEMINI_SCHEMA_KEYS: ReadonlySet<string> = new Set([
+export const ANTIGRAVITY_SCHEMA_KEYS: ReadonlySet<string> = new Set([
   'type',
   'format',
   'description',
@@ -711,7 +711,7 @@ export const GEMINI_SCHEMA_KEYS: ReadonlySet<string> = new Set([
 export function sanitizeGeminiSchema(schema: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(schema)) {
-    if (!GEMINI_SCHEMA_KEYS.has(key)) continue
+    if (!ANTIGRAVITY_SCHEMA_KEYS.has(key)) continue
 
     if (key === 'properties') {
       if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
@@ -781,23 +781,23 @@ export function sanitizeGeminiSchema(schema: Record<string, unknown>): Record<st
 // ---------------------------------------------------------------------------
 
 /** 已内联的图片（`attachmentId` → base64 与 mediaType）。 */
-export interface GeminiInlineImage {
+export interface AntigravityInlineImage {
   mediaType: string
   /** **裸 base64**（不含 `data:` 前缀）—— `inlineData.data` 要的就是它。 */
   data: string
 }
 
 /** 上游单张内联图片的体积上限（超出则整请求被拒）。 */
-export const GEMINI_MAX_IMAGE_BYTES_INLINE = 10 * 1024 * 1024
+export const ANTIGRAVITY_MAX_IMAGE_BYTES_INLINE = 10 * 1024 * 1024
 /**
- * 请求体上限（发送前**真实检查**，见 `gemini-adapter.ts` 的发送点）。
+ * 请求体上限（发送前**真实检查**，见 `antigravity-adapter.ts` 的发送点）。
  *
  * ⚠️ 2026-10-05：这个常量此前**定义了但全仓零引用** —— 看着有防护，实际没有。
  * 现已接上。超限归类走 `CONTEXT_WINDOW_EXCEEDED`（触发 harness 压缩重试）
  * 而不是 `INVALID_REQUEST`（死路）——理由与 `isGeminiContextOverflow` 同：
  * 归错码的代价不对称。
  */
-export const GEMINI_MAX_REQUEST_BODY_BYTES = 64 * 1024 * 1024
+export const ANTIGRAVITY_MAX_REQUEST_BODY_BYTES = 64 * 1024 * 1024
 
 /**
  * 校验 base64 是否可用（原版 `imagePart` 的口径）。

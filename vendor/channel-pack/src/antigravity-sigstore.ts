@@ -40,13 +40,13 @@ import { resolveChannelPackHome } from './channel-pack-store.js'
  * 级、同机多 profile 共享 —— 旧代码/另一个工作区触发任意一次全量写入就会把
  * 不认识的键抹掉（`src/permanent-lock-store.ts:1-33` 记录的同类事故）。
  */
-export const GEMINI_SIG_FILE = 'gemini-sigs.json'
+export const ANTIGRAVITY_SIG_FILE = 'antigravity-sigs.json'
 
 /**
  * 缓存条数上限。签名串平均 300~800 字节，2000 条约 1MB 量级，
  * 足够覆盖一个工作日的会话。
  */
-export const GEMINI_SIG_MAX_ENTRIES = 2_000
+export const ANTIGRAVITY_SIG_MAX_ENTRIES = 2_000
 
 /**
  * 算键时只取正文前 512 字符。
@@ -64,7 +64,7 @@ interface SigEntry {
    * 工具名。
    *
    * ⚠️ 必须持久化：缓存键是 `sha256("tool:" + name + "\0" + args)[:16]`，**不可逆**，
-   * 不存名字就没法在载入时重建 {@link GeminiSigStore.latestForTool} 的索引。
+   * 不存名字就没法在载入时重建 {@link AntigravitySigStore.latestForTool} 的索引。
    * 旧版本写的条目没有这个字段 —— 它们仍能按精确键命中，只是不进索引（可接受降级）。
    */
   name?: string
@@ -77,7 +77,7 @@ interface SigEntry {
  * 与原版 `SigKey` 逐字一致 —— 换算法会让**已有缓存全部失配**（表现为每轮都
  * 去签重试）。
  */
-export function geminiSigKey(role: string, text: string): string {
+export function antigravitySigKey(role: string, text: string): string {
   const body = text.length > SIG_KEY_BODY_LIMIT ? text.slice(0, SIG_KEY_BODY_LIMIT) : text
   return createHash('sha256').update(`${role}\u0000${body}`, 'utf8').digest('hex').slice(0, 16)
 }
@@ -89,8 +89,8 @@ export function geminiSigKey(role: string, text: string): string {
  * 即按键名升序的 JSON）—— 两侧不一致会让查表**永远命中不了**，
  * 症状是「每轮都去签重试」而不报任何错。
  */
-export function geminiToolSigKey(name: string, argsJson: string): string {
-  return geminiSigKey(`tool:${name}`, argsJson)
+export function antigravityToolSigKey(name: string, argsJson: string): string {
+  return antigravitySigKey(`tool:${name}`, argsJson)
 }
 
 /** 去掉签名首尾空白（上游对首尾换行敏感，原版 `TrimPrefix`）。 */
@@ -99,7 +99,7 @@ export function trimGeminiSignature(signature: string): string {
 }
 
 /** 读取结果：坏文件按「空缓存」处理，不算失败。 */
-export interface GeminiSigRead {
+export interface AntigravitySigRead {
   entries: Map<string, SigEntry>
 }
 
@@ -109,7 +109,7 @@ export interface GeminiSigRead {
  * `path === undefined` 时退化为**仅内存**（无法定位 dsh home 时的显式降级，
  * 与 `permanent-lock-store.ts` 的 `MemoryLockStore` 同策）。
  */
-export class GeminiSigStore {
+export class AntigravitySigStore {
   private readonly entries: Map<string, SigEntry>
   private dirty = false
 
@@ -127,7 +127,7 @@ export class GeminiSigStore {
 
   /** 按工具名 + 规范化参数查签名。 */
   get(name: string, argsJson: string): string | undefined {
-    const entry = this.entries.get(geminiToolSigKey(name, argsJson))
+    const entry = this.entries.get(antigravityToolSigKey(name, argsJson))
     if (entry === undefined || entry.sig === '') return undefined
     return entry.sig
   }
@@ -169,10 +169,10 @@ export class GeminiSigStore {
   put(name: string, argsJson: string, signature: string): void {
     const sig = trimGeminiSignature(signature)
     if (sig === '') return
-    const key = geminiToolSigKey(name, argsJson)
+    const key = antigravityToolSigKey(name, argsJson)
     if (key === '') return
     this.entries.set(key, { sig, at: Math.floor(Date.now() / 1000), name })
-    if (this.entries.size > GEMINI_SIG_MAX_ENTRIES) this.evict()
+    if (this.entries.size > ANTIGRAVITY_SIG_MAX_ENTRIES) this.evict()
     this.dirty = true
   }
 
@@ -219,7 +219,7 @@ export class GeminiSigStore {
       writeFileSync(tmp, payload, 'utf-8')
       renameSync(tmp, this.path)
     } catch (error) {
-      this.logger?.warn(`[gemini] 签名缓存写入失败（不影响推理）: ${String(error)}`)
+      this.logger?.warn(`[antigravity] 签名缓存写入失败（不影响推理）: ${String(error)}`)
     }
   }
 
@@ -245,7 +245,7 @@ export class GeminiSigStore {
       }
     } catch (error) {
       // 坏文件直接丢弃：这是纯缓存，没有它只是命中率低一点。
-      this.logger?.warn(`[gemini] 签名缓存文件损坏，已重置: ${String(error)}`)
+      this.logger?.warn(`[antigravity] 签名缓存文件损坏，已重置: ${String(error)}`)
       return new Map()
     }
     return out
@@ -253,16 +253,16 @@ export class GeminiSigStore {
 }
 
 /**
- * 按 dsh home 创建签名缓存（落 `$DSH_HOME/channel-pack/gemini-sigs.json`）。
+ * 按 dsh home 创建签名缓存（落 `$DSH_HOME/channel-pack/antigravity-sigs.json`）。
  *
  * home 的解析与账号池**同一个函数**（`resolveChannelPackHome`），保证与 `state.json`、
  * `permanent-locks.json` 永远落在同一目录。
  */
-export function createGeminiSigStore(ctx: Context): GeminiSigStore {
+export function createGeminiSigStore(ctx: Context): AntigravitySigStore {
   const home = resolveChannelPackHome(ctx)
   if (home === undefined) {
-    ctx.logger?.warn?.('[gemini] 无法定位 DSH home，签名缓存仅存在于内存中（命中率会在重启后归零）')
-    return new GeminiSigStore(undefined, ctx.logger)
+    ctx.logger?.warn?.('[antigravity] 无法定位 DSH home，签名缓存仅存在于内存中（命中率会在重启后归零）')
+    return new AntigravitySigStore(undefined, ctx.logger)
   }
-  return new GeminiSigStore(join(home, 'channel-pack', GEMINI_SIG_FILE), ctx.logger)
+  return new AntigravitySigStore(join(home, 'channel-pack', ANTIGRAVITY_SIG_FILE), ctx.logger)
 }

@@ -7,7 +7,7 @@
  * 10 分钟超时，显示「登录已过期」—— 真实原因（回调返回错误、token 交换失败、
  * whoami 401 …）永远到不了用户眼前。
  *
- * 对照实现：`gemini` / `codearts` 分支把原因写进 `pendingLoginFailures`，
+ * 对照实现：`antigravity` / `codearts` 分支把原因写进 `pendingLoginFailures`，
  * `login.poll` 读到后返回 `{ done: true, success: false, error }`。
  *
  * ⚠️ 本用例**不 mock 内部函数**，走真实链路：

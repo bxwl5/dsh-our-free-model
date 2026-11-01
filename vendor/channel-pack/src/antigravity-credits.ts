@@ -1,12 +1,12 @@
 /**
  * Gemini（Cloud Code Assist）**配额窗口**查询。
  *
- * 逐点移植自 `cmdc-pak-align-wb/internal/upstream/gemini/quota.go`。
+ * 逐点移植自 `cmdc-pak-align-wb/internal/upstream/antigravity/quota.go`。
  *
  * ## 端点与身份
  *
  * `POST {sandbox}/v1internal:retrieveUserQuotaSummary`，身份头与推理请求
- * **完全一致**（`geminiHeaders`），Bearer 用 `access_token`。
+ * **完全一致**（`antigravityHeaders`），Bearer 用 `access_token`。
  *
  * ## ⚠️ 请求体**必须带 `project`**（2026-10-03 修正）
  *
@@ -20,13 +20,13 @@
  *
  * 而**同一个 token、同一组身份头**，只要请求体带上 `{"project":"aicode-consumers"}`
  * 就 200 —— 唯一的变量就是 `project`。同一账号的**推理**请求本来就在信封里带
- * `project`（`gemini-messages.ts:278`），所以只有配额这条链路会 403：
+ * `project`（`antigravity-messages.ts:278`），所以只有配额这条链路会 403：
  * 面板显示「凭据已失效」，而「测试」按钮照样能发请求（用户 m07113 报障）。
  *
  * 字段名是 `project`，**不是** `cloudaicompanionProject` —— 后者会 400
  * `Unknown name "cloudaicompanionProject": Cannot find field.`。值取凭据里的
  * `cloudaicompanionProject`（`loadCodeAssist` 的回报，实测恒为 `aicode-consumers`），
- * 缺失时退到 {@link GEMINI_DEFAULT_PROJECT}。
+ * 缺失时退到 {@link ANTIGRAVITY_DEFAULT_PROJECT}。
  *
  * ⚠️ 走 **sandbox** 端点而不是 daily：原版 `baseFor(path)` 把
  * `loadCodeAssistPath` / `retrieveQuotaPath` 两类路径固定路由到 sandbox，
@@ -41,7 +41,7 @@
  * ## ⚠️ 桶 id 是判据，`displayName` 不是
  *
  * 响应里第三组桶（`3p-*`）属于 Claude/GPT 产品线，与本 provider 无关。
- * 只认 `gemini-5h` / `gemini-weekly` 两个 id，**不按显示名匹配** ——
+ * 只认 `antigravity-5h` / `antigravity-weekly` 两个 id，**不按显示名匹配** ——
  * 显示名会被上游改文案，id 不会。
  *
  * ## ⚠️ `resetTime` 解析失败 ⇒ **整条桶丢弃**
@@ -59,39 +59,39 @@
  *
  * 面板还要显示「这是 Pro 还是 Free」。规格来自 `loadCodeAssist`，与配额是
  * **两个端点**，但**并行发在同一次调用里**（面板 30 秒刷一次，多一个独立
- * RPC 只会多一份编排）。取到的档位挂在 {@link GeminiBalanceResult.tier} 上，
+ * RPC 只会多一份编排）。取到的档位挂在 {@link AntigravityBalanceResult.tier} 上，
  * 失败就 `undefined`（不渲染那一行），**绝不影响配额行**。
  */
 
 import { roundCredits, type CreditBalance, type CreditPackage } from './credits.js'
 import {
-  GEMINI,
-  GEMINI_CREDITS_TIMEOUT_MS,
-  GEMINI_DEFAULT_PROJECT,
-  GEMINI_ENDPOINT_SANDBOX,
-  GEMINI_LOAD_CODE_ASSIST_BODY,
-  GEMINI_LOAD_CODE_ASSIST_PATH,
-  GEMINI_QUOTA_CACHE_TTL_MS,
-  GEMINI_QUOTA_PATH,
-  geminiHeaders,
-  type GeminiCredential,
-  type GeminiProduct,
-} from './gemini.js'
+  ANTIGRAVITY,
+  ANTIGRAVITY_CREDITS_TIMEOUT_MS,
+  ANTIGRAVITY_DEFAULT_PROJECT,
+  ANTIGRAVITY_ENDPOINT_SANDBOX,
+  ANTIGRAVITY_LOAD_CODE_ASSIST_BODY,
+  ANTIGRAVITY_LOAD_CODE_ASSIST_PATH,
+  ANTIGRAVITY_QUOTA_CACHE_TTL_MS,
+  ANTIGRAVITY_QUOTA_PATH,
+  antigravityHeaders,
+  type AntigravityCredential,
+  type AntigravityProduct,
+} from './antigravity.js'
 
 /** 未授权时的文案（原版 `MessageUnauthorized`，面板据此区分「没登录」）。 */
-export const GEMINI_UNAUTHORIZED_MESSAGE = '尚未授权 Google 账号'
+export const ANTIGRAVITY_UNAUTHORIZED_MESSAGE = '尚未授权 Google 账号'
 
 /** 5 小时窗口的桶 id。 */
-export const GEMINI_BUCKET_FIVE_HOUR = 'gemini-5h'
+export const ANTIGRAVITY_BUCKET_FIVE_HOUR = 'antigravity-5h'
 /** 周窗口的桶 id。 */
-export const GEMINI_BUCKET_WEEKLY = 'gemini-weekly'
+export const ANTIGRAVITY_BUCKET_WEEKLY = 'antigravity-weekly'
 
 /** 面板里两个窗口的显示名（**不是**积分，故不写「积分」二字）。 */
-export const GEMINI_WINDOW_LABEL_FIVE_HOUR = '5 小时窗口'
-export const GEMINI_WINDOW_LABEL_WEEKLY = '周窗口'
+export const ANTIGRAVITY_WINDOW_LABEL_FIVE_HOUR = '5 小时窗口'
+export const ANTIGRAVITY_WINDOW_LABEL_WEEKLY = '周窗口'
 
 /** 配额单位：剩余**百分比**。 */
-const GEMINI_QUOTA_UNIT = '%'
+const ANTIGRAVITY_QUOTA_UNIT = '%'
 
 /**
  * 账号规格（Google 档位）。
@@ -105,7 +105,7 @@ const GEMINI_QUOTA_UNIT = '%'
  *
  * ⚠️ `currentTier` 只作兜底（`paidTier` 缺席时）。
  */
-export interface GeminiAccountTier {
+export interface AntigravityAccountTier {
   /** 上游档位 id（`g1-pro-tier` / `free-tier`），hover 里原样展示。 */
   readonly id: string
   /** 上游档位名（`Google AI Pro`），hover 里原样展示。 */
@@ -145,7 +145,7 @@ function pickTier(raw: unknown): { id: string; name: string } | undefined {
  * `description`、`privacyNotice.noticeText`（一大段英文隐私说明）、
  * `allowedTiers` —— **一个都不要展示**。
  */
-export function parseGeminiAccountTier(payload: unknown): GeminiAccountTier | undefined {
+export function parseGeminiAccountTier(payload: unknown): AntigravityAccountTier | undefined {
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return undefined
   const record = payload as Record<string, unknown>
   const tier = pickTier(record.paidTier) ?? pickTier(record.currentTier)
@@ -154,7 +154,7 @@ export function parseGeminiAccountTier(payload: unknown): GeminiAccountTier | un
 }
 
 /** 归一后的一个配额窗口。 */
-export interface GeminiQuotaWindow {
+export interface AntigravityQuotaWindow {
   readonly bucketId: string
   /** 上游自报的窗口名（`5h` / `weekly`），仅诊断用。 */
   readonly window: string
@@ -165,7 +165,7 @@ export interface GeminiQuotaWindow {
 }
 
 /** 一次配额查询的结果（**不抛错**，失败用 `error` 表达）。 */
-export interface GeminiBalanceResult {
+export interface AntigravityBalanceResult {
   balance: CreditBalance | null
   error?: string
   /**
@@ -174,11 +174,11 @@ export interface GeminiBalanceResult {
    * ⚠️ **可选且与 `error` 无关**：档位查询失败（网络/上游改协议）绝不能让
    * 配额行跟着报错 —— 它只是一栏附注信息。拿不到就不渲染那一行。
    */
-  tier?: GeminiAccountTier
+  tier?: AntigravityAccountTier
 }
 
 /** {@link fetchGeminiCreditBalance} 的可选参数。 */
-export interface GeminiCreditOptions {
+export interface AntigravityCreditOptions {
   /** 跳过缓存（面板「刷新」按钮）。 */
   force?: boolean
   /** 时钟注入（测试用）。 */
@@ -194,7 +194,7 @@ export interface GeminiCreditOptions {
  * 滞后太久（原版 `quotaCacheTTL` 同值）。键用 **access_token** ——
  * 它是账号的稳定标识，且配额本身就是按 token 归属的。
  */
-const cache = new Map<string, { at: number; result: GeminiBalanceResult }>()
+const cache = new Map<string, { at: number; result: AntigravityBalanceResult }>()
 
 /** 清空缓存（测试与「重置限流标记」用）。 */
 export function clearGeminiCreditCache(): void {
@@ -202,7 +202,7 @@ export function clearGeminiCreditCache(): void {
 }
 
 /** 解析单个桶；任何硬约束不满足即返回 `undefined`（**不编造**）。 */
-export function parseGeminiQuotaWindow(raw: unknown): GeminiQuotaWindow | undefined {
+export function parseGeminiQuotaWindow(raw: unknown): AntigravityQuotaWindow | undefined {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined
   const record = raw as Record<string, unknown>
   const bucketId = typeof record.bucketId === 'string' ? record.bucketId : ''
@@ -222,8 +222,8 @@ export function parseGeminiQuotaWindow(raw: unknown): GeminiQuotaWindow | undefi
  * 形状（原版注释里的实测结论，**普通 JSON 不是 protobuf**）：
  * ```json
  * {"groups":[{"displayName":"Gemini Models","buckets":[
- *   {"bucketId":"gemini-weekly","window":"weekly","resetTime":"…","remainingFraction":0.99},
- *   {"bucketId":"gemini-5h","window":"5h","resetTime":"…","remainingFraction":0.99}]},
+ *   {"bucketId":"antigravity-weekly","window":"weekly","resetTime":"…","remainingFraction":0.99},
+ *   {"bucketId":"antigravity-5h","window":"5h","resetTime":"…","remainingFraction":0.99}]},
  *  {"displayName":"Claude and GPT models","buckets":[…]}]}
  * ```
  *
@@ -231,14 +231,14 @@ export function parseGeminiQuotaWindow(raw: unknown): GeminiQuotaWindow | undefi
  * 会变；`window` 字段在实测里出现过缺失。id 是唯一稳定判据。
  */
 export function parseGeminiQuotaWindows(payload: unknown): {
-  fiveHour?: GeminiQuotaWindow
-  weekly?: GeminiQuotaWindow
+  fiveHour?: AntigravityQuotaWindow
+  weekly?: AntigravityQuotaWindow
 } {
   if (typeof payload !== 'object' || payload === null) return {}
   const groups = (payload as Record<string, unknown>).groups
   if (!Array.isArray(groups)) return {}
-  let fiveHour: GeminiQuotaWindow | undefined
-  let weekly: GeminiQuotaWindow | undefined
+  let fiveHour: AntigravityQuotaWindow | undefined
+  let weekly: AntigravityQuotaWindow | undefined
   for (const group of groups) {
     if (typeof group !== 'object' || group === null || Array.isArray(group)) continue
     const buckets = (group as Record<string, unknown>).buckets
@@ -246,8 +246,8 @@ export function parseGeminiQuotaWindows(payload: unknown): {
     for (const bucket of buckets) {
       const parsed = parseGeminiQuotaWindow(bucket)
       if (parsed === undefined) continue
-      if (parsed.bucketId === GEMINI_BUCKET_FIVE_HOUR && fiveHour === undefined) fiveHour = parsed
-      if (parsed.bucketId === GEMINI_BUCKET_WEEKLY && weekly === undefined) weekly = parsed
+      if (parsed.bucketId === ANTIGRAVITY_BUCKET_FIVE_HOUR && fiveHour === undefined) fiveHour = parsed
+      if (parsed.bucketId === ANTIGRAVITY_BUCKET_WEEKLY && weekly === undefined) weekly = parsed
     }
   }
   return {
@@ -257,17 +257,17 @@ export function parseGeminiQuotaWindows(payload: unknown): {
 }
 
 /** 剩余比例 → 百分比整数（0..100，越界收敛）。 */
-function percentOf(window: GeminiQuotaWindow): number {
+function percentOf(window: AntigravityQuotaWindow): number {
   const clamped = Math.min(1, Math.max(0, window.remainingFraction))
   return Math.round(clamped * 100)
 }
 
 /** 一个窗口 → 一个 {@link CreditPackage}（单位是百分比，不是积分）。 */
-function makeQuotaPackage(label: string, window: GeminiQuotaWindow): CreditPackage {
+function makeQuotaPackage(label: string, window: AntigravityQuotaWindow): CreditPackage {
   const remaining = percentOf(window)
   return {
     name: label,
-    unit: GEMINI_QUOTA_UNIT,
+    unit: ANTIGRAVITY_QUOTA_UNIT,
     remaining,
     total: 100,
     used: 100 - remaining,
@@ -290,12 +290,12 @@ function makeQuotaPackage(label: string, window: GeminiQuotaWindow): CreditPacka
  * ⚠️ `expiredTotal` 恒 0：配额窗口没有"过期积分"这个概念。
  */
 export function toGeminiCreditBalance(
-  fiveHour?: GeminiQuotaWindow,
-  weekly?: GeminiQuotaWindow,
+  fiveHour?: AntigravityQuotaWindow,
+  weekly?: AntigravityQuotaWindow,
 ): CreditBalance {
   const packages: CreditPackage[] = []
-  if (fiveHour !== undefined) packages.push(makeQuotaPackage(GEMINI_WINDOW_LABEL_FIVE_HOUR, fiveHour))
-  if (weekly !== undefined) packages.push(makeQuotaPackage(GEMINI_WINDOW_LABEL_WEEKLY, weekly))
+  if (fiveHour !== undefined) packages.push(makeQuotaPackage(ANTIGRAVITY_WINDOW_LABEL_FIVE_HOUR, fiveHour))
+  if (weekly !== undefined) packages.push(makeQuotaPackage(ANTIGRAVITY_WINDOW_LABEL_WEEKLY, weekly))
   if (packages.length === 0) return { total: 0, packages: [], expiredTotal: 0 }
   const sum = packages.reduce((acc, item) => acc + item.remaining, 0)
   return {
@@ -316,18 +316,18 @@ export function toGeminiCreditBalance(
  *   签名保持一致而保留（配额端点是全局固定的，不需要产品配置）。
  */
 export async function fetchGeminiCreditBalance(
-  credential: GeminiCredential,
-  _product: GeminiProduct = GEMINI,
-  options: GeminiCreditOptions = {},
-): Promise<GeminiBalanceResult> {
+  credential: AntigravityCredential,
+  _product: AntigravityProduct = ANTIGRAVITY,
+  options: AntigravityCreditOptions = {},
+): Promise<AntigravityBalanceResult> {
   const token = credential.access_token ?? ''
   // ⚠️ 未授权**不是错误**：面板据此显示「尚未授权 Google 账号」。
-  if (token === '') return { balance: null, error: GEMINI_UNAUTHORIZED_MESSAGE }
+  if (token === '') return { balance: null, error: ANTIGRAVITY_UNAUTHORIZED_MESSAGE }
 
   const now = options.now?.() ?? Date.now()
   if (options.force !== true) {
     const cached = cache.get(token)
-    if (cached !== undefined && now - cached.at < GEMINI_QUOTA_CACHE_TTL_MS) return cached.result
+    if (cached !== undefined && now - cached.at < ANTIGRAVITY_QUOTA_CACHE_TTL_MS) return cached.result
   }
 
   const result = await requestQuota(credential, options.fetcher ?? fetch)
@@ -337,10 +337,10 @@ export async function fetchGeminiCreditBalance(
 
 /** 真正发一次请求并映射结果（**内部，不抛错**）。 */
 async function requestQuota(
-  credential: GeminiCredential,
+  credential: AntigravityCredential,
   fetcher: typeof fetch,
-): Promise<GeminiBalanceResult> {
-  const project = credential.cloudaicompanionProject ?? GEMINI_DEFAULT_PROJECT
+): Promise<AntigravityBalanceResult> {
+  const project = credential.cloudaicompanionProject ?? ANTIGRAVITY_DEFAULT_PROJECT
   // ⚠️ 档位与配额**并行**发，且档位失败绝不污染配额结果（`catch` 吞成
   // `undefined`）：面板的「账号规格」是一栏附注，不能因为它挂了就把整行
   // 变成错误 —— 那正是「测试能发请求、配额却报错」那类误报的翻版。
@@ -353,20 +353,20 @@ async function requestQuota(
 
 /** 配额本体（`retrieveUserQuotaSummary`）。 */
 async function requestQuotaSummary(
-  credential: GeminiCredential,
+  credential: AntigravityCredential,
   fetcher: typeof fetch,
   project: string,
-): Promise<GeminiBalanceResult> {
+): Promise<AntigravityBalanceResult> {
   let response: Response
   try {
-    response = await fetcher(`${GEMINI_ENDPOINT_SANDBOX}${GEMINI_QUOTA_PATH}`, {
+    response = await fetcher(`${ANTIGRAVITY_ENDPOINT_SANDBOX}${ANTIGRAVITY_QUOTA_PATH}`, {
       method: 'POST',
       // ⚠️ 身份头与推理请求**完全一致**（含五个伪装头）；流式才刻意不带 Accept，
       // 配额是普通 JSON 请求，`includeAccept` 保持默认 false 与抓包一致。
-      headers: geminiHeaders(credential),
+      headers: antigravityHeaders(credential),
       // ⚠️ 必须带 `project`（见文件头注释）：空对象 `{}` 对第二个账号会 403。
       body: JSON.stringify({ project }),
-      signal: AbortSignal.timeout(GEMINI_CREDITS_TIMEOUT_MS),
+      signal: AbortSignal.timeout(ANTIGRAVITY_CREDITS_TIMEOUT_MS),
     })
   } catch (error) {
     return { balance: null, error: `配额查询网络失败：${describe(error)}` }
@@ -405,21 +405,21 @@ async function requestQuotaSummary(
 /**
  * 账号规格（`loadCodeAssist`）。
  *
- * 请求体是**逐字常量** {@link GEMINI_LOAD_CODE_ASSIST_BODY}（对齐原版
+ * 请求体是**逐字常量** {@link ANTIGRAVITY_LOAD_CODE_ASSIST_BODY}（对齐原版
  * `project.go:97-103` 的抓包，content-length 恰为 38）—— 不要"顺手"把
  * `cloudaicompanionProject` 塞进去，原版注释明确它不带。
  *
  * 解不出档位就返回 `undefined`（面板不渲染那一行），**不编造**。
  */
 async function requestAccountTier(
-  credential: GeminiCredential,
+  credential: AntigravityCredential,
   fetcher: typeof fetch,
-): Promise<GeminiAccountTier | undefined> {
-  const response = await fetcher(`${GEMINI_ENDPOINT_SANDBOX}${GEMINI_LOAD_CODE_ASSIST_PATH}`, {
+): Promise<AntigravityAccountTier | undefined> {
+  const response = await fetcher(`${ANTIGRAVITY_ENDPOINT_SANDBOX}${ANTIGRAVITY_LOAD_CODE_ASSIST_PATH}`, {
     method: 'POST',
-    headers: geminiHeaders(credential),
-    body: GEMINI_LOAD_CODE_ASSIST_BODY,
-    signal: AbortSignal.timeout(GEMINI_CREDITS_TIMEOUT_MS),
+    headers: antigravityHeaders(credential),
+    body: ANTIGRAVITY_LOAD_CODE_ASSIST_BODY,
+    signal: AbortSignal.timeout(ANTIGRAVITY_CREDITS_TIMEOUT_MS),
   })
   if (!response.ok) return undefined
   const text = await response.text().catch(() => '')
@@ -460,14 +460,14 @@ function quotaRejectionHint(text: string): string {
         const message = typeof record.message === 'string' ? record.message : ''
         if (reason !== undefined) {
           // `UNSUPPORTED_LOCATION` 是**地区限制**，不是凭据问题也不是额度问题：
-          // Google 只允许在支持的国家/地区使用 Gemini Code Assist 个人版。
+          // Google 只允许在支持的国家/地区使用 Antigravity 个人版。
           // 用户报障原话：「配额查询被拒（HTTP 403）（UNSUPPORTED_LOCATION）：
           // Your current account is not eligible … not currently available in your location.」
           // 光把原文抛出来，用户会以为是账号/登录坏了 —— 这里补一条**可操作**的指引：
           // 渠道包的请求走 `network.fetch`，而它接的就是本插件的「出口代理」
           // （`pack.apply(..., { outlet })`），所以开出口即可换到支持的地区。
           const locationHint = reason === 'UNSUPPORTED_LOCATION'
-            ? '。这是 Google 的地区限制（Gemini Code Assist 个人版在你所在地区不可用），'
+            ? '。这是 Google 的地区限制（Antigravity 个人版在你所在地区不可用），'
               + '不是凭据或额度问题；可在本插件设置页开启「出口代理」，'
               + '让请求从 Gemini 支持的地区发出后重试'
             : ''
