@@ -58,8 +58,17 @@ export interface AntigravityPart {
   text?: string
   thought?: boolean
   thoughtSignature?: string
-  functionCall?: { name: string; args?: Record<string, unknown> }
-  functionResponse?: { name: string; response: Record<string, unknown> }
+  /**
+   * `id`（2026-11-01 起）：工具调用的配对键。
+   *
+   * ⚠️ **Gemini 家族不需要**（按 `name` 配对，多发的 `id` 字段被忽略 ——
+   * 探针实测带 id 照样 200）；**Claude / GPT-OSS 家族必需**：上游把信封翻成
+   * Anthropic `tool_use`/`tool_result` 时按 id 配对，缺 id 直接 400
+   *（`tool_use_id: Field required` / `tool_call_id ... to be populated`）。
+   * 故发信封时**统一带上**（值 = DSH 的本地 toolCallId，全对话内唯一）。
+   */
+  functionCall?: { name: string; args?: Record<string, unknown>; id?: string }
+  functionResponse?: { name: string; response: Record<string, unknown>; id?: string }
   inlineData?: { mimeType: string; data: string }
 }
 
@@ -241,7 +250,15 @@ export function translateGeminiRequest(options: TranslateGeminiRequestOptions): 
         // 查不到就**不带签名发**：上游会拒（`IsSignatureError` 命中），
         // 适配器据此走「去签重试一次」路径。
         const signature = options.lookupSignature?.(block.name, argsJson)
-        const part: AntigravityPart = { functionCall: { name: block.name, args } }
+        const part: AntigravityPart = {
+          functionCall: {
+            name: block.name,
+            args,
+            // ⚠️ Claude/GPT-OSS 按 id 配对 tool_use ↔ tool_result（Gemini 忽略
+            // 该字段）。用 DSH 本地 id：同一对话内稳定，结果回传时能对上。
+            id: String(block.id),
+          },
+        }
         if (signature !== undefined && signature !== '') part.thoughtSignature = signature
         parts.push(part)
         continue
@@ -257,7 +274,8 @@ export function translateGeminiRequest(options: TranslateGeminiRequestOptions): 
           content: toolResultText(block.content),
         }
         if (block.isError === true) response.error = true
-        parts.push({ functionResponse: { name, response } })
+        // ⚠️ id 同上：Claude/GPT-OSS 必须与 functionCall.id 一致才能配上对。
+        parts.push({ functionResponse: { name, response, id: String(block.toolCallId) } })
         continue
       }
 

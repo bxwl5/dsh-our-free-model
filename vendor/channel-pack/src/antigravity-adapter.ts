@@ -35,6 +35,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 import type { Context } from '@deepseek-ai/cordis'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
+import type { ModelQuota } from './types.js'
 import { providerCatalogVisible, type AccountPool } from './account-pool.js'
 import { collectImages, httpErrorCode } from './openai-compat.js'
 import { projectRequestImage } from './image-budget.js'
@@ -56,6 +57,7 @@ import {
   antigravityReasoningInfo,
   isGeminiExpired,
   marshalAlphabetical,
+  matchSegmentSuffix,
   newGeminiRequestId,
   normalizeBase64,
   type AntigravityCredential,
@@ -257,7 +259,7 @@ export interface AntigravityAdapterOptions {
    */
   persistProject?: (value: string) => Promise<void>
   /** 回写失败时的告警出口（可选）。 */
-  logger?: { warn(message: string): void }
+  logger?: { warn(message: string): void; info?(message: string): void }
   /** 产品配置；默认 {@link ANTIGRAVITY}。 */
   product?: AntigravityProduct
   /**
@@ -312,6 +314,11 @@ export class AntigravityAdapter extends LlmAdapter {
         const fetched = await fetchRemote()
         if (fetched.length === 0) return false
         this.remoteModels = fetched
+        // ⚠️ 顺序敏感：迁移**先写**（把 claude/gpt-oss 与合并主模型写成显式
+        // 打开/关闭），closingNew **后跑** —— 它只关「黑名单里无显式记录」的
+        // 新 id，先写过的就不会被翻转。反过来（closingNew 先写 true）迁移会把
+        // 「用户点名要的模型」当成用户显式关闭而不再动（竞态缺陷，本注释即防回归）。
+        await this.migrateCatalogOnLoad(this.options.accountPool)
         void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool)
         return true
       })
@@ -335,10 +342,89 @@ export class AntigravityAdapter extends LlmAdapter {
       const fetched = await fetchRemote()
       if (fetched.length === 0) return false
       this.remoteModels = fetched
+      // 顺序敏感：同 loadModels —— 迁移先写，closingNew 后跑。
+      await this.migrateCatalogOnLoad(this.options.accountPool)
       void writeModelCatalogClosingNew(this.product.id, fetched, this.options.accountPool)
       return true
     } catch {
       return false
+    }
+  }
+
+  /**
+   * 单个模型的剩余额度（用户 2026-11-01 要求：模型名后面学 zcode 加剩余%）。
+   *
+   * 数据来自远端目录 `quotaInfo.remainingFraction`（`fetchAvailableModels`
+   * 每模型下发，0-1 浮点；分段合并条目取族内最保守值）。静态兜底表没有
+   * 该字段 → `undefined`，客户端就不渲染标签（不编造 100%）。
+   */
+  quotaFor(modelId: string): ModelQuota | undefined {
+    const entry = this.currentModels().find((item) => item.id === modelId)
+    const remaining = entry && 'remainingFraction' in entry ? entry.remainingFraction : undefined
+    if (typeof remaining !== 'number' || !Number.isFinite(remaining)) return undefined
+    if (remaining <= 0) return { kind: 'exhausted' }
+    // percent 单位：amount = 0-1 比例 × 100 取整（85.4% → 85）。
+    return { kind: 'remaining', amount: Math.round(remaining * 100), unit: 'percent' }
+  }
+
+  /**
+   * 模型目录**合并迁移**（一次性，幂等）：
+   *
+   * 1. **分段条目 → 合并条目**：远端目录 2026-11-01 起把
+   *    `gemini-3.8-flash-{low,medium,high}` 合并成 `gemini-3.8-flash` 一条。
+   *    合并后用户在**旧分段条目**上的开/关状态要搬到合并条目上
+   *   （任一分段开过 = 打开；全部关 = 关闭），否则升级后主模型默认关着，
+   *    对话框里直接消失。旧分段 id 从黑名单清掉（目录里已不存在，留着是垃圾）。
+   * 2. **claude/gpt-oss 首次放行**：这两族 id 是本次新增，若走
+   *    `writeModelCatalogClosingNew` 的「新增自动关闭」规则会被默认关掉，
+   *    用户点名要的模型反而看不见 —— 显式打开。
+   *
+   * ⚠️ 只在**远端目录成功加载后**跑（`loadModels`/`refreshCatalog` 拿到数据时）；
+   * 静态兜底表不触发。
+   * ⚠️ 调用方必须 **await** 本函数再跑 `writeModelCatalogClosingNew`
+   *（顺序契约见 `loadModels` 内注释）。
+   * ⚠️ 全 try 包裹：迁移失败不影响目录本身（下次再试）。
+   */
+  private async migrateCatalogOnLoad(pool: AccountPool | undefined): Promise<void> {
+    if (pool === undefined) return
+    const models = this.remoteModels
+    if (models === undefined || models.length === 0) return
+    try {
+      const disabled = pool.listDisabledModels(this.product.id)
+      const writes: Array<{ id: string; disabled: boolean }> = []
+
+      // ① 分段 → 合并的开关继承（只在合并 id 没有用户显式记录时搬状态）。
+      const mergedIds = new Set(models.map((item) => item.id))
+      for (const model of models) {
+        if (matchSegmentSuffix(model.id) === undefined) continue
+        const segments = ['low', 'medium', 'high']
+          .map((segment) => `${model.id}-${segment}`)
+          .filter((id) => !mergedIds.has(id))
+        if (segments.length === 0) continue
+        // 黑名单里有旧分段记录才迁移；没有就什么都不动（首次使用）。
+        if (!segments.some((id) => disabled[id] === true || disabled[id] === false)) continue
+        if (disabled[model.id] === true || disabled[model.id] === false) continue
+        // 任一分段是显式打开（false）→ 打开；否则（全部关闭）→ 关闭。
+        const opened = segments.some((id) => disabled[id] === false)
+        writes.push({ id: model.id, disabled: !opened })
+      }
+
+      // ② claude / gpt-oss 显式打开（用户点名拉取的模型，不该被默认关闭）。
+      for (const model of models) {
+        if (!model.id.startsWith('claude-') && !model.id.startsWith('gpt-oss-')) continue
+        if (disabled[model.id] === true || disabled[model.id] === false) continue
+        writes.push({ id: model.id, disabled: false })
+      }
+
+      if (writes.length === 0) return
+      for (const { id, disabled: isDisabled } of writes) {
+        await pool.setModelDisabled(this.product.id, id, isDisabled)
+      }
+      this.options.logger?.info?.(
+        `[antigravity] 目录合并迁移：${writes.map((w) => `${w.id}→${w.disabled ? '关' : '开'}`).join(', ')}`,
+      )
+    } catch (error) {
+      this.options.logger?.warn?.(`[antigravity] 目录合并迁移失败（不影响目录）: ${String(error)}`)
     }
   }
 

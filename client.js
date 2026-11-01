@@ -287,6 +287,7 @@ window.__ModuleLoader__.load({
         'chan.model.quotaExhaustedHint': '该模型的免费额度已用尽',
         // 额度标签的**文案模板**（后端只传结构化数据，见 ModelQuota）。
         'chan.model.quotaRemaining': '剩 {n}',
+        'chan.model.quotaRemainingPercent': '剩 {n}%',
         'chan.model.quotaExhausted': '额度用尽',
         // 「异常汇总」板块（渠道列表下方，仅在有模型限流时出现）
         'chan.anomaly.title': '异常汇总',
@@ -781,6 +782,7 @@ window.__ModuleLoader__.load({
         'chan.model.quotaHint': 'Remaining quota for this model',
         'chan.model.quotaExhaustedHint': 'Free quota for this model is used up',
         'chan.model.quotaRemaining': '{n} left',
+        'chan.model.quotaRemainingPercent': '{n}% left',
         'chan.model.quotaExhausted': 'Quota used up',
         'chan.anomaly.title': 'Limits',
         'chan.anomaly.rateLimit': 'Rate limited',
@@ -3560,8 +3562,13 @@ window.__ModuleLoader__.load({
         const quota = model?.quota
         if (!quota || typeof quota !== 'object') return null
         const exhausted = quota.kind === 'exhausted'
-        const template = exhausted ? t('chan.model.quotaExhausted') : t('chan.model.quotaRemaining')
-        const text = exhausted ? template : template.replace('{n}', formatTokens(quota.amount))
+        // percent 单位（Antigravity 按模型分桶的 remainingFraction）：显示
+        // 「剩 85%」，不走 formatTokens（那会把 85 显示成 token 数）。
+        const text = exhausted
+          ? t('chan.model.quotaExhausted')
+          : quota.unit === 'percent'
+            ? t('chan.model.quotaRemainingPercent').replace('{n}', String(quota.amount))
+            : t('chan.model.quotaRemaining').replace('{n}', formatTokens(quota.amount))
         if (text === '') return null
         return h('span', {
           className: 'ofm_creditbadge strong ofm_quotabadge' + (exhausted ? ' exhausted' : ''),

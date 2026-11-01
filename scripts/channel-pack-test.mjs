@@ -360,6 +360,11 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
     const { verifyGeminiLocationHint } = await import('./antigravity-location-hint-test.mjs')
     await verifyGeminiLocationHint()
   }
+  {
+    const { verifyAntigravityModelCatalog } = await import('./antigravity-model-catalog-test.mjs')
+    await verifyAntigravityModelCatalog()
+    console.log('ok  antigravity 模型目录三项：claude/gpt-oss 放行、分段合并去重、剩余额度绿标')
+  }
   const { verifyChannelPrFixes } = await import('./channel-pr-fixes-test.mjs')
   await verifyChannelPrFixes()
   const { verifyTencentFingerprint } = await import('./tencent-fingerprint-test.mjs')

@@ -780,11 +780,15 @@ export interface RpcModelListRequest {
  * 判别联合而不是「字符串 + 语义字段」：`amount` 只在 `remaining` 分支
  * 存在，类型层面就不可能出现「已用尽还带着剩余量」这种矛盾状态。
  *
- * - `remaining` → 绿色框，显示「还剩多少」；
+ * - `remaining` → 绿色框，显示「还剩多少」；`unit` 决定读法：
+ *   - `tokens` → 计数（`3.0M`），ZCode 按模型分账的 token 池；
+ *   - `percent` → 百分比（`85%`），Antigravity 按模型分桶下发
+ *     `quotaInfo.remainingFraction`（0-1 浮点，amount 已乘 100 取整）。
  * - `exhausted` → 红色框，显示「已用尽」（上游只给二值，没有数量）。
  */
 export type ModelQuota =
   | { kind: 'remaining'; amount: number; unit: 'tokens' }
+  | { kind: 'remaining'; amount: number; unit: 'percent' }
   | { kind: 'exhausted' }
 
 export interface RpcModelListEntry {

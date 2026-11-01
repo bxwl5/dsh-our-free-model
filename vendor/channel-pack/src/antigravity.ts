@@ -501,25 +501,53 @@ export interface AntigravityRemoteModelEntry extends AntigravityModelEntry {
  *
  * ⚠️ **过滤两类噪音 id**（实测响应里确实有）：`chat_23310` / `tab_jump_flash_lite_preview`
  * 这类内部占位条目（无 displayName、无 quotaInfo）不进目录。
- * ⚠️ **只接 Gemini 家族**（id 前缀 `antigravity-`）：响应里还有 `claude-sonnet-4-6` /
- * `claude-opus-4-6-thinking` / `gpt-oss-120b-medium`，但本插件的推理协议/工具
- * 语义按 Gemini 信封实现，未实现的通道不广告（Agent2API 同款前缀白名单策略）。
+ *
+ * ## 2026-11-01 起放行 Claude / GPT-OSS 家族（用户要求「应该拉取这些模型」）
+ *
+ * `claude-sonnet-4-6` / `claude-opus-4-6-thinking` / `gpt-oss-120b-medium` 经
+ * `streamGenerateContent` 逐 id 推理探针验证 **200 可用**（Gemini 同信封：
+ * 五头 + `model` 顶层字段 + `thinkingConfig`；工具调用首轮返回
+ * `functionCall{id,args}`，结果回传要求 `functionResponse` 携带**与 call 相同
+ * 的 id** —— 见 `antigravity-messages.ts` 的 id 配对段）。放行即广告，不再按
+ * Gemini 前缀白名单拦（用户 2026-11-01 拍板）。
+ *
+ * ## 2026-11-01 起合并「同模型不同思考强度」的分段条目（用户报障）
+ *
+ * 远端把 Gemini 3.8 Flash 的三个思考档拆成三条独立条目
+ *（`gemini-3.8-flash-low/medium/high`），UI 上占三个模型位。本函数把同族分段
+ * 合并成**单条** `gemini-3.8-flash`（档位走既有的 efforts 下拉，同静态兜底表）：
+ *
+ * - 族名 = 剥掉 `-(low|medium|high)$` 后缀的裸名；`displayName` 取「最短后缀」
+ *   一侧的显示名（`(Low)` < `(Medium)` < `(High)` 字典序，`Gemini 3.8 Flash
+ *   (Low)` 去掉 ` (Low)` 即 `Gemini 3.8 Flash`）。
+ * - 各分段字段取「信息量最大」侧合并（contextWindow/maxOutputTokens 取最大，
+ *   supportsImage/支持思考 任一为真即真，remainingFraction 取最小=最保守）。
+ * - **只有全部三个档位齐了才合并**（缺任意一个按独立模型透传，不猜族名）。
+ * - `-tiered`（无 displayName 的自适应档）**不进族**：上游把它作为编程用入口，
+ *   且无显示名；本插件静态表已提供 `gemini-3.8-flash`+`tiered` 下拉档覆盖该
+ *   能力，此处若再暴露会与合并后的主模型重复。
  */
 export function parseGeminiAvailableModels(payload: unknown): readonly AntigravityRemoteModelEntry[] {
   if (typeof payload !== 'object' || payload === null) return []
   const models = (payload as Record<string, unknown>).models
   if (typeof models !== 'object' || models === null || Array.isArray(models)) return []
+  type Seg = {
+    base: string
+    displayName: string
+    entry: AntigravityRemoteModelEntry
+  }
   const out: AntigravityRemoteModelEntry[] = []
+  const segments = new Map<string, Seg[]>()
   for (const [id, raw] of Object.entries(models as Record<string, unknown>)) {
     if (typeof raw !== 'object' || raw === null) continue
     const entry = raw as Record<string, unknown>
-    // ⚠️ 白名单（2026-11-01 实测后放宽）：
-    // - `antigravity-` 前缀：远端 id 就是上游真名，逐 id 推理探针验证 3.8 系 /
-    //   gemini-3-flash 均 200（2.5-pro 一次 503 为上游临时），全部放行。
-    // - `claude-*` / `gpt-oss-*` 不接：本插件的推理信封是 Gemini 形态，
-    //   未实现的通道不广告（Agent2API 同款前缀白名单策略）。
-    // - 占位 id（chat_NNN / tab_*）无 displayName，由下面判挡。
-    if (!id.startsWith('gemini-')) continue
+    // ⚠️ 白名单（2026-11-01 第二次放宽）：
+    // - `gemini-` 前缀：远端 id 就是上游真名，逐 id 推理探针验证 3.8 系 /
+    //   gemini-3-flash 均 200，全部放行。
+    // - `claude-` / `gpt-oss-` 前缀：同信封推理探针验证 200（文本 / 思考 /
+    //   工具调用 / 工具结果回传全链路），放行（用户点名要这三条）。
+    // - 占位 id（chat_NNN / tab_* / models/*）无 displayName，由下面判挡。
+    if (!id.startsWith('gemini-') && !id.startsWith('claude-') && !id.startsWith('gpt-oss-')) continue
     const displayName = typeof entry.displayName === 'string' ? entry.displayName : ''
     if (displayName === '') continue
     const contextWindow = positiveIntField(entry.maxTokens) ?? ANTIGRAVITY_CONTEXT_WINDOW
@@ -533,7 +561,7 @@ export function parseGeminiAvailableModels(payload: unknown): readonly Antigravi
     const remaining = typeof quota.remainingFraction === 'number' && Number.isFinite(quota.remainingFraction)
       ? quota.remainingFraction
       : undefined
-    out.push({
+    const parsed: AntigravityRemoteModelEntry = {
       id,
       name: displayName,
       contextWindow,
@@ -544,9 +572,65 @@ export function parseGeminiAvailableModels(payload: unknown): readonly Antigravi
       ...(typeof entry.thinkingBudget === 'number' && Number.isFinite(entry.thinkingBudget)
         ? { thinkingBudget: entry.thinkingBudget }
         : {}),
+    }
+    // 分段族归并：`gemini-3.8-flash-{low,medium,high}` → 同一 `{base}` 桶。
+    // 非分段 id（含 `-tiered`）直接进输出。
+    const seg = matchSegmentSuffix(id)
+    if (seg === undefined) {
+      out.push(parsed)
+      continue
+    }
+    const bucket = segments.get(seg.base) ?? []
+    bucket.push({ base: seg.base, displayName, entry: parsed })
+    segments.set(seg.base, bucket)
+  }
+  // 分段合并：三档齐全才合并成一条（族名即裸名，显示名去掉强度后缀）。
+  for (const [base, bucket] of segments) {
+    if (bucket.length < 3) {
+      out.push(...bucket.map((item) => item.entry))
+      continue
+    }
+    // 显示名取「字典序最小」的（`(Low)` < `(Medium)` < `(High)`）再剥掉
+    // ` (Low)` 后缀 —— `Gemini 3.8 Flash (Low)` → `Gemini 3.8 Flash`。
+    const displayNames = bucket.map((item) => item.displayName).sort()
+    const shortest = displayNames[0] ?? base
+    const stripped = shortest.replace(/\s*\((?:Low|Medium|High)\)\s*$/i, '').trim()
+    const entries = bucket.map((item) => item.entry)
+    out.push({
+      id: base,
+      name: stripped === '' ? base : stripped,
+      // 合并取各档最宽能力：窗口/输出取最大，图片/思考任一为真即真。
+      contextWindow: Math.max(...entries.map((item) => item.contextWindow)),
+      maxTokens: Math.max(...entries.map((item) => item.maxTokens)),
+      supportsImage: entries.some((item) => item.supportsImage),
+      // 分段族必然 supportsThinking（上游按档位拆分的前提），档位下拉用
+      // low/medium/high —— **不含 tiered**：上游分段没有自适应档。
+      effortOptions: ['low', 'medium', 'high'],
+      defaultEffort: ANTIGRAVITY_DEFAULT_EFFORT,
+      // remainingFraction 取最小（=最保守的桶）。
+      ...(entries.some((item) => item.remainingFraction !== undefined)
+        ? { remainingFraction: Math.min(...entries.map((item) => item.remainingFraction ?? 1)) }
+        : {}),
     })
   }
   return out
+}
+
+/**
+ * 识别「思考强度分段」id（`-low/-medium/-high` 后缀）。
+ *
+ * ⚠️ **只对 `gemini-` 前缀生效**：claude/gpt-oss 的 id 虽也可能以这些词结尾
+ *（如 `gpt-oss-120b-medium`），但那是**模型名本身的一部分**（上游就这一条、
+ * 无同族其它档位），剥掉后缀会把两个不同模型并成一个 —— 绝不能碰。
+ */
+export function matchSegmentSuffix(id: string): { base: string; segment: string } | undefined {
+  if (!id.startsWith('gemini-')) return undefined
+  for (const segment of ['low', 'medium', 'high'] as const) {
+    if (id.endsWith(`-${segment}`)) {
+      return { base: id.slice(0, id.length - segment.length - 1), segment }
+    }
+  }
+  return undefined
 }
 
 /** 正整数字段提取（`parseGeminiAvailableModels` 内部用）。 */
@@ -584,14 +668,19 @@ export interface AntigravityModelSpec {
 /**
  * 归一化模型 id：剥掉档位后缀（`-low/-medium/-high/-tiered`），得到目录裸名。
  *
+ * ## 2026-11-01 起：只对 `gemini-` 前缀剥档位
+ *
+ * ⚠️ 远端目录接入后出现了**以档位词结尾的非 Gemini id**（`gpt-oss-120b-medium`）
+ * —— `-medium` 是模型名本身的一部分，不是档位。对它们剥后缀会把两个不同模型
+ * 并成一个（`gpt-oss-120b-medium` 被剥成不存在的 `gpt-oss-120b`，请求 404）。
+ * 故本函数**只剥 `gemini-` 前缀 id 的已知档位**，其余前缀原样返回。
+ *
  * ⚠️ 限流标记（`modelRateLimits` 的 key）与 `account.test` 探测链路记录 /
  * 传递的可能是**带档位的名字**（写标记时用的是请求原始 id），而静态表的 id
  * 是裸名 —— 两处校验都必须先归一化，否则「测一下被限流的档位」会被误拒。
- * ⚠️ 只剥**已知档位**后缀：未来加第二个模型时，若其真名恰好以档位词结尾
- * （如 `antigravity-x-high`），这里会把它误剥成 `antigravity-x` —— 届时必须改为
- * 「按目录表全名优先匹配」再回落剥后缀。
  */
 export function antigravityCanonicalModelId(modelId: string): string {
+  if (!modelId.startsWith('gemini-')) return modelId
   for (const tier of ANTIGRAVITY_EFFORT_IDS) {
     if (modelId.endsWith(`-${tier}`)) return modelId.slice(0, modelId.length - tier.length - 1)
   }
@@ -601,26 +690,43 @@ export function antigravityCanonicalModelId(modelId: string): string {
 /**
  * 由「模型 id + 用户选的档位」得出上游模型规格。
  *
- * ## 2026-11-01 起支持远端目录的**全 Gemini 家族**
+ * ## 2026-11-01 起：远端目录全家族（Gemini + Claude + GPT-OSS）
  *
- * `fetchAvailableModels` 实测（Agent2API 规格）：远端下发的 id 就是上游真名，
- * 逐 id 推理探针验证 `gemini-3.8-flash-medium` / `-tiered` / `gemini-3-flash`
- * 均 200 —— **上游按请求体的 `model` 原样路由，名字本身不参与准入校验**
- * （这与文件头「模型名是准入钥匙」的旧结论并不矛盾：那是旧通道/旧凭据时期
- * 的现象，Antigravity free-tier 新通道实测不再卡名字）。
+ * `fetchAvailableModels` 实测：远端下发的 id 就是上游真名，逐 id 推理探针验证
+ * `gemini-3.8-flash-medium` / `-tiered` / `gemini-3-flash` / `claude-sonnet-4-6` /
+ * `claude-opus-4-6-thinking` / `gpt-oss-120b-medium` 均 200 —— **上游按请求体的
+ * `model` 原样路由，名字本身不参与准入校验**（这与文件头「模型名是准入钥匙」
+ * 的旧结论并不矛盾：那是旧通道/旧凭据时期的现象，Antigravity free-tier 新通道
+ * 实测不再卡名字）。
  *
  * 规则：
- * - **裸 `gemini-3.8-flash`**（静态兜底表条目）：拼档位后缀（`-<tier>`）——
- *   档位是用户在 UI 下拉框选的，efforts 表也只在它身上声明。
+ * - **裸 `gemini-3.8-flash`**（静态兜底表条目 / 分段合并后的目录条目）：拼档位
+ *   后缀（`-<tier>`）—— 档位是用户在 UI 下拉框选的，efforts 表在它身上声明。
  * - **其余 `gemini-` 前缀 id**（远端目录原样名，如 `gemini-3.8-flash-medium` /
  *   `gemini-3-flash` / `gemini-2.5-pro`）：**原样透传**，不吃档位 —— 这些 id
  *   已是上游真名，拼后缀反而 404。
- * - **非 `antigravity-` 前缀 / 目录外 id**：拒绝（保留旧「写错名静默跑 3.8」的防线）。
+ * - **`claude-` / `gpt-oss-` 前缀 id**：原样透传，**不发档位后缀** ——
+ *   `gpt-oss-120b-medium` 的 `-medium` 是名字的一部分；claude 的思考预算由
+ *   `thinkingConfig` 表达（探针实测：budget 必须 < maxOutputTokens，故
+ *   `antigravityThinkingBudget` 的 1k/4k/10k 对它们是安全的）。
+ * - **其它前缀 / 目录外 id**：拒绝（保留旧「写错名静默跑 3.8」的防线）。
  *
- * ⚠️ 远端条目的档位不映射 effort：它们的 supportsThinking 只影响
- * `inputModalities` 展示，思考预算由上游默认值决定（Agent2API 同口径）。
+ * ⚠️ 思考档位的传递方式：档位仍然只影响 `thinkingConfig.thinkingBudget`
+ *（Claude 家族上游会校验 `budget < max_tokens`，本插件的 1k/4k/10k 档在
+ * 默认 64k 输出上限下恒成立）；对**不接受**思考预算的远端条目（如
+ * `gpt-oss-120b-medium` 上游建议 8192），档位同样只改预算值 —— 上游自行取整。
  */
 export function antigravityModelSpec(modelId: string, effort?: string): AntigravityModelSpec {
+  // claude / gpt-oss：原样透传（不吃档位后缀），思考走 thinkingConfig。
+  if (modelId.startsWith('claude-') || modelId.startsWith('gpt-oss-')) {
+    const tier = antigravityEffortToTier(effort)
+    return {
+      upstream: modelId,
+      tier,
+      thinkingBudget: antigravityThinkingBudget(tier),
+      includeThoughts: true,
+    }
+  }
   if (!modelId.startsWith('gemini-')) {
     throw new LlmError(
       `antigravity: 模型 "${modelId}" 不在本 provider 目录中（仅支持 antigravity- 前缀模型）`,
@@ -630,8 +736,10 @@ export function antigravityModelSpec(modelId: string, effort?: string): Antigrav
       { status: 404 },
     )
   }
-  // 静态兜底表的裸主模型：档位后缀是准入钥匙，走档位表。
-  if (antigravityCanonicalModelId(modelId) === ANTIGRAVITY_UPSTREAM_FLASH && modelId === ANTIGRAVITY_UPSTREAM_FLASH) {
+  // 静态兜底表的裸主模型 / 分段合并后的目录条目：档位后缀走档位表。
+  // （合并条目的 id 就是裸名 `gemini-3.8-flash`，与静态表同名同路径；
+  // 远端原始分段名 `-medium/-low/-high` 落到下面的原样透传。）
+  if (modelId === ANTIGRAVITY_UPSTREAM_FLASH) {
     const tier = antigravityEffortToTier(effort)
     return {
       upstream: `${ANTIGRAVITY_UPSTREAM_FLASH}-${tier}`,
