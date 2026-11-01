@@ -64878,11 +64878,6 @@ var AntigravityAdapter = class extends LlmAdapter16 {
   async listModels(_provider) {
     if (!await providerCatalogVisible(this.options.accountPool, this.product.id)) return [];
     const all = await this.loadModels();
-    try {
-      const credential = await this.options.resolveCredential();
-      if (credential?.access_token) this.lastKnownToken = credential.access_token;
-    } catch {
-    }
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id);
     const listed = disabled === void 0 || disabled.size === 0 ? all : all.filter((model) => !disabled.has(model.id));
     return listed.map((model) => ({

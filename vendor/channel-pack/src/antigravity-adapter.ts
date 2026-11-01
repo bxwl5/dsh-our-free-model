@@ -512,14 +512,11 @@ export class AntigravityAdapter extends LlmAdapter {
     if (!await providerCatalogVisible(this.options.accountPool, this.product.id)) return []
 
     const all = await this.loadModels()
-    // 顺路记下「最后已知凭据 token」：`quotaFor` 是**同步**接口读不了凭据
-    //（异步会破坏 `listAllModels` 的同步契约），而组桶快照按 token 键存
-    //（`cachedGroupBuckets`）。失败吞掉 —— token 只是绿标数据的键，拿不到
-    // 就回落模型级粗快照。
-    try {
-      const credential = await this.options.resolveCredential()
-      if (credential?.access_token) this.lastKnownToken = credential.access_token
-    } catch { /* 绿标降级，不影响列表 */ }
+    // ⚠️ 不在这里预取凭据 token：`quotaFor` 的组桶快照键由 `stream()`（发推理
+    // 时）与 `credits.balances`（面板查余额时）两条既有路径写入，listModels
+    // 只读不写 —— 多一次凭据解析徒增列表失败面（t 审查后排障实证：宿主环境
+    // 把 listModels 变成抛错渠道被网关跳过）。绿标在首条推理/首次余额查询后
+    // 自然点亮。
     const disabled = this.options.accountPool?.disabledModelsFor(this.product.id)
     const listed = disabled === undefined || disabled.size === 0
       ? all
