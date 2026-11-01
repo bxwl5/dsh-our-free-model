@@ -62627,6 +62627,13 @@ function parseGeminiAvailableModels(payload) {
   }
   return disambiguateDuplicateNames(out, referencedIds);
 }
+var KNOWN_DUPLICATE_PUBLIC_NAMES = {
+  // 撞名组「Gemini 3.5 Flash Lite」（权威条目 gemini-3.5-flash-lite 保留原名）。
+  "gemini-2.5-flash-lite": "Gemini 2.5 Flash Lite",
+  "gemini-2.5-flash": "Gemini 2.5 Flash",
+  // 上游 id 自带 -thinking 后缀，公开名用 Google 的「（思考）」表述。
+  "gemini-2.5-flash-thinking": "Gemini 2.5 Flash\uFF08\u601D\u8003\uFF09"
+};
 function disambiguateDuplicateNames(entries, referencedIds = []) {
   const byName = /* @__PURE__ */ new Map();
   for (const entry of entries) {
@@ -62644,6 +62651,11 @@ function disambiguateDuplicateNames(entries, referencedIds = []) {
     const sorted = [...bucket].sort((a, b) => a.id.localeCompare(b.id));
     const canonical = sorted.find((item) => referenced.has(item.id)) ?? sorted[0];
     for (const entry of bucket) {
+      const publicName = KNOWN_DUPLICATE_PUBLIC_NAMES[entry.id];
+      if (publicName !== void 0 && entry.id !== canonical.id) {
+        out.push({ ...entry, name: publicName });
+        continue;
+      }
       if (entry.id === canonical.id) {
         out.push(entry);
         continue;

@@ -132,10 +132,20 @@ export async function verifyAntigravityModelCatalog() {
   assert.equal(disambiguated.length, 5, '四个撞名模型全保留（不合并丢弃）')
   assert.equal(dupById.get('gemini-3.5-flash-lite')?.name, 'Gemini 3.5 Flash Lite',
     '权威 id（被推荐面引用）保留原名')
-  assert.equal(dupById.get('gemini-2.5-flash-lite')?.name, 'Gemini 3.5 Flash Lite (2.5-flash-lite)')
-  assert.equal(dupById.get('gemini-2.5-flash')?.name, 'Gemini 3.5 Flash Lite (2.5-flash)')
-  assert.equal(dupById.get('gemini-2.5-flash-thinking')?.name, 'Gemini 3.5 Flash Lite (2.5-flash-thinking)')
+  // 用户拍板「更换」：已证实的撞名 id 用 Google 正式公开名（不是 id 尾段）
+  assert.equal(dupById.get('gemini-2.5-flash-lite')?.name, 'Gemini 2.5 Flash Lite')
+  assert.equal(dupById.get('gemini-2.5-flash')?.name, 'Gemini 2.5 Flash')
+  assert.equal(dupById.get('gemini-2.5-flash-thinking')?.name, 'Gemini 2.5 Flash（思考）')
   assert.equal(dupById.get('gemini-2.5-pro')?.name, 'Gemini 2.5 Pro', '非撞名条目不动')
+  // 保底路径：映射表没有的撞名 id 仍用 id 尾段
+  const fallback = parseGeminiAvailableModels({
+    models: {
+      'gemini-a': { displayName: 'Same Name' },
+      'gemini-b': { displayName: 'Same Name' },
+    },
+  })
+  const fbNames = fallback.map((item) => item.name).sort()
+  assert.deepEqual(fbNames, ['Same Name', 'Same Name (b)'], '映射表外的撞名回落 id 尾段')
   // 消歧只改 name：id 与能力字段（effortOptions）原样
   assert.deepEqual([...dupById.get('gemini-2.5-flash')?.effortOptions ?? []], ['low', 'medium', 'high', 'tiered'])
 
@@ -146,9 +156,9 @@ export async function verifyAntigravityModelCatalog() {
     const real = parseGeminiAvailableModels(fixture)
     const realById = new Map(real.map((item) => [item.id, item]))
     assert.equal(realById.get('gemini-3.5-flash-lite')?.name, 'Gemini 3.5 Flash Lite')
-    assert.equal(realById.get('gemini-2.5-flash-lite')?.name, 'Gemini 3.5 Flash Lite (2.5-flash-lite)')
-    assert.equal(realById.get('gemini-2.5-flash')?.name, 'Gemini 3.5 Flash Lite (2.5-flash)')
-    assert.equal(realById.get('gemini-2.5-flash-thinking')?.name, 'Gemini 3.5 Flash Lite (2.5-flash-thinking)')
+    assert.equal(realById.get('gemini-2.5-flash-lite')?.name, 'Gemini 2.5 Flash Lite')
+    assert.equal(realById.get('gemini-2.5-flash')?.name, 'Gemini 2.5 Flash')
+    assert.equal(realById.get('gemini-2.5-flash-thinking')?.name, 'Gemini 2.5 Flash（思考）')
     // 消歧后不应再有同名重复
     const names = real.map((item) => item.name)
     assert.equal(new Set(names).size, names.length, '消歧后显示名无重复')

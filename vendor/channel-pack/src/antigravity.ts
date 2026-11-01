@@ -659,6 +659,31 @@ export function parseGeminiAvailableModels(payload: unknown): readonly Antigravi
 }
 
 /**
+ * 上游撞名条目的**公开名映射**（2026-11-01 用户拍板「更换」）。
+ *
+ * ## 背景：这是修正上游的数据错误，不是编造
+ *
+ * `fetchAvailableModels` 把四个不同模型的 displayName 全标成
+ * 「Gemini 3.5 Flash Lite」（直连探针证实 `modelVersion` 各异）。四条除 id 外
+ * 字段全等（连 `quotaInfo.resetTime` 都同秒）—— 上游注册旧 id 时整条复制
+ * `gemini-3.5-flash-lite` 忘改显示名。且 2.5 系的公开名称本来就是
+ *「Gemini 2.5 Flash / 2.5 Flash Lite」（Google 发布记录），"3.5" 覆在
+ * "2.5" 上是元数据错误。
+ *
+ * 映射只收录**本表已证实的撞名 id**：逐条直连推理验证过 `modelVersion`，
+ * 公开名采用 Google 的正式发布名。**不做通用猜测**（比如从 id 推导任意
+ * 模型的显示名）—— 上游没下发的知识不进这张表。未来上游修正 displayName
+ * 后撞名消失，映射自然不再命中（组内只剩一条时原样透传）。
+ */
+const KNOWN_DUPLICATE_PUBLIC_NAMES: Readonly<Record<string, string>> = {
+  // 撞名组「Gemini 3.5 Flash Lite」（权威条目 gemini-3.5-flash-lite 保留原名）。
+  'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
+  'gemini-2.5-flash': 'Gemini 2.5 Flash',
+  // 上游 id 自带 -thinking 后缀，公开名用 Google 的「（思考）」表述。
+  'gemini-2.5-flash-thinking': 'Gemini 2.5 Flash（思考）',
+}
+
+/**
  * 同名条目消歧（2026-11-01 用户报障「Gemini 3.5 Flash Lite 出现多个」）。
  *
  * ## 上游事实（直连推理探针，2026-11-01）
@@ -670,15 +695,16 @@ export function parseGeminiAvailableModels(payload: unknown): readonly Antigravi
  * `deprecatedModelIds` 为空，不能按「废弃」剔除（会丢可用模型）。
  *
  * ⚠️ **不能合并**：合并 = 把四个不同模型折成一个（其余三个 id 从此不可选）。
- * 正确做法是**消歧显示名**：同 displayName 组内保留「上游推荐面引用的权威
- * id」（`agentModelSorts` / `mqueryModelIds` 等引用的 `gemini-3.5-flash-lite`）
- * 原名不动，其余条目追加 id 特征尾段 —— `Gemini 3.5 Flash Lite (2.5-flash)`。
+ * 消歧分两层：
  *
- * 规则：
- * - 组内权威条目：被 `referencedIds` 点名者优先；无引用信息时保留**字典序
- *   最小**的 id（稳定，不依赖顶层字段是否存在）。
- * - 区分标签取 id 去掉家族前缀的**特征尾段**（`gemini-2.5-flash-thinking`
- *   → `2.5-flash-thinking`），组内可读且互不相同。
+ * 1. **公开名映射**（{@link KNOWN_DUPLICATE_PUBLIC_NAMES}）：已证实的撞名 id
+ *    直接换成 Google 的正式公开名（用户拍板；比 id 尾段可读）。
+ * 2. **id 尾段保底**：映射表没有的撞名 id，同 displayName 组内保留「上游
+ *    推荐面引用的权威 id」（`agentModelSorts` / `mqueryModelIds` 等引用的
+ *    条目）原名不动，其余追加 id 特征尾段 —— `Gemini X (2.5-flash)`。
+ *
+ * 组内权威条目：被 `referencedIds` 点名者优先；无引用信息时保留**字典序
+ * 最小**的 id（稳定，不依赖顶层字段是否存在）。
  */
 function disambiguateDuplicateNames(
   entries: readonly AntigravityRemoteModelEntry[],
@@ -700,11 +726,17 @@ function disambiguateDuplicateNames(
     const sorted = [...bucket].sort((a, b) => a.id.localeCompare(b.id))
     const canonical = sorted.find((item) => referenced.has(item.id)) ?? sorted[0]
     for (const entry of bucket) {
+      // ① 公开名映射命中（只对撞名组生效）：直接用 Google 正式发布名。
+      const publicName = KNOWN_DUPLICATE_PUBLIC_NAMES[entry.id]
+      if (publicName !== undefined && entry.id !== canonical.id) {
+        out.push({ ...entry, name: publicName })
+        continue
+      }
       if (entry.id === canonical.id) {
         out.push(entry)
         continue
       }
-      // 特征尾段：剥掉家族前缀（gemini-/claude-/gpt-oss-）。
+      // ② 保底：id 特征尾段（剥掉家族前缀 gemini-/claude-/gpt-oss-）。
       const suffix = entry.id.replace(/^(gemini|claude|gpt-oss)-/, '')
       out.push({
         ...entry,
