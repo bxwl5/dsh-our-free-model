@@ -53,7 +53,7 @@ const check = (name, run) => { run(); checks++; console.log(`ok  ${name}`) }
 const { resolveZcodeAppVersion, ZCODE_APP_VERSION_FALLBACK } = await import('../vendor/channel-pack/src/zcode.ts')
 const {
   buildZcodeHeaders, fetchZcodeClaimablePlans, fetchZcodeBalance, claimZcodePlan,
-  zcodeEffectiveActivityGrants, zcodeRemainingByModel,
+  zcodeEffectiveActivityGrants, zcodeRemainingByModel, parseZcodeMarketingTouch,
 } = await import('../vendor/channel-pack/src/zcode-upstream.ts')
 
 const credential = (appVersion) => ({
@@ -102,9 +102,11 @@ check('preview 的 ?app_version= 也是钳制后的值', async () => {
     return new Response(JSON.stringify({ code: 0, data: { plans: [] } }), { status: 200 })
   }
   await fetchZcodeClaimablePlans(credential('3.14.3'), fetchImpl)
-  assert.equal(seen.length, 1)
-  assert.match(seen[0], /[?&]app_version=3\.16\.3(&|$)/)
-  assert.doesNotMatch(seen[0], /app_version=3\.14\.3/)
+  // 自 2026-11-02 起两个来源都查（投放 + preview），故这里只挑 preview 那条断言。
+  const preview = seen.find(url => url.includes('/billing/preview'))
+  assert.ok(preview !== undefined, '必须查 preview')
+  assert.match(preview, /[?&]app_version=3\.16\.3(&|$)/)
+  assert.doesNotMatch(preview, /app_version=3\.14\.3/)
 })
 
 check('balance 里的活动清单同样按新版本查', async () => {
@@ -258,6 +260,185 @@ check('余量不是「只查一次」——按 TTL 重查（到点/过期才会�
   assert.match(warm.slice(0, 2200), /MODEL_REMAINING_TTL_MS/, 'warmCatalog 要看 TTL')
   assert.match(warm.slice(0, 2200), /modelRemainingAt/, 'TTL 基准是上次刷新时刻')
   assert.match(source, /this\.modelRemainingAt = Date\.now\(\)/, '刷新成功后要记时刻')
+})
+
+// ── ★ 2026-11-02：每日活动额度由「营销投放」下发，`preview` 是空的 ──────────
+//
+// 真凭据实测（同一账号、同一 JWT、同一时刻）：
+//   GET /zcode-plan/billing/preview → {"code":0,"msg":"","logid":…}   ← 连 data 都没有
+//   GET /api/v1/marketing/touch     → claim_zcode_plan / …-start-plan-1102 / 3 亿 token
+// 旧实现只读 preview ⇒ 每轮都报「今日暂无可领额度」，用户看到的就是「签到一直没成功」。
+
+/** 一份**真实抓取**的 `marketing/touch` 响应（2026-11-02，字段逐字保留）。 */
+const TOUCH_FIXTURE = {
+  code: 0,
+  msg: '',
+  data: {
+    server_time: 1793623341,
+    language: 'zh-CN',
+    deliveries: [{
+      campaign_id: '2101141259813175296',
+      resource_position: 'banner',
+      priority: 50,
+      banner: {
+        buttons: [
+          { text: { format: '', content: '' }, action: { type: 'close', args: null } },
+          {
+            text: { format: '', content: '' },
+            action: { type: 'claim_zcode_plan', args: { plan_id: 'zcode-v3-start-plan-1102' } },
+          },
+        ],
+        background: {
+          type: 'bundle',
+          args: {
+            zcode_plan: {
+              plan_id: 'zcode-v3-start-plan-1102',
+              name: 'ZCODE GLOBAL BUILD',
+              priority: 111,
+              starts_at: 1793617200,
+              ends_at: 1793667600,
+              entitlements: [{
+                entitlement_id: 'ent-zcode-v3-start-plan-1102-1',
+                show_name: 'GLM-5.3-Flash',
+                meter: 'model_usage',
+                unit_type: 'token',
+                capabilities: ['model:glm-5.3-flash'],
+                grant_units: 300_000_000,
+                period: 'one_time',
+                effective_at: 1793631600,
+                priority: 101,
+              }],
+            },
+          },
+        },
+        success_popup: {
+          hero: {
+            type: 'bundle',
+            args: {
+              zcode_plan: {
+                plan_id: 'zcode-v3-start-plan-1102',
+                name: 'ZCODE GLOBAL BUILD',
+                priority: 111,
+                entitlements: [{ grant_units: 300_000_000, unit_type: 'token' }],
+              },
+            },
+          },
+        },
+      },
+    }],
+  },
+}
+
+check('投放里能读出「可领 + 额度 + 名称 + 单位」（与 preview 同构）', () => {
+  const plans = parseZcodeMarketingTouch(TOUCH_FIXTURE)
+  assert.equal(plans.length, 1)
+  assert.equal(plans[0].planId, 'zcode-v3-start-plan-1102')
+  assert.equal(plans[0].name, 'ZCODE GLOBAL BUILD')
+  assert.equal(plans[0].priority, 111)
+  assert.equal(plans[0].grantUnits, 300_000_000)
+  assert.equal(plans[0].unitType, 'token')
+})
+
+check('只有出现在 `claim_zcode_plan` 动作里的才算可领（元数据不算）', () => {
+  const payload = {
+    data: {
+      deliveries: [{
+        banner: {
+          buttons: [],
+          // 只有描述、没有 claim 动作 ⇒ 是「已领过 / 仅展示」的活动，不能当可领
+          background: { args: { zcode_plan: { plan_id: 'zcode-v3-start-plan-1030', name: '已结束' } } },
+        },
+      }],
+    },
+  }
+  assert.deepEqual(parseZcodeMarketingTouch(payload), [])
+})
+
+check('投放解析容错：空投放 / 非对象 / 缺 plan_id 都不抛', () => {
+  assert.deepEqual(parseZcodeMarketingTouch({ data: { deliveries: [] } }), [])
+  assert.deepEqual(parseZcodeMarketingTouch(undefined), [])
+  assert.deepEqual(parseZcodeMarketingTouch({ data: { deliveries: [{ banner: { buttons: [{ action: { type: 'claim_zcode_plan', args: {} } }] } }] } }), [])
+})
+
+check('可领活动**同时读 touch 与 preview**，按 plan_id 去重且投放优先', async () => {
+  const seen = []
+  const fetchImpl = async (input) => {
+    const url = String(input)
+    seen.push(url)
+    if (url.includes('/marketing/touch')) {
+      return new Response(JSON.stringify(TOUCH_FIXTURE), { status: 200 })
+    }
+    if (url.includes('/billing/preview')) {
+      // preview 历史形态：另一条套餐（2026-10-03 实测过 …-trust-*）
+      return new Response(JSON.stringify({
+        code: 0,
+        data: { plans: [{ plan_id: 'zcode-v3-start-plan-trust-1003', name: '旧活动', entitlements: [{ grant_units: 100_000_000, unit_type: 'token' }] }] },
+      }), { status: 200 })
+    }
+    return new Response('{}', { status: 404 })
+  }
+  const plans = await fetchZcodeClaimablePlans(credential('3.16.3'), fetchImpl)
+  assert.ok(seen.some(url => url.includes('/marketing/touch')), '必须查投放（每日活动在这里）')
+  assert.ok(seen.some(url => url.includes('/billing/preview')), '仍要查 preview（计费位历史形态）')
+  const ids = plans.map(plan => plan.planId).sort()
+  assert.deepEqual(ids, ['zcode-v3-start-plan-1102', 'zcode-v3-start-plan-trust-1003'])
+  // priority 降序：投放那条是 111，旧活动没有 priority（0）
+  assert.equal(plans[0].planId, 'zcode-v3-start-plan-1102')
+})
+
+check('touch 带 Authorization（缺了上游回 200 但没有投放）', async () => {
+  let touchHeaders
+  const fetchImpl = async (input, init) => {
+    if (String(input).includes('/marketing/touch')) {
+      touchHeaders = init?.headers
+      return new Response(JSON.stringify(TOUCH_FIXTURE), { status: 200 })
+    }
+    return new Response('{}', { status: 200 })
+  }
+  await fetchZcodeClaimablePlans(credential('3.16.3'), fetchImpl)
+  assert.equal(touchHeaders?.['Authorization'], 'Bearer header.payload.signature')
+  assert.equal(touchHeaders?.['X-Device-Mid'], 'device-mid-test')
+})
+
+check('单条链路失败不拖累另一条（投放挂了仍返回 preview 的）', async () => {
+  const fetchImpl = async (input) => {
+    if (String(input).includes('/marketing/touch')) throw new Error('boom')
+    return new Response(JSON.stringify({
+      code: 0,
+      data: { plans: [{ plan_id: 'p-preview', entitlements: [{ grant_units: 500 }] }] },
+    }), { status: 200 })
+  }
+  const plans = await fetchZcodeClaimablePlans(credential('3.16.3'), fetchImpl)
+  assert.deepEqual(plans.map(plan => plan.planId), ['p-preview'])
+})
+
+check('balance 的 claimablePlans 也走合并来源（面板才看得见）', async () => {
+  const fetchImpl = async (input) => {
+    const url = String(input)
+    if (url.includes('/marketing/touch')) return new Response(JSON.stringify(TOUCH_FIXTURE), { status: 200 })
+    if (url.includes('/billing/preview')) return new Response(JSON.stringify({ code: 0 }), { status: 200 })
+    return new Response(JSON.stringify({ code: 0, data: { balances: [], plans: [] } }), { status: 200 })
+  }
+  const result = await fetchZcodeBalance(credential('3.16.3'), fetchImpl)
+  assert.ok(result !== undefined)
+  assert.deepEqual(result.claimablePlans, [{ planId: 'zcode-v3-start-plan-1102', showName: 'ZCODE GLOBAL BUILD', amount: 300_000_000 }])
+})
+
+check('领取路径拿到的就是投放里的那个 plan_id（端到端形状）', async () => {
+  const claimed = []
+  const fetchImpl = async (input, init) => {
+    const url = String(input)
+    if (url.includes('/marketing/touch')) return new Response(JSON.stringify(TOUCH_FIXTURE), { status: 200 })
+    if (url.includes('/billing/preview')) return new Response(JSON.stringify({ code: 0 }), { status: 200 })
+    if (url.includes('/billing/claim')) {
+      claimed.push(JSON.parse(String(init?.body ?? '{}')).plan_id)
+      return new Response(JSON.stringify({ code: 0, data: { message: '套餐领取成功' } }), { status: 200 })
+    }
+    return new Response(JSON.stringify({ code: 0 }), { status: 200 })
+  }
+  const plans = await fetchZcodeClaimablePlans(credential('3.16.3'), fetchImpl)
+  for (const plan of plans) await claimZcodePlan(credential('3.16.3'), plan.planId, undefined, fetchImpl)
+  assert.deepEqual(claimed, ['zcode-v3-start-plan-1102'])
 })
 
 console.log(`\nzcode-app-version: ${checks} checks passed`)

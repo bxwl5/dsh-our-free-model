@@ -4,22 +4,52 @@
  * ## 这一层与其它 provider 的差异
  *
  * 其它 provider 的「额度 / 签到」是各家私有协议；ZCode 这套的**特点**是
- * 同一组请求头要在三处复用，且**鉴权要求按端点不同**（实测）：
+ * 同一组请求头要在多处复用，且**鉴权要求按端点不同**（实测）：
  *
  * | 端点 | 需要 `Authorization: Bearer <jwt>` | 需要 `X-Device-Mid` |
  * |---|---|---|
  * | `GET /zcode-plan/billing/balance` | **是**（缺则 401） | **是**（缺则 400 code 3001） |
  * | `GET /zcode-plan/billing/preview` | 否 | 是 |
+ * | `GET /api/v1/marketing/touch` | **是**（缺则「没有投放」，但 HTTP 200） | **是**（缺则 400 code 3001） |
  * | `POST /api/v1/event/report` | 否 | 是 |
  * | `POST /zcode-plan/billing/claim` | **是** | 是（另需 captcha 头） |
  * | `GET /api/v1/client/configs` | **是** | 是 |
  *
- * ⚠ 这两条都踩过：不带 `Authorization` 查额度得 **401**；
+ * ⚠ 这几条都踩过：不带 `Authorization` 查额度得 **401**；
  * 不带 `X-Device-Mid` 得 **400 `{"code":3001,"msg":"parameter error"}`**。
  *
- * ## 签到为什么要「补激活上报」
+ * ## ★ 可领活动两个来源，**以 `marketing/touch` 为准**（2026-11-02 实测）
  *
- * 服务端**不会主动推送**活动。`preview` 的内容依赖**客户端活跃信号**：
+ * 旧实现只读 `billing/preview`，而服务端把「今天的 3 亿」放在**营销投放位**里，
+ * `preview` 对它恒回 `{"code":0,"msg":"","data":null}`（不是空 `plans[]`，
+ * 是**连 `data` 都没有**）：
+ *
+ * ```
+ * 同一账号、同一 JWT、同一时刻：
+ *   GET /zcode-plan/billing/preview → {"code":0,"msg":"","logid":…}    ← 没有 data
+ *   GET /api/v1/marketing/touch     → deliveries[].banner.buttons[].action
+ *                                     = {type:"claim_zcode_plan",
+ *                                        args:{plan_id:"zcode-v3-start-plan-1102"}}
+ * ```
+ *
+ * ⇒ 「preview 为空」**不等于**「今天没有可领的」，真正的原因是**看错了端点**。
+ * 两个来源现在都读，按 `plan_id` 去重（见 {@link fetchZcodeClaimablePlans}）。
+ *
+ * ## 版本门槛仍在，且 `marketing/touch` 比 `preview` 宽
+ *
+ * 实测（同一账号只改 `app_version`，`marketing/touch` 是否下发可领活动）：
+ *
+ * | app_version | `marketing/touch` |
+ * |---|---|
+ * | `3.14.3` / `3.16.0` | 无投放（`deliveries: []`） |
+ * | **`3.16.3` 及以上（含 `3.40.x`）** | 有 `claim_zcode_plan` |
+ * | `4.0.0` | 无投放（跨大版本同样不认） |
+ *
+ * ⚠ 现有钳制窗口是 `3.16.3 ~ 3.20.x`，**落在两条链路的交集内**，故不必调整。
+ *
+ * ## 签到为什么还要「补激活上报」
+ *
+ * `preview` 的内容依赖**客户端活跃信号**（`marketing/touch` 实测不依赖）：
  *
  * ```
  * 补 POST /api/v1/event/report {app_launch, app_daily_active} 之前：
@@ -28,8 +58,8 @@
  *   preview → {"code":0,"data":{"plans":[{plan_id:"zcode-v3-start-plan-trust-…"}]}}
  * ```
  *
- * **⇒ 「每日随机派发」不是随机推送，而是「服务端按活跃信号决定要不要给」。**
- * 所以要领额度必须**先补两条事件**，再查 preview，再 claim。
+ * 保留它是因为仍是 `preview` 那条腿的前提，且**幂等**（服务端按
+ * `device_mid` + 日期去重）；`marketing/touch` 不补也能拿到投放。
  */
 
 import type { ZcodeCredential } from './zcode.js'
@@ -61,8 +91,17 @@ export function zcodeMessagesUrl(channel: 'start-plan' | 'coding-plan'): string 
 /** 额度余额端点（**需要 Authorization**）。 */
 export const ZCODE_BILLING_BALANCE_URL = `${ZCODE_ORIGIN}/api/v1/zcode-plan/billing/balance`
 
-/** 可领活动预览端点（**不需要 Authorization**）。 */
+/** 可领活动预览端点（**不需要 Authorization**，但 2026-11-02 起活动主要不在它这里）。 */
 export const ZCODE_BILLING_PREVIEW_URL = `${ZCODE_ORIGIN}/api/v1/zcode-plan/billing/preview`
+
+/**
+ * 营销投放端点（**需要 Authorization**）—— 每日活动额度的**权威来源**。
+ *
+ * `seq` 是客户端自增的拉取序号，实测**任意值都返回同一份投放**
+ * （`0` / `12345` / `999999` / 不带 `seq` 结果一致），故只做一个进程内自增，
+ * 不参与任何判定 —— 别把它当成游标去实现「翻页找活动」。
+ */
+export const ZCODE_MARKETING_TOUCH_URL = `${ZCODE_ORIGIN}/api/v1/marketing/touch`
 
 /** 领取端点（**需要 Authorization + captcha**）。 */
 export const ZCODE_BILLING_CLAIM_URL = `${ZCODE_ORIGIN}/api/v1/zcode-plan/billing/claim`
@@ -601,29 +640,21 @@ async function fetchClaimablePlans(
   credential: ZcodeCredential,
   fetchImpl: typeof fetch,
 ): Promise<ZcodeClaimablePlanSummary[]> {
+  /**
+   * ★ 复用 {@link fetchZcodeClaimablePlans}（投放 + preview 合并）而**不再只查
+   * `preview`**（2026-11-02）：每日活动额度由营销投放下发，只查 preview 的
+   * 结果是「0 个可领」—— 面板于是永远显示「今天没得领」。
+   *
+   * ⚠ 失败降级仍由被调方保证（它自己 `try/catch` 成 `[]`），
+   *   这里再兜一层是为了守住「preview 失败绝不影响 balance 主体」这条约定。
+   */
   try {
-    const appVersion = resolveZcodeAppVersion(credential.app_version)
-    const response = await fetchWithTimeout(
-      fetchImpl,
-      `${ZCODE_BILLING_PREVIEW_URL}?app_version=${encodeURIComponent(appVersion)}&platform=win32`,
-      { method: 'GET', headers: buildZcodeHeaders(credential, { json: false }) },
-      15_000,
-    )
-    if (!response.ok) return []
-    const parsed = await response.json() as { data?: { plans?: unknown } }
-    const raw = Array.isArray(parsed.data?.plans) ? parsed.data.plans : []
-    const out: ZcodeClaimablePlanSummary[] = []
-    for (const item of raw as Array<Record<string, unknown>>) {
-      if (typeof item !== 'object' || item === null) continue
-      const planId = item['plan_id']
-      if (typeof planId !== 'string' || planId.length === 0) continue
-      out.push({
-        planId,
-        ...(typeof item['name'] === 'string' ? { showName: item['name'] } : {}),
-        ...(typeof item['amount'] === 'number' ? { amount: item['amount'] } : {}),
-      })
-    }
-    return out
+    const plans = await fetchZcodeClaimablePlans(credential, fetchImpl)
+    return plans.map((plan) => ({
+      planId: plan.planId,
+      ...(plan.name === undefined ? {} : { showName: plan.name }),
+      ...(plan.grantUnits === undefined ? {} : { amount: plan.grantUnits }),
+    }))
   } catch {
     return []
   }
@@ -660,48 +691,203 @@ export async function reportZcodeActivation(
   }
 }
 
-/** 查当前可领的活动。 */
+/**
+ * 从一个「套餐描述对象」（`zcode_plan` 那一层）读出可领活动的完整形状。
+ *
+ * 上游在投放里给的字段与 `billing/preview` 的 plan **同构**：
+ * `plan_id` / `name` / `priority` / `entitlements[].grant_units`。
+ * 故两处共用这一个解析器，避免「两套字段读法」漂移。
+ */
+function planFromRecord(record: Record<string, unknown>): ZcodeClaimablePlan | undefined {
+  const planId = record['plan_id']
+  if (typeof planId !== 'string' || planId === '') return undefined
+  /**
+   * ★ 额度取自 `entitlements[]`（2026-10-03 实测）——
+   * plan 顶层**没有**额度字段，只有 `entitlements[0].grant_units`。
+   * 不读它 ⇒ `toClaimOutcome` 只能填 0 ⇒ 面板显示「+0 积分」。
+   */
+  const ents = Array.isArray(record['entitlements'])
+    ? record['entitlements'] as Array<Record<string, unknown>>
+    : []
+  const first = ents[0] ?? {}
+  const grantUnits = num(first['grant_units'])
+  return {
+    planId,
+    priority: num(record['priority']) ?? 0,
+    name: typeof record['name'] === 'string' ? record['name'] : undefined,
+    ...(grantUnits === undefined ? {} : { grantUnits }),
+    ...(typeof first['unit_type'] === 'string' ? { unitType: first['unit_type'] } : {}),
+  }
+}
+
+/**
+ * 解析 `marketing/touch` 投放里的**可领活动**。
+ *
+ * ## 为什么是「深度遍历」而不是按固定路径取值
+ *
+ * 投放里 `plan_id` 出现**两次**，语义不同、都必须读：
+ *
+ * ```
+ * deliveries[].banner.buttons[].action
+ *   = {type: "claim_zcode_plan", args: {plan_id: "zcode-v3-start-plan-1102"}}   ← 可领凭据
+ * deliveries[].banner.background.args.zcode_plan
+ *   = {plan_id, name, priority, starts_at, ends_at, entitlements: [{grant_units: 300000000}]}
+ *                                                                                ← 额度与名称
+ * ```
+ *
+ * 只读前者 ⇒ 知道「能领」但 `grant_units` 缺失，面板显示「+0」；
+ * 只读后者 ⇒ 有额度但不知道它是否**真的可领**。
+ *
+ * 而上游会把这两块放在哪一层**改过**（`background` → `hero` 也出现过，
+ * 见 `success_popup.hero.args.zcode_plan`），故这里对整棵 delivery 做**有界遍历**：
+ * 收集所有 `type === 'claim_zcode_plan'` 的 `args.plan_id`（可领集合），
+ * 以及所有 `zcode_plan` 键的对象（元数据），最后按 `plan_id` 合并。
+ *
+ * ⚠ **只有出现在 claim 动作里的 plan_id 才算可领** —— 投放里可能同时挂着
+ * 已领过的活动描述（元数据有、动作没有），拿元数据当可领就会重复领取。
+ */
+export function parseZcodeMarketingTouch(payload: unknown): ZcodeClaimablePlan[] {
+  const claimable = new Set<string>()
+  const meta = new Map<string, Record<string, unknown>>()
+  const walk = (value: unknown, depth: number): void => {
+    if (depth > 12 || typeof value !== 'object' || value === null) return
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, depth + 1)
+      return
+    }
+    const record = value as Record<string, unknown>
+    if (record['type'] === 'claim_zcode_plan') {
+      const args = record['args']
+      if (typeof args === 'object' && args !== null) {
+        const planId = (args as Record<string, unknown>)['plan_id']
+        if (typeof planId === 'string' && planId.trim() !== '') claimable.add(planId.trim())
+      }
+    }
+    const described = record['zcode_plan']
+    if (typeof described === 'object' && described !== null && !Array.isArray(described)) {
+      const plan = planFromRecord(described as Record<string, unknown>)
+      if (plan !== undefined && !meta.has(plan.planId)) {
+        meta.set(plan.planId, described as Record<string, unknown>)
+      }
+    }
+    for (const key of Object.keys(record)) walk(record[key], depth + 1)
+  }
+  walk(payload, 0)
+  const plans: ZcodeClaimablePlan[] = []
+  for (const planId of claimable) {
+    const described = meta.get(planId)
+    const parsed = described === undefined ? undefined : planFromRecord(described)
+    plans.push(parsed ?? { planId, priority: 0 })
+  }
+  return plans
+}
+
+/** `marketing/touch` 的拉取序号（进程内自增；服务端不按它做任何判定）。 */
+let touchSeq = 0
+
+/**
+ * 从 `marketing/touch` 取可领活动（**失败一律降级为空数组**）。
+ *
+ * ⚠ 缺 `Authorization` 时上游**仍回 HTTP 200**，只是 `deliveries: []` ——
+ * 故不能靠状态码判断「拉取成功」，这条链路的失败形态就是「没有投放」。
+ */
+async function fetchMarketingTouchPlans(
+  credential: ZcodeCredential,
+  fetchImpl: typeof fetch,
+): Promise<ZcodeClaimablePlan[]> {
+  try {
+    const url = `${ZCODE_MARKETING_TOUCH_URL}?seq=${touchSeq++}`
+    const response = await fetchWithTimeout(fetchImpl, url, {
+      method: 'GET',
+      headers: buildZcodeHeaders(credential, {
+        authorization: `Bearer ${credential.zcode_jwt}`,
+        json: false,
+      }),
+    }, 20_000)
+    if (!response.ok) return []
+    let parsed: unknown
+    try {
+      parsed = await response.json()
+    } catch {
+      return []
+    }
+    return parseZcodeMarketingTouch(parsed)
+  } catch {
+    return []
+  }
+}
+
+/** 从 `billing/preview` 取可领活动（**失败一律降级为空数组**）。 */
+async function fetchPreviewPlans(
+  credential: ZcodeCredential,
+  fetchImpl: typeof fetch,
+): Promise<ZcodeClaimablePlan[]> {
+  try {
+    const appVersion = resolveZcodeAppVersion(credential.app_version)
+    const url = `${ZCODE_BILLING_PREVIEW_URL}?app_version=${encodeURIComponent(appVersion)}&platform=win32`
+    const response = await fetchWithTimeout(fetchImpl, url, {
+      method: 'GET',
+      headers: buildZcodeHeaders(credential, { json: false }),
+    }, 25_000)
+    if (!response.ok) return []
+    let parsed: { data?: { plans?: unknown } }
+    try {
+      parsed = await response.json() as typeof parsed
+    } catch {
+      return []
+    }
+    const raw = Array.isArray(parsed.data?.plans) ? parsed.data.plans : []
+    const plans: ZcodeClaimablePlan[] = []
+    for (const item of raw) {
+      if (typeof item !== 'object' || item === null) continue
+      const plan = planFromRecord(item as Record<string, unknown>)
+      if (plan !== undefined) plans.push(plan)
+    }
+    return plans
+  } catch {
+    return []
+  }
+}
+
+/**
+ * 查当前可领的活动。
+ *
+ * ## ★ 两个来源合并，**`marketing/touch` 才是主来源**（2026-11-02 实测）
+ *
+ * 此前只读 `billing/preview`，而每日活动额度由**营销投放**下发：
+ *
+ * ```
+ * 同一账号、同一 JWT、同一时刻：
+ *   GET /zcode-plan/billing/preview → {"code":0,"msg":"","logid":…}   ← 连 data 都没有
+ *   GET /api/v1/marketing/touch     → claim_zcode_plan / …-start-plan-1102 + 3 亿 token
+ * ```
+ *
+ * 于是每轮都判成「今日暂无可领额度（服务端按日刷新）」—— 用户看到的
+ * 正是「签到一直没成功过」。只把 `preview` 的解析写得多健壮也救不回来，
+ * 因为**那个端点此刻根本没有这份活动**。
+ *
+ * 为什么两个都读而不是只读投放：投放是**营销位**，可能只放「本周活动」；
+ * `preview` 是**计费位**，历史上也确实下发过 `…-trust-*` 的套餐
+ * （2026-10-03 实测）。两个来源各按 `plan_id` 去重后合并，覆盖最全，
+ * 且重复时**保留先出现的那条**（投放带完整额度，让它优先）。
+ *
+ * ⚠ 单条链路失败**不互相拖累**：各自 `try/catch` 降级为空数组。
+ *   「投放拉不到」与「今天真没有」在此层无法区分 —— 这是上游的形态
+ *   （缺鉴权也回 200 空投放），如实承受，不臆造第三种状态。
+ */
 export async function fetchZcodeClaimablePlans(
   credential: ZcodeCredential,
   fetchImpl: typeof fetch = fetch,
 ): Promise<readonly ZcodeClaimablePlan[]> {
-  const appVersion = resolveZcodeAppVersion(credential.app_version)
-  const url = `${ZCODE_BILLING_PREVIEW_URL}?app_version=${encodeURIComponent(appVersion)}&platform=win32`
-  const response = await fetchWithTimeout(fetchImpl, url, {
-    method: 'GET',
-    headers: buildZcodeHeaders(credential, { json: false }),
-  }, 25_000)
-  if (!response.ok) return []
-  let parsed: { data?: { plans?: unknown } }
-  try {
-    parsed = await response.json() as typeof parsed
-  } catch {
-    return []
+  const [fromTouch, fromPreview] = await Promise.all([
+    fetchMarketingTouchPlans(credential, fetchImpl),
+    fetchPreviewPlans(credential, fetchImpl),
+  ])
+  const byId = new Map<string, ZcodeClaimablePlan>()
+  for (const plan of [...fromTouch, ...fromPreview]) {
+    if (!byId.has(plan.planId)) byId.set(plan.planId, plan)
   }
-  const raw = Array.isArray(parsed.data?.plans) ? parsed.data.plans : []
-  const plans: ZcodeClaimablePlan[] = []
-  for (const item of raw) {
-    if (typeof item !== 'object' || item === null) continue
-    const record = item as Record<string, unknown>
-    if (typeof record.plan_id !== 'string' || record.plan_id.length === 0) continue
-    /**
-     * ★ 额度取自 `entitlements[]`（2026-10-03 实测）——
-     * plan 顶层**没有**额度字段，只有 `entitlements[0].grant_units`。
-     * 不读它 ⇒ `toClaimOutcome` 只能填 0 ⇒ 面板显示「+0 积分」。
-     */
-    const ents = Array.isArray(record.entitlements)
-      ? record.entitlements as Array<Record<string, unknown>>
-      : []
-    const first = ents[0] ?? {}
-    const grantUnits = num(first.grant_units)
-    plans.push({
-      planId: record.plan_id,
-      priority: num(record.priority) ?? 0,
-      name: typeof record.name === 'string' ? record.name : undefined,
-      ...(grantUnits === undefined ? {} : { grantUnits }),
-      ...(typeof first.unit_type === 'string' ? { unitType: first.unit_type } : {}),
-    })
-  }
+  const plans = [...byId.values()]
   // priority 降序（与官方/第三方实现一致：先领高优先级）。
   plans.sort((a, b) => b.priority - a.priority)
   return plans

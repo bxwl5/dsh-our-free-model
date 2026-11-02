@@ -58159,6 +58159,7 @@ function zcodeMessagesUrl(channel) {
 }
 var ZCODE_BILLING_BALANCE_URL = `${ZCODE_ORIGIN2}/api/v1/zcode-plan/billing/balance`;
 var ZCODE_BILLING_PREVIEW_URL = `${ZCODE_ORIGIN2}/api/v1/zcode-plan/billing/preview`;
+var ZCODE_MARKETING_TOUCH_URL = `${ZCODE_ORIGIN2}/api/v1/marketing/touch`;
 var ZCODE_BILLING_CLAIM_URL = `${ZCODE_ORIGIN2}/api/v1/zcode-plan/billing/claim`;
 var ZCODE_EVENT_REPORT_URL = `${ZCODE_ORIGIN2}/api/v1/event/report`;
 var ZCODE_CLIENT_CONFIGS_URL = `${ZCODE_ORIGIN2}/api/v1/client/configs`;
@@ -58365,28 +58366,12 @@ function zcodeRemainingByModel(balance, nowMs = Date.now()) {
 }
 async function fetchClaimablePlans(credential, fetchImpl) {
   try {
-    const appVersion = resolveZcodeAppVersion(credential.app_version);
-    const response = await fetchWithTimeout(
-      fetchImpl,
-      `${ZCODE_BILLING_PREVIEW_URL}?app_version=${encodeURIComponent(appVersion)}&platform=win32`,
-      { method: "GET", headers: buildZcodeHeaders(credential, { json: false }) },
-      15e3
-    );
-    if (!response.ok) return [];
-    const parsed = await response.json();
-    const raw = Array.isArray(parsed.data?.plans) ? parsed.data.plans : [];
-    const out = [];
-    for (const item of raw) {
-      if (typeof item !== "object" || item === null) continue;
-      const planId = item["plan_id"];
-      if (typeof planId !== "string" || planId.length === 0) continue;
-      out.push({
-        planId,
-        ...typeof item["name"] === "string" ? { showName: item["name"] } : {},
-        ...typeof item["amount"] === "number" ? { amount: item["amount"] } : {}
-      });
-    }
-    return out;
+    const plans = await fetchZcodeClaimablePlans(credential, fetchImpl);
+    return plans.map((plan) => ({
+      planId: plan.planId,
+      ...plan.name === void 0 ? {} : { showName: plan.name },
+      ...plan.grantUnits === void 0 ? {} : { amount: plan.grantUnits }
+    }));
   } catch {
     return [];
   }
@@ -58409,37 +58394,115 @@ async function reportZcodeActivation(credential, fetchImpl = fetch) {
     }
   }
 }
-async function fetchZcodeClaimablePlans(credential, fetchImpl = fetch) {
-  const appVersion = resolveZcodeAppVersion(credential.app_version);
-  const url = `${ZCODE_BILLING_PREVIEW_URL}?app_version=${encodeURIComponent(appVersion)}&platform=win32`;
-  const response = await fetchWithTimeout(fetchImpl, url, {
-    method: "GET",
-    headers: buildZcodeHeaders(credential, { json: false })
-  }, 25e3);
-  if (!response.ok) return [];
-  let parsed;
+function planFromRecord(record) {
+  const planId = record["plan_id"];
+  if (typeof planId !== "string" || planId === "") return void 0;
+  const ents = Array.isArray(record["entitlements"]) ? record["entitlements"] : [];
+  const first = ents[0] ?? {};
+  const grantUnits = num(first["grant_units"]);
+  return {
+    planId,
+    priority: num(record["priority"]) ?? 0,
+    name: typeof record["name"] === "string" ? record["name"] : void 0,
+    ...grantUnits === void 0 ? {} : { grantUnits },
+    ...typeof first["unit_type"] === "string" ? { unitType: first["unit_type"] } : {}
+  };
+}
+function parseZcodeMarketingTouch(payload) {
+  const claimable = /* @__PURE__ */ new Set();
+  const meta = /* @__PURE__ */ new Map();
+  const walk = (value, depth) => {
+    if (depth > 12 || typeof value !== "object" || value === null) return;
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, depth + 1);
+      return;
+    }
+    const record = value;
+    if (record["type"] === "claim_zcode_plan") {
+      const args = record["args"];
+      if (typeof args === "object" && args !== null) {
+        const planId = args["plan_id"];
+        if (typeof planId === "string" && planId.trim() !== "") claimable.add(planId.trim());
+      }
+    }
+    const described = record["zcode_plan"];
+    if (typeof described === "object" && described !== null && !Array.isArray(described)) {
+      const plan = planFromRecord(described);
+      if (plan !== void 0 && !meta.has(plan.planId)) {
+        meta.set(plan.planId, described);
+      }
+    }
+    for (const key of Object.keys(record)) walk(record[key], depth + 1);
+  };
+  walk(payload, 0);
+  const plans = [];
+  for (const planId of claimable) {
+    const described = meta.get(planId);
+    const parsed = described === void 0 ? void 0 : planFromRecord(described);
+    plans.push(parsed ?? { planId, priority: 0 });
+  }
+  return plans;
+}
+var touchSeq = 0;
+async function fetchMarketingTouchPlans(credential, fetchImpl) {
   try {
-    parsed = await response.json();
+    const url = `${ZCODE_MARKETING_TOUCH_URL}?seq=${touchSeq++}`;
+    const response = await fetchWithTimeout(fetchImpl, url, {
+      method: "GET",
+      headers: buildZcodeHeaders(credential, {
+        authorization: `Bearer ${credential.zcode_jwt}`,
+        json: false
+      })
+    }, 2e4);
+    if (!response.ok) return [];
+    let parsed;
+    try {
+      parsed = await response.json();
+    } catch {
+      return [];
+    }
+    return parseZcodeMarketingTouch(parsed);
   } catch {
     return [];
   }
-  const raw = Array.isArray(parsed.data?.plans) ? parsed.data.plans : [];
-  const plans = [];
-  for (const item of raw) {
-    if (typeof item !== "object" || item === null) continue;
-    const record = item;
-    if (typeof record.plan_id !== "string" || record.plan_id.length === 0) continue;
-    const ents = Array.isArray(record.entitlements) ? record.entitlements : [];
-    const first = ents[0] ?? {};
-    const grantUnits = num(first.grant_units);
-    plans.push({
-      planId: record.plan_id,
-      priority: num(record.priority) ?? 0,
-      name: typeof record.name === "string" ? record.name : void 0,
-      ...grantUnits === void 0 ? {} : { grantUnits },
-      ...typeof first.unit_type === "string" ? { unitType: first.unit_type } : {}
-    });
+}
+async function fetchPreviewPlans(credential, fetchImpl) {
+  try {
+    const appVersion = resolveZcodeAppVersion(credential.app_version);
+    const url = `${ZCODE_BILLING_PREVIEW_URL}?app_version=${encodeURIComponent(appVersion)}&platform=win32`;
+    const response = await fetchWithTimeout(fetchImpl, url, {
+      method: "GET",
+      headers: buildZcodeHeaders(credential, { json: false })
+    }, 25e3);
+    if (!response.ok) return [];
+    let parsed;
+    try {
+      parsed = await response.json();
+    } catch {
+      return [];
+    }
+    const raw = Array.isArray(parsed.data?.plans) ? parsed.data.plans : [];
+    const plans = [];
+    for (const item of raw) {
+      if (typeof item !== "object" || item === null) continue;
+      const plan = planFromRecord(item);
+      if (plan !== void 0) plans.push(plan);
+    }
+    return plans;
+  } catch {
+    return [];
   }
+}
+async function fetchZcodeClaimablePlans(credential, fetchImpl = fetch) {
+  const [fromTouch, fromPreview] = await Promise.all([
+    fetchMarketingTouchPlans(credential, fetchImpl),
+    fetchPreviewPlans(credential, fetchImpl)
+  ]);
+  const byId = /* @__PURE__ */ new Map();
+  for (const plan of [...fromTouch, ...fromPreview]) {
+    if (!byId.has(plan.planId)) byId.set(plan.planId, plan);
+  }
+  const plans = [...byId.values()];
   plans.sort((a, b) => b.priority - a.priority);
   return plans;
 }

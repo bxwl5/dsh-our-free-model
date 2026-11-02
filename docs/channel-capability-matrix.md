@@ -226,8 +226,14 @@
   `device_mid` 由插件自己生成，**不读本机客户端任何数据**；captcha **按需**产出。
 - 协议：**Anthropic Messages** 协议族（`zcode-anthropic.ts`）。
 - 模型目录：静态白名单（上游模型池含实测返回空响应的两条，故不枚举远端）。
-- 额度：单位 tokens；签到 = 补激活上报 → preview → 逐个 plan claim（**每个 plan 现产一个
-  captcha**，复用会得 `3007`）。
+- 额度：单位 tokens；签到 = 补激活上报 → 取可领活动 → 逐个 plan claim（captcha **按需**：
+  先裸发一次，只在 `3007` 时才产，复用会得 `3007`）。
+- 可领活动的**权威来源是营销投放** `GET /api/v1/marketing/touch`（2026-11-02 实测）：
+  `billing/preview` 对每日活动恒回 `{"code":0,"msg":"","logid":…}`（**连 `data` 都没有**），
+  只读它就会永远判成「今日暂无可领额度」。现两条都读、按 `plan_id` 去重（投放优先）。
+  投放里 `claim_zcode_plan` 动作给「可领」，`zcode_plan` 元数据给额度/名称，两者缺一不可。
+  版本门槛：`marketing/touch` 实测同样卡 `3.16.3`（`3.14.3`/`4.0.0` 无投放），现行钳制窗口
+  `3.16.3 ~ 3.20.x` 落在交集内。
 - 图片：双桥（不接会在序列化时退化成 `[image unavailable]`，实测症状是模型回
   「我在当前对话中没有收到任何图片」）。
 
