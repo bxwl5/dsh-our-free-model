@@ -51,6 +51,31 @@ assert.equal(got.rows.length, 1)
 assert.deepEqual(errors, ['kuku:credential lapsed'], 'a lapsed channel reports but does not break the read')
 assert.ok(!got.rows.some(r => r.id.includes('deepseek-official')), 'non-pack vendors are not absorbed')
 
+// resolveModelInfo 提供真实容量时覆盖兜底值（修复「所有渠道模型都显示 131K/33K」）
+const rich = {
+  listProviders: () => [{ id: 'zcode' }],
+  listModels: async () => [{ id: 'GLM-5.3' }, { id: 'GLM-5.3-Flash' }],
+  resolveModelInfo: async (provider, model) => model === 'GLM-5.3'
+    ? { context: { contextWindow: 200000 }, defaultMaxTokens: 16000 }
+    : { context: { contextWindow: 128000 }, defaultMaxTokens: 8192 },
+}
+const enriched = await readChannelRosters(rich, new Set(['zcode']))
+assert.equal(enriched.rows.length, 2)
+assert.equal(enriched.rows[0].contextWindow, 200000, 'real context replaces the 131072 fallback')
+assert.equal(enriched.rows[0].maxOutput, 16000, 'real maxOutput replaces the 32768 fallback')
+assert.equal(enriched.rows[1].contextWindow, 128000)
+assert.equal(enriched.rows[1].maxOutput, 8192)
+
+// resolveModelInfo 单个失败只影响那一行（保留兜底），不拖垮整轮
+const partial = {
+  listProviders: () => [{ id: 'zcode' }],
+  listModels: async () => [{ id: 'a' }, { id: 'b' }],
+  resolveModelInfo: async (_p, m) => { if (m === 'a') throw new Error('boom'); return { context: { contextWindow: 64000 } } },
+}
+const partialRows = await readChannelRosters(partial, new Set(['zcode']))
+assert.equal(partialRows.rows[0].contextWindow, 131072, 'a failed resolve keeps the honest fallback')
+assert.equal(partialRows.rows[1].contextWindow, 64000)
+
 // 无 llm 时安全返回
 assert.deepEqual(await readChannelRosters(undefined, new Set()), { rows: [], providers: [] })
 // listProviders 抛错时安全返回

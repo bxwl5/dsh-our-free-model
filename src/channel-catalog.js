@@ -150,6 +150,12 @@ export async function readChannelRosters(llm, packProviders, onError) {
     return { rows, providers }
   }
   if (typeof llm.listModels !== 'function') return { rows, providers }
+  // `listModels` 只有 id/name/模态，**没有** contextWindow / maxOutput —— 早期版本
+  // 因此把每个渠道模型都标成 131072/32768 的兜底值，用户看到「所有渠道模型都是
+  // 131K/33K」。适配器自己的 `resolveModelInfo` 才带真实容量（它读远端目录 +
+  // 产品兜底表 + 静态表三级），所以这里逐模型补一次查询；失败不阻塞目录，
+  // 那一行保持未知而不是编一个假数字。
+  const resolve = typeof llm.resolveModelInfo === 'function' ? llm.resolveModelInfo.bind(llm) : undefined
   for (const info of listed) {
     const provider = typeof info?.id === 'string' ? info.id : ''
     if (provider === '' || OWN_ROUTES.has(provider)) continue
@@ -159,6 +165,19 @@ export async function readChannelRosters(llm, packProviders, onError) {
       const roster = Array.isArray(models) ? models : []
       if (roster.length === 0) continue
       providers.push(provider)
+      if (resolve !== undefined && roster.length <= 64) {
+        await Promise.all(roster.map(async model => {
+          try {
+            const resolved = await resolve(provider, model.id)
+            const context = Number(resolved?.context?.contextWindow)
+            const maxTokens = Number(resolved?.defaultMaxTokens)
+            if (Number.isFinite(context) && context > 0) model.contextWindow = Math.trunc(context)
+            if (Number.isFinite(maxTokens) && maxTokens > 0) model.maxOutput = Math.trunc(maxTokens)
+          } catch {
+            // 单个模型解析失败只影响它自己那一行。
+          }
+        }))
+      }
       rows.push(...buildChannelCatalog([{ provider, models: roster }]))
     } catch (error) {
       onError?.(provider, error)

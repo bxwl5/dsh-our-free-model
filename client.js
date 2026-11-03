@@ -85,8 +85,8 @@ window.__ModuleLoader__.load({
         'tag.kiloChannel': 'Kilo 渠道 · 免费池（prompt 可能被上游记录用于改进服务，勿发送敏感内容）',
         'section.models': '模型清单',
         'section.modelsHint': '名称与能力来自上游清单与公开能力表，可用性由本机出口实测得出。',
-        'section.dash': '用量看板',
-        'section.dashHint': '数据只写入本机，不会上传。',
+        'section.dash': '性能预览',
+        'section.dashHint': '首屏只保留性能概览；完整数据看板在「数据看板」页，数据只写入本机。',
         'section.forward': '本地转发（OpenAI 兼容）',
         'section.forwardHint': '让其它本地工具用一个 base URL 调用这些模型。',
         'section.egress': '出口代理（订阅分流）',
@@ -592,8 +592,8 @@ window.__ModuleLoader__.load({
         'tag.kiloChannel': 'Kilo channel · free pool (prompts may be logged by the upstream provider — never send sensitive content)',
         'section.models': 'Model roster',
         'section.modelsHint': 'Names and capacities come from the upstream roster and published capability tables; availability is measured from this machine.',
-        'section.dash': 'Usage dashboard',
-        'section.dashHint': 'Written to this machine only; nothing is uploaded.',
+        'section.dash': 'Performance preview',
+        'section.dashHint': 'A compact performance overview; the full ledger lives on its own page. Written to this machine only.',
         'section.forward': 'Local forward (OpenAI compatible)',
         'section.forwardHint': 'Let other local tools reach these models through one base URL.',
         'section.egress': 'Egress outlet (subscription routing)',
@@ -1072,7 +1072,7 @@ window.__ModuleLoader__.load({
 /* ── 键盘可达性：只给键盘聚焦画聚焦环，鼠标点击不出现 ─────────────────── */
 .ofm_root :focus-visible{outline:2px solid color-mix(in srgb,var(--dsw-alias-state-business-primary) 78%,transparent);outline-offset:2px;box-shadow:0 0 0 4px color-mix(in srgb,var(--dsw-alias-state-business-primary) 13%,transparent)}
 /* ══ 页头 hero ═════════════════════════════════════════════════════════ */
-.ofm_hero{position:relative;display:flex;flex-direction:column;gap:14px;padding:22px 24px;border-radius:20px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 78%,transparent);background:linear-gradient(165deg,color-mix(in srgb,var(--dsw-alias-bg-layer-3) 88%,transparent),color-mix(in srgb,var(--dsw-alias-bg-layer-1) 82%,transparent));overflow:hidden}
+.ofm_hero{position:relative;display:flex;flex-direction:column;gap:9px;padding:14px 18px;border-radius:16px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 78%,transparent);background:linear-gradient(165deg,color-mix(in srgb,var(--dsw-alias-bg-layer-3) 88%,transparent),color-mix(in srgb,var(--dsw-alias-bg-layer-1) 82%,transparent));overflow:hidden}
 .ofm_hero::before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(120% 150% at 12% -20%,color-mix(in srgb,var(--dsw-alias-state-business-primary) 13%,transparent),transparent 58%),radial-gradient(90% 120% at 88% 130%,color-mix(in srgb,var(--dsw-alias-state-success-primary) 7%,transparent),transparent 60%)}
 .ofm_hero>*{position:relative}
 .ofm_pagehead{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
@@ -1122,13 +1122,13 @@ window.__ModuleLoader__.load({
 .ofm_metrics b{color:var(--dsw-alias-label-secondary);font-weight:600;font-variant-numeric:tabular-nums}
 .ofm_note{font-size:10.5px;color:var(--dsw-alias-label-tertiary);line-height:1.38}
 /* ══ 面板 ══════════════════════════════════════════════════════════════ */
-.ofm_forward{gap:8px;padding:12px 14px}
-.ofm_forward .ofm_row{gap:8px}
-.ofm_forward pre{max-height:132px;margin:0;padding:7px 9px;font-size:10.5px;line-height:1.5}
-.ofm_panel{padding:16px;border-radius:16px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 82%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 5%),0 2px 6px rgb(0 0 0 / 4%);display:flex;flex-direction:column;gap:12px}
+.ofm_forward{gap:6px;padding:9px 12px}
+.ofm_forward .ofm_row{gap:6px}
+.ofm_forward pre{max-height:110px;margin:0;padding:5px 8px;font-size:10px;line-height:1.42}
+.ofm_panel{padding:10px 12px;border-radius:12px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 82%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 5%),0 2px 6px rgb(0 0 0 / 4%);display:flex;flex-direction:column;gap:7px}
 .ofm_paneltitle{font-size:12px;font-weight:680;letter-spacing:.2px;color:var(--dsw-alias-label-secondary);display:flex;align-items:center;gap:8px}
 .ofm_paneltitle .ofm_sec_hint{font-weight:400;letter-spacing:0}
-.ofm_row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.ofm_row{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
 /*
  * 模型列表的三个批量按钮：「全部开启 / 全部关闭 / 刷新模型」并列等宽。
  *
@@ -1179,7 +1179,7 @@ window.__ModuleLoader__.load({
 .ofm_table tr:last-child td{border-bottom:0}
 .ofm_num{text-align:right}
 /* ══ 按钮（分层状态） ══════════════════════════════════════════════════ */
-.ofm_btn{font:inherit;font-size:12px;font-weight:580;padding:6px 14px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 84%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 5%),0 1px 2px rgb(0 0 0 / 6%);color:var(--dsw-alias-label-primary);cursor:pointer;transition:transform .18s var(--ease-instrument),border-color .2s var(--ease-instrument),background .2s var(--ease-instrument),box-shadow .22s var(--ease-instrument),opacity .16s ease}
+.ofm_btn{font:inherit;font-size:12px;font-weight:580;padding:4px 12px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 84%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 5%),0 1px 2px rgb(0 0 0 / 6%);color:var(--dsw-alias-label-primary);cursor:pointer;transition:transform .18s var(--ease-instrument),border-color .2s var(--ease-instrument),background .2s var(--ease-instrument),box-shadow .22s var(--ease-instrument),opacity .16s ease}
 .ofm_btn:hover:not(:disabled){border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 62%,var(--dsw-alias-border-l2));background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 7%,var(--dsw-alias-bg-layer-3));transform:translateY(-1px);box-shadow:inset 0 1px 0 rgb(255 255 255 / 7%),0 3px 8px rgb(0 0 0 / 9%)}
 .ofm_btn:active:not(:disabled){transform:scale(.985);transition-duration:.1s;box-shadow:inset 0 1px 0 rgb(255 255 255 / 4%)}
 .ofm_btn:disabled{opacity:.45;cursor:default;box-shadow:none;transform:none}
@@ -1193,21 +1193,21 @@ window.__ModuleLoader__.load({
 .ofm_minibtn:disabled{opacity:.45;cursor:default;transform:none}
 .ofm_minibtn.danger:hover:not(:disabled){border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 60%,transparent);color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 7%,transparent)}
 /* ══ 表单 ══════════════════════════════════════════════════════════════ */
-.ofm_field{display:flex;flex-direction:column;gap:4px;min-width:120px}
+.ofm_field{display:flex;flex-direction:column;gap:2px;min-width:120px}
 .ofm_field>span{font-size:11px;color:var(--dsw-alias-label-tertiary)}
-.ofm_input{font:inherit;font-size:12px;padding:6px 10px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);box-shadow:inset 0 1px 2px rgb(0 0 0 / 5%);color:var(--dsw-alias-label-primary);min-width:0;width:100%;transition:border-color .16s ease,box-shadow .16s ease}
+.ofm_input{font:inherit;font-size:12px;padding:4px 9px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);box-shadow:inset 0 1px 2px rgb(0 0 0 / 5%);color:var(--dsw-alias-label-primary);min-width:0;width:100%;transition:border-color .16s ease,box-shadow .16s ease}
 .ofm_input::placeholder{color:var(--dsw-alias-label-tertiary)}
 .ofm_input:hover{border-color:color-mix(in srgb,var(--dsw-alias-border-l2) 60%,var(--dsw-alias-label-tertiary))}
 .ofm_input:focus{outline:none;border-color:var(--dsw-alias-state-business-primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--dsw-alias-state-business-primary) 20%,transparent)}
 /* ══ 开关（spring 滑块） ═══════════════════════════════════════════════ */
 .ofm_switch{display:inline-flex;align-items:center;gap:9px;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;appearance:none;background:transparent;border:0;padding:0;font:inherit;color:inherit}
-.ofm_switch i{width:36px;height:20px;border-radius:999px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);box-shadow:inset 0 1px 3px rgb(0 0 0 / 8%);position:relative;transition:background .2s ease,border-color .2s ease,box-shadow .2s ease;flex:none}
+.ofm_switch i{width:32px;height:18px;border-radius:999px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);box-shadow:inset 0 1px 3px rgb(0 0 0 / 8%);position:relative;transition:background .2s ease,border-color .2s ease,box-shadow .2s ease;flex:none}
 .ofm_switch:hover i{filter:brightness(1.05)}
 .ofm_switch[aria-checked="true"]:hover i{filter:brightness(1.08)}
-.ofm_switch i::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--dsw-alias-label-secondary);box-shadow:0 1px 3px rgb(0 0 0 / 22%);transition:transform .26s cubic-bezier(.34,1.3,.64,1),background .2s ease,width .16s ease}
+.ofm_switch i::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--dsw-alias-label-secondary);box-shadow:0 1px 3px rgb(0 0 0 / 22%);transition:transform .26s cubic-bezier(.34,1.3,.64,1),background .2s ease,width .16s ease}
 .ofm_switch:active i::after{width:17px}
 .ofm_switch[aria-checked="true"] i{background:var(--dsw-alias-state-business-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 85%,#000);box-shadow:inset 0 1px 3px rgb(0 0 0 / 12%)}
-.ofm_switch[aria-checked="true"] i::after{transform:translateX(16px);background:#fff}
+.ofm_switch[aria-checked="true"] i::after{transform:translateX(14px);background:#fff}
 .ofm_switch[aria-checked="true"]:active i::after{transform:translateX(13px)}
 .ofm_switch:focus-visible i{box-shadow:0 0 0 3px color-mix(in srgb,var(--dsw-alias-state-business-primary) 22%,transparent)}
 .ofm_mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;padding:7px 10px;border-radius:9px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);overflow-x:auto;white-space:pre;color:var(--dsw-alias-label-secondary)}
@@ -1216,7 +1216,7 @@ window.__ModuleLoader__.load({
 .ofm_error{border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 9%,transparent)}
 /* ══ 小组件统计 ════════════════════════════════════════════════════════ */
 .ofm_stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:8px}
-.ofm_stat{padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 78%,transparent);border:1px solid var(--dsw-alias-border-l1);box-shadow:inset 0 1px 0 rgb(255 255 255 / 4%)}
+.ofm_stat{padding:7px 10px;border-radius:10px;background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 78%,transparent);border:1px solid var(--dsw-alias-border-l1);box-shadow:inset 0 1px 0 rgb(255 255 255 / 4%)}
 .ofm_stat b{display:block;font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
 .ofm_stat span{font-size:10.5px;color:var(--dsw-alias-label-tertiary)}
 /* ══ 公告（首次引导） ══════════════════════════════════════════════════ */
@@ -1321,8 +1321,8 @@ window.__ModuleLoader__.load({
 .ofm_modalfoot{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px;border-top:1px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 72%,transparent)}
 .ofm_root .ofm_hero,.ofm_root .ofm_panel,.ofm_root .ofm_modal{background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 70%,transparent);backdrop-filter:blur(18px) saturate(155%);-webkit-backdrop-filter:blur(18px) saturate(155%);box-shadow:inset 0 1px 0 rgb(255 255 255 / 7%),0 14px 40px rgb(0 0 0 / 10%)}
 /* ══ 鱼缸加大版（页头） ════════════════════════════════════════════════ */
-.ofm_tankrow{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
-.ofm_tankside{flex:1;min-width:236px;display:flex;flex-direction:column;gap:11px;justify-content:center}
+.ofm_tankrow{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.ofm_tankside{flex:1;min-width:236px;display:flex;flex-direction:column;gap:7px;justify-content:center}
 .ofm_tank.xl{width:264px;height:148px;border-radius:20px;box-shadow:inset 0 0 0 1px rgb(255 255 255 / 12%),0 16px 40px rgb(0 0 0 / 14%)}
 .ofm_tank.xl .ofm_tankglass{border-radius:20px}
 /* ══ 渠道接入页 ════════════════════════════════════════════════════════ */
@@ -1598,7 +1598,7 @@ window.__ModuleLoader__.load({
 .ofm_poolbadge.over{color:var(--dsw-alias-state-error-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 40%,transparent)}
 .ofm_poolbadge.over .ofm_pooldot{background:var(--dsw-alias-state-error-primary);animation:ofmpulse .8s ease-in-out infinite}
 .ofm_poolstats{display:flex;gap:22px;flex-wrap:wrap}
-.ofm_poolstats .ofm_stat b{font-size:19px}
+.ofm_poolstats .ofm_stat b{font-size:17px}
 .ofm_poolstats .ofm_stat.hot b{color:var(--dsw-alias-state-error-primary)}
 .ofm_poolmeta{display:flex;gap:8px 18px;align-items:baseline;flex-wrap:wrap;justify-content:space-between}
 @media (max-width:760px){.ofm_tank.xl{width:100%;max-width:340px}.ofm_tab{flex:1 1 auto;text-align:center}}
