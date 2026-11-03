@@ -19,8 +19,8 @@
     },
     {
       "path": "client.js",
-      "size": 449053,
-      "sha256": "fe90f61625200760f906d1d631dc0ef3ba6c424271696672ab4d392db8cf289c"
+      "size": 449164,
+      "sha256": "f59428314dd25243788523d86f668ee6e0ffbbbee35a4b57e8788a93f41984b1"
     },
     {
       "path": "cordis.patch.yml",
@@ -74,8 +74,8 @@
     },
     {
       "path": "src/channel-catalog.js",
-      "size": 7142,
-      "sha256": "fa382325f0255db4d336916b5e0ec4802e374b231c1472640f969fb82989df42"
+      "size": 8368,
+      "sha256": "33f70f30bb607e0c4a815dc5d352baf0f4942bf8456a319764bbeac6cc711061"
     },
     {
       "path": "src/channel.js",
