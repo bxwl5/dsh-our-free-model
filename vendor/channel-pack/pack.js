@@ -36668,11 +36668,6 @@ function createDirectFetch(options = {}) {
   const lifetime = new AbortController();
   let closing;
   const send = async (input, init) => {
-    const scrubbed = scrubFetchArguments(input, init);
-    if (scrubbed !== null) {
-      input = scrubbed.input;
-      init = scrubbed.init;
-    }
     const injected = options.fetchImpl ?? directLane.fetch;
     if (injected) return injected(input, init);
     const dispatcher = init?.dispatcher ?? agent;
@@ -38832,9 +38827,10 @@ var CodeArtsAdapter = class extends LlmAdapter {
       messages.splice(messages.findIndex((m) => m.role === "system") + 1, 0, { role: "system", content: buildDsmlSystemPrompt(wireTools) });
       wireTools = void 0;
     }
+    const scrubbedMessages = messages.map((message2) => scrubWireMessage(message2));
     const body = JSON.stringify({
       model: options.model,
-      messages,
+      messages: scrubbedMessages,
       stream: true,
       // prompt_cache_key 让服务端启用前缀缓存并在 usage 中返回 cached_tokens，
       // 缺少该字段时缓存命中恒为 0（实测 2026-08-24）。

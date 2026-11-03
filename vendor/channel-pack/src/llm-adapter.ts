@@ -14,6 +14,7 @@ import { availableCodeArtsModels, isCodeArtsBenefitModel } from './models.js'
 import { normalizeHarnessMessages } from './message-shape.js'
 import { directFetch } from './direct-fetch.js'
 import { signRequestHuawei } from './sign.js'
+import { scrubWireMessage } from './content-fingerprint.js'
 import { createBlankReasoningSuppressor, createReasoningLoopDetector, hasUsableToolName, isReasoningLoopGuardEnabled, isTruncatedArguments, normalizeToolArguments, readWithIdleTimeout, reasoningLoopFailure, resolveEmptyResponseReason, resolveToolPairing, stripCourseLeakFromHistoryContent, stripCourseLeakIfEnabled } from './sse.js'
 import type { CodeArtsCredential } from './types.js'
 import {
@@ -1174,9 +1175,19 @@ export class CodeArtsAdapter extends LlmAdapter {
       messages.splice(messages.findIndex(m => m.role === 'system') + 1, 0, { role: 'system', content: buildDsmlSystemPrompt(wireTools) })
       wireTools = undefined
     }
+    // ── 内容级风控指纹清洗（2026-11-04）──
+    //
+    // ⚠️ **必须在这里、不能放在出口层**：下面 `signRequestHuawei` 用 HMAC 对
+    // `body` 算签名，再把**同一份 body** 发出去。在出口层改 body 会让服务端
+    // 重算的哈希与签名对不上，稳定回 `APIG.0301 verify ak sk signature fail`
+    // / HTTP 403（实测：挂出口层清洗 = codearts 403，撤掉 = 正常）。
+    //
+    // 放在 `JSON.stringify` 之前，签的就是清洗后的字节 —— 签名与内容一致。
+    // 只改 system / assistant（判据见 `content-fingerprint.ts`），user 原话不动。
+    const scrubbedMessages = messages.map((message) => scrubWireMessage(message as { role?: unknown, content?: unknown }))
     const body = JSON.stringify({
       model: options.model,
-      messages,
+      messages: scrubbedMessages,
       stream: true,
       // prompt_cache_key 让服务端启用前缀缓存并在 usage 中返回 cached_tokens，
       // 缺少该字段时缓存命中恒为 0（实测 2026-08-24）。

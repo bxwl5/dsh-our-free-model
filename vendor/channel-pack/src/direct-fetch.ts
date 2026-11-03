@@ -5,7 +5,6 @@
  */
 import { Agent, fetch as undiciFetch } from 'undici'
 import { createChannelFetch, type ChannelFetchOptions, type ChannelOutlet } from './channel-fetch.js'
-import { scrubFetchArguments } from './content-fingerprint.js'
 
 /** 插件出口需将提供的底层发送函数用于本机 relay，避免重新进入全局 fetch。 */
 export interface SignedChannelOutlet extends ChannelOutlet {
@@ -23,15 +22,12 @@ export function createDirectFetch(options: DirectFetchOptions = {}): { fetch: ty
   const lifetime = new AbortController()
   let closing: Promise<void> | undefined
   const send: typeof fetch = async (input, init) => {
-    // 底层指纹清洗（2026-11-04）：签名车道（CodeArts）走自己的 undici，不经过
-    // `createChannelFetch`，故这里单独再挂一次 —— 它同样是「所有请求的必经之路」。
-    // ⚠️ 必须在**签名之前**：签名算的是 body 的哈希，先签名再改 body 会让请求
-    // 必然 401。放在这里（注入 sender 之前）才能保证签的是清洗后的字节。
-    const scrubbed = scrubFetchArguments(input as RequestInfo | URL, init)
-    if (scrubbed !== null) {
-      input = scrubbed.input as typeof input
-      init = scrubbed.init
-    }
+    // ⚠️ **签名车道（CodeArts）不在这里清洗**（2026-11-04 实测踩过）：
+    // `llm-adapter` 先用 HMAC 对 `body` 算签名、再把**同一份** `body` 发出去。
+    // 在这里改 body 会让服务端重算的哈希与签名对不上，稳定回
+    // `APIG.0301 verify ak sk signature fail` / HTTP 403 —— 三条真实调用实测：
+    // 挂上这层 = codearts 403，撤掉 = 正常。
+    // 该车道的清洗在**签名之前**做：见 `llm-adapter.ts` 的 `body` 构造处。
     const injected = options.fetchImpl ?? directLane.fetch
     if (injected) return injected(input, init)
     const dispatcher = (init as RequestInit & { dispatcher?: unknown })?.dispatcher ?? agent
