@@ -77,7 +77,7 @@ window.__ModuleLoader__.load({
         'section.models': '模型清单',
         'section.modelsHint': '名称与能力来自上游清单与公开能力表，可用性由本机出口实测得出。',
         'section.dash': '性能预览',
-        'section.dashHint': '首屏只保留性能概览；完整数据看板在「数据看板」页，数据只写入本机。',
+        'section.dashHint': '下面四块各自折叠；完整数据看板在「数据看板」页，数据只写入本机。',
         'section.forward': '本地转发（OpenAI 兼容）',
         'section.forwardHint': '让其它本地工具用一个 base URL 调用这些模型。',
         'section.egress': '出口代理（订阅分流）',
@@ -104,6 +104,8 @@ window.__ModuleLoader__.load({
         'section.prefs': '插件设置',
         'section.prefsHint': '改动在下一次加载完全生效。',
         'heat.title': 'Token 热力图',
+        'heat.hint': '按天查看消耗密度',
+        'curve.hint': '累计 Token 与请求数',
         'heat.legend': '少',
         'heat.legendMore': '多',
         'heat.empty': '还没有用量记录。用一次对话后回来看看。',
@@ -127,6 +129,7 @@ window.__ModuleLoader__.load({
         'last.originForward': '转发',
         'last.originBench': '测速',
         'speed.title': '速度',
+        'speed.modelHint': '每个模型的调用、回合与 Token',
         'speed.tps': '输出速度',
         'speed.ttft': '首帧延迟',
         'speed.model': '模型',
@@ -575,7 +578,7 @@ window.__ModuleLoader__.load({
         'section.models': 'Model roster',
         'section.modelsHint': 'Names and capacities come from the upstream roster and published capability tables; availability is measured from this machine.',
         'section.dash': 'Performance preview',
-        'section.dashHint': 'A compact performance overview; the full ledger lives on its own page. Written to this machine only.',
+        'section.dashHint': 'The four panels below fold independently; the full ledger lives on its own page.',
         'section.forward': 'Local forward (OpenAI compatible)',
         'section.forwardHint': 'Let other local tools reach these models through one base URL.',
         'section.egress': 'Egress outlet (subscription routing)',
@@ -602,6 +605,8 @@ window.__ModuleLoader__.load({
         'section.prefs': 'Plugin settings',
         'section.prefsHint': 'Changes take full effect on the next load.',
         'heat.title': 'Token heatmap',
+        'heat.hint': 'Daily spend density',
+        'curve.hint': 'Cumulative tokens and requests',
         'heat.legend': 'Less',
         'heat.legendMore': 'More',
         'heat.empty': 'No usage yet. Have one conversation and come back.',
@@ -625,6 +630,7 @@ window.__ModuleLoader__.load({
         'last.originForward': 'forward',
         'last.originBench': 'bench',
         'speed.title': 'Speed',
+        'speed.modelHint': 'Calls, turns and tokens per model',
         'speed.tps': 'Output speed',
         'speed.ttft': 'First frame',
         'speed.model': 'Model',
@@ -1208,7 +1214,6 @@ window.__ModuleLoader__.load({
        shell so this reads as first-party. */
 @keyframes ofm-fadein{from{opacity:0}to{opacity:1}}
 @keyframes ofm-popin{from{opacity:0;transform:translateY(16px) scale(.965)}to{opacity:1;transform:none}}
-.ofm_two{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
 /* ══ 公告中心 ══════════════════════════════════════════════════════════ */
 /* ══ 进度条 ════════════════════════════════════════════════════════════ */
 @keyframes ofm-prog-shine{0%{transform:translateX(-100%)}60%,100%{transform:translateX(100%)}}
@@ -2706,13 +2711,13 @@ window.__ModuleLoader__.load({
         stat(String(stats.failedTurns ?? stats.grand.failedTurns ?? 0), t('speed.turnFailed')),
         stat(String(stats.recoveredTurns ?? stats.grand.recoveredTurns ?? 0), t('speed.recovered')))
 
-      const heatmap = h(Panel, { title: t('heat.title') }, h(Heatmap, { days, t }))
+      const heatmap = h(Panel, null, h(Heatmap, { days, t }))
 
       const legend = h('div', { className: 'ofm_chips' },
         chip(t('curve.total'), metric === 'total', SEASON[0], () => setMetric('total')),
         models.map((m, index) => chip(m.name, metric === m.model, SEASON[index % SEASON.length], () => setMetric(m.model))))
 
-      const curve = h(Panel, { title: t('curve.title') },
+      const curve = h(Panel, null,
         h('div', { className: 'ofm_row' },
           h('div', { className: 'ofm_seg' },
             segButton(t('curve.tokens'), mode === 'tokens', () => setMode('tokens')),
@@ -2747,7 +2752,7 @@ window.__ModuleLoader__.load({
           + (lastSample.ok === false ? ` · ${t('speed.failed')}` : '')),
         h('span', { className: 'ofm_note', style: { marginLeft: 'auto' } }, agoOf(lastSample.at)))
 
-      const speed = h(Panel, { title: t('speed.title'), hint: recent.length + ' ' + t('speed.calls') },
+      const speed = h(Panel, null,
         recent.length === 0
           ? h('p', { className: 'ofm_note' }, t('speed.none'))
           : h(Fragment, null,
@@ -2760,7 +2765,7 @@ window.__ModuleLoader__.load({
               .replace('{n}', String(streamed.length))
               .replace('{total}', String(recent.length)))))
 
-      const table = models.length === 0 ? null : h(Panel, { title: t('speed.model') },
+      const table = models.length === 0 ? null : h(Panel, null,
         h('div', { className: 'ofm_tablewrap' }, h('table', { className: 'ofm_table' },
           h('thead', null, h('tr', null,
             h('th', null, t('speed.model')),
@@ -2782,8 +2787,19 @@ window.__ModuleLoader__.load({
       const historyNote = stats.logicalEstimated || stats.requestFailuresEstimated
         ? h('p', { className: 'ofm_note' }, t('speed.estimated'))
         : null
-      return h(Fragment, null, headline, h('p', { className: 'ofm_note' }, t('speed.scope')), historyNote,
-        h('div', { className: 'ofm_two' }, heatmap, curve), speed, table)
+      // ⚠️ 四块图表各自折叠，不再共用一个折叠开关（用户 2026-11-03）：看板整体
+      // 收起来时想看一眼热力图就得把曲线、速度、模型表一起展开再一起收起，
+      // 一次展开等于展开四屏。现在每块自己收起/展开，默认全部收起。
+      // 顺序也是要求：热力图在上、总量曲线在下 —— 此前两者并排（ofm_two），
+      // 窄一点就要横向滚动，竖向读日期的热力图被压成半栏反而更难扫。
+      return h(Fragment, null,
+        headline,
+        h('p', { className: 'ofm_note' }, t('speed.scope')),
+        historyNote,
+        h(Section, { title: t('heat.title'), hint: t('heat.hint'), collapsible: true }, heatmap),
+        h(Section, { title: t('curve.title'), hint: t('curve.hint'), collapsible: true }, curve),
+        h(Section, { title: t('speed.title'), hint: String(recent.length) + ' ' + t('speed.calls'), collapsible: true }, speed),
+        table === null ? null : h(Section, { title: t('speed.model'), hint: t('speed.modelHint'), collapsible: true }, table))
     }
 
     const sparkCell = (label, values, color, format, t, summary) => {
@@ -5834,7 +5850,7 @@ window.__ModuleLoader__.load({
                 h(Button, { disabled: busy || catalogBusy, onClick: refresh }, catalogBusy || summary.status === 'loading' ? t('probing') : t('refresh')),
                 h(Button, { disabled: busy || catalogBusy, onClick: reprobe }, t('reprobe')))))),
         h(Section, { title: t('section.models'), hint: t('section.modelsHint') }, h(Roster, { summary: data, t, onBench: bench, benches, onApply: apply, busy })),
-        h(Section, { title: t('section.dash'), hint: t('section.dashHint'), collapsible: true },
+        h(Section, { title: t('section.dash'), hint: t('section.dashHint') },
           stats.status === 'ready' && stats.data !== undefined ? h(Dashboard, { stats: stats.data, t })
             : h('p', { className: 'ofm_note' }, t('loading'))),
         h(Section, { title: t('section.forward'), hint: t('section.forwardHint') }, h(Forward, { settings: data.settings, t, onApply: apply, busy })),
@@ -5922,7 +5938,7 @@ window.__ModuleLoader__.load({
     exports.inject = inject
     exports.name = 'our-free-model'
     // Headless test seams use the same stub React as scripts/client-lint.mjs.
-    exports.__test = { parseSafeHtml, safeUrl, sanitizeStyle, htmlToDom, buildHeatCells, Heatmap, ChannelsPage, AnomalyPanel, CheckinPanel, DICT, useChannelRpc, Shell, Section, CSS }
+    exports.__test = { parseSafeHtml, safeUrl, sanitizeStyle, htmlToDom, buildHeatCells, Heatmap, ChannelsPage, AnomalyPanel, CheckinPanel, DICT, useChannelRpc, Shell, Section, Dashboard, CSS }
     return module.exports
   },
 })

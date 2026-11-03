@@ -144,6 +144,36 @@ await check('the home roster groups by lane, not by the route every model shares
     '渠道模型不列出来，但要告诉用户它们去哪了')
 })
 
+await check('the home dashboard folds each chart on its own, heatmap above the curve', () => {
+  const app = boot(), { Dashboard } = app.api
+  const stats = {
+    days: [{ day: '2026-11-02', total: 1200, models: [{ model: 'free-1', calls: 3 }] }],
+    samples: [], models: [{ model: 'free-1', name: 'Free One', calls: 3, turns: 3, recoveredTurns: 0, tps: 40, avgTtftMs: 900, reasoning: 100, output: 200, failed: 0, failedTurns: 0 }],
+    grand: { input: 900, output: 200, cacheRead: 50, reasoning: 100, failed: 0, turns: 3 },
+    requests: 3, requestFailures: 0, turns: 3, failedTurns: 0, recoveredTurns: 0,
+  }
+  const all = flatten(app.draw(Dashboard, { stats, t: app.t }))
+  // Section 是组件节点（未展开为 DOM），按 props 断言结构与顺序。
+  const sections = all.filter(node => node?.type === app.api.Section)
+  assert.deepEqual(sections.map(node => node.props.title),
+    [app.t('heat.title'), app.t('curve.title'), app.t('speed.title'), app.t('speed.model')],
+    '热力图 / 总量曲线 / 速度 / 模型表各自成一个可折叠小节，顺序是热力图在前、曲线在后')
+  assert.equal(sections.length, 4, 'four independent fold controls — not one shared collapse')
+  for (const node of sections) assert.equal(node.props.collapsible, true, '每块自己折叠')
+  assert.equal(all.some(node => String(node?.props?.className ?? '').includes('ofm_two')), false,
+    '两块不再并排（ofm_two 版式已移除）')
+  // 每块把各自的图表作为 children 传进来（折叠默认态与逐块开合由上一条
+  // 「a collapsible section is folded by default…」用例覆盖，同一套 Section）。
+  // `h(Section, props, body)` 把 body 放在节点的 children 上（不是 props），
+  // 而 Section 渲染时 `open ? props.children : null` 决定的正是这一份。
+  assert.ok(flatten(sections[0].children).some(node => node?.type === app.api.Heatmap),
+    'the heatmap section owns the heatmap')
+  assert.ok(flatten(sections[1].children).some(node => node?.props?.className === 'ofm_seg'),
+    'the curve section owns its own tokens/requests switch')
+  assert.notEqual(sections[0].children, sections[1].children,
+    'each section carries its own body — folding one never folds another')
+})
+
 await check('a collapsible section is folded by default and opens on the header click', () => {
   const app = boot(), { Section } = app.api
   const props = { title: '用量看板', hint: '数据只写入本机', collapsible: true }
