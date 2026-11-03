@@ -1078,7 +1078,7 @@ window.__ModuleLoader__.load({
 .ofm_secheadtoggle{display:flex;align-items:baseline;gap:10px;width:100%;font:inherit;text-align:left;padding:0 0 6px;border:0;border-bottom:1px solid var(--dsw-alias-border-l1);background:none;color:inherit;cursor:pointer}
 .ofm_secheadtoggle:hover .ofm_sec_title{color:var(--dsw-alias-state-business-primary)}
 .ofm_seccaret{font-size:10px;color:var(--dsw-alias-label-tertiary);flex:none}
-.ofm_grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:8px}
+.ofm_grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:8px}
 /* ══ 卡片（双层 bezel：hairline 边框 + 顶部内高光 + 柔和外阴影） ═══════ */
 .ofm_card{position:relative;display:flex;flex-direction:column;gap:3px;padding:7px 9px;border-radius:10px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 80%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 6%),0 1px 2px color-mix(in srgb,var(--dsw-alias-state-business-primary) 7%,transparent),0 3px 10px color-mix(in srgb,var(--dsw-alias-state-business-primary) 4%,transparent);transition:transform .2s cubic-bezier(.32,.72,0,1),box-shadow .24s ease,border-color .18s ease}
 .ofm_card:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 66%,var(--dsw-alias-border-l2));box-shadow:inset 0 1px 0 rgb(255 255 255 / 9%),0 16px 34px color-mix(in srgb,var(--dsw-alias-state-business-primary) 12%,transparent)}
@@ -2030,7 +2030,9 @@ window.__ModuleLoader__.load({
 .ofm_pickcheck{flex:none;font-size:11px;font-weight:700;color:var(--dsw-alias-state-business-primary)}
 .ofm_meter{height:9px;border-radius:99px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);overflow:hidden}
 .ofm_meter i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,color-mix(in srgb,var(--dsw-alias-state-business-primary) 62%,transparent),var(--dsw-alias-state-business-primary));transition:width .55s cubic-bezier(.22,.61,.36,1)}
-.ofm_member{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:10px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l1) 82%,transparent);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 58%,transparent);font-size:11.5px;transition:border-color .16s ease,background .16s ease}
+.ofm_member{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:10px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l1) 82%,transparent);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 58%,transparent);font-size:11.5px;transition:border-color .16s ease,background .16s ease;cursor:grab}
+.ofm_member:active{cursor:grabbing}
+.ofm_member.dragover{border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 62%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 8%,transparent)}
 .ofm_member .ofm_id{flex:1;min-width:0}
 .ofm_snippet{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.6;padding:9px 11px;border-radius:10px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);white-space:pre;overflow:auto;max-height:230px}
 @media (max-width:600px){.ofm_duo{grid-template-columns:1fr}.ofm_pickgroupbody{grid-template-columns:1fr}.ofm_member{flex-wrap:wrap}}
@@ -5381,6 +5383,19 @@ window.__ModuleLoader__.load({
         next.splice(target, 0, row)
         return next
       })
+      // 拖动排序：成员行的顺序就是链路的顺序，↑↓ 按钮之外直接拖行更直观。
+      // HTML5 DnD 的数据传递在跨浏览器时不可靠，这里只用它是「哪个元素被拖」
+      // 的事件源 —— 真正的顺序由目标行的 index 决定，drop 之后清掉高亮。
+      const dragIndex = useRef(-1)
+      const dropAt = target => setMembers(current => {
+        const from = dragIndex.current
+        dragIndex.current = -1
+        if (from < 0 || from === target || from >= current.length) return current
+        const next = [...current]
+        const [row] = next.splice(from, 1)
+        next.splice(target, 0, row)
+        return next
+      })
       const submit = async () => {
         setBusy(true)
         setError('')
@@ -5436,7 +5451,25 @@ window.__ModuleLoader__.load({
           ? h('p', { className: 'ofm_note' }, t('routing.memberEmpty'))
           : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } }, members.map((id, index) => {
             const row = byId.get(id)
-            return h('div', { key: `${id}#${index}`, className: 'ofm_member' },
+            return h('div', {
+              key: `${id}#${index}`, className: 'ofm_member', draggable: busy !== true,
+              onDragStart: () => { dragIndex.current = index },
+              onDragOver: event => {
+                if (dragIndex.current < 0) return
+                event.preventDefault()
+                event.dataTransfer && (event.dataTransfer.dropEffect = 'move')
+                event.currentTarget?.classList?.add('dragover')
+              },
+              onDragLeave: event => { event.currentTarget?.classList?.remove('dragover') },
+              onDrop: event => {
+                event.currentTarget?.classList?.remove('dragover')
+                dropAt(index)
+              },
+              onDragEnd: event => {
+                event.currentTarget?.classList?.remove('dragover')
+                dragIndex.current = -1
+              },
+            },
               h('span', { className: 'ofm_id', title: id }, row?.name ?? id),
               h('span', { className: 'ofm_tag' }, laneLabelOf(t, row?.channel, row?.provider)),
               row?.contextWindow > 0 ? h('span', { className: 'ofm_tag' }, `${t('tag.context')} ${kilo(row.contextWindow)}`) : null,

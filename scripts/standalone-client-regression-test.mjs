@@ -314,6 +314,43 @@ const savedCard = render(ChainCard, { t, chain: { id: 'combo:fixture', name: 'Fi
   resolved: ['large'], missing: [], lookup: new Map(capacityModels.map(row => [row.id, row])), capacity, onEdit() {} })
 assert.equal(nodes(savedCard).find(node => node.type === ChainCapacity).props.capacity.contextWindow, 1000000)
 assert.ok(nodes(ChainCapacity({ t, capacity })).some(node => node.children.includes(`${t('tag.context')} 1.0M`)))
+
+/*
+ * 已存链路的成员列表支持**拖动排序**（用户 2026-11-03）。
+ *
+ * 成员行的顺序就是链路的顺序，↑↓ 按钮之外直接拖行更直观。实现走 HTML5 DnD：
+ * onDragStart 记下来源行，目标行的 onDrop 把它移到自己这一位。驱动真实事件
+ * （不能自己再写一份「按 index 重排」—— 那测的是测试，不是组件）。
+ */
+{
+  captureEffects = false
+  cells.length = 0
+  const dragProps = { t, models: capacityModels, chain: { name: 'Drag', models: ['small', 'large'] } }
+  let dragEditor = render(ChainEditor, dragProps)
+  let rows = nodes(dragEditor).filter(node => node.props.className === 'ofm_member')
+  assert.equal(rows.length, 2, 'the fixture chain has two member rows')
+  assert.ok(rows[0].props.draggable === true, 'member rows are draggable')
+
+  // 把第 0 行（small）拖到第 1 行（large）上 → 顺序翻转为 large, small
+  const target = rows[1]
+  target.props.onDragStart ? null : null
+  rows[0].props.onDragStart()
+  target.props.onDragOver({ preventDefault() {}, currentTarget: { classList: { add() {}, remove() {} } } })
+  target.props.onDrop({ currentTarget: { classList: { add() {}, remove() {} } } })
+  dragEditor = render(ChainEditor, dragProps)
+  const names = nodes(dragEditor).filter(node => node.props.className === 'ofm_member')
+    .map(row => row.children.find(child => child.props?.className === 'ofm_id').children[0])
+  assert.deepEqual(names, ['Large', 'Small'], 'dragging row 0 onto row 1 reorders the chain')
+
+  // 拖到自己头上是无操作
+  const again = nodes(dragEditor).filter(node => node.props.className === 'ofm_member')
+  again[0].props.onDragStart()
+  again[0].props.onDrop({ currentTarget: { classList: { add() {}, remove() {} } } })
+  dragEditor = render(ChainEditor, dragProps)
+  const same = nodes(dragEditor).filter(node => node.props.className === 'ofm_member')
+    .map(row => row.children.find(child => child.props?.className === 'ofm_id').children[0])
+  assert.deepEqual(same, ['Large', 'Small'], 'dropping a row on itself keeps the order')
+}
 console.log('ok  combo picker capacities, saved card and live server intersection refresh')
 /*
  * 选择器是**开关**，不是追加。
@@ -475,7 +512,23 @@ console.log('ok  check-in result table and anomaly panel render without crashing
 // Compile the actual standalone page in memory, without rebuilding web output.
 const require = createRequire(import.meta.url)
 let transformSync
-try { ({ transformSync } = createRequire(new URL('../packages/standalone/package.json', import.meta.url))('esbuild')) } catch {}
+try {
+  const candidate = createRequire(new URL('../packages/standalone/package.json', import.meta.url))('esbuild')
+  // vfat 盘上原生二进制没有执行位：spawn EACCES 会以**异步** uncaughtException 的
+  // 形态爆出来（esbuild 服务进程的 spawn 失败不走 transform 的 Promise 链），
+  // try/catch 接不住。所以先探测一次，让这个进程的 uncaughtException 掉一次
+  // 探测错误；之后 transform 仍会失败，但走的是同步 catch —— 借此把
+  // transformSync 置空，整个 TSX 分支按「esbuild 不可用」跳过。
+  let broken = false
+  const onUncaught = () => { broken = true }
+  process.on('uncaughtException', onUncaught)
+  try { candidate.transformSync('let x: number = 1', { loader: 'ts' }) } catch { broken = true }
+  await new Promise(resolve => setImmediate(resolve))
+  await new Promise(resolve => setTimeout(resolve, broken ? 0 : 50))
+  process.off('uncaughtException', onUncaught)
+  if (broken) { console.log('  (esbuild binary not executable on this mount; TSX checks skipped)') }
+  if (!broken) transformSync = candidate.transformSync
+} catch {}
 if (transformSync) {
 const modelsSource = fs.readFileSync(new URL('../packages/standalone/frontend/models.tsx', import.meta.url), 'utf8')
 const modelsBody = modelsSource.slice(modelsSource.indexOf('const availabilityNames')).replace('export function Models', 'function Models')
