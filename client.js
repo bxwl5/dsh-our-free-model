@@ -2020,7 +2020,7 @@ window.__ModuleLoader__.load({
 .ofm_duo{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(272px,100%),1fr));gap:12px;align-items:start}
 .ofm_duo>*{min-width:0}
 .ofm_picklist{display:block;max-height:330px;overflow:auto;padding:2px}
-.ofm_pickrow{display:flex;flex-direction:row;align-items:center;gap:0;text-align:left;font:inherit;padding:6px 9px;border-radius:9px;border:1px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 62%,transparent);color:var(--dsw-alias-label-primary);cursor:pointer;transition:border-color .16s ease,background .16s ease,transform .16s ease}
+.ofm_pickrow{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:8px;text-align:left;font:inherit;padding:6px 9px;border-radius:9px;border:1px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 62%,transparent);color:var(--dsw-alias-label-primary);cursor:pointer;transition:border-color .16s ease,background .16s ease,transform .16s ease}
 .ofm_pickrow:hover:not(:disabled){border-color:var(--dsw-alias-state-business-primary);transform:translateY(-1px)}
 .ofm_pickrow[aria-pressed="true"]{border-color:var(--dsw-alias-state-business-primary);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 12%,transparent)}
 .ofm_pickrow:disabled{opacity:.55;cursor:default}
@@ -2031,7 +2031,7 @@ window.__ModuleLoader__.load({
 .ofm_pickgrouptitle{flex:1;min-width:0;font-size:11px;letter-spacing:.05em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ofm_pickgroupbadge{flex:none;font-size:10px;min-width:16px;text-align:center;padding:0 5px;border-radius:8px;background:var(--dsw-alias-state-business-primary);color:#fff}
 .ofm_pickgroupbody{display:grid;grid-template-columns:repeat(auto-fill,minmax(214px,1fr));gap:6px;padding:6px 0 2px 4px}
-.ofm_pickhead{display:flex;align-items:center;gap:6px;min-width:0}
+.ofm_pickhead{display:flex;align-items:center;gap:6px;min-width:0;flex:1}
 .ofm_pickhead b{font-size:12px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
 .ofm_pickcheck{flex:none;font-size:11px;font-weight:700;color:var(--dsw-alias-state-business-primary)}
 .ofm_picklane{flex:none;font-size:10px;padding:1px 5px;border-radius:5px;background:color-mix(in srgb,var(--dsw-alias-label-tertiary) 16%,transparent);color:var(--dsw-alias-label-tertiary);white-space:nowrap}
