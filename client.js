@@ -51,7 +51,9 @@ window.__ModuleLoader__.load({
         'state.listed': '已列出 · 未实测',
         'roster.selectable': '免费模型',
         'roster.lanes': '渠道模型',
-        'roster.lanesHint': '来自已接入的渠道与 Kilo 车道，按供应商计量，不占免费额度。',
+        'roster.lanesHint': '来自已接入的渠道，按供应商计量，不占免费额度。',
+        'roster.kilo': 'Kilo 车道',
+        'roster.kiloHint': '聚合车道，与免费车道一起作为兜底候选。',
         'hint.listed': '来自渠道目录，未做逐模型推理测试；不代表对话或工具调用成功。',
         'hint.region': '该模型按出口地区放行。开启网络代理后，插件会在下一次探测自动把它移入可用分组。',
         'hint.unknown': '尚未探测，默认保持可达。',
@@ -557,7 +559,9 @@ window.__ModuleLoader__.load({
         'state.listed': 'Listed · not tested',
         'roster.selectable': 'Free models',
         'roster.lanes': 'Channel models',
-        'roster.lanesHint': 'Served by absorbed channels and the Kilo lane; billed by their provider, not against the free quota.',
+        'roster.lanesHint': 'Served by absorbed channels; billed by their provider, not against the free quota.',
+        'roster.kilo': 'Kilo lane',
+        'roster.kiloHint': 'Aggregate lane, kept as a fallback beside the free lane.',
         'hint.listed': 'Listed by the channel; inference has not been tested. This does not confirm chat or tool use.',
         'hint.region': 'This model is gated by egress country. Once a proxy changes your egress, the next probe moves it into the available group by itself.',
         'hint.unknown': 'Not probed yet, so it stays reachable.',
@@ -1091,13 +1095,16 @@ window.__ModuleLoader__.load({
 .ofm_sechead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding-bottom:6px;border-bottom:1px solid var(--dsw-alias-border-l1)}
 .ofm_sec_title{font-size:14px;font-weight:680;letter-spacing:-.2px}
 .ofm_sec_hint{font-size:11.5px;color:var(--dsw-alias-label-tertiary);margin-left:auto}
+.ofm_secheadtoggle{display:flex;align-items:baseline;gap:10px;width:100%;font:inherit;text-align:left;padding:0 0 6px;border:0;border-bottom:1px solid var(--dsw-alias-border-l1);background:none;color:inherit;cursor:pointer}
+.ofm_secheadtoggle:hover .ofm_sec_title{color:var(--dsw-alias-state-business-primary)}
+.ofm_seccaret{font-size:10px;color:var(--dsw-alias-label-tertiary);flex:none}
 .ofm_grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(252px,1fr));gap:10px}
 /* ══ 卡片（双层 bezel：hairline 边框 + 顶部内高光 + 柔和外阴影） ═══════ */
-.ofm_card{position:relative;display:flex;flex-direction:column;gap:8px;padding:12px 13px;border-radius:13px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 80%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 6%),0 1px 2px color-mix(in srgb,var(--dsw-alias-state-business-primary) 7%,transparent),0 3px 10px color-mix(in srgb,var(--dsw-alias-state-business-primary) 4%,transparent);transition:transform .2s cubic-bezier(.32,.72,0,1),box-shadow .24s ease,border-color .18s ease}
+.ofm_card{position:relative;display:flex;flex-direction:column;gap:6px;padding:9px 11px;border-radius:11px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 80%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 6%),0 1px 2px color-mix(in srgb,var(--dsw-alias-state-business-primary) 7%,transparent),0 3px 10px color-mix(in srgb,var(--dsw-alias-state-business-primary) 4%,transparent);transition:transform .2s cubic-bezier(.32,.72,0,1),box-shadow .24s ease,border-color .18s ease}
 .ofm_card:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 66%,var(--dsw-alias-border-l2));box-shadow:inset 0 1px 0 rgb(255 255 255 / 9%),0 16px 34px color-mix(in srgb,var(--dsw-alias-state-business-primary) 12%,transparent)}
 .ofm_card.dim{opacity:.68}
 .ofm_cardhead{display:flex;align-items:center;gap:8px}
-.ofm_cardname{font-size:13.5px;font-weight:650;letter-spacing:-.1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ofm_cardname{font-size:12.5px;font-weight:650;letter-spacing:-.1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ofm_badge{margin-left:auto;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 60%,transparent);white-space:nowrap}
 .ofm_badge.available{color:var(--dsw-alias-state-success-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-success-primary) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent)}
 .ofm_badge.region-blocked{color:var(--dsw-alias-state-warning-primary,#f0a441);border-color:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 10%,transparent)}
@@ -1105,7 +1112,7 @@ window.__ModuleLoader__.load({
 .ofm_badge.unknown{color:var(--dsw-alias-label-tertiary)}
 .ofm_id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ofm_tags{display:flex;gap:5px;flex-wrap:wrap}
-.ofm_tag{font-size:10.5px;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 70%,transparent);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary)}
+.ofm_tag{font-size:10px;padding:1px 7px;border-radius:999px;background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 70%,transparent);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary)}
 .ofm_chantag{font-size:10px;font-weight:650;padding:2px 8px;border-radius:999px;border:1px solid color-mix(in srgb,var(--dsw-alias-state-business-primary) 50%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 9%,transparent);color:var(--dsw-alias-state-business-primary);white-space:nowrap}
 /* ══ 新品/热门徽标与高速标签（置顶的 opencode 免费模型） ═════════════════ */
 .ofm_newtag{flex:none;font-size:9.5px;font-weight:750;letter-spacing:.4px;padding:2px 7px;border-radius:999px;color:#fff;background:var(--dsw-alias-state-error-primary);box-shadow:0 1px 4px color-mix(in srgb,var(--dsw-alias-state-error-primary) 45%,transparent);white-space:nowrap;text-transform:uppercase}
@@ -1117,6 +1124,9 @@ window.__ModuleLoader__.load({
 .ofm_metrics b{color:var(--dsw-alias-label-secondary);font-weight:600;font-variant-numeric:tabular-nums}
 .ofm_note{font-size:11px;color:var(--dsw-alias-label-tertiary);line-height:1.5}
 /* ══ 面板 ══════════════════════════════════════════════════════════════ */
+.ofm_forward{gap:8px;padding:12px 14px}
+.ofm_forward .ofm_row{gap:8px}
+.ofm_forward pre{max-height:132px;margin:0;padding:7px 9px;font-size:10.5px;line-height:1.5}
 .ofm_panel{padding:16px;border-radius:16px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 82%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 5%),0 2px 6px rgb(0 0 0 / 4%);display:flex;flex-direction:column;gap:12px}
 .ofm_paneltitle{font-size:12px;font-weight:680;letter-spacing:.2px;color:var(--dsw-alias-label-secondary);display:flex;align-items:center;gap:8px}
 .ofm_paneltitle .ofm_sec_hint{font-weight:400;letter-spacing:0}
@@ -2405,16 +2415,31 @@ window.__ModuleLoader__.load({
       title: props.title,
     }, props.children)
 
+    /**
+     * 一页里的一节。
+     *
+     * `collapsible` 给那几节「平时不看、但占半屏」的内容用：标题本身就是开关，
+     * 默认收起。首页的用量看板就是一例 —— 它每次刷新都要算一遍图表，展开时
+     * 才需要那几个数字。
+     */
     function Section(props) {
-      return h('section', { className: 'ofm_sec' },
-        h('div', { className: 'ofm_sechead' },
+      const [open, setOpen] = useState(props.collapsible !== true)
+      const head = props.collapsible === true
+        ? h('button', {
+          type: 'button', className: 'ofm_secheadtoggle', 'aria-expanded': open ? 'true' : 'false',
+          onClick: () => setOpen(current => !current),
+        },
+        h('span', { className: 'ofm_seccaret', 'aria-hidden': 'true' }, open ? '▾' : '▸'),
+        h('span', { className: 'ofm_sec_title' }, props.title),
+        props.hint === undefined ? null : h('span', { className: 'ofm_sec_hint' }, props.hint))
+        : h('div', { className: 'ofm_sechead' },
           h('span', { className: 'ofm_sec_title' }, props.title),
-          props.hint === undefined ? null : h('span', { className: 'ofm_sec_hint' }, props.hint)),
-        props.children)
+          props.hint === undefined ? null : h('span', { className: 'ofm_sec_hint' }, props.hint))
+      return h('section', { className: 'ofm_sec' }, head, open ? props.children : null)
     }
 
     function Panel(props) {
-      return h('div', { className: 'ofm_panel' },
+      return h('div', { className: `ofm_panel${props.className === undefined ? '' : ` ${props.className}`}` },
         props.title === undefined ? null : h('div', { className: 'ofm_paneltitle' }, props.title, props.hint === undefined ? null : h('span', { className: 'ofm_sec_hint' }, props.hint)),
         props.children)
     }
@@ -2552,12 +2577,15 @@ window.__ModuleLoader__.load({
                 m.ttftMs === undefined || m.ttftMs === 0 ? null : h('span', null, t('tag.latency'), ' ', h('b', null, Math.round(m.ttftMs)), ' ms'),
                 h('span', null, manual ? t('pref.measuredAt') : t('pref.probedAt'), ' ', h('b', null, ago(m.probedAt, t.locale)))),
         m.canDisableThinking === false ? h('p', { className: 'ofm_note' }, t('hint.sharedBudget')) : null,
-        onVisibility === undefined ? null : h('div', { className: 'ofm_sec' },
-          h(Switch, { checked: m.hiddenByUser !== true, label: t('visibility.showModel'),
-            disabled: busy || m.hiddenByGroup === true, onChange: () => onVisibility(m) }),
-          m.hiddenByGroup === true ? h('p', { className: 'ofm_note' }, t('visibility.groupHidden')) : null),
-        onBench === undefined ? null : h('div', { className: 'ofm_row' },
-          h(Button, { disabled: bench?.running === true, onClick: () => onBench(m) }, bench?.running === true ? t('bench.running') : t('bench.run')),
+        // 开关与测速并成一行：它们都是"对这一行做什么"，分成两行只会让每张
+        // 卡片多出十几像素，几十张卡片就是一屏。
+        onVisibility === undefined && onBench === undefined ? null : h('div', { className: 'ofm_row' },
+          onVisibility === undefined ? null : h(Switch, {
+            checked: m.hiddenByUser !== true, label: t('visibility.showModel'),
+            disabled: busy || m.hiddenByGroup === true, onChange: () => onVisibility(m),
+          }),
+          onBench === undefined ? null : h(Button, { disabled: bench?.running === true, onClick: () => onBench(m) }, bench?.running === true ? t('bench.running') : t('bench.run')),
+          m.hiddenByGroup === true ? h('span', { className: 'ofm_note' }, t('visibility.groupHidden')) : null,
           bench?.result === undefined ? null : h('span', { className: 'ofm_note' }, bench.result)))
     }
 
@@ -2578,7 +2606,10 @@ window.__ModuleLoader__.load({
       const lead = list => [...list].sort((a, b) => (b.pinned === true ? 1 : 0) - (a.pinned === true ? 1 : 0))
       const available = lead(roster.filter(m => !m.channel && m.route === 'our-free-model'))
       const limited = lead(roster.filter(m => !m.channel && m.route === 'our-free-model-region'))
-      const lanes = lead(roster.filter(m => Boolean(m.channel)))
+      // Kilo 单独一组：它是聚合车道，和"某一家渠道"不是一类东西；混在一列里
+      // 时 Kilo 的十八条会把真正的渠道挤到后面，用户找一个渠道要滚很久。
+      const lanes = lead(roster.filter(m => Boolean(m.channel) && m.channel !== 'kilo'))
+      const kiloRows = lead(roster.filter(m => m.channel === 'kilo'))
       const unlisted = lead(roster.filter(m => !m.channel && m.route !== 'our-free-model' && m.route !== 'our-free-model-region'))
       const toggleModel = onApply === undefined ? undefined : model => {
         const ids = summary.settings.hiddenModelIds ?? []
@@ -2600,6 +2631,7 @@ window.__ModuleLoader__.load({
             label: t('pref.hideFreeModels'), onChange: () => onApply({ hideFreeModels: summary.settings.hideFreeModels !== true }) })),
         group(t('roster.selectable'), available),
         group(t('roster.lanes'), lanes, t('roster.lanesHint')),
+        group(t('roster.kilo'), kiloRows, t('roster.kiloHint')),
         group(t('state.region-blocked'), limited, t('hint.region')),
         group(t('visibility.unlisted'), unlisted))
     }
@@ -2802,6 +2834,8 @@ window.__ModuleLoader__.load({
       const [key, setKey] = useState('')
       const [shown, setShown] = useState(false)
       const [copied, setCopied] = useState('')
+      // 示例命令默认收起：它是最高的那一块，只在第一次接入时需要。
+      const [showCurl, setShowCurl] = useState(false)
       useEffect(() => {
         if (draft?.running !== true) return
         let alive = true
@@ -2848,7 +2882,9 @@ window.__ModuleLoader__.load({
       const lanUrl = lanHost === '' ? t('forward.lanNoAddress') : `http://${lanHost}:${lanPort}/v1`
       const lanToggle = current => ({ ...current, lan: { ...(current?.lan ?? {}), enabled: !(current?.lan?.enabled === true) } })
 
-      return h(Panel, null,
+      // `ofm_forward` 只做版式：这一节字段行多，标准面板的行距叠起来能占满一屏，
+      // 而这里每一行都是同一种「标签 + 输入框」。
+      return h(Panel, { className: 'ofm_forward' },
         h('div', { className: 'ofm_row' },
           h(Switch, { checked: draft?.enabled === true, label: t('forward.enabled'), onChange: () => setDraft(current => ({ ...current, enabled: !(current?.enabled === true) })) }),
           h('span', { className: 'ofm_pill' }, h('span', { className: `ofm_dot ${draft?.running === true ? 'ok' : draft?.error ? 'err' : ''}` }), draft?.running === true ? t('forward.running') : t('forward.stopped'))),
@@ -2880,9 +2916,18 @@ window.__ModuleLoader__.load({
                 showToast({ title: t('forward.rotateFail'), body: String(error?.message ?? error).slice(0, 160), tone: 'warn' })
               }
             } }, t('forward.rotate'))),
-          h('div', { className: 'ofm_sec', style: { gap: 4 } }, h('span', { className: 'ofm_note' }, t('forward.example')),
-            h('pre', { className: 'ofm_mono' }, curl),
-            h('div', null, h(Button, { kind: 'ghost', onClick: () => doCopy('curl', curl) }, copied === 'curl' ? t('forward.copied') : t('forward.copy'))))) : null,
+          h('div', { className: 'ofm_sec', style: { gap: 4 } },
+            h('div', { className: 'ofm_row' },
+              // 示例命令默认收起：它是这一节里最高的一块，而看的人通常只在第一次
+              // 接入时用；复制按钮留在标题行上，收起也点得到。
+              h('button', {
+                type: 'button', className: 'ofm_secheadtoggle', style: { borderBottom: 0, padding: 0, width: 'auto' },
+                'aria-expanded': showCurl ? 'true' : 'false', onClick: () => setShowCurl(current => !current),
+              },
+              h('span', { className: 'ofm_seccaret', 'aria-hidden': 'true' }, showCurl ? '▾' : '▸'),
+              h('span', { className: 'ofm_note' }, t('forward.example'))),
+              h(Button, { kind: 'ghost', onClick: () => doCopy('curl', curl) }, copied === 'curl' ? t('forward.copied') : t('forward.copy'))),
+            showCurl ? h('pre', { className: 'ofm_mono' }, curl) : null)) : null,
         h('div', { className: 'ofm_sec', style: { gap: 6, marginTop: 12 } },
           h('div', { className: 'ofm_note' }, t('forward.lanTitle')),
           h('div', { className: 'ofm_row' },
@@ -5782,7 +5827,7 @@ window.__ModuleLoader__.load({
                 h(Button, { disabled: busy || catalogBusy, onClick: refresh }, catalogBusy || summary.status === 'loading' ? t('probing') : t('refresh')),
                 h(Button, { disabled: busy || catalogBusy, onClick: reprobe }, t('reprobe')))))),
         h(Section, { title: t('section.models'), hint: t('section.modelsHint') }, h(Roster, { summary: data, t, onBench: bench, benches, onApply: apply, busy })),
-        h(Section, { title: t('section.dash'), hint: t('section.dashHint') },
+        h(Section, { title: t('section.dash'), hint: t('section.dashHint'), collapsible: true },
           stats.status === 'ready' && stats.data !== undefined ? h(Dashboard, { stats: stats.data, t })
             : h('p', { className: 'ofm_note' }, t('loading'))),
         h(Section, { title: t('section.forward'), hint: t('section.forwardHint') }, h(Forward, { settings: data.settings, t, onApply: apply, busy })),
@@ -5870,7 +5915,7 @@ window.__ModuleLoader__.load({
     exports.inject = inject
     exports.name = 'our-free-model'
     // Headless test seams use the same stub React as scripts/client-lint.mjs.
-    exports.__test = { parseSafeHtml, safeUrl, sanitizeStyle, htmlToDom, buildHeatCells, Heatmap, ChannelsPage, AnomalyPanel, CheckinPanel, DICT, useChannelRpc, Shell, CSS }
+    exports.__test = { parseSafeHtml, safeUrl, sanitizeStyle, htmlToDom, buildHeatCells, Heatmap, ChannelsPage, AnomalyPanel, CheckinPanel, DICT, useChannelRpc, Shell, Section, CSS }
     return module.exports
   },
 })

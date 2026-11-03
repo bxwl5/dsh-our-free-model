@@ -128,13 +128,28 @@ await check('the home roster groups by lane, not by the route every model shares
   const kilo = { ...base, id: 'kilo/m2', name: 'Kilo Two', channel: 'kilo' }
   const combo = { ...base, id: 'combo:x', name: 'My Chain', channel: 'combo', combo: ['channel:raccoon/m1'], route: 'our-free-model' }
   const roster = flatten(Roster({ summary: { catalog: [free, lane, kilo, combo], settings: {} }, t: app.t }))
-  const titles = roster.filter(node => node === app.t('roster.selectable') || node === app.t('roster.lanes'))
-  assert.deepEqual(titles, [app.t('roster.selectable'), app.t('roster.lanes')], 'free and channel models get their own groups')
+  const titles = roster.filter(node => node === app.t('roster.selectable') || node === app.t('roster.lanes') || node === app.t('roster.kilo'))
+  assert.deepEqual(titles, [app.t('roster.selectable'), app.t('roster.lanes'), app.t('roster.kilo')],
+    '免费车道在最前，渠道居中，Kilo 单独一组排在渠道之后')
   // Roster 只把 ModelCard 作为待渲染元素放进去，名字不会出现在这棵树上，
   // 所以要按卡片的 `props.model.id` 判断归属，而不是找文本。
   const cardIds = roster.filter(node => node?.type === ModelCard).map(node => node.props.model.id)
   assert.deepEqual(cardIds, ['free-1', 'channel:raccoon/m1', 'kilo/m2'],
     'free lane, channel lane and Kilo are listed; the chain is not')
+})
+
+await check('a collapsible section is folded by default and opens on the header click', () => {
+  const app = boot(), { Section } = app.api
+  const props = { title: '用量看板', hint: '数据只写入本机', collapsible: true }
+  const body = { type: 'p', props: { className: 'ofm_note' }, children: ['BODY'] }
+  const folded = flatten(app.draw(Section, { ...props, children: body }))
+  assert.equal(folded.includes('BODY'), false, '默认收起：内容不渲染')
+  const head = folded.find(node => node?.props?.className === 'ofm_secheadtoggle')
+  assert.equal(head.props['aria-expanded'], 'false', '读屏要知道这一节是收着的')
+  head.props.onClick()
+  const opened = flatten(app.draw(Section, { ...props, children: body }))
+  assert.equal(opened.includes('BODY'), true, '点击后展开')
+  assert.equal(opened.find(node => node?.props?.className === 'ofm_secheadtoggle').props['aria-expanded'], 'true')
 })
 
 for (const persisted of [true, false]) {
