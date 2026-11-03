@@ -76557,6 +76557,7 @@ function apply(ctx, config = {}) {
   mountOpenAiGateway(ctx, pool);
   installLoopResume(ctx);
   ctx.provide("accountPool", pool);
+  return { providers: Object.keys(modelAdapters) };
 }
 export {
   Config,

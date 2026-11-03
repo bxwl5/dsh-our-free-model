@@ -28,7 +28,7 @@ const sourceFiles = [
     .map(name => `packages/standalone/channels/${name}.mjs`),
   'packages/standalone/web/index.html',
   'packages/standalone/web/assets.json',
-  ...['adapter', 'anthropic', 'catalog', 'channel', 'combos', 'deferred-response', 'effort',
+  ...['adapter', 'anthropic', 'catalog', 'channel', 'channel-catalog', 'combos', 'deferred-response', 'effort',
     'egress', 'failure', 'forward', 'http', 'image-pricing', 'kilo', 'local-optimize', 'messages', 'model-test', 'probe', 'recovery',
     'store', 'stream', 'trust', 'upstream']
     .map(name => `src/${name}.js`),

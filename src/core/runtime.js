@@ -3,6 +3,7 @@ import path from 'node:path'
 import { FreeModelAdapter, ROUTE_MAIN, ROUTE_REGION } from '../adapter.js'
 import { buildCatalog, buildKiloCatalog, isKiloEntry, parseListing, reviveKiloCatalog } from '../catalog.js'
 import { buildComboCatalog, isComboEntry, normalizeCombos, pruneRotation } from '../combos.js'
+import { isChannelEntry, readChannelRosters } from '../channel-catalog.js'
 import { JsonStore, SETTINGS_INITIAL, STATS_INITIAL, STATS_VERSION, migrateStats, pruneDays, recordTurn, recordUsage, isModelHidden } from '../store.js'
 import { STATE, detectEgress, probeCatalog } from '../probe.js'
 import { CODE, UpstreamError, getJson } from '../http.js'
@@ -59,6 +60,15 @@ export function createModelRuntime({
   attributionUserAgent = 'our-free-model',
   resolveImage,
   onTopology = () => {},
+  /**
+   * 宿主的 llm 服务（可选）。给了才能把渠道包的模型列进目录并在链上转发：
+   * 目录来自它的 `listProviders`/`listModels`，转发走它的 `prepareCall`。
+   * 不给时本运行时只服务免费车道，行为与接入前一致。
+   */
+  llm,
+  /** 渠道包注册的 provider id 集合；只有它们算「本插件的渠道」。 */
+  packProviders = new Set(),
+  onChannelError,
 }) {
   let catalog = materializeCatalog(catalogStore.get().entries ?? [])
   let kiloCatalog = reviveKiloCatalog(catalogStore.get().kiloRows)
@@ -66,6 +76,10 @@ export function createModelRuntime({
   let comboCatalog = []
   /** The free lane's own roster: the base every other lane is merged onto. */
   let freeCatalog = catalog
+  /** 渠道包各 provider 的目录行；由 {@link refreshChannelCatalog} 重建。 */
+  let channelCatalog = []
+  /** 本轮取到目录的渠道 provider id（用于空状态说清原因）。 */
+  let channelProviders = []
   let egress = availability.get().egress ?? null
   let gatewayLatency = { ms: 0, at: 0 }
   let disposed = false
@@ -87,7 +101,7 @@ export function createModelRuntime({
   const rebuildCatalog = () => {
     const seen = new Set()
     const merged = []
-    for (const entry of [...freeCatalog, ...kiloCatalog]) {
+    for (const entry of [...freeCatalog, ...kiloCatalog, ...channelCatalog]) {
       if (entry === null || entry === undefined || seen.has(entry.id)) continue
       seen.add(entry.id)
       merged.push(entry)
@@ -110,9 +124,28 @@ export function createModelRuntime({
     attributionUserAgent,
   })
   const emitTopology = () => { if (!disposed) onTopology() }
+  /**
+   * 把一次渠道模型的调用交回宿主。
+   *
+   * 宿主已为每个 provider 注册了适配器，`prepareCall` 返回的 `stream` 已经绑定
+   * 了那一代的适配器实例；本插件只负责把 provider/model 换成渠道自己的名字。
+   * 缺 `prepareCall`（旧内核）时返回 undefined，由适配器给出明确错误而不是
+   * 静默失败。
+   */
+  const prepareChannelCall = typeof llm?.prepareCall === 'function'
+    ? async (provider, model, signal) => {
+      if (disposed) throw new UpstreamError('the model runtime is disposed', CODE.aborted)
+      const handle = await llm.prepareCall({ provider, model }, signal)
+      // `config` 是内核为这次派发锁定的权威配置；适配器必须照它派发，
+      // 否则会被 `INVALID_PREPARED_CALL` 拒绝。
+      return { config: handle?.config, stream: options => handle.stream(options) }
+    }
+    : undefined
+
   const adapter = new FreeModelAdapter({
     state,
     resolveImage,
+    prepareChannelCall,
     recordUsage: record => {
       if (disposed) return
       recordUsage(stats, record)
@@ -174,6 +207,7 @@ export function createModelRuntime({
       freeCatalog = materializeCatalog(catalogStore.get().entries ?? [])
     }
     await refreshKiloRoster()
+    await refreshChannelCatalog()
     if (disposed) return catalog
     rebuildCatalog()
     if (probe) await refreshAvailability(force)
@@ -191,6 +225,32 @@ export function createModelRuntime({
     } catch (error) {
       if (!disposed) logger.warn?.(`our-free-model: Kilo channel listing failed (${error?.code ?? error?.message ?? 'unknown'}); keeping its cached roster`)
     }
+  }
+
+  /**
+   * 重建渠道模型的目录行。
+   *
+   * 与免费车道不同，这里**不探测**：渠道模型的可用性由各自渠道自己维护
+   * （账号池、黑名单、远端目录），拿本机探测去判它们只会花掉账号额度换来
+   * 一个错误结论。清单本身来自宿主 `listModels`，那就是权威。
+   *
+   * 单家失败降级为「这家本轮没有目录」——一个渠道的凭据过期不该让整张
+   * 候选清单变空，否则用户连别的渠道也选不了。
+   */
+  async function refreshChannelCatalog() {
+    if (disposed) return channelCatalog
+    const { rows, providers } = await readChannelRosters(llm, packProviders, (provider, error) => {
+      onChannelError?.(provider, error)
+      if (provider !== 'listProviders') {
+        logger.warn?.(`our-free-model: channel ${provider} model list unavailable (${String(error?.message ?? error)}); skipping this round`)
+      }
+    })
+    if (disposed) return channelCatalog
+    channelCatalog = rows
+    channelProviders = providers
+    rebuildCatalog()
+    emitTopology()
+    return channelCatalog
   }
 
   async function fetchListing() {
@@ -216,7 +276,7 @@ export function createModelRuntime({
     // has no endpoint of its own: probing one would send the chain's own id to
     // the free lane as a model name, spending quota to collect a verdict about
     // nothing.
-    const probeable = catalog.filter(entry => !isKiloEntry(entry) && !isComboEntry(entry))
+    const probeable = catalog.filter(entry => !isKiloEntry(entry) && !isComboEntry(entry) && !isChannelEntry(entry))
     const results = await probeCatalog(probeable, { attributionUserAgent, signal: lifetime.signal }, (id, result) => {
       if (disposed) return
       availability.edit(value => ({
@@ -293,9 +353,19 @@ export function createModelRuntime({
       return !availability.writeFailed
     }
     try {
+      /**
+       * 探测消息用**块数组**，不用裸字符串。
+       *
+       * 免费车道这条链路由本插件自己解析消息，字符串够用；但渠道模型的调用
+       * 要交回宿主（`prepareCall` → 渠道适配器 → 内核的图像策略），而内核对
+       * content 一律按块数组处理（`contentHasImage` 直接 `.some()`）。裸字符串
+       * 会在那里抛 `content.some is not a function`，看起来像渠道坏了，实际是
+       * 探测请求的形状不对。块数组是两种链路都接受的写法。
+       */
+      const probeMessages = [{ role: 'user', content: [{ type: 'text', text: 'Reply with exactly: OK' }] }]
       const measured = await runModelTest(testSignal => adapter.stream({
         provider: ROUTE_MAIN, model: entry.id,
-        messages: [{ role: 'user', content: 'Reply with exactly: OK' }],
+        messages: probeMessages,
         reasoningEffort: selectedEffort, sessionId: 'bench:' + entry.id + ':' + selectedEffort,
         signal: testSignal,
       }, entry, state()), { signal: linkedSignal })
@@ -314,6 +384,8 @@ export function createModelRuntime({
 
   return {
     testModel, state, adapter, refreshCatalog, refreshAvailability, watchEgress, fetchListing,
+    refreshChannelCatalog,
+    get channelProviders() { return channelProviders },
     complete: createForwardCompletion({
       adapter, signal: lifetime.signal,
       state: () => {

@@ -521,8 +521,12 @@ window.__ModuleLoader__.load({
         'routing.deleteWarn': '删除后这个模型 ID 立即从清单消失，正在引用它的客户端会拿到 404。',
         'routing.enabled': '启用',
         'routing.channel.free': '免费车道',
-                'routing.channel.kilo': 'Kilo',
+        'routing.channel.kilo': 'Kilo',
         'routing.channel.combo': '链路',
+        'routing.pickGroup': '{provider}（{n}）',
+        'routing.pickNoChannels': '还没有可路由的渠道模型：请先在渠道页登录账号并启用模型。',
+        'routing.pickFilterAll': '全部',
+        'routing.pickFilterLabel': '按供应商筛选',
         'gw.clientsTitle': '接入客户端',
         'gw.clientsHint': '免费车道转发端口的接入配方：地址与 Key 按实际绑定端口与真实密钥生成。',
         'gw.clientsOff': '转发端口未启用',
@@ -1013,6 +1017,10 @@ window.__ModuleLoader__.load({
         'routing.enabled': 'Enabled',
         'routing.channel.free': 'Free lane',
                 'routing.channel.kilo': 'Kilo',
+        'routing.pickGroup': '{provider} ({n})',
+        'routing.pickNoChannels': 'No routable channel models yet: sign in on the Channels page and enable models first.',
+        'routing.pickFilterAll': 'All',
+        'routing.pickFilterLabel': 'Filter by provider',
         'routing.channel.combo': 'Chain',
         'gw.clientsTitle': 'Connect a client',
         'gw.clientsHint': 'How the free lane\'s forward port (enabled under "Local forward" on the Free models page) plugs into each client: addresses and keys below are generated from the port that actually bound and the real key.',
@@ -2010,6 +2018,8 @@ window.__ModuleLoader__.load({
 .ofm_pickrow:hover:not(:disabled){border-color:var(--dsw-alias-state-business-primary);transform:translateY(-1px)}
 .ofm_pickrow[aria-pressed="true"]{border-color:var(--dsw-alias-state-business-primary);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 12%,transparent)}
 .ofm_pickrow:disabled{opacity:.55;cursor:default}
+.ofm_pickgroup{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.ofm_pickgrouptitle{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary);padding:2px 2px 0}
 .ofm_pickhead{display:flex;align-items:center;gap:7px;min-width:0}
 .ofm_pickhead b{font-size:12.5px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ofm_pickmeta{display:flex;gap:7px;flex-wrap:wrap;font-size:10.5px;color:var(--dsw-alias-label-tertiary);min-width:0}
@@ -4985,6 +4995,24 @@ window.__ModuleLoader__.load({
       kilo: t('routing.channel.kilo'),
       combo: t('routing.channel.combo'),
     })
+    /**
+     * 一个 catalog 行的标签。
+     *
+     * 渠道行的 `channel` 是 `channel:<provider>`，直接显示只会得到一串内部
+     * 前缀；用户认得的是供应商名。免费车道 / Kilo / 链路三个固定标签走
+     * 翻译表，其余一律取 provider 段。
+     */
+    const laneLabelOf = (t, channel, provider) => {
+      const labels = LANE_LABEL(t)
+      if (channel !== undefined && labels[channel] !== undefined) return labels[channel]
+      if (typeof provider === 'string' && provider !== '') return provider
+      if (typeof channel === 'string' && channel.startsWith('channel:')) {
+        const rest = channel.slice('channel:'.length)
+        const slash = rest.indexOf('/')
+        return slash < 0 ? rest : rest.slice(0, slash)
+      }
+      return channel ?? ''
+    }
 
     // Labels for the ids the host serves. Literal t() calls inside an object
     // literal rather than a key table, because a key the copy lint cannot see is
@@ -5172,31 +5200,61 @@ window.__ModuleLoader__.load({
     function ModelPicker(props) {
       const { t, models, chosen, onPick } = props
       const [query, setQuery] = useState('')
+      const [only, setOnly] = useState('')
       const lanes = LANE_LABEL(t)
       const needle = query.trim().toLowerCase()
-      const rows = models
-        .filter(row => needle === '' || `${row.id} ${row.name}`.toLowerCase().includes(needle))
-        .slice(0, 60)
+      // 渠道模型的名字会跨供应商重复（GLM-5.3 在不止一家），所以候选必须按
+      // provider 分组展示：平铺成一列时两个同名条目长得一样，用户选中哪个只能猜。
+      const providerOf = row => row.provider ?? row.channel ?? 'free'
+      const labelOf = row => laneLabelOf(t, row.channel, row.provider)
+      const matched = models.filter(row => {
+        if (only !== '' && providerOf(row) !== only) return false
+        if (needle === '') return true
+        return `${row.id} ${row.name ?? ''} ${providerOf(row)}`.toLowerCase().includes(needle)
+      })
+      const groups = new Map()
+      for (const row of matched) {
+        const key = providerOf(row)
+        if (!groups.has(key)) groups.set(key, [])
+        groups.get(key).push(row)
+      }
+      // 供应商选择器只在真有多家时出现：只有一家时它是个没有选择的控件。
+      const providerIds = [...new Set(models.map(providerOf))].sort()
+      const renderRow = row => h('button', {
+        key: row.id, type: 'button', className: 'ofm_pickrow',
+        'aria-pressed': chosen.includes(row.id) ? 'true' : 'false',
+        onClick: () => onPick(row.id),
+      },
+      h('span', { className: 'ofm_pickhead' }, h('b', { title: row.name }, row.name ?? row.id)),
+      h('span', { className: 'ofm_pickmeta' },
+        h('span', { className: 'ofm_id' }, row.id),
+        h('span', { className: 'ofm_tag' }, labelOf(row)),
+        row.contextWindow > 0 ? h('span', { className: 'ofm_tag' }, `${t('tag.context')} ${kilo(row.contextWindow)}`) : null,
+        row.maxOutput > 0 ? h('span', { className: 'ofm_tag' }, `${t('tag.output')} ${kilo(row.maxOutput)}`) : null,
+        row.vision === true ? h('span', { className: 'ofm_tag' }, t('tag.vision')) : null))
       return h('div', { className: 'ofm_panel' },
         h('div', { className: 'ofm_paneltitle' }, t('routing.pickModel')),
         h('div', { className: 'ofm_row' },
           h('div', { className: 'ofm_field', style: { flex: '1 1 200px' } },
             h('span', null, t('routing.pickModel')),
-            h('input', { className: 'ofm_input', value: query, placeholder: t('routing.searchModel'), onChange: event => setQuery(event.target.value) }))),
-        rows.length === 0
-          ? h('p', { className: 'ofm_note' }, t('routing.noModel'))
-          : h('div', { className: 'ofm_picklist' }, rows.map(row => h('button', {
-            key: row.id, type: 'button', className: 'ofm_pickrow',
-            'aria-pressed': chosen.includes(row.id) ? 'true' : 'false',
-            onClick: () => onPick(row.id),
-          },
-          h('span', { className: 'ofm_pickhead' }, h('b', { title: row.name }, row.name ?? row.id)),
-          h('span', { className: 'ofm_pickmeta' },
-            h('span', { className: 'ofm_id' }, row.id),
-            h('span', { className: 'ofm_tag' }, lanes[row.channel] ?? row.channel),
-            row.contextWindow > 0 ? h('span', { className: 'ofm_tag' }, `${t('tag.context')} ${kilo(row.contextWindow)}`) : null,
-            row.maxOutput > 0 ? h('span', { className: 'ofm_tag' }, `${t('tag.output')} ${kilo(row.maxOutput)}`) : null,
-            row.vision === true ? h('span', { className: 'ofm_tag' }, t('tag.vision')) : null)))))
+            h('input', { className: 'ofm_input', value: query, placeholder: t('routing.searchModel'), onChange: event => setQuery(event.target.value) })),
+          providerIds.length > 1
+            ? h('div', { className: 'ofm_field', style: { flex: '0 0 180px' } },
+              h('span', null, t('routing.pickFilterLabel')),
+              h('select', {
+                className: 'ofm_input', value: only,
+                onChange: event => setOnly(event.target.value),
+              },
+              h('option', { value: '' }, t('routing.pickFilterAll')),
+              providerIds.map(id => h('option', { key: id, value: id }, id))))
+            : null),
+        models.length === 0
+          ? h('p', { className: 'ofm_note' }, t('routing.pickNoChannels'))
+          : matched.length === 0
+            ? h('p', { className: 'ofm_note' }, t('routing.noModel'))
+            : h('div', { className: 'ofm_picklist' }, [...groups.entries()].map(([provider, rows]) => h('div', { key: provider, className: 'ofm_pickgroup' },
+              h('div', { className: 'ofm_pickgrouptitle' }, t('routing.pickGroup').replace('{provider}', provider).replace('{n}', String(rows.length))),
+              rows.map(renderRow)))))
     }
 
     function ChainCapacity({ capacity, t }) {
@@ -5297,7 +5355,7 @@ window.__ModuleLoader__.load({
             const row = byId.get(id)
             return h('div', { key: `${id}#${index}`, className: 'ofm_member' },
               h('span', { className: 'ofm_id', title: id }, row?.name ?? id),
-              h('span', { className: 'ofm_tag' }, lanes[row?.channel] ?? ''),
+              h('span', { className: 'ofm_tag' }, laneLabelOf(t, row?.channel, row?.provider)),
               row?.contextWindow > 0 ? h('span', { className: 'ofm_tag' }, `${t('tag.context')} ${kilo(row.contextWindow)}`) : null,
               miniBtn('↑', () => move(index, -1), { disabled: busy || index === 0, title: t('routing.moveUp') }),
               miniBtn('↓', () => move(index, 1), { disabled: busy || index === members.length - 1, title: t('routing.moveDown') }),
@@ -5345,7 +5403,10 @@ window.__ModuleLoader__.load({
           h('span', { className: 'ofm_note' }, t('routing.resolved')),
           resolved.length === 0
             ? h('span', { className: 'ofm_note' }, '—')
-            : resolved.map(id => h('span', { key: id, className: 'ofm_tag' }, `${lookup.get(id)?.name ?? id} · ${lanes[lookup.get(id)?.channel] ?? ''}`))),
+            : resolved.map(id => {
+              const row = lookup.get(id)
+              return h('span', { key: id, className: 'ofm_tag' }, `${row?.name ?? id} · ${laneLabelOf(t, row?.channel, row?.provider)}`)
+            })),
         missing.length === 0
           ? null
           : h(Fragment, null,

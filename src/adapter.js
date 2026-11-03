@@ -27,6 +27,7 @@ import { createChannel } from './channel.js'
 import { recoveryPolicy, canRecover, canRecoverSilentStop, recoveryMessages, continuationMessages, checkpointFits, addUsage, createBlockTracker } from './recovery.js'
 import { isKiloEntry } from './catalog.js'
 import { isComboEntry, comboChain } from './combos.js'
+import { isChannelEntry, parseChannelModelId } from './channel-catalog.js'
 import { applyTokenSavers, saverConfig } from './token-saver/index.js'
 import { classifyFailure, describeVerdict, shouldAdvance } from './route/classify.js'
 import { FALLBACK_IMAGE_PRICING } from './image-pricing.js'
@@ -201,6 +202,10 @@ export class FreeModelAdapter {
       yield * this.runCombo(options, entry, snapshot)
       return
     }
+    if (entry !== null && isChannelEntry(entry)) {
+      yield * this.runChannel(options, entry)
+      return
+    }
     yield * this.runSingle(options, entry, snapshot, {})
   }
 
@@ -238,12 +243,20 @@ export class FreeModelAdapter {
     const tried = []
     for (let index = 0; index < candidates.length; index += 1) {
       const candidate = candidates[index]
-      const iterator = this.runSingle(options, candidate, snapshot, {
-        wire: wireOf(candidate),
-        turnModel: entry.id,
-        recordTurn: false,
-        allowAdvance: true,
-      })
+      // 链上的候选可以是三种东西之一，派发路径各不相同：
+      // - 免费车道模型：走 `runSingle`（本插件自己的 wire）；
+      // - 渠道模型：走 `runChannel`（交回宿主 `prepareCall`）；
+      // - 嵌套链路：不允许（normalizeCombos 已经排除自引用，这里只兜底）。
+      // 早先这里无条件走 `runSingle`，渠道候选会被当成免费车道模型名去拼请求，
+      // 上游回 400 —— 症状是「链路里的渠道成员永远失败」，而单独测那个渠道是通的。
+      const iterator = isChannelEntry(candidate)
+        ? this.runChannel({ ...options, model: candidate.id }, candidate)
+        : this.runSingle(options, candidate, snapshot, {
+          wire: wireOf(candidate),
+          turnModel: entry.id,
+          recordTurn: false,
+          allowAdvance: true,
+        })
       let committed = false
       let result
       const held = []
@@ -279,6 +292,111 @@ export class FreeModelAdapter {
       message: `the chain "${entry.name}" exhausted every candidate: ${tried.join('; ')}`,
       code: CODE.server,
     } } }
+  }
+
+  /**
+   * One turn for an absorbed channel model — delegated, not spoken here.
+   *
+   * A channel model's endpoint, credential and wire belong to the provider that
+   * registered it. This plugin has no business re-implementing any of them, so
+   * the whole call is handed back to the host: `prepareCall(provider, model)`
+   * resolves that provider's own adapter and returns a bound `stream`.
+   *
+   * Two things are rewritten on the way through, and only these two:
+   *
+   * - `provider`/`model` name the *channel*, not this route (the host would
+   *   otherwise re-enter this same adapter and recurse);
+   * - the caller's `reasoningEffort` is dropped. This plugin's effort ids are
+   *   the free lane's ladder (`off`/`low`/`high`…); the channel's own ids are
+   *   upstream-private (`light`, `xhigh`, `max`) and passing one through would
+   *   produce a 400. The channel applies its own default, which is what a user
+   *   who never configured that channel expects anyway.
+   *
+   * Failures are yielded as the normal terminal `finish` chunk rather than
+   * thrown, so a chain can classify them and advance like any other candidate.
+   */
+  async * runChannel(options, entry) {
+    const settings = (this.deps.state().settings) ?? {}
+    const started = Date.now()
+    const target = parseChannelModelId(entry.id)
+    const fail = (message, code) => ({
+      type: 'finish',
+      reason: { kind: 'error', failure: { message, code } },
+    })
+    if (settings.enabled === false) {
+      this.deps.recordTurn?.({ at: started, model: entry.id, ok: false, recovered: false, attempts: 0, origin: 'harness' })
+      yield fail('our free model is switched off in its settings page', 'CONFIG_DISABLED')
+      return { advance: false, verdict: null, ok: false }
+    }
+    if (target === undefined) {
+      this.deps.recordTurn?.({ at: started, model: entry.id, ok: false, recovered: false, attempts: 0, origin: 'harness' })
+      yield fail(`"${entry.id}" is not a channel model id`, CODE.server)
+      return { advance: false, verdict: null, ok: false }
+    }
+    const prepare = this.deps.prepareChannelCall
+    if (typeof prepare !== 'function') {
+      this.deps.recordTurn?.({ at: started, model: entry.id, ok: false, recovered: false, attempts: 0, origin: 'harness' })
+      yield fail(`channel ${target.provider} is unavailable: the host does not expose prepareCall`, CODE.server)
+      return { advance: false, verdict: null, ok: false }
+    }
+
+    let handle
+    try {
+      handle = await prepare(target.provider, target.model, options.signal)
+    } catch (error) {
+      this.deps.recordTurn?.({ at: started, model: entry.id, ok: false, recovered: false, attempts: 0, origin: 'harness' })
+      yield fail(`channel ${target.provider} could not resolve "${target.model}": ${String(error?.message ?? error)}`, CODE.server)
+      return { advance: false, verdict: null, ok: false }
+    }
+
+    /**
+     * 派发前必须让调用与 handle 锁定的配置**逐字段相等**，否则内核的
+     * `callConfigEquals` 会以 `INVALID_PREPARED_CALL` 拒绝。
+     *
+     * 所以这里从 handle 自己报告的 `config` 取权威值，而不是从我们这边的
+     * `options` 猜：provider / model 一定是渠道自己的名字，`maxTokens` 等
+     * 字段若被渠道适配器解析出默认值也必须照它说的传。`signal` 不参与比较，
+     * 保留调用方的取消链路。
+     */
+    const locked = handle?.config ?? { provider: target.provider, model: target.model }
+    const forwarded = { ...options, ...locked }
+    delete forwarded.reasoningEffort
+    if (locked.reasoningEffort !== undefined) forwarded.reasoningEffort = locked.reasoningEffort
+    let ok = false
+    let committed = false
+    /**
+     * 渠道适配器报告失败有**两种**形态，都必须当成候选失败处理：
+     *
+     * 1. 抛异常（传输层、解析层）；
+     * 2. 正常结束流，但最后一个 `finish` 块的 reason 是 `error`。
+     *
+     * 第 2 种是渠道适配器的常规形态（它们把上游业务错误规整成终止块），早先
+     * 这里只看 `kind === 'stop'` 判成功、其余一律 `advance: false`，于是链路
+     * 遇到「额度用尽」这种**正是它存在意义**的失败时反而不降级，把上游错误
+     * 原样甩给用户。
+     */
+    let failed = false
+    try {
+      for await (const chunk of handle.stream(forwarded)) {
+        if (chunk?.type === 'text-delta' && typeof chunk.text === 'string' && chunk.text.trim() !== '') committed = true
+        if (chunk?.type === 'tool-call-delta') committed = true
+        if (chunk?.type === 'finish') {
+          if (chunk.reason?.kind === 'stop') ok = true
+          else if (chunk.reason?.kind === 'error') failed = true
+        }
+        yield chunk
+      }
+    } catch (error) {
+      this.deps.recordTurn?.({ at: started, model: entry.id, ok: false, recovered: false, attempts: 1, origin: 'harness' })
+      // Before any answer-bearing delta this is still an invisible candidate
+      // fault, so a chain may move on; afterwards the caller already saw output.
+      yield fail(`channel ${target.provider} failed: ${String(error?.message ?? error)}`, CODE.server)
+      return { advance: !committed, verdict: null, ok: false }
+    }
+    this.deps.recordTurn?.({ at: started, model: entry.id, ok: !failed && ok, recovered: false, attempts: 1, origin: 'harness' })
+    // 已经交出内容就不能再换模型（调用方看得到那段输出）；还没交出的失败
+    // 才是「换一个再来」的场景。
+    return { advance: failed && !committed, verdict: null, ok: !failed && ok }
   }
 
   /**

@@ -113,6 +113,7 @@ const suites = [
   ['rtk-shape', 'rtk-shape-test.mjs', []],
   ['local-optimize', 'local-optimize-test.mjs', []],
   ['route', 'route-test.mjs', []],
+  ['channel-catalog', 'channel-catalog-test.mjs', []],
   ['combo-advance', 'combo-advance-test.mjs', []],
   ['prompt-saver', 'prompt-saver-test.mjs', []],
   ['anthropic', 'anthropic-test.mjs', []],

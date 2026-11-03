@@ -158,12 +158,26 @@ export function apply(ctx, config) {
   /** Set when this generation is disposed; late async callbacks must stand down. */
   let disposed = false
 
+  /**
+   * 渠道包注册的 provider id。包是异步挂载的（见下方的动态 import），所以这里
+   * 先备好一个可变集合：包挂载后填入真实名单，再触发一次渠道目录重建。空集合
+   * 时运行时只服务免费车道，与接入前完全一致。
+   */
+  const packProviders = new Set()
+
   const modelRuntime = createModelRuntime({
     ...stores,
     logger,
     attributionUserAgent: 'deepseek-harness',
     resolveImage: imageResolver(ctx, logger),
     onTopology: () => emitTopology(),
+    llm: ctx.llm,
+    packProviders,
+    onChannelError: (provider, error) => {
+      if (provider === 'listProviders') {
+        logger.warn?.(`our-free-model: cannot enumerate providers for the routing catalog (${String(error?.message ?? error)})`)
+      }
+    },
   })
   const { state, adapter, refreshCatalog, refreshAvailability, watchEgress, fetchListing, publicModelRows, syncAggregateCatalog } = modelRuntime
   const runForwarded = modelRuntime.complete
@@ -731,12 +745,23 @@ export function apply(ctx, config) {
     // release manifest stays inside its file cap.
     void import('./vendor/channel-pack/pack.js').then(pack => {
       if (stopped) return
-      pack.apply(scoped, {
+      const mounted = pack.apply(scoped, {
         disableOpencode: true,
         outlet: { active: egressActive, fetch: egressFetch, fetchSigned: (input, init, send) => egressFetch(input, init, send) },
       })
+      // 包回来的 provider 名单是「哪些 provider 属于本插件的渠道」的唯一权威：
+      // 宿主的 provider 列表里还混着用户自己配的供应商，只有包知道分界。
+      const providers = Array.isArray(mounted?.providers) ? mounted.providers : []
+      for (const provider of providers) if (typeof provider === 'string' && provider !== '') packProviders.add(provider)
       channelPack = { state: 'ready', error: '' }
-      logger.info?.('our-free-model: free-channel pack mounted (CodeArts, CodeBuddy, and 11 more)')
+      logger.info?.(`our-free-model: free-channel pack mounted (${providers.length || 'no'} providers)`)
+      // 挂载前那次目录刷新看不到任何渠道，故这里补一次，让路由候选立刻带上
+      // 各渠道的模型，而不必等用户手动刷新或下一轮目录轮询。
+      if (providers.length > 0) {
+        void modelRuntime.refreshChannelCatalog().catch(error => {
+          logger.warn?.(`our-free-model: channel catalog refresh failed (${String(error?.message ?? error)})`)
+        })
+      }
     }).catch(error => {
       if (stopped) return
       channelPack = { state: 'failed', error: String(error?.message ?? error).slice(0, 300) }
@@ -763,6 +788,10 @@ export function apply(ctx, config) {
         models: state().catalog.map(entry => ({
           id: entry.id, name: entry.name, channel: entry.channel ?? 'free', vision: entry.vision === true,
           contextWindow: entry.contextWindow, maxOutput: entry.maxOutput,
+          // 分组键：渠道模型的 provider 就是它自己的 channel，免费车道与 Kilo
+          // 各有固定标签。前端据此「一家供应商一张卡片」，而不是把三十多个
+          // 模型平铺成一列——平铺时同名的 GLM-5.3 会来自好几家，用户无从分辨。
+          ...entry.provider === undefined ? {} : { provider: entry.provider },
         })),
         usable: state().catalog.filter(isComboEntry).map(publicCombo),
         strategies: ['fallback', 'round-robin'],

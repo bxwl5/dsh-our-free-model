@@ -295,7 +295,22 @@ export function makeReadImageRequest(ctx: Context) {
 }
 
 /** 注册 codeartsAuth 服务与 codearts LLM 路由（不注册斜杠命令）。 */
-export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?: SignedChannelOutlet } = {}): void {
+/**
+ * `apply` 的返回值就是壳层要的那份「本包注册了哪些 provider」清单。
+ *
+ * 壳层（`index.js`）要判断宿主的某个 provider 是不是本包的渠道，才能决定
+ * 要不要把它的模型收进路由候选。这件事只有本包自己知道 —— 宿主只看到一堆
+ * 并列的 provider，分不出哪些是渠道、哪些是用户自己配的供应商。
+ *
+ * 返回数组而不是 `Set`：跨模块边界传字符集合容易在打包后被结构化克隆，
+ * 数组没有这个歧义，且顺序稳定（注册顺序）。
+ */
+export interface ChannelPackMount {
+  /** 本包向 `ctx.llm` 注册的全部 provider id（20 个渠道）。 */
+  providers: string[]
+}
+
+export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?: SignedChannelOutlet } = {}): ChannelPackMount {
   const network = createChannelFetch({ outlet: config.outlet })
   const signedNetwork = createDirectFetch({ outlet: config.outlet })
   const detachSignedNetwork = attachDirectFetch(signedNetwork.fetch)
@@ -2457,4 +2472,5 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
   // 该服务缺席的 profile 里本功能整体不生效，不会让插件永久 pending。
   installLoopResume(ctx)
   ctx.provide('accountPool', pool)
+  return { providers: Object.keys(modelAdapters) }
 }
