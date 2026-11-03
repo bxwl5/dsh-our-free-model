@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 
 const source = fs.readFileSync(new URL('../client.js', import.meta.url), 'utf8')
-  .replace('exports.__test = {', 'exports.__test = { SettingsPage, ModelCard, Roster,')
+  .replace('exports.__test = {', 'exports.__test = { SettingsPage, ModelCard, Roster, ModelPicker,')
 const tick = () => new Promise(resolve => setImmediate(resolve))
 let checks = 0
 async function check(name, run) { await run(); checks++; console.log('  ok  ' + name) }
@@ -172,6 +172,55 @@ await check('the home dashboard folds each chart on its own, heatmap above the c
     'the curve section owns its own tokens/requests switch')
   assert.notEqual(sections[0].children, sections[1].children,
     'each section carries its own body — folding one never folds another')
+})
+
+await check('the member picker shows the balance beside each channel name', async () => {
+  const app = boot(), { ModelPicker } = app.api
+  // 宿主 RPC 的调用形状与 useChannelRpc 一致：connection.rpc.call(path, ns, {method,payload}, signal)
+  const asked = []
+  const ctx = { connection: { rpc: { call: async (_path, _ns, request) => {
+    asked.push(request.payload.provider)
+    const accounts = request.payload.provider === 'buddy'
+      ? [{ accountId: 'a1', nickname: 'a1', balance: { total: 155670, packages: [], expiredTotal: 0 } },
+        { accountId: 'a2', nickname: 'a2', balance: { total: 44330, packages: [], expiredTotal: 0 } }]
+      : [{ accountId: 'b1', nickname: 'b1', balance: { total: 0, packages: [], expiredTotal: 0 } }]
+    return { ok: true, value: { provider: request.payload.provider, accounts } }
+  } } } }
+  const models = [
+    { id: 'channel:buddy/x', name: 'Buddy X', channel: 'channel:buddy', provider: 'buddy' },
+    { id: 'channel:zcode/y', name: 'Z Code Y', channel: 'channel:zcode', provider: 'zcode' },
+  ]
+  let tree = app.draw(ModelPicker, { t: app.t, models, chosen: [], onPick() {}, ctx })
+  const head = flatten(tree).find(node => node.props?.className === 'ofm_pickgrouphead')
+  assert.ok(head, 'provider group heading renders')
+  // 折叠时不查余额：一条上游请求都不该发。
+  assert.deepEqual(asked, [], 'collapsed groups must not query any balance')
+  head.props.onClick()
+  tree = app.draw(ModelPicker, { t: app.t, models, chosen: [], onPick() {}, ctx })
+  await new Promise(resolve => setImmediate(resolve))
+  tree = app.draw(ModelPicker, { t: app.t, models, chosen: [], onPick() {}, ctx })
+  assert.deepEqual(asked, ['buddy'], 'only the expanded channel is queried')
+  const badge = flatten(tree).find(node => node?.props?.className?.startsWith?.('ofm_pickquota'))
+  assert.ok(badge, 'the expanded group now carries a balance badge')
+  assert.equal(flatten(badge).filter(x => typeof x === 'string').join(''), '200.0K',
+    'per-account balances fold into one readable total')
+
+  // 额度打光的那家标成红色（low）：这正是链路失败最常见的根因。
+  const zhead = flatten(tree).filter(node => node.props?.className === 'ofm_pickgrouphead')[1]
+  zhead.props.onClick()
+  app.draw(ModelPicker, { t: app.t, models, chosen: [], onPick() {}, ctx })
+  await new Promise(resolve => setImmediate(resolve))
+  const after = flatten(app.draw(ModelPicker, { t: app.t, models, chosen: [], onPick() {}, ctx }))
+  assert.deepEqual(asked, ['buddy', 'zcode'], 'each channel is queried once it is opened')
+  const low = after.filter(node => node?.props?.className?.startsWith?.('ofm_pickquota')).find(node => node.props.className.includes('low'))
+  assert.ok(low, 'a spent channel is marked low')
+
+  // 失败的那家不画数字，也**不反复重试**（否则 effect 会把它当成「待查」一直打上游）。
+  const before = asked.length
+  app.draw(ModelPicker, { t: app.t, models, chosen: [], onPick() {}, ctx })
+  await new Promise(resolve => setImmediate(resolve))
+  app.draw(ModelPicker, { t: app.t, models, chosen: [], onPick() {}, ctx })
+  assert.equal(asked.length, before, 'a channel that already answered is never re-queried per render')
 })
 
 await check('a collapsible section is folded by default and opens on the header click', () => {

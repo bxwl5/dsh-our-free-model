@@ -493,6 +493,9 @@ window.__ModuleLoader__.load({
         'routing.stickyHint': '轮询时同一个模型连续用多少次再换下一个。',
         'routing.members': '成员（按顺序）',
         'routing.addMember': '添加成员',
+        'routing.pickClose': '✕ 收起',
+        'routing.pickQuotaLoading': '余额查询中',
+        'routing.pickQuotaHint': '该渠道剩余额度；链路的失败多半是这一家额度打光，先看这里再挑成员。',
         'routing.memberEmpty': '还没有成员——点「添加成员」从清单里挑一个。',
         'routing.moveUp': '上移',
         'routing.moveDown': '下移',
@@ -988,6 +991,9 @@ window.__ModuleLoader__.load({
         'routing.stickyHint': 'How many calls in a row one model serves before the rotation moves on.',
         'routing.members': 'Members (in order)',
         'routing.addMember': 'Add member',
+        'routing.pickClose': '✕ Close',
+        'routing.pickQuotaLoading': 'Checking balance',
+        'routing.pickQuotaHint': 'What this channel has left. Most chain failures are a spent quota here, so read this before picking.',
         'routing.memberEmpty': 'No member yet — press "Add member" to pick one from the roster.',
         'routing.moveUp': 'Move up',
         'routing.moveDown': 'Move down',
@@ -1175,6 +1181,9 @@ window.__ModuleLoader__.load({
 .ofm_btn.primary:hover:not(:disabled){background:linear-gradient(180deg,var(--dsw-alias-state-business-primary),color-mix(in srgb,var(--dsw-alias-state-business-primary) 88%,#000));border-color:var(--dsw-alias-state-business-primary);box-shadow:inset 0 1px 0 rgb(255 255 255 / 20%),0 4px 14px color-mix(in srgb,var(--dsw-alias-state-business-primary) 42%,transparent)}
 .ofm_btn.ghost{background:transparent;box-shadow:none;border-color:transparent;color:var(--dsw-alias-label-secondary)}
 .ofm_btn.ghost:hover:not(:disabled){background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 80%,transparent);border-color:var(--dsw-alias-border-l1);color:var(--dsw-alias-label-primary)}
+.ofm_textbtn{font:inherit;font-size:11.5px;padding:3px 6px;border:0;border-radius:7px;background:none;color:var(--dsw-alias-label-tertiary);cursor:pointer;transition:color .16s ease,background .16s ease}
+.ofm_textbtn:hover:not(:disabled){color:var(--dsw-alias-label-primary);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 70%,transparent);text-decoration:underline}
+.ofm_textbtn:disabled{opacity:.45;cursor:default}
 .ofm_minibtn{font:inherit;font-size:11px;font-weight:540;padding:3px 9px;border-radius:8px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 85%,transparent);background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 70%,transparent);color:var(--dsw-alias-label-secondary);cursor:pointer;transition:transform .12s ease,border-color .16s ease,color .16s ease,background .16s ease,opacity .16s ease}
 .ofm_minibtn:hover:not(:disabled){border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 60%,transparent);color:var(--dsw-alias-label-primary);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 7%,transparent);transform:translateY(-1px)}
 .ofm_minibtn:active:not(:disabled){transform:scale(.96)}
@@ -2028,6 +2037,8 @@ window.__ModuleLoader__.load({
 .ofm_pickgrouphead:hover{border-color:var(--dsw-alias-border-l1);color:var(--dsw-alias-label-primary)}
 .ofm_pickcaret{flex:none;font-size:10px;width:10px;color:var(--dsw-alias-label-tertiary)}
 .ofm_pickgrouptitle{flex:1;min-width:0;font-size:11px;letter-spacing:.05em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ofm_pickquota{flex:none;font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:999px;border:1px solid color-mix(in srgb,var(--dsw-alias-state-success-primary) 42%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 9%,transparent);color:var(--dsw-alias-state-success-primary);white-space:nowrap;font-variant-numeric:tabular-nums}
+.ofm_pickquota.low{border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 48%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 10%,transparent);color:var(--dsw-alias-state-error-primary)}
 .ofm_pickgroupbadge{flex:none;font-size:10px;min-width:16px;text-align:center;padding:0 5px;border-radius:8px;background:var(--dsw-alias-state-business-primary);color:#fff}
 .ofm_pickgroupbody{display:grid;grid-template-columns:repeat(auto-fill,minmax(214px,1fr));gap:6px;padding:6px 0 2px 4px}
 .ofm_pickhead{display:flex;align-items:center;gap:6px;min-width:0;flex:1}
@@ -3264,6 +3275,30 @@ window.__ModuleLoader__.load({
       if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
       if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
       return String(Math.trunc(n))
+    }
+
+    /**
+     * 一家渠道的余额短标签：把 `usage.badge` 的逐账号读数折成一行看得懂的数。
+     *
+     * 口径与渠道卡一致：非配额制 = 各账号可用总余额相加；配额制（Antigravity /
+     * accio 按资源包给 remainingFraction）= **最小**的那一档剩余百分比 —— 链路的
+     * 可用性由最紧的一档决定，报合计会让人以为还能用很久。
+     */
+    function quotaSummaryOf(t, provider, payload) {
+      const capability = CHANNEL_CREDITS[provider] ?? {}
+      const accounts = Array.isArray(payload?.accounts) ? payload.accounts : []
+      if (capability.quota === true) {
+        const fractions = accounts.flatMap(row => (row.balance?.packages ?? [])
+          .map(pkg => Number(pkg.remaining))
+          .filter(value => Number.isFinite(value)))
+        if (fractions.length === 0) return null
+        return { text: `${Math.min(...fractions)}%`, title: t('chan.credits.quota'), tone: Math.min(...fractions) <= 10 ? 'low' : '' }
+      }
+      const totals = accounts.map(row => Number(row.balance?.total)).filter(value => Number.isFinite(value))
+      if (totals.length === 0) return null
+      const sum = totals.reduce((acc, value) => acc + value, 0)
+      const text = capability.unit === 'dollars' ? `$${sum.toFixed(sum >= 100 ? 0 : 2)}` : formatTokens(sum)
+      return { text, title: t(capability.unit === 'dollars' ? 'chan.credits.dollars' : capability.unit === 'tokens' ? 'chan.credits.tokens' : 'chan.credits.left'), tone: sum <= 0 ? 'low' : '' }
     }
 
     function ChannelCard(props) {
@@ -5258,9 +5293,31 @@ window.__ModuleLoader__.load({
     /** The chain editor's member picker: searchable, and it shows the lane and
      *  the vision flag, because those are what decide a chain's order. */
     function ModelPicker(props) {
-      const { t, models, chosen, onPick } = props
+      const { t, models, chosen, onPick, ctx } = props
       const [query, setQuery] = useState('')
       const [only, setOnly] = useState('')
+      // ── 渠道余额（用户 2026-11-03 第 4 项）─────────────────────────────────
+      // 选成员时最想知道的就是「这家还剩多少」：链路的失败大多不是模型坏了，
+      // 而是那一家的额度打光。读的是渠道包 `usage.badge` —— 与宿主用量徽标
+      // **同一份**读数、同一层 TTL 缓存，不会因为这页打开就打二十次上游。
+      // 只在某一家**被展开**时才取（折叠的组不查），失败的那家不显示而不是
+      // 显示一个假的 0。
+      const channelRpc = useChannelRpc(ctx)
+      const [quotas, setQuotas] = useState({})
+      const pending = useRef(new Set())
+      const loadQuota = provider => {
+        if (!channelRpc.available || pending.current.has(provider)) return
+        if (CHANNEL_CREDITS[provider] === undefined) return
+        pending.current.add(provider)
+        setQuotas(current => ({ ...current, [provider]: { loading: true } }))
+        channelRpc.rpc('usage.badge', { provider }, 90_000)
+          .then(payload => setQuotas(current => ({ ...current, [provider]: { loading: false, value: quotaSummaryOf(t, provider, payload) } })))
+          // 失败也要留一个**已答**的条目：把键删掉会让「待查列表」重新包含这家，
+          // effect 立刻再跑一次 —— 于是不停重试。这里标成失败并什么都不画
+          // （宁可少一个数，也不画一个假的 0）。
+          .catch(() => setQuotas(current => ({ ...current, [provider]: { loading: false, value: null, failed: true } })))
+          .finally(() => { pending.current.delete(provider) })
+      }
       const lanes = LANE_LABEL(t)
       const needle = query.trim().toLowerCase()
       // 渠道模型的名字会跨供应商重复（GLM-5.3 在不止一家），所以候选必须按
@@ -5290,6 +5347,14 @@ window.__ModuleLoader__.load({
        */
       const [openGroups, setOpenGroups] = useState([])
       const isOpen = provider => needle !== '' || openGroups.includes(provider)
+      // 展开的组才查余额（折叠不查、搜索命中也算展开）。放在 effect 里而不是
+      // 渲染过程里：`loadQuota` 要 setState，render 中 setState 会自触发重渲染。
+      const expandedProviders = [...new Set(matched.filter(row => isOpen(providerOf(row))).map(providerOf))]
+        .filter(provider => CHANNEL_CREDITS[provider] !== undefined && quotas[provider] === undefined).join(',')
+      useEffect(() => {
+        if (expandedProviders === '') return
+        for (const provider of expandedProviders.split(',')) loadQuota(provider)
+      }, [expandedProviders, channelRpc.available])
       const toggleGroup = provider => setOpenGroups(current => current.includes(provider)
         ? current.filter(name => name !== provider)
         : [...current, provider])
@@ -5313,7 +5378,11 @@ window.__ModuleLoader__.load({
         picked ? h('span', { className: 'ofm_pickcheck' }, '✓') : null))
       }
       return h('div', { className: 'ofm_panel' },
-        h('div', { className: 'ofm_paneltitle' }, t('routing.pickModel')),
+        h('div', { className: 'ofm_paneltitle' }, t('routing.pickModel'),
+          props.onClose === undefined ? null : h('button', {
+            type: 'button', className: 'ofm_textbtn', style: { marginLeft: 'auto' },
+            onClick: props.onClose,
+          }, t('routing.pickClose'))),
         h('div', { className: 'ofm_row' },
           h('div', { className: 'ofm_field', style: { flex: '1 1 200px' } },
             h('span', null, t('routing.pickModel')),
@@ -5347,6 +5416,14 @@ window.__ModuleLoader__.load({
                   // 车道名而不是供应商名，直接显示英文键会让人以为是漏翻。
                   .replace('{provider}', laneLabelOf(t, rows[0]?.channel, provider))
                   .replace('{n}', String(rows.length))),
+                (() => {
+                  const reading = quotas[provider]
+                  if (reading === undefined) { if (expanded) loadQuota(provider); return null }
+                  if (reading.loading === true) return h('span', { className: 'ofm_pickquota', title: t('routing.pickQuotaLoading') }, '…')
+                  if (reading.value === undefined || reading.value === null) return null
+                  return h('span', { className: `ofm_pickquota${reading.value.tone === 'low' ? ' low' : ''}`, title: `${reading.value.title} · ${t('routing.pickQuotaHint')}` },
+                    reading.value.text)
+                })(),
                 // 已选数量：折叠时也能看出这一家里已经挑了几个，否则收起后
                 // 完全看不见自己往链里加过什么。
                 picked > 0 ? h('span', {
@@ -5376,7 +5453,7 @@ window.__ModuleLoader__.load({
      * to tell "you meant this model" from "this model is gone".
      */
     function ChainEditor(props) {
-      const { t, chain, models, onSave, onCancel } = props
+      const { t, chain, models, onSave, onCancel, ctx } = props
       const [name, setName] = useState(chain.name ?? '')
       const [strategy, setStrategy] = useState(chain.strategy === 'round-robin' ? 'round-robin' : 'fallback')
       const [stickyLimit, setStickyLimit] = useState(String(chain.stickyLimit ?? 1))
@@ -5497,21 +5574,28 @@ window.__ModuleLoader__.load({
           ? h('p', { className: 'ofm_note' }, t('routing.capacityUnavailable'))
           : preview.status === 'loading' && members.length ? h('p', { className: 'ofm_note' }, t('loading'))
             : h(ChainCapacity, { capacity: preview.data?.capacity, t }),
-        h('div', { className: 'ofm_row' },
-          h(Button, { kind: 'ghost', disabled: busy, onClick: () => setPicking(value => !value) }, picking ? t('routing.cancel') : t('routing.addMember'))),
+        // ⚠️ 这里不再放一个「取消」（用户 2026-11-03）：这个按钮在选择器打开时
+        // 变成「取消」，于是表单**顶部一个取消、底部一个取消**，用户不知道该点
+        // 哪个，而它们做的事其实不同（上面收起选择器，下面放弃整次编辑）。
+        // 现在选择器打开时这一行整行消失，收起的入口只剩选择器标题行那个 ✕；
+        // 底部的「取消」仍然只负责放弃编辑。
+        picking ? null : h('div', { className: 'ofm_row' },
+          h(Button, { kind: 'ghost', disabled: busy, onClick: () => setPicking(true) }, t('routing.addMember'))),
         // 选择器是**开关**，不是"追加"：再点一次同一个模型就是取消。
         // 原先这里无条件 `[...current, id]`，于是连点同一个模型会把它反复加进链里，
         // 而保存时 normalizeCombos 又用 Set 去重 —— 界面显示 5 个、存下去剩 1 个，
         // 两边对不上。
         picking ? h(ModelPicker, {
-          t, models, chosen: members,
+          t, models, chosen: members, ctx, onClose: () => setPicking(false),
           onPick: id => setMembers(current => current.includes(id)
             ? current.filter(existing => existing !== id)
             : [...current, id]),
         }) : null,
+        // 「取消」不再是第二个大按钮（用户 2026-11-03：太丑）：一个表单只需要
+        // 一个视觉主角，保存是主角，放弃就该是一个安静的文字链接。
         h('div', { className: 'ofm_row' },
           h(Button, { kind: 'primary', disabled: busy || name.trim() === '' || members.length === 0, onClick: submit }, t('routing.save')),
-          h(Button, { kind: 'ghost', disabled: busy, onClick: onCancel }, t('routing.cancel'))),
+          h('button', { type: 'button', className: 'ofm_textbtn', disabled: busy, onClick: onCancel }, t('routing.cancel'))),
         error === '' ? null : h('div', { className: 'ofm_callout ofm_error' },
           h('div', null, h('b', null, t('routing.failed')), h('div', null, error))))
     }
@@ -5567,7 +5651,7 @@ window.__ModuleLoader__.load({
      * with is preferred when it is there.
      */
     function RoutingPage(props) {
-      const { t, summary } = props
+      const { t, summary, ctx } = props
       const panel = usePanel(() => api('/combos'), [])
       // 保存链路之后必须重拉 `/summary`：顶栏「路由」后面的数字是拿
       // `summary.catalog` 里 `channel === 'combo'` 的行数出来的，而这次写入
@@ -5627,7 +5711,7 @@ window.__ModuleLoader__.load({
             // form squeezed into a 252 px column is a form nobody can order.
             editing !== null
               ? h(ChainEditor, {
-                t, models, chain: editing.chain,
+                t, models, chain: editing.chain, ctx,
                 onSave: save, onCancel: () => setEditing(null),
               })
               : chains.length === 0
@@ -5785,7 +5869,7 @@ window.__ModuleLoader__.load({
           : tab === 'saver'
             ? h(SaverPage, { t })
             : tab === 'routing'
-              ? h(RoutingPage, { t, summary })
+              ? h(RoutingPage, { t, summary, ctx })
               : tab === 'ledger'
                 ? h(LedgerPage, { t, ctx })
                 : tab === 'logs'

@@ -291,6 +291,9 @@ for (const row of pickerRows) {
     'no inline lane label on the row — the group heading already names the provider')
 }
 captureEffects = true
+// ModelPicker 现在自带 useChannelRpc + 两个新槽位，必须在本段前清槽（本文件的
+// 惯例：每个场景各占一套 useState 槽位）。
+cells.length = 0
 const editorProps = { t, models: capacityModels, chain: { name: 'Fixture', models: ['small', 'large'] } }
 render(ChainEditor, editorProps)
 for (const effect of effects.splice(0)) effect()
@@ -369,8 +372,8 @@ console.log('ok  combo picker capacities, saved card and live server intersectio
   /**
    * 打开选择器并返回它。
    *
-   * 那个按钮是**开关**：未打开时文案是「添加成员」，已打开后变成「取消」。
-   * 所以只有第一次需要点它；之后直接读当前帧里的 ModelPicker。
+   * 「添加成员」只在收起时存在；打开后那一行整行消失，选择器标题行自己带一个
+   * 「✕ 收起」。所以只有第一次需要点它；之后直接读当前帧里的 ModelPicker。
    */
   const openPicker = () => {
     let tree = render(ChainEditor, toggleProps)
@@ -408,6 +411,20 @@ console.log('ok  combo picker capacities, saved card and live server intersectio
     const current = chosenNow()
     assert.equal(new Set(current).size, current.length, 'chosen list never contains duplicates')
     assert.ok(current.length <= 1, 'repeated clicks never accumulate')
+  }
+  // ⚠️ 打开选择器后，表单里不能同时存在两个「取消」（用户 2026-11-03）：
+  // 「添加成员」那一行整行消失，收起的入口只有选择器标题行的 ✕。
+  {
+    const tree = render(ChainEditor, toggleProps)
+    const labels = nodes(tree).filter(node => node.children !== undefined && node.children.includes(t('routing.cancel')))
+    assert.equal(labels.length, 1, 'exactly one 取消 in the editor: the picker row is gone, only the bottom cancel remains')
+    // ModelPicker 是组件节点（children 要等它自己执行才存在），按同一条注释
+    // 里的写法直接 render 它，再在渲染后的 DOM 里找标题行的 ✕。
+    const pickerTree = nodes(render(ModelPicker, { ...pickerNode.props }))
+    const close = pickerTree.find(node => node.props?.className === 'ofm_textbtn')
+    assert.ok(close, 'the picker owns a 收起 control in its own heading')
+    assert.ok(texts(close).includes(t('routing.pickClose')))
+    assert.equal(typeof close.props.onClick, 'function', 'the 收起 control actually closes it')
   }
 }
 console.log('ok  model picker toggles a member instead of appending it')
