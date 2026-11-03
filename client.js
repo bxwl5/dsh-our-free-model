@@ -5306,7 +5306,9 @@ window.__ModuleLoader__.load({
                 },
                 h('span', { className: 'ofm_pickcaret', 'aria-hidden': 'true' }, expanded ? '▾' : '▸'),
                 h('span', { className: 'ofm_pickgrouptitle' }, t('routing.pickGroup')
-                  .replace('{provider}', provider)
+                  // 分组键是 provider，但 `free` / `kilo` / `combo` 这类是我们的
+                  // 车道名而不是供应商名，直接显示英文键会让人以为是漏翻。
+                  .replace('{provider}', laneLabelOf(t, rows[0]?.channel, provider))
                   .replace('{n}', String(rows.length))),
                 // 已选数量：折叠时也能看出这一家里已经挑了几个，否则收起后
                 // 完全看不见自己往链里加过什么。
@@ -5568,7 +5570,10 @@ window.__ModuleLoader__.load({
                     h(Button, { kind: 'primary', onClick: () => setEditing({ chain: blank }) }, t('routing.newChain'))))
                 : h('div', { className: 'ofm_row' },
                   h(Button, { kind: 'primary', onClick: () => setEditing({ chain: blank }) }, t('routing.newChain'))),
-            chains.length === 0 ? null : h('div', { className: 'ofm_grid' }, chains.map((chain, index) => h(ChainCard, {
+            // 编辑时不再列卡片：编辑器是全宽的，下面的卡片列表留在原地会
+            // 被读成「编辑器的一部分」，用户点开一条链路，看到的却是另外两条
+            // 还挂在这个表单底下。
+            editing !== null || chains.length === 0 ? null : h('div', { className: 'ofm_grid' }, chains.map((chain, index) => h(ChainCard, {
               key: chain.id, t, index, chain, lookup,
               resolved: resolvedOf(chain), missing: missingOf(chain),
               capacity: (panel.data?.usable ?? []).find(row => row.id === chain.id),

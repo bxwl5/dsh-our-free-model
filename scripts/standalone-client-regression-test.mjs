@@ -222,6 +222,23 @@ for (const patch of [{ hideFreeModels: 1 }, { hiddenModelIds: [''] }, { hiddenMo
 }
 assert.deepEqual(publicModelVisibility({ hiddenModelIds: ['free', 'free', null], forwardKey: 'private' }),
   { hiddenModelIds: ['free'], hideFreeModels: false })
+// 渠道模型的 provider 就是它自己（`channel:raccoon/...`），宿主的选择器里
+// 已经有那一组。再以本插件的 route 广播一遍，同一批模型会多出一份 ——
+// 用户看到「Our Free Model」底下挂着别人家的模型，以为链路把它们收了进来。
+{
+  const real = [
+    { id: 'free-1' }, { id: 'kilo/1', channel: 'kilo' },
+    { id: 'channel:raccoon/m1', channel: 'channel:raccoon' },
+    { id: 'combo:mine', channel: 'combo' },
+  ]
+  const advertised = Object.values(computeMembership(real, {}, {})).flat()
+  assert.ok(advertised.includes('free-1'), '免费车道照常广播')
+  assert.ok(advertised.includes('kilo/1'), 'Kilo 是本插件自己的车道')
+  assert.ok(advertised.includes('combo:mine'), '组合线路照常广播')
+  assert.equal(advertised.includes('channel:raccoon/m1'), false, '渠道模型不重复广播')
+  // 不广播 ≠ 不能拨：catalog 里还在，链路成员与转发网关都按 id 解析。
+  assert.ok(real.some(row => row.id === 'channel:raccoon/m1'))
+}
 
 for (const language of ['zh', 'en']) {
   cells.length = 0

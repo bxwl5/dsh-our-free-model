@@ -433,6 +433,13 @@ export function computeMembership(catalog, availabilitySnapshot, settings) {
   const main = []
   const region = []
   for (const entry of usable) {
+    // 渠道模型（`channel:<provider>/<model>`）不在这里广播：它们的 provider
+    // 就是自己（raccoon / buddy / ...），宿主的选择器里已经有那一组。再以本
+    // 插件的 route 报一遍，同一批模型会多出一份，用户看到「Our Free Model」
+    // 底下挂着 8 个别人家的模型，还以为链路把它们收了进来。
+    // 这**不影响**调用：`prepareCall` 与转发网关都按 catalog 里的 id 解析，
+    // 链路成员照样能被拨出去（隐藏广告不等于拒绝请求）。
+    if (typeof entry.channel === 'string' && entry.channel.startsWith('channel:')) continue
     if (isModelHidden(entry, settings)) continue
     const verdict = verdictOf(entry)
     if (verdict !== STATE.regionBlocked) main.push(entry.id)
