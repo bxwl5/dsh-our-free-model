@@ -1091,6 +1091,7 @@ window.__ModuleLoader__.load({
 .ofm_secheadtoggle:hover .ofm_sec_title{color:var(--dsw-alias-state-business-primary)}
 .ofm_seccaret{font-size:10px;color:var(--dsw-alias-label-tertiary);flex:none}
 .ofm_grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:8px}
+.ofm_grid1{grid-template-columns:1fr}
 /* ══ 卡片（双层 bezel：hairline 边框 + 顶部内高光 + 柔和外阴影） ═══════ */
 .ofm_card{position:relative;display:flex;flex-direction:column;gap:3px;padding:7px 9px;border-radius:10px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 80%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 6%),0 1px 2px color-mix(in srgb,var(--dsw-alias-state-business-primary) 7%,transparent),0 3px 10px color-mix(in srgb,var(--dsw-alias-state-business-primary) 4%,transparent);transition:transform .2s cubic-bezier(.32,.72,0,1),box-shadow .24s ease,border-color .18s ease}
 .ofm_card:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 66%,var(--dsw-alias-border-l2));box-shadow:inset 0 1px 0 rgb(255 255 255 / 9%),0 16px 34px color-mix(in srgb,var(--dsw-alias-state-business-primary) 12%,transparent)}
@@ -2038,14 +2039,12 @@ window.__ModuleLoader__.load({
 .ofm_pickcaret{flex:none;font-size:10px;width:10px;color:var(--dsw-alias-label-tertiary)}
 .ofm_pickgrouptitle{flex:1;min-width:0;font-size:11px;letter-spacing:.05em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* ══ 看板折叠卡网格（FoldCard）══════════════════════════════════════════ */
-.ofm_foldgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;align-items:start}
-@media (max-width:600px){.ofm_foldgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.ofm_foldgrid{display:flex;flex-direction:column;gap:8px}
 .ofm_foldcard{padding:8px 10px;gap:6px}
 .ofm_foldhead{display:flex;align-items:center;gap:6px;width:100%;font:inherit;font-size:11.5px;text-align:left;padding:0;border:0;background:none;color:var(--dsw-alias-label-secondary);cursor:pointer;min-width:0}
 .ofm_foldhead:hover .ofm_foldtitle{color:var(--dsw-alias-state-business-primary)}
 .ofm_foldtitle{font-weight:640;font-size:11.5px;white-space:nowrap}
 .ofm_foldhint{font-size:10.5px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:auto;text-align:right}
-.ofm_foldcard.open{grid-column:1/-1}
 .ofm_pickquota{flex:none;font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:999px;border:1px solid color-mix(in srgb,var(--dsw-alias-state-success-primary) 42%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 9%,transparent);color:var(--dsw-alias-state-success-primary);white-space:nowrap;font-variant-numeric:tabular-nums}
 .ofm_pickquota.low{border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 48%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 10%,transparent);color:var(--dsw-alias-state-error-primary)}
 .ofm_pickgroupbadge{flex:none;font-size:10px;min-width:16px;text-align:center;padding:0 5px;border-radius:8px;background:var(--dsw-alias-state-business-primary);color:#fff}
@@ -2060,7 +2059,7 @@ window.__ModuleLoader__.load({
 .ofm_member.dragover{border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 62%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 8%,transparent)}
 .ofm_member .ofm_id{flex:1;min-width:0}
 .ofm_snippet{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.6;padding:9px 11px;border-radius:10px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);white-space:pre;overflow:auto;max-height:230px}
-@media (max-width:600px){.ofm_duo{grid-template-columns:1fr}.ofm_pickgroupbody{grid-template-columns:1fr}.ofm_member{flex-wrap:wrap}.ofm_foldcard.open{grid-column:1/-1}}
+@media (max-width:600px){.ofm_duo{grid-template-columns:1fr}.ofm_pickgroupbody{grid-template-columns:1fr}.ofm_member{flex-wrap:wrap}}
 @media (prefers-reduced-motion:reduce){.ofm_rise,.ofm_page{animation:none}.ofm_pickrow,.ofm_member,.ofm_meter i,.ofm_card,.ofm_kpi,.ofm_chan{transition:none}.ofm_root .ofm_card:hover,.ofm_pickrow:hover:not(:disabled){transform:none}}
 
 /* ── 推荐项目页：两张「去点 Star」的卡片 ─────────────────────────────────
@@ -2450,7 +2449,8 @@ window.__ModuleLoader__.load({
      * 之前的四节 Section 竖排下来就是四条又宽又扁的横线：字号 14px 的标题 +
      * 分隔线，收起的东西比展开的东西还占地方，一屏全是"标题条"。现在：
      *   - 折叠态就是一枚普通卡片，里面**只有一行小字**（▸ 标题 · 副题）；
-     *   - 四枚卡片**横排**（auto-fit 网格，宽屏一行放得下就一行）；
+     *   - 四枚卡片**各占一行**（用户 2026-11-03 追加：不要并排 —— 并排时一行
+     *     四个小标题把看板压成一条，展开的那块又被挤成半栏）；
      *   - 展开的那枚自己横跨整行，在卡片内部展开完整内容 —— 收起与展开共用
      *     同一张卡，视线不用在"标题条"和"下一块"之间来回找。
      */
@@ -2632,15 +2632,21 @@ window.__ModuleLoader__.load({
         const ids = summary.settings.hiddenModelIds ?? []
         return onApply({ hiddenModelIds: ids.includes(model.id) ? ids.filter(id => id !== model.id) : [...ids, model.id] })
       }
-      const group = (title, list, hint) => list.length === 0 ? null
-        : h('div', { className: 'ofm_sec', style: { gap: 8 } },
-          h('div', { className: 'ofm_row' }, h('span', { className: 'ofm_sec_title', style: { fontSize: 12.5 } }, title),
-            hint === undefined ? null : h('span', { className: 'ofm_sec_hint' }, hint)),
-          h('div', { className: 'ofm_grid' }, list.map(m => h(ModelCard, {
-            key: m.id, model: m, t, onBench,
-            onVisibility: toggleModel, busy,
-            bench: { running: benches[m.id]?.running === true, ...benches[m.id]?.result === undefined ? {} : { result: benches[m.id].result } },
-          }))))
+      // ⚠️ 「各占一行」指的是**模型名**各占一行（用户 2026-11-03 特别澄清），
+      // 不是每个车道各占一行。折叠组（未公开模型、Kilo 车道）内部是单列：
+      // 一个模型一行；免费车道仍是默认展开的两列网格 —— 它是这一页的主角。
+      const cards = (list, single) => h('div', { className: single ? 'ofm_grid ofm_grid1' : 'ofm_grid' }, list.map(m => h(ModelCard, {
+        key: m.id, model: m, t, onBench,
+        onVisibility: toggleModel, busy,
+        bench: { running: benches[m.id]?.running === true, ...benches[m.id]?.result === undefined ? {} : { result: benches[m.id].result } },
+      })))
+      const group = (title, list, hint, folded) => list.length === 0 ? null
+        : folded
+          ? h(FoldCard, { title, hint }, cards(list, true))
+          : h('div', { className: 'ofm_sec', style: { gap: 8 } },
+            h('div', { className: 'ofm_row' }, h('span', { className: 'ofm_sec_title', style: { fontSize: 12.5 } }, title),
+              hint === undefined ? null : h('span', { className: 'ofm_sec_hint' }, hint)),
+            cards(list, false))
       return h(Fragment, null,
         onApply === undefined ? null : h('div', { className: 'ofm_sec' },
           h('p', { className: 'ofm_note' }, t('visibility.hint')),
@@ -2654,8 +2660,8 @@ window.__ModuleLoader__.load({
         //   顺序：未公开（opencode 免费模型）在 Kilo 之前 —— 前者是这条车道的
         //   正主，后者是兜底车道。
         group(t('roster.selectable'), available),
-        group(t('visibility.unlisted'), unlisted),
-        group(t('roster.kilo'), kiloRows, t('roster.kiloHint')),
+        group(t('visibility.unlisted'), unlisted, undefined, true),
+        group(t('roster.kilo'), kiloRows, t('roster.kiloHint'), true),
         group(t('state.region-blocked'), limited, t('hint.region')),
         lanes.length === 0 ? null : h('p', { className: 'ofm_note' }, t('roster.lanesMoved')))
     }
@@ -5972,8 +5978,12 @@ window.__ModuleLoader__.load({
             : h('p', { className: 'ofm_note' }, t('loading'))),
         // 这两节是「配一次就不再碰」的设置：默认折叠（用户 2026-11-03），
         // 免得它们把模型清单和看板顶出首屏。
-        h(Section, { title: t('section.forward'), hint: t('section.forwardHint'), collapsible: true }, h(Forward, { settings: data.settings, t, onApply: apply, busy })),
-        h(Section, { title: t('section.egress'), hint: t('section.egressHint'), collapsible: true }, h(Egress, { settings: data.settings, t, onApply: apply, busy })),
+        // 这两节也用折叠卡（用户 2026-11-03 第 3 项）：和看板的四块同一个样子，
+        // 收起时整节就是卡片里的一行小字，不再是「标题条 + 分隔线」。
+        h(FoldCard, { title: t('section.forward'), hint: t('section.forwardHint') },
+          h(Forward, { settings: data.settings, t, onApply: apply, busy })),
+        h(FoldCard, { title: t('section.egress'), hint: t('section.egressHint') },
+          h(Egress, { settings: data.settings, t, onApply: apply, busy })),
         h(Section, { title: t('section.prefs'), hint: t('section.prefsHint') }, h(Preferences, { summary: data, t, onApply: apply, busy }))
 )
     }

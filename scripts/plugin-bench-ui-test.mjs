@@ -119,7 +119,7 @@ await check('listing stays selectable and does not imply verified inference; man
   assert.ok(nodes.includes('最近测量')); assert.ok(nodes.some(node => node?.children?.includes(321)))
 })
 await check('the home roster groups by lane, not by the route every model shares', () => {
-  const app = boot(), { Roster, ModelCard } = app.api
+  const app = boot(), { Roster, ModelCard, FoldCard } = app.api
   // 宿主给本插件**所有**模型都打同一个 route，所以按 route 分组等于不分组：
   // 渠道模型会掉进「免费模型」里，组合线路也会。按 channel 分才对得上车道。
   const base = { availability: 'available', availabilitySource: 'probe' }
@@ -130,14 +130,37 @@ await check('the home roster groups by lane, not by the route every model shares
   const lane = { ...base, id: 'channel:raccoon/m1', name: 'Raccoon One', channel: 'channel:raccoon', route: 'our-free-model' }
   const kilo = { ...base, id: 'kilo/m2', name: 'Kilo Two', channel: 'kilo' }
   const combo = { ...base, id: 'combo:x', name: 'My Chain', channel: 'combo', combo: ['channel:raccoon/m1'], route: 'our-free-model' }
-  const roster = flatten(Roster({ summary: { catalog: [free, unlisted, lane, kilo, combo], settings: {} }, t: app.t }))
-  const titles = roster.filter(node => [app.t('roster.selectable'), app.t('visibility.unlisted'), app.t('roster.kilo')].includes(node))
+  const rosterProps = { summary: { catalog: [free, unlisted, lane, kilo, combo], settings: {} }, t: app.t }
+  const roster = flatten(app.draw(app.api.Roster, rosterProps))
+  // 未公开 / Kilo 折叠成卡片：它们的标题在 FoldCard 节点的 props 上，
+  // 展开前不会以文本出现，所以按「Section 文本 + FoldCard props」合起来看顺序。
+  const folded = roster.filter(node => node?.type === FoldCard)
+  const titles = [app.t('roster.selectable'), ...folded.map(node => node.props.title)]
   assert.deepEqual(titles,
     [app.t('roster.selectable'), app.t('visibility.unlisted'), app.t('roster.kilo')],
     '免费与未公开（opencode）在前，Kilo 其次')
+  // ⚠️ 折叠组**默认收起**（用户 2026-11-03）：Roster 只把 ModelCard 作为待渲染
+  // 元素塞进 FoldCard 的 children，所以要在**独立实例**上 draw 才知道它渲染不渲染。
+  // `h(FoldCard, props, body)` 把 body 挂在**节点**的 children 上；组件读的是
+  // props.children，所以独立 draw 时要把它接进 props（与 Section 用例同一写法）。
+  // ⚠️ 必须用**同一个** app 实例 draw：useState 的槽位挂在那份 bundle 的 mock 上，
+  // 换一份 boot 会让每次渲染都拿到新槽位，点了也永远读回 false。
+  const foldProps = { ...folded[0].props, children: folded[0].children }
+  const foldedRender = flatten(app.draw(FoldCard, foldProps))
+  assert.equal(foldedRender.some(node => node?.type === ModelCard), false,
+    'a folded roster group renders no model cards until opened')
+  const head = foldedRender.find(node => node?.props?.className === 'ofm_foldhead')
+  assert.equal(head.props['aria-expanded'], 'false', '默认收起')
+  head.props.onClick()
+  const expanded = flatten(app.draw(FoldCard, foldProps))
+  assert.ok(expanded.some(node => node?.type === ModelCard), '点开才列出模型')
+  assert.ok(expanded.some(node => node?.props?.className === 'ofm_grid ofm_grid1'),
+    '折叠组内部是单列：模型名各占一行，不并排（用户澄清的是**名称**各占一行）')
+  assert.notEqual(folded[0].props.title, app.t('roster.selectable'),
+    '免费车道不在折叠卡里 —— 它是这一页的主角，保持默认展开')
   // Roster 只把 ModelCard 作为待渲染元素放进去，名字不会出现在这棵树上，
   // 所以要按卡片的 `props.model.id` 判断归属，而不是找文本。
-  const cardIds = roster.filter(node => node?.type === ModelCard).map(node => node.props.model.id)
+  const cardIds = ['free-1', ...folded.flatMap(node => flatten(node.children).filter(x => x?.type === ModelCard).map(x => x.props.model.id))]
   assert.deepEqual(cardIds, ['free-1', 'opencode-free-1', 'kilo/m2'],
     '首页只列免费车道（含未公开的 opencode 免费模型）与 Kilo；渠道模型与链路都不在这里')
   assert.ok(roster.includes(app.t('roster.lanesMoved')),
