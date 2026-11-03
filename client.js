@@ -50,8 +50,7 @@ window.__ModuleLoader__.load({
         'state.unknown': '未探测',
         'state.listed': '已列出 · 未实测',
         'roster.selectable': '免费模型',
-        'roster.lanes': '渠道模型',
-        'roster.lanesHint': '来自已接入的渠道，按供应商计量，不占免费额度。',
+        'roster.lanesMoved': '渠道模型不在首页列出：请到「渠道」页按供应商查看、开关与测速。',
         'roster.kilo': 'Kilo 车道',
         'roster.kiloHint': '聚合车道，与免费车道一起作为兜底候选。',
         'hint.listed': '来自渠道目录，未做逐模型推理测试；不代表对话或工具调用成功。',
@@ -558,8 +557,7 @@ window.__ModuleLoader__.load({
         'state.unknown': 'Not probed',
         'state.listed': 'Listed · not tested',
         'roster.selectable': 'Free models',
-        'roster.lanes': 'Channel models',
-        'roster.lanesHint': 'Served by absorbed channels; billed by their provider, not against the free quota.',
+        'roster.lanesMoved': 'Channel models are not listed here — open the Channels page to inspect, toggle and benchmark them per provider.',
         'roster.kilo': 'Kilo lane',
         'roster.kiloHint': 'Aggregate lane, kept as a fallback beside the free lane.',
         'hint.listed': 'Listed by the channel; inference has not been tested. This does not confirm chat or tool use.',
@@ -1098,21 +1096,21 @@ window.__ModuleLoader__.load({
 .ofm_secheadtoggle{display:flex;align-items:baseline;gap:10px;width:100%;font:inherit;text-align:left;padding:0 0 6px;border:0;border-bottom:1px solid var(--dsw-alias-border-l1);background:none;color:inherit;cursor:pointer}
 .ofm_secheadtoggle:hover .ofm_sec_title{color:var(--dsw-alias-state-business-primary)}
 .ofm_seccaret{font-size:10px;color:var(--dsw-alias-label-tertiary);flex:none}
-.ofm_grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(252px,1fr));gap:10px}
+.ofm_grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:8px}
 /* ══ 卡片（双层 bezel：hairline 边框 + 顶部内高光 + 柔和外阴影） ═══════ */
-.ofm_card{position:relative;display:flex;flex-direction:column;gap:6px;padding:9px 11px;border-radius:11px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 80%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 6%),0 1px 2px color-mix(in srgb,var(--dsw-alias-state-business-primary) 7%,transparent),0 3px 10px color-mix(in srgb,var(--dsw-alias-state-business-primary) 4%,transparent);transition:transform .2s cubic-bezier(.32,.72,0,1),box-shadow .24s ease,border-color .18s ease}
+.ofm_card{position:relative;display:flex;flex-direction:column;gap:3px;padding:7px 9px;border-radius:10px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 80%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 6%),0 1px 2px color-mix(in srgb,var(--dsw-alias-state-business-primary) 7%,transparent),0 3px 10px color-mix(in srgb,var(--dsw-alias-state-business-primary) 4%,transparent);transition:transform .2s cubic-bezier(.32,.72,0,1),box-shadow .24s ease,border-color .18s ease}
 .ofm_card:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 66%,var(--dsw-alias-border-l2));box-shadow:inset 0 1px 0 rgb(255 255 255 / 9%),0 16px 34px color-mix(in srgb,var(--dsw-alias-state-business-primary) 12%,transparent)}
 .ofm_card.dim{opacity:.68}
-.ofm_cardhead{display:flex;align-items:center;gap:8px}
-.ofm_cardname{font-size:12.5px;font-weight:650;letter-spacing:-.1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ofm_badge{margin-left:auto;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 60%,transparent);white-space:nowrap}
+.ofm_cardhead{display:flex;align-items:center;gap:6px;line-height:1.25}
+.ofm_cardname{font-size:12px;font-weight:650;letter-spacing:-.1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ofm_badge{margin-left:auto;font-size:10px;font-weight:600;line-height:1.5;padding:0 7px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 60%,transparent);white-space:nowrap}
 .ofm_badge.available{color:var(--dsw-alias-state-success-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-success-primary) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent)}
 .ofm_badge.region-blocked{color:var(--dsw-alias-state-warning-primary,#f0a441);border-color:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 10%,transparent)}
 .ofm_badge.throttled,.ofm_badge.unavailable{color:var(--dsw-alias-state-error-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 10%,transparent)}
 .ofm_badge.unknown{color:var(--dsw-alias-label-tertiary)}
-.ofm_id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ofm_tags{display:flex;gap:5px;flex-wrap:wrap}
-.ofm_tag{font-size:10px;padding:1px 7px;border-radius:999px;background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 70%,transparent);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary)}
+.ofm_id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;line-height:1.2;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ofm_tags{display:flex;gap:4px;flex-wrap:wrap}
+.ofm_tag{font-size:9.5px;line-height:1.5;padding:0 6px;border-radius:999px;background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 70%,transparent);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary)}
 .ofm_chantag{font-size:10px;font-weight:650;padding:2px 8px;border-radius:999px;border:1px solid color-mix(in srgb,var(--dsw-alias-state-business-primary) 50%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 9%,transparent);color:var(--dsw-alias-state-business-primary);white-space:nowrap}
 /* ══ 新品/热门徽标与高速标签（置顶的 opencode 免费模型） ═════════════════ */
 .ofm_newtag{flex:none;font-size:9.5px;font-weight:750;letter-spacing:.4px;padding:2px 7px;border-radius:999px;color:#fff;background:var(--dsw-alias-state-error-primary);box-shadow:0 1px 4px color-mix(in srgb,var(--dsw-alias-state-error-primary) 45%,transparent);white-space:nowrap;text-transform:uppercase}
@@ -1120,9 +1118,9 @@ window.__ModuleLoader__.load({
 .ofm_tag.fast{color:var(--dsw-alias-state-success-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-success-primary) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent);font-weight:650}
 .ofm_card.pinned{border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 42%,var(--dsw-alias-border-l2));box-shadow:inset 0 1px 0 rgb(255 255 255 / 6%),0 2px 6px color-mix(in srgb,var(--dsw-alias-state-error-primary) 14%,transparent),0 6px 18px color-mix(in srgb,var(--dsw-alias-state-error-primary) 8%,transparent)}
 .ofm_card.pinned:hover{border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 62%,var(--dsw-alias-border-l2))}
-.ofm_metrics{display:flex;gap:12px;font-size:11px;color:var(--dsw-alias-label-tertiary);flex-wrap:wrap}
+.ofm_metrics{display:flex;gap:10px;font-size:10.5px;line-height:1.3;color:var(--dsw-alias-label-tertiary);flex-wrap:wrap}
 .ofm_metrics b{color:var(--dsw-alias-label-secondary);font-weight:600;font-variant-numeric:tabular-nums}
-.ofm_note{font-size:11px;color:var(--dsw-alias-label-tertiary);line-height:1.5}
+.ofm_note{font-size:10.5px;color:var(--dsw-alias-label-tertiary);line-height:1.38}
 /* ══ 面板 ══════════════════════════════════════════════════════════════ */
 .ofm_forward{gap:8px;padding:12px 14px}
 .ofm_forward .ofm_row{gap:8px}
@@ -2629,11 +2627,18 @@ window.__ModuleLoader__.load({
           h('p', { className: 'ofm_note' }, t('visibility.hint')),
           h(Switch, { checked: summary.settings.hideFreeModels === true, disabled: busy,
             label: t('pref.hideFreeModels'), onChange: () => onApply({ hideFreeModels: summary.settings.hideFreeModels !== true }) })),
+        // ⚠️ 首页只列**免费车道**（用户 2026-11-03 第三次指出「渠道模型还是
+        // 混在免费模型里」）：渠道模型一行都不出现在这里，它们的开关在「渠道」
+        // 页的每个渠道卡里，按供应商分组、带额度与可用性，那才是它们的位置。
+        // 首页此前把这些行分组后照样列出来 —— 分组不是隔离，用户翻开「免费
+        // 模型」看到的仍然是一屏别人家的模型，这就是「混进来了」。
+        //   顺序：未公开（opencode 免费模型）在 Kilo 之前 —— 前者是这条车道的
+        //   正主，后者是兜底车道。
         group(t('roster.selectable'), available),
-        group(t('roster.lanes'), lanes, t('roster.lanesHint')),
+        group(t('visibility.unlisted'), unlisted),
         group(t('roster.kilo'), kiloRows, t('roster.kiloHint')),
         group(t('state.region-blocked'), limited, t('hint.region')),
-        group(t('visibility.unlisted'), unlisted))
+        lanes.length === 0 ? null : h('p', { className: 'ofm_note' }, t('roster.lanesMoved')))
     }
 
     // ── dashboard ─────────────────────────────────────────────────────────────

@@ -124,18 +124,24 @@ await check('the home roster groups by lane, not by the route every model shares
   // 渠道模型会掉进「免费模型」里，组合线路也会。按 channel 分才对得上车道。
   const base = { availability: 'available', availabilitySource: 'probe' }
   const free = { ...base, id: 'free-1', name: 'Free One', route: 'our-free-model' }
+  // opencode 的免费模型在还没探测/被上游撤回时会落到「未公开模型」（route 为 null），
+  // 它属于免费车道的正主，必须排在 Kilo 之前。
+  const unlisted = { ...base, id: 'opencode-free-1', name: 'Opencode Free', route: null }
   const lane = { ...base, id: 'channel:raccoon/m1', name: 'Raccoon One', channel: 'channel:raccoon', route: 'our-free-model' }
   const kilo = { ...base, id: 'kilo/m2', name: 'Kilo Two', channel: 'kilo' }
   const combo = { ...base, id: 'combo:x', name: 'My Chain', channel: 'combo', combo: ['channel:raccoon/m1'], route: 'our-free-model' }
-  const roster = flatten(Roster({ summary: { catalog: [free, lane, kilo, combo], settings: {} }, t: app.t }))
-  const titles = roster.filter(node => node === app.t('roster.selectable') || node === app.t('roster.lanes') || node === app.t('roster.kilo'))
-  assert.deepEqual(titles, [app.t('roster.selectable'), app.t('roster.lanes'), app.t('roster.kilo')],
-    '免费车道在最前，渠道居中，Kilo 单独一组排在渠道之后')
+  const roster = flatten(Roster({ summary: { catalog: [free, unlisted, lane, kilo, combo], settings: {} }, t: app.t }))
+  const titles = roster.filter(node => [app.t('roster.selectable'), app.t('visibility.unlisted'), app.t('roster.kilo')].includes(node))
+  assert.deepEqual(titles,
+    [app.t('roster.selectable'), app.t('visibility.unlisted'), app.t('roster.kilo')],
+    '免费与未公开（opencode）在前，Kilo 其次')
   // Roster 只把 ModelCard 作为待渲染元素放进去，名字不会出现在这棵树上，
   // 所以要按卡片的 `props.model.id` 判断归属，而不是找文本。
   const cardIds = roster.filter(node => node?.type === ModelCard).map(node => node.props.model.id)
-  assert.deepEqual(cardIds, ['free-1', 'channel:raccoon/m1', 'kilo/m2'],
-    'free lane, channel lane and Kilo are listed; the chain is not')
+  assert.deepEqual(cardIds, ['free-1', 'opencode-free-1', 'kilo/m2'],
+    '首页只列免费车道（含未公开的 opencode 免费模型）与 Kilo；渠道模型与链路都不在这里')
+  assert.ok(roster.includes(app.t('roster.lanesMoved')),
+    '渠道模型不列出来，但要告诉用户它们去哪了')
 })
 
 await check('a collapsible section is folded by default and opens on the header click', () => {

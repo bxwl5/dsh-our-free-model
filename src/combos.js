@@ -139,11 +139,14 @@ function number(value) {
 /**
  * Resolve a combo row into the ordered candidate entries for one turn.
  *
- * `fallback` returns the list as stored. `round-robin` rotates the starting
- * point and then keeps it for `stickyLimit` turns, which is the behaviour the
- * upstream router settled on: a strict per-turn rotation defeats prompt caching
- * on every provider in the chain, and a strictly sticky cursor makes the other
- * candidates decoration.
+ * `fallback` returns the list as stored, always from its head. `round-robin`
+ * starts at the rotating cursor and walks **forward to the end** — it never
+ * wraps the tail back to the head of the same turn, because a candidate that
+ * just failed (a spent quota, a region refusal) must not hand the turn back to
+ * a member that was already skipped. The cursor keeps its place for
+ * `stickyLimit` turns, which is the behaviour the upstream router settled on:
+ * a strict per-turn rotation defeats prompt caching on every provider in the
+ * chain, and a strictly sticky cursor makes the other candidates decoration.
  *
  * @param {object} entry - a combo catalog row
  * @param {Array<object>} catalog
@@ -158,12 +161,40 @@ export function comboChain(entry, catalog, options = {}) {
   const limit = Number.isFinite(Number(entry.stickyLimit)) && Number(entry.stickyLimit) > 0 ? Math.trunc(Number(entry.stickyLimit)) : 1
   const cursor = rotation.get(entry.id) ?? { index: 0, used: 0 }
   const index = Math.min(Math.max(cursor.index, 0), members.length - 1)
+  /**
+   * 顺序是「从游标往后走，走到队尾再接到队首」：**一回合内每个成员只出现一次**，
+   * `runCombo` 因此不会在有答案之前重复撞同一个成员。真正让用户觉得「一直回到
+   * buddy」的不是这里的回绕，而是**跨回合**的游标：游标停在队尾那一回合之后
+   * 如果不前移，下一回合又从同一个起点开始，看起来就像从头轮。所以失败/命中
+   * 之后由 `advanceComboCursor` 把游标推到「刚试过的那个成员的下一个」。
+   */
   const ordered = [...members.slice(index), ...members.slice(0, index)]
   if (options.peek !== true) {
     const used = cursor.used + 1
     rotation.set(entry.id, used >= limit ? { index: (index + 1) % members.length, used: 0 } : { index, used })
   }
   return ordered
+}
+
+/**
+ * Move a chain's rotation cursor to the member *after* `afterId`.
+ *
+ * Used after a turn that had to fail over: the member that failed (or the last
+ * one tried) must not be the head of the next turn, otherwise a chain whose
+ * tail is out of quota keeps offering the same dead link first — or, worse,
+ * skips back to the head and looks like "it started over from buddy". Advancing
+ * past the tried member keeps a whole cycle covering every candidate while each
+ * single turn only ever walks forward.
+ */
+export function advanceComboCursor(entry, catalog, afterId) {
+  if (entry?.strategy !== 'round-robin') return
+  const ids = Array.isArray(entry?.combo) ? entry.combo : []
+  const present = new Set(catalog.map(row => row.id))
+  const members = ids.filter(id => present.has(id))
+  if (members.length <= 1) return
+  const at = members.indexOf(afterId)
+  if (at < 0) return
+  rotation.set(entry.id, { index: (at + 1) % members.length, used: 0 })
 }
 
 /** Drop rotation cursors for combos that no longer exist, so the map cannot grow forever. */

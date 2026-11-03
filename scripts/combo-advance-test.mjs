@@ -73,7 +73,12 @@ const CHINESE_NAME = '\u514d\u8d39\u4f18\u5148'
 const COMBOS = normalizeCombos([
   { name: 'failover', models: ['deepseek-v4-flash-free', 'mimo-v2.5-free'], strategy: 'fallback', stickyLimit: 1 },
   { name: CHINESE_NAME, models: ['deepseek-v4-flash-free', 'mimo-v2.5-free'] },
+  // Round-robin with a large sticky limit: the cursor is supposed to stay put
+  // for `stickyLimit` turns, which is exactly the shape that used to make a
+  // spent head look like "it keeps rotating back to the first member".
+  { name: 'rotation', models: ['deepseek-v4-flash-free', 'mimo-v2.5-free', 'mimo-v2.6-flash-free'], strategy: 'round-robin', stickyLimit: 10 },
 ])
+const ROTATION_ID = comboId('rotation')
 const FREE_CATALOG = buildCatalog(MODELS)
 const CATALOG = [...FREE_CATALOG, ...buildComboCatalog(COMBOS, FREE_CATALOG)]
 
@@ -250,6 +255,55 @@ for (const [status, type, message, attempts] of [
   assert.equal(run.scenario.requests.length, attempts)
   assert.equal(run.finish?.kind, attempts === 2 ? 'stop' : 'error')
   if (attempts === 2) assert.equal(run.text, ANSWER)
+})
+
+await check('a spent head hands the rotation to the member after the one that answered', async () => {
+  // 用户实测：链路 [buddy, qodercn, officeace, zcode] 里 zcode 额度打光以后，
+  // 每一回合都从 buddy 重新开始轮 —— 因为轮转游标在粘滞期内不动，队首那个
+  // 死成员就被反复先撞一次。正确的行为是：失败 / 答出之后把游标推到刚试过的
+  // 那个成员的下一个，下一回合从那里接着走。
+  const adapter = new FreeModelAdapter({
+    state: () => ({
+      catalog: CATALOG,
+      membership: { [ROUTE_MAIN]: MODELS },
+      settings: { enabled: true, defaultMaxTokens: 32768, streamRecovery: false },
+      attributionUserAgent: 'offline-combo-rotation-test',
+    }),
+    recordUsage: () => {},
+    recordTurn: () => {},
+    warn: () => {},
+  })
+  const turn = async answers => {
+    const scenario = { answers, requests: [] }
+    activeCase = scenario
+    const controller = new AbortController()
+    const chunks = []
+    try {
+      for await (const chunk of adapter.stream({
+        provider: ROUTE_MAIN,
+        model: ROTATION_ID,
+        maxTokens: 4096,
+        sessionId: 'combo-rotation-test',
+        messages: [{ role: 'user', content: [{ type: 'text', text: TASK }] }],
+        signal: controller.signal,
+      })) chunks.push(chunk)
+    } finally { controller.abort() }
+    return { scenario, chunks, finish: chunks.find(chunk => chunk.type === 'finish')?.reason }
+  }
+  const dead = { status: 429, body: JSON.stringify({ error: { message: 'quota exhausted for today' } }) }
+  const ok = { body: sse({ choices: [{ index: 0, delta: { content: ANSWER } }] }) + sse({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }) + 'data: [DONE]\n\n' }
+
+  const first = await turn([dead, ok])
+  assert.equal(first.finish?.kind, 'stop')
+  assert.deepEqual(first.scenario.requests.map(row => row.body.model), [MODELS[0], MODELS[1]],
+    'the first turn walks the stored order past the dead head')
+
+  const second = await turn([ok])
+  assert.equal(second.finish?.kind, 'stop')
+  assert.notEqual(second.scenario.requests[0].body.model, MODELS[0],
+    'the next turn does not start again at the dead head')
+  assert.equal(second.scenario.requests[0].body.model, MODELS[2],
+    'it continues after the member that answered, not after the dead one')
 })
 
 await check('a candidate that hit its quota is deprioritised next turn, never dropped', async () => {

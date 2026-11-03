@@ -26,7 +26,7 @@ import { DEFAULT_LEVEL, MIN_BUDGET, budgetFor, defaultEffortFor, effortPatchFor,
 import { createChannel } from './channel.js'
 import { recoveryPolicy, canRecover, canRecoverSilentStop, recoveryMessages, continuationMessages, checkpointFits, addUsage, createBlockTracker } from './recovery.js'
 import { isKiloEntry } from './catalog.js'
-import { isComboEntry, comboChain } from './combos.js'
+import { isComboEntry, comboChain, advanceComboCursor } from './combos.js'
 import { isChannelEntry, parseChannelModelId } from './channel-catalog.js'
 import { applyTokenSavers, saverConfig } from './token-saver/index.js'
 import { classifyFailure, describeVerdict, shouldAdvance } from './route/classify.js'
@@ -286,6 +286,12 @@ export class FreeModelAdapter {
         // 这个成员刚刚答出来了，禁期立刻作废 —— 否则一次误判会让它在队尾
         // 待满整个冷却时长。
         this.chainCooldown.delete(candidate.id)
+        // 只有**发生过降级**（答出来的不是队首那个）才推游标：这时下一回合
+        // 的起点应该是「刚答出来的这个成员的下一个」，而不是回到队首重新开始
+        // ——否则链尾的 zcode 一打光，用户每一回合都先撞一次 zcode、再由 buddy
+        // 兜掉，看起来就是「一直在轮 buddy」。队首直接答出来时不推，粘滞
+        // （stickyLimit）对提示缓存的价值才保得住。
+        if (index > 0) advanceComboCursor(entry, snapshot.catalog, candidate.id)
         this.deps.recordTurn?.({ at: started, model: entry.id, ok: result?.ok === true, recovered: result?.recovered === true, attempts: index + 1, origin: 'harness' })
         return
       }
@@ -299,6 +305,9 @@ export class FreeModelAdapter {
       }
       const reason = result.verdict === null || result.verdict === undefined ? 'failed' : describeVerdict(result.verdict)
       this.markFaulty(candidate.id, result.verdict)
+      // 失败成员也要把游标推到它之后：额度按自然日结算，冷却到期并不等于
+      // 下回合它就能用，先让健康成员接手。
+      advanceComboCursor(entry, snapshot.catalog, candidate.id)
       tried.push(`${candidate.id} (${reason})`)
       this.deps.warn?.(`our-free-model: chain "${entry.name}" advanced past ${candidate.id} — ${reason}`)
     }
