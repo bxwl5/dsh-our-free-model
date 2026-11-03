@@ -65,6 +65,8 @@
  * `device_mid` + 日期去重）；`marketing/touch` 不补也能拿到投放。
  */
 
+import { randomUUID } from 'node:crypto'
+import os from 'node:os'
 import type { ZcodeCredential } from './zcode.js'
 import { resolveZcodeAppVersion } from './zcode.js'
 import { hasZcodeUnusualActivity, parseZcodeBusinessCode } from './zcode-diagnostics.js'
@@ -116,11 +118,53 @@ export const ZCODE_EVENT_REPORT_URL = `${ZCODE_ORIGIN}/api/v1/event/report`
 export const ZCODE_CLIENT_CONFIGS_URL = `${ZCODE_ORIGIN}/api/v1/client/configs`
 
 /**
+ * OS 版本字符串（`X-Os-Version`）。
+ *
+ * 官方客户端是 Electron 跑在 Windows 上，发的是 `10.0.<build>` 形态。我们不是
+ * 那台机器，取本机真实内核版本即可 —— 关键是**这个头存在且形状正确**，而不是
+ * 某个具体数值（没有任何实测表明上游校验它的具体内容）。
+ */
+function osVersionHeader(): string {
+  // `os.version()` 在 Linux/macOS 上给出内核串（如 `6.8.0-45-generic`），
+  // 而官方形态是 `10.0.<build>`；对不上形状时退回一个通行值。
+  const raw = os.version?.() ?? ''
+  const win = /^(\d+)\.(\d+)\.(\d+)/.exec(raw)
+  if (win !== null) return raw
+  // 非 Windows 宿主：发 Windows 10 的通行使。
+  return '10.0.19045'
+}
+
+/**
  * 构造 ZCode 的「来源标识」请求头。
  *
  * ⚠ 这些头是官方客户端在真实流量里发的。实测**它们不是 3012 的判据**
  * （判据是请求体里的 system 内容），但它们仍是「像官方客户端」的一部分，
  * 且 `X-Device-Mid` **是硬需求**（缺它 billing 全家桶回 400）。
+ *
+ * ## 2026-11-04 补齐三个官方必带头（对照公开源码）
+ *
+ * 官方 `zai-org/ZCode` 的 `packages/shared/src/zcode-source-headers.ts` 有：
+ *
+ * ```ts
+ * export const ZCODE_SOURCE_HEADERS = {
+ *   "User-Agent": "ZCode/unknown",
+ *   "HTTP-Referer": DEFAULT_ZCODE_ENDPOINT_ORIGIN,
+ *   "X-Title": "Z Code@electron",     // ← 硬编码常量
+ * } as const;
+ * ```
+ *
+ * 社区实现 `pjpv/zcode-switch`（Rust/Tauri）的 claim 头同样是
+ * `User-Agent` / `HTTP-Referer` / **`X-Title`** / `X-ZCode-App-Version` /
+ * **`X-Platform`（`${platform}-${arch}`）** / `X-Release-Channel` /
+ * `X-Client-Language` / `X-Client-Timezone` / `X-Os-Category` /
+ * **`X-Os-Version`** / `X-Device-Mid` / **`x-request-id`**。
+ *
+ * 我们此前缺 `X-Title` / `X-Os-Version` / `x-request-id`，且 `X-Platform`
+ * 发的是裸 `win32` 而不是官方的 `win32-x64` 形态。这些补齐的代价为零，
+ * 而「像官方客户端」这件事对内容级/渠道级风控是有意义的。
+ *
+ * ⚠ `X-Title` 是官方源码里的**常量字面量** `Z Code@electron`，照抄即可。
+ * ⚠ `x-request-id` 每请求一个新的 UUID（官方也是每请求生成，不复用）。
  */
 export function buildZcodeHeaders(
   credential: Pick<ZcodeCredential, 'device_mid' | 'app_version'>,
@@ -130,13 +174,19 @@ export function buildZcodeHeaders(
   const headers: Record<string, string> = {
     'User-Agent': `ZCode/${appVersion}`,
     'HTTP-Referer': ZCODE_ORIGIN,
+    // 官方 `ZCODE_SOURCE_HEADERS` 的硬编码常量。
+    'X-Title': 'Z Code@electron',
     'X-ZCode-App-Version': appVersion,
     'X-Release-Channel': 'stable',
     'X-Client-Language': 'zh-CN',
     'X-Client-Timezone': 'Asia/Shanghai',
     'X-Device-Mid': credential.device_mid,
-    'X-Platform': 'win32',
+    // 官方是 `${platform}-${arch}`（如 `win32-x64`），不是裸平台名。
+    'X-Platform': 'win32-x64',
     'X-Os-Category': 'windows',
+    'X-Os-Version': osVersionHeader(),
+    // 每请求一个新的请求 id（官方同样每请求生成）。
+    'x-request-id': randomUUID(),
     'anthropic-version': '2023-06-01',
   }
   if (options.json !== false) headers['Content-Type'] = 'application/json'

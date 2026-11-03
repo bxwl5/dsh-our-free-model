@@ -1284,6 +1284,26 @@ export class AccountPool {
   }
 
   /**
+   * 记录一次「领取验证被阻断」（上游要验证，但我们这侧产不出 param）。
+   *
+   * ⚠ **不是风控**，别混：风控（`3012`）是上游惩罚账号，要停手等冷却；
+   * 这条是我们缺件（没有 chromium 内核 / 验证退避冷却中），要装浏览器。
+   * 归成一类会让用户照着错误的指示操作（2026-11-04 用户报「看不到为什么领不到」）。
+   *
+   * ⚠ 只写「最近一次时刻」、**不设未来时刻**：它不需要冷却语义（我们随时可以
+   *   装好浏览器再试），也不参与选号 —— 纯粹给异常汇总一个可见的现场。
+   */
+  async recordVerificationBlocked(accountId: string, now: number = Date.now()): Promise<void> {
+    if (!Number.isFinite(now)) return
+    const accounts = this.readAccounts()
+    const idx = accounts.findIndex(a => a.id === accountId)
+    if (idx === -1) return
+    const next = [...accounts]
+    next[idx] = { ...next[idx]!, verificationBlockedAtMs: now }
+    await this.writeAccounts(next)
+  }
+
+  /**
    * 清理**早已过期**的账号风控标记（过期后只留 {@link RATE_LIMIT_KEEP_MS}）。
    *
    * 与 {@link sweepExpiredRateLimits} 同款节奏，由 index.ts 的定时器调用。

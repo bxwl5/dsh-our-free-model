@@ -153,14 +153,52 @@ check('需要验证时两个验证头成对下发', async () => {
   assert.equal(headers['x-aliyun-captcha-verify-region'], 'cn')
 })
 
-check('领取实现是「先裸发、3007 才产 captcha」的顺序（源码守卫）', () => {
+check('请求头补齐官方必带的三项 + X-Platform 的 platform-arch 形态', async () => {
+  const { buildZcodeHeaders } = await import('../vendor/channel-pack/src/zcode-upstream.ts')
+  const headers = buildZcodeHeaders({ device_mid: 'fixture-uuid', app_version: '3.20.9' }, { authorization: 'Bearer x' })
+  /**
+   * 官方 `zai-org/ZCode` 的 `packages/shared/src/zcode-source-headers.ts`：
+   * `X-Title: "Z Code@electron"` 是**硬编码常量**；社区实现
+   * `pjpv/zcode-switch` 的 claim 头另有 `X-Os-Version` 与 `x-request-id`。
+   * 我们此前三项全缺，且 `X-Platform` 发的是裸 `win32`（官方是 `${platform}-${arch}`）。
+   */
+  assert.equal(headers['X-Title'], 'Z Code@electron', 'X-Title 照抄官方常量')
+  assert.match(String(headers['X-Os-Version']), /^\d+\.\d+/, 'X-Os-Version 形状是数字版本串')
+  assert.match(String(headers['x-request-id']), /^[0-9a-f-]{36}$/, 'x-request-id 是 UUID')
+  assert.equal(headers['X-Platform'], 'win32-x64', 'X-Platform 是 platform-arch')
+  // 每请求新 id，不复用。
+  const again = buildZcodeHeaders({ device_mid: 'fixture-uuid', app_version: '3.20.9' })
+  assert.notEqual(again['x-request-id'], headers['x-request-id'], 'x-request-id 每请求不同')
+  // 验证头仍然只在带 captcha 时出现（不要无条件发一个空 param）。
+  assert.equal('x-aliyun-captcha-verify-param' in headers, false, '不带 captcha 时不得发验证头')
+  const withCaptcha = buildZcodeHeaders({ device_mid: 'u', app_version: '3.20.9' }, { captcha: { param: 'p', region: 'cn' } })
+  assert.equal(withCaptcha['x-aliyun-captcha-verify-param'], 'p')
+})
+
+check('领取实现是「先验证、再 claim」的官方顺序（源码守卫）', () => {
   const source = fs.readFileSync(new URL('../vendor/channel-pack/src/zcode-auth.ts', import.meta.url), 'utf8')
   const body = source.slice(source.indexOf('private async claimOnePlan'))
-  const firstClaim = body.indexOf('claimZcodePlan(')
   const mint = body.indexOf('mintClaimCaptcha(')
-  assert.ok(firstClaim >= 0 && mint >= 0, '两处都应存在')
-  assert.ok(firstClaim < mint, '首发必须在 mint 之前（先不带验证头试一发）')
-  assert.match(body.slice(firstClaim, firstClaim + 200), /plan\.planId, undefined/, '首发不带 captcha')
+  const firstClaim = body.indexOf('claimZcodePlan(')
+  assert.ok(mint >= 0 && firstClaim >= 0, '两处都应存在')
+  /**
+   * 2026-11-04 用户要求「复刻官方顺序」。官方
+   * `zai-org/ZCode` 的 `docs/zai-start-plan-provider.md:305-324` 是固定状态机
+   * `checking-auth -> verifying -> claiming`，其 `claimManualPlan()` 在 claim 的
+   * header 里**无条件**展开安全校验结果 —— 官方从不裸发。
+   *
+   * 本仓库自己的实测也证明旧顺序已失效（`zcode-upstream.ts:928-931`）：
+   * 2026-10-28 裸发 `code:0` 成功，**2026-11-03 裸发回 `400 {code:3007}`**。
+   * 故守卫方向反过来：**mint 必须在首次 claim 之前**。
+   */
+  assert.ok(mint < firstClaim, '必须先产 param（verifying）再 claim（claiming），与官方同序')
+  // 且第一发 claim 必须带验证头（不是 `undefined`）。
+  const firstClaimCall = body.slice(firstClaim, firstClaim + 220)
+  assert.match(firstClaimCall, /param:\s*minted\.param/, '第一发 claim 必须带 param')
+  // 无浏览器时的裸发降级仍然保留（否则 web/独立服务形态连试都不试）。
+  assert.ok(body.includes('plan\.planId, undefined'), '没有浏览器时仍要有裸发降级路径')
+  // 裸发降级不得在 3007 上重试（避免多扣一次风控计数）。
+  assert.match(body, /outcome\.code === 3007 && mintError !== undefined/, '裸发 3007 只补文案，不重试')
 })
 
 // ── 活动额度的「生效 / 到期」与「多账号合计」口径（用户 2026-10-28） ──────────
@@ -517,6 +555,46 @@ check('sweepExpiredRiskBlocks 只清「过期且超保留期」的标记', async
   assert.ok(byId['expired-kept'].riskBlockedUntilMs !== undefined, '刚过期的留档排障')
   assert.ok(!('riskBlockedUntilMs' in byId['expired-gone']), '过期超保留期的删除')
   assert.ok(!('riskBlockedUntilMs' in byId.dirty), '脏值（0）删除')
+})
+
+check('验证受阻（产不出 param）自成一条异常，与风控分色（源码守卫 + 行为）', async () => {
+  /**
+   * 用户 2026-11-04 报「领取失败但异常汇总里什么都没有」。根因：captcha 产出
+   * 失败只在领取结果的 toast 里一闪而过，而板块读的是账号上的持久标记。
+   *
+   * 语义上它**不是风控**：前者是我们缺件（装浏览器即可），后者是上游罚账号
+   * （要停手等冷却，3012 有 30 分钟 → 24 小时 → 停用的阶梯）。归成一类会让
+   * 用户照着错误的指示操作，所以它是独立的 `kind`。
+   */
+  const { AccountPool } = await import('../vendor/channel-pack/src/account-pool.ts')
+  const state = { accounts: [
+    { id: 'zcode-v1', provider: 'zcode', nickname: 'v', enabled: true, credentialRef: 'R1', createdAt: 1, refreshable: false },
+  ], disabledModels: {}, gatewayEnabled: true, providerOrder: [] }
+  const store = {
+    kind: 'file', loads: 0, stamp: 1000,
+    mtimeMs() { return this.stamp },
+    load() { this.loads += 1; return JSON.parse(JSON.stringify(state)) },
+    async save(next) { Object.assign(state, JSON.parse(JSON.stringify(next))); this.stamp += 1 },
+  }
+  const pool = new AccountPool({
+    logger: { warn() {}, info() {} },
+    credentials: { resolve: async () => undefined, describe: async () => undefined, set: async () => {}, unset: async () => {} },
+  })
+  Object.defineProperty(pool, 'store', { value: store, writable: true, configurable: true })
+  Object.defineProperty(pool, 'loaded', { value: false, writable: true, configurable: true })
+  await pool.recordVerificationBlocked('zcode-v1', 1_793_700_000_000)
+  const entry = state.accounts.find(a => a.id === 'zcode-v1')
+  assert.equal(entry.verificationBlockedAtMs, 1_793_700_000_000, '记录最近一次发生时刻')
+  assert.equal(entry.riskBlockedUntilMs, undefined, '不得污染风控字段（那条有冷却阶梯语义）')
+
+  const rpc = fs.readFileSync(new URL('../vendor/channel-pack/src/channel-pack-rpc.ts', import.meta.url), 'utf8')
+  assert.match(rpc, /kind: 'verification-blocked'/, 'RPC 必须能产出该类型')
+  assert.match(rpc, /verificationBlockedAtMs/, '读数读的是专用字段')
+  const auth = fs.readFileSync(new URL('../vendor/channel-pack/src/zcode-auth.ts', import.meta.url), 'utf8')
+  assert.match(auth, /recordVerificationBlocked\(accountId\)/, '领取失败时必须落账')
+  const client = fs.readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.match(client, /chan\.anomaly\.verifyBlocked/, '前端有独立文案')
+  assert.match(client, /ofm_anomalykind\.verify/, '前端有独立配色（蓝，不是红）')
 })
 
 check('两条 3012 落点都接了落账（推理 + 领取，源码守卫）', () => {

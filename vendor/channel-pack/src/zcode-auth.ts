@@ -1503,45 +1503,73 @@ export class ZcodeAuth extends Service {
     const { plan, credential, accountId, mintCaptcha, captchaConfig, region } = input
     try {
       /**
-       * ★ 第一发**不带验证头**（2026-10-28 实测）。
+       * ★★ **先验证、再领取** —— 复刻官方协议顺序（2026-11-04）。
        *
-       * 官方 `app_version 3.16.3` 下，同一账号同一 JWT 不带 `X-Aliyun-Captcha-Verify-*`
-       * 直接 `code:0 / 套餐领取成功 / 300,000,000 token`。旧结论「claim 始终强制索要
-       * captcha」在当前窗口已不成立，而产 param 需要浏览器（内部载体或外挂 chromium）——
-       * 在没有浏览器的形态里，那把「先 mint 再领」会把一键领取直接卡死。
+       * ## 为什么改（推翻了 2026-10-28 的「裸发优先」）
        *
-       * 故改为：**先裸发一发**；只有上游回 `3007`（真的要求验证）才去 mint 并重发
-       * （见下面的 `3007` 分支）。代价是上游要求验证时多一发 `3007`，收益是常态
-       * 下一发即中、且不依赖任何浏览器。
+       * 官方 `zai-org/ZCode`（8.4k star，公开源码）的
+       * `docs/zai-start-plan-provider.md:305-324` 把领取写成一个**固定状态机**：
+       *
+       * ```text
+       * idle -> checking-auth -> verifying -> claiming -> success-dialog
+       * ```
+       *
+       * 原文：「官方版本的领取前安全校验成功后才调用 claim」「官方版本的安全校验
+       * 结果通过请求头传递」。它的 `claimManualPlan()`
+       * （`bigmodelCodingPlanSubscriptionProvider.ts:338`）在 claim 的 header 里
+       * **无条件**展开 `...requestVerificationClaimHeaders(request)` —— 也就是说
+       * **官方从不裸发**：每一发 claim 都带着一次已经做完的安全校验。
+       *
+       * 对照本仓库自己的实测记录（`zcode-upstream.ts:928-931`）：
+       * - 2026-10-28（`app_version 3.16.3`）裸发 → `code:0` 成功；
+       * - **2026-11-03（3.18.0 钉窗口后）裸发 → `400 {code:3007}`**。
+       *
+       * 结论：10-28 那次成功是**活动期的宽松窗口**，该窗口已于 11-03 关闭。
+       * 在那个窗口里「裸发优先」能省掉整条浏览器链；但在窗口关闭后，它变成
+       * **净损失** —— 每个 plan 先发一发注定 `3007` 的请求，既多一次上游风控
+       * 计数，又白白多等一个往返。
+       *
+       * ## 现在的顺序
+       *
+       * 1. 先 `mint` 一个 param（相当于官方的 `verifying` 阶段）；
+       * 2. 带着 `X-Aliyun-Captcha-Verify-*` 发 claim（相当于 `claiming`）；
+       * 3. 只有 mint 失败（无浏览器 / 退避冷却）时，才退化成「裸发一试」——
+       *    这是给**没有浏览器内核的形态**（web / 独立服务）保留的降级路径，
+       *    否则那些形态连试一下的机会都没有。
+       *
+       * ⚠ 第 3 步的降级**不是**回到旧行为：旧行为是「永远先裸发」，现在是
+       *   「先验证；验证产不出来才裸发」。有浏览器时顺序与官方一致。
+       * ⚠ captcha 是**一次性**的：每个 plan 必须各自 mint，复用必 `3007`
+       *   （见 `zcode-upstream.ts` 的 claim 注释）。
        */
       const claimStartedAt = Date.now()
-      noteZcodeRequestSent(accountId, claimStartedAt)
-      let outcome: ZcodeClaimOutcome = await claimZcodePlan(
-        credential, plan.planId, undefined, this.fetchImpl,
-      )
       /** 本 plan 是否已走过「3007 换链重发」（只影响 3007 的文案措辞）。 */
       let internalRetried = false
       let diagnosticSentAt = claimStartedAt
-      if (outcome.ok) {
-        noteZcodeRequestOk(accountId, Date.now())
-      } else {
-        noteZcodeRequestFailed(accountId)
-      }
+
       /**
-       * ★ `3007` = 上游这次要安全验证 ⇒ 产一个 param 重发（本 plan 上限一次）。
+       * 阶段 ①：`verifying` —— 产 param。
        *
-       * ⚠ mint 放在这里（而不是进入本方法就做）才是「按需」：见上面第一发的说明。
-       * ⚠ mint 可能抛错（注入链撞退避冷却 / 找不到浏览器），由本方法的 `catch`
-       *   归一成这个 plan 的 `failed` —— 不让它拖垮同账号的其它 plan。
+       * ⚠ mint 失败**不直接判负**：先记下原因，走阶段 ①b 的裸发降级。
+       *   这样「没有浏览器」不会把一键领取整条卡死（旧实现的教训，见
+       *   `zcode-auth.ts` 的 `mintClaimCaptcha` 注释），同时也如实告诉用户
+       *   「这次是没验证成，不是账号被风控」。
        */
-      if (outcome.code === 3007) {
-        const minted = await this.mintClaimCaptcha(mintCaptcha, captchaConfig)
-        const retryStartedAt = Date.now()
-        noteZcodeRequestSent(accountId, retryStartedAt)
+      let minted: { param: string, source: 'internal' | 'chromium' } | undefined
+      let mintError: Error | undefined
+      try {
+        minted = await this.mintClaimCaptcha(mintCaptcha, captchaConfig)
+      } catch (error) {
+        mintError = error instanceof Error ? error : new Error(String(error))
+      }
+
+      let outcome: ZcodeClaimOutcome
+      if (minted !== undefined) {
+        // 阶段 ②：`claiming` —— 带验证头领取（与官方同序）。
+        noteZcodeRequestSent(accountId, claimStartedAt)
         outcome = await claimZcodePlan(
           credential, plan.planId, { param: minted.param, region }, this.fetchImpl,
         )
-        diagnosticSentAt = retryStartedAt
         if (outcome.ok) {
           noteZcodeRequestOk(accountId, Date.now())
         } else {
@@ -1556,6 +1584,38 @@ export class ZcodeAuth extends Service {
           )
           outcome = retried.outcome
           diagnosticSentAt = retried.sentAt
+        }
+      } else {
+        // 阶段 ①b：验证产不出来（无浏览器 / 退避冷却）⇒ 裸发一试。
+        noteZcodeRequestSent(accountId, claimStartedAt)
+        outcome = await claimZcodePlan(
+          credential, plan.planId, undefined, this.fetchImpl,
+        )
+        if (outcome.ok) {
+          noteZcodeRequestOk(accountId, Date.now())
+        } else {
+          noteZcodeRequestFailed(accountId)
+        }
+        /**
+         * ⚠ 裸发回 `3007` 时**不再重试**：验证本身都产不出来，再发一次只会
+         *   再多扣一次风控计数（3012 的阶梯惩罚：30 分钟 → 24 小时 → 停用）。
+         *   把 mint 失败的原因并进文案，用户才知道「该装浏览器了」而不是
+         *   「账号被封了」。
+         */
+        if (outcome.code === 3007 && mintError !== undefined) {
+          outcome = {
+            ...outcome,
+            message: `${outcome.message}（安全验证无法完成：${mintError.message}）`,
+          }
+          /**
+           * ★ 落一条「验证被阻断」到账号池（2026-11-04 用户报「看不到为什么
+           * 领不到」）：这是**我们这侧缺件**，与上游风控（3012）必须分色显示 ——
+           * 前者要装浏览器，后者要停手等冷却。
+           * ⚠ `void …catch()`：展示层记账不许把领取失败变成另一件事。
+           */
+          if (accountId !== undefined) {
+            void this.accountPool()?.recordVerificationBlocked(accountId).catch(() => {})
+          }
         }
       }
       const mapped = toClaimOutcome(outcome, plan.planId, {

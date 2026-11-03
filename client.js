@@ -283,6 +283,8 @@ window.__ModuleLoader__.load({
         'chan.anomaly.title': '异常汇总',
         'chan.anomaly.rateLimit': '限流',
         'chan.anomaly.riskBlocked': '风控',
+        'chan.anomaly.verifyBlocked': '验证受阻',
+        'chan.anomaly.verifyHint': '领取需要安全验证，但本机产不出验证参数（通常是没有安装 Chrome/Chromium）。这不是账号被风控，装好浏览器后可再试。',
         'chan.anomaly.allModels': '全部模型',
         'chan.anomaly.col.channel': '渠道',
         'chan.anomaly.col.account': '账号',
@@ -778,6 +780,8 @@ window.__ModuleLoader__.load({
         'chan.anomaly.title': 'Limits',
         'chan.anomaly.rateLimit': 'Rate limited',
         'chan.anomaly.riskBlocked': 'Risk blocked',
+        'chan.anomaly.verifyBlocked': 'Verification blocked',
+        'chan.anomaly.verifyHint': 'Claiming needs a security check, but this machine cannot produce a verification param (usually no Chrome/Chromium installed). The account is not penalised — install a browser and retry.',
         'chan.anomaly.allModels': 'All models',
         'chan.anomaly.col.channel': 'Channel',
         'chan.anomaly.col.account': 'Account',
@@ -1393,6 +1397,11 @@ window.__ModuleLoader__.load({
  * 风控再点会升级封禁 —— 红色是唯一能传达「别再碰它」的颜色。 */
 .ofm_anomalykind.risk{color:var(--dsw-alias-state-error-primary);
   background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 14%,transparent)}
+/* 「验证受阻」= 我们这侧缺件（没装 chromium / 验证冷却），不是账号被罚。
+ * 用中性蓝而不是红：红色在这种语境下会让人以为账号要被封，从而不敢再试；
+ * 而这条的正确动作恰恰是「装好浏览器再试」。 */
+.ofm_anomalykind.verify{color:var(--dsw-alias-state-business-primary,#3b82f6);
+  background:color-mix(in srgb,var(--dsw-alias-state-business-primary,#3b82f6) 14%,transparent)}
 /*
  * 签到结果表格（用户 2026-10-27）。与异常汇总共用同一套视觉语言：白底、
  * 灰框、可折叠、表头内高光 —— 它俩在页面上紧挨着，样式必须同源。
@@ -4412,15 +4421,30 @@ window.__ModuleLoader__.load({
               h('span', { className: 'ofm_anomalycell channel', role: 'cell' }, channelName(row.provider)),
               h('span', { className: 'ofm_anomalycell account', role: 'cell', title: row.accountId }, row.accountName),
               h('span', { className: 'ofm_anomalycell', role: 'cell' },
-                h('span', { className: 'ofm_anomalykind' + (row.kind === 'risk-blocked' ? ' risk' : '') },
-                  row.kind === 'risk-blocked' ? t('chan.anomaly.riskBlocked') : t('chan.anomaly.rateLimit'))),
+                h('span', {
+                  className: 'ofm_anomalykind'
+                    + (row.kind === 'risk-blocked' ? ' risk' : row.kind === 'verification-blocked' ? ' verify' : ''),
+                  title: row.kind === 'verification-blocked' ? t('chan.anomaly.verifyHint') : undefined,
+                },
+                  row.kind === 'risk-blocked' ? t('chan.anomaly.riskBlocked')
+                    : row.kind === 'verification-blocked' ? t('chan.anomaly.verifyBlocked')
+                      : t('chan.anomaly.rateLimit'))),
               h('span', {
                 className: 'ofm_anomalycell ' + (row.modelName === undefined ? 'allmodels' : 'model'),
                 role: 'cell', title: row.modelName ?? '',
-              }, row.kind === 'risk-blocked' ? '—'
+              }, row.kind === 'risk-blocked' || row.kind === 'verification-blocked' ? '—'
                 : row.modelName === undefined ? t('chan.anomaly.allModels') : row.modelName),
-              h('span', { className: 'ofm_anomalycell until', role: 'cell' }, absolute(row.resetAtMs)),
-              h('span', { className: 'ofm_anomalycell remaining', role: 'cell' }, remaining(row.resetAtMs)))))) : null)
+              /**
+               * ⚠ 「验证受阻」是**已经发生的时刻**，不是冷却截止时刻 —— 没有
+               * 「剩余等待」这回事（装好浏览器随时可再试）。显示成剩余时间会让
+               * 用户白等一个不存在的冷却，所以两列都改成「上次发生」+「—」。
+               */
+              row.kind === 'verification-blocked'
+                ? h('span', { className: 'ofm_anomalycell until', role: 'cell', title: t('chan.anomaly.verifyHint') },
+                  absolute(row.resetAtMs))
+                : h('span', { className: 'ofm_anomalycell until', role: 'cell' }, absolute(row.resetAtMs)),
+              h('span', { className: 'ofm_anomalycell remaining', role: 'cell' },
+                row.kind === 'verification-blocked' ? '—' : remaining(row.resetAtMs)))))) : null)
     }
 
     /**

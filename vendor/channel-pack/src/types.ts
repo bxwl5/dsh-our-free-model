@@ -52,6 +52,15 @@ export interface ProviderAccountEntry {
    */
   riskBlockedUntilMs?: number
   /**
+   * **领取验证被阻断**的最近一次时刻（仅展示，与 {@link riskBlockedUntilMs} 同款）。
+   *
+   * 语义：上游要安全验证（ZCode `3007`），而我们这侧**产不出 param**
+   * （本机没有 chromium / 验证处于退避冷却）。它不是账号问题，是环境缺件 ——
+   * 故不参与选号、也不设冷却期，只在异常汇总里如实列出，让用户知道
+   * 「该装浏览器了」而不是「账号被风控了」。
+   */
+  verificationBlockedAtMs?: number
+  /**
    * TRAE 签到设备轮换代次（仅 `trae` provider 使用）。
    *
    * 业务码 `9074`（签到人数过多）的限流范围是 **device_id 而非账号**：
@@ -970,7 +979,17 @@ export interface AccountAnomaly {
    * 汇总里，应为红色」）：两者对用户的动作完全不同 —— 限流等就行，风控
    * **再点会升级封禁**。混在一列里等于把最危险的一条藏进背景噪声。
    */
-  kind?: 'rate-limit' | 'risk-blocked'
+  kind?: 'rate-limit' | 'risk-blocked' | 'verification-blocked'
+  /**
+   * `'verification-blocked'` = **领取被验证环节阻断**（ZCode 的阿里云 captcha
+   * 产不出 param）。
+   *
+   * ⚠ 与 `'risk-blocked'` 必须分开（2026-11-04 用户报「看不到为什么领不到」）：
+   * 前者是**我们这侧缺件**（本机没有 chromium 内核 / 验证冷却中），用户的动作
+   * 是「装浏览器」；后者是**上游惩罚账号**，用户的动作是「停手等冷却」。
+   * 归成一类会让用户照着错误的指示操作 —— 这正是它此前只在 toast 里一闪而过、
+   * 异常汇总里完全看不到的原因。
+   */
   /** 账号 id。 */
   accountId: string
   /** 账号昵称（用户认得出的那个）。 */

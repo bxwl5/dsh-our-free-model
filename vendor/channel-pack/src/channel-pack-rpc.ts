@@ -1747,6 +1747,28 @@ function registerChannelPackEndpoints(
                 resetAtMs: riskUntil,
               })
             }
+            /**
+             * ★ **验证被阻断**（不是风控，2026-11-04）。
+             *
+             * 上游要安全验证、而我们这侧产不出 param（没有 chromium 内核 /
+             * 验证退避冷却中）。它此前只在领取结果的 toast 里一闪而过，
+             * 用户看到的现象是「领取失败但异常汇总里什么都没有」。
+             *
+             * ⚠ 这里**不复用 `riskBlockedUntilMs`**：那条有 30 分钟 → 24 小时的
+             *   冷却阶梯，而这条只是「环境缺件」，装好浏览器立刻就能再试。
+             *   用同一个字段会让用户等一个根本不存在的冷却。
+             * ⚠ 只报最近 24 小时内的：更早的已经不代表当前环境状态。
+             */
+            const verifyAt = Number(account.verificationBlockedAtMs)
+            if (Number.isFinite(verifyAt) && verifyAt > 0 && now - verifyAt <= 24 * 60 * 60 * 1000) {
+              anomalies.push({
+                provider,
+                accountId: account.id,
+                accountName: account.nickname || account.id,
+                kind: 'verification-blocked',
+                resetAtMs: verifyAt,
+              })
+            }
             const limits = Object.entries(account.modelRateLimits ?? {})
               .filter(([, resetAt]) => Number(resetAt) > now)
             if (limits.length === 0) continue
