@@ -247,8 +247,24 @@ const capacityModels = [
   { id: 'small', name: 'Small', contextWindow: 128000, maxOutput: 16000, vision: false },
 ]
 cells.length = 0
-const picker = render(ModelPicker, { t, models: capacityModels, chosen: [], onPick() {} })
-assert.ok(nodes(picker).some(node => node.children.includes(`${t('tag.context')} 1.0M`)))
+// 供应商分组默认折叠，模型行不渲染，所以先断言「折叠态」再点开：
+// 折叠时只看得到组头（供应商名 + 数量），这正是默认视图该有的样子。
+let picker = render(ModelPicker, { t, models: capacityModels, chosen: [], onPick() {} })
+const groupHead = nodes(picker).find(node => node.type === 'button' && node.props['aria-expanded'] === 'false')
+assert.ok(groupHead, 'provider groups start collapsed')
+assert.equal(
+  nodes(picker).filter(node => node.props.className === 'ofm_pickrow').length, 0,
+  'a collapsed group renders no model rows',
+)
+groupHead.props.onClick()
+picker = render(ModelPicker, { t, models: capacityModels, chosen: [], onPick() {} })
+assert.equal(
+  nodes(picker).find(node => node.type === 'button' && node.props.className === 'ofm_pickgrouphead').props['aria-expanded'], 'true',
+  'clicking the group head expands it',
+)
+// 卡片把容量压进「点号连排」的一行（id · 上下文 · 输出 · 视觉），所以这里
+// 断言的是那个片段，而不是旧的独立标签标签节点。
+assert.ok(nodes(picker).some(node => node.children.includes(`· 1.0M`)), 'picker shows the context window')
 captureEffects = true
 const editorProps = { t, models: capacityModels, chain: { name: 'Fixture', models: ['small', 'large'] } }
 render(ChainEditor, editorProps)

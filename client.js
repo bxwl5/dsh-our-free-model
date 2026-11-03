@@ -2013,22 +2013,29 @@ window.__ModuleLoader__.load({
 @keyframes ofmrisein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .ofm_duo{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(272px,100%),1fr));gap:12px;align-items:start}
 .ofm_duo>*{min-width:0}
-.ofm_picklist{display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:8px;max-height:330px;overflow:auto;padding:2px}
-.ofm_pickrow{display:flex;flex-direction:column;gap:5px;align-items:stretch;text-align:left;font:inherit;padding:9px 11px;border-radius:11px;border:1px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 62%,transparent);color:var(--dsw-alias-label-primary);cursor:pointer;transition:border-color .16s ease,background .16s ease,transform .16s ease}
+.ofm_picklist{display:block;max-height:330px;overflow:auto;padding:2px}
+.ofm_pickrow{display:flex;flex-direction:column;gap:2px;align-items:stretch;text-align:left;font:inherit;padding:6px 9px;border-radius:9px;border:1px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 62%,transparent);color:var(--dsw-alias-label-primary);cursor:pointer;transition:border-color .16s ease,background .16s ease,transform .16s ease}
 .ofm_pickrow:hover:not(:disabled){border-color:var(--dsw-alias-state-business-primary);transform:translateY(-1px)}
 .ofm_pickrow[aria-pressed="true"]{border-color:var(--dsw-alias-state-business-primary);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 12%,transparent)}
 .ofm_pickrow:disabled{opacity:.55;cursor:default}
-.ofm_pickgroup{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
-.ofm_pickgrouptitle{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary);padding:2px 2px 0}
-.ofm_pickhead{display:flex;align-items:center;gap:7px;min-width:0}
-.ofm_pickhead b{font-size:12.5px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ofm_pickmeta{display:flex;gap:7px;flex-wrap:wrap;font-size:10.5px;color:var(--dsw-alias-label-tertiary);min-width:0}
+.ofm_pickgroup{display:block;margin-bottom:4px}
+.ofm_pickgrouphead{display:flex;align-items:center;gap:6px;width:100%;font:inherit;text-align:left;padding:5px 7px;border-radius:8px;border:1px solid transparent;background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 45%,transparent);color:var(--dsw-alias-label-secondary);cursor:pointer}
+.ofm_pickgrouphead:hover{border-color:var(--dsw-alias-border-l1);color:var(--dsw-alias-label-primary)}
+.ofm_pickcaret{flex:none;font-size:10px;width:10px;color:var(--dsw-alias-label-tertiary)}
+.ofm_pickgrouptitle{flex:1;min-width:0;font-size:11px;letter-spacing:.05em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ofm_pickgroupbadge{flex:none;font-size:10px;min-width:16px;text-align:center;padding:0 5px;border-radius:8px;background:var(--dsw-alias-state-business-primary);color:#fff}
+.ofm_pickgroupbody{display:grid;grid-template-columns:repeat(auto-fill,minmax(214px,1fr));gap:6px;padding:6px 0 2px 4px}
+.ofm_pickhead{display:flex;align-items:center;gap:6px;min-width:0}
+.ofm_pickhead b{font-size:12px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.ofm_picklane{flex:none;font-size:10px;padding:1px 5px;border-radius:5px;background:color-mix(in srgb,var(--dsw-alias-label-tertiary) 16%,transparent);color:var(--dsw-alias-label-tertiary);white-space:nowrap}
+.ofm_pickmeta{display:flex;gap:4px;flex-wrap:nowrap;overflow:hidden;font-size:10px;color:var(--dsw-alias-label-tertiary);min-width:0;white-space:nowrap}
+.ofm_pickmeta .ofm_id{flex:0 1 auto;min-width:0}
 .ofm_meter{height:9px;border-radius:99px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);overflow:hidden}
 .ofm_meter i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,color-mix(in srgb,var(--dsw-alias-state-business-primary) 62%,transparent),var(--dsw-alias-state-business-primary));transition:width .55s cubic-bezier(.22,.61,.36,1)}
 .ofm_member{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:10px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l1) 82%,transparent);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 58%,transparent);font-size:11.5px;transition:border-color .16s ease,background .16s ease}
 .ofm_member .ofm_id{flex:1;min-width:0}
 .ofm_snippet{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.6;padding:9px 11px;border-radius:10px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);white-space:pre;overflow:auto;max-height:230px}
-@media (max-width:600px){.ofm_duo{grid-template-columns:1fr}.ofm_picklist{grid-template-columns:1fr}.ofm_member{flex-wrap:wrap}}
+@media (max-width:600px){.ofm_duo{grid-template-columns:1fr}.ofm_pickgroupbody{grid-template-columns:1fr}.ofm_member{flex-wrap:wrap}}
 @media (prefers-reduced-motion:reduce){.ofm_rise,.ofm_page{animation:none}.ofm_pickrow,.ofm_member,.ofm_meter i,.ofm_card,.ofm_kpi,.ofm_chan{transition:none}.ofm_root .ofm_card:hover,.ofm_pickrow:hover:not(:disabled){transform:none}}
 
 /* ── 推荐项目页：两张「去点 Star」的卡片 ─────────────────────────────────
@@ -5220,18 +5227,35 @@ window.__ModuleLoader__.load({
       }
       // 供应商选择器只在真有多家时出现：只有一家时它是个没有选择的控件。
       const providerIds = [...new Set(models.map(providerOf))].sort()
+      /**
+       * 展开的供应商：**默认全部折叠**。
+       *
+       * 一屏四十多个模型时，全展开等于让人滚动寻找，而用户通常已经知道自己
+       * 要哪一家。折叠后每个供应商只占一行，一眼就能扫完，点开才展开。
+       *
+       * 搜索时例外：有查询词就把命中的组全部展开，否则用户搜出结果却看到
+       * 一排收起的标题，会以为没搜到。
+       */
+      const [openGroups, setOpenGroups] = useState([])
+      const isOpen = provider => needle !== '' || openGroups.includes(provider)
+      const toggleGroup = provider => setOpenGroups(current => current.includes(provider)
+        ? current.filter(name => name !== provider)
+        : [...current, provider])
       const renderRow = row => h('button', {
         key: row.id, type: 'button', className: 'ofm_pickrow',
         'aria-pressed': chosen.includes(row.id) ? 'true' : 'false',
         onClick: () => onPick(row.id),
       },
-      h('span', { className: 'ofm_pickhead' }, h('b', { title: row.name }, row.name ?? row.id)),
+      h('span', { className: 'ofm_pickhead' },
+        h('b', { title: row.name }, row.name ?? row.id),
+        h('span', { className: 'ofm_picklane' }, labelOf(row))),
+      // 一行封顶：容量与 id 用点号连排、超出省略。原来这五个标签各自 wrap，
+      // 一张卡长到三行，三十多张卡就是一屏放不下几行。
       h('span', { className: 'ofm_pickmeta' },
-        h('span', { className: 'ofm_id' }, row.id),
-        h('span', { className: 'ofm_tag' }, labelOf(row)),
-        row.contextWindow > 0 ? h('span', { className: 'ofm_tag' }, `${t('tag.context')} ${kilo(row.contextWindow)}`) : null,
-        row.maxOutput > 0 ? h('span', { className: 'ofm_tag' }, `${t('tag.output')} ${kilo(row.maxOutput)}`) : null,
-        row.vision === true ? h('span', { className: 'ofm_tag' }, t('tag.vision')) : null))
+        h('span', { className: 'ofm_id', title: row.id }, row.id),
+        row.contextWindow > 0 ? h('span', null, `· ${kilo(row.contextWindow)}`) : null,
+        row.maxOutput > 0 ? h('span', null, `· ${kilo(row.maxOutput)}`) : null,
+        row.vision === true ? h('span', null, `· ${t('tag.vision')}`) : null))
       return h('div', { className: 'ofm_panel' },
         h('div', { className: 'ofm_paneltitle' }, t('routing.pickModel')),
         h('div', { className: 'ofm_row' },
@@ -5252,9 +5276,24 @@ window.__ModuleLoader__.load({
           ? h('p', { className: 'ofm_note' }, t('routing.pickNoChannels'))
           : matched.length === 0
             ? h('p', { className: 'ofm_note' }, t('routing.noModel'))
-            : h('div', { className: 'ofm_picklist' }, [...groups.entries()].map(([provider, rows]) => h('div', { key: provider, className: 'ofm_pickgroup' },
-              h('div', { className: 'ofm_pickgrouptitle' }, t('routing.pickGroup').replace('{provider}', provider).replace('{n}', String(rows.length))),
-              rows.map(renderRow)))))
+            : h('div', { className: 'ofm_picklist' }, [...groups.entries()].map(([provider, rows]) => {
+              const expanded = isOpen(provider)
+              const picked = rows.filter(row => chosen.includes(row.id)).length
+              return h('div', { key: provider, className: 'ofm_pickgroup' },
+                h('button', {
+                  type: 'button', className: 'ofm_pickgrouphead',
+                  'aria-expanded': expanded ? 'true' : 'false',
+                  onClick: () => toggleGroup(provider),
+                },
+                h('span', { className: 'ofm_pickcaret', 'aria-hidden': 'true' }, expanded ? '▾' : '▸'),
+                h('span', { className: 'ofm_pickgrouptitle' }, t('routing.pickGroup')
+                  .replace('{provider}', provider)
+                  .replace('{n}', String(rows.length))),
+                // 已选数量：折叠时也能看出这一家里已经挑了几个，否则收起后
+                // 完全看不见自己往链里加过什么。
+                picked > 0 ? h('span', { className: 'ofm_pickgroupbadge' }, String(picked)) : null),
+                expanded ? h('div', { className: 'ofm_pickgroupbody' }, rows.map(renderRow)) : null)
+            })))
     }
 
     function ChainCapacity({ capacity, t }) {
