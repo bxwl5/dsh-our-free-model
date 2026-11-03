@@ -19,8 +19,8 @@
     },
     {
       "path": "client.js",
-      "size": 435662,
-      "sha256": "46593b6cda184c20458e0ece65d73d3dd93e9242187bcfec3e19e47f049d29c0"
+      "size": 439072,
+      "sha256": "e624fa320b3794e0dfced08a9ebfa602c55c0b9d55d5cb50af8f07a1a7510df4"
     },
     {
       "path": "cordis.patch.yml",
@@ -34,8 +34,8 @@
     },
     {
       "path": "index.js",
-      "size": 81295,
-      "sha256": "eb99e2def28a2c1845da70918610bde436a6e2d7f4bdf96839eed97e73cc5103"
+      "size": 83152,
+      "sha256": "9b80e572e2ff558634940c283254621ccd1c98964501518b4cebd68af8f2b645"
     },
     {
       "path": "locale/en.json",
@@ -54,8 +54,8 @@
     },
     {
       "path": "src/adapter.js",
-      "size": 39688,
-      "sha256": "50f739e0fea6e2dbcb6265d80688f757e0cee7e7ef4c3fd32b096312c613605b"
+      "size": 46231,
+      "sha256": "7852e7fed64cd4d8394126f3b21857a3c27c8eafe1038959c5d5c43060db4735"
     },
     {
       "path": "src/anthropic.js",
@@ -71,6 +71,11 @@
       "path": "src/chan-relay.js",
       "size": 8580,
       "sha256": "2d6ffa259f19a4dcbcb34f48cbf8db43e20da0716e6deda63c88804e3a08d859"
+    },
+    {
+      "path": "src/channel-catalog.js",
+      "size": 7142,
+      "sha256": "fa382325f0255db4d336916b5e0ec4802e374b231c1472640f969fb82989df42"
     },
     {
       "path": "src/channel.js",
@@ -94,8 +99,8 @@
     },
     {
       "path": "src/core/runtime.js",
-      "size": 16404,
-      "sha256": "c0fd6efcb15e512a02b52736c6c63019e0a0df7f21e35e83283864e41845923d"
+      "size": 20027,
+      "sha256": "6119e775b10e068d04b59d42f004937e8ecc2208b9a3acc0543199e6cb0242e6"
     },
     {
       "path": "src/core/stats.js",
@@ -319,8 +324,8 @@
     },
     {
       "path": "vendor/channel-pack/pack.js",
-      "size": 3251500,
-      "sha256": "2ad53259f5bb738854a27c8ba5f6afe48b181d3bbae80ac1981700cb7abe8d44"
+      "size": 3251552,
+      "sha256": "2513992f247ca4ff896f6199b0755df8ea35a19cf44c469e41d78e96b031a105"
     },
     {
       "path": "vendor/channel-pack/qoder-auth-wasm.wasm",
