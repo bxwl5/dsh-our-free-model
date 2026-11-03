@@ -153,25 +153,36 @@ await check('the home dashboard folds each chart on its own, heatmap above the c
     requests: 3, requestFailures: 0, turns: 3, failedTurns: 0, recoveredTurns: 0,
   }
   const all = flatten(app.draw(Dashboard, { stats, t: app.t }))
-  // Section 是组件节点（未展开为 DOM），按 props 断言结构与顺序。
-  const sections = all.filter(node => node?.type === app.api.Section)
+  // 每块是折叠卡网格里的一枚 FoldCard：折叠态只有卡片里一行小字。
+  const sections = all.filter(node => node?.type === app.api.FoldCard)
   assert.deepEqual(sections.map(node => node.props.title),
     [app.t('heat.title'), app.t('curve.title'), app.t('speed.title'), app.t('speed.model')],
-    '热力图 / 总量曲线 / 速度 / 模型表各自成一个可折叠小节，顺序是热力图在前、曲线在后')
+    '热力图 / 总量曲线 / 速度 / 模型表各自折叠，顺序是热力图在前、曲线在后')
   assert.equal(sections.length, 4, 'four independent fold controls — not one shared collapse')
-  for (const node of sections) assert.equal(node.props.collapsible, true, '每块自己折叠')
+  assert.ok(all.some(node => node?.props?.className === 'ofm_foldgrid'),
+    '四块排在一条网格里，不再竖排成四条标题条（用户第 4 项）')
+  // FoldCard 的折叠/开合在**独立实例**上验（本仓库 mock 的 useState 槽位按
+  // 渲染次数复用，Dashboard 已经占用了前几个槽；直接在这里 draw 会读到 Dashboard 的状态）。
+  const solo = boot()
+  const body = { type: 'p', props: { className: 'ofm_note' }, children: ['BODY'] }
+  const folded = flatten(solo.draw(solo.api.FoldCard, { title: 'Token 热力图', hint: '按天查看消耗密度', children: [body] }))
+  assert.equal(folded.includes('BODY'), false, '折叠态不渲染图表本体')
+  assert.equal(folded.some(node => String(node?.props?.className ?? '').includes('ofm_panel')), true,
+    '折叠态本身就是一张卡片')
+  const head = folded.find(node => node?.props?.className === 'ofm_foldhead')
+  assert.equal(head.props['aria-expanded'], 'false', '默认收起')
+  head.props.onClick()
+  assert.equal(flatten(solo.draw(solo.api.FoldCard, { title: 'Token 热力图', hint: '按天查看消耗密度', children: [body] })).includes('BODY'), true,
+    '点标题在同一张卡内部展开完整内容')
+  // `h(FoldCard, props, body)` 把 body 放在**节点**的 children 上（不是 props）。
+  assert.ok(flatten(sections[0].children).some(node => node?.type === app.api.Heatmap),
+    'the heatmap card owns the heatmap')
+  assert.ok(flatten(sections[1].children).some(node => node?.props?.className === 'ofm_seg'),
+    'the curve card owns its tokens/requests switch')
+  assert.notEqual(sections[0].children, sections[1].children,
+    'each card carries its own body — opening one never opens another')
   assert.equal(all.some(node => String(node?.props?.className ?? '').includes('ofm_two')), false,
     '两块不再并排（ofm_two 版式已移除）')
-  // 每块把各自的图表作为 children 传进来（折叠默认态与逐块开合由上一条
-  // 「a collapsible section is folded by default…」用例覆盖，同一套 Section）。
-  // `h(Section, props, body)` 把 body 放在节点的 children 上（不是 props），
-  // 而 Section 渲染时 `open ? props.children : null` 决定的正是这一份。
-  assert.ok(flatten(sections[0].children).some(node => node?.type === app.api.Heatmap),
-    'the heatmap section owns the heatmap')
-  assert.ok(flatten(sections[1].children).some(node => node?.props?.className === 'ofm_seg'),
-    'the curve section owns its own tokens/requests switch')
-  assert.notEqual(sections[0].children, sections[1].children,
-    'each section carries its own body — folding one never folds another')
 })
 
 await check('the member picker shows the balance beside each channel name', async () => {

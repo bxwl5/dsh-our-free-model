@@ -2037,6 +2037,15 @@ window.__ModuleLoader__.load({
 .ofm_pickgrouphead:hover{border-color:var(--dsw-alias-border-l1);color:var(--dsw-alias-label-primary)}
 .ofm_pickcaret{flex:none;font-size:10px;width:10px;color:var(--dsw-alias-label-tertiary)}
 .ofm_pickgrouptitle{flex:1;min-width:0;font-size:11px;letter-spacing:.05em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* ══ 看板折叠卡网格（FoldCard）══════════════════════════════════════════ */
+.ofm_foldgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;align-items:start}
+@media (max-width:600px){.ofm_foldgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.ofm_foldcard{padding:8px 10px;gap:6px}
+.ofm_foldhead{display:flex;align-items:center;gap:6px;width:100%;font:inherit;font-size:11.5px;text-align:left;padding:0;border:0;background:none;color:var(--dsw-alias-label-secondary);cursor:pointer;min-width:0}
+.ofm_foldhead:hover .ofm_foldtitle{color:var(--dsw-alias-state-business-primary)}
+.ofm_foldtitle{font-weight:640;font-size:11.5px;white-space:nowrap}
+.ofm_foldhint{font-size:10.5px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:auto;text-align:right}
+.ofm_foldcard.open{grid-column:1/-1}
 .ofm_pickquota{flex:none;font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:999px;border:1px solid color-mix(in srgb,var(--dsw-alias-state-success-primary) 42%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 9%,transparent);color:var(--dsw-alias-state-success-primary);white-space:nowrap;font-variant-numeric:tabular-nums}
 .ofm_pickquota.low{border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 48%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 10%,transparent);color:var(--dsw-alias-state-error-primary)}
 .ofm_pickgroupbadge{flex:none;font-size:10px;min-width:16px;text-align:center;padding:0 5px;border-radius:8px;background:var(--dsw-alias-state-business-primary);color:#fff}
@@ -2051,7 +2060,7 @@ window.__ModuleLoader__.load({
 .ofm_member.dragover{border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 62%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 8%,transparent)}
 .ofm_member .ofm_id{flex:1;min-width:0}
 .ofm_snippet{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.6;padding:9px 11px;border-radius:10px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);white-space:pre;overflow:auto;max-height:230px}
-@media (max-width:600px){.ofm_duo{grid-template-columns:1fr}.ofm_pickgroupbody{grid-template-columns:1fr}.ofm_member{flex-wrap:wrap}}
+@media (max-width:600px){.ofm_duo{grid-template-columns:1fr}.ofm_pickgroupbody{grid-template-columns:1fr}.ofm_member{flex-wrap:wrap}.ofm_foldcard.open{grid-column:1/-1}}
 @media (prefers-reduced-motion:reduce){.ofm_rise,.ofm_page{animation:none}.ofm_pickrow,.ofm_member,.ofm_meter i,.ofm_card,.ofm_kpi,.ofm_chan{transition:none}.ofm_root .ofm_card:hover,.ofm_pickrow:hover:not(:disabled){transform:none}}
 
 /* ── 推荐项目页：两张「去点 Star」的卡片 ─────────────────────────────────
@@ -2435,6 +2444,29 @@ window.__ModuleLoader__.load({
       return h('section', { className: 'ofm_sec' }, head, open ? props.children : null)
     }
 
+    /**
+     * 看板四块的折叠卡（用户 2026-11-03 第 3/4 项）。
+     *
+     * 之前的四节 Section 竖排下来就是四条又宽又扁的横线：字号 14px 的标题 +
+     * 分隔线，收起的东西比展开的东西还占地方，一屏全是"标题条"。现在：
+     *   - 折叠态就是一枚普通卡片，里面**只有一行小字**（▸ 标题 · 副题）；
+     *   - 四枚卡片**横排**（auto-fit 网格，宽屏一行放得下就一行）；
+     *   - 展开的那枚自己横跨整行，在卡片内部展开完整内容 —— 收起与展开共用
+     *     同一张卡，视线不用在"标题条"和"下一块"之间来回找。
+     */
+    function FoldCard(props) {
+      const [open, setOpen] = useState(false)
+      return h('div', { className: 'ofm_panel ofm_foldcard' + (open ? ' open' : '') },
+        h('button', {
+          type: 'button', className: 'ofm_foldhead', 'aria-expanded': open ? 'true' : 'false',
+          onClick: () => setOpen(current => !current),
+        },
+        h('span', { className: 'ofm_seccaret', 'aria-hidden': 'true' }, open ? '▾' : '▸'),
+        h('span', { className: 'ofm_foldtitle' }, props.title),
+        props.hint === undefined ? null : h('span', { className: 'ofm_foldhint' }, props.hint)),
+        open ? props.children : null)
+    }
+
     function Panel(props) {
       return h('div', { className: `ofm_panel${props.className === undefined ? '' : ` ${props.className}`}` },
         props.title === undefined ? null : h('div', { className: 'ofm_paneltitle' }, props.title, props.hint === undefined ? null : h('span', { className: 'ofm_sec_hint' }, props.hint)),
@@ -2722,13 +2754,13 @@ window.__ModuleLoader__.load({
         stat(String(stats.failedTurns ?? stats.grand.failedTurns ?? 0), t('speed.turnFailed')),
         stat(String(stats.recoveredTurns ?? stats.grand.recoveredTurns ?? 0), t('speed.recovered')))
 
-      const heatmap = h(Panel, null, h(Heatmap, { days, t }))
+      const heatmap = h(Heatmap, { days, t })
 
       const legend = h('div', { className: 'ofm_chips' },
         chip(t('curve.total'), metric === 'total', SEASON[0], () => setMetric('total')),
         models.map((m, index) => chip(m.name, metric === m.model, SEASON[index % SEASON.length], () => setMetric(m.model))))
 
-      const curve = h(Panel, null,
+      const curve = h(Fragment, null,
         h('div', { className: 'ofm_row' },
           h('div', { className: 'ofm_seg' },
             segButton(t('curve.tokens'), mode === 'tokens', () => setMode('tokens')),
@@ -2763,7 +2795,7 @@ window.__ModuleLoader__.load({
           + (lastSample.ok === false ? ` · ${t('speed.failed')}` : '')),
         h('span', { className: 'ofm_note', style: { marginLeft: 'auto' } }, agoOf(lastSample.at)))
 
-      const speed = h(Panel, null,
+      const speed = h(Fragment, null,
         recent.length === 0
           ? h('p', { className: 'ofm_note' }, t('speed.none'))
           : h(Fragment, null,
@@ -2776,7 +2808,7 @@ window.__ModuleLoader__.load({
               .replace('{n}', String(streamed.length))
               .replace('{total}', String(recent.length)))))
 
-      const table = models.length === 0 ? null : h(Panel, null,
+      const table = models.length === 0 ? null : h(Fragment, null,
         h('div', { className: 'ofm_tablewrap' }, h('table', { className: 'ofm_table' },
           h('thead', null, h('tr', null,
             h('th', null, t('speed.model')),
@@ -2798,19 +2830,19 @@ window.__ModuleLoader__.load({
       const historyNote = stats.logicalEstimated || stats.requestFailuresEstimated
         ? h('p', { className: 'ofm_note' }, t('speed.estimated'))
         : null
-      // ⚠️ 四块图表各自折叠，不再共用一个折叠开关（用户 2026-11-03）：看板整体
-      // 收起来时想看一眼热力图就得把曲线、速度、模型表一起展开再一起收起，
-      // 一次展开等于展开四屏。现在每块自己收起/展开，默认全部收起。
-      // 顺序也是要求：热力图在上、总量曲线在下 —— 此前两者并排（ofm_two），
-      // 窄一点就要横向滚动，竖向读日期的热力图被压成半栏反而更难扫。
+      // ⚠️ 四块各自折叠 + 横排（用户 2026-11-03 第 2/3/4 项）：折叠态每块只是
+      // 卡片里一行小字，四枚排在一条 auto-fit 网格里；展开的那枚横跨整行在
+      // 卡内展开完整内容。顺序仍是热力图、总量曲线、速度、模型表 —— 展开的
+      // 内容里热力图在上、曲线在下（此前两者并排被压成半栏，反而更难扫）。
       return h(Fragment, null,
         headline,
         h('p', { className: 'ofm_note' }, t('speed.scope')),
         historyNote,
-        h(Section, { title: t('heat.title'), hint: t('heat.hint'), collapsible: true }, heatmap),
-        h(Section, { title: t('curve.title'), hint: t('curve.hint'), collapsible: true }, curve),
-        h(Section, { title: t('speed.title'), hint: String(recent.length) + ' ' + t('speed.calls'), collapsible: true }, speed),
-        table === null ? null : h(Section, { title: t('speed.model'), hint: t('speed.modelHint'), collapsible: true }, table))
+        h('div', { className: 'ofm_foldgrid' },
+          [h(FoldCard, { key: 'heat', title: t('heat.title'), hint: t('heat.hint') }, heatmap),
+            h(FoldCard, { key: 'curve', title: t('curve.title'), hint: t('curve.hint') }, curve),
+            h(FoldCard, { key: 'speed', title: t('speed.title'), hint: String(recent.length) + ' ' + t('speed.calls') }, speed),
+            ...(table === null ? [] : [h(FoldCard, { key: 'model', title: t('speed.model'), hint: t('speed.modelHint') }, table)])]))
     }
 
     const sparkCell = (label, values, color, format, t, summary) => {
@@ -3068,8 +3100,9 @@ window.__ModuleLoader__.load({
         h('div', { className: 'ofm_row', style: { gap: 20 } },
           h(Switch, { checked: settings.enabled !== false, label: t('pref.enabled'), onChange: () => onApply({ enabled: !(settings.enabled !== false) }) }),
           h(Switch, { checked: settings.exposeRegionModels !== false, label: t('pref.exposeRegion'), onChange: () => onApply({ exposeRegionModels: !(settings.exposeRegionModels !== false) }) })),
-        h('div', { className: 'ofm_row', style: { gap: 20 } },
-          h(Switch, { checked: settings.hideFreeModels === true, disabled: busy, label: t('pref.hideFreeModels'), onChange: () => onApply({ hideFreeModels: settings.hideFreeModels !== true }) })),
+        // 「隐藏匿名与 Kilo 免费模型」只在**模型清单**顶部出现一次（用户
+        // 2026-11-03）：它改的是清单的显示，放在清单旁边才看得见效果；这里
+        // 再放一枚就是同一个开关的两个入口，改一处另一处的状态还要跟着同步。
         h('div', { className: 'ofm_row' },
           field(t('pref.interval'), h('input', { className: 'ofm_input', style: { maxWidth: 100 }, value: draft?.probeIntervalMinutes ?? 15, onChange: e => setDraft(c => ({ ...c, probeIntervalMinutes: Number(e.target.value.replace(/\D/g, '')) || 0 })) })),
           field(t('pref.maxTokens'), h('input', { className: 'ofm_input', style: { maxWidth: 120 }, value: draft?.defaultMaxTokens ?? 32768, onChange: e => setDraft(c => ({ ...c, defaultMaxTokens: Number(e.target.value.replace(/\D/g, '')) || 0 })) })),
@@ -5937,8 +5970,10 @@ window.__ModuleLoader__.load({
         h(Section, { title: t('section.dash'), hint: t('section.dashHint') },
           stats.status === 'ready' && stats.data !== undefined ? h(Dashboard, { stats: stats.data, t })
             : h('p', { className: 'ofm_note' }, t('loading'))),
-        h(Section, { title: t('section.forward'), hint: t('section.forwardHint') }, h(Forward, { settings: data.settings, t, onApply: apply, busy })),
-        h(Section, { title: t('section.egress'), hint: t('section.egressHint') }, h(Egress, { settings: data.settings, t, onApply: apply, busy })),
+        // 这两节是「配一次就不再碰」的设置：默认折叠（用户 2026-11-03），
+        // 免得它们把模型清单和看板顶出首屏。
+        h(Section, { title: t('section.forward'), hint: t('section.forwardHint'), collapsible: true }, h(Forward, { settings: data.settings, t, onApply: apply, busy })),
+        h(Section, { title: t('section.egress'), hint: t('section.egressHint'), collapsible: true }, h(Egress, { settings: data.settings, t, onApply: apply, busy })),
         h(Section, { title: t('section.prefs'), hint: t('section.prefsHint') }, h(Preferences, { summary: data, t, onApply: apply, busy }))
 )
     }
@@ -6022,7 +6057,7 @@ window.__ModuleLoader__.load({
     exports.inject = inject
     exports.name = 'our-free-model'
     // Headless test seams use the same stub React as scripts/client-lint.mjs.
-    exports.__test = { parseSafeHtml, safeUrl, sanitizeStyle, htmlToDom, buildHeatCells, Heatmap, ChannelsPage, AnomalyPanel, CheckinPanel, DICT, useChannelRpc, Shell, Section, Dashboard, CSS }
+    exports.__test = { parseSafeHtml, safeUrl, sanitizeStyle, htmlToDom, buildHeatCells, Heatmap, ChannelsPage, AnomalyPanel, CheckinPanel, DICT, useChannelRpc, Shell, Section, Dashboard, FoldCard, CSS }
     return module.exports
   },
 })
