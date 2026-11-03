@@ -112,12 +112,31 @@ await check('listing stays selectable and does not imply verified inference; man
   assert.equal(nodes.find(node => node?.type === 'article').props.className, 'ofm_card')
   assert.equal(Boolean(nodes.find(node => node?.props?.label === app.t('visibility.showModel')).props.disabled), false)
   const roster = flatten(Roster({ summary: { catalog: [model], settings: {} }, t: app.t }))
-  assert.ok(roster.includes('可选模型')); assert.ok(roster.some(node => node?.type === ModelCard))
+  assert.ok(roster.includes(app.t('roster.selectable'))); assert.ok(roster.some(node => node?.type === ModelCard))
   nodes = flatten(ModelCard({ ...props, model: { ...model, availabilitySource: 'manual', availability: 'unknown', detail: 'No normal finish' } }))
   assert.ok(nodes.includes('No normal finish')); assert.ok(!nodes.includes('可用'))
   nodes = flatten(ModelCard({ ...props, model: { ...model, availabilitySource: 'manual', availability: 'available', probedAt: Date.now(), ttftMs: 321 } }))
   assert.ok(nodes.includes('最近测量')); assert.ok(nodes.some(node => node?.children?.includes(321)))
 })
+await check('the home roster groups by lane, not by the route every model shares', () => {
+  const app = boot(), { Roster, ModelCard } = app.api
+  // 宿主给本插件**所有**模型都打同一个 route，所以按 route 分组等于不分组：
+  // 渠道模型会掉进「免费模型」里，组合线路也会。按 channel 分才对得上车道。
+  const base = { availability: 'available', availabilitySource: 'probe' }
+  const free = { ...base, id: 'free-1', name: 'Free One', route: 'our-free-model' }
+  const lane = { ...base, id: 'channel:raccoon/m1', name: 'Raccoon One', channel: 'channel:raccoon', route: 'our-free-model' }
+  const kilo = { ...base, id: 'kilo/m2', name: 'Kilo Two', channel: 'kilo' }
+  const combo = { ...base, id: 'combo:x', name: 'My Chain', channel: 'combo', combo: ['channel:raccoon/m1'], route: 'our-free-model' }
+  const roster = flatten(Roster({ summary: { catalog: [free, lane, kilo, combo], settings: {} }, t: app.t }))
+  const titles = roster.filter(node => node === app.t('roster.selectable') || node === app.t('roster.lanes'))
+  assert.deepEqual(titles, [app.t('roster.selectable'), app.t('roster.lanes')], 'free and channel models get their own groups')
+  // Roster 只把 ModelCard 作为待渲染元素放进去，名字不会出现在这棵树上，
+  // 所以要按卡片的 `props.model.id` 判断归属，而不是找文本。
+  const cardIds = roster.filter(node => node?.type === ModelCard).map(node => node.props.model.id)
+  assert.deepEqual(cardIds, ['free-1', 'channel:raccoon/m1', 'kilo/m2'],
+    'free lane, channel lane and Kilo are listed; the chain is not')
+})
+
 for (const persisted of [true, false]) {
   await check('benchmark waits 330s, refreshes summary and keeps success when persisted=' + persisted, async () => {
     const summary = { catalog: [{ id: 'listing', availability: 'available', availabilitySource: 'listing' }], settings: {} }

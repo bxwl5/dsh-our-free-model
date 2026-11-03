@@ -49,7 +49,9 @@ window.__ModuleLoader__.load({
         'state.throttled': '暂不可用',
         'state.unknown': '未探测',
         'state.listed': '已列出 · 未实测',
-        'roster.selectable': '可选模型',
+        'roster.selectable': '免费模型',
+        'roster.lanes': '渠道模型',
+        'roster.lanesHint': '来自已接入的渠道与 Kilo 车道，按供应商计量，不占免费额度。',
         'hint.listed': '来自渠道目录，未做逐模型推理测试；不代表对话或工具调用成功。',
         'hint.region': '该模型按出口地区放行。开启网络代理后，插件会在下一次探测自动把它移入可用分组。',
         'hint.unknown': '尚未探测，默认保持可达。',
@@ -553,7 +555,9 @@ window.__ModuleLoader__.load({
         'state.throttled': 'Temporarily unavailable',
         'state.unknown': 'Not probed',
         'state.listed': 'Listed · not tested',
-        'roster.selectable': 'Selectable models',
+        'roster.selectable': 'Free models',
+        'roster.lanes': 'Channel models',
+        'roster.lanesHint': 'Served by absorbed channels and the Kilo lane; billed by their provider, not against the free quota.',
         'hint.listed': 'Listed by the channel; inference has not been tested. This does not confirm chat or tool use.',
         'hint.region': 'This model is gated by egress country. Once a proxy changes your egress, the next probe moves it into the available group by itself.',
         'hint.unknown': 'Not probed yet, so it stays reachable.',
@@ -2562,14 +2566,20 @@ window.__ModuleLoader__.load({
       // shows the region-limited entries, the free page everything else.
       // Filtering here (rather than in each page) keeps one definition of what
       // a route group means.
-      const roster = summary.catalog
+      // ⚠️ 不能按 `route` 分组。宿主要给本插件**所有**模型打同一个 route
+      // （`our-free-model`），于是 route 在这里等于没有信息量：渠道模型、
+      // Kilo 车道、组合线路全被算进「免费模型」，用户在首页看到的免费清单
+      // 里混着一堆 131K 的付费渠道模型。按 `channel` 分才是真实车道。
+      // 组合线路也不进首页清单 —— 它有自己的「路由」页。
+      const roster = summary.catalog.filter(m => m.channel !== 'combo')
       // Featured rows lead their group: the pinned flag rides the catalog row, so
       // the order is the same on every page, and a row that is not featured keeps
       // its upstream order.
       const lead = list => [...list].sort((a, b) => (b.pinned === true ? 1 : 0) - (a.pinned === true ? 1 : 0))
-      const available = lead(roster.filter(m => m.route === 'our-free-model'))
-      const limited = lead(roster.filter(m => m.route === 'our-free-model-region'))
-      const unlisted = lead(roster.filter(m => m.route !== 'our-free-model' && m.route !== 'our-free-model-region'))
+      const available = lead(roster.filter(m => !m.channel && m.route === 'our-free-model'))
+      const limited = lead(roster.filter(m => !m.channel && m.route === 'our-free-model-region'))
+      const lanes = lead(roster.filter(m => Boolean(m.channel)))
+      const unlisted = lead(roster.filter(m => !m.channel && m.route !== 'our-free-model' && m.route !== 'our-free-model-region'))
       const toggleModel = onApply === undefined ? undefined : model => {
         const ids = summary.settings.hiddenModelIds ?? []
         return onApply({ hiddenModelIds: ids.includes(model.id) ? ids.filter(id => id !== model.id) : [...ids, model.id] })
@@ -2589,6 +2599,7 @@ window.__ModuleLoader__.load({
           h(Switch, { checked: summary.settings.hideFreeModels === true, disabled: busy,
             label: t('pref.hideFreeModels'), onChange: () => onApply({ hideFreeModels: summary.settings.hideFreeModels !== true }) })),
         group(t('roster.selectable'), available),
+        group(t('roster.lanes'), lanes, t('roster.lanesHint')),
         group(t('state.region-blocked'), limited, t('hint.region')),
         group(t('visibility.unlisted'), unlisted))
     }
@@ -5486,8 +5497,16 @@ window.__ModuleLoader__.load({
      * with is preferred when it is there.
      */
     function RoutingPage(props) {
-      const { t } = props
+      const { t, summary } = props
       const panel = usePanel(() => api('/combos'), [])
+      // 保存链路之后必须重拉 `/summary`：顶栏「路由」后面的数字是拿
+      // `summary.catalog` 里 `channel === 'combo'` 的行数出来的，而这次写入
+      // 只更新了 `/combos`。不重拉的话，用户刚建好的两条链路，顶栏仍然是 0，
+      // 得整页刷新才对得上 —— 而它其实是对的，只是这份快照旧了。
+      const afterWrite = () => {
+        panel.reload()
+        summary?.reload?.()
+      }
       const [editing, setEditing] = useState(null)
       const [confirm, setConfirm] = useState('')
       const chains = panel.data?.combos ?? []
@@ -5508,14 +5527,14 @@ window.__ModuleLoader__.load({
         const rows = known ? chains.map(chain => chain.id === row.id ? row : chain) : [...chains, row]
         const answer = await post('/combos', { combos: rows })
         panel.patch({ combos: answer.combos, usable: answer.usable })
-        panel.reload()
+        afterWrite()
         setEditing(null)
         showToast({ title: t('routing.saved'), body: t('routing.savedBody'), holdMs: 3200 })
       }
       const remove = async id => {
         const answer = await post('/combos', { combos: chains.filter(chain => chain.id !== id) })
         panel.patch({ combos: answer.combos, usable: answer.usable })
-        panel.reload()
+        afterWrite()
         setConfirm('')
         showToast({ title: t('routing.saved'), body: t('routing.savedBody'), holdMs: 3200 })
       }
@@ -5693,7 +5712,7 @@ window.__ModuleLoader__.load({
           : tab === 'saver'
             ? h(SaverPage, { t })
             : tab === 'routing'
-              ? h(RoutingPage, { t })
+              ? h(RoutingPage, { t, summary })
               : tab === 'ledger'
                 ? h(LedgerPage, { t, ctx })
                 : tab === 'logs'

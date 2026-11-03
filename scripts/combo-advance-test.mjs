@@ -252,6 +252,55 @@ for (const [status, type, message, attempts] of [
   if (attempts === 2) assert.equal(run.text, ANSWER)
 })
 
+await check('a candidate that hit its quota is deprioritised next turn, never dropped', async () => {
+  // 一条链路每回合都从队首走。队首那个渠道额度打光以后，如果每回合仍然先
+  // 撞它一次，用户就每回合白等十几秒。它也不该被删掉 —— 额度会恢复。
+  // 正确的行为是：记住失败给出的冷却时长，下回合把它排到队尾。
+  const turns = []
+  const adapter = new FreeModelAdapter({
+    state: () => ({
+      catalog: CATALOG,
+      membership: { [ROUTE_MAIN]: MODELS },
+      settings: { enabled: true, defaultMaxTokens: 32768, streamRecovery: false },
+      attributionUserAgent: 'offline-combo-cooldown-test',
+    }),
+    recordUsage: () => {},
+    recordTurn: row => turns.push(row),
+    warn: () => {},
+  })
+  const turn = async answers => {
+    const scenario = { answers, requests: [] }
+    activeCase = scenario
+    const controller = new AbortController()
+    const chunks = []
+    try {
+      for await (const chunk of adapter.stream({
+        provider: ROUTE_MAIN,
+        model: COMBO_ID,
+        maxTokens: 4096,
+        sessionId: 'combo-cooldown-test',
+        messages: [{ role: 'user', content: [{ type: 'text', text: TASK }] }],
+        signal: controller.signal,
+      })) chunks.push(chunk)
+    } finally { controller.abort() }
+    return { scenario, chunks, finish: chunks.find(chunk => chunk.type === 'finish')?.reason }
+  }
+  const head = { status: 429, body: JSON.stringify({ error: { message: 'quota exhausted for today' } }) }
+  const second = { body: sse({ choices: [{ index: 0, delta: { content: ANSWER } }] }) + sse({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }) + 'data: [DONE]\n\n' }
+
+  const first = await turn([head, second])
+  assert.equal(first.scenario.requests.length, 2, 'the first turn walks past the dead head')
+  assert.equal(first.finish?.kind, 'stop')
+
+  const next = await turn([second])
+  assert.equal(next.scenario.requests.length, 1, 'the second turn does not pay the dead head again')
+  assert.equal(next.scenario.requests[0].body.model, MODELS[1], 'it starts with the candidate that worked')
+  assert.equal(next.finish?.kind, 'stop')
+  assert.equal(adapter.chainCooldown.has(MODELS[0]), true, 'the dead candidate is remembered, not removed')
+  assert.equal(comboChain(CATALOG.find(row => row.id === COMBO_ID), CATALOG).length, 2,
+    'the chain itself is unchanged — the member is only deprioritised')
+})
+
 server.close()
 if (failures > 0) console.error(`combo-advance-test: ${failures} failure(s)`)
 else console.log('combo-advance-test: the chain commits on answers only and fails over on everything else')

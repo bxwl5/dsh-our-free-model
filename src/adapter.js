@@ -54,6 +54,17 @@ export class FreeModelAdapter {
    */
   constructor(dependencies) {
     this.deps = dependencies
+    /**
+     * 链路成员的临时禁用期：模型 id -> 解禁时刻（ms）。
+     *
+     * 为什么需要它：一条链路每个回合都从队首开始走。队首那个渠道今早已经
+     * 把额度打光、或者凭据过期，于是**每一回合**都要先在它身上失败一次再换人
+     * ——用户看到的是每次都慢上十几秒，日志里是同一条上游错误反复出现。
+     * 失败信息本身（`verdict.cooldownMs`）已经说明了「多久之后再来」，这里只是
+     * 把它记下来，下一回合把还在禁期里的成员排到队尾，而不是丢掉它们：
+     * 额度是会恢复的，链路不该因为一次 429 就永久少一个成员。
+     */
+    this.chainCooldown = new Map()
   }
 
   providerInfo(provider) {
@@ -234,7 +245,7 @@ export class FreeModelAdapter {
       yield { type: 'finish', reason: { kind: 'error', failure: { message: 'our free model is switched off in its settings page', code: 'CONFIG_DISABLED' } } }
       return
     }
-    const candidates = comboChain(entry, snapshot.catalog)
+    const candidates = this.orderByCooldown(comboChain(entry, snapshot.catalog))
     if (candidates.length === 0) {
       rejectedTurn(0)
       yield { type: 'finish', reason: { kind: 'error', failure: { message: `the chain "${entry.name}" has no model available on this egress`, code: CODE.server } } }
@@ -272,6 +283,9 @@ export class FreeModelAdapter {
         }
       }
       if (committed) {
+        // 这个成员刚刚答出来了，禁期立刻作废 —— 否则一次误判会让它在队尾
+        // 待满整个冷却时长。
+        this.chainCooldown.delete(candidate.id)
         this.deps.recordTurn?.({ at: started, model: entry.id, ok: result?.ok === true, recovered: result?.recovered === true, attempts: index + 1, origin: 'harness' })
         return
       }
@@ -284,6 +298,7 @@ export class FreeModelAdapter {
         return
       }
       const reason = result.verdict === null || result.verdict === undefined ? 'failed' : describeVerdict(result.verdict)
+      this.markFaulty(candidate.id, result.verdict)
       tried.push(`${candidate.id} (${reason})`)
       this.deps.warn?.(`our-free-model: chain "${entry.name}" advanced past ${candidate.id} — ${reason}`)
     }
@@ -292,6 +307,36 @@ export class FreeModelAdapter {
       message: `the chain "${entry.name}" exhausted every candidate: ${tried.join('; ')}`,
       code: CODE.server,
     } } }
+  }
+
+  /**
+   * 把还在禁期里的成员挪到队尾。
+   *
+   * 顺序本身是策略的一部分（fallback = 质量阶梯，round-robin = 轮转），所以
+   * 只做「稳定分组」：健康的保持原有相对顺序在前，禁期内的保持原有相对顺序在
+   * 后。全员都在禁期里时不重排 —— 那样等于每回合都从队尾开始，反倒随机。
+   */
+  orderByCooldown(candidates) {
+    if (this.chainCooldown.size === 0) return candidates
+    const now = Date.now()
+    for (const [id, until] of this.chainCooldown) if (until <= now) this.chainCooldown.delete(id)
+    if (this.chainCooldown.size === 0) return candidates
+    const healthy = candidates.filter(candidate => !this.chainCooldown.has(candidate.id))
+    const cooling = candidates.filter(candidate => this.chainCooldown.has(candidate.id))
+    return healthy.length === 0 ? candidates : [...healthy, ...cooling]
+  }
+
+  /** 记录一次成员失败给出的冷却时长；判不出来时按一分钟保守处理。 */
+  markFaulty(id, verdict) {
+    const suggested = Number(verdict?.cooldownMs)
+    const wait = Number.isFinite(suggested) && suggested > 0 ? suggested : 60_000
+    // 上限 30 分钟：上游偶尔回一个荒谬的 retry-after，不该让成员消失半天。
+    this.chainCooldown.set(id, Date.now() + Math.min(wait, 30 * 60_000))
+    // 别让它无限增长：过期项顺手清掉。
+    if (this.chainCooldown.size > 64) {
+      const now = Date.now()
+      for (const [key, until] of this.chainCooldown) if (until <= now) this.chainCooldown.delete(key)
+    }
   }
 
   /**
