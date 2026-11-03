@@ -383,13 +383,6 @@ export async function fetchQoderCreditBalance(
   return { total, packages, expiredTotal: 0 }
 }
 
-/** 把 `CreditBalance` 压成一行可读摘要（供探针与日志使用）。 */
-export function describeQoderBalance(balance: CreditBalance | null): string {
-  if (balance === null) return '查询失败'
-  if (balance.total === 0) return '余额 0'
-  return `${balance.total} credits（${balance.packages.length} 个包）`
-}
-
 // ── 每日领取 ──
 
 /** 一个可领取的活动条目（`campaigns[]` 的一项，只保留实现需要的字段）。 */

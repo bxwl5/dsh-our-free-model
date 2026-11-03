@@ -171,35 +171,6 @@ export function isRaccoonRefreshable(credential: RaccoonCredential): boolean {
   return typeof credential.refresh_token === 'string' && credential.refresh_token.trim().length > 0
 }
 
-/**
- * 加密手机号，供 `send_sms` / `login_with_sms` 使用。
- *
- * 算法照抄客户端（渲染层模块 68284 的 `yv()`）：
- *
- * ```
- * key   = UTF8("senseraccoon2023")  → 16 字节 ⇒ AES-128
- * iv    = 随机 16 字节
- * mode  = CFB, padding = NoPadding
- * 输出  = Base64(iv ‖ ciphertext)
- * ```
- *
- * ⚠️ 必须**显式**写 `aes-128-cfb`：密钥是 16 字节，写成 `aes-256-cfb` 会因
- * 长度不足而抛错（不会自动补齐）。
- * ⚠️ 填充语义已实测：CFB 是流密码，`setAutoPadding(true/false)` 输出**完全一致**
- * （11 字节手机号两种设置下密文都是 11 字节）。这里显式关掉以对齐 CryptoJS
- * 的 `NoPadding`，避免读者误以为有填充。
- *
- * @param iv 仅供单测注入固定值；生产路径省略（随机）。
- */
-export function encryptRaccoonPhone(phone: string, iv?: Buffer): string {
-  const key = Buffer.from(RACCOON_PHONE_CIPHER_SECRET, 'utf8')
-  const nonce = iv ?? randomBytes(16)
-  const cipher = createCipheriv('aes-128-cfb', key, nonce)
-  cipher.setAutoPadding(false)
-  const ciphertext = Buffer.concat([cipher.update(Buffer.from(phone, 'utf8')), cipher.final()])
-  return Buffer.concat([nonce, ciphertext]).toString('base64')
-}
-
 /** 远端模型条目中本插件关心的字段。 */
 export interface RaccoonModelMeta {
   /** 模型 id（发给 `chat/completions` 的 `model`）。 */

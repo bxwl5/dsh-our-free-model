@@ -64,11 +64,6 @@ const DEFAULT_CATALOG_TTL_MS = 300_000
 
 const catalogCache = new Map<string, { at: number; entries: readonly OpencodeCatalogEntry[] }>()
 
-/** 清空目录缓存（RPC 的「刷新目录」与单测隔离用）。 */
-export function clearOpencodeCatalogCache(): void {
-  catalogCache.clear()
-}
-
 /** 远端目录拉取（注入以便单测离线）。 */
 export type OpencodeCatalogFetcher = (slot: IdentitySlot, signal?: AbortSignal) => Promise<Response>
 
@@ -415,7 +410,6 @@ export class OpencodeAdapter extends LlmAdapter {
     return { model: await this.resolveModel(provider, model, signal), stream: (o) => this.stream(o) }
   }
 
-
 /**
  * 平权轮换：失败按「语义」标记该槽 → 换下一槽重发。
  *
@@ -491,7 +485,7 @@ export class OpencodeAdapter extends LlmAdapter {
           )
           throw new LlmError(
             `opencode: 免费通道被上游拒绝（FreeTierError）。`
-            + '该错误由请求形状触发（session id 形状不对时出现），换 API key 或换出口都无效。',
+            + '该错误由请求形状触发（session id 不对时出现），换 key 或出口都无效。',
             'AUTH',
             { status: 403 },
           )

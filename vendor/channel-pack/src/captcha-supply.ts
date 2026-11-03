@@ -209,15 +209,3 @@ export function waitForFreshParam(
 export function captchaSupplyStats(): typeof stats & { pendingInteractive: boolean } {
   return { ...stats, pendingInteractive: slot?.interactive === true }
 }
-
-/** 全量复位（单测用；与 `resetCaptchaRequirementMemory` 配套调用）。 */
-export function resetCaptchaSupply(): void {
-  slot = undefined
-  demand = false
-  stats.supplied = 0
-  stats.used = 0
-  stats.stale = 0
-  stats.waitTimeouts = 0
-  stats.interactive = 0
-  waiters.length = 0
-}

@@ -211,11 +211,6 @@ export interface AntigravityCreditOptions {
  */
 const cache = new Map<string, { at: number; result: AntigravityBalanceResult }>()
 
-/** 清空缓存（测试与「重置限流标记」用）。 */
-export function clearGeminiCreditCache(): void {
-  cache.clear()
-}
-
 /** 解析单个桶；任何硬约束不满足即返回 `undefined`（**不编造**）。 */
 export function parseGeminiQuotaWindow(raw: unknown): AntigravityQuotaWindow | undefined {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined

@@ -65,11 +65,6 @@ export function createProxyDispatcher(proxy: NormalizedProxy): Dispatcher {
   return proxy.kind === 'http' ? buildHttpDispatcher(proxy.url) : buildSocksDispatcher(proxy)
 }
 
-/** 当前缓存的代理实例数（诊断用）。 */
-export function proxyCacheSize(): number {
-  return cache.size
-}
-
 /** 关闭并清空全部缓存实例（插件 dispose 路径）。 */
 export async function closeAllProxyDispatchers(): Promise<void> {
   const all = [...cache.values()]

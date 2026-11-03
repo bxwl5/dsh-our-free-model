@@ -57,7 +57,6 @@ export const name = 'our-free-model'
 /** The installed package directory — the self-updater and hot reload operate here. */
 const PKG_URL = new URL('./', import.meta.url)
 const PKG_DIR = fileURLToPath(PKG_URL)
-const ENTRY_URL = new URL('index.js', import.meta.url).href
 
 /** Published version of the installed package, read once at load. */
 function readPackageVersion() {
@@ -100,20 +99,14 @@ export const inject = ['llm']
  * Who owns the plugin's bytes — the distribution mode:
  *
  * - `self` (default): the plugin updates itself from its repository, publishes
- *   its announcement feed, and hot-reloads, exactly as before.
- * - `managed`: the plugin arrived through a distribution pack (a
- *   integration pack, a Mojobox install). The pack manager owns the bytes now,
- *   so the in-app updater, the announcement channel and the hot reload stand
- *   down — two writers to one installed directory is a corrupted install. The
- *   model lane is untouched; this is about who ships the code, not what it does.
+ *   its announcement feed and hot-reloads.
+ * - `managed`: it arrived through a distribution pack, so the pack manager owns
+ *   the bytes; the updater, the announcement channel and hot reload stand down
+ *   (two writers to one installed directory corrupts an install).
  *
- * `config.distribution` (what a pack's bundle patch passes) outranks the
- * settings file, and the settings API never accepts the field back, so an
- * install that shipped managed stays managed.
+ * `config.distribution` outranks the settings file, and the settings API never
+ * accepts the field back, so an install that shipped managed stays managed.
  */
-const MANAGED_MESSAGE = 'this installation is managed; updates are handled by the pack that installed it'
-
-/** Effective distribution mode: config override first, then the settings file. */
 function distributionOf(config, settings) {
   if (config?.distribution === 'managed' || settings.get().distribution === 'managed') return 'managed'
   return 'self'
@@ -547,7 +540,6 @@ export function apply(ctx, config) {
       },
     }
   }
-
 
   // ── egress outlet ───────────────────────────────────────────────────────────
   /** One gateway round trip at a time; the panel polls, the throttle decides. */
@@ -1439,7 +1431,6 @@ export function createApiRoutes(deps) {
   }
 }
 
-
 function pick(source, keys) {
   const out = {}
   for (const key of keys) if (source?.[key] !== undefined) out[key] = source[key]
@@ -1469,7 +1460,6 @@ async function readJson(req) {
     throw httpError(400, `invalid JSON body (${error?.message ?? error})`)
   }
 }
-
 
 /**
  * The token-saver section as the browser may see it.

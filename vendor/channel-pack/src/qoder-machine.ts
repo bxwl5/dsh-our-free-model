@@ -470,31 +470,6 @@ async function readFromRuntimeInfoAsync(override?: string): Promise<QoderMachine
   })
 }
 
-/** 仅供测试：清空缓存（生产代码不需要）。 */
-export function resetQoderMachineIdentityCache(): void {
-  cached = undefined
-}
-
-/**
- * 把设备身份并入请求头。
- *
- * 拿不到身份时**原样返回**，不写空串 —— 发空头会让服务端可能按非法设备处理，
- * 漏发才是安全的降级（与修复前行为一致）。
- *
- * 同步版：只在身份**已缓存**时才会命中；否则请用
- * {@link withQoderMachineHeadersAsync}。
- */
-export function withQoderMachineHeaders(headers: Record<string, string>): Record<string, string> {
-  const identity = resolveQoderMachineIdentity()
-  if (identity === undefined) return headers
-  return {
-    ...headers,
-    // 两者必须同时出现（见模块头部消融表：缺一即拿不到可领活动）。
-    'Cosy-MachineToken': identity.token,
-    'Cosy-MachineType': identity.type,
-  }
-}
-
 /** 异步版：生产路径用（首次会真实 spawn，约 3.8 秒，之后走缓存）。 */
 export async function withQoderMachineHeadersAsync(
   headers: Record<string, string>,

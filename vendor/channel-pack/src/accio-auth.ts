@@ -134,34 +134,6 @@ export async function refreshCredential(
   }
 }
 
-/** 读用户资料（token 走 query）。 */
-export async function fetchUserInfo(
-  fetcher: typeof fetch,
-  product: AccioProduct,
-  credential: AccioCredential,
-  signal?: AbortSignal,
-): Promise<{ accountId?: string; nickname?: string } | undefined> {
-  try {
-    const query = new URLSearchParams({ accessToken: credential.access_token }).toString()
-    const response = await fetcher(`${product.gatewayBase}${ACCIO_USERINFO_PATH}?${query}`, {
-      method: 'GET',
-      headers: accioHeaders(product),
-      ...(signal === undefined ? {} : { signal }),
-    })
-    if (!response.ok) return undefined
-    const body: unknown = await response.json().catch(() => undefined)
-    if (typeof body !== 'object' || body === null) return undefined
-    const record = body as Record<string, unknown>
-    const data = typeof record.data === 'object' && record.data !== null ? record.data as Record<string, unknown> : record
-    return {
-      ...(typeof data.userId === 'string' ? { accountId: data.userId } : {}),
-      ...(typeof data.nickname === 'string' ? { nickname: data.nickname } : {}),
-    }
-  } catch {
-    return undefined
-  }
-}
-
 /** 读额度。返回用量百分比（0–1）。 */
 export async function fetchQuota(
   fetcher: typeof fetch,

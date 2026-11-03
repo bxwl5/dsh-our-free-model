@@ -2110,10 +2110,3 @@ export class ZcodeCaptchaBrowser {
     tryRemove(0)
   }
 }
-
-/**
- * 用户主目录（导出给测试注入用；避免测试真的去碰 `~/.zcode`）。
- *
- * 目前仅用于文档目的 —— 实际路径解析在 `zcode.ts` 的候选表里。
- */
-export const ZCODE_HOME = homedir()

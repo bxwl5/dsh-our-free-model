@@ -556,7 +556,7 @@ function traeStreamErrorMessage(code: number, message: string, model: string): s
   const base = `trae: ${message} (code=${code})`
   if (code !== 4001) return base
   return `${base} —— 模型「${model}」不被上游接受：它通常是「仅可见但不可调用」的`
-    + '自定义模型（需先在 TRAE IDE 内自行配置供应商），请改用模型列表中的其它模型'
+    + '自定义模型需先在 TRAE IDE 内配置供应商，请改用列表中的其它模型'
 }
 
 /** 传输级错误判定。 */

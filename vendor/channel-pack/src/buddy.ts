@@ -18,8 +18,6 @@
 
 /** 主 API 端点（product.json endpoint）。 */
 export const API_ENDPOINT = 'https://copilot.tencent.com'
-/** API 路径前缀（product.json authentication.attributes.prefixPath）。 */
-export const PREFIX_PATH = '/plugin'
 /** 平台标识（product.json authentication.attributes.platform）。 */
 export const PLATFORM = 'ide'
 /** 登录网站首页（copilot.tencent.com → www.codebuddy.cn 映射）。 */
@@ -33,8 +31,6 @@ export const AUTH_TOKEN_PATH = '/v2/plugin/auth/token'
 export const LOGIN_ACCOUNT_PATH = '/v2/plugin/login/account'
 /** 刷新 token 端点：POST /v2/plugin/auth/token/refresh */
 export const AUTH_REFRESH_PATH = '/v2/plugin/auth/token/refresh'
-/** 账户列表端点：GET /v2/plugin/accounts */
-export const ACCOUNTS_PATH = '/v2/plugin/accounts'
 /** 云端配置端点：GET /v3/config（获取模型列表、agents、productFeatures） */
 export const CONFIG_PATH = '/v3/config'
 

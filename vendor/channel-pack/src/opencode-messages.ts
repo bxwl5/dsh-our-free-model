@@ -360,8 +360,3 @@ export function buildOpencodePayloadWithToolMap(input: OpencodePayloadInput): {
   }
   return { payload: ensureFreeLaneShape(base, toolNameMap), toolNameMap }
 }
-
-/** 构造一次 chat 请求的完整 body（已过门禁）。 */
-export function buildOpencodePayload(input: OpencodePayloadInput): Record<string, unknown> {
-  return buildOpencodePayloadWithToolMap(input).payload
-}

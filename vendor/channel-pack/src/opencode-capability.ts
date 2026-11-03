@@ -414,19 +414,6 @@ export function primeOpencodeCapabilities(): void {
   })
 }
 
-/** 清空内存与磁盘缓存（单测用）。 */
-export async function clearOpencodeCapabilitiesCache(): Promise<void> {
-  memory = []
-  cacheFileAt = 0
-  diskLoaded = false
-  try {
-    const { unlink } = await import('node:fs/promises')
-    await unlink(cacheFilePath())
-  } catch {
-    // 文件不存在是正常的
-  }
-}
-
 /** 某模型是否接受图片输入（未知模型按纯文本处理）。 */
 export function supportsOpencodeImage(capability: OpencodeModelCapability | undefined): boolean {
   return capability?.modalities.includes('image') === true

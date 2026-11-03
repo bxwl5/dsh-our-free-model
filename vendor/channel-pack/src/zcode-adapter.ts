@@ -2044,7 +2044,7 @@ export function describeUpstreamError(
   if (code === 1005 || trimmed.includes('1005')) {
     return (
       `额度用尽（1005 exceed quota limit）——` +
-      `该账号在这个模型上的免费额度已用完，请等待额度重置或更换账号。原始响应：${suffix}`
+      `该账号此模型的免费额度已用完，请等重置或换账号。原始响应：${suffix}`
     )
   }
   if (code === 3007 || trimmed.includes('3007')) {

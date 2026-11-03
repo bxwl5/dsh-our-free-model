@@ -495,14 +495,3 @@ export function formatZcodeDiagnostic(input: ZcodeDiagnosticInput): string {
     `HTTP ${input.status}`,
   ].join(' · ')
 }
-
-/**
- * 清空全部进程级状态（**只给单测的 `beforeEach` 用**）。
- *
- * ⚠ 与 `resetCaptchaRequirementMemory()` 同款：序号分配器也一并归零，
- * 否则同一进程里跑两轮用例会拿到不同的 `账号#N`，断言就得写成相对值。
- */
-export function resetZcodeDiagnostics(): void {
-  profiles.clear()
-  nextOrdinal = 1
-}

@@ -1978,7 +1978,7 @@ function registerChannelPackEndpoints(
             // catch 不删账号（下方 catch 与本分支约定：凭据可用时只报失败原因），
             // 用户开通服务后点「续期」补齐网关信息即可，无需重新授权。
             if (permission.baseUrl === undefined || permission.appKey === undefined || permission.appSecret === undefined) {
-              throw new Error('OfficeAce：云端未返回模型网关信息（账号可能未开通服务，需先在官方客户端兑换邀请码/开通后再试）')
+              throw new Error('OfficeAce：云端未返回模型网关信息（可能未开通服务，请先在官方客户端兑换邀请码）')
             }
             const credential = {
               ...sts,
@@ -3641,7 +3641,7 @@ function registerChannelPackEndpoints(
             ok: false,
             error: {
               code: 'bad-request',
-              message: 'Raccoon Work 不支持每日签到（每日积分由服务端自动发放；登录奖励请在「新手任务」中领取）',
+              message: 'Raccoon Work 不支持每日签到（积分由服务端自动发放，奖励见「新手任务」）',
             },
           }
         }

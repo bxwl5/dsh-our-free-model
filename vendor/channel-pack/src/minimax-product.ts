@@ -154,19 +154,12 @@ export const MINIMAX: MinimaxProduct = {
 /** 产品注册表（供 `productById` 风格查找；本轮只有一个）。 */
 export const ALL_MINIMAX_PRODUCTS: readonly MinimaxProduct[] = [MINIMAX]
 
-/** 按 id 查产品配置。 */
-export function minimaxProductById(id: string): MinimaxProduct | undefined {
-  return ALL_MINIMAX_PRODUCTS.find((product) => product.id === id)
-}
-
 // ===== 端点路径 =====
 
 /** OAuth 设备码申请（asar `endpoint-config.js`）。 */
 export const MINIMAX_DEVICE_CODE_PATH = '/oauth2/device/code'
 /** OAuth 令牌（轮询与续期共用）。 */
 export const MINIMAX_TOKEN_PATH = '/oauth2/token'
-/** OAuth 撤销。 */
-export const MINIMAX_REVOKE_PATH = '/oauth2/revoke'
 /** 远端模型目录（需 `?region=&buildEnv=`）。 */
 export const MINIMAX_MODELS_PATH = '/mavis/api/v1/models'
 /**
@@ -187,11 +180,3 @@ export const MINIMAX_CREDIT_DETAILS_PATH = '/minimax-cloud/api/v1/credit/details
 export const MINIMAX_REQUEST_TIMEOUT_MS = 30_000
 /** OAuth 请求超时（毫秒）；比业务请求短，避免用户干等。 */
 export const MINIMAX_OAUTH_TIMEOUT_MS = 20_000
-/**
- * 模型目录的**客户端**缓存期（远端 `ttlSeconds: 300`）。
- *
- * ⚠️ **当前仓库中无任何引用** —— 保留它是因为远端快照确实下发了 `ttlSeconds`，
- * 且这是将来实现「目录本地缓存」时该用的值。
- * 我们**不照抄**这么久的缓存（DSH 按需拉取目录），故实现缓存时也应重新评估。
- */
-export const MINIMAX_MODEL_TTL_MS = 300_000

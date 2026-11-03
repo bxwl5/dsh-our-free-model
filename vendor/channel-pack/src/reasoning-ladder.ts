@@ -80,11 +80,6 @@ export const CANONICAL_REASONING_EFFORTS: readonly string[] = Object.freeze([
   'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra',
 ])
 
-/** 强度序里登记过的名字（= 我们认识它，不是拼写错误）。 */
-export function isKnownReasoningEffort(effort: string): boolean {
-  return reasoningRankOf(effort) !== undefined
-}
-
 /** 档位强度；未登记返回 undefined。 */
 export function reasoningRankOf(effort: string): number | undefined {
   return Object.prototype.hasOwnProperty.call(REASONING_EFFORT_RANK, effort)

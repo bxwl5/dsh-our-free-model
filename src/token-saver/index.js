@@ -103,27 +103,6 @@ export function emptySavings() {
   return { bytesBefore: 0, bytesAfter: 0, saved: 0, blocks: 0, calls: 0, promptCalls: 0 }
 }
 
-/**
- * Fold one pipeline report into a lifetime accumulator.
- *
- * `calls` counts every request the pipeline ran on — including the ones where
- * nothing was compressible — because "0 bytes saved over 400 calls" and "0
- * bytes saved over 0 calls" are different facts, and only one of them means the
- * saver is working.
- */
-export function addSavings(total, report) {
-  const base = total ?? emptySavings()
-  const blocks = Array.isArray(report?.rtk?.hits) ? report.rtk.hits.length : 0
-  return {
-    bytesBefore: base.bytesBefore + (Number(report?.bytesBefore) || 0),
-    bytesAfter: base.bytesAfter + (Number(report?.bytesAfter) || 0),
-    saved: base.saved + (Number(report?.saved) || 0),
-    blocks: base.blocks + blocks,
-    calls: base.calls + 1,
-    promptCalls: base.promptCalls + (report?.prompt?.injected === true ? 1 : 0),
-  }
-}
-
 /** Percent saved, rounded, or 0 when nothing was measured. */
 export function savingsPercent(total) {
   const before = Number(total?.bytesBefore) || 0

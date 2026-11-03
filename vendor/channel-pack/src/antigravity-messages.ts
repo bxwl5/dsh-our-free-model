@@ -304,7 +304,7 @@ export function translateGeminiRequest(options: TranslateGeminiRequestOptions): 
         const inline = attachmentId === undefined ? undefined : options.images?.get(attachmentId)
         if (inline === undefined) {
           // ⚠️ **显式抛错，不静默丢弃**：静默丢弃会让用户以为图片被模型看到了。
-          throw new Error('antigravity: 图片未能内联（附件服务不可用或读取失败），拒绝发出缺少图片的请求')
+          throw new Error('antigravity: 图片未能内联（附件服务不可用或读取失败）')
         }
         parts.push({ inlineData: { mimeType: inline.mediaType, data: inline.data } })
         continue

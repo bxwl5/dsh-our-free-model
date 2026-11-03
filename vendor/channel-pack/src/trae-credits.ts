@@ -99,13 +99,6 @@ export function classifyTraeCheckinError(
   return { type: 'Unknown', cooldownSecs: 0 }
 }
 
-/**
- * 签到业务码 **9074**：「签到人数过多」。
- *
- * 保留此常量作为公开引用（供测试与 RPC 使用）。
- */
-export const TRAE_CHECKIN_BUSY_CODE = 9074
-
 // ── JSON 安全读取 ──
 
 function readNumber(source: Record<string, unknown>, key: string): number {
@@ -378,18 +371,4 @@ export async function fetchTraeCreditBalance(
   }
 
   return { total, packages, expiredTotal }
-}
-
-// ── 处理器工厂（与 `channel-pack-rpc.ts` 协作）──
-
-export function makeTraeCheckinStatusHandler(_product: TraeProduct) {
-  return async (credential: TraeCredential) => fetchTraeCheckinStatus(credential, {} as TraeProduct)
-}
-
-export function makeTraeClaimHandler(_product: TraeProduct) {
-  return async (credential: TraeCredential) => claimTraeDailyCheckin(credential, {} as TraeProduct)
-}
-
-export function makeTraeBalanceHandler(_product: TraeProduct) {
-  return async (credential: TraeCredential) => fetchTraeCreditBalance(credential, {} as TraeProduct)
 }

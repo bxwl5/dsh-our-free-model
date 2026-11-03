@@ -172,11 +172,6 @@ export const COMMANDCODE: CommandCodeProduct = {
 /** 全部 Command Code 产品配置（保留数组以便将来扩展 staging）。 */
 export const ALL_COMMANDCODE_PRODUCTS: readonly CommandCodeProduct[] = [COMMANDCODE]
 
-/** 按 provider id 取产品配置；未知 id 返回 undefined。 */
-export function commandCodeProductById(id: string): CommandCodeProduct | undefined {
-  return ALL_COMMANDCODE_PRODUCTS.find((product) => product.id === id)
-}
-
 // ── 端点路径常量 ──
 // 抽成常量而非散落字面量：登录、模型、身份、计费四处都要用。
 

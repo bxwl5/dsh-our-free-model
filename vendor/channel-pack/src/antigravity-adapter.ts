@@ -638,7 +638,7 @@ export class AntigravityAdapter extends LlmAdapter {
       }
       if (inline === undefined) {
         throw new LlmError(
-          'antigravity: 图片附件读取不到内容；附件服务可能未就绪，或该对象已不存在。',
+          'antigravity: 图片附件读取不到内容；附件服务未就绪或对象不存在。',
           'UNSUPPORTED_CONTENT',
         )
       }
@@ -1018,9 +1018,4 @@ export function registerAntigravityLlm(
   const adapter = new AntigravityAdapter(options)
   registerAdapterIdempotent(ctx.llm, [product.id], adapter)
   return adapter
-}
-
-/** 供接线侧构造档位 id（避免各处重复 `as ReasoningEffortId`）。 */
-export function antigravityEffortId(id: string): ReasoningEffortId {
-  return ReasoningEffortId(id)
 }

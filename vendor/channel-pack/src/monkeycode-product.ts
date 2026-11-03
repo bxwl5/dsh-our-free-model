@@ -81,20 +81,6 @@ export const MONKEYCODE: MonkeyCodeProduct = {
   fallbackModels: MONKEYCODE_FALLBACK_MODELS,
 }
 
-/** 按 id 取产品配置。 */
-export function monkeyCodeProductById(id: string): MonkeyCodeProduct | undefined {
-  return id === MONKEYCODE.id ? MONKEYCODE : undefined
-}
-
-// ── 端点路径 ──
-
-/**
- * @deprecated 上游已下线该端点（实测 404）。存活探测改用
- * {@link MONKEYCODE_PROBE_PATH}；当前已无任何引用，仅为历史兼容保留
- * （导出名出现在旧文档/脚本里，删掉会破坏外部 import）。
- */
-export const MONKEYCODE_ME_PATH = '/api/v1/users/me'
-
 /**
  * 存活探测端点。
  *
@@ -134,8 +120,3 @@ export const MONKEYCODE_SESSION_COOKIE = 'nebula_session'
  * 两个名字都收，精确到 `name=` 前缀匹配。
  */
 export const MONKEYCODE_SESSION_COOKIES = ['monkeycode_ai_session', 'nebula_session'] as const
-
-/** 免费用户每日基础模型 token 上限（1000 万）。 */
-export const MONKEYCODE_FREE_DAILY_TOKENS = 10_000_000
-/** 每日签到积分。 */
-export const MONKEYCODE_CHECKIN_CREDIT = 100

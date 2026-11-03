@@ -827,17 +827,3 @@ export async function* consumeAnthropicSse(
         : { kind: 'stop' }
   yield { type: 'finish', reason }
 }
-
-/** 从 Anthropic 非流式响应里取可见文本（探活与日志用）。 */
-export function extractAnthropicText(payload: unknown): string {
-  if (typeof payload !== 'object' || payload === null) return ''
-  const content = (payload as { content?: unknown }).content
-  if (!Array.isArray(content)) return ''
-  const parts: string[] = []
-  for (const block of content) {
-    if (typeof block !== 'object' || block === null) continue
-    const record = block as Record<string, unknown>
-    if (record.type === 'text' && typeof record.text === 'string') parts.push(record.text)
-  }
-  return parts.join('')
-}

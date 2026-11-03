@@ -1336,7 +1336,7 @@ export class BuddyAdapter extends LlmAdapter {
           // 若此处 continue，线上请求会退化成纯文本，用户只看到模型
           // 「看不到图」而没有任何错误提示。
           throw new LlmError(
-            `${this.product.id}: 图片附件读取不到内容（${id}）；附件服务可能未就绪，或该对象已不存在。`,
+            `${this.product.id}: 图片附件读取不到内容（${id}）；附件服务未就绪或对象不存在。`,
             'UNSUPPORTED_CONTENT',
           )
         }

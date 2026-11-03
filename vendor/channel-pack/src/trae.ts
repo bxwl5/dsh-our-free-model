@@ -37,11 +37,6 @@
 import { createHash } from 'node:crypto'
 import { jwtExpiresAtMs } from './buddy.js'
 import { TRAE_CHANNELS, type TraeProduct } from './trae-product.js'
-
-// ── 端点路径 ──
-
-/** 对话端点（SOLO 自定义 SSE）。 */
-export const TRAE_CHAT_PATH = '/api/agent/v3/llm_utils_chat'
 /** 模型列表（单通道）。 */
 export const TRAE_MODELS_PATH = '/api/ide/v1/get_detail_param'
 /**
@@ -61,8 +56,6 @@ export const TRAE_CHECKIN_STATUS_PATH = '/trae/api/v2/ug/checkin_credits/status'
 export const TRAE_CHECKIN_CLAIM_PATH = '/trae/api/v2/ug/checkin_credits/claim'
 /** 积分余额。 */
 export const TRAE_ENT_USAGE_PATH = '/trae/api/v2/pay/ide_user_ent_usage'
-/** 登录回调路径（对齐 Go 端 `authorizeCallback` 与 TRAE 登录页强制回传）。 */
-export const TRAE_CALLBACK_PATH = '/authorize'
 
 /** 控制面请求超时（毫秒）；对话流式请求不适用。 */
 export const TRAE_REQUEST_TIMEOUT_MS = 30_000
@@ -1122,26 +1115,6 @@ function parseTraeConfigEntry(
 }
 
 /**
- * 解析 `get_detail_param`（单通道）响应。
- *
- * Go 端响应结构：`{ config_info_list: [{ config_name, display_config: { display_name }, model_detail_list: [...] }] }`
- */
-export function parseTraeModelList(body: unknown): TraeRemoteModel[] {
-  if (typeof body !== 'object' || body === null) return []
-  const record = body as Record<string, unknown>
-  const list = record.config_info_list ?? record.ConfigInfoList ?? record.data
-  if (!Array.isArray(list)) return []
-
-  const models: TraeRemoteModel[] = []
-  for (const item of list) {
-    if (typeof item !== 'object' || item === null) continue
-    const model = parseTraeConfigEntry(item as Record<string, unknown>, undefined)
-    if (model !== undefined) models.push(model)
-  }
-  return models
-}
-
-/**
  * 解析 `batch_get_detail_param`（**多通道**）响应。
  *
  * 真实 CN IDE 用的就是这个端点：一次请求传 22 个 `functions`，响应形如
@@ -1850,68 +1823,4 @@ export interface TraeAggregatedResult {
   finishReason: string
   usage: Record<string, unknown> | undefined
   error?: { code: number; message: string }
-}
-
-/**
- * 聚合一个完整的 SOLO SSE 为 OpenAI 格式（非流式场景下一次性解析）。
- *
- * @param lines SOLO SSE 事件的行序列
- */
-export function aggregateTraeSSE(lines: readonly string[]): TraeAggregatedResult {
-  const result: TraeAggregatedResult = {
-    content: '',
-    reasoningContent: '',
-    toolCalls: [],
-    finishReason: 'stop',
-    usage: undefined,
-  }
-
-  let st: { event: string; data: string } | undefined
-
-  for (const rawLine of lines) {
-    const line = rawLine.trimEnd()
-
-    // 空行 = 事件结束
-    if (line.length === 0) {
-      if (st !== undefined) {
-        const ev = parseTraeSSELine(st.event, st.data)
-        st = undefined
-        if (ev === undefined) continue
-        switch (ev.event) {
-          case 'output':
-            if (ev.response !== undefined) result.content += ev.response
-            if (ev.reasoningContent !== undefined) result.reasoningContent += ev.reasoningContent
-            if (ev.toolCalls !== undefined && ev.toolCalls.length > 0) {
-              result.toolCalls.push(...ev.toolCalls)
-            }
-            break
-          case 'token_usage':
-            result.usage = ev.usage
-            break
-          case 'done':
-            if (ev.finishReason !== undefined) result.finishReason = ev.finishReason
-            break
-          case 'error':
-            result.error = { code: ev.errorCode ?? -1, message: ev.errorMessage ?? 'unknown error' }
-            break
-        }
-      }
-      continue
-    }
-
-    if (line.startsWith('event:')) {
-      const newEvent = line.slice(6).trim()
-      if (st !== undefined) st.event = newEvent
-      else st = { event: newEvent, data: '' }
-      continue
-    }
-    if (line.startsWith('data:')) {
-      const data = line.slice(5)
-      if (st !== undefined) st.data += data
-      continue
-    }
-    // 注释行（":"）忽略
-  }
-
-  return result
 }

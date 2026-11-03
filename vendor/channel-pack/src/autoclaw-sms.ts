@@ -342,9 +342,6 @@ export const AUTOCLAW_USERAPI_VERSION = '1.18.5'
 /** 任务完成端点（`/autoclaw-proxy/proxy/autoclaw-task-complete`）。 */
 export const AUTOCLAW_TASK_COMPLETE_PATH = '/autoclaw-proxy/proxy/autoclaw-task-complete'
 
-/** 任务列表端点（失败归因用：拿不到说明登录态有问题）。 */
-export const AUTOCLAW_TASK_LIST_PATH = '/autoclaw-proxy/proxy/autoclaw-task-list'
-
 /** 每日签到任务 id（`autoclaw-task-complete` 的 `task_id`）。 */
 export const AUTOCLAW_DAILY_SIGNIN_TASK = 'daily_signin'
 

@@ -93,11 +93,6 @@ export function accioDeviceId(): string {
   return cachedDeviceId
 }
 
-/** 测试钩子：清空设备指纹缓存（让下一个请求重新生成）。 */
-export function resetAccioDeviceIdForTest(): void {
-  cachedDeviceId = undefined
-}
-
 /**
  * 推理 / 目录请求的公共头。
  *
@@ -233,7 +228,7 @@ export function parseAdkFrame(
   if (value.rgv587_flag !== undefined) {
     return {
       kind: 'error',
-      message: '上游风控拦截（rgv587，punish 页）。Accio 渠道请求头不完整或设备指纹缺失，请更新插件版本；若仍复现请到渠道面板重新登录后重试',
+      message: '上游风控拦截（rgv587）。请求头或设备指纹缺失，请更新插件版本；仍复现则重新登录该渠道',
     }
   }
   // 业务错误常在 200 的帧里（不是 HTTP 状态码）。

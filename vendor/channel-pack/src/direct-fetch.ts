@@ -49,7 +49,7 @@ export function createDirectFetch(options: DirectFetchOptions = {}): { fetch: ty
       active: () => outlet.active(),
       fetch: (input, init) => {
         if (!outlet.fetchSigned) {
-          throw new Error('所选插件出口尚未接入签名传输，请升级出口适配；请求未绕过该出口')
+          throw new Error('所选出口尚未接入签名传输，请升级出口适配（请求未绕过该出口）')
         }
         return outlet.fetchSigned(input, init, send)
       },

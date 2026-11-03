@@ -298,23 +298,6 @@ export function qoderBearerToken(credential: QoderCredential): string {
   return typeof credential.access_token === 'string' ? credential.access_token : ''
 }
 
-/** 推理请求头。 */
-export function qoderChatHeaders(
-  credential: QoderCredential,
-  product: QoderProduct,
-  requestId: string,
-  sessionId: string,
-): Record<string, string> {
-  return {
-    Authorization: `Bearer ${qoderBearerToken(credential)}`,
-    Accept: 'text/event-stream',
-    'Content-Type': 'application/json',
-    'X-Request-ID': requestId,
-    'X-Session-ID': sessionId,
-    'User-Agent': `${product.userAgentPrefix}/1.0.0`,
-  }
-}
-
 /**
  * 用续期结果覆盖旧凭据。
  *

@@ -244,6 +244,3 @@ export function isUsableZcodeCredential(value: unknown): value is ZcodeCredentia
 export function isZcodeExpired(_credential: ZcodeCredential): boolean {
   return false
 }
-
-/** ZCode 是否可续期 —— 见 {@link isZcodeExpired}，**否**。 */
-export const ZCODE_REFRESHABLE = false

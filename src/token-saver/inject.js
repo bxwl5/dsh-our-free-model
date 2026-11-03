@@ -181,34 +181,6 @@ function injectMessages(payload, segment) {
   return result(payload, false, 'shape-not-recognised')
 }
 
-function stripMessages(payload) {
-  if (!Array.isArray(payload.messages)) return { payload, stripped: false, reason: 'shape-not-recognised' }
-  const system = payload.system
-  if (typeof system === 'string') {
-    const cut = cutMarked(system)
-    if (cut === null) return { payload, stripped: false, reason: 'not-injected' }
-    // `toClaudeMessages` reports an empty system as `undefined`, never as `''`,
-    // so an emptied field is restored by removing it.
-    if (cut === '') delete payload.system
-    else payload.system = cut
-    return { payload, stripped: true, reason: 'stripped' }
-  }
-  if (Array.isArray(system)) {
-    let changed = false
-    for (let i = system.length - 1; i >= 0; i -= 1) {
-      const block = system[i]
-      if (block === null || typeof block !== 'object' || typeof block.text !== 'string') continue
-      const cut = cutMarked(block.text)
-      if (cut === null) continue
-      changed = true
-      if (cut === '') system.splice(i, 1)
-      else block.text = cut
-    }
-    return { payload, stripped: changed, reason: changed ? 'stripped' : 'not-injected' }
-  }
-  return { payload, stripped: false, reason: 'not-injected' }
-}
-
 // ── responses (OpenAI Responses) ─────────────────────────────────────────────
 
 function injectResponses(payload, segment) {

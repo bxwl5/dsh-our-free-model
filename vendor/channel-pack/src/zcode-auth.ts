@@ -2026,7 +2026,7 @@ export function toClaimOutcome(
       code: 3007,
       message: options.internalRetried === true
         ? `captcha 被拒（${planId}）：已改用浏览器链路重试**仍**失败 —— `
-          + '上游多半已把本机降级为交互式验证（设备信誉不足），请稍后再试、别连续点领取'
+          + '设备信誉不足，上游要求交互式验证，请稍后再试、别连点领取'
         : `captcha 校验失败（${planId}），请重试`,
     }
   }

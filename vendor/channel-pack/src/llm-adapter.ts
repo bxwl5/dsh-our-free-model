@@ -274,7 +274,7 @@ function buildDsmlSystemPrompt(tools: Array<{
     '- 每个参数用一个 <｜DSML｜parameter> 标签包裹，参数值放在标签之间。',
     '- 字符串参数加 string="true" 属性；对象/数组/数字/布尔参数不要加该属性。',
     '- 一次可以输出多个 <｜DSML｜invoke> 调用（工具可以并行）。',
-    '- 文件内容请一次性完整写入单个 write 调用的 content 参数，不要拆分或省略。',
+    '- 文件内容请一次性写入单个 write 的 content，不要拆分或省略。',
     '',
     '工具列表（JSON Schema）：',
     toolJson,

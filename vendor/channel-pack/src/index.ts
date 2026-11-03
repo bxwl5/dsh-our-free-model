@@ -521,7 +521,7 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
       // 把一次网络抖动报成"额度已用尽"，用户会去解锁或白等，而号其实有钱。
       if (picked.reason?.kind === 'unknown') {
         throw new Error(
-          `${options.displayName}：无法确认是否有可用账号。已锁定永久积分，而部分账号的余额查询失败`
+          `${options.displayName}：部分账号余额查询失败，无法确认可用账号（已锁定永久积分）`
           + `（${picked.reason.errors.slice(0, 2).join('；')}）。这些账号**可能仍有**「${days} 天内到期」`
           + '的积分 —— 请重试，或在 Channel Pack 对应面板检查凭据是否失效。',
         )
@@ -1341,7 +1341,7 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
           const reason = picked.reason
           if (reason.kind === 'unknown') {
             throw new Error(
-              'Loomy：无法确认是否有可用账号。已锁定永久积分，而部分账号的余额查询失败'
+              'Loomy：部分账号余额查询失败，无法确认可用账号（已锁定永久积分）'
               + `（${reason.errors.slice(0, 2).join('；')}）。这些账号**可能仍有**今日额度 —— `
               + '请重试，或在 Channel Pack 的 Loomy 面板检查凭据是否失效。',
             )

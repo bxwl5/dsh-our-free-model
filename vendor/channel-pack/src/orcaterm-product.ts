@@ -84,11 +84,6 @@ export const ORCATERM: OrcaTermProduct = {
   fallbackModels: ORCATERM_FALLBACK_MODELS,
 }
 
-/** 按 id 取产品配置。 */
-export function orcaTermProductById(id: string): OrcaTermProduct | undefined {
-  return id === ORCATERM.id ? ORCATERM : undefined
-}
-
 /**
  * 上游的模型挂载名（`TokenHub/<name>`）。
  *

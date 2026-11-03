@@ -365,21 +365,3 @@ export function restoreModelCatalog<T>(
   }
   return restored
 }
-
-/**
- * 快照的写入时间；没有快照时 `undefined`。
- *
- * 目前只有诊断用得到（设置页不展示时间），保留它是为了让「这条到底是远端
- * 新拉的还是上次的快照」在排障时**可判定**，而不是只能靠猜。
- */
-export function modelCatalogSavedAt(provider: string): number | undefined {
-  const file = fileNameFor(provider)
-  const dir = catalogDir()
-  if (file === undefined || dir === null) return undefined
-  try {
-    const body = JSON.parse(readFileSync(join(dir, file), 'utf-8')) as Record<string, unknown>
-    return typeof body?.savedAt === 'number' ? body.savedAt : undefined
-  } catch {
-    return undefined
-  }
-}

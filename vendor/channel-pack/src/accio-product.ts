@@ -153,11 +153,6 @@ export const ACCIO_CN: AccioProduct = {
 /** 全部产品。 */
 export const ALL_ACCIO_PRODUCTS: readonly AccioProduct[] = [ACCIO, ACCIO_CN]
 
-/** 按 id 取产品配置。 */
-export function accioProductById(id: string): AccioProduct | undefined {
-  return ALL_ACCIO_PRODUCTS.find((product) => product.id === id)
-}
-
 // ── 端点路径 ──
 
 /** 授权码换 token。 */

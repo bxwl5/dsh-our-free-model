@@ -305,46 +305,6 @@ export interface KukuCheckinOutcome {
   message: string
 }
 
-/** 查当前可领任务（仅用于展示；领取不依赖它，见 `claimable_point` 恒 0）。 */
-export async function fetchKukuCheckinTasks(
-  fetcher: typeof fetch,
-  product: KukuProduct,
-  credential: KukuCredential,
-  signal?: AbortSignal,
-): Promise<Array<{ taskType: string; taskName: string; status: string }>> {
-  if (!isCredentialUsable(credential)) return []
-  try {
-    const response = await fetcher(`${product.apiBase}${KUKU_FREEPOINT_PATH}?${KUKU_WEB_QUERY}`, {
-      method: 'GET',
-      headers: kukuHeaders(product, credential),
-      ...(signal === undefined ? {} : { signal }),
-    })
-    if (!response.ok) return []
-    const body: unknown = await response.json().catch(() => undefined)
-    if (typeof body !== 'object' || body === null) return []
-    const tasks: Array<{ taskType: string; taskName: string; status: string }> = []
-    const walk = (node: unknown): void => {
-      if (Array.isArray(node)) { for (const item of node) walk(item); return }
-      if (typeof node !== 'object' || node === null) return
-      const record = node as Record<string, unknown>
-      const taskType = typeof record.task_type === 'string' ? record.task_type : undefined
-      if (taskType !== undefined) {
-        tasks.push({
-          taskType,
-          taskName: typeof record.task_name === 'string' ? record.task_name : taskType,
-          status: typeof record.task_status === 'string' ? record.task_status : '',
-        })
-        return
-      }
-      for (const child of Object.values(record)) walk(child)
-    }
-    walk((body as Record<string, unknown>).data)
-    return tasks
-  } catch {
-    return []
-  }
-}
-
 /**
  * 领取今日可领任务（LOGIN + CHAT）。
  *

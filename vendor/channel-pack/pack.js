@@ -27810,12 +27810,8 @@ __export(commandcode_product_exports, {
   COMMANDCODE_MODELS_PATH: () => COMMANDCODE_MODELS_PATH,
   COMMANDCODE_STUDIO_AUTH_PATH: () => COMMANDCODE_STUDIO_AUTH_PATH,
   COMMANDCODE_WHOAMI_PATH: () => COMMANDCODE_WHOAMI_PATH,
-  commandCodeProductById: () => commandCodeProductById,
   requiresAnthropicMessages: () => requiresAnthropicMessages
 });
-function commandCodeProductById(id) {
-  return ALL_COMMANDCODE_PRODUCTS.find((product) => product.id === id);
-}
 function requiresAnthropicMessages(model) {
   return /claude/i.test(String(model));
 }
@@ -29126,7 +29122,7 @@ async function* streamChat(fetcher, product, credential, options) {
   } catch (error) {
     const message2 = error instanceof Error ? error.message : String(error);
     if (/code 10811/.test(message2)) {
-      throw new Error("MonkeyCode\uFF1A\u5DF2\u5C1D\u8BD5\u505C\u6B62\u65E7\u4EFB\u52A1\u4F46\u4ECD\u88AB\u5360\u7528\uFF08code 10811\uFF09\uFF0C\u8BF7\u5230 monkeycode \u7F51\u9875\u7AEF\u624B\u52A8\u5904\u7406\u540E\u518D\u8BD5");
+      throw new Error("MonkeyCode\uFF1A\u65E7\u4EFB\u52A1\u4ECD\u88AB\u5360\u7528\uFF08code 10811\uFF09\uFF0C\u8BF7\u5230\u7F51\u9875\u7AEF\u5904\u7406\u540E\u91CD\u8BD5");
     }
     throw error;
   }
@@ -29385,8 +29381,6 @@ __export(kuku_product_exports, {
   KUKU_APP_ID: () => KUKU_APP_ID,
   KUKU_CHANNEL: () => KUKU_CHANNEL,
   KUKU_CHANNEL_NAME: () => KUKU_CHANNEL_NAME,
-  KUKU_CLIENT_ADDED_CLIENT_TYPE: () => KUKU_CLIENT_ADDED_CLIENT_TYPE,
-  KUKU_CLIENT_ADDED_VERSION: () => KUKU_CLIENT_ADDED_VERSION,
   KUKU_CLIENT_TYPE: () => KUKU_CLIENT_TYPE,
   KUKU_FREEPOINT_PATH: () => KUKU_FREEPOINT_PATH,
   KUKU_MODEL_LIST_PATH: () => KUKU_MODEL_LIST_PATH,
@@ -29398,13 +29392,9 @@ __export(kuku_product_exports, {
   KUKU_USERREPORT_PATH: () => KUKU_USERREPORT_PATH,
   KUKU_VERSION: () => KUKU_VERSION,
   KUKU_VIP_REMAIN_PATH: () => KUKU_VIP_REMAIN_PATH,
-  KUKU_WEB_QUERY: () => KUKU_WEB_QUERY,
-  kukuProductById: () => kukuProductById
+  KUKU_WEB_QUERY: () => KUKU_WEB_QUERY
 });
-function kukuProductById(id) {
-  return id === KUKU.id ? KUKU : void 0;
-}
-var KUKU_FALLBACK_MODELS, KUKU, KUKU_CLIENT_TYPE, KUKU_VERSION, KUKU_CHANNEL, KUKU_PROTOCOL_V, KUKU_CLIENT_ADDED_CLIENT_TYPE, KUKU_CLIENT_ADDED_VERSION, KUKU_CHANNEL_NAME, KUKU_APP_ID, KUKU_SENDMSG_PATH, KUKU_SSE_PATH, KUKU_FREEPOINT_PATH, KUKU_USERREPORT_PATH, KUKU_TASK_COMPLETE_PATH, KUKU_VIP_REMAIN_PATH, KUKU_MODEL_LIST_PATH, KUKU_WEB_QUERY, KUKU_SESSION_COOKIE;
+var KUKU_FALLBACK_MODELS, KUKU, KUKU_CLIENT_TYPE, KUKU_VERSION, KUKU_CHANNEL, KUKU_PROTOCOL_V, KUKU_CHANNEL_NAME, KUKU_APP_ID, KUKU_SENDMSG_PATH, KUKU_SSE_PATH, KUKU_FREEPOINT_PATH, KUKU_USERREPORT_PATH, KUKU_TASK_COMPLETE_PATH, KUKU_VIP_REMAIN_PATH, KUKU_MODEL_LIST_PATH, KUKU_WEB_QUERY, KUKU_SESSION_COOKIE;
 var init_kuku_product = __esm({
   "vendor/channel-pack/src/kuku-product.ts"() {
     "use strict";
@@ -29434,8 +29424,6 @@ var init_kuku_product = __esm({
     KUKU_VERSION = "1.6.5.130";
     KUKU_CHANNEL = "kuku_pc_genflowpro_v1";
     KUKU_PROTOCOL_V = "cd1755270722192e4536f605";
-    KUKU_CLIENT_ADDED_CLIENT_TYPE = 400;
-    KUKU_CLIENT_ADDED_VERSION = "1.4.4";
     KUKU_CHANNEL_NAME = "chunlei";
     KUKU_APP_ID = 123971023;
     KUKU_SENDMSG_PATH = "/wenchain/genflowpro/sendmsg";
@@ -29970,7 +29958,6 @@ __export(kuku_auth_exports, {
   KUKU_CLAIMABLE_TASK_TYPES: () => KUKU_CLAIMABLE_TASK_TYPES,
   claimKukuDailyCheckin: () => claimKukuDailyCheckin,
   ensureKukuTokenTriple: () => ensureKukuTokenTriple,
-  fetchKukuCheckinTasks: () => fetchKukuCheckinTasks,
   fetchKukuPoints: () => fetchKukuPoints,
   kukuTokenQuery: () => kukuTokenQuery,
   probeCredential: () => probeCredential2,
@@ -30128,42 +30115,6 @@ async function fetchKukuPoints(fetcher, product, credential, signal) {
     return void 0;
   }
 }
-async function fetchKukuCheckinTasks(fetcher, product, credential, signal) {
-  if (!isCredentialUsable4(credential)) return [];
-  try {
-    const response = await fetcher(`${product.apiBase}${KUKU_FREEPOINT_PATH}?${KUKU_WEB_QUERY}`, {
-      method: "GET",
-      headers: kukuHeaders(product, credential),
-      ...signal === void 0 ? {} : { signal }
-    });
-    if (!response.ok) return [];
-    const body = await response.json().catch(() => void 0);
-    if (typeof body !== "object" || body === null) return [];
-    const tasks = [];
-    const walk = (node) => {
-      if (Array.isArray(node)) {
-        for (const item of node) walk(item);
-        return;
-      }
-      if (typeof node !== "object" || node === null) return;
-      const record = node;
-      const taskType = typeof record.task_type === "string" ? record.task_type : void 0;
-      if (taskType !== void 0) {
-        tasks.push({
-          taskType,
-          taskName: typeof record.task_name === "string" ? record.task_name : taskType,
-          status: typeof record.task_status === "string" ? record.task_status : ""
-        });
-        return;
-      }
-      for (const child of Object.values(record)) walk(child);
-    };
-    walk(body.data);
-    return tasks;
-  } catch {
-    return [];
-  }
-}
 async function claimKukuDailyCheckin(fetcher, product, credential, signal) {
   if (!isCredentialUsable4(credential)) return { claimed: 0, message: "\u51ED\u636E\u4E0D\u53EF\u7528" };
   let working = credential;
@@ -30314,12 +30265,8 @@ __export(accio_product_exports, {
   ACCIO_REGION_HEADER: () => ACCIO_REGION_HEADER,
   ACCIO_TOKEN_PATH: () => ACCIO_TOKEN_PATH,
   ACCIO_USERINFO_PATH: () => ACCIO_USERINFO_PATH,
-  ALL_ACCIO_PRODUCTS: () => ALL_ACCIO_PRODUCTS,
-  accioProductById: () => accioProductById
+  ALL_ACCIO_PRODUCTS: () => ALL_ACCIO_PRODUCTS
 });
-function accioProductById(id) {
-  return ALL_ACCIO_PRODUCTS.find((product) => product.id === id);
-}
 var ACCIO_FALLBACK_MODELS, ACCIO, ACCIO_CN, ALL_ACCIO_PRODUCTS, ACCIO_TOKEN_PATH, ACCIO_REFRESH_PATH, ACCIO_USERINFO_PATH, ACCIO_QUOTA_PATH, ACCIO_LLM_CONFIG_PATH, ACCIO_GENERATE_PATH, ACCIO_REGION_HEADER, ACCIO_APP_KEY, ACCIO_APP_VERSION, ACCIO_CALLBACK_PATH, ACCIO_LOGIN_START_PORT;
 var init_accio_product = __esm({
   "vendor/channel-pack/src/accio-product.ts"() {
@@ -30509,7 +30456,7 @@ function parseAdkFrame(value) {
   if (value.rgv587_flag !== void 0) {
     return {
       kind: "error",
-      message: "\u4E0A\u6E38\u98CE\u63A7\u62E6\u622A\uFF08rgv587\uFF0Cpunish \u9875\uFF09\u3002Accio \u6E20\u9053\u8BF7\u6C42\u5934\u4E0D\u5B8C\u6574\u6216\u8BBE\u5907\u6307\u7EB9\u7F3A\u5931\uFF0C\u8BF7\u66F4\u65B0\u63D2\u4EF6\u7248\u672C\uFF1B\u82E5\u4ECD\u590D\u73B0\u8BF7\u5230\u6E20\u9053\u9762\u677F\u91CD\u65B0\u767B\u5F55\u540E\u91CD\u8BD5"
+      message: "\u4E0A\u6E38\u98CE\u63A7\u62E6\u622A\uFF08rgv587\uFF09\u3002\u8BF7\u6C42\u5934\u6216\u8BBE\u5907\u6307\u7EB9\u7F3A\u5931\uFF0C\u8BF7\u66F4\u65B0\u63D2\u4EF6\u7248\u672C\uFF1B\u4ECD\u590D\u73B0\u5219\u91CD\u65B0\u767B\u5F55\u8BE5\u6E20\u9053"
     };
   }
   const errorCode = value.error_code ?? value.errorCode;
@@ -30589,8 +30536,8 @@ function contentToText10(content) {
   return parts.join("\n");
 }
 async function createPkcePair() {
-  const { randomBytes: randomBytes16, createHash: createHash15 } = await import("node:crypto");
-  const verifier = randomBytes16(32).toString("base64url");
+  const { randomBytes: randomBytes15, createHash: createHash15 } = await import("node:crypto");
+  const verifier = randomBytes15(32).toString("base64url");
   const challenge = createHash15("sha256").update(verifier).digest("base64url");
   return { verifier, challenge };
 }
@@ -30620,7 +30567,6 @@ __export(accio_auth_exports, {
   exchangeCode: () => exchangeCode,
   fetchModels: () => fetchModels2,
   fetchQuota: () => fetchQuota,
-  fetchUserInfo: () => fetchUserInfo,
   refreshCredential: () => refreshCredential,
   startAccioLogin: () => startAccioLogin,
   streamChat: () => streamChat4
@@ -30687,27 +30633,6 @@ async function refreshCredential(fetcher, product, credential, signal) {
     };
   } catch (error) {
     if (error instanceof AccioRefreshRejectedError) throw error;
-    return void 0;
-  }
-}
-async function fetchUserInfo(fetcher, product, credential, signal) {
-  try {
-    const query = new URLSearchParams({ accessToken: credential.access_token }).toString();
-    const response = await fetcher(`${product.gatewayBase}${ACCIO_USERINFO_PATH}?${query}`, {
-      method: "GET",
-      headers: accioHeaders(product),
-      ...signal === void 0 ? {} : { signal }
-    });
-    if (!response.ok) return void 0;
-    const body = await response.json().catch(() => void 0);
-    if (typeof body !== "object" || body === null) return void 0;
-    const record = body;
-    const data = typeof record.data === "object" && record.data !== null ? record.data : record;
-    return {
-      ...typeof data.userId === "string" ? { accountId: data.userId } : {},
-      ...typeof data.nickname === "string" ? { nickname: data.nickname } : {}
-    };
-  } catch {
     return void 0;
   }
 }
@@ -31012,18 +30937,12 @@ __export(officeace_product_exports, {
   OFFICEACE_BONUS_CLAIM_PATH: () => OFFICEACE_BONUS_CLAIM_PATH,
   OFFICEACE_CODE_PATH: () => OFFICEACE_CODE_PATH,
   OFFICEACE_IAM_PROJECTS_PATH: () => OFFICEACE_IAM_PROJECTS_PATH,
-  OFFICEACE_LOGIN_TIMEOUT_MS: () => OFFICEACE_LOGIN_TIMEOUT_MS,
   OFFICEACE_PERMISSION_PATH: () => OFFICEACE_PERMISSION_PATH,
-  OFFICEACE_POLL_INTERVAL_MS: () => OFFICEACE_POLL_INTERVAL_MS,
   OFFICEACE_STATE_PATH: () => OFFICEACE_STATE_PATH,
   OFFICEACE_STS_TOKENS_PATH: () => OFFICEACE_STS_TOKENS_PATH,
-  OFFICEACE_SUBSCRIPTION_PATH: () => OFFICEACE_SUBSCRIPTION_PATH,
-  officeAceProductById: () => officeAceProductById
+  OFFICEACE_SUBSCRIPTION_PATH: () => OFFICEACE_SUBSCRIPTION_PATH
 });
-function officeAceProductById(id) {
-  return id === OFFICEACE.id ? OFFICEACE : void 0;
-}
-var OFFICEACE_FALLBACK_MODELS, OFFICEACE, OFFICEACE_STATE_PATH, OFFICEACE_CODE_PATH, OFFICEACE_PERMISSION_PATH, OFFICEACE_SUBSCRIPTION_PATH, OFFICEACE_BONUS_CLAIM_PATH, OFFICEACE_STS_TOKENS_PATH, OFFICEACE_IAM_PROJECTS_PATH, OFFICEACE_AUTHORIZE_PATH, OFFICEACE_POLL_INTERVAL_MS, OFFICEACE_LOGIN_TIMEOUT_MS;
+var OFFICEACE_FALLBACK_MODELS, OFFICEACE, OFFICEACE_STATE_PATH, OFFICEACE_CODE_PATH, OFFICEACE_PERMISSION_PATH, OFFICEACE_SUBSCRIPTION_PATH, OFFICEACE_BONUS_CLAIM_PATH, OFFICEACE_STS_TOKENS_PATH, OFFICEACE_IAM_PROJECTS_PATH, OFFICEACE_AUTHORIZE_PATH;
 var init_officeace_product = __esm({
   "vendor/channel-pack/src/officeace-product.ts"() {
     "use strict";
@@ -31080,8 +30999,6 @@ var init_officeace_product = __esm({
     OFFICEACE_STS_TOKENS_PATH = "/v1/oauth2/tokens";
     OFFICEACE_IAM_PROJECTS_PATH = "/v3/projects";
     OFFICEACE_AUTHORIZE_PATH = "/authui/login.html";
-    OFFICEACE_POLL_INTERVAL_MS = 2e3;
-    OFFICEACE_LOGIN_TIMEOUT_MS = 6e5;
   }
 });
 
@@ -31889,12 +31806,8 @@ __export(autoclaw_product_exports, {
   ALL_AUTOCLAW_PRODUCTS: () => ALL_AUTOCLAW_PRODUCTS,
   AUTOCLAW: () => AUTOCLAW,
   AUTOCLAW_CALLBACK_PORTS: () => AUTOCLAW_CALLBACK_PORTS,
-  AUTOCLAW_MODEL_CONFIG_PATH: () => AUTOCLAW_MODEL_CONFIG_PATH,
-  autoClawProductById: () => autoClawProductById
+  AUTOCLAW_MODEL_CONFIG_PATH: () => AUTOCLAW_MODEL_CONFIG_PATH
 });
-function autoClawProductById(id) {
-  return ALL_AUTOCLAW_PRODUCTS.find((product) => product.id === id);
-}
 var AUTOCLAW_FALLBACK_MODELS, AUTOCLAW, ALL_AUTOCLAW_PRODUCTS, AUTOCLAW_MODEL_CONFIG_PATH, AUTOCLAW_CALLBACK_PORTS;
 var init_autoclaw_product = __esm({
   "vendor/channel-pack/src/autoclaw-product.ts"() {
@@ -31950,7 +31863,6 @@ __export(autoclaw_sms_exports, {
   AUTOCLAW_SMS_APP_KEY: () => AUTOCLAW_SMS_APP_KEY,
   AUTOCLAW_SOURCE_ID: () => AUTOCLAW_SOURCE_ID,
   AUTOCLAW_TASK_COMPLETE_PATH: () => AUTOCLAW_TASK_COMPLETE_PATH,
-  AUTOCLAW_TASK_LIST_PATH: () => AUTOCLAW_TASK_LIST_PATH,
   AUTOCLAW_USERAPI_VERSION: () => AUTOCLAW_USERAPI_VERSION,
   AUTOCLAW_WALLET_V1_PATH: () => AUTOCLAW_WALLET_V1_PATH,
   AUTOCLAW_WALLET_V2_PATH: () => AUTOCLAW_WALLET_V2_PATH,
@@ -32279,7 +32191,7 @@ async function fetchAutoClawWallets(options) {
   }
   return void 0;
 }
-var AUTOCLAW_SMS_APP_ID, AUTOCLAW_SMS_APP_KEY, AUTOCLAW_SEND_CODE_PATH, AUTOCLAW_LOGIN_PATH, AUTOCLAW_SOURCE_ID, REQUEST_TIMEOUT_MS2, PHONE_RE, stripBearer, AUTOCLAW_REFRESH_PATHS, AUTOCLAW_USERAPI_VERSION, AUTOCLAW_TASK_COMPLETE_PATH, AUTOCLAW_TASK_LIST_PATH, AUTOCLAW_DAILY_SIGNIN_TASK, AUTOCLAW_ROUTE_PREFIXES, AUTOCLAW_DEFAULT_ROUTE, AUTOCLAW_MODEL_ROUTES, AUTOCLAW_IDENTITY_LINE, AUTOCLAW_IDENTITY_PREFIX, AUTOCLAW_MAX_TOKENS_FLOOR, AUTOCLAW_FOREIGN_IDENTITIES, AUTOCLAW_WALLET_V2_PATH, AUTOCLAW_WALLET_V1_PATH, AUTOCLAW_AUTH_EXPIRED_CODES;
+var AUTOCLAW_SMS_APP_ID, AUTOCLAW_SMS_APP_KEY, AUTOCLAW_SEND_CODE_PATH, AUTOCLAW_LOGIN_PATH, AUTOCLAW_SOURCE_ID, REQUEST_TIMEOUT_MS2, PHONE_RE, stripBearer, AUTOCLAW_REFRESH_PATHS, AUTOCLAW_USERAPI_VERSION, AUTOCLAW_TASK_COMPLETE_PATH, AUTOCLAW_DAILY_SIGNIN_TASK, AUTOCLAW_ROUTE_PREFIXES, AUTOCLAW_DEFAULT_ROUTE, AUTOCLAW_MODEL_ROUTES, AUTOCLAW_IDENTITY_LINE, AUTOCLAW_IDENTITY_PREFIX, AUTOCLAW_MAX_TOKENS_FLOOR, AUTOCLAW_FOREIGN_IDENTITIES, AUTOCLAW_WALLET_V2_PATH, AUTOCLAW_WALLET_V1_PATH, AUTOCLAW_AUTH_EXPIRED_CODES;
 var init_autoclaw_sms = __esm({
   "vendor/channel-pack/src/autoclaw-sms.ts"() {
     "use strict";
@@ -32294,7 +32206,6 @@ var init_autoclaw_sms = __esm({
     AUTOCLAW_REFRESH_PATHS = ["/userapi/v1/refresh", "/userapi/v1/agent-refresh"];
     AUTOCLAW_USERAPI_VERSION = "1.18.5";
     AUTOCLAW_TASK_COMPLETE_PATH = "/autoclaw-proxy/proxy/autoclaw-task-complete";
-    AUTOCLAW_TASK_LIST_PATH = "/autoclaw-proxy/proxy/autoclaw-task-list";
     AUTOCLAW_DAILY_SIGNIN_TASK = "daily_signin";
     AUTOCLAW_ROUTE_PREFIXES = ["zaicoding_", "zai_", "x_"];
     AUTOCLAW_DEFAULT_ROUTE = "zai_auto";
@@ -33705,9 +33616,9 @@ var init_webapi = __esm({
 });
 
 // vendor/channel-pack/src/oauth.ts
-import { createHash as createHash10, randomBytes as randomBytes7 } from "node:crypto";
+import { createHash as createHash10, randomBytes as randomBytes6 } from "node:crypto";
 function generatePkcePair() {
-  const codeVerifier = randomBytes7(48).toString("base64url");
+  const codeVerifier = randomBytes6(48).toString("base64url");
   const codeChallenge = createHash10("sha256").update(codeVerifier).digest("base64url");
   return { codeVerifier, codeChallenge };
 }
@@ -33724,7 +33635,7 @@ async function signDpopJws(keyPair, htm, htu) {
     htm,
     htu,
     iat: Math.floor(Date.now() / 1e3),
-    jti: randomBytes7(32).toString("hex")
+    jti: randomBytes6(32).toString("hex")
   };
   return new SignJWT(payload).setProtectedHeader({ alg: "ES256", typ: "dpop+jwt", jwk: keyPair.publicKeyJwk }).sign(key);
 }
@@ -33834,7 +33745,7 @@ __export(login_exports, {
 });
 import { createServer as createServer3 } from "node:http";
 import { spawn } from "node:child_process";
-import { randomBytes as randomBytes8 } from "node:crypto";
+import { randomBytes as randomBytes7 } from "node:crypto";
 function expiresFromCredential(credential) {
   if (credential.expires_at) {
     const parsed = Date.parse(credential.expires_at);
@@ -33907,7 +33818,7 @@ function listenOnCallbackPort(server) {
   });
 }
 async function startOAuthFlow(options = {}) {
-  const ticketId = randomBytes8(32).toString("hex");
+  const ticketId = randomBytes7(32).toString("hex");
   const pkce = generatePkcePair();
   const keyPair = await generateDpopKeyPair();
   const { port, server, result } = await startOAuthCallbackServer(ticketId, pkce, keyPair, options);
@@ -36472,7 +36383,7 @@ function createDirectFetch(options = {}) {
       active: () => outlet.active(),
       fetch: (input, init) => {
         if (!outlet.fetchSigned) {
-          throw new Error("\u6240\u9009\u63D2\u4EF6\u51FA\u53E3\u5C1A\u672A\u63A5\u5165\u7B7E\u540D\u4F20\u8F93\uFF0C\u8BF7\u5347\u7EA7\u51FA\u53E3\u9002\u914D\uFF1B\u8BF7\u6C42\u672A\u7ED5\u8FC7\u8BE5\u51FA\u53E3");
+          throw new Error("\u6240\u9009\u51FA\u53E3\u5C1A\u672A\u63A5\u5165\u7B7E\u540D\u4F20\u8F93\uFF0C\u8BF7\u5347\u7EA7\u51FA\u53E3\u9002\u914D\uFF08\u8BF7\u6C42\u672A\u7ED5\u8FC7\u8BE5\u51FA\u53E3\uFF09");
         }
         return outlet.fetchSigned(input, init, send);
       }
@@ -38105,7 +38016,7 @@ function buildDsmlSystemPrompt(tools) {
     "- \u6BCF\u4E2A\u53C2\u6570\u7528\u4E00\u4E2A <\uFF5CDSML\uFF5Cparameter> \u6807\u7B7E\u5305\u88F9\uFF0C\u53C2\u6570\u503C\u653E\u5728\u6807\u7B7E\u4E4B\u95F4\u3002",
     '- \u5B57\u7B26\u4E32\u53C2\u6570\u52A0 string="true" \u5C5E\u6027\uFF1B\u5BF9\u8C61/\u6570\u7EC4/\u6570\u5B57/\u5E03\u5C14\u53C2\u6570\u4E0D\u8981\u52A0\u8BE5\u5C5E\u6027\u3002',
     "- \u4E00\u6B21\u53EF\u4EE5\u8F93\u51FA\u591A\u4E2A <\uFF5CDSML\uFF5Cinvoke> \u8C03\u7528\uFF08\u5DE5\u5177\u53EF\u4EE5\u5E76\u884C\uFF09\u3002",
-    "- \u6587\u4EF6\u5185\u5BB9\u8BF7\u4E00\u6B21\u6027\u5B8C\u6574\u5199\u5165\u5355\u4E2A write \u8C03\u7528\u7684 content \u53C2\u6570\uFF0C\u4E0D\u8981\u62C6\u5206\u6216\u7701\u7565\u3002",
+    "- \u6587\u4EF6\u5185\u5BB9\u8BF7\u4E00\u6B21\u6027\u5199\u5165\u5355\u4E2A write \u7684 content\uFF0C\u4E0D\u8981\u62C6\u5206\u6216\u7701\u7565\u3002",
     "",
     "\u5DE5\u5177\u5217\u8868\uFF08JSON Schema\uFF09\uFF1A",
     toolJson
@@ -40986,7 +40897,7 @@ var BuddyAdapter = class _BuddyAdapter extends LlmAdapter2 {
         }
         if (image === void 0) {
           throw new LlmError3(
-            `${this.product.id}: \u56FE\u7247\u9644\u4EF6\u8BFB\u53D6\u4E0D\u5230\u5185\u5BB9\uFF08${id}\uFF09\uFF1B\u9644\u4EF6\u670D\u52A1\u53EF\u80FD\u672A\u5C31\u7EEA\uFF0C\u6216\u8BE5\u5BF9\u8C61\u5DF2\u4E0D\u5B58\u5728\u3002`,
+            `${this.product.id}: \u56FE\u7247\u9644\u4EF6\u8BFB\u53D6\u4E0D\u5230\u5185\u5BB9\uFF08${id}\uFF09\uFF1B\u9644\u4EF6\u670D\u52A1\u672A\u5C31\u7EEA\u6216\u5BF9\u8C61\u4E0D\u5B58\u5728\u3002`,
             "UNSUPPORTED_CONTENT"
           );
         }
@@ -45017,7 +44928,7 @@ function httpErrorCode4(status) {
 function traeStreamErrorMessage(code, message2, model) {
   const base = `trae: ${message2} (code=${code})`;
   if (code !== 4001) return base;
-  return `${base} \u2014\u2014 \u6A21\u578B\u300C${model}\u300D\u4E0D\u88AB\u4E0A\u6E38\u63A5\u53D7\uFF1A\u5B83\u901A\u5E38\u662F\u300C\u4EC5\u53EF\u89C1\u4F46\u4E0D\u53EF\u8C03\u7528\u300D\u7684\u81EA\u5B9A\u4E49\u6A21\u578B\uFF08\u9700\u5148\u5728 TRAE IDE \u5185\u81EA\u884C\u914D\u7F6E\u4F9B\u5E94\u5546\uFF09\uFF0C\u8BF7\u6539\u7528\u6A21\u578B\u5217\u8868\u4E2D\u7684\u5176\u5B83\u6A21\u578B`;
+  return `${base} \u2014\u2014 \u6A21\u578B\u300C${model}\u300D\u4E0D\u88AB\u4E0A\u6E38\u63A5\u53D7\uFF1A\u5B83\u901A\u5E38\u662F\u300C\u4EC5\u53EF\u89C1\u4F46\u4E0D\u53EF\u8C03\u7528\u300D\u7684\u81EA\u5B9A\u4E49\u6A21\u578B\u9700\u5148\u5728 TRAE IDE \u5185\u914D\u7F6E\u4F9B\u5E94\u5546\uFF0C\u8BF7\u6539\u7528\u5217\u8868\u4E2D\u7684\u5176\u5B83\u6A21\u578B`;
 }
 function isTransportError4(error) {
   if (!(error instanceof Error)) return false;
@@ -50041,7 +49952,6 @@ function registerLoomyLlm(ctx, options) {
 import { LlmAdapter as LlmAdapter14, LlmError as LlmError18, ReasoningEffortId as ReasoningEffortId11 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/raccoon.ts
-import { createCipheriv as createCipheriv2, randomBytes as randomBytes6 } from "node:crypto";
 var RACCOON_API_BASE = "https://xiaohuanxiong.com";
 var RACCOON_POINTS_PREFIX = "/api/web/points/v1";
 var RACCOON_DESKTOP_PREFIX = "/api/web/desktop/v1";
@@ -55206,10 +55116,10 @@ var RACCOON_LOGIN_PAGE_PATHS = {
 async function startRaccoonLoginFlow(options = {}) {
   const product = options.product ?? RACCOON;
   const fetcher = options.fetcher ?? fetch;
-  const { randomBytes: randomBytes16 } = await import("node:crypto");
+  const { randomBytes: randomBytes15 } = await import("node:crypto");
   const state = {
     // 64 位 hex（32 字节）—— 授权页对 loopback 回调的硬性要求。
-    oauthState: randomBytes16(32).toString("hex")
+    oauthState: randomBytes15(32).toString("hex")
   };
   let resolveResult;
   let rejectResult;
@@ -57196,7 +57106,6 @@ var ZcodeCaptchaBrowser = class {
     tryRemove(0);
   }
 };
-var ZCODE_HOME = homedir2();
 
 // vendor/channel-pack/src/captcha-pool.ts
 var CaptchaPool = class {
@@ -57828,7 +57737,7 @@ function buildCarrierPageHtml(config) {
 }
 
 // vendor/channel-pack/src/zcode-login.ts
-import { randomBytes as randomBytes9, randomUUID as randomUUID12 } from "node:crypto";
+import { randomBytes as randomBytes8, randomUUID as randomUUID12 } from "node:crypto";
 var ZCODE_ORIGIN = "https://zcode.z.ai";
 var ZCODE_OAUTH_CLI_INIT_URL = `${ZCODE_ORIGIN}/api/v1/oauth/cli/init`;
 var zcodeOauthCliPollUrl = (flowId) => `${ZCODE_ORIGIN}/api/v1/oauth/cli/poll/${encodeURIComponent(flowId)}`;
@@ -57841,7 +57750,7 @@ var ZcodeLoginError = class extends Error {
   }
 };
 function generateFlowSecret() {
-  return randomBytes9(32).toString("hex");
+  return randomBytes8(32).toString("hex");
 }
 function generateDeviceMid() {
   return randomUUID12();
@@ -60167,7 +60076,7 @@ function toClaimOutcome(outcome, planId, options = {}) {
     return {
       kind: "failed",
       code: 3007,
-      message: options.internalRetried === true ? `captcha \u88AB\u62D2\uFF08${planId}\uFF09\uFF1A\u5DF2\u6539\u7528\u6D4F\u89C8\u5668\u94FE\u8DEF\u91CD\u8BD5**\u4ECD**\u5931\u8D25 \u2014\u2014 \u4E0A\u6E38\u591A\u534A\u5DF2\u628A\u672C\u673A\u964D\u7EA7\u4E3A\u4EA4\u4E92\u5F0F\u9A8C\u8BC1\uFF08\u8BBE\u5907\u4FE1\u8A89\u4E0D\u8DB3\uFF09\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5\u3001\u522B\u8FDE\u7EED\u70B9\u9886\u53D6` : `captcha \u6821\u9A8C\u5931\u8D25\uFF08${planId}\uFF09\uFF0C\u8BF7\u91CD\u8BD5`
+      message: options.internalRetried === true ? `captcha \u88AB\u62D2\uFF08${planId}\uFF09\uFF1A\u5DF2\u6539\u7528\u6D4F\u89C8\u5668\u94FE\u8DEF\u91CD\u8BD5**\u4ECD**\u5931\u8D25 \u2014\u2014 \u8BBE\u5907\u4FE1\u8A89\u4E0D\u8DB3\uFF0C\u4E0A\u6E38\u8981\u6C42\u4EA4\u4E92\u5F0F\u9A8C\u8BC1\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5\u3001\u522B\u8FDE\u70B9\u9886\u53D6` : `captcha \u6821\u9A8C\u5931\u8D25\uFF08${planId}\uFF09\uFF0C\u8BF7\u91CD\u8BD5`
     };
   }
   if (isClaimUnusualActivity(outcome)) {
@@ -61341,7 +61250,7 @@ function describeUpstreamError(status, body, diagnostic) {
     return `\u4E0A\u6E38\u5E76\u53D1\u9650\u6D41\uFF083009 model concurrency limit exceeded\uFF09\u2014\u2014\u5DF2\u6309\u9000\u907F\u91CD\u8BD5\u4ECD\u672A\u901A\u8FC7\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002\u539F\u59CB\u54CD\u5E94\uFF1A${suffix}`;
   }
   if (code === 1005 || trimmed.includes("1005")) {
-    return `\u989D\u5EA6\u7528\u5C3D\uFF081005 exceed quota limit\uFF09\u2014\u2014\u8BE5\u8D26\u53F7\u5728\u8FD9\u4E2A\u6A21\u578B\u4E0A\u7684\u514D\u8D39\u989D\u5EA6\u5DF2\u7528\u5B8C\uFF0C\u8BF7\u7B49\u5F85\u989D\u5EA6\u91CD\u7F6E\u6216\u66F4\u6362\u8D26\u53F7\u3002\u539F\u59CB\u54CD\u5E94\uFF1A${suffix}`;
+    return `\u989D\u5EA6\u7528\u5C3D\uFF081005 exceed quota limit\uFF09\u2014\u2014\u8BE5\u8D26\u53F7\u6B64\u6A21\u578B\u7684\u514D\u8D39\u989D\u5EA6\u5DF2\u7528\u5B8C\uFF0C\u8BF7\u7B49\u91CD\u7F6E\u6216\u6362\u8D26\u53F7\u3002\u539F\u59CB\u54CD\u5E94\uFF1A${suffix}`;
   }
   if (code === 3007 || trimmed.includes("3007")) {
     return `\u963F\u91CC\u4E91 captcha \u6821\u9A8C\u5931\u8D25\uFF083007\uFF09\u3002\u8BF7\u91CD\u8BD5\uFF1B\u82E5\u6301\u7EED\u5931\u8D25\uFF0C\u68C0\u67E5\u6D4F\u89C8\u5668\u662F\u5426\u53EF\u7528\u3002`;
@@ -62408,7 +62317,7 @@ async function fetchMinimaxCreditBalance(credential, fetcher = fetch, product = 
 }
 
 // vendor/channel-pack/src/antigravity.ts
-import { randomBytes as randomBytes10 } from "node:crypto";
+import { randomBytes as randomBytes9 } from "node:crypto";
 import { LlmError as LlmError20, ReasoningEffortId as ReasoningEffortId13 } from "@deepseek-ai/dsh-llm";
 var ANTIGRAVITY_ENDPOINT_DAILY = "https://daily-cloudcode-pa.googleapis.com";
 var ANTIGRAVITY_ENDPOINT_SANDBOX = "https://daily-cloudcode-pa.sandbox.googleapis.com";
@@ -62521,7 +62430,7 @@ function marshalAlphabetical(value) {
   return sortedStringify(value);
 }
 function newGeminiRequestId(nowMs = Date.now()) {
-  return `agent/${nowMs}/${randomBytes10(4).toString("hex")}`;
+  return `agent/${nowMs}/${randomBytes9(4).toString("hex")}`;
 }
 var ANTIGRAVITY_UPSTREAM_FLASH = "gemini-3.8-flash";
 var ANTIGRAVITY_BUDGET_LOW = 1e3;
@@ -64197,8 +64106,7 @@ import {
   CONTEXT_WINDOW_EXCEEDED_CODE as CONTEXT_WINDOW_EXCEEDED_CODE3,
   isContextWindowExceededError as isContextWindowExceededError3,
   LlmAdapter as LlmAdapter16,
-  LlmError as LlmError21,
-  ReasoningEffortId as ReasoningEffortId14
+  LlmError as LlmError21
 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/antigravity-messages.ts
@@ -64277,7 +64185,7 @@ function translateGeminiRequest(options) {
         const attachmentId = typeof ref?.attachmentId === "string" ? ref.attachmentId : void 0;
         const inline = attachmentId === void 0 ? void 0 : options.images?.get(attachmentId);
         if (inline === void 0) {
-          throw new Error("antigravity: \u56FE\u7247\u672A\u80FD\u5185\u8054\uFF08\u9644\u4EF6\u670D\u52A1\u4E0D\u53EF\u7528\u6216\u8BFB\u53D6\u5931\u8D25\uFF09\uFF0C\u62D2\u7EDD\u53D1\u51FA\u7F3A\u5C11\u56FE\u7247\u7684\u8BF7\u6C42");
+          throw new Error("antigravity: \u56FE\u7247\u672A\u80FD\u5185\u8054\uFF08\u9644\u4EF6\u670D\u52A1\u4E0D\u53EF\u7528\u6216\u8BFB\u53D6\u5931\u8D25\uFF09");
         }
         parts.push({ inlineData: { mimeType: inline.mediaType, data: inline.data } });
         continue;
@@ -64983,7 +64891,7 @@ var AntigravityAdapter = class extends LlmAdapter16 {
       }
       if (inline === void 0) {
         throw new LlmError21(
-          "antigravity: \u56FE\u7247\u9644\u4EF6\u8BFB\u53D6\u4E0D\u5230\u5185\u5BB9\uFF1B\u9644\u4EF6\u670D\u52A1\u53EF\u80FD\u672A\u5C31\u7EEA\uFF0C\u6216\u8BE5\u5BF9\u8C61\u5DF2\u4E0D\u5B58\u5728\u3002",
+          "antigravity: \u56FE\u7247\u9644\u4EF6\u8BFB\u53D6\u4E0D\u5230\u5185\u5BB9\uFF1B\u9644\u4EF6\u670D\u52A1\u672A\u5C31\u7EEA\u6216\u5BF9\u8C61\u4E0D\u5B58\u5728\u3002",
           "UNSUPPORTED_CONTENT"
         );
       }
@@ -65574,10 +65482,10 @@ async function importBackup(credentials, pool, raw) {
 
 // vendor/channel-pack/src/opencode-rpc.ts
 import { credentialRef as credentialRef12 } from "@deepseek-ai/dsh-credentials";
-import { randomBytes as randomBytes12 } from "node:crypto";
+import { randomBytes as randomBytes11 } from "node:crypto";
 
 // vendor/channel-pack/src/opencode-auth.ts
-import { randomBytes as randomBytes11 } from "node:crypto";
+import { randomBytes as randomBytes10 } from "node:crypto";
 function newAccountFingerprint(apiKey) {
   return { projectId: deriveProjectId(apiKey, 0), generation: 0 };
 }
@@ -65609,8 +65517,8 @@ function isAnonymousCredential(apiKey) {
 async function ensureDefaultAnonymousSlot(addEntry, writeCredential, listEntries, alreadyHasAnonymous) {
   try {
     if (alreadyHasAnonymous()) return "";
-    const id = `${OPENCODE.id}-anon-${randomBytes11(3).toString("hex")}`;
-    const refName = `OPENCODE_ANON_${randomBytes11(4).toString("hex").toUpperCase()}`;
+    const id = `${OPENCODE.id}-anon-${randomBytes10(3).toString("hex")}`;
+    const refName = `OPENCODE_ANON_${randomBytes10(4).toString("hex").toUpperCase()}`;
     await writeCredential(refName, JSON.stringify({
       api_key: OPENCODE.anonymousKey,
       nickname: "\u533F\u540D\u901A\u9053"
@@ -65677,8 +65585,8 @@ async function handleOpencodeRpc(ctx, pool, method, payload) {
       }
       case "opencode.addAnonymous": {
         const req = call2.payload;
-        const id = `${OPENCODE.id}-anon-${randomBytes12(3).toString("hex")}`;
-        const refName = `OPENCODE_ANON_${randomBytes12(4).toString("hex").toUpperCase()}`;
+        const id = `${OPENCODE.id}-anon-${randomBytes11(3).toString("hex")}`;
+        const refName = `OPENCODE_ANON_${randomBytes11(4).toString("hex").toUpperCase()}`;
         const count2 = pool.listAccountsByProvider(OPENCODE.id).filter((a) => a.id.startsWith(`${OPENCODE.id}-anon-`)).length;
         const nickname = typeof req?.nickname === "string" && req.nickname.trim().length > 0 ? req.nickname.trim() : `\u533F\u540D\u901A\u9053 ${count2 + 1}`;
         await ctx.credentials.set(credentialRef12(refName), JSON.stringify({
@@ -67519,7 +67427,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             });
             const permission = await oa.validatePermission(codeartsFetcher, OFFICEACE2, sts);
             if (permission.baseUrl === void 0 || permission.appKey === void 0 || permission.appSecret === void 0) {
-              throw new Error("OfficeAce\uFF1A\u4E91\u7AEF\u672A\u8FD4\u56DE\u6A21\u578B\u7F51\u5173\u4FE1\u606F\uFF08\u8D26\u53F7\u53EF\u80FD\u672A\u5F00\u901A\u670D\u52A1\uFF0C\u9700\u5148\u5728\u5B98\u65B9\u5BA2\u6237\u7AEF\u5151\u6362\u9080\u8BF7\u7801/\u5F00\u901A\u540E\u518D\u8BD5\uFF09");
+              throw new Error("OfficeAce\uFF1A\u4E91\u7AEF\u672A\u8FD4\u56DE\u6A21\u578B\u7F51\u5173\u4FE1\u606F\uFF08\u53EF\u80FD\u672A\u5F00\u901A\u670D\u52A1\uFF0C\u8BF7\u5148\u5728\u5B98\u65B9\u5BA2\u6237\u7AEF\u5151\u6362\u9080\u8BF7\u7801\uFF09");
             }
             const credential = {
               ...sts,
@@ -68709,7 +68617,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             ok: false,
             error: {
               code: "bad-request",
-              message: "Raccoon Work \u4E0D\u652F\u6301\u6BCF\u65E5\u7B7E\u5230\uFF08\u6BCF\u65E5\u79EF\u5206\u7531\u670D\u52A1\u7AEF\u81EA\u52A8\u53D1\u653E\uFF1B\u767B\u5F55\u5956\u52B1\u8BF7\u5728\u300C\u65B0\u624B\u4EFB\u52A1\u300D\u4E2D\u9886\u53D6\uFF09"
+              message: "Raccoon Work \u4E0D\u652F\u6301\u6BCF\u65E5\u7B7E\u5230\uFF08\u79EF\u5206\u7531\u670D\u52A1\u7AEF\u81EA\u52A8\u53D1\u653E\uFF0C\u5956\u52B1\u89C1\u300C\u65B0\u624B\u4EFB\u52A1\u300D\uFF09"
             }
           };
         }
@@ -70211,7 +70119,7 @@ import { join as join11 } from "node:path";
 
 // vendor/channel-pack/src/openai-gateway/auth.ts
 import { mkdirSync as mkdirSync9, readFileSync as readFileSync11, renameSync as renameSync8, writeFileSync as writeFileSync10, existsSync as existsSync10 } from "node:fs";
-import { randomBytes as randomBytes13 } from "node:crypto";
+import { randomBytes as randomBytes12 } from "node:crypto";
 import { join as join10 } from "node:path";
 var KEY_FILE = "api-key";
 var KEY_PATTERN2 = /^[A-Za-z0-9_-]{43}$/;
@@ -70231,7 +70139,7 @@ function loadOrCreateApiKey(home, env = process.env) {
       `\u7F51\u5173\u5BC6\u94A5\u6587\u4EF6\u5185\u5BB9\u5F02\u5E38\uFF08\u4E0D\u662F\u672C\u63D2\u4EF6\u751F\u6210\u7684\u5F62\u6001\uFF09\uFF1A${path2}\u3002\u53EF\u80FD\u662F\u88AB\u624B\u5DE5\u7F16\u8F91\u6216\u88AB\u5176\u5B83\u7A0B\u5E8F\u6539\u5199\uFF1B\u672C\u63D2\u4EF6\u4E0D\u4F1A\u9759\u9ED8\u66F4\u6362\u5B83\uFF0C\u5426\u5219\u5DF2\u914D\u7F6E\u7684\u5BA2\u6237\u7AEF\u4F1A\u5168\u90E8\u5931\u6548\u3002\u5982\u9700\u66F4\u6362\uFF1A\u5220\u9664\u8BE5\u6587\u4EF6\u540E\u91CD\u542F DSH\uFF08\u4F1A\u91CD\u65B0\u751F\u6210\uFF09\uFF0C\u6216\u6539\u7528 DSH_OPENAI_GATEWAY_API_KEY \u73AF\u5883\u53D8\u91CF\u3002`
     );
   }
-  const key = randomBytes13(32).toString("base64url");
+  const key = randomBytes12(32).toString("base64url");
   mkdirSync9(directory, { recursive: true });
   const temporary = `${path2}.${process.pid}.${Date.now()}.tmp`;
   writeFileSync10(temporary, key, { encoding: "utf8", mode: 384 });
@@ -72554,7 +72462,7 @@ import { Service as Service10 } from "@deepseek-ai/cordis";
 import { credentialRef as credentialRef14 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/minimax-oauth.ts
-import { createHash as createHash13, randomBytes as randomBytes14 } from "node:crypto";
+import { createHash as createHash13, randomBytes as randomBytes13 } from "node:crypto";
 var MinimaxLoginCancelledError = class extends Error {
   constructor(message2 = "\u7528\u6237\u53D6\u6D88\u4E86 MiniMax \u6388\u6743") {
     super(message2);
@@ -72653,7 +72561,7 @@ function parseMinimaxTokenGrant(payload, previousRefreshToken, product = MINIMAX
   };
 }
 function createMinimaxPkce() {
-  const codeVerifier = randomBytes14(32).toString("base64url");
+  const codeVerifier = randomBytes13(32).toString("base64url");
   const codeChallenge = createHash13("sha256").update(codeVerifier, "ascii").digest("base64url");
   return { codeVerifier, codeChallenge };
 }
@@ -73686,7 +73594,7 @@ import { credentialRef as credentialRef15 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/antigravity-oauth.ts
 import { createServer as createServer9 } from "node:http";
-import { randomBytes as randomBytes15 } from "node:crypto";
+import { randomBytes as randomBytes14 } from "node:crypto";
 var ANTIGRAVITY_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 var ANTIGRAVITY_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 var ANTIGRAVITY_USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v2/userinfo";
@@ -73926,7 +73834,7 @@ async function listenCallback(handler, preferredPort) {
   return attempt(preferredPort);
 }
 async function startGeminiOAuthFlow(options = {}) {
-  const state = randomBytes15(16).toString("hex");
+  const state = randomBytes14(16).toString("hex");
   let resolveCode = () => {
   };
   let rejectCode = () => {
@@ -75133,7 +75041,7 @@ var OpencodeAdapter = class extends LlmAdapter18 {
             `opencode: \u514D\u8D39\u901A\u9053\u88AB FreeTierError \u62D2\u7EDD \u2014\u2014 \u68C0\u67E5 session id \u5F62\u72B6\uFF08\u5E94\u4E3A ses_ + 12hex + 14base62\uFF09\uFF1A${info.detail}`
           );
           throw new LlmError25(
-            `opencode: \u514D\u8D39\u901A\u9053\u88AB\u4E0A\u6E38\u62D2\u7EDD\uFF08FreeTierError\uFF09\u3002\u8BE5\u9519\u8BEF\u7531\u8BF7\u6C42\u5F62\u72B6\u89E6\u53D1\uFF08session id \u5F62\u72B6\u4E0D\u5BF9\u65F6\u51FA\u73B0\uFF09\uFF0C\u6362 API key \u6216\u6362\u51FA\u53E3\u90FD\u65E0\u6548\u3002`,
+            `opencode: \u514D\u8D39\u901A\u9053\u88AB\u4E0A\u6E38\u62D2\u7EDD\uFF08FreeTierError\uFF09\u3002\u8BE5\u9519\u8BEF\u7531\u8BF7\u6C42\u5F62\u72B6\u89E6\u53D1\uFF08session id \u4E0D\u5BF9\u65F6\u51FA\u73B0\uFF09\uFF0C\u6362 key \u6216\u51FA\u53E3\u90FD\u65E0\u6548\u3002`,
             "AUTH",
             { status: 403 }
           );
@@ -75470,7 +75378,7 @@ function apply(ctx, config = {}) {
       const days = buddyExpiringWindowDays();
       if (picked.reason?.kind === "unknown") {
         throw new Error(
-          `${options.displayName}\uFF1A\u65E0\u6CD5\u786E\u8BA4\u662F\u5426\u6709\u53EF\u7528\u8D26\u53F7\u3002\u5DF2\u9501\u5B9A\u6C38\u4E45\u79EF\u5206\uFF0C\u800C\u90E8\u5206\u8D26\u53F7\u7684\u4F59\u989D\u67E5\u8BE2\u5931\u8D25\uFF08${picked.reason.errors.slice(0, 2).join("\uFF1B")}\uFF09\u3002\u8FD9\u4E9B\u8D26\u53F7**\u53EF\u80FD\u4ECD\u6709**\u300C${days} \u5929\u5185\u5230\u671F\u300D\u7684\u79EF\u5206 \u2014\u2014 \u8BF7\u91CD\u8BD5\uFF0C\u6216\u5728 Channel Pack \u5BF9\u5E94\u9762\u677F\u68C0\u67E5\u51ED\u636E\u662F\u5426\u5931\u6548\u3002`
+          `${options.displayName}\uFF1A\u90E8\u5206\u8D26\u53F7\u4F59\u989D\u67E5\u8BE2\u5931\u8D25\uFF0C\u65E0\u6CD5\u786E\u8BA4\u53EF\u7528\u8D26\u53F7\uFF08\u5DF2\u9501\u5B9A\u6C38\u4E45\u79EF\u5206\uFF09\uFF08${picked.reason.errors.slice(0, 2).join("\uFF1B")}\uFF09\u3002\u8FD9\u4E9B\u8D26\u53F7**\u53EF\u80FD\u4ECD\u6709**\u300C${days} \u5929\u5185\u5230\u671F\u300D\u7684\u79EF\u5206 \u2014\u2014 \u8BF7\u91CD\u8BD5\uFF0C\u6216\u5728 Channel Pack \u5BF9\u5E94\u9762\u677F\u68C0\u67E5\u51ED\u636E\u662F\u5426\u5931\u6548\u3002`
         );
       }
       throw new Error(
@@ -75957,7 +75865,7 @@ function apply(ctx, config = {}) {
           const reason = picked.reason;
           if (reason.kind === "unknown") {
             throw new Error(
-              `Loomy\uFF1A\u65E0\u6CD5\u786E\u8BA4\u662F\u5426\u6709\u53EF\u7528\u8D26\u53F7\u3002\u5DF2\u9501\u5B9A\u6C38\u4E45\u79EF\u5206\uFF0C\u800C\u90E8\u5206\u8D26\u53F7\u7684\u4F59\u989D\u67E5\u8BE2\u5931\u8D25\uFF08${reason.errors.slice(0, 2).join("\uFF1B")}\uFF09\u3002\u8FD9\u4E9B\u8D26\u53F7**\u53EF\u80FD\u4ECD\u6709**\u4ECA\u65E5\u989D\u5EA6 \u2014\u2014 \u8BF7\u91CD\u8BD5\uFF0C\u6216\u5728 Channel Pack \u7684 Loomy \u9762\u677F\u68C0\u67E5\u51ED\u636E\u662F\u5426\u5931\u6548\u3002`
+              `Loomy\uFF1A\u90E8\u5206\u8D26\u53F7\u4F59\u989D\u67E5\u8BE2\u5931\u8D25\uFF0C\u65E0\u6CD5\u786E\u8BA4\u53EF\u7528\u8D26\u53F7\uFF08\u5DF2\u9501\u5B9A\u6C38\u4E45\u79EF\u5206\uFF09\uFF08${reason.errors.slice(0, 2).join("\uFF1B")}\uFF09\u3002\u8FD9\u4E9B\u8D26\u53F7**\u53EF\u80FD\u4ECD\u6709**\u4ECA\u65E5\u989D\u5EA6 \u2014\u2014 \u8BF7\u91CD\u8BD5\uFF0C\u6216\u5728 Channel Pack \u7684 Loomy \u9762\u677F\u68C0\u67E5\u51ED\u636E\u662F\u5426\u5931\u6548\u3002`
             );
           }
           throw new Error(

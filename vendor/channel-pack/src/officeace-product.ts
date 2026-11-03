@@ -121,11 +121,6 @@ export const OFFICEACE: OfficeAceProduct = {
   fallbackModels: OFFICEACE_FALLBACK_MODELS,
 }
 
-/** 按 id 取产品配置。 */
-export function officeAceProductById(id: string): OfficeAceProduct | undefined {
-  return id === OFFICEACE.id ? OFFICEACE : undefined
-}
-
 // ── 端点路径 ──
 
 /** 取 state（无鉴权）。 */
@@ -152,8 +147,3 @@ export const OFFICEACE_IAM_PROJECTS_PATH = '/v3/projects'
 
 /** 授权页路径（挂 loginBase）。 */
 export const OFFICEACE_AUTHORIZE_PATH = '/authui/login.html'
-
-/** 轮询授权码的间隔（毫秒）。 */
-export const OFFICEACE_POLL_INTERVAL_MS = 2_000
-/** 一次登录的总时限。 */
-export const OFFICEACE_LOGIN_TIMEOUT_MS = 600_000

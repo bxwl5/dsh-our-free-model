@@ -125,11 +125,6 @@ export const AUTOCLAW: AutoClawProduct = {
 /** 全部产品（国际版已于 2026-10-25 按用户要求整渠道移除，仅剩国内站）。 */
 export const ALL_AUTOCLAW_PRODUCTS: readonly AutoClawProduct[] = [AUTOCLAW]
 
-/** 按 id 取产品配置。 */
-export function autoClawProductById(id: string): AutoClawProduct | undefined {
-  return ALL_AUTOCLAW_PRODUCTS.find((product) => product.id === id)
-}
-
 /** 模型目录路径（**不在** proxyPrefix 下）。 */
 export const AUTOCLAW_MODEL_CONFIG_PATH = '/autoclaw-proxy/proxy/autoclaw-model-config'
 

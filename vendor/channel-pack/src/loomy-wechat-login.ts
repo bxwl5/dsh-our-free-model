@@ -45,27 +45,6 @@ import {
   type LoomyLoginResult,
 } from './loomy-oauth.js'
 
-/**
- * 按平台决定「用哪个命令打开 URL」。
- *
- * ⚠️ **本模块不使用它，也不应该使用** —— Loomy 走**两步式**：返回
- * `loginUrl` 由**前端** `window.open` 打开（与 codearts / lobsterai /
- * qoder / trae / cline 一致）。宿主侧主动开浏览器会**破坏两步式的意义**
- * （`window.open` 只在用户手势窗口内有效，等流程跑完再开必被拦截）。
- *
- * 保留这个纯函数是为了让「平台分派」有**可离线单测**的落点 ——
- * 早期这里有个会真的 spawn 浏览器的 `defaultOpenBrowser`，单测一调它
- * 就弹出 `http://127.0.0.1:1/never`（真实缺陷，用户报障）。
- * 现在只测这个纯函数，**永不 spawn**。
- */
-export function resolveOpenCommand(
-  platform: string,
-): { command: string; args: string[] } {
-  if (platform === 'win32') return { command: 'cmd', args: ['/c', 'start', ''] }
-  if (platform === 'darwin') return { command: 'open', args: [] }
-  return { command: 'xdg-open', args: [] }
-}
-
 /** 整个扫码 + 绑定的超时（毫秒）。 */
 export const LOOMY_WECHAT_LOGIN_TIMEOUT_MS = 5 * 60 * 1000
 

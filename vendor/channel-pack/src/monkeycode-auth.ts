@@ -409,7 +409,7 @@ export async function* streamChat(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     if (/code 10811/.test(message)) {
-      throw new Error('MonkeyCode：已尝试停止旧任务但仍被占用（code 10811），请到 monkeycode 网页端手动处理后再试')
+      throw new Error('MonkeyCode：旧任务仍被占用（code 10811），请到网页端处理后重试')
     }
     throw error
   }

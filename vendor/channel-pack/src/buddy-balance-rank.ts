@@ -99,11 +99,6 @@ export function buddyExpiringWindowDays(env: NodeJS.ProcessEnv = process.env): n
   return parsed
 }
 
-/** 当前生效的窗口（毫秒）。 */
-export function buddyExpiringWindowMs(env: NodeJS.ProcessEnv = process.env): number {
-  return buddyExpiringWindowDays(env) * 24 * 60 * 60 * 1000
-}
-
 /** 账号余额档位。数字越小越优先。 */
 export const BUDDY_BALANCE_TIER = Object.freeze({
   /** 有 15 天内到期的积分 —— 优先消耗（再不用就作废）。 */

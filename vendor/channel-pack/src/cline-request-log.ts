@@ -165,11 +165,6 @@ export function readClineRequestHistory(
     .slice(0, limit)
 }
 
-/** 当前保留的流水条数（诊断用）。 */
-export function clineRequestHistorySize(): number {
-  return history.length
-}
-
 /**
  * 模型 id 的**模型族/上游**前缀（`/` 之前），如
  * `cline-pass/deepseek-v4.1-flash` → `cline-pass`。
@@ -182,9 +177,4 @@ export function clineRequestHistorySize(): number {
 export function clineUpstreamOf(model: string): string {
   const idx = String(model ?? '').indexOf('/')
   return idx > 0 ? String(model).slice(0, idx) : ''
-}
-
-/** 清空流水（仅测试用：模块级状态会在用例间泄漏）。 */
-export function resetClineRequestHistory(): void {
-  history = []
 }
