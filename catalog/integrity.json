@@ -19,8 +19,8 @@
     },
     {
       "path": "client.js",
-      "size": 448280,
-      "sha256": "4e5aafa89e82b8aec1722426b4b9cae89d0055d359dc9149a3d36cd80d3b5a31"
+      "size": 449053,
+      "sha256": "fe90f61625200760f906d1d631dc0ef3ba6c424271696672ab4d392db8cf289c"
     },
     {
       "path": "cordis.patch.yml",
@@ -54,8 +54,8 @@
     },
     {
       "path": "src/adapter.js",
-      "size": 48846,
-      "sha256": "ef0d058ae8eb37c7bacf30e5bc769af5eb5853165c0f3e32b2aeb2709e444ce5"
+      "size": 49671,
+      "sha256": "b2473b63b7b640e9e8787c4a3a653a6696f13830bbadff8a87a918a9f843330f"
     },
     {
       "path": "src/anthropic.js",
@@ -84,8 +84,8 @@
     },
     {
       "path": "src/combos.js",
-      "size": 7725,
-      "sha256": "df06eb2a2ca16dec75b059b129c196aabaf95271f22175c7942d4ff3ffc0428a"
+      "size": 9519,
+      "sha256": "28602d7ea02404b5c2f92a84097e57cb051a21a5924c37c346383694d1b497a4"
     },
     {
       "path": "src/core/channel-usage.js",
