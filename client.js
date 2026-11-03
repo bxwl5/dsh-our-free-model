@@ -2041,6 +2041,10 @@ window.__ModuleLoader__.load({
 /* ══ 看板折叠卡网格（FoldCard）══════════════════════════════════════════ */
 .ofm_foldgrid{display:flex;flex-direction:column;gap:8px}
 .ofm_foldcard{padding:8px 10px;gap:6px}
+/* 卡内的图表面板不再另起一张卡（用户 2026-11-03 第 3 项）：折叠卡本身就是
+   卡片，里面再套一层带边框和内光的 Panel 就成了「卡中卡」，两层圆角两层
+   边线。展开后只要内容贴着卡的内边距即可。 */
+.ofm_foldcard>.ofm_panel{padding:0!important;border:0!important;border-radius:0!important;background:none!important;box-shadow:none!important}
 .ofm_foldhead{display:flex;align-items:center;gap:6px;width:100%;font:inherit;font-size:11.5px;text-align:left;padding:0;border:0;background:none;color:var(--dsw-alias-label-secondary);cursor:pointer;min-width:0}
 .ofm_foldhead:hover .ofm_foldtitle{color:var(--dsw-alias-state-business-primary)}
 .ofm_foldtitle{font-weight:640;font-size:11.5px;white-space:nowrap}
