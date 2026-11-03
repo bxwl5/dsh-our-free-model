@@ -3,19 +3,24 @@
  *
  * ## 为什么要有一个专门的套件
  *
- * ZCode 的每日活动额度（`/billing/preview` 下发、`/billing/claim` 领取）是**按客户端
+ * ZCode 的每日活动额度（`marketing/touch` 投放为主、`/billing/preview` 为辅）是**按客户端
  * 版本**下发的。真凭据实测（同一账号、同一 JWT、只改 `app_version`）：
  *
  * ```
- * 3.14.3 / 3.15.x / 3.16.0 / 4.0.0 → preview.plans = []
- * 3.16.3 ~ 3.20.x                  → [zcode-v3-start-plan-1028]，300,000,000 token
+ * 3.14.3 / 3.16.x / 3.17.0 / 3.21.0+ / 4.0.0 → deliveries = []（无投放）
+ * 3.17.2 ~ 3.20.x                            → [zcode-v3-start-plan-1103]，300,000,000 token
  * ```
+ *
+ * ⚠ **窗口会往上漂**（2026-11-03 实测）：`3.16.3` 在 10-28 还「已知可用」，今天已整条
+ * 出窗，症状与最初一模一样（面板显示「今日额度尚未到账」）。故兜底值的语义是
+ * **「钉在当期窗口内」而不是「钉死一个数」**：上游移动窗口时必须重扫
+ * `marketing/touch` 并同步改 `src/zcode.ts` 的三个常量。
  *
  * 本仓库此前一直发 `3.14.3`（常量 + 凭据里登录时写下的值），于是每一轮都判成
  * 「今日额度尚未到账」—— 一键领取看起来正常，实际永远领不到那 3 亿。
  *
  * 这个套件锁死三件事：
- * 1. `resolveZcodeAppVersion` 的钳制矩阵（**存量凭据 `3.14.3` 也必须被抬到 3.16.3**）；
+ * 1. `resolveZcodeAppVersion` 的钳制矩阵（**存量凭据 `3.14.3` / `3.16.3` 都必须被抬进窗口**）；
  * 2. 请求头与 `?app_version=` 用的确实是钳制后的值（不是凭据里那个旧值）；
  * 3. 领取**先不带验证头试一发**，只在 `3007` 时才去产 captcha（没有浏览器的形态
  *    也能领）。
@@ -62,34 +67,35 @@ const credential = (appVersion) => ({
   ...(appVersion === undefined ? {} : { app_version: appVersion }),
 })
 
-check('兜底版本就是服务端认的那个（3.16.3）', () => {
-  assert.equal(ZCODE_APP_VERSION_FALLBACK, '3.16.3')
+check('兜底版本钉在当期窗口内（3.20.9）', () => {
+  assert.equal(ZCODE_APP_VERSION_FALLBACK, '3.20.9')
 })
 
 check('版本钳制矩阵：旧凭据被抬起、窗口内原样、窗口外与垃圾值回落', () => {
   const cases = [
-    [undefined, '3.16.3', '缺字段'],
-    ['', '3.16.3', '空串'],
-    ['  3.14.3  ', '3.16.3', '存量凭据（登录时写的 3.14.3）'],
-    ['3.16.0', '3.16.3', '3.16.0 差一个补丁'],
-    ['3.16.2', '3.16.3', '3.16.2 差一个补丁'],
-    ['3.16.3', '3.16.3', '窗口下限'],
+    [undefined, '3.20.9', '缺字段'],
+    ['', '3.20.9', '空串'],
+    ['  3.14.3  ', '3.20.9', '存量凭据（登录时写的 3.14.3）'],
+    ['3.16.0', '3.20.9', '3.16.0（出窗，实测无投放）'],
+    ['3.16.3', '3.20.9', '3.16.3（本仓库 2026-11-03 前的兜底，今天已出窗）'],
+    ['3.17.0', '3.20.9', '3.17.0 差一个补丁（实测无投放）'],
+    ['3.17.2', '3.17.2', '窗口下限（官方客户端当前版本，实测有投放）'],
     ['3.18.0', '3.18.0', '窗口内'],
-    ['3.20.9', '3.20.9', '窗口上限'],
-    ['3.21.0', '3.16.3', '窗口之上'],
-    ['4.0.0', '3.16.3', '跨大版本（实测同样拿不到活动额度）'],
-    ['v3.16.3-beta.1', 'v3.16.3-beta.1', '带前缀/预发布后缀'],
-    ['not-a-version', '3.16.3', '垃圾值'],
+    ['3.20.9', '3.20.9', '窗口上限（钉住的兜底值）'],
+    ['3.21.0', '3.20.9', '窗口之上（实测无投放）'],
+    ['4.0.0', '3.20.9', '跨大版本（实测同样拿不到活动额度）'],
+    ['v3.17.2-beta.1', 'v3.17.2-beta.1', '带前缀/预发布后缀'],
+    ['not-a-version', '3.20.9', '垃圾值'],
   ]
   for (const [stored, want, why] of cases) {
     assert.equal(resolveZcodeAppVersion(stored), want, `${why}: ${String(stored)}`)
   }
 })
 
-check('请求头用钳制后的版本（存量 3.14.3 凭据也发 3.16.3）', () => {
+check('请求头用钳制后的版本（存量 3.14.3 凭据也发钉住的 3.20.9）', () => {
   const headers = buildZcodeHeaders(credential('3.14.3'), { authorization: 'Bearer x' })
-  assert.equal(headers['X-ZCode-App-Version'], '3.16.3')
-  assert.equal(headers['User-Agent'], 'ZCode/3.16.3')
+  assert.equal(headers['X-ZCode-App-Version'], '3.20.9')
+  assert.equal(headers['User-Agent'], 'ZCode/3.20.9')
   // 窗口内的值不被改写
   const kept = buildZcodeHeaders(credential('3.18.0'), {})
   assert.equal(kept['X-ZCode-App-Version'], '3.18.0')
@@ -105,7 +111,7 @@ check('preview 的 ?app_version= 也是钳制后的值', async () => {
   // 自 2026-11-02 起两个来源都查（投放 + preview），故这里只挑 preview 那条断言。
   const preview = seen.find(url => url.includes('/billing/preview'))
   assert.ok(preview !== undefined, '必须查 preview')
-  assert.match(preview, /[?&]app_version=3\.16\.3(&|$)/)
+  assert.match(preview, /[?&]app_version=3\.20\.9(&|$)/)
   assert.doesNotMatch(preview, /app_version=3\.14\.3/)
 })
 
@@ -119,7 +125,7 @@ check('balance 里的活动清单同样按新版本查', async () => {
   assert.ok(result !== undefined)
   const preview = seen.find(url => url.includes('/billing/preview'))
   assert.ok(preview !== undefined, 'balance 会附带查一次 preview')
-  assert.match(preview, /app_version=3\.16\.3/)
+  assert.match(preview, /app_version=3\.20\.9/)
 })
 
 check('领取**不带验证头**时不发 captcha 头（没有浏览器的形态也能领）', async () => {
@@ -128,9 +134,9 @@ check('领取**不带验证头**时不发 captcha 头（没有浏览器的形态
     headers = init.headers
     return new Response(JSON.stringify({ code: 0, data: { plan: { plan_id: 'p', status: 'active' } } }), { status: 200 })
   }
-  const outcome = await claimZcodePlan(credential('3.14.3'), 'zcode-v3-start-plan-1028', undefined, fetchImpl)
+  const outcome = await claimZcodePlan(credential('3.14.3'), 'zcode-v3-start-plan-1103', undefined, fetchImpl)
   assert.equal(outcome.ok, true)
-  assert.equal(headers['X-ZCode-App-Version'], '3.16.3')
+  assert.equal(headers['X-ZCode-App-Version'], '3.20.9')
   // 头名在 `buildZcodeHeaders` 里是小写（HTTP 头不区分大小写，这里按实际写法断言）
   assert.equal(headers['x-aliyun-captcha-verify-param'], undefined)
   assert.equal(headers['x-aliyun-captcha-verify-region'], undefined)

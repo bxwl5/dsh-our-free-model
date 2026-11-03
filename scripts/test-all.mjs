@@ -48,8 +48,9 @@ const suites = [
   ['channel-pack', 'channel-pack-test.mjs', []],
   ['channel-source', 'channel-pack-test.mjs', ['--source', '--channels-only']],
   ['channel-network', 'channel-network-test.mjs', []],
-  // ZCode 每日活动额度的**客户端版本门槛**（2026-10-28）：服务端只对 3.16.3–3.20.x
-  // 下发 …start-plan 活动包，而凭据里存着登录时的 3.14.3 —— 不钳制就永远「今日没到账」。
+  // ZCode 每日活动额度的**客户端版本门槛**（2026-10-28 立、2026-11-03 复核）：服务端按
+  // app_version 窗口下发 …start-plan 活动包，且窗口会随活动期上移（3.16.3 已出窗，现钉
+  // 3.17.2–3.20.x / 兜底 3.20.9）；而凭据里存着登录时的旧值 —— 不钳制就永远「今日没到账」。
   // 同时锁死「领取先裸发、3007 才产 captcha」这条不依赖浏览器的路径。
   ['zcode-app-version', 'zcode-app-version-test.mjs', []],
   // 自动签到的逐渠道记账（2026-10-26）：失败渠道当天可补跑 / coversToday=false

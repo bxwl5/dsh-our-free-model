@@ -50,7 +50,6 @@ window.__ModuleLoader__.load({
         'state.unknown': '未探测',
         'state.listed': '已列出 · 未实测',
         'roster.selectable': '免费模型',
-        'roster.lanesMoved': '渠道模型不在首页列出：请到「渠道」页按供应商查看、开关与测速。',
         'roster.kilo': 'Kilo 车道',
         'roster.kiloHint': '聚合车道，与免费车道一起作为兜底候选。',
         'hint.listed': '来自渠道目录，未做逐模型推理测试；不代表对话或工具调用成功。',
@@ -76,8 +75,6 @@ window.__ModuleLoader__.load({
         'tag.kiloChannel': 'Kilo 渠道 · 免费池（prompt 可能被上游记录用于改进服务，勿发送敏感内容）',
         'section.models': '模型清单',
         'section.modelsHint': '名称与能力来自上游清单与公开能力表，可用性由本机出口实测得出。',
-        'section.dash': '性能预览',
-        'section.dashHint': '下面四块各自折叠；完整数据看板在「数据看板」页，数据只写入本机。',
         'section.forward': '本地转发（OpenAI 兼容）',
         'section.forwardHint': '让其它本地工具用一个 base URL 调用这些模型。',
         'section.egress': '出口代理（订阅分流）',
@@ -114,8 +111,6 @@ window.__ModuleLoader__.load({
         'curve.requests': '请求数',
         'curve.total': '总计',
         'stat.output': '输出 Token',
-        'stat.cacheRead': '缓存读 Token',
-        'stat.reasoning': '推理 Token',
         'col.reason': '推理',
         'col.output': '输出',
         'last.title': '最近一回合',
@@ -138,8 +133,6 @@ window.__ModuleLoader__.load({
         'speed.turns': '对话回合',
         'speed.turnFailed': '回合失败',
         'speed.recovered': '已恢复',
-        'speed.estimated': '升级前的历史按上游请求估算，之后按最终结果精确记录。',
-        'speed.scope': '请求、回合、Token 为累计；速度与首帧取最近 40 次调用。',
         'speed.none': '暂无样本',
         'speed.note': '输出速度只统计 {n}/{total} 次可测调用：未流式送出的思考 token 与过短的解码窗口不计入。',
         'unit.tokPerSec': 'tok/s',
@@ -554,7 +547,6 @@ window.__ModuleLoader__.load({
         'state.unknown': 'Not probed',
         'state.listed': 'Listed · not tested',
         'roster.selectable': 'Free models',
-        'roster.lanesMoved': 'Channel models are not listed here — open the Channels page to inspect, toggle and benchmark them per provider.',
         'roster.kilo': 'Kilo lane',
         'roster.kiloHint': 'Aggregate lane, kept as a fallback beside the free lane.',
         'hint.listed': 'Listed by the channel; inference has not been tested. This does not confirm chat or tool use.',
@@ -580,8 +572,6 @@ window.__ModuleLoader__.load({
         'tag.kiloChannel': 'Kilo channel · free pool (prompts may be logged by the upstream provider — never send sensitive content)',
         'section.models': 'Model roster',
         'section.modelsHint': 'Names and capacities come from the upstream roster and published capability tables; availability is measured from this machine.',
-        'section.dash': 'Performance preview',
-        'section.dashHint': 'The four panels below fold independently; the full ledger lives on its own page.',
         'section.forward': 'Local forward (OpenAI compatible)',
         'section.forwardHint': 'Let other local tools reach these models through one base URL.',
         'section.egress': 'Egress outlet (subscription routing)',
@@ -618,8 +608,6 @@ window.__ModuleLoader__.load({
         'curve.requests': 'Requests',
         'curve.total': 'Total',
         'stat.output': 'Output tokens',
-        'stat.cacheRead': 'Cache-read tokens',
-        'stat.reasoning': 'Reasoning tokens',
         'col.reason': 'reason',
         'col.output': 'output',
         'last.title': 'Last turn',
@@ -642,8 +630,6 @@ window.__ModuleLoader__.load({
         'speed.turns': 'Conversation turns',
         'speed.turnFailed': 'Turn failures',
         'speed.recovered': 'Recovered',
-        'speed.estimated': 'Pre-upgrade history is estimated from upstream requests; turns are exact after upgrade.',
-        'speed.scope': 'Requests, turns and tokens are lifetime totals; speed and first frame use the last 40 calls, the heatmap is daily.',
         'speed.none': 'No samples yet',
         'speed.note': 'Output speed covers the {n}/{total} calls it could measure: tokens never streamed out are left out of the numerator, and windows too short to time are dropped.',
         'unit.tokPerSec': 'tok/s',
@@ -2667,7 +2653,7 @@ window.__ModuleLoader__.load({
         group(t('visibility.unlisted'), unlisted, undefined, true),
         group(t('roster.kilo'), kiloRows, t('roster.kiloHint'), true),
         group(t('state.region-blocked'), limited, t('hint.region')),
-        lanes.length === 0 ? null : h('p', { className: 'ofm_note' }, t('roster.lanesMoved')))
+        )
     }
 
     // ── dashboard ─────────────────────────────────────────────────────────────
@@ -2753,17 +2739,6 @@ window.__ModuleLoader__.load({
         ? 'var(--dsw-alias-state-business-primary)'
         : SEASON[Math.max(0, models.findIndex(m => m.model === metric)) % SEASON.length]
 
-      const headline = h('div', { className: 'ofm_stats' },
-        stat(kilo(stats.grand.input + stats.grand.output + (stats.grand.cacheRead ?? 0)), t('curve.tokens')),
-        stat(kilo(stats.grand.output), t('stat.output')),
-        stat(kilo(stats.grand.cacheRead ?? 0), t('stat.cacheRead')),
-        stat(kilo(stats.grand.reasoning), t('stat.reasoning')),
-        stat(String(stats.requests ?? 0), t('speed.calls')),
-        stat(String(stats.requestFailures ?? stats.grand.failed ?? 0), t('speed.failed')),
-        stat(String(stats.turns ?? stats.grand.turns ?? 0), t('speed.turns')),
-        stat(String(stats.failedTurns ?? stats.grand.failedTurns ?? 0), t('speed.turnFailed')),
-        stat(String(stats.recoveredTurns ?? stats.grand.recoveredTurns ?? 0), t('speed.recovered')))
-
       const heatmap = h(Heatmap, { days, t })
 
       const legend = h('div', { className: 'ofm_chips' },
@@ -2837,17 +2812,11 @@ window.__ModuleLoader__.load({
             numTd(m.failed === 0 ? '—' : m.failed),
             numTd(m.failedTurns === 0 ? '—' : m.failedTurns)))))))
 
-      const historyNote = stats.logicalEstimated || stats.requestFailuresEstimated
-        ? h('p', { className: 'ofm_note' }, t('speed.estimated'))
-        : null
       // ⚠️ 四块各自折叠 + 横排（用户 2026-11-03 第 2/3/4 项）：折叠态每块只是
       // 卡片里一行小字，四枚排在一条 auto-fit 网格里；展开的那枚横跨整行在
       // 卡内展开完整内容。顺序仍是热力图、总量曲线、速度、模型表 —— 展开的
       // 内容里热力图在上、曲线在下（此前两者并排被压成半栏，反而更难扫）。
       return h(Fragment, null,
-        headline,
-        h('p', { className: 'ofm_note' }, t('speed.scope')),
-        historyNote,
         h('div', { className: 'ofm_foldgrid' },
           [h(FoldCard, { key: 'heat', title: t('heat.title'), hint: t('heat.hint') }, heatmap),
             h(FoldCard, { key: 'curve', title: t('curve.title'), hint: t('curve.hint') }, curve),
@@ -5977,9 +5946,11 @@ window.__ModuleLoader__.load({
                 h(Button, { disabled: busy || catalogBusy, onClick: refresh }, catalogBusy || summary.status === 'loading' ? t('probing') : t('refresh')),
                 h(Button, { disabled: busy || catalogBusy, onClick: reprobe }, t('reprobe')))))),
         h(Section, { title: t('section.models'), hint: t('section.modelsHint') }, h(Roster, { summary: data, t, onBench: bench, benches, onApply: apply, busy })),
-        h(Section, { title: t('section.dash'), hint: t('section.dashHint') },
-          stats.status === 'ready' && stats.data !== undefined ? h(Dashboard, { stats: stats.data, t })
-            : h('p', { className: 'ofm_note' }, t('loading'))),
+        // 首页不再有一个「性能预览」小节，也没有那一排累计数字/口径说明（用户
+        // 2026-11-03：这些全不要了）—— 累计统计在「数据看板」页都有，这里只留
+        // 四张折叠卡本身。
+        stats.status === 'ready' && stats.data !== undefined ? h(Dashboard, { stats: stats.data, t })
+          : h('p', { className: 'ofm_note' }, t('loading')),
         // 这两节是「配一次就不再碰」的设置：默认折叠（用户 2026-11-03），
         // 免得它们把模型清单和看板顶出首屏。
         // 这两节也用折叠卡（用户 2026-11-03 第 3 项）：和看板的四块同一个样子，

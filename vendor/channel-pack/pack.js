@@ -55909,8 +55909,8 @@ function phoneFromUserId(userId) {
   if (!PHONE_RE2.test(head)) return void 0;
   return `${head.slice(0, 3)}****${head.slice(-4)}`;
 }
-var ZCODE_APP_VERSION_FALLBACK = "3.16.3";
-var ZCODE_APP_VERSION_MIN = "3.16.3";
+var ZCODE_APP_VERSION_FALLBACK = "3.20.9";
+var ZCODE_APP_VERSION_MIN = "3.17.2";
 var ZCODE_APP_VERSION_MAX_MINOR = 20;
 function parseAppVersion(value) {
   const matched = /^v?(\d+)\.(\d+)\.(\d+)/.exec(value.trim());

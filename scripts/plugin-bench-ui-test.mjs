@@ -163,8 +163,10 @@ await check('the home roster groups by lane, not by the route every model shares
   const cardIds = ['free-1', ...folded.flatMap(node => flatten(node.children).filter(x => x?.type === ModelCard).map(x => x.props.model.id))]
   assert.deepEqual(cardIds, ['free-1', 'opencode-free-1', 'kilo/m2'],
     '首页只列免费车道（含未公开的 opencode 免费模型）与 Kilo；渠道模型与链路都不在这里')
-  assert.ok(roster.includes(app.t('roster.lanesMoved')),
-    '渠道模型不列出来，但要告诉用户它们去哪了')
+  // 「渠道模型去哪了」的说明行也删了（用户 2026-11-03：这些全不要了）：
+  // 渠道页自己就是入口，首页不必再留一句指路文案。
+  assert.equal(roster.includes(app.t('roster.lanesMoved')), false,
+    'no pointer sentence left on the home page')
 })
 
 await check('the home dashboard folds each chart on its own, heatmap above the curve', () => {
