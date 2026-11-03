@@ -95,7 +95,18 @@ check('版本钳制矩阵：旧凭据被抬起、窗口内原样、窗口外与�
 check('请求头用钳制后的版本（存量 3.14.3 凭据也发钉住的 3.20.9）', () => {
   const headers = buildZcodeHeaders(credential('3.14.3'), { authorization: 'Bearer x' })
   assert.equal(headers['X-ZCode-App-Version'], '3.20.9')
-  assert.equal(headers['User-Agent'], 'ZCode/3.20.9')
+  /**
+   * ⚠ UA **不再拼版本号**：官方 bundle 的来源头常量就是 `ZCode/unknown`
+   * （`K0 = {"User-Agent":"ZCode/unknown",...}`）。版本号只出现在
+   * `X-ZCode-App-Version` 里 —— 两个头都带版本反而是我们独有的特征。
+   */
+  /**
+   * ⚠️ 实抓纠正：官方 `~/.zcode/cli/rollout/model-io-sess_*.jsonl` 的
+   * `request.headers` 里 `user-agent: ZCode/3.17.2` —— **带真实版本号**。
+   * bundle 里 `K0 = { "User-Agent": "ZCode/unknown" }` 只是来源头常量兜底，
+   * 真实请求会把版本拼进去。以实抓为准。
+   */
+  assert.equal(headers['User-Agent'], 'ZCode/3.20.9', 'UA 带真实版本号（官方实测形态）')
   // 窗口内的值不被改写
   const kept = buildZcodeHeaders(credential('3.18.0'), {})
   assert.equal(kept['X-ZCode-App-Version'], '3.18.0')
@@ -153,24 +164,36 @@ check('需要验证时两个验证头成对下发', async () => {
   assert.equal(headers['x-aliyun-captcha-verify-region'], 'cn')
 })
 
-check('请求头补齐官方必带的三项 + X-Platform 的 platform-arch 形态', async () => {
+check('请求头逐字对齐官方真实请求（2026-11-04 实抓 model-io）', async () => {
   const { buildZcodeHeaders } = await import('../vendor/channel-pack/src/zcode-upstream.ts')
   const headers = buildZcodeHeaders({ device_mid: 'fixture-uuid', app_version: '3.20.9' }, { authorization: 'Bearer x' })
   /**
-   * 官方 `zai-org/ZCode` 的 `packages/shared/src/zcode-source-headers.ts`：
-   * `X-Title: "Z Code@electron"` 是**硬编码常量**；社区实现
-   * `pjpv/zcode-switch` 的 claim 头另有 `X-Os-Version` 与 `x-request-id`。
-   * 我们此前三项全缺，且 `X-Platform` 发的是裸 `win32`（官方是 `${platform}-${arch}`）。
+   * 证据来源：官方客户端自己落的 model-io 记录
+   * `~/.zcode/cli/rollout/model-io-sess_*.jsonl` 的 `request.headers`。
+   * 这是**真实发出去的头**，比 bundle 反解可靠。
    */
-  assert.equal(headers['X-Title'], 'Z Code@electron', 'X-Title 照抄官方常量')
-  assert.match(String(headers['X-Os-Version']), /^\d+\.\d+/, 'X-Os-Version 形状是数字版本串')
-  assert.match(String(headers['x-request-id']), /^[0-9a-f-]{36}$/, 'x-request-id 是 UUID')
-  assert.equal(headers['X-Platform'], 'win32-x64', 'X-Platform 是 platform-arch')
-  // 每请求新 id，不复用。
-  const again = buildZcodeHeaders({ device_mid: 'fixture-uuid', app_version: '3.20.9' })
-  assert.notEqual(again['x-request-id'], headers['x-request-id'], 'x-request-id 每请求不同')
-  // 验证头仍然只在带 captcha 时出现（不要无条件发一个空 param）。
-  assert.equal('x-aliyun-captcha-verify-param' in headers, false, '不带 captcha 时不得发验证头')
+  const official = {
+    'http-referer': 'https://zcode.z.ai',
+    'x-title': 'Z Code@electron',
+    'x-release-channel': 'production',   // 不是 stable
+    'x-client-language': 'zh-CN',
+    'x-client-timezone': 'Asia/Shanghai',
+    'x-zcode-agent': 'glm',              // 此前完全没发
+    'x-os-category': 'linux',
+  }
+  const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]))
+  assert.equal(lower['http-referer'], official['http-referer'])
+  assert.equal(lower['x-title'], official['x-title'], 'X-Title 官方常量')
+  assert.equal(lower['x-release-channel'], official['x-release-channel'], 'release channel 是 production')
+  assert.equal(lower['x-client-language'], official['x-client-language'])
+  assert.equal(lower['x-client-timezone'], official['x-client-timezone'])
+  assert.equal(lower['x-zcode-agent'], official['x-zcode-agent'], 'x-zcode-agent=glm（渠道判据）')
+  assert.equal(lower['x-os-category'], official['x-os-category'], 'os category 跟真实宿主')
+  // 动态头：每请求新 UUID
+  assert.match(String(lower['x-request-id']), /^[0-9a-f-]{36}$/, 'x-request-id 是 UUID')
+  assert.equal(lower['x-device-mid'], 'fixture-uuid')
+  // 验证头只在带 captcha 时出现
+  assert.equal('x-aliyun-captcha-verify-param' in lower, false, '不带 captcha 时不发验证头')
   const withCaptcha = buildZcodeHeaders({ device_mid: 'u', app_version: '3.20.9' }, { captcha: { param: 'p', region: 'cn' } })
   assert.equal(withCaptcha['x-aliyun-captcha-verify-param'], 'p')
 })

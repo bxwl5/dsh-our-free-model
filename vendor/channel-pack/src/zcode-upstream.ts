@@ -118,23 +118,6 @@ export const ZCODE_EVENT_REPORT_URL = `${ZCODE_ORIGIN}/api/v1/event/report`
 export const ZCODE_CLIENT_CONFIGS_URL = `${ZCODE_ORIGIN}/api/v1/client/configs`
 
 /**
- * OS 版本字符串（`X-Os-Version`）。
- *
- * 官方客户端是 Electron 跑在 Windows 上，发的是 `10.0.<build>` 形态。我们不是
- * 那台机器，取本机真实内核版本即可 —— 关键是**这个头存在且形状正确**，而不是
- * 某个具体数值（没有任何实测表明上游校验它的具体内容）。
- */
-function osVersionHeader(): string {
-  // `os.version()` 在 Linux/macOS 上给出内核串（如 `6.8.0-45-generic`），
-  // 而官方形态是 `10.0.<build>`；对不上形状时退回一个通行值。
-  const raw = os.version?.() ?? ''
-  const win = /^(\d+)\.(\d+)\.(\d+)/.exec(raw)
-  if (win !== null) return raw
-  // 非 Windows 宿主：发 Windows 10 的通行使。
-  return '10.0.19045'
-}
-
-/**
  * 构造 ZCode 的「来源标识」请求头。
  *
  * ⚠ 这些头是官方客户端在真实流量里发的。实测**它们不是 3012 的判据**
@@ -166,28 +149,123 @@ function osVersionHeader(): string {
  * ⚠ `X-Title` 是官方源码里的**常量字面量** `Z Code@electron`，照抄即可。
  * ⚠ `x-request-id` 每请求一个新的 UUID（官方也是每请求生成，不复用）。
  */
+/** 官方 `x-platform` 形态：`${platform}-${arch}`，arch 用 `x64`（官方 linux-x64）。 */
+function clientPlatformKey(): string {
+  return `${process.platform}-${process.arch}`
+}
+
+/** 官方 `x-os-category`：windows / linux / macos。 */
+function osCategory(): string {
+  if (process.platform === 'win32') return 'windows'
+  if (process.platform === 'darwin') return 'macos'
+  return 'linux'
+}
+
+/** 官方 `x-os-version`：真实内核版本串（官方实测 `6.18.48-amd64-desktop-rolling`）。 */
+function osVersionHeader(): string {
+  try {
+    return os.release()
+  } catch {
+    return 'unknown'
+  }
+}
+
 export function buildZcodeHeaders(
   credential: Pick<ZcodeCredential, 'device_mid' | 'app_version'>,
   options: { authorization?: string; json?: boolean; captcha?: { param: string; region: string } } = {},
 ): Record<string, string> {
   const appVersion = resolveZcodeAppVersion(credential.app_version)
+  /**
+   * ## ⚠️ 逐字对齐官方 bundle 的头部构造（2026-11-04 从官方 3.17.2 反解）
+   *
+   * 官方 `out/main/index.js` 里的真实逻辑（变量名原样）：
+   *
+   * ```js
+   * var K0 = { "User-Agent": "ZCode/unknown", "HTTP-Referer": "https://zcode.z.ai",
+   *            "X-Title": "Z Code@electron" }
+   * // dt(...) 之后：
+   * return {
+   *   ...K0,
+   *   "HTTP-Referer": s,
+   *   "User-Agent": `ZCode/${n ?? "unknown"}`,
+   *   ...n ? { "X-ZCode-App-Version": n } : {},
+   *   "X-Title": `Z Code@${g}`,                       // g 默认 "electron"
+   *   ...p && r ? { "X-Platform": `${p}-${r}` } : {},  // **两者都有值才发**
+   *   ...m ? { "X-Release-Channel": m } : {},          // **有值才发**
+   * }
+   * ```
+   *
+   * 由此推出三条此前做错的：
+   *
+   * 1. **UA 是 `ZCode/unknown`**，不是 `ZCode/<版本号>`。官方只在拿到版本号时才把
+   *    版本拼进 UA；而它的来源头常量里默认就是 `unknown`。我们此前发
+   *    `ZCode/3.20.9` —— 一个「声称客户端版本 3.20.9」的 UA。
+   * 2. **`X-Release-Channel` 是条件头**：官方只在有 `releaseChannel` 时才发，
+   *    硬编码 `stable` 属于凭空多出一个字段。
+   * 3. **没有 `X-Os-Category` / `X-Os-Version` / `x-request-id` / `X-Client-Language`
+   *    / `X-Client-Timezone` / `anthropic-version`** —— 这些是我们从社区项目
+   *    （`pjpv/zcode-switch`）抄来的，官方 bundle 里**一个都没有**。
+   *    抓包也证实了这点：官方 MCP 请求只发 `accept / authorization /
+   *    content-type` 三个头（`/tmp/zcap/captured` 实测）。
+   *
+   * ⚠️ 多发的头在内容级风控眼里就是「你不是官方客户端」的证据 ——
+   *    官方的原则是**只发它真会发的**，而不是「能发就发」。
+   *
+   * ⚠️ 但 `X-Device-Mid` 必须发：本仓库实测缺它 `billing` 全家桶回
+   *    `400 / 3001`（见 `zcode.ts` 的 device_mid 注释）。它由官方的
+   *    `NodeApiClient` 统一注入，不在上面那个 `K0` 常量里。
+   */
+  /**
+   * ## ⚠️ 逐字对齐**官方客户端的真实请求**（2026-11-04 从本机官方 3.17.2 抓到）
+   *
+   * 证据来源不是社区项目、也不是 bundle 反解，而是官方客户端自己落的
+   * **model-io 记录**（`~/.zcode/cli/rollout/model-io-sess_*.jsonl` 的
+   * `request.headers`）—— 它记的就是真实发出去的每一个头。实测值：
+   *
+   * ```
+   * http-referer: https://zcode.z.ai
+   * user-agent: ZCode/3.17.2
+   * x-zcode-app-version: 3.17.2
+   * x-title: Z Code@electron
+   * x-release-channel: production          ← 不是 stable
+   * x-client-language: zh-CN
+   * x-client-timezone: Asia/Shanghai
+   * x-zcode-agent: glm                     ← 我们此前完全没发
+   * x-platform: linux-x64                  ← 官方确实发，且是真实宿主
+   * x-os-category: linux
+   * x-os-version: 6.18.48-amd64-desktop-rolling
+   * x-request-id: <uuid>
+   * x-zcode-session-type: main
+   * x-zcode-trace-id: <uuid>
+   * x-query-id: <uuid>
+   * x-zcode-query-source: main_turn
+   * x-session-id: <uuid>
+   * ```
+   *
+   * 注意这里**纠正了我上一版的判断**：我先前从 bundle 的 `K0` 常量推断官方只发
+   * 5 个头，那是**来源头常量**（`ZCODE_SOURCE_HEADERS`）的形状 —— 官方还有
+   * `NodeApiClient` 在真实请求上统一追加的那一批。以实抓为准。
+   *
+   * ⚠️ `x-zcode-agent: glm` 很可能是**渠道/agent 判据**：官方内置 agent 是 glm。
+   * ⚠️ `x-release-channel` 官方发 `production`，我们此前发 `stable` —— 值不对。
+   * ⚠️ `user-agent` 官方带真实版本号 `ZCode/3.17.2`（`K0` 里的 `unknown` 只是
+   *    常量兜底，真实请求会把版本拼进去）。
+   */
   const headers: Record<string, string> = {
     'User-Agent': `ZCode/${appVersion}`,
     'HTTP-Referer': ZCODE_ORIGIN,
-    // 官方 `ZCODE_SOURCE_HEADERS` 的硬编码常量。
     'X-Title': 'Z Code@electron',
     'X-ZCode-App-Version': appVersion,
-    'X-Release-Channel': 'stable',
+    'X-Release-Channel': 'production',
     'X-Client-Language': 'zh-CN',
     'X-Client-Timezone': 'Asia/Shanghai',
+    'X-Zcode-Agent': 'glm',
     'X-Device-Mid': credential.device_mid,
-    // 官方是 `${platform}-${arch}`（如 `win32-x64`），不是裸平台名。
-    'X-Platform': 'win32-x64',
-    'X-Os-Category': 'windows',
+    // 真实宿主平台（官方同样发真实值，不是硬编码 Windows）。
+    'X-Platform': clientPlatformKey(),
+    'X-Os-Category': osCategory(),
     'X-Os-Version': osVersionHeader(),
-    // 每请求一个新的请求 id（官方同样每请求生成）。
     'x-request-id': randomUUID(),
-    'anthropic-version': '2023-06-01',
   }
   if (options.json !== false) headers['Content-Type'] = 'application/json'
   if (options.authorization !== undefined) headers['Authorization'] = options.authorization
