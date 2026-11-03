@@ -279,14 +279,16 @@ assert.equal(
   nodes(picker).find(node => node.type === 'button' && node.props.className === 'ofm_pickgrouphead').props['aria-expanded'], 'true',
   'clicking the group head expands it',
 )
-// 候选行只显示「名称 + 渠道」：id 与容量已从列表移除（用户 2026-11-03 要求，
-// 那些数字对"要不要加进链路"没有帮助，链路容量在下面的交集里给）。这里确认
-// 行上确实只剩那段，而模型名与渠道都在。
+// 候选行只显示「名称」：id/容量（2026-11-03 第一轮）与行内渠道标签（同日第二轮）
+// 都已从列表移除——供应商分组标题就是渠道名，行内再挂一遍是重复信息。这里确认
+// 行上只有模型名与选中勾。
 const pickerRows = nodes(picker).filter(node => node.props.className === 'ofm_pickrow')
 assert.equal(pickerRows.length, capacityModels.length, 'every model of the expanded group has a row')
 for (const row of pickerRows) {
   assert.ok(texts(row).some(text => text === 'Large' || text === 'Small'), 'the row still names the model')
   assert.ok(!texts(row).some(text => text.includes('·')), 'no id/capacity fragment is rendered on the row')
+  assert.ok(!texts(row).some(text => text.includes('渠道') || text.includes('Lane') || text.includes('ZCode') || text.includes('Kilo')),
+    'no inline lane label on the row — the group heading already names the provider')
 }
 captureEffects = true
 const editorProps = { t, models: capacityModels, chain: { name: 'Fixture', models: ['small', 'large'] } }

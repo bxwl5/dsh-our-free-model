@@ -64,15 +64,6 @@ window.__ModuleLoader__.load({
         'tag.thinkingShared': '思考不可关',
         'tag.rung': '默认档上限',
         'tag.rungTitle': '各档位实际输出上限：{ladder}。思考与回答共用该额度，不超过最长输出与单次上限。',
-        'tag.levels': '思考档',
-        'tag.levelsTitle': '该模型自己声明的思考档位，选中后按原值下发到上游的 reasoning_effort 字段；档位之外的取值会被上游拒绝。',
-        'effort.off': '关闭',
-        'effort.minimal': '最小',
-        'effort.low': '低',
-        'effort.medium': '中',
-        'effort.high': '高',
-        'effort.xhigh': '极高',
-        'effort.max': '最大',
         'tag.context': '上下文',
         'tag.output': '最长输出',
         'tag.latency': '首字',
@@ -571,15 +562,6 @@ window.__ModuleLoader__.load({
         'tag.thinkingShared': 'Thinking always on',
         'tag.rung': 'Default ceiling',
         'tag.rungTitle': 'What each rung actually sends: {ladder}. A rung is one ceiling shared by thinking and the answer, and it never exceeds the max output above or the per-call ceiling in settings.',
-        'tag.levels': 'Thinking levels',
-        'tag.levelsTitle': 'The levels this model declares itself; the selected one is sent as-is in the upstream reasoning_effort field, and a value outside the set is rejected upstream.',
-        'effort.off': 'Off',
-        'effort.minimal': 'Minimal',
-        'effort.low': 'Low',
-        'effort.medium': 'Medium',
-        'effort.high': 'High',
-        'effort.xhigh': 'Extra high',
-        'effort.max': 'Max',
         'tag.context': 'Context',
         'tag.output': 'Max output',
         'tag.latency': 'First token',
@@ -2046,7 +2028,6 @@ window.__ModuleLoader__.load({
 .ofm_pickhead{display:flex;align-items:center;gap:6px;min-width:0;flex:1}
 .ofm_pickhead b{font-size:12px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
 .ofm_pickcheck{flex:none;font-size:11px;font-weight:700;color:var(--dsw-alias-state-business-primary)}
-.ofm_picklane{flex:none;font-size:10px;padding:1px 5px;border-radius:5px;background:color-mix(in srgb,var(--dsw-alias-label-tertiary) 16%,transparent);color:var(--dsw-alias-label-tertiary);white-space:nowrap}
 .ofm_meter{height:9px;border-radius:99px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);overflow:hidden}
 .ofm_meter i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,color-mix(in srgb,var(--dsw-alias-state-business-primary) 62%,transparent),var(--dsw-alias-state-business-primary));transition:width .55s cubic-bezier(.22,.61,.36,1)}
 .ofm_member{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:10px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l1) 82%,transparent);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 58%,transparent);font-size:11.5px;transition:border-color .16s ease,background .16s ease}
@@ -2532,20 +2513,6 @@ window.__ModuleLoader__.load({
       const stateKey = `state.${m.availability}`
       const dim = !listed && m.availability !== 'available'
       const rung = (m.budgets ?? []).find(row => row.isDefault === true)
-      // A model that declares its own thinking levels shows them beside the
-      // ceiling tag, so the card names what the composer's Effort menu offers.
-      // Each id is looked up with a literal call so the dictionary lint can see
-      // the key, and an id with no translation falls back to the id itself.
-      const levelName = id => id === 'disabled' || id === 'none' ? t('effort.off')
-        : id === 'minimal' ? t('effort.minimal')
-          : id === 'low' ? t('effort.low')
-            : id === 'medium' ? t('effort.medium')
-              : id === 'high' ? t('effort.high')
-                : id === 'xhigh' ? t('effort.xhigh')
-                  : id === 'max' ? t('effort.max') : id
-      const levels = Array.isArray(m.efforts) && m.efforts.length > 0
-        ? m.efforts.map(levelName).join(' / ')
-        : undefined
       return h('article', { className: 'ofm_card' + (dim ? ' dim' : '') + (m.pinned === true ? ' pinned' : '') },
         h('div', { className: 'ofm_cardhead' },
           m.channel === 'kilo' ? h('span', { className: 'ofm_chantag', title: t('tag.kiloChannel') }, 'Kilo') : null,
@@ -2564,8 +2531,10 @@ window.__ModuleLoader__.load({
           rung === undefined ? null
             : h('span', { className: 'ofm_tag', title: t('tag.rungTitle').replace('{ladder}', m.budgets.map(row => `${row.name} ${kilo(row.tokens)}`).join(' · ')) },
               `${t('tag.rung')} ${kilo(rung.tokens)}`),
-          levels === undefined ? null
-            : h('span', { className: 'ofm_tag', title: t('tag.levelsTitle') }, `${t('tag.levels')} ${levels}`)),
+          // 「思考档 关闭 / 低 / 中 / 高」不再上卡片（用户 2026-11-03）：
+          // 对每个模型都长一样（档位菜单在模型选择器/对话里仍然生效），只是
+          // 把卡片垫高了一行。档位详情留在 tag.rung（默认档上限）的悬浮提示里。
+          ),
         listed ? h('p', { className: 'ofm_note' }, t('hint.listed'))
           : manual && m.availability !== 'available' ? h('p', { className: 'ofm_note' }, m.detail || t(stateKey))
           : m.availability === 'region-blocked' ? h('p', { className: 'ofm_note' }, t('hint.region'))
@@ -5279,7 +5248,6 @@ window.__ModuleLoader__.load({
       // 渠道模型的名字会跨供应商重复（GLM-5.3 在不止一家），所以候选必须按
       // provider 分组展示：平铺成一列时两个同名条目长得一样，用户选中哪个只能猜。
       const providerOf = row => row.provider ?? row.channel ?? 'free'
-      const labelOf = row => laneLabelOf(t, row.channel, row.provider)
       const matched = models.filter(row => {
         if (only !== '' && providerOf(row) !== only) return false
         if (needle === '') return true
@@ -5320,10 +5288,11 @@ window.__ModuleLoader__.load({
       // 第二行，但那三个数字对「要不要把它加进链路」几乎没有帮助 —— 链路的
       // 真实容量在本页下方的「链路能力交集」里按交集算，那里才是权威。
       // 模型详情在模型页与对话框选择器里仍完整可见，这里不必重复。
+      // 渠道标签不再上这行（用户 2026-11-03）：成员已经按供应商分组展示，
+      // 组标题就是渠道名，行内再挂一遍是重复信息，还把长模型名挤成省略号。
       h('span', { className: 'ofm_pickhead' },
         h('b', { title: row.name }, row.name ?? row.id),
-        picked ? h('span', { className: 'ofm_pickcheck' }, '✓') : null,
-        h('span', { className: 'ofm_picklane' }, labelOf(row))))
+        picked ? h('span', { className: 'ofm_pickcheck' }, '✓') : null))
       }
       return h('div', { className: 'ofm_panel' },
         h('div', { className: 'ofm_paneltitle' }, t('routing.pickModel')),
