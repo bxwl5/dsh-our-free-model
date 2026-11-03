@@ -527,6 +527,9 @@ window.__ModuleLoader__.load({
         'routing.pickNoChannels': '还没有可路由的渠道模型：请先在渠道页登录账号并启用模型。',
         'routing.pickFilterAll': '全部',
         'routing.pickFilterLabel': '按供应商筛选',
+        'routing.pickThisModel': '点击加入链路',
+        'routing.unpickModel': '再点一次移出链路',
+        'routing.picked': '已加入',
         'gw.clientsTitle': '接入客户端',
         'gw.clientsHint': '免费车道转发端口的接入配方：地址与 Key 按实际绑定端口与真实密钥生成。',
         'gw.clientsOff': '转发端口未启用',
@@ -1021,6 +1024,9 @@ window.__ModuleLoader__.load({
         'routing.pickNoChannels': 'No routable channel models yet: sign in on the Channels page and enable models first.',
         'routing.pickFilterAll': 'All',
         'routing.pickFilterLabel': 'Filter by provider',
+        'routing.pickThisModel': 'Click to add to the chain',
+        'routing.unpickModel': 'Click again to remove from the chain',
+        'routing.picked': 'Added',
         'routing.channel.combo': 'Chain',
         'gw.clientsTitle': 'Connect a client',
         'gw.clientsHint': 'How the free lane\'s forward port (enabled under "Local forward" on the Free models page) plugs into each client: addresses and keys below are generated from the port that actually bound and the real key.',
@@ -2014,7 +2020,7 @@ window.__ModuleLoader__.load({
 .ofm_duo{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(272px,100%),1fr));gap:12px;align-items:start}
 .ofm_duo>*{min-width:0}
 .ofm_picklist{display:block;max-height:330px;overflow:auto;padding:2px}
-.ofm_pickrow{display:flex;flex-direction:column;gap:2px;align-items:stretch;text-align:left;font:inherit;padding:6px 9px;border-radius:9px;border:1px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 62%,transparent);color:var(--dsw-alias-label-primary);cursor:pointer;transition:border-color .16s ease,background .16s ease,transform .16s ease}
+.ofm_pickrow{display:flex;flex-direction:row;align-items:center;gap:0;text-align:left;font:inherit;padding:6px 9px;border-radius:9px;border:1px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 62%,transparent);color:var(--dsw-alias-label-primary);cursor:pointer;transition:border-color .16s ease,background .16s ease,transform .16s ease}
 .ofm_pickrow:hover:not(:disabled){border-color:var(--dsw-alias-state-business-primary);transform:translateY(-1px)}
 .ofm_pickrow[aria-pressed="true"]{border-color:var(--dsw-alias-state-business-primary);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 12%,transparent)}
 .ofm_pickrow:disabled{opacity:.55;cursor:default}
@@ -2027,9 +2033,8 @@ window.__ModuleLoader__.load({
 .ofm_pickgroupbody{display:grid;grid-template-columns:repeat(auto-fill,minmax(214px,1fr));gap:6px;padding:6px 0 2px 4px}
 .ofm_pickhead{display:flex;align-items:center;gap:6px;min-width:0}
 .ofm_pickhead b{font-size:12px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.ofm_pickcheck{flex:none;font-size:11px;font-weight:700;color:var(--dsw-alias-state-business-primary)}
 .ofm_picklane{flex:none;font-size:10px;padding:1px 5px;border-radius:5px;background:color-mix(in srgb,var(--dsw-alias-label-tertiary) 16%,transparent);color:var(--dsw-alias-label-tertiary);white-space:nowrap}
-.ofm_pickmeta{display:flex;gap:4px;flex-wrap:nowrap;overflow:hidden;font-size:10px;color:var(--dsw-alias-label-tertiary);min-width:0;white-space:nowrap}
-.ofm_pickmeta .ofm_id{flex:0 1 auto;min-width:0}
 .ofm_meter{height:9px;border-radius:99px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);overflow:hidden}
 .ofm_meter i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,color-mix(in srgb,var(--dsw-alias-state-business-primary) 62%,transparent),var(--dsw-alias-state-business-primary));transition:width .55s cubic-bezier(.22,.61,.36,1)}
 .ofm_member{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:10px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l1) 82%,transparent);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 58%,transparent);font-size:11.5px;transition:border-color .16s ease,background .16s ease}
@@ -5241,21 +5246,24 @@ window.__ModuleLoader__.load({
       const toggleGroup = provider => setOpenGroups(current => current.includes(provider)
         ? current.filter(name => name !== provider)
         : [...current, provider])
-      const renderRow = row => h('button', {
-        key: row.id, type: 'button', className: 'ofm_pickrow',
-        'aria-pressed': chosen.includes(row.id) ? 'true' : 'false',
-        onClick: () => onPick(row.id),
-      },
+      const renderRow = row => {
+        const picked = chosen.includes(row.id)
+        return h('button', {
+          key: row.id, type: 'button', className: 'ofm_pickrow',
+          // `aria-pressed` 让读屏与键盘用户知道这是一次开关，而不是"再添加一份"。
+          'aria-pressed': picked ? 'true' : 'false',
+          title: picked ? t('routing.unpickModel') : t('routing.pickThisModel'),
+          onClick: () => onPick(row.id),
+        },
+      // 只留「名称 + 渠道」一行。id 与容量（上下文 / 最长输出 / 视觉）此前占
+      // 第二行，但那三个数字对「要不要把它加进链路」几乎没有帮助 —— 链路的
+      // 真实容量在本页下方的「链路能力交集」里按交集算，那里才是权威。
+      // 模型详情在模型页与对话框选择器里仍完整可见，这里不必重复。
       h('span', { className: 'ofm_pickhead' },
         h('b', { title: row.name }, row.name ?? row.id),
-        h('span', { className: 'ofm_picklane' }, labelOf(row))),
-      // 一行封顶：容量与 id 用点号连排、超出省略。原来这五个标签各自 wrap，
-      // 一张卡长到三行，三十多张卡就是一屏放不下几行。
-      h('span', { className: 'ofm_pickmeta' },
-        h('span', { className: 'ofm_id', title: row.id }, row.id),
-        row.contextWindow > 0 ? h('span', null, `· ${kilo(row.contextWindow)}`) : null,
-        row.maxOutput > 0 ? h('span', null, `· ${kilo(row.maxOutput)}`) : null,
-        row.vision === true ? h('span', null, `· ${t('tag.vision')}`) : null))
+        picked ? h('span', { className: 'ofm_pickcheck' }, '✓') : null,
+        h('span', { className: 'ofm_picklane' }, labelOf(row))))
+      }
       return h('div', { className: 'ofm_panel' },
         h('div', { className: 'ofm_paneltitle' }, t('routing.pickModel')),
         h('div', { className: 'ofm_row' },
@@ -5291,7 +5299,11 @@ window.__ModuleLoader__.load({
                   .replace('{n}', String(rows.length))),
                 // 已选数量：折叠时也能看出这一家里已经挑了几个，否则收起后
                 // 完全看不见自己往链里加过什么。
-                picked > 0 ? h('span', { className: 'ofm_pickgroupbadge' }, String(picked)) : null),
+                picked > 0 ? h('span', {
+                  className: 'ofm_pickgroupbadge',
+                  title: t('routing.picked'),
+                  'aria-label': `${t('routing.picked')} ${picked}`,
+                }, String(picked)) : null),
                 expanded ? h('div', { className: 'ofm_pickgroupbody' }, rows.map(renderRow)) : null)
             })))
     }
@@ -5406,7 +5418,16 @@ window.__ModuleLoader__.load({
             : h(ChainCapacity, { capacity: preview.data?.capacity, t }),
         h('div', { className: 'ofm_row' },
           h(Button, { kind: 'ghost', disabled: busy, onClick: () => setPicking(value => !value) }, picking ? t('routing.cancel') : t('routing.addMember'))),
-        picking ? h(ModelPicker, { t, models, chosen: members, onPick: id => setMembers(current => [...current, id]) }) : null,
+        // 选择器是**开关**，不是"追加"：再点一次同一个模型就是取消。
+        // 原先这里无条件 `[...current, id]`，于是连点同一个模型会把它反复加进链里，
+        // 而保存时 normalizeCombos 又用 Set 去重 —— 界面显示 5 个、存下去剩 1 个，
+        // 两边对不上。
+        picking ? h(ModelPicker, {
+          t, models, chosen: members,
+          onPick: id => setMembers(current => current.includes(id)
+            ? current.filter(existing => existing !== id)
+            : [...current, id]),
+        }) : null,
         h('div', { className: 'ofm_row' },
           h(Button, { kind: 'primary', disabled: busy || name.trim() === '' || members.length === 0, onClick: submit }, t('routing.save')),
           h(Button, { kind: 'ghost', disabled: busy, onClick: onCancel }, t('routing.cancel'))),

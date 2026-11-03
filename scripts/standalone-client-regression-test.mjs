@@ -262,9 +262,15 @@ assert.equal(
   nodes(picker).find(node => node.type === 'button' && node.props.className === 'ofm_pickgrouphead').props['aria-expanded'], 'true',
   'clicking the group head expands it',
 )
-// 卡片把容量压进「点号连排」的一行（id · 上下文 · 输出 · 视觉），所以这里
-// 断言的是那个片段，而不是旧的独立标签标签节点。
-assert.ok(nodes(picker).some(node => node.children.includes(`· 1.0M`)), 'picker shows the context window')
+// 候选行只显示「名称 + 渠道」：id 与容量已从列表移除（用户 2026-11-03 要求，
+// 那些数字对"要不要加进链路"没有帮助，链路容量在下面的交集里给）。这里确认
+// 行上确实只剩那段，而模型名与渠道都在。
+const pickerRows = nodes(picker).filter(node => node.props.className === 'ofm_pickrow')
+assert.equal(pickerRows.length, capacityModels.length, 'every model of the expanded group has a row')
+for (const row of pickerRows) {
+  assert.ok(texts(row).some(text => text === 'Large' || text === 'Small'), 'the row still names the model')
+  assert.ok(!texts(row).some(text => text.includes('·')), 'no id/capacity fragment is rendered on the row')
+}
 captureEffects = true
 const editorProps = { t, models: capacityModels, chain: { name: 'Fixture', models: ['small', 'large'] } }
 render(ChainEditor, editorProps)
@@ -290,6 +296,67 @@ const savedCard = render(ChainCard, { t, chain: { id: 'combo:fixture', name: 'Fi
 assert.equal(nodes(savedCard).find(node => node.type === ChainCapacity).props.capacity.contextWindow, 1000000)
 assert.ok(nodes(ChainCapacity({ t, capacity })).some(node => node.children.includes(`${t('tag.context')} 1.0M`)))
 console.log('ok  combo picker capacities, saved card and live server intersection refresh')
+/*
+ * 选择器是**开关**，不是追加。
+ *
+ * 用户报障（2026-11-03）：连点同一个模型，链里就重复出现同一个条目。原因是
+ * `ChainEditor` 传给 picker 的 `onPick` 是 `[...current, id]`，只加不减；而保存时
+ * `normalizeCombos` 用 Set 去重只留 1 个，于是界面显示 5 个、存下去剩 1 个。
+ *
+ * ⚠️ 必须驱动 **ChainEditor 里那个真实的 onPick**，不能自己再写一份开关逻辑来测：
+ * 那样测的是测试自己的实现，原 bug 照样能过。
+ */
+{
+  captureEffects = false
+  cells.length = 0
+  const toggleProps = { t, models: capacityModels, chain: { name: 'Toggle', models: [] } }
+  /**
+   * 打开选择器并返回它。
+   *
+   * 那个按钮是**开关**：未打开时文案是「添加成员」，已打开后变成「取消」。
+   * 所以只有第一次需要点它；之后直接读当前帧里的 ModelPicker。
+   */
+  const openPicker = () => {
+    let tree = render(ChainEditor, toggleProps)
+    let picker = nodes(tree).find(node => node.type === ModelPicker)
+    if (picker === undefined) {
+      // `h(Button, ...)` 在树里是 `type: <Button 函数>` 的节点，className 要等
+      // Button 自身执行时才生成，所以按「children 里有那段文案」定位。
+      const add = nodes(tree).find(node => typeof node.type === 'function'
+        && node.children.includes(t('routing.addMember')))
+      assert.ok(add, 'the add-member button is rendered while closed')
+      add.props.onClick()
+      tree = render(ChainEditor, toggleProps)
+      picker = nodes(tree).find(node => node.type === ModelPicker)
+    }
+    assert.ok(picker, 'the picker is open')
+    return picker
+  }
+  // 每次 click 后必须重新 render 才能读出新状态：组件用的是 useState 槽位，
+  // 旧的树只是那一帧的快照。
+  let pickerNode = openPicker()
+  const target = capacityModels[0].id
+  const chosenNow = () => {
+    pickerNode = openPicker()
+    return pickerNode.props.chosen
+  }
+  pickerNode.props.onPick(target)
+  assert.deepEqual(chosenNow(), [target], 'first click adds the model')
+  // 再点一次同一个 = 取消；这是原实现最直接的失败点
+  pickerNode.props.onPick(target)
+  assert.deepEqual(chosenNow(), [], 'clicking the same model again removes it')
+  // 连点三次必须停在「在/不在」两态之间，绝不累积重复
+  for (let i = 0; i < 3; i += 1) {
+    pickerNode = openPicker()
+    pickerNode.props.onPick(target)
+    const current = chosenNow()
+    assert.equal(new Set(current).size, current.length, 'chosen list never contains duplicates')
+    assert.ok(current.length <= 1, 'repeated clicks never accumulate')
+  }
+}
+console.log('ok  model picker toggles a member instead of appending it')
+
+
 
 /*
  * 签到结果表格 / 异常汇总的**真实渲染**冒烟。
