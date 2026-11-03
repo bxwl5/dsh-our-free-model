@@ -1607,16 +1607,24 @@ export class ZcodeAuth extends Service {
             ...outcome,
             message: `${outcome.message}（安全验证无法完成：${mintError.message}）`,
           }
-          /**
-           * ★ 落一条「验证被阻断」到账号池（2026-11-04 用户报「看不到为什么
-           * 领不到」）：这是**我们这侧缺件**，与上游风控（3012）必须分色显示 ——
-           * 前者要装浏览器，后者要停手等冷却。
-           * ⚠ `void …catch()`：展示层记账不许把领取失败变成另一件事。
-           */
-          if (accountId !== undefined) {
-            void this.accountPool()?.recordVerificationBlocked(accountId).catch(() => {})
-          }
         }
+      }
+      /**
+       * ★ 落一条「验证被阻断」到账号池 —— **任何 `3007` 都算**（2026-11-04 用户
+       * 报「领取失败但异常汇总里什么都没有」）。
+       *
+       * ⚠ 记录点必须放在**两条分支之外**：真机实测（2026-11-04）里，内部载体
+       *   其实**产出了** param，只是被上游拒了（回到首发带 param 的分支）——
+       *   早先把记账写在「mint 失败」分支里，因此这种最常见的情形**一条都不记**，
+       *   用户依然看不到。判据只能是「上游要验证而我们没通过」，与 param 从哪来
+       *   无关。
+       *
+       * 与 `3012`（风控）分色：这里是我们没通过验证（要装浏览器 / 验证被拒），
+       * 那边是上游罚账号（要停手等冷却）。
+       * ⚠ `void …catch()`：展示层记账不许把领取失败变成另一件事。
+       */
+      if (outcome.code === 3007 && accountId !== undefined) {
+        void this.accountPool()?.recordVerificationBlocked(accountId).catch(() => {})
       }
       const mapped = toClaimOutcome(outcome, plan.planId, {
         plan, accountId, sentAt: diagnosticSentAt, status: outcome.httpStatus, internalRetried,

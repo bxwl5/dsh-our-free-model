@@ -60021,11 +60021,11 @@ var ZcodeAuth = class extends Service9 {
             ...outcome,
             message: `${outcome.message}\uFF08\u5B89\u5168\u9A8C\u8BC1\u65E0\u6CD5\u5B8C\u6210\uFF1A${mintError.message}\uFF09`
           };
-          if (accountId !== void 0) {
-            void this.accountPool()?.recordVerificationBlocked(accountId).catch(() => {
-            });
-          }
         }
+      }
+      if (outcome.code === 3007 && accountId !== void 0) {
+        void this.accountPool()?.recordVerificationBlocked(accountId).catch(() => {
+        });
       }
       const mapped = toClaimOutcome(outcome, plan.planId, {
         plan,

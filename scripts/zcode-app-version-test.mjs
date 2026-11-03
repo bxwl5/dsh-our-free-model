@@ -199,6 +199,12 @@ check('领取实现是「先验证、再 claim」的官方顺序（源码守卫�
   assert.ok(body.includes('plan\.planId, undefined'), '没有浏览器时仍要有裸发降级路径')
   // 裸发降级不得在 3007 上重试（避免多扣一次风控计数）。
   assert.match(body, /outcome\.code === 3007 && mintError !== undefined/, '裸发 3007 只补文案，不重试')
+  /**
+   * ⚠ 记账点必须**在两条分支之外**：真机实测（2026-11-04）内部载体其实产出了
+   * param，只是被上游拒（回到「带 param 首发」那条分支）—— 记账若写在「mint
+   * 失败」分支里，这种最常见的情形一条都不记，用户依然看不到。
+   */
+  assert.match(body, /outcome\.code === 3007 && accountId !== undefined/, '任何 3007 都要落验证受阻账')
 })
 
 // ── 活动额度的「生效 / 到期」与「多账号合计」口径（用户 2026-10-28） ──────────
