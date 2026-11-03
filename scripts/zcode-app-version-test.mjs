@@ -447,4 +447,104 @@ check('领取路径拿到的就是投放里的那个 plan_id（端到端形状�
   assert.deepEqual(claimed, ['zcode-v3-start-plan-1102'])
 })
 
+// ── 账号级风控（3012）进「异常汇总」（用户 2026-11-03） ──────────────────────
+
+check('recordAccountRisk 阶梯：首次 30 分钟，冷却未完再命中升级 24 小时', async () => {
+  const { AccountPool, RISK_FIRST_COOLDOWN_MS, RISK_REPEAT_COOLDOWN_MS } =
+    await import('../vendor/channel-pack/src/account-pool.ts')
+  const state = { accounts: [
+    { id: 'zcode-a1', provider: 'zcode', nickname: 'a', enabled: true, credentialRef: 'R1', createdAt: 1, refreshable: false },
+  ], disabledModels: {}, gatewayEnabled: true, providerOrder: [] }
+  const store = {
+    kind: 'file', loads: 0, stamp: 1000,
+    mtimeMs() { return this.stamp },
+    load() { this.loads += 1; return JSON.parse(JSON.stringify(state)) },
+    async save(next) { Object.assign(state, JSON.parse(JSON.stringify(next))); this.stamp += 1 },
+  }
+  const ctx = {
+    logger: { warn() {}, info() {} },
+    credentials: { resolve: async () => undefined, describe: async () => undefined, set: async () => {}, unset: async () => {} },
+  }
+  const pool = new AccountPool(ctx)
+  Object.defineProperty(pool, 'store', { value: store, writable: true, configurable: true })
+  Object.defineProperty(pool, 'loaded', { value: false, writable: true, configurable: true })
+
+  const t0 = 1_793_700_000_000
+  await pool.recordAccountRisk('zcode-a1', t0)
+  let entry = state.accounts.find(a => a.id === 'zcode-a1')
+  assert.equal(entry.riskBlockedUntilMs, t0 + RISK_FIRST_COOLDOWN_MS, '首次命中记 30 分钟')
+
+  // 冷却未完又命中 ⇒ 升级到 24 小时（这就是「别连续重试」的量化后果）。
+  await pool.recordAccountRisk('zcode-a1', t0 + 60_000)
+  entry = state.accounts.find(a => a.id === 'zcode-a1')
+  assert.equal(entry.riskBlockedUntilMs, t0 + 60_000 + RISK_REPEAT_COOLDOWN_MS, '重复命中升级 24 小时')
+
+  // 冷却到点（24h 期满）后再命中 ⇒ 回落首次档：阶梯是从头数，不是永久升级。
+  const afterRepeat = t0 + 60_000 + RISK_REPEAT_COOLDOWN_MS
+  await pool.recordAccountRisk('zcode-a1', afterRepeat + 5_000)
+  entry = state.accounts.find(a => a.id === 'zcode-a1')
+  assert.equal(entry.riskBlockedUntilMs, afterRepeat + 5_000 + RISK_FIRST_COOLDOWN_MS,
+    '期满后再命中按首次档')
+
+  // 未知账号：不抛错、不写脏。
+  const before = JSON.stringify(state)
+  await pool.recordAccountRisk('nope', t0)
+  assert.equal(JSON.stringify(state), before, '账号不存在时不得写盘')
+})
+
+check('sweepExpiredRiskBlocks 只清「过期且超保留期」的标记', async () => {
+  const { AccountPool, RATE_LIMIT_KEEP_MS } = await import('../vendor/channel-pack/src/account-pool.ts')
+  const now = Date.now()
+  const state = { accounts: [
+    { id: 'fresh', provider: 'zcode', nickname: 'f', enabled: true, credentialRef: 'R', createdAt: 1, refreshable: false, riskBlockedUntilMs: now + 60_000 },
+    { id: 'expired-kept', provider: 'zcode', nickname: 'e', enabled: true, credentialRef: 'R', createdAt: 1, refreshable: false, riskBlockedUntilMs: now - 60_000 },
+    { id: 'expired-gone', provider: 'zcode', nickname: 'g', enabled: true, credentialRef: 'R', createdAt: 1, refreshable: false, riskBlockedUntilMs: now - RATE_LIMIT_KEEP_MS - 60_000 },
+    { id: 'dirty', provider: 'zcode', nickname: 'd', enabled: true, credentialRef: 'R', createdAt: 1, refreshable: false, riskBlockedUntilMs: 0 },
+  ], disabledModels: {}, gatewayEnabled: true, providerOrder: [] }
+  const store = {
+    kind: 'file', loads: 0,
+    mtimeMs() { return 1000 },
+    load() { return JSON.parse(JSON.stringify(state)) },
+    async save(next) { Object.assign(state, JSON.parse(JSON.stringify(next))) },
+  }
+  const ctx = { logger: { warn() {}, info() {} }, credentials: { resolve: async () => undefined, describe: async () => undefined, set: async () => {}, unset: async () => {} } }
+  const pool = new AccountPool(ctx)
+  Object.defineProperty(pool, 'store', { value: store, writable: true, configurable: true })
+  Object.defineProperty(pool, 'loaded', { value: false, writable: true, configurable: true })
+  await pool.sweepExpiredRiskBlocks()
+  const byId = Object.fromEntries(state.accounts.map(a => [a.id, a]))
+  assert.ok(byId.fresh.riskBlockedUntilMs !== undefined, '未到期的保留')
+  assert.ok(byId['expired-kept'].riskBlockedUntilMs !== undefined, '刚过期的留档排障')
+  assert.ok(!('riskBlockedUntilMs' in byId['expired-gone']), '过期超保留期的删除')
+  assert.ok(!('riskBlockedUntilMs' in byId.dirty), '脏值（0）删除')
+})
+
+check('两条 3012 落点都接了落账（推理 + 领取，源码守卫）', () => {
+  const adapter = fs.readFileSync(new URL('../vendor/channel-pack/src/zcode-adapter.ts', import.meta.url), 'utf8')
+  const auth = fs.readFileSync(new URL('../vendor/channel-pack/src/zcode-auth.ts', import.meta.url), 'utf8')
+  // 回看窗口 1400：两个分支前面都有一段解释性注释 + 文案，400 会把判据挤出去。
+  // 推理路径：守卫必须是 hasZcodeUnusualActivity（先信码后看正文），不能是裸 includes。
+  const aSite = adapter.indexOf('recordAccountRisk(activeAccountId)')
+  assert.ok(aSite > 0, '推理路径 3012 分支必须落账')
+  assert.ok(adapter.slice(aSite - 1400, aSite).includes('hasZcodeUnusualActivity(text)'),
+    '推理路径必须用风控判据而不是裸 3012 串匹配')
+  // 领取路径：落账必须在 isClaimUnusualActivity 短路的同一分支里（换链之后的最终 outcome）。
+  const cSite = auth.indexOf('recordAccountRisk(accountId)')
+  assert.ok(cSite > 0, '领取路径 3012 短路必须落账')
+  assert.ok(auth.slice(cSite - 1400, cSite).includes('isClaimUnusualActivity'),
+    '领取落账必须挂在统一的 3012 判定分支内')
+})
+
+check('异常汇总收编 risk-blocked（RPC 出口 + 前端红色徽标，源码守卫）', () => {
+  const rpc = fs.readFileSync(new URL('../vendor/channel-pack/src/channel-pack-rpc.ts', import.meta.url), 'utf8')
+  const caseSite = rpc.slice(rpc.indexOf("case 'account.anomalies'"))
+  assert.ok(caseSite.includes("kind: 'risk-blocked'"), 'anomalies 必须收编风控记录')
+  assert.ok(caseSite.includes('riskBlockedUntilMs'), '读的是账号上的风控字段')
+  const client = fs.readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.ok(client.includes("'chan.anomaly.riskBlocked'"), '前端必须有「风控」文案键')
+  assert.ok(client.includes("row.kind === 'risk-blocked' ? ' risk'"), 'kind 徽标必须分流样式类')
+  assert.ok(/\.ofm_anomalykind\.risk\{[^}]*state-error/.test(client),
+    '风控徽标必须是 error 红（与限流橙色区分，用户要求红色）')
+})
+
 console.log(`\nzcode-app-version: ${checks} checks passed`)

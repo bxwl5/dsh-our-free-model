@@ -1730,6 +1730,23 @@ function registerChannelPackEndpoints(
           const idToName = new Map(catalog.map((model) => [model.id, model.name]))
           const knownIds = catalog.map((model) => model.id)
           for (const account of accounts) {
+            /**
+             * ★ **账号级风控**（ZCode 3012）优先于限流入账（用户 2026-11-03：
+             * 「风控类型应显示红色」）。一条记录两类语义不能混：风控没有模型
+             * 维度，`modelName` 恒 `undefined`、`kind='risk-blocked'` 由前端
+             * 映射成红色徽标。已到期不列（与限流同一口径，过期的由
+             * `sweepExpiredRiskBlocks` 留档清理）。
+             */
+            const riskUntil = Number(account.riskBlockedUntilMs)
+            if (Number.isFinite(riskUntil) && riskUntil > now) {
+              anomalies.push({
+                provider,
+                accountId: account.id,
+                accountName: account.nickname || account.id,
+                kind: 'risk-blocked',
+                resetAtMs: riskUntil,
+              })
+            }
             const limits = Object.entries(account.modelRateLimits ?? {})
               .filter(([, resetAt]) => Number(resetAt) > now)
             if (limits.length === 0) continue

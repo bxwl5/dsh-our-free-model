@@ -2217,6 +2217,15 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
           + `${error instanceof Error ? error.message : String(error)}`,
         )
       })
+      // ★ 过期风控标记（3012 落账）走**同一个**定时器：同为「过期后留 7 天」的
+      //   卫生清理（RATE_LIMIT_KEEP_MS 同口径），新增定时器纯属浪费 IO。
+      //   它同样不参与选号，失败只影响异常汇总里旧条目的堆积。
+      void pool.sweepExpiredRiskBlocks().catch((error: unknown) => {
+        ctx.logger?.warn?.(
+          `[channel-pack] 过期风控标记清理失败（不影响选号）：`
+          + `${error instanceof Error ? error.message : String(error)}`,
+        )
+      })
     }
     sweep()
     const sweepTimer = setInterval(sweep, SWEEP_INTERVAL_MS)

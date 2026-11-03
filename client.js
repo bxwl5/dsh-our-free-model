@@ -282,6 +282,7 @@ window.__ModuleLoader__.load({
         // 「异常汇总」板块（渠道列表下方，仅在有模型限流时出现）
         'chan.anomaly.title': '异常汇总',
         'chan.anomaly.rateLimit': '限流',
+        'chan.anomaly.riskBlocked': '风控',
         'chan.anomaly.allModels': '全部模型',
         'chan.anomaly.col.channel': '渠道',
         'chan.anomaly.col.account': '账号',
@@ -776,6 +777,7 @@ window.__ModuleLoader__.load({
         'chan.model.quotaExhausted': 'Quota used up',
         'chan.anomaly.title': 'Limits',
         'chan.anomaly.rateLimit': 'Rate limited',
+        'chan.anomaly.riskBlocked': 'Risk blocked',
         'chan.anomaly.allModels': 'All models',
         'chan.anomaly.col.channel': 'Channel',
         'chan.anomaly.col.account': 'Account',
@@ -1387,6 +1389,10 @@ window.__ModuleLoader__.load({
 .ofm_anomalykind{display:inline-block;font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:999px;white-space:nowrap;
   color:var(--dsw-alias-state-warning-primary,#f0a441);
   background:color-mix(in srgb,var(--dsw-alias-state-warning-primary,#f0a441) 14%,transparent)}
+/* 风控（3012）与限流（橙色）必须**分色**（用户 2026-11-03）：限流等就行，
+ * 风控再点会升级封禁 —— 红色是唯一能传达「别再碰它」的颜色。 */
+.ofm_anomalykind.risk{color:var(--dsw-alias-state-error-primary);
+  background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 14%,transparent)}
 /*
  * 签到结果表格（用户 2026-10-27）。与异常汇总共用同一套视觉语言：白底、
  * 灰框、可折叠、表头内高光 —— 它俩在页面上紧挨着，样式必须同源。
@@ -4406,11 +4412,13 @@ window.__ModuleLoader__.load({
               h('span', { className: 'ofm_anomalycell channel', role: 'cell' }, channelName(row.provider)),
               h('span', { className: 'ofm_anomalycell account', role: 'cell', title: row.accountId }, row.accountName),
               h('span', { className: 'ofm_anomalycell', role: 'cell' },
-                h('span', { className: 'ofm_anomalykind' }, t('chan.anomaly.rateLimit'))),
+                h('span', { className: 'ofm_anomalykind' + (row.kind === 'risk-blocked' ? ' risk' : '') },
+                  row.kind === 'risk-blocked' ? t('chan.anomaly.riskBlocked') : t('chan.anomaly.rateLimit'))),
               h('span', {
                 className: 'ofm_anomalycell ' + (row.modelName === undefined ? 'allmodels' : 'model'),
                 role: 'cell', title: row.modelName ?? '',
-              }, row.modelName === undefined ? t('chan.anomaly.allModels') : row.modelName),
+              }, row.kind === 'risk-blocked' ? '—'
+                : row.modelName === undefined ? t('chan.anomaly.allModels') : row.modelName),
               h('span', { className: 'ofm_anomalycell until', role: 'cell' }, absolute(row.resetAtMs)),
               h('span', { className: 'ofm_anomalycell remaining', role: 'cell' }, remaining(row.resetAtMs)))))) : null)
     }

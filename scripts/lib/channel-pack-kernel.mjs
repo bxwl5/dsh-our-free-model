@@ -4,6 +4,12 @@ export class Service {
   constructor(ctx, name) { this.ctx = ctx; ctx.provide(name, this) }
 }
 export class LlmAdapter {}
+/**
+ * 真实 cordis 里 `Context` 只是类型；但 `stripTypeScriptTypes` 在 transform 模式下
+ * 保留值导入语法（`import { Context }`），所以账号池（`AccountPool` 构造参数的
+ * 类型标注）被直接 import 时仍需要运行时符号。这里导出一个空类占位即可。
+ */
+export class Context {}
 export class LlmError extends Error {
   constructor(code, message) { super(message); this.code = code }
 }

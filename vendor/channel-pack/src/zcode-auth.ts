@@ -1579,6 +1579,15 @@ export class ZcodeAuth extends Service {
           `zcode: 账号 ${accountId ?? '-'} 被上游风控拦截（3012）⇒ 本账号停止领取 `
           + `（重试会加重冷却惩罚：30 分钟 → 24 小时 → 停用）`,
         )
+        /**
+         * ★ 领取路径命中风控 ⇒ **落账到账号池**（用户 2026-11-03 报「异常汇总
+         * 不显示风控类型」：一键领取的 3012 只进了单次结果 toast，板块读的是
+         * 账号上的持久标记，两边从未接通过）。
+         * ⚠ 同样 `void …catch()`：展示层记账不许把领取失败变成另一件事。
+         */
+        if (accountId !== undefined) {
+          void this.accountPool()?.recordAccountRisk(accountId).catch(() => {})
+        }
         return { outcome: mapped, continueWithNextPlan: false }
       }
       return { outcome: mapped, continueWithNextPlan: true }

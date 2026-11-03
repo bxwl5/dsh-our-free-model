@@ -34523,6 +34523,8 @@ function createPermanentLockStore(ctx) {
 // vendor/channel-pack/src/account-pool.ts
 var EMPTY_MODEL_SET = /* @__PURE__ */ new Set();
 var RATE_LIMIT_KEEP_MS = 7 * 24 * 60 * 60 * 1e3;
+var RISK_FIRST_COOLDOWN_MS = 30 * 60 * 1e3;
+var RISK_REPEAT_COOLDOWN_MS = 24 * 60 * 60 * 1e3;
 function availableModelsForChannel(accounts, models, excludedModelId, now = Date.now()) {
   const usable = [];
   for (const model of models) {
@@ -35503,6 +35505,61 @@ var AccountPool = class {
         return rest;
       }
       return { ...entry, modelRateLimits: limits };
+    });
+    if (changed) await this.writeAccounts(next);
+  }
+  /**
+   * 记录一次**账号级风控**（上游 `3012`）的估计解禁时刻。
+   *
+   * 与 {@link updateModelRateLimit} 同款：在**最新快照**上做局部合并后整体
+   * 写回，避免与并发的账号操作互相覆盖。
+   *
+   * 阶梯逻辑：现值仍在未来（未解封又命中）⇒ 升级到 {@link RISK_REPEAT_COOLDOWN_MS}；
+   * 否则记首次的 {@link RISK_FIRST_COOLDOWN_MS}。只接受比现值**更长**的解禁时刻，
+   * 与限流标记同约定 —— 冷却未完又命中只会更糟，绝不能用新值把已知的 24h 写回 30min。
+   *
+   * ⚠ **不参与选号**（见 types.ts 的 `riskBlockedUntilMs` 注释）：它只服务于
+   * 「异常汇总」的红色风控徽标；真正的「别连点」由请求路径的 3012 短路守卫负责。
+   */
+  async recordAccountRisk(accountId, now = Date.now()) {
+    const accounts = this.readAccounts();
+    const idx = accounts.findIndex((a) => a.id === accountId);
+    if (idx === -1) {
+      this.ctx.logger?.warn?.(
+        `[channel-pack] recordAccountRisk: \u8D26\u53F7 ${accountId} \u4E0D\u5728\u8D26\u53F7\u5217\u8868\u4E2D`
+      );
+      return;
+    }
+    if (!Number.isFinite(now)) return;
+    const current = accounts[idx].riskBlockedUntilMs;
+    const escalating = typeof current === "number" && Number.isFinite(current) && current > now;
+    const resetAtMs = now + (escalating ? RISK_REPEAT_COOLDOWN_MS : RISK_FIRST_COOLDOWN_MS);
+    if (Number.isFinite(current) && current >= resetAtMs) return;
+    const next = [...accounts];
+    next[idx] = { ...next[idx], riskBlockedUntilMs: resetAtMs };
+    await this.writeAccounts(next);
+    this.ctx.logger?.info?.(
+      `[channel-pack] \u5DF2\u8BB0\u5F55\u8D26\u53F7\u98CE\u63A7: ${accountId} ${escalating ? "\u91CD\u590D\u547D\u4E2D\uFF0C\u51B7\u5374\u5347\u7EA7" : "\u9996\u6B21\u547D\u4E2D"}\u81F3 ${new Date(resetAtMs).toISOString()}`
+    );
+  }
+  /**
+   * 清理**早已过期**的账号风控标记（过期后只留 {@link RATE_LIMIT_KEEP_MS}）。
+   *
+   * 与 {@link sweepExpiredRateLimits} 同款节奏，由 index.ts 的定时器调用。
+   * 过期风控对行为无任何影响（它只驱动异常汇总显示），但留着排障可查。
+   */
+  async sweepExpiredRiskBlocks(keepMs = RATE_LIMIT_KEEP_MS) {
+    const now = Date.now();
+    const accounts = this.readAccounts();
+    let changed = false;
+    const next = accounts.map((entry) => {
+      if (entry.riskBlockedUntilMs === void 0) return entry;
+      if (entry.riskBlockedUntilMs <= 0 || !Number.isFinite(entry.riskBlockedUntilMs) || now - entry.riskBlockedUntilMs > keepMs) {
+        const { riskBlockedUntilMs: _dropped, ...rest } = entry;
+        changed = true;
+        return rest;
+      }
+      return entry;
     });
     if (changed) await this.writeAccounts(next);
   }
@@ -59740,6 +59797,10 @@ var ZcodeAuth = class extends Service9 {
         this.carrierLog?.(
           `zcode: \u8D26\u53F7 ${accountId ?? "-"} \u88AB\u4E0A\u6E38\u98CE\u63A7\u62E6\u622A\uFF083012\uFF09\u21D2 \u672C\u8D26\u53F7\u505C\u6B62\u9886\u53D6 \uFF08\u91CD\u8BD5\u4F1A\u52A0\u91CD\u51B7\u5374\u60E9\u7F5A\uFF1A30 \u5206\u949F \u2192 24 \u5C0F\u65F6 \u2192 \u505C\u7528\uFF09`
         );
+        if (accountId !== void 0) {
+          void this.accountPool()?.recordAccountRisk(accountId).catch(() => {
+          });
+        }
         return { outcome: mapped, continueWithNextPlan: false };
       }
       return { outcome: mapped, continueWithNextPlan: true };
@@ -60988,6 +61049,10 @@ var ZcodeAdapter = class extends LlmAdapter15 {
           shape: describeZcodeRequestShape(body.system, body.messages),
           now: Date.now()
         }) : void 0;
+        if (activeAccountId !== void 0 && hasZcodeUnusualActivity(text)) {
+          void this.options.accountPool?.recordAccountRisk(activeAccountId).catch(() => {
+          });
+        }
         throw new LlmError19(
           `zcode: ${describeUpstreamError(response.status, text, diagnostic)}`,
           httpErrorCodeForZcode(response.status, text),
@@ -67218,6 +67283,16 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           const idToName = new Map(catalog.map((model) => [model.id, model.name]));
           const knownIds = catalog.map((model) => model.id);
           for (const account of accounts) {
+            const riskUntil = Number(account.riskBlockedUntilMs);
+            if (Number.isFinite(riskUntil) && riskUntil > now) {
+              anomalies.push({
+                provider,
+                accountId: account.id,
+                accountName: account.nickname || account.id,
+                kind: "risk-blocked",
+                resetAtMs: riskUntil
+              });
+            }
             const limits = Object.entries(account.modelRateLimits ?? {}).filter(([, resetAt]) => Number(resetAt) > now);
             if (limits.length === 0) continue;
             const everyModel = knownIds.length > 0 && knownIds.every((id) => limits.some(([key]) => key === id));
@@ -76389,6 +76464,11 @@ function apply(ctx, config = {}) {
       void pool.sweepExpiredRateLimits().catch((error) => {
         ctx.logger?.warn?.(
           `[channel-pack] \u8FC7\u671F\u9650\u6D41\u6807\u8BB0\u6E05\u7406\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u9009\u53F7\uFF09\uFF1A${error instanceof Error ? error.message : String(error)}`
+        );
+      });
+      void pool.sweepExpiredRiskBlocks().catch((error) => {
+        ctx.logger?.warn?.(
+          `[channel-pack] \u8FC7\u671F\u98CE\u63A7\u6807\u8BB0\u6E05\u7406\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u9009\u53F7\uFF09\uFF1A${error instanceof Error ? error.message : String(error)}`
         );
       });
     };

@@ -523,6 +523,22 @@ console.log('ok  model picker toggles a member instead of appending it')
   assert.ok(anomaly.collapsed && anomaly.collapsed.type === 'section', '异常汇总必须渲染出 section')
   assert.ok(!texts(anomaly.collapsed).includes('hy3'), '默认折叠时异常明细不应渲染')
   assert.ok(texts(anomaly.tree).includes('hy3'), '展开后必须能看到被限流的模型名')
+
+  // ⑦ 风控（3012）行必须是**红色徽标**且文案不同于限流（用户 2026-11-03 报障）。
+  // 缺省 kind（老数据/其他渠道）仍渲染「限流」—— 向后兼容不能破。
+  const riskAnomaly = expand(AnomalyPanel, {
+    anomalies: [
+      { provider: 'zcode', accountId: 'z1', accountName: 'z1', kind: 'risk-blocked', resetAtMs: Date.now() + 1_800_000 },
+      { provider: 'workbuddy', accountId: 'w', accountName: 'w', modelName: 'hy3', resetAtMs: Date.now() + 3_600_000 },
+    ],
+    channelName, t,
+  })
+  const kindBadges = nodes(riskAnomaly.tree).filter(node => String(node.props.className ?? '').includes('ofm_anomalykind'))
+  assert.ok(kindBadges.some(node => String(node.props.className).includes('risk')), '风控行必须带 risk 样式类（红色）')
+  assert.ok(kindBadges.some(node => !String(node.props.className).includes('risk')), '限流行保持默认橙色类')
+  const badgeTexts = texts(riskAnomaly.tree)
+  assert.ok(badgeTexts.includes('风控'), '风控行的类型文案必须是「风控」')
+  assert.ok(badgeTexts.includes('限流'), 'kind 缺省的老数据仍显示「限流」（向后兼容）')
 }
 console.log('ok  check-in result table and anomaly panel render without crashing on partial groups')
 

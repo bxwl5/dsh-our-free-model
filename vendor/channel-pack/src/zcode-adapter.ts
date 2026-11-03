@@ -1469,6 +1469,18 @@ export class ZcodeAdapter extends LlmAdapter {
             now: Date.now(),
           })
           : undefined
+        /**
+         * ★ 推理路径命中风控 ⇒ **落账到账号池**（用户 2026-11-03 报「异常汇总
+         * 不显示风控类型」）。判据用 `hasZcodeUnusualActivity`（与文案分支同源、
+         * 先信码后看正文），不能用裸 `includes('3012')` —— 那会把
+         * `13012` / `plan-3012-trust` 误记成风控。
+         * ⚠ `void …catch()`：这是展示层的记账，**绝不允许**把一次落盘失败
+         *   变成推理失败（错误仍由下面的 LlmError 如实抛）。
+         */
+        if (activeAccountId !== undefined && hasZcodeUnusualActivity(text)) {
+          void this.options.accountPool?.recordAccountRisk(activeAccountId)
+            .catch(() => {})
+        }
         throw new LlmError(
           `zcode: ${describeUpstreamError(response.status, text, diagnostic)}`,
           httpErrorCodeForZcode(response.status, text),
