@@ -19,8 +19,8 @@
     },
     {
       "path": "client.js",
-      "size": 436497,
-      "sha256": "914675570436f4ad48e78dad6aa2f75696af4f1bfe94f6fd566742252773788c"
+      "size": 435662,
+      "sha256": "46593b6cda184c20458e0ece65d73d3dd93e9242187bcfec3e19e47f049d29c0"
     },
     {
       "path": "cordis.patch.yml",
@@ -34,8 +34,8 @@
     },
     {
       "path": "index.js",
-      "size": 81766,
-      "sha256": "7349aefccc90ba0eb01bd8284059bcd0f5c2f34c1071266902304440692ddbab"
+      "size": 81295,
+      "sha256": "eb99e2def28a2c1845da70918610bde436a6e2d7f4bdf96839eed97e73cc5103"
     },
     {
       "path": "locale/en.json",
@@ -199,13 +199,13 @@
     },
     {
       "path": "src/token-saver/index.js",
-      "size": 6530,
-      "sha256": "891f93dace6be8b85d04927105cddd514c666e390dc4b01ec1ecad6b75edfee0"
+      "size": 5684,
+      "sha256": "e076d73f084264a8814f4b13ff07f55316fac1221bd0eb8c615a03bda733f991"
     },
     {
       "path": "src/token-saver/inject.js",
-      "size": 11027,
-      "sha256": "a9260692750fd687a03a1c5ce775e66626f21470f0e19077e2549108ebbc9736"
+      "size": 9865,
+      "sha256": "545932e8e815cdd25b902bed37f8f45f14da3dd6f1b719a7115b0cd565d1983c"
     },
     {
       "path": "src/token-saver/prompts.js",
@@ -319,8 +319,8 @@
     },
     {
       "path": "vendor/channel-pack/pack.js",
-      "size": 3255930,
-      "sha256": "a2ed7eaa33257ea4824c9c8fc61f97b7c2249a2571bcb048fd55eea3dfe36596"
+      "size": 3251500,
+      "sha256": "2ad53259f5bb738854a27c8ba5f6afe48b181d3bbae80ac1981700cb7abe8d44"
     },
     {
       "path": "vendor/channel-pack/qoder-auth-wasm.wasm",
