@@ -72,6 +72,7 @@
  */
 
 import { withDeadModelPruning } from './dead-model-store.js'
+import { scrubGenerateOptions } from './content-fingerprint.js'
 import { FALLBACK_IMAGE_PRICING } from '../../../src/image-pricing.js'
 
 /** dsh-llm 对「configurable provider 已存在」抛的 code。**当前仅作防御**保留。 */
@@ -167,7 +168,20 @@ export function wrapAdapterWithTokenLedger<T extends object>(providers: readonly
    * 把一次流式调用包上记账（顶层 `stream` 与 `prepareCall` 返回的 `call.stream`
    * 共用同一实现，口径才不会分叉）。
    */
-  const accountingStream = (options: unknown, open: () => AsyncIterable<unknown>): AsyncIterable<unknown> => {
+  const accountingStream = (rawOptions: unknown, open: (options: unknown) => AsyncIterable<unknown>): AsyncIterable<unknown> => {
+    // ── 内容级风控指纹清洗（消息层，2026-11-04）──
+    //
+    // 底层出口（`channel-fetch` / `direct-fetch`）已经按 JSON 请求体兜了一层；
+    // 这里在**交给适配器之前**再清一次，两个理由：
+    //  1. 少数适配器会把 body 加密/编码后再发（Qoder 信封、Gemini proto），
+    //     出口层看到的已经不是 JSON 消息，只能在这一层清；
+    //  2. 出口层要重新序列化 JSON 才能清（会改字节），而这一层清的是**字符串
+    //     内容**、不动结构 —— 未命中的消息逐字符不变，前缀缓存无损。
+    //
+    // ⚠️ `scrubGenerateOptions` 绝不原地改：宿主 `dsh-llm` 会 `deepFreeze` 它
+    // 构造的 options 副本，原地赋值会抛。它在无命中时返回**同一个对象**，
+    // 所以正常路径（99%）零拷贝、零开销。
+    const options = scrubGenerateOptions(rawOptions)
     const channel = channelOfOptions(options)
     const modelId = String((options as { model?: unknown })?.model ?? '').slice(0, 160)
     /**
@@ -199,7 +213,10 @@ export function wrapAdapterWithTokenLedger<T extends object>(providers: readonly
       }
       return modelId
     })()
-    return recordThroughStream(open, { channel, provider, model, startedAt: Date.now() })
+    // ⚠️ 把**清洗后**的 options 交给适配器（不是原始 rawOptions）：`open` 是
+    // 各调用点传进来的闭包，它捕获的是调用点自己的 options —— 那些调用点
+    // 拿到的已经是本函数返回的对象，所以这里显式传参，避免闭包把原始引用带回去。
+    return recordThroughStream(() => open(options), { channel, provider, model, startedAt: Date.now() })
   }
 
   return new Proxy(adapter, {
@@ -217,7 +234,7 @@ export function wrapAdapterWithTokenLedger<T extends object>(providers: readonly
         // 私有字段（`#field`）对 proxy 的 this 不可见，绑 proxy 会抛 TypeError。
         return (options: never) => accountingStream(
           options,
-          () => (target as unknown as StreamCapableAdapter).stream.call(target, options) as AsyncIterable<unknown>,
+          scrubbed => (target as unknown as StreamCapableAdapter).stream.call(target, scrubbed as never) as AsyncIterable<unknown>,
         )
       }
       /**
@@ -252,7 +269,7 @@ export function wrapAdapterWithTokenLedger<T extends object>(providers: readonly
             // ⚠️ 只包 `stream` 这一个字段，其余（modelInfo 等）原样透传。
             stream: (options: unknown) => accountingStream(
               options,
-              () => (inner as (o: unknown) => AsyncIterable<unknown>).call(target, options),
+              scrubbed => (inner as (o: unknown) => AsyncIterable<unknown>).call(target, scrubbed),
             ),
           }
         }

@@ -83,129 +83,48 @@
  * 故这里是**表**：新增一条 = 往 {@link CONTENT_FINGERPRINTS} 里加一行 + 一条用例。
  */
 
-/** 受影响的 provider：腾讯系两个后端（`buddy` = CodeBuddy 中国版，`workbuddy` = WorkBuddy 国际版）。 */
-const TENCENT_PROVIDERS: readonly string[] = ['buddy', 'workbuddy']
-
-interface ContentFingerprint {
-  /** 被拦的**字面量**（匹配时**大小写不敏感**，但不做任何模式泛化）。 */
-  readonly find: string
-  /** 等义改写。两个端点均实测 200。 */
-  readonly replace: string
-  /** 来源与证据，写死在代码里，免得后人「顺手」把它改成正则或删掉。 */
-  readonly note: string
-}
-
 /**
- * 已知会被腾讯网关拦下的 system 模板句。
+ * ⚠️ 自 2026-11-04 起本模块**不再自己持有一份规则表** —— 用户要求「全部模型、
+ * 包含免费模型，直接在底层(出口层/请求层)进行指纹清洗」，规则表已收归
+ * `src/content-fingerprint.ts`（全渠道、无 provider 判据）。
  *
- * ⚠️ **每一条都必须有实发证据**（被拦 + 改写后放行，两条都要），
- * 照抄别家客户端的常量而没实测过 = 给上游加了一条没人验证过的改写。
+ * 本文件保留两样东西：
+ * 1. **上面的实测证据表**（哪一句被拦、改成什么放行、在哪个端点验的）—— 这是
+ *    唯一能证明「这条规则不是凭空加的」的记录，删掉就等于把结论变成传说；
+ * 2. 两个**兼容导出**（{@link isTencentContentFingerprintProvider} /
+ *    {@link rewriteTencentContentFingerprints}），因为
+ *    `openai-gateway/messages.ts`、`responses.ts`、`buddy-adapter.ts` 与
+ *    `scripts/tencent-fingerprint-test.mjs` 仍在调它们。
+ *
+ * ⚠️ `isTencentContentFingerprintProvider` 现在**恒为 true**：清洗不再按 provider
+ * 开关。它留着只为让「调用点先判 provider 再清」的旧写法继续编译与运行 —— 那种
+ * 写法在语义上已经退化成「总是清洗」，与共享模块一致。
  */
-const CONTENT_FINGERPRINTS: readonly ContentFingerprint[] = [
-  {
-    // DSH 内核 `@deepseek-ai/dsh-system-prompt` 的 `harness:identity` 首句。
-    // 实测（本机 DSH 0.2.1-rc.2 / 2026-10-21）该句在 system 与 **assistant
-    // 历史**里都拦；重新登录 / 换号 / 换网络都不会好转 —— 它是**内容级**判定。
-    //
-    // ⚠️ find **不带末尾句号**：上游对带 / 不带句号两种写法都拦，而
-    // `escapeRegExp` 会把 "." 转义成字面点号。去掉句号后一条规则同时覆盖
-    // 两种写法，原文的句号也会保留在替换结果里。
-    // ⚠️ replace 必须是**中性表达并去掉品牌词**：`DeepSeek Harness` 本身就是
-    // 被检测的目标；把 `agent` 改成 `assistant` 只是碰巧绕开一个短语，上游
-    // 随时可能把 `assistant` 也加进名单。
-    find: 'You are an AI agent powered by DeepSeek Harness',
-    replace: 'You are an AI assistant',
-    note: 'DSH harness:identity 首句；上游锚定内容开头、忽略大小写、末尾句号可选',
-  },
-  {
-    // **DSH 自己的 Web GUI 提示词**（`@deepseek-ai/dsh-harness-dev-context` 的
-    // `WEB_SURFACE_PROMPT` 开头两句）。这是 2026-10-24 用户报「WorkBuddy 国内版模型
-    // 调用报错 Illegal API invocation」的**真正原因** —— 它在**每一轮**对话里都会注入。
-    //
-    // 实测（`copilot.tencent.com` / `hy3` / stream / max_tokens=8，2026-10-25）：
-    //   只放第一句（到 "runtime context names." 为止）              → ✅ 200
-    //   第一句 + 第二句（"When the user refers to "this page"…"）  → ❌ 400/11128
-    //   整段 1004 字符原文                                          → ❌ 400/11128
-    //   把品牌词 `the DeepSeek Harness Web GUI` 改成 `the Web GUI`   → ✅ 200
-    // 即**上游锚定的是这两句的组合**，单句放行；逐字符敏感（改一个词即可绕过）。
-    //
-    // find 取「第一句开头 + 第二句关键片段」的组合，replace 只去掉品牌词，
-    // 其余逐字保留（保住服务端前缀缓存）。
-    find: 'You are interacting with the user through the DeepSeek Harness Web GUI',
-    replace: 'You are interacting with the user through the Web GUI',
-    note: 'DSH WEB_SURFACE_PROMPT 首句；2026-10-25 实测 copilot.tencent.com 单句放行、两句组合拦截',
-  },
-  {
-    // 其它客户端（Claude Code 兼容层 / 第三方 agent）注入的身份句。
-    // 2026-10-25 本机实测（`copilot.tencent.com`，同账号同模型，max_tokens=8）：
-    //   system = `You are Claude Code, Anthropic's official CLI for Claude.` → ❌ 400/11128
-    //   system = `You are Claude Code`                                     → ❌ 400/11128
-    //   system = `This is powered by Claude Code.`                         → ✅ 200
-    //   system = `Anthropic's official CLI for Claude.`                     → ✅ 200
-    // 即**上游锚定的是 `You are Claude Code` 这个开头短语**，后面接什么都拦；
-    // 只出现 "Claude Code" 而不带 "You are " 前缀则放行。
-    // 用户报障「WorkBuddy 国内版模型调用报错 Illegal API invocation」即由此触发。
-    // replace 去掉品牌名、保留「你是一个助手」的语义，且**不含 Claude / Code**，
-    // 避免上游把替换后的文本也加进名单。
-    find: 'You are Claude Code',
-    replace: 'You are a helpful assistant',
-    note: '2026-10-25 本机实测 copilot.tencent.com；锚定 You are Claude Code 开头，尾随内容不影响',
-  },
-  {
-    // ZCode 内建常量：`$Js="Main branch (you will usually use this for PRs)"`。
-    // 每个 git 仓库里的会话都会被注入（拼在 `Main branch … : <分支名>` 这一行）。
-    find: 'Main branch (you will usually use this for PRs)',
-    replace: 'Main branch (PRs usually go here)',
-    note: 'Gitee IKJNA1；本机 2026-10-05 对 workbuddy / CodeBuddy 双端点实测复现',
-  },
-]
 
-/** 正则元字符转义：把字面量安全地变成**精确**匹配，而不是模式。 */
-function escapeRegExp(literal: string): string {
-  return literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
+import { rewriteContentFingerprints } from '../content-fingerprint.js'
 
-interface CompiledFingerprint {
-  readonly replace: string
-  /** 小写形态，用于 `includes` 预检（不命中就不必跑正则，字符串**原样**返回）。 */
-  readonly findLower: string
-  readonly pattern: RegExp
-}
+/** 曾经需要特殊处理的两个腾讯系后端（保留给诊断信息与历史对照）。 */
+export const TENCENT_PROVIDERS: readonly string[] = ['buddy', 'workbuddy']
 
-const COMPILED: readonly CompiledFingerprint[] = CONTENT_FINGERPRINTS.map((rule) => ({
-  replace: rule.replace,
-  findLower: rule.find.toLowerCase(),
-  // `g` = 全部出现都改写；`i` = 大小写不敏感（实测全小写 / 全大写同样被拦）。
-  pattern: new RegExp(escapeRegExp(rule.find), 'gi'),
-}))
-
-/** 该 provider 是否走腾讯系后端（有这套内容级风控）。 */
-export function isTencentContentFingerprintProvider(provider: string): boolean {
-  return TENCENT_PROVIDERS.includes(provider)
+/**
+ * 该 provider 是否走「内容级风控指纹清洗」。
+ *
+ * ⚠️ **现在恒为 `true`** —— 清洗是全渠道的（2026-11-04 用户要求）。
+ * 保留该函数是为了让既有的「先判 provider 再清洗」调用点不必改结构。
+ */
+export function isTencentContentFingerprintProvider(_provider: string): boolean {
+  return true
 }
 
 /**
- * 把 system 文本里已知的腾讯风控指纹做**窄改写**。
+ * 把文本里已知的风控指纹做**窄改写**（全渠道，规则表见
+ * `../content-fingerprint.ts`）。
  *
- * ## 契约
- *
- * - **非腾讯系 provider 原样返回**（同一个函数指针意义上的同一份字符串内容）；
- * - **不含任何指纹的文本逐字符不变** —— 这一条是硬要求：腾讯侧按前缀缓存，
- *   无谓地重建字符串会让每一轮都算作新前缀，白白吃掉缓存命中；
- * - 只改**内容**，不删句子、不改结构：`Main branch (PRs usually go here)` 与原句
- *   语义等价，模型读到的仍是「主分支（提 PR 通常走这里）」。
+ * ⚠️ `provider` 参数保留只为兼容旧调用点，**不参与判定**。
  *
  * @param text 已取出的 system 纯文本
- * @param provider `parseModelRoute` 得到的 provider 段
+ * @param _provider 旧调用点传的 provider 段（已不使用）
  */
-export function rewriteTencentContentFingerprints(text: string, provider: string): string {
-  if (!isTencentContentFingerprintProvider(provider)) return text
-  let out = text
-  for (const rule of COMPILED) {
-    // 预检：不含（小写化后的）字面量就整条跳过，`out` 保持同一份字符串内容。
-    if (!out.toLowerCase().includes(rule.findLower)) continue
-    // `String.replace` 配 `g` 正则会在调用前后把 lastIndex 归零，不会串状态。
-    out = out.replace(rule.pattern, rule.replace)
-  }
-  return out
+export function rewriteTencentContentFingerprints(text: string, _provider?: string): string {
+  return rewriteContentFingerprints(text)
 }

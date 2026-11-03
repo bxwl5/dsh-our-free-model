@@ -4,6 +4,7 @@ import { promisify } from 'node:util'
 import path from 'node:path'
 import { Dispatcher1Wrapper, type Dispatcher } from 'undici'
 import { normalizeProxy } from './opencode.js'
+import { scrubFetchArguments } from './content-fingerprint.js'
 import { createProxyDispatcher } from './opencode-proxy.js'
 
 export interface ChannelOutlet {
@@ -111,6 +112,20 @@ export function createChannelFetch(options: ChannelFetchOptions = {}): { fetch: 
   const fetchImpl: typeof fetch = (input, init) => (options.fetchImpl ?? globalThis.fetch)(input, init)
   const fetcher: typeof fetch = async (input, init) => {
     if (closed) throw new Error('渠道出网服务已停止')
+    // ── 内容级风控指纹清洗（底层出口层，2026-11-04）──
+    //
+    // 全部 20 个渠道的上游请求都从这里出网（`index.ts` 把 `network.fetch` /
+    // `signedNetwork.fetch` 注入每个适配器），所以在这一层清洗就与「哪个渠道、
+    // 哪套 wire、谁拼的请求体」无关 —— 这正是用户要的「底层出口层清洗」。
+    //
+    // ⚠️ 必须放在 loopback / outlet / 代理判定**之前**：否则走出口代理或本机
+    // relay 的请求会带着未清洗的 body 出去。
+    // ⚠️ 未命中任何指纹时返回 null，原样转发（零字节改动，保住前缀缓存）。
+    const scrubbed = scrubFetchArguments(input as RequestInfo | URL, init)
+    if (scrubbed !== null) {
+      input = scrubbed.input as typeof input
+      init = scrubbed.init
+    }
     const target = new URL(input instanceof Request ? input.url : String(input))
     const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined)
     signal?.throwIfAborted()

@@ -17,11 +17,18 @@ async function verifyRewriteFunction() {
   const { rewriteTencentContentFingerprints, isTencentContentFingerprintProvider } =
     await import('../vendor/channel-pack/src/openai-gateway/tencent-fingerprint.ts')
 
+  // ⚠️ 自 2026-11-04 起清洗是**全渠道**的（用户要求「全部模型、包含免费模型」），
+  // 所以 `isTencentContentFingerprintProvider` 恒为 true、`zcode` 也会被改写。
+  // 原先这里断言「非腾讯系原样返回」—— 那条语义已按需求变更，不再是缺陷。
   assert.equal(isTencentContentFingerprintProvider('buddy'), true)
   assert.equal(isTencentContentFingerprintProvider('workbuddy'), true)
-  assert.equal(isTencentContentFingerprintProvider('zcode'), false)
+  assert.equal(isTencentContentFingerprintProvider('zcode'), true, '全渠道：不再按 provider 开关')
   const dirty = `${IDENTITY}.`
-  assert.equal(rewriteTencentContentFingerprints(dirty, 'zcode'), dirty, 'non-Tencent provider is untouched')
+  assert.equal(
+    rewriteTencentContentFingerprints(dirty, 'zcode'),
+    'You are an AI assistant.',
+    '全渠道：非腾讯系同样改写',
+  )
 
   for (const [input, expected] of [
     [`${IDENTITY}.`, 'You are an AI assistant.'],
@@ -50,8 +57,12 @@ async function verifyRewriteFunction() {
     'Web GUI 提示词必须去掉品牌词',
   )
   assert.ok(!webGuiFixed.includes('DeepSeek Harness Web GUI'), '改写后不得残留品牌词')
-  // 非腾讯系原样
-  assert.equal(rewriteTencentContentFingerprints(webGuiFull, 'codearts'), webGuiFull)
+  // 全渠道：非腾讯系同样改写（2026-11-04 起不再按 provider 开关）
+  assert.equal(
+    rewriteTencentContentFingerprints(webGuiFull, 'codearts'),
+    webGuiFull.replace(WEBGUI, 'You are interacting with the user through the Web GUI'),
+    '全渠道：codearts 也改写',
+  )
 
   // ── `You are Claude Code` 指纹（2026-10-25 实测 copilot.tencent.com）──
   // 上游锚定该**开头短语**，尾随内容不影响；只出现 "Claude Code" 则放行。
@@ -70,8 +81,8 @@ async function verifyRewriteFunction() {
   // 反例：不带 "You are " 前缀的 "Claude Code" **不该**被改（实测放行，改了反而白破坏文本）
   const harmless = 'This is powered by Claude Code.'
   assert.equal(rewriteTencentContentFingerprints(harmless, 'buddy'), harmless, '无前缀不触发')
-  // 非腾讯系一律原样
-  assert.equal(rewriteTencentContentFingerprints(`${CLAUDE}.`, 'zcode'), `${CLAUDE}.`)
+  // 全渠道：非腾讯系一律改写
+  assert.equal(rewriteTencentContentFingerprints(`${CLAUDE}.`, 'zcode'), 'You are a helpful assistant.')
 
   for (const clean of [
     'You are an AI assistant.',

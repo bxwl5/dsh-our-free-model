@@ -369,6 +369,11 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   await verifyChannelPrFixes()
   const { verifyTencentFingerprint } = await import('./tencent-fingerprint-test.mjs')
   await verifyTencentFingerprint()
+  // 全渠道 + 底层出口层的指纹清洗（2026-11-04 用户要求：全部模型、包含免费模型）。
+  // 必须在 `--source` 模式下跑：它要 import 渠道包 `.ts` 源码比对规则表，
+  // 也要走 `createChannelFetch` 的真实出口路径（`.js` → `.ts` 由本文件的 hooks 重映射）。
+  const { verifyContentFingerprint } = await import('./content-fingerprint-test.mjs')
+  await verifyContentFingerprint()
   const { verifyCommandCodeAuth } = await import('./commandcode-auth-test.mjs')
   await verifyCommandCodeAuth()
   const { verifyCommandCodeAdapter } = await import('./commandcode-adapter-test.mjs')

@@ -461,8 +461,9 @@ async function toMessages(
         continue
       }
       if (raw.role === 'system' || raw.role === 'developer') {
-        // ⚠️ 腾讯系内容级风控的改写点之一 —— **必须与 Chat 路径同一判据**，
+        // ⚠️ 内容级风控的改写点之一 —— **必须与 Chat 路径同一判据**，
         // 否则同一份提示词在 `/v1/responses` 上被拦、在 `/v1/chat/completions` 上放行。
+        // 自 2026-11-04 起该判据是**全渠道**（规则表见 ../content-fingerprint.ts）。
         messages.push(createGatewayMessage('system', [{
           type: 'text',
           text: rewriteTencentContentFingerprints(textFromContent(content), provider),
