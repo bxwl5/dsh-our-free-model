@@ -86,6 +86,23 @@ export interface RemoteModel {
   id: string
   name: string
   /**
+   * 上下文窗口（上游 `context_window`）。
+   *
+   * ⚠️ 2026-11-04 用户要求「按另外九家那样，取到就写进本地」时补上。
+   *
+   * 之前本适配器**只取 id/name/rate**，把上游同一份响应里的 `context_window`
+   * 整块丢掉，于是容量只能查 `CONTEXT_WINDOWS` 那张写死 5 条的表 ——
+   * 表外的模型连 `context` 字段都不设，面板显示插件的兜底值 131072。
+   * 对照 magpie 0.3.5 的 `parseModelInfo`（同一端点、同一张兜底表）：
+   *
+   *     const info = { id, name, context: num(m.context_window) || CONTEXT_WINDOWS[base] }
+   *
+   * 它是「远端优先、本地兜底」，我们却把兜底当成了唯一来源。现在对齐。
+   */
+  contextWindow?: number
+  /** 输出上限（上游 `max_tokens`）。同一原因补上。 */
+  maxTokens?: number
+  /**
    * 消耗系数（agent-center 的 credit rate；x1 不标，`undefined` = 无倍率信息）。
    *
    * ⚠️ 2026-10-29 接入倍率时**漏了本字段**：`fetchCodeArtsAgentModels` 直接
@@ -135,7 +152,28 @@ function parseModelInfo(m: Record<string, unknown>, seen: Set<string>): RemoteMo
   // 与目录同一次响应，零额外请求；没有计费档（`credit: []`，如两个 VL 模型）
   // 就不带倍率，面板照常显示模型名。
   const rate = creditRateOf(m['credit'])
-  return { id, name, ...(rate > 0 ? { rate } : {}) }
+  // 容量：与倍率同一次响应，零额外请求（2026-11-04 用户要求）。
+  // 缺字段就不带 —— 绝不编造，交给 `CONTEXT_WINDOWS` 兜底。
+  const contextWindow = positiveNumber(m['context_window'])
+  const maxTokens = positiveNumber(m['max_tokens'])
+  return {
+    id,
+    name,
+    ...(rate > 0 ? { rate } : {}),
+    ...(contextWindow === undefined ? {} : { contextWindow }),
+    ...(maxTokens === undefined ? {} : { maxTokens }),
+  }
+}
+
+/**
+ * 上游数值字段 → 正数（否则 `undefined`）。
+ *
+ * 上游偶发下发字符串或 0，`Number()` 直接转会得到 `NaN` / `0`，
+ * 后续 `contextWindow > 0` 的判断全失效，所以统一在这里收口。
+ */
+function positiveNumber(value: unknown): number | undefined {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : undefined
 }
 
 /** 从 JSON 响应中沿路径指针取数组。 */

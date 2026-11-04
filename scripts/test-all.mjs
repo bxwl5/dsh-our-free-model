@@ -74,6 +74,7 @@ const suites = [
   // 守卫：路由候选必须按需重读渠道名册，且不得订阅 llm/adapters-updated
   //（11-04 那次递归把 CPU 打满、桌面端起不来）。
   ['adapter-event-loop-guard', 'adapter-event-loop-guard-test.mjs', []],
+  ['codearts-context-remote', 'codearts-context-remote-test.mjs', []],
   ['open-external', 'open-external-test.mjs', []],
   ['forward-boot', 'forward-boot-test.mjs', []],
   ['standalone', 'standalone-test.mjs', []],

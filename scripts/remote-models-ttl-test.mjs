@@ -1012,6 +1012,17 @@ export async function verifyCodeArtsCatalogFallbackBoundary() {
   const fsMod = await import('node:fs')
   const cacheDir = fsMod.mkdtempSync(`${os.tmpdir()}/ofm-cacb-`)
   process.env.DSH_CODEARTS_CACHE_DIR = cacheDir
+  // ⚠ 2026-11-04：CodeArts 现在也会写**统一的** `model-catalogs/codearts.json`
+  // （用户要求与另外九家一致），所以隔离必须扩到整个 channel-pack 状态目录 ——
+  // 否则本用例 ① 写进去的 `remote-a` 会被 ② 的 `restoreFromDisk()` 读到，
+  // 「无远端才用兜底表」那条断言就会假失败。
+  const stateDir = fsMod.mkdtempSync(`${os.tmpdir()}/ofm-cacb-state-`)
+  process.env.DSH_CHANNEL_PACK_STATE_DIR = stateDir
+  // ⚠ 光设环境变量不够：`catalogDir()` 在模块级缓存了 `resolvedDir`，同一进程里
+  // 早先的用例可能已经把它解析成真实的 `~/.dsh`。不重置的话这里仍会读/写用户
+  // 的真实目录（既不隔离，也可能真的写出 `remote-a` 这种测试数据）。
+  const { resetModelCatalogCacheForTest } = await import('../vendor/channel-pack/src/model-catalog-cache.ts')
+  resetModelCatalogCacheForTest()
   const { CodeArtsAdapter } = await import('../vendor/channel-pack/src/llm-adapter.ts')
 
   const makeAdapter = (remote) => new CodeArtsAdapter({
@@ -1030,6 +1041,13 @@ export async function verifyCodeArtsCatalogFallbackBoundary() {
   assert.equal(listed.includes('glm-5.3-flash'), false, '兜底表条目不得混入远端结果（benefit 组）')
 
   // ② 远端从没拉到过（空数组 = 拉取失败/首启）：兜底表顶上
+  //
+  // ⚠ 2026-11-04：CodeArts 现在会把远端结果写进统一的 `model-catalogs/codearts.json`
+  // （用户要求与另外九家一致），所以 ① 刚写下的 `remote-a` 会被 ② 的
+  // `restoreFromDisk()` 读回来 —— 那不是缺陷，正是「取到就写进本地，重启后
+  // 仍然记得」的语义。要让 ② 真的退化成「首启」，必须**清掉那份快照**。
+  resetModelCatalogCacheForTest()
+  fsMod.rmSync(`${stateDir}/channel-pack/model-catalogs`, { recursive: true, force: true })
   const fallbackOnly = makeAdapter([])
   const fallback = (await fallbackOnly.listModels('codearts')).map((m) => m.id)
   assert.ok(fallback.length > 0, '没有远端时必须用兜底表，而不是空列表')

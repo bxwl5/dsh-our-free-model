@@ -69,6 +69,7 @@ import {
   saveModelsCache,
   setMemoryCache,
 } from './models.js'
+import { writeModelCatalogClosingNew } from './model-catalog-cache.js'
 
 /**
  * CodeArts 历史单凭据 ref 常量。
@@ -561,6 +562,11 @@ export class CodeArtsAuth extends Service {
       const known = previousIdsForCodeArts ?? diskKnown
       setMemoryCache(models)
       saveModelsCache(models)
+      // 同一份结果也写进**统一目录**（`model-catalogs/codearts.json`），与另外
+      // 九家一致（2026-11-04 用户要求「取到就写进本地」）。
+      // ⚠️ 顺序在 saveModelsCache 之后：旧路径写失败是静默的，统一目录才是
+      // 面板与重启后读的那一份，不能让前者的异常把它带掉。
+      void writeModelCatalogClosingNew('codearts', models, pool)
       // 本次成功刷新即成为下一轮的进程内基准（先算 fresh 再覆盖）。
       previousIdsForCodeArts = new Set(models.map((m) => m.id))
       if (known !== undefined) {

@@ -10,7 +10,8 @@ import { AccountPool, providerCatalogVisible } from './account-pool.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
 import { settingsNamespaceFor } from './settings-compat.js'
 import { nextUtc8DayStartMs } from './model-queue.js'
-import { availableCodeArtsModels, isCodeArtsBenefitModel } from './models.js'
+import { availableCodeArtsModels, isCodeArtsBenefitModel, type RemoteModel } from './models.js'
+import { readModelCatalog, writeModelCatalogClosingNew } from './model-catalog-cache.js'
 import { normalizeHarnessMessages } from './message-shape.js'
 import { directFetch } from './direct-fetch.js'
 import { signRequestHuawei } from './sign.js'
@@ -951,8 +952,13 @@ export class CodeArtsAdapter extends LlmAdapter {
     return { id, name: 'CodeArts Agent' }
   }
 
-  /** 动态模型缓存（首次 listModels 成功后填充）；rate = 消耗系数（agent-center）。 */
-  private remoteModels: Array<{ id: string; name: string; rate?: number }> | undefined
+  /**
+   * 动态模型缓存（首次 listModels 成功后填充）。
+   *
+   * - `rate`：消耗系数（agent-center）
+   * - `contextWindow` / `maxTokens`：上游同一份响应里的容量（2026-11-04 补）
+   */
+  private remoteModels: RemoteModel[] | undefined
 
   /**
    * 目录加载闸门：并发去重 + 失败冷却。
@@ -977,6 +983,10 @@ export class CodeArtsAdapter extends LlmAdapter {
       // 也不应立刻重试（否则每个模型都打一次空请求）。
       if (models.length === 0) return false
       this.remoteModels = models
+      // 与另外九家**同一套落盘**（`~/.dsh/channel-pack/model-catalogs/codearts.json`）。
+      // 在此之前 CodeArts 走的是 `~/.cache/deveco/codearts_models.json` 那条独立路径，
+      // 于是它成了全仓唯一一个「缓存不在统一目录、面板也看不到」的渠道。
+      void writeModelCatalogClosingNew(PROVIDER, models, this.options.accountPool)
       return true
     })
     // 远端没拉到：用磁盘快照（`~/.cache/deveco/codearts_models.json`，由
@@ -994,6 +1004,15 @@ export class CodeArtsAdapter extends LlmAdapter {
    */
   private restoreFromDisk(): void {
     if (this.remoteModels !== undefined) return
+    // ① 统一目录（`model-catalogs/codearts.json`，与另外九家同款）——
+    //    这份带 `contextWindow` / `maxTokens`，是容量在重启后仍能保住的关键。
+    const unified = readModelCatalog<RemoteModel>(PROVIDER)
+    if (unified !== undefined && unified.length > 0) {
+      this.remoteModels = unified
+      return
+    }
+    // ② 旧路径（`~/.cache/deveco/codearts_models.json`）—— 兼容已经存在的
+    //    安装：里面只有 id/name/rate，没有容量，下一次远端拉取会写进统一目录。
     const cached = availableCodeArtsModels()
     if (cached === undefined || cached.length === 0) return
     // ⚠ 必须带上 `rate`（2026-10-30 用户实测「倍率消失」）：这里早期只挑了
@@ -1004,6 +1023,8 @@ export class CodeArtsAdapter extends LlmAdapter {
       id: model.id,
       name: model.name,
       ...(model.rate === undefined ? {} : { rate: model.rate }),
+      ...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
+      ...(model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens }),
     }))
   }
 
@@ -1105,12 +1126,23 @@ export class CodeArtsAdapter extends LlmAdapter {
     this.restoreFromDisk()
     const remoteModel = this.remoteModels?.find((m) => m.id === model)
     const name = remoteModel?.name ?? model
-    // ⚠️ 查表前**必须**去日期后缀（见 normalizeModelId 的说明）：
-    // 直接用原始 id 查一张只有基础名的表必然落空，落空后宿主会吃掉自己的
-    // 默认 131072，把 1M 的模型报成 128K。
-    const contextWindow = CONTEXT_WINDOWS.get(normalizeModelId(model))
+    // 容量：**远端优先，本地表兜底**（2026-11-04 用户要求，与另外九家对齐）。
+    //
+    // 此前这里只有 `CONTEXT_WINDOWS.get(...)` —— 那张表写死 5 条，表外模型
+    // 不设 `context`，宿主便填自己的默认 131072。而上游同一份目录响应里本来
+    // 就带 `context_window` / `max_tokens`，`parseModelInfo` 却把这两个字段
+    // 丢掉了。对照 magpie 0.3.5（同端点、同一张兜底表）：
+    //
+    //     const info = { id, name, context: num(m.context_window) || CONTEXT_WINDOWS[base] }
+    //
+    // ⚠️ 本地表查表前**必须**去日期后缀（见 normalizeModelId 的说明）：
+    // 直接用原始 id 查一张只有基础名的表必然落空。
+    const contextWindow = remoteModel?.contextWindow ?? CONTEXT_WINDOWS.get(normalizeModelId(model))
+    const maxTokens = remoteModel?.maxTokens
     const resolved: LlmResolvedModelInfo = { provider, id: model, name }
     if (contextWindow !== undefined) resolved.context = { contextWindow }
+    // 输出上限同样以远端为准；没下发就不设，绝不编造。
+    if (maxTokens !== undefined) resolved.defaultMaxTokens = maxTokens
     // 思考开关（实测，2026-09-29）：本网关**唯一**真正生效的思考控制是
     // 顶层 `thinking.type`。`reasoning_effort`（含 low/high/none/minimal）与
     // 嵌套 `reasoning.effort` 都被服务端接受但**完全无效果**（判据为服务端
