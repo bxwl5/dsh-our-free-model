@@ -68,7 +68,7 @@ const REMOTE_MODELS_TTL_MS = 300_000
 export class OfficeAceAdapter extends LlmAdapter {
   private readonly product: OfficeAceProduct
   private readonly fetchImpl: typeof fetch
-  private remoteModels: Array<{ id: string; name: string; contextWindow: number; maxTokens?: number; rate?: number }> | undefined
+  private remoteModels: Array<{ id: string; name: string; contextWindow?: number; maxTokens?: number; rate?: number }> | undefined
   /** 上次成功拉取的时刻。配合 {@link REMOTE_MODELS_TTL_MS} 决定是否重拉。 */
   private remoteModelsAt = 0
   private loading: Promise<void> | undefined
@@ -111,15 +111,27 @@ export class OfficeAceAdapter extends LlmAdapter {
         if (typeof body !== 'object' || body === null) return
         const record = body as Record<string, unknown>
         if (!Array.isArray(record.data)) return
-        const rows: Array<{ id: string; name: string; contextWindow: number; maxTokens?: number; rate?: number }> = []
+        const rows: Array<{ id: string; name: string; contextWindow?: number; maxTokens?: number; rate?: number }> = []
         for (const raw of record.data) {
           if (typeof raw !== 'object' || raw === null) continue
           const item = raw as Record<string, unknown>
           const id = typeof item.id === 'string' && item.id !== '' ? item.id : undefined
           if (id === undefined) continue
+          /**
+           * ⚠️ 缺失时**不再硬填 128_000**（2026-11-04 用户报障）。
+           *
+           * 上游 `/models` 不给 `context_length`（实测：只有 id / name / 倍率），
+           * 原先一律兜成 `128_000` —— 而这批模型的真实上下文是 **1,000,000**，
+           * `128_000` 是它们的**输出上限**（参考实现 `officeace-auth` 的
+           * `FALLBACK_MODELS`：`limit: { context: 1_000_000, output: 128_000 }`）。
+           * 把输出上限当上下文用 ⇒ 上下文被低估 8 倍，长会话被提前压缩。
+           *
+           * 正确做法：上游给了就信上游；没给就**留空**，由 `resolveModel`
+           * 回退到兜底表（那份表已按真实值修正）。
+           */
           const contextRaw = item.context_length ?? item.contextWindow
-          const contextWindow = typeof contextRaw === 'number' && contextRaw > 0 ? contextRaw : 128_000
-          rows.push({ id, name: typeof item.name === 'string' && item.name !== '' ? item.name : id, contextWindow })
+          const contextWindow = typeof contextRaw === 'number' && contextRaw > 0 ? contextRaw : undefined
+          rows.push({ id, name: typeof item.name === 'string' && item.name !== '' ? item.name : id, ...(contextWindow === undefined ? {} : { contextWindow }) })
         }
         if (rows.length > 0) {
           // 倍率（2026-10-29）：与目录**并联**拉（`/v1/model-token-rates`，V11
@@ -210,14 +222,30 @@ export class OfficeAceAdapter extends LlmAdapter {
     await this.ensureRemoteModels()
     const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels
     const entry = source.find((candidate) => candidate.id === model)
+    /**
+     * ⚠️ 上下文**必须有值**（2026-11-04 用户报障）。
+     *
+     * 上游 `/models` 不给 `context_length`，而 `remoteModels` 一旦存在就会
+     * **完全取代** 兜底表（上面的 `??`）。于是远端条目缺 context 时，
+     * `resolved.context` 不设 ⇒ 宿主退回自己的默认 `131072` ⇒ 用户看到
+     * 「上下文 128K」，而这批模型真实是 **1M**。
+     *
+     * 故这里补一次回退：远端没给就用兜底表的同 id 条目（那份已按真实值修正：
+     * context 1,000,000 / output 128,000）。
+     */
+    const fallback = entry?.contextWindow === undefined
+      ? this.product.fallbackModels.find((candidate) => candidate.id === model)
+      : undefined
+    const contextWindow = entry?.contextWindow ?? fallback?.contextWindow
+    const maxTokens = entry?.maxTokens ?? fallback?.maxTokens
     const resolved: LlmResolvedModelInfo = {
       provider,
       id: model,
       name: entry?.name ?? model,
       inputModalities: ['text'],
     }
-    if (entry?.contextWindow !== undefined) resolved.context = { contextWindow: entry.contextWindow }
-    if (entry?.maxTokens !== undefined && entry.maxTokens > 0) resolved.defaultMaxTokens = entry.maxTokens
+    if (contextWindow !== undefined) resolved.context = { contextWindow }
+    if (maxTokens !== undefined && maxTokens > 0) resolved.defaultMaxTokens = maxTokens
     return resolved
   }
 

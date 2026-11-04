@@ -114,6 +114,18 @@ const AUTO_CLAW_EFFORT_NAMES: Readonly<Record<string, string>> = {
  * 按来源分账（活动奖励 / 每日签到 / 订阅 / 加油包），**没有模型维度**，
  * 拆到每个模型只能是编造。真实的是「用尽 vs 能用」这个二值状态。
  */
+/**
+ * 该 401/403 是否**确凿**是鉴权失败。
+ *
+ * 只认 token/凭据类字样。`Invalid token` 也在列表里 —— 但它**同样可能**由
+ * 「头名用错」产生（见 `autoClawHeaders` 的注释：目录端点认 `Authorization`、
+ * 对话端点认 `X-Authorization`，用错头得到的报错与「token 真失效」一模一样）。
+ * 故调用方把上游原话一并带进 message，让用户与排查者看得到真实报文。
+ */
+export function isAutoClawAuthFailure(text: string): boolean {
+  return /invalid\s+token|token\s+(?:is\s+)?(?:invalid|expired|revoked)|unauthoriz|authentication\s+(?:failed|required)|请(?:重新)?登录|凭据(?:已)?(?:失效|过期)/i.test(text)
+}
+
 export function autoClawDisplayName(model: AutoClawModelRow): string {
   const parts: string[] = [model.name]
   // 1. 消耗档：只显示标签本身（`低`/`中`/`高`）。
@@ -424,10 +436,29 @@ export class AutoClawAdapter extends LlmAdapter {
     if (!response.ok) {
       const text = await response.text().catch(() => '')
       const detail = errorDetail(text)
+      /**
+       * ⚠️ **401/403 不能无条件判 AUTH、更不能无条件报「凭据无效」**
+       * （真实缺陷，用户报障 2026-11-04「AutoClaw 对话返回 api 密钥无效」）。
+       *
+       * 这个报错本身就可能撒谎（见 `isAutoClawAuthFailure` 的说明），
+       * 把它直接翻译成「凭据无效」，UI 就会渲染「API 密钥无效」，
+       * 把用户引向重新登录 —— 而凭据可能完全有效（真实原因常是
+       * 「套餐不含该模型 / 设备未绑定 / 权限不足」，都是 403）。
+       *
+       * 判据：报文出现确凿的 token/凭据字样才算鉴权失败；否则按状态码
+       * 走通用分类，让真实原因浮出来。
+       */
       if (response.status === 401 || response.status === 403) {
+        if (isAutoClawAuthFailure(text)) {
+          throw new LlmError(
+            `AutoClaw：凭据无效或已过期（HTTP ${response.status}）${detail === '' ? '' : `：${detail}`}`,
+            'AUTH',
+            { status: response.status },
+          )
+        }
         throw new LlmError(
-          `AutoClaw：凭据无效或已过期（HTTP ${response.status}）${detail === '' ? '' : `：${detail}`}`,
-          'AUTH',
+          `AutoClaw：上游拒绝（HTTP ${response.status}）${detail === '' ? '' : `：${detail}`}`,
+          httpErrorCode(response.status),
           { status: response.status },
         )
       }

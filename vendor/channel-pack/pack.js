@@ -31343,32 +31343,32 @@ var init_officeace_product = __esm({
   "vendor/channel-pack/src/officeace-product.ts"() {
     "use strict";
     OFFICEACE_FALLBACK_MODELS = [
-      { id: "deepseek-v4.1-flash", name: "deepseek-v4.1-flash", contextWindow: 128e3 },
-      { id: "deepseek-v4-flash", name: "deepseek-v4-flash", contextWindow: 128e3 },
-      { id: "glm-5.3", name: "glm-5.3", contextWindow: 128e3 },
-      { id: "qwen3-30b-a3b", name: "qwen3-30b-a3b", contextWindow: 128e3 },
-      { id: "kimi-k3.1-pro", name: "kimi-k3.1-pro", contextWindow: 128e3 },
-      { id: "kimi-k3-test-1009", name: "kimi-k3-test-1009", contextWindow: 128e3 },
-      { id: "openpangu-2.0-pro", name: "openpangu-2.0-pro", contextWindow: 128e3 },
-      { id: "qwen3-32b", name: "qwen3-32b", contextWindow: 128e3 },
-      { id: "glm-5.2-zx", name: "glm-5.2-zx", contextWindow: 128e3 },
-      { id: "kimi-k3", name: "kimi-k3", contextWindow: 128e3 },
-      { id: "glm-5.2-a3", name: "glm-5.2-a3", contextWindow: 128e3 },
-      { id: "glm-5.3-test", name: "glm-5.3-test", contextWindow: 128e3 },
-      { id: "openpangu-2.0-flash", name: "openpangu-2.0-flash", contextWindow: 128e3 },
-      { id: "glm-5.1", name: "glm-5.1", contextWindow: 128e3 },
-      { id: "glm-5.3-zx", name: "glm-5.3-zx", contextWindow: 128e3 },
-      { id: "deepseek-v4.1-flash-0930", name: "deepseek-v4.1-flash-0930", contextWindow: 128e3 },
-      { id: "deepseek-v4.1-flash-bnt", name: "deepseek-v4.1-flash-bnt", contextWindow: 128e3 },
-      { id: "glm-5.2", name: "glm-5.2", contextWindow: 128e3 },
-      { id: "deepseek-v4-flash-0731", name: "deepseek-v4-flash-0731", contextWindow: 128e3 },
-      { id: "glm-5.2-harmony", name: "glm-5.2-harmony", contextWindow: 128e3 },
-      { id: "kimi-k2.6", name: "kimi-k2.6", contextWindow: 128e3 },
-      { id: "deepseek-v4-pro", name: "deepseek-v4-pro", contextWindow: 128e3 },
-      { id: "glm-5.3-flash", name: "glm-5.3-flash", contextWindow: 128e3 },
-      { id: "kimi-k3-1019", name: "kimi-k3-1019", contextWindow: 128e3 },
-      { id: "glm.5.2-arkts-spark", name: "glm.5.2-arkts-spark", contextWindow: 128e3 },
-      { id: "deepseek-v4.1-flash-1017", name: "deepseek-v4.1-flash-1017", contextWindow: 128e3 }
+      { id: "deepseek-v4.1-flash", name: "deepseek-v4.1-flash", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "deepseek-v4-flash", name: "deepseek-v4-flash", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "glm-5.3", name: "glm-5.3", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "qwen3-30b-a3b", name: "qwen3-30b-a3b", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "kimi-k3.1-pro", name: "kimi-k3.1-pro", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "kimi-k3-test-1009", name: "kimi-k3-test-1009", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "openpangu-2.0-pro", name: "openpangu-2.0-pro", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "qwen3-32b", name: "qwen3-32b", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "glm-5.2-zx", name: "glm-5.2-zx", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "kimi-k3", name: "kimi-k3", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "glm-5.2-a3", name: "glm-5.2-a3", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "glm-5.3-test", name: "glm-5.3-test", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "openpangu-2.0-flash", name: "openpangu-2.0-flash", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "glm-5.1", name: "glm-5.1", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "glm-5.3-zx", name: "glm-5.3-zx", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "deepseek-v4.1-flash-0930", name: "deepseek-v4.1-flash-0930", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "deepseek-v4.1-flash-bnt", name: "deepseek-v4.1-flash-bnt", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "glm-5.2", name: "glm-5.2", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "deepseek-v4-flash-0731", name: "deepseek-v4-flash-0731", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "glm-5.2-harmony", name: "glm-5.2-harmony", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "kimi-k2.6", name: "kimi-k2.6", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "deepseek-v4-pro", name: "deepseek-v4-pro", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "glm-5.3-flash", name: "glm-5.3-flash", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "kimi-k3-1019", name: "kimi-k3-1019", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "glm.5.2-arkts-spark", name: "glm.5.2-arkts-spark", contextWindow: 1e6, maxTokens: 128e3 },
+      { id: "deepseek-v4.1-flash-1017", name: "deepseek-v4.1-flash-1017", contextWindow: 1e6, maxTokens: 128e3 }
     ];
     OFFICEACE = {
       id: "officeace",
@@ -38964,6 +38964,12 @@ var DEFAULT_MODELS = [
   "deepseek-v4-pro",
   "deepseek-v4.1-flash"
 ];
+function normalizeModelId(id) {
+  if (id.length <= 5) return id;
+  const suffix = id.slice(-5);
+  if (suffix.startsWith("-") && /^\d{4}$/.test(suffix.slice(1))) return id.slice(0, -5);
+  return id;
+}
 var CONTEXT_WINDOWS = /* @__PURE__ */ new Map([
   ["GLM-5.2", 202752],
   ["glm-5.3-flash", 1048576],
@@ -39051,8 +39057,10 @@ function isQueueError(status, body) {
   return status === 400 && (body.includes("TM.00001041") || /peak\s+usage|try\s+again\s+after|peak\s+hours/i.test(body) || /high\s+demand|too\s+many\s+requests/i.test(body));
 }
 function isAuthError(status, body) {
-  if (status === 401 || status === 403) return true;
-  return body.includes("APIG.0602") || /invalid\s+token|token\s+expired|token\s+is\s+invalid/i.test(body);
+  if (status === 401) return true;
+  if (body.includes("APIG.0602") || body.includes("APIG.0301")) return true;
+  if (/invalid\s+token|token\s+has\s+expired|token\s+is\s+invalid|signature\s+fail/i.test(body)) return true;
+  return status === 403 && /authenticat|unauthoriz|credential|permission\s+denied/i.test(body);
 }
 function isSseQueueErrorCode(code) {
   return code === "TM.00001041" || /81111|TPM|(^|[^0-9])429([^0-9]|$)|rate.?limit|too many requests|排队|限流/i.test(code);
@@ -39081,7 +39089,11 @@ function httpErrorCode2(status, body) {
   const detail = errorDetail2(body);
   if (isQuotaExceededError(detail)) return QUOTA_EXCEEDED_CODE;
   if (status === 400 && isContextWindowExceededError(detail)) return CONTEXT_WINDOW_EXCEEDED_CODE;
+  if (isUpstreamBusy(detail) || isUpstreamBusy(body)) return "SERVER";
   return baseHttpErrorCode(status);
+}
+function isUpstreamBusy(text) {
+  return text.includes("TM.00000001") || /网络繁忙|服务繁忙|系统繁忙/i.test(text) || /service\s+(?:is\s+)?busy|try\s+again\s+later/i.test(text);
 }
 function delay(ms, signal) {
   return new Promise((resolve2) => {
@@ -39425,7 +39437,7 @@ var CodeArtsAdapter = class extends LlmAdapter {
     this.restoreFromDisk();
     const remoteModel = this.remoteModels?.find((m) => m.id === model);
     const name2 = remoteModel?.name ?? model;
-    const contextWindow = CONTEXT_WINDOWS.get(model);
+    const contextWindow = CONTEXT_WINDOWS.get(normalizeModelId(model));
     const resolved = { provider, id: model, name: name2 };
     if (contextWindow !== void 0) resolved.context = { contextWindow };
     resolved.reasoning = {
@@ -49222,8 +49234,8 @@ var OfficeAceAdapter = class extends LlmAdapter11 {
           const id = typeof item.id === "string" && item.id !== "" ? item.id : void 0;
           if (id === void 0) continue;
           const contextRaw = item.context_length ?? item.contextWindow;
-          const contextWindow = typeof contextRaw === "number" && contextRaw > 0 ? contextRaw : 128e3;
-          rows.push({ id, name: typeof item.name === "string" && item.name !== "" ? item.name : id, contextWindow });
+          const contextWindow = typeof contextRaw === "number" && contextRaw > 0 ? contextRaw : void 0;
+          rows.push({ id, name: typeof item.name === "string" && item.name !== "" ? item.name : id, ...contextWindow === void 0 ? {} : { contextWindow } });
         }
         if (rows.length > 0) {
           const rates = await fetchTokenRates(this.fetchImpl, credential).catch(() => /* @__PURE__ */ new Map());
@@ -49298,14 +49310,17 @@ var OfficeAceAdapter = class extends LlmAdapter11 {
     await this.ensureRemoteModels();
     const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels;
     const entry = source.find((candidate) => candidate.id === model);
+    const fallback2 = entry?.contextWindow === void 0 ? this.product.fallbackModels.find((candidate) => candidate.id === model) : void 0;
+    const contextWindow = entry?.contextWindow ?? fallback2?.contextWindow;
+    const maxTokens = entry?.maxTokens ?? fallback2?.maxTokens;
     const resolved = {
       provider,
       id: model,
       name: entry?.name ?? model,
       inputModalities: ["text"]
     };
-    if (entry?.contextWindow !== void 0) resolved.context = { contextWindow: entry.contextWindow };
-    if (entry?.maxTokens !== void 0 && entry.maxTokens > 0) resolved.defaultMaxTokens = entry.maxTokens;
+    if (contextWindow !== void 0) resolved.context = { contextWindow };
+    if (maxTokens !== void 0 && maxTokens > 0) resolved.defaultMaxTokens = maxTokens;
     return resolved;
   }
   async prepareCall(provider, model, signal) {
@@ -49523,6 +49538,9 @@ var AUTO_CLAW_EFFORT_NAMES = {
   minimal: "\u6700\u5C11",
   xhigh: "\u6781\u9AD8"
 };
+function isAutoClawAuthFailure(text) {
+  return /invalid\s+token|token\s+(?:is\s+)?(?:invalid|expired|revoked)|unauthoriz|authentication\s+(?:failed|required)|请(?:重新)?登录|凭据(?:已)?(?:失效|过期)/i.test(text);
+}
 function autoClawDisplayName(model) {
   const parts = [model.name];
   if (model.creditLevel !== void 0 && model.creditLevel !== "") parts.push(model.creditLevel);
@@ -49748,9 +49766,16 @@ var AutoClawAdapter = class extends LlmAdapter12 {
       const text = await response.text().catch(() => "");
       const detail = errorDetail(text);
       if (response.status === 401 || response.status === 403) {
+        if (isAutoClawAuthFailure(text)) {
+          throw new LlmError16(
+            `AutoClaw\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF08HTTP ${response.status}\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`,
+            "AUTH",
+            { status: response.status }
+          );
+        }
         throw new LlmError16(
-          `AutoClaw\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF08HTTP ${response.status}\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`,
-          "AUTH",
+          `AutoClaw\uFF1A\u4E0A\u6E38\u62D2\u7EDD\uFF08HTTP ${response.status}\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`,
+          httpErrorCode(response.status),
           { status: response.status }
         );
       }

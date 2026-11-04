@@ -378,12 +378,16 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   const { verifySseResidual } = await import('./sse-residual-test.mjs')
   await verifySseResidual()
   // 上游错误码归类（2026-11-04 审查）：数字片段不得假阳性 + HTTP 402 必须归额度用尽。
-  const { verifyChannelErrorCodes, verifyErrorFrameClassification } = await import('./channel-error-codes-test.mjs')
+  const { verifyChannelErrorCodes, verifyErrorFrameClassification, verifyForbiddenIsNotAuth } = await import('./channel-error-codes-test.mjs')
   await verifyChannelErrorCodes()
   await verifyErrorFrameClassification()
+  await verifyForbiddenIsNotAuth()
   // 账本账号归属的并发隔离（2026-11-04 审查 P1-7）：并发流不得串号。
   const { verifyLedgerScope } = await import('./ledger-scope-test.mjs')
   await verifyLedgerScope()
+  // 渠道上下文窗口（2026-11-04 用户报障）：CodeArts 带日期 id / OfficeAce 的 1M。
+  const { verifyChannelContextWindows } = await import('./channel-context-window-test.mjs')
+  await verifyChannelContextWindows()
   const { verifyCommandCodeAuth } = await import('./commandcode-auth-test.mjs')
   await verifyCommandCodeAuth()
   const { verifyCommandCodeAdapter } = await import('./commandcode-adapter-test.mjs')

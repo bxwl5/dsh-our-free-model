@@ -80,6 +80,31 @@ const DEFAULT_MODELS: readonly string[] = [
  *   2026-09 kernel 日志；对齐 deveco-code-rust fb1b4a2）。
  * - 其余模型未公开上下文容量，留 undefined 让后端默认裁剪。
  */
+/**
+ * 去掉模型 id 尾部的 **4 位日期版本号**，得到查表用的基础名。
+ *
+ * `deepseek-v4-flash-0731` → `deepseek-v4-flash`、`deepseek-v4.1-flash-1017`
+ * → `deepseek-v4.1-flash`。参考实现（magpie `opencode-codearts-auth`
+ * 的 `normalizeModelId`）也是同一规则。
+ *
+ * ⚠️ **只用于查表与展示名**：发给上游的 id 必须保留日期（带日期的才是
+ * 已注册的免费模型，裸名是另一个计费模型 —— 见 `BENEFIT_MODEL_FALLBACK` 注释）。
+ *
+ * ## 为什么必须有这一步（真实缺陷，2026-11-04 用户报障）
+ *
+ * `CONTEXT_WINDOWS` 的键是**基础名**，而目录里的 id **带日期**。
+ * 原先直接 `CONTEXT_WINDOWS.get(model)` ⇒ 用 `deepseek-v4.1-flash-1017`
+ * 去查一张只有 `deepseek-v4.1-flash` 的表，**永远落空** ⇒ `resolved.context`
+ * 不设 ⇒ 宿主退回自己的默认值 `131072` ⇒ 用户看到「上下文 128K」，
+ * 而该模型实际是 **1M**。上下文被低估 8 倍，长会话会被提前压缩。
+ */
+export function normalizeModelId(id: string): string {
+  if (id.length <= 5) return id
+  const suffix = id.slice(-5)          // "-0731" / "-1017"
+  if (suffix.startsWith('-') && /^\d{4}$/.test(suffix.slice(1))) return id.slice(0, -5)
+  return id
+}
+
 const CONTEXT_WINDOWS: ReadonlyMap<string, number> = new Map([
   ['GLM-5.2', 202752],
   ['glm-5.3-flash', 1_048_576],
@@ -410,9 +435,34 @@ function isQueueError(status: number, body: string): boolean {
  * 策略：触发一次静默 refresh，用新 AK/SK/SecurityToken 重试一次；仍失败
  * 才抛 AUTH，避免把可自愈的瞬时鉴权失败暴露给用户。
  */
-function isAuthError(status: number, body: string): boolean {
-  if (status === 401 || status === 403) return true
-  return body.includes('APIG.0602') || /invalid\s+token|token\s+expired|token\s+is\s+invalid/i.test(body)
+export function isAuthError(status: number, body: string): boolean {
+  /**
+   * ⚠️ **403 不能无条件判鉴权**（真实缺陷，用户报障 2026-11-04：
+   * 「CodeArts 与 AutoClaw 对话时返回 API 密钥无效」）。
+   *
+   * 华为 APIG 的 403 是**通用拒绝码**，实测覆盖至少四类完全不同的原因：
+   *
+   * | 真实原因 | 报文 | 刷新凭据有用吗 |
+   * |---|---|---|
+   * | SecurityToken 过期/吊销 | `APIG.0602 Invalid token` | ✅ 有用 |
+   * | **上游繁忙** | `TM.00000001 网络繁忙，请稍后重试` | ❌ 完全无用 |
+   * | 模型无权 / 未开通 | `InferHub.002002009` | ❌ 无用 |
+   * | 安全策略拦截 | 11140 一类 | ❌ 无用 |
+   *
+   * 旧写法 `status === 403 → true` 会把后三类**全部**当成鉴权失败：
+   * 白刷新一次凭据（多一次 200ms 往返 + 一次 token 轮换），重试仍失败，
+   * 最终抛 `AUTH` ⇒ DSH 把它渲染成「**API 密钥无效**」，把用户引向
+   * 重新登录 —— 而凭据完全是好的。`buddy-adapter.ts:377/1476` 记过同型缺陷。
+   *
+   * 现在的判据：
+   * - 401 ⇒ 鉴权（状态码没歧义）；
+   * - 403 ⇒ **只有**报文里出现确凿的 token/签名错误才算鉴权；
+   *   其余一律交给下游分类（繁忙 → 可重试，无权 → 不可重试）。
+   */
+  if (status === 401) return true
+  if (body.includes('APIG.0602') || body.includes('APIG.0301')) return true
+  if (/invalid\s+token|token\s+has\s+expired|token\s+is\s+invalid|signature\s+fail/i.test(body)) return true
+  return status === 403 && /authenticat|unauthoriz|credential|permission\s+denied/i.test(body)
 }
 
 /**
@@ -517,11 +567,35 @@ function errorDetail(body: string): string {
  */
 function httpErrorCode(status: number, body: string): string {
   // ① 纯状态码部分统一走共享表（2026-11-04 全仓审查 M-3）。
-  // ② 再叠加本适配器特有的**响应体**分类（CodeArts 的额度文案与上下文超限措辞）。
+  // ② 再叠加本适配器特有的**响应体**分类（额度文案、上下文超限、上游繁忙）。
   const detail = errorDetail(body)
   if (isQuotaExceededError(detail)) return QUOTA_EXCEEDED_CODE
   if (status === 400 && isContextWindowExceededError(detail)) return CONTEXT_WINDOW_EXCEEDED_CODE
+  /**
+   * ⚠️ **上游繁忙必须归可重试的 `SERVER`，不能被状态码带走**（真实缺陷，
+   * 用户报障 2026-11-04「CodeArts 对话报 API 密钥无效」）。
+   *
+   * 实测报文：`HTTP 403` + `{"error_code":"TM.00000001","error_msg":"网络繁忙，请稍后重试"}`。
+   * 这是**上游过载**，与鉴权毫无关系，但 403 走共享表会被归成 `AUTH` ⇒
+   * DSH 渲染成「**API 密钥无效**」，用户被引去重新登录（凭据明明有效）。
+   *
+   * `SERVER` 在 harness 的 `DEFAULT_RETRYABLE_CODES` 里 ⇒ 会退避重试，
+   * 而「网络繁忙，请稍后重试」正是该重试的场景。
+   */
+  if (isUpstreamBusy(detail) || isUpstreamBusy(body)) return 'SERVER'
   return baseHttpErrorCode(status)
+}
+
+/**
+ * 上游**繁忙/过载**（瞬时、可重试）的判据。
+ *
+ * 只认确凿的措辞：`TM.00000001` 与「网络繁忙 / 稍后重试」。
+ * 判据刻意窄 —— 泛词（`busy`、`retry`）会误伤「参数错误请重试」这类确定性失败。
+ */
+function isUpstreamBusy(text: string): boolean {
+  return text.includes('TM.00000001')
+    || /网络繁忙|服务繁忙|系统繁忙/i.test(text)
+    || /service\s+(?:is\s+)?busy|try\s+again\s+later/i.test(text)
 }
 
 /** 可中止的休眠；当信号中止时立即 resolve。 */
@@ -1031,7 +1105,10 @@ export class CodeArtsAdapter extends LlmAdapter {
     this.restoreFromDisk()
     const remoteModel = this.remoteModels?.find((m) => m.id === model)
     const name = remoteModel?.name ?? model
-    const contextWindow = CONTEXT_WINDOWS.get(model)
+    // ⚠️ 查表前**必须**去日期后缀（见 normalizeModelId 的说明）：
+    // 直接用原始 id 查一张只有基础名的表必然落空，落空后宿主会吃掉自己的
+    // 默认 131072，把 1M 的模型报成 128K。
+    const contextWindow = CONTEXT_WINDOWS.get(normalizeModelId(model))
     const resolved: LlmResolvedModelInfo = { provider, id: model, name }
     if (contextWindow !== undefined) resolved.context = { contextWindow }
     // 思考开关（实测，2026-09-29）：本网关**唯一**真正生效的思考控制是

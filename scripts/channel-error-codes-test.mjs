@@ -143,3 +143,65 @@ export async function verifyErrorFrameClassification() {
 
   console.log('ok  错误帧分类：确定性错误不再落 SERVER（模型不存在/额度/鉴权/上下文超限）')
 }
+
+/**
+ * 第三部分：**403 不等于「API 密钥无效」**（用户报障 2026-11-04）。
+ *
+ * ## 真实事故
+ *
+ * 用户报告「CodeArts 和 AutoClaw 两个渠道，在对话的时候会返回 api 密钥无效」。
+ * 实测抓到的真实报文是：
+ *
+ * ```
+ * CodeArts: HTTP 403  {"error_code":"TM.00000001","error_msg":"网络繁忙，请稍后重试"}
+ * ```
+ *
+ * 这是**上游过载**，与鉴权毫无关系。但两个适配器都把 403 无条件归成 `AUTH`：
+ * - CodeArts `isAuthError()` 第一行就是 `if (status === 401 || 403) return true`
+ * - AutoClaw 直接把文案写成「凭据无效或已过期」
+ *
+ * `AUTH` 会被 DSH 渲染成「**API 密钥无效**」⇒ 用户被引去重新登录，而凭据
+ * 明明是好的；同时 `AUTH` **不在**可重试集合里，一个「稍后重试即可」的
+ * 上游繁忙被当成终态失败。
+ *
+ * 参考同仓库 `buddy-adapter.ts:377/1476` 记过的同型缺陷（403 覆盖
+ * 「真认证失败 / 额度 / 权限 / 安全策略」四类）。
+ */
+export async function verifyForbiddenIsNotAuth() {
+  const llm = await import('../vendor/channel-pack/src/llm-adapter.ts')
+  const compat = await import('../vendor/channel-pack/src/openai-compat.ts')
+
+  // ── 1. CodeArts：上游繁忙的 403 必须可重试，不得是 AUTH ──
+  const isAuthError = llm.isAuthError
+  assert.equal(typeof isAuthError, 'function', 'isAuthError 必须导出')
+
+  const busy403 = '{"error_code":"TM.00000001","error_msg":"网络繁忙，请稍后重试"}'
+  assert.equal(isAuthError(403, busy403), false,
+    '「网络繁忙」的 403 不是鉴权失败 —— 判成 AUTH 会让 UI 显示「API 密钥无效」')
+
+  // 真鉴权失败仍要认出来（401 无歧义；403 带确凿 token 字样）
+  assert.equal(isAuthError(401, ''), true, '401 就是鉴权失败')
+  assert.equal(isAuthError(403, '{"error_code":"APIG.0602","error_msg":"Invalid token"}'), true,
+    'APIG.0602 Invalid token 是确凿的鉴权失败')
+  assert.equal(isAuthError(403, '{"error_msg":"signature fail"}'), true, '签名失败也是鉴权失败')
+  // 非鉴权的 403（模型无权 / 安全策略）不得算鉴权
+  assert.equal(isAuthError(403, '{"error_code":"InferHub.002002009","error_msg":"model is not registered"}'), false,
+    '模型未开通的 403 不是鉴权失败')
+  assert.equal(isAuthError(403, '{"code":11140,"message":"request illegal"}'), false,
+    '安全策略拦截的 403 不是鉴权失败')
+
+  // ── 2. 上游繁忙要归成可重试码，而不是由状态码带走 ──
+  const retryable = new Set(['RATE_LIMIT', 'SERVER', 'TIMEOUT', 'TRANSPORT', 'EMPTY_RESPONSE'])
+  assert.equal(compat.baseHttpErrorCode(403), 'AUTH',
+    '共享表对**纯** 403 仍按历史口径给 AUTH（响应体分类是各适配器的职责）')
+
+  // ── 3. AutoClaw 的判据：只有确凿 token 字样才算鉴权 ──
+  const isAutoClawAuthFailure = llm.isAutoClawAuthFailure ?? llm.default?.isAutoClawAuthFailure
+  if (typeof isAutoClawAuthFailure === 'function') {
+    assert.equal(isAutoClawAuthFailure('{"error":"Invalid token"}'), true)
+    assert.equal(isAutoClawAuthFailure('{"code":403001,"message":"套餐不包含该模型"}'), false,
+      '套餐不含模型的 403 不是「凭据无效」')
+  }
+
+  console.log('ok  403 不再一律当「API 密钥无效」（上游繁忙/模型无权/安全策略各自归类）')
+}
