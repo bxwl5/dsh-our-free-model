@@ -167,6 +167,10 @@ import type {
   RpcUpdateAccountRequest,
   RpcDeleteAccountRequest,
   RpcReorderAccountsRequest,
+  RpcGetAccountStrategyRequest,
+  RpcGetAccountStrategyResponse,
+  RpcSetAccountStrategyRequest,
+  AccountStrategy,
   RpcGetProviderOrderResponse,
   RpcSetProviderOrderRequest,
   RpcRefreshAccountRequest,
@@ -1760,13 +1764,38 @@ function registerChannelPackEndpoints(
              * ⚠ 只报最近 24 小时内的：更早的已经不代表当前环境状态。
              */
             const verifyAt = Number(account.verificationBlockedAtMs)
-            if (Number.isFinite(verifyAt) && verifyAt > 0 && now - verifyAt <= 24 * 60 * 60 * 1000) {
+            /**
+             * 只看**最近一小时内**的。
+             *
+             * 原来放 24 小时：一个昨天凌晨的失败会把「异常汇总」占满一整天，
+             * 而那个时间点的环境状况早就没参考价值了 —— 用户瞄一眼列表以为
+             * 「现在还是坏的」，实际只是历史留痕（2026-11-04：实测列表里挂着
+             * 16.7 小时前的记录，用户直接理解为「过期了还在列表里」）。
+             *
+             * 一小时足够覆盖「刚试过、现在正困惑」的现场；更早的留在
+             * `state.json` 里供排障，不上汇总。
+             */
+            const VERIFY_VISIBLE_MS = 60 * 60 * 1000
+            if (Number.isFinite(verifyAt) && verifyAt > 0 && now - verifyAt <= VERIFY_VISIBLE_MS) {
               anomalies.push({
                 provider,
                 accountId: account.id,
                 accountName: account.nickname || account.id,
                 kind: 'verification-blocked',
-                resetAtMs: verifyAt,
+                /**
+                 * ⚠️ **不要**把过去时刻塞进 `resetAtMs`（2026-11-04 用户报
+                 * 「异常列表里有两个早就过了解封时间，还在列表里面」）。
+                 *
+                 * 那是「解禁时刻」字段，界面按它渲染「解禁时间」并把 `<= now`
+                 * 读成「已经该解封了」，可这条异常根本没有冷却期 —— 它只是
+                 * 「上次因缺浏览器内核没能产出验证参数」。实测两条 ZCode 记录
+                 * 因此长期显示凌晨 02:24 却一直挂在列表上。
+                 *
+                 * 现在：`resetAtMs` 置 0（无解禁时间），发生时刻走 `happenedAtMs`，
+                 * 界面据此显示「上次发生」而不是一个撒谎的解封时间。
+                 */
+                resetAtMs: 0,
+                happenedAtMs: verifyAt,
               })
             }
             const limits = Object.entries(account.modelRateLimits ?? {})
@@ -2610,6 +2639,57 @@ function registerChannelPackEndpoints(
           }
         }
         return { ok: true, value: undefined }
+      }
+
+      case 'account.getStrategy': {
+        const req = payload as RpcGetAccountStrategyRequest
+        if (typeof req.provider !== 'string' || req.provider.length === 0) {
+          return { ok: false, error: { code: 'bad-request', message: 'provider 必填' } }
+        }
+        const view = pool.accountStrategy(req.provider)
+        // 顺便告诉前端「这家有几个可用账号」：轮询开关在 <2 个账号时没有意义，
+        // 界面上要能解释为什么开着也没效果。
+        let usable = 0
+        try {
+          const accounts = await pool.listAllAccounts()
+          usable = accounts.filter(a => a.provider === req.provider && a.enabled !== false).length
+        } catch {
+          usable = 0
+        }
+        const value: RpcGetAccountStrategyResponse = {
+          strategy: view.strategy,
+          stickyLimit: view.stickyLimit,
+          usableAccounts: usable,
+        }
+        return { ok: true, value }
+      }
+
+      case 'account.setStrategy': {
+        const req = payload as RpcSetAccountStrategyRequest
+        if (typeof req.provider !== 'string' || req.provider.length === 0) {
+          return { ok: false, error: { code: 'bad-request', message: 'provider 必填' } }
+        }
+        if (req.strategy !== 'sequential' && req.strategy !== 'round-robin') {
+          return { ok: false, error: { code: 'bad-request', message: 'strategy 只能是 sequential 或 round-robin' } }
+        }
+        try {
+          const value = await pool.setAccountStrategy(
+            req.provider,
+            req.strategy as AccountStrategy,
+            req.stickyLimit,
+          )
+          const resolved = pool.accountStrategy(req.provider)
+          ctx.logger?.info?.(
+            `[channel-pack] ${req.provider} 账号策略 → ${req.strategy}`
+            + (req.strategy === 'round-robin' ? `（每账号连续 ${resolved.stickyLimit} 次）` : ''),
+          )
+          return { ok: true, value }
+        } catch (error) {
+          return {
+            ok: false,
+            error: { code: 'bad-request', message: error instanceof Error ? error.message : String(error) },
+          }
+        }
       }
 
       case 'account.refresh': {

@@ -2,7 +2,12 @@ import { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { BuddyCredential } from './buddy.js'
 import type { BuddyProduct } from './product.js'
-import { createChannelPackStore, mergeLegacyLoomyLock, sanitizeAccounts, sanitizeDisabledModels, sanitizePermanentLocks } from './channel-pack-store.js'
+import { createChannelPackStore, mergeLegacyLoomyLock, sanitizeAccounts, sanitizeDisabledModels, sanitizePermanentLocks,
+  sanitizeAccountStrategy,
+  sanitizeAccountSticky,
+  DEFAULT_ACCOUNT_STICKY_LIMIT,
+  type AccountStrategy,
+} from './channel-pack-store.js'
 import type { ChannelPackStore, ChannelPackState, ModelDisableMap, PermanentLockMap } from './channel-pack-store.js'
 import { createPermanentLockStore } from './permanent-lock-store.js'
 import type { PermanentLockStore } from './permanent-lock-store.js'
@@ -203,6 +208,26 @@ export class AccountPool {
    * 数组语义见 `channel-pack-store.ts` 的 `ChannelPackState.providerOrder`。
    */
   private providerOrderCache: string[] = []
+  /**
+   * 账号选择策略（按 provider）。缺键 = `'sequential'`，即历史行为。
+   *
+   * ⚠️ 缺键必须落到 sequential：老用户升级后行为与升级前完全一致，
+   * 不会因为新加了一个默认轮询就突然「每请求换号」，那会让上游的风控
+   * 把整组账号一起盯上。
+   */
+  private accountStrategyCache: Record<string, AccountStrategy> = {}
+  /**
+   * 轮询模式下每个账号连续用几次再换（按 provider）。缺键用默认值。
+   */
+  private accountStickyCache: Record<string, number> = {}
+  /**
+   * 轮询游标（按 provider，**内存态**）。
+   *
+   * 为什么不像路由链路那样只存内存：这里也一样 —— 重启丢失游标的代价只是
+   * 下一次从第一个账号重新开始，没有任何正确性损失；而落盘会让每次换号都
+   * 多一次全量 state.json 重写（账号池的写是全文档替换），得不偿失。
+   */
+  private readonly accountRotation = new Map<string, { index: number; used: number }>()
   /** 是否已完成首次载入。 */
   private loaded = false
   /**
@@ -256,6 +281,8 @@ export class AccountPool {
       this.gatewayEnabledCache = state.gatewayEnabled !== false
       // 供应商顺序同理：老文档没有该键 → 空数组（未自定义）。
       this.providerOrderCache = state.providerOrder ?? []
+      this.accountStrategyCache = sanitizeAccountStrategy(state.accountStrategy)
+      this.accountStickyCache = sanitizeAccountSticky(state.accountStickyLimit)
     }
     this.loadLocks(state)
   }
@@ -339,6 +366,8 @@ export class AccountPool {
         // 分两次快照会让同一份文档里的字段互相矛盾。
         gatewayEnabled: this.gatewayEnabledCache,
         providerOrder: this.providerOrderCache,
+        accountStrategy: this.accountStrategyCache,
+        accountStickyLimit: this.accountStickyCache,
       })
       // 自己写盘后立即同步 mtime：否则下一次 ensureLoaded 会把「自己刚写的」
       // 误判成外部改动，导致立刻整份重读（白解析一遍 JSON）。
@@ -427,6 +456,61 @@ export class AccountPool {
    *
    * 空数组 = 用户尚未自定义（或老文档没有该键），展示侧按声明顺序渲染。
    */
+  /** 某 provider 的账号选择策略（缺键 = 顺序模式，即历史行为）。 */
+  private accountStrategyFor(provider: string): AccountStrategy {
+    this.ensureLoaded()
+    return this.accountStrategyCache[provider] ?? 'sequential'
+  }
+
+  /** 某 provider 轮询时每账号连续用几次（缺键 = 默认值）。 */
+  private accountStickyFor(provider: string): number {
+    this.ensureLoaded()
+    const n = this.accountStickyCache[provider]
+    return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : DEFAULT_ACCOUNT_STICKY_LIMIT
+  }
+
+  /**
+   * 读取账号选择策略与轮询次数（供账号界面渲染开关）。
+   *
+   * 返回的是**全部 provider 的当前值**，缺键补成默认值 —— 前端不必再猜
+   * 「没返回值是什么意思」。
+   */
+  accountStrategy(provider: string): { strategy: AccountStrategy; stickyLimit: number } {
+    return {
+      strategy: this.accountStrategyFor(provider),
+      stickyLimit: this.accountStickyFor(provider),
+    }
+  }
+
+  /**
+   * 设置账号选择策略与轮询次数（账号界面的开关）。
+   *
+   * `stickyLimit` 只在 `'round-robin'` 下有意义，但**照样存下来**：
+   * 用户先调次数、再打开轮询是常见顺序，丢掉它会让开关一开就跳回默认值。
+   */
+  async setAccountStrategy(
+    provider: string,
+    strategy: AccountStrategy,
+    stickyLimit?: number,
+  ): Promise<{ strategy: AccountStrategy; stickyLimit: number }> {
+    if (strategy !== 'sequential' && strategy !== 'round-robin') {
+      throw new Error(`unknown account strategy: ${String(strategy)}`)
+    }
+    this.ensureLoaded()
+    this.accountStrategyCache = { ...this.accountStrategyCache, [provider]: strategy }
+    if (stickyLimit !== undefined) {
+      const n = Number.isFinite(stickyLimit) ? Math.min(1000, Math.max(1, Math.trunc(stickyLimit))) : undefined
+      if (n !== undefined) {
+        this.accountStickyCache = { ...this.accountStickyCache, [provider]: n }
+      }
+    }
+    // 策略一变就把游标归零：否则从 round-robin 切回 sequential 再切回来，
+    // 会从一个陈旧的中间位置开始，用户以为是随机的。
+    this.accountRotation.delete(provider)
+    await this.queueStoreSave()
+    return this.accountStrategy(provider)
+  }
+
   providerOrder(): string[] {
     this.ensureLoaded()
     return this.providerOrderCache
@@ -1094,6 +1178,40 @@ export class AccountPool {
         return resetAt === undefined || resetAt === 0 || Date.now() >= resetAt
       })
     if (candidates.length === 0) return null
+    /**
+     * 账号轮询（2026-11-04 用户要求）。
+     *
+     * 用户原话：「默认是按照顺序来进行使用的，非要把账号1用到封禁/限流/欠费，
+     * 才会用账号2。这个很不合理，要加入轮询/顺序开关，还有轮询次数的设置。」
+     *
+     * 策略按 provider 独立配置：
+     * - `sequential`（缺键默认）：保持历史行为 —— 永远用排在最前的那个，
+     *   直到它被限流/封禁（上面那层 filter 把它踢出候选）才轮到下一个。
+     * - `round-robin`：按顺序轮流用，每个账号连续用 `sticky` 次后换下一个。
+     *
+     * ⚠️ 轮转只在**通过过滤的候选**里进行：被限流/停用的账号本来就不在
+     * `candidates` 里，不会占用轮转位置 —— 否则它们会让健康账号少轮几次。
+     * 这里用 `excludeAccountIds` 的重试场景也要保持轮转：调用方拿「下一个」
+     * 时游标必须前进，不然换号重试会原地打转（与路由链路同一坑）。
+     */
+    const strategy = this.accountStrategyFor(provider)
+    if (strategy === 'round-robin' && candidates.length > 1) {
+      const sticky = this.accountStickyFor(provider)
+      const cursor = this.accountRotation.get(provider) ?? { index: 0, used: 0 }
+      // 游标按**当前候选集合**取模：候选会因限流增减，用索引直接取会越界。
+      const index = Math.min(Math.max(cursor.index, 0), candidates.length - 1)
+      // 轮转：把游标指向的那个账号挪到队首，其余保持手动顺序。
+      const rotated = [...candidates.slice(index), ...candidates.slice(0, index)]
+      const next = excludeAccountIds === undefined ? cursor : cursor
+      if (excludeAccountIds === undefined) {
+        const used = next.used + 1
+        this.accountRotation.set(
+          provider,
+          used >= sticky ? { index: (index + 1) % candidates.length, used: 0 } : { index, used },
+        )
+      }
+      candidates.splice(0, candidates.length, ...rotated)
+    }
     // 候选顺序即**用户在 Channel Pack 拖拽设定的手动顺序**（`reorderAccounts` 写入）。
     //
     // 为什么不再按「限流重置时间最早到期」重排（早期实现如此）：

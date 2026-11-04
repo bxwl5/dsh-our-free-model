@@ -243,6 +243,38 @@ export interface RpcReorderAccountsRequest {
 export interface RpcRefreshAccountRequest {
   accountId: string
 }
+
+/**
+ * 账号选择策略（2026-11-04 用户要求）。
+ *
+ * - `'sequential'`：只用排在最前的那一个，直到它被限流/封禁/欠费才换；
+ * - `'round-robin'`：按顺序轮流用，每个账号连续用 `stickyLimit` 次后换下一个。
+ */
+export type AccountStrategy = 'sequential' | 'round-robin'
+
+/** 读取某 provider 的账号选择策略（账号界面的开关初值）。 */
+export interface RpcGetAccountStrategyRequest {
+  provider: string
+}
+export interface RpcGetAccountStrategyResponse {
+  strategy: AccountStrategy
+  stickyLimit: number
+  /**
+   * 该 provider 当前有几个**可用**账号（已启用、未限流）。
+   *
+   * 界面上「轮询」开关只在 ≥2 个账号时才有意义，返回给前端用于禁用/提示，
+   * 而不是让用户打开一个永远不生效的开关。
+   */
+  usableAccounts: number
+}
+
+/** 设置账号选择策略与轮询次数。 */
+export interface RpcSetAccountStrategyRequest {
+  provider: string
+  strategy: AccountStrategy
+  /** 只在 `round-robin` 下生效；省略则保持当前值。 */
+  stickyLimit?: number
+}
 export interface RpcRefreshAccountResponse {
   /**
    * ⚠️ **只可能为 `true`**：续期失败**不回**本响应，而是回
@@ -1001,8 +1033,28 @@ export interface AccountAnomaly {
    * 一种状态（「这个账号现在整个用不了」），铺开成 N 行反而看不出这个结论。
    */
   modelName?: string
-  /** 解禁时刻（毫秒时间戳）。 */
+  /**
+   * 解禁时刻（毫秒时间戳）。
+   *
+   * ⚠️ **只对 `rate-limit` / `risk-blocked` 有「解禁」含义**，两者都必须
+   * `> now` 才会被列出。
+   *
+   * `verification-blocked` 是例外：它是**已经发生的时刻**（我们这侧上次因缺
+   * 浏览器内核而没能产出验证参数），没有「冷却截止」这回事。早期实现把那个
+   * 过去时刻塞进了这个字段，而界面把它当「解禁时间」渲染 —— 于是用户看到
+   * 「早就过了解封时间还挂在列表里」（2026-11-04 报障，实测两条 ZCode 记录
+   * 显示 02:24 却仍在列）。
+   *
+   * 现在该类型改用 {@link happenedAtMs}，本字段对它不再有意义（置 0）。
+   */
   resetAtMs: number
+  /**
+   * 「已经发生」的时刻，只用于 `verification-blocked`。
+   *
+   * 与 {@link resetAtMs} 分开是为了让界面能如实分栏：这条没有倒计时，
+   * 只有「上次发生在什么时候」。
+   */
+  happenedAtMs?: number
 }
 
 export interface ProviderStatus {

@@ -101,7 +101,37 @@ export interface ChannelPackState {
    * 故插件跨版本增删 provider 时不需要任何迁移。
    */
   providerOrder?: string[]
+  /**
+   * 账号选择策略（2026-11-04 用户要求）。
+   *
+   * - `'sequential'`（默认，保持历史行为）：**只用排在最前的那一个**，
+   *   直到它被封禁 / 限流 / 欠费才换下一个。用户原话：「非要把账号1用到
+   *   封禁/限流/欠费，才会用账号2，这个很不合理」。
+   * - `'round-robin'`：**按顺序轮着用**，每个账号连续用 `accountStickyLimit`
+   *   次后换下一个，与路由链路的 stickyLimit 同一套语义。
+   *
+   * 按 provider 分别设置，因为各家的账号数量与额度模型差别很大。
+   */
+  accountStrategy?: Record<string, AccountStrategy>
+  /**
+   * 轮询模式下每个账号连续使用多少次再换（2026-11-04 用户要求）。
+   *
+   * 按 provider 分别设置；缺省 {@link DEFAULT_ACCOUNT_STICKY_LIMIT}。
+   * 只在 `accountStrategy[provider] === 'round-robin'` 时生效。
+   */
+  accountStickyLimit?: Record<string, number>
 }
+
+/** 账号选择策略。 */
+export type AccountStrategy = 'sequential' | 'round-robin'
+
+/**
+ * 轮询模式下的默认粘滞次数。
+ *
+ * 选 1 表示「每次请求都换号」——这正是用户说的「轮询」的直觉含义；
+ * 想减少切换开销可以调大（粘滞对上游的提示缓存更友好）。
+ */
+export const DEFAULT_ACCOUNT_STICKY_LIMIT = 1
 
 /** 持久化后端的能力标识，供调用方决定要不要告警。 */
 export type ChannelPackStoreKind = 'settings' | 'file' | 'memory'
@@ -141,6 +171,8 @@ const channelPackSchema = Schema.object({
   loomyPermanentLocked: Schema.boolean().default(false),
   gatewayEnabled: Schema.boolean().default(true),
   providerOrder: Schema.array(Schema.string()).default([]),
+  accountStrategy: Schema.dict(Schema.any()).default({}),
+  accountStickyLimit: Schema.dict(Schema.any()).default({}),
 })
 
 /**
@@ -186,6 +218,41 @@ export function sanitizeProviderOrder(raw: unknown): string[] {
  * （未锁定），文档也不会随开关操作累积噪音。
  * ⚠️ 单测专门覆盖「`{ loomy: 'yes' }` 不得判成已锁定」这一类脏数据。
  */
+/**
+ * 归一化账号选择策略表（2026-11-04 用户要求）。
+ *
+ * 只保留认识的两个值；其他（含拼错、老版本写的数字）一律**丢弃该键**，
+ * 于是该 provider 回落到 `'sequential'` —— 也就是升级前的行为。
+ * 宁可回到顺序模式，也不要猜成一个会让账号被上游风控的轮询模式。
+ */
+export function sanitizeAccountStrategy(raw: unknown): Record<string, AccountStrategy> {
+  const out: Record<string, AccountStrategy> = {}
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return out
+  for (const [provider, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof provider !== 'string' || provider.length === 0) continue
+    if (value === 'sequential' || value === 'round-robin') out[provider] = value
+  }
+  return out
+}
+
+/**
+ * 归一化「轮询时每个账号连续用几次」。
+ *
+ * 下界 1（0 或负数会让轮询原地打转），上界 1000（防止手滑写成天文数字
+ * 导致永远不换号，那与 sequential 无异却更难排查）。
+ */
+export function sanitizeAccountSticky(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {}
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return out
+  for (const [provider, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof provider !== 'string' || provider.length === 0) continue
+    const n = typeof value === 'number' ? value : Number(value)
+    if (!Number.isFinite(n)) continue
+    out[provider] = Math.min(1000, Math.max(1, Math.trunc(n)))
+  }
+  return out
+}
+
 export function sanitizePermanentLocks(raw: unknown): PermanentLockMap {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {}
   const result: PermanentLockMap = {}

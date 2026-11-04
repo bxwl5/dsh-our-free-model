@@ -4458,9 +4458,17 @@ window.__ModuleLoader__.load({
                * 「剩余等待」这回事（装好浏览器随时可再试）。显示成剩余时间会让
                * 用户白等一个不存在的冷却，所以两列都改成「上次发生」+「—」。
                */
+              /**
+               * ⚠️ 「验证受阻」渲染的是**上次发生时刻**，不是解禁时间
+               * （2026-11-04 用户报「有两个早就过了解封时间还在列表里」）。
+               *
+               * 后端此前把过去时刻填进了 `resetAtMs`，这里照原样渲染成「解禁
+               * 时间」，于是同一行既显示一个早就过去的时刻、又迟迟不消失，
+               * 看起来像清理逻辑坏了。现在取 `happenedAtMs`，语义与文案一致。
+               */
               row.kind === 'verification-blocked'
                 ? h('span', { className: 'ofm_anomalycell until', role: 'cell', title: t('chan.anomaly.verifyHint') },
-                  absolute(row.resetAtMs))
+                  row.happenedAtMs ? absolute(row.happenedAtMs) : '—')
                 : h('span', { className: 'ofm_anomalycell until', role: 'cell' }, absolute(row.resetAtMs)),
               h('span', { className: 'ofm_anomalycell remaining', role: 'cell' },
                 row.kind === 'verification-blocked' ? '—' : remaining(row.resetAtMs)))))) : null)

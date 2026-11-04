@@ -34588,12 +34588,15 @@ function suppressAutoSettingsPage(ctx) {
 
 // vendor/channel-pack/src/channel-pack-store.ts
 var CHANNEL_PACK_NS = "channel-pack";
+var DEFAULT_ACCOUNT_STICKY_LIMIT = 1;
 var channelPackSchema = Schema.object({
   accounts: Schema.array(Schema.any()).default([]),
   disabledModels: Schema.dict(Schema.any()).default({}),
   loomyPermanentLocked: Schema.boolean().default(false),
   gatewayEnabled: Schema.boolean().default(true),
-  providerOrder: Schema.array(Schema.string()).default([])
+  providerOrder: Schema.array(Schema.string()).default([]),
+  accountStrategy: Schema.dict(Schema.any()).default({}),
+  accountStickyLimit: Schema.dict(Schema.any()).default({})
 });
 function sanitizeGatewayEnabled(raw) {
   return raw !== false;
@@ -34608,6 +34611,26 @@ function sanitizeProviderOrder(raw) {
     result.push(id);
   }
   return result;
+}
+function sanitizeAccountStrategy(raw) {
+  const out = {};
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return out;
+  for (const [provider, value] of Object.entries(raw)) {
+    if (typeof provider !== "string" || provider.length === 0) continue;
+    if (value === "sequential" || value === "round-robin") out[provider] = value;
+  }
+  return out;
+}
+function sanitizeAccountSticky(raw) {
+  const out = {};
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return out;
+  for (const [provider, value] of Object.entries(raw)) {
+    if (typeof provider !== "string" || provider.length === 0) continue;
+    const n = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(n)) continue;
+    out[provider] = Math.min(1e3, Math.max(1, Math.trunc(n)));
+  }
+  return out;
 }
 function sanitizePermanentLocks(raw) {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
@@ -35029,6 +35052,26 @@ var AccountPool = class {
    * 数组语义见 `channel-pack-store.ts` 的 `ChannelPackState.providerOrder`。
    */
   providerOrderCache = [];
+  /**
+   * 账号选择策略（按 provider）。缺键 = `'sequential'`，即历史行为。
+   *
+   * ⚠️ 缺键必须落到 sequential：老用户升级后行为与升级前完全一致，
+   * 不会因为新加了一个默认轮询就突然「每请求换号」，那会让上游的风控
+   * 把整组账号一起盯上。
+   */
+  accountStrategyCache = {};
+  /**
+   * 轮询模式下每个账号连续用几次再换（按 provider）。缺键用默认值。
+   */
+  accountStickyCache = {};
+  /**
+   * 轮询游标（按 provider，**内存态**）。
+   *
+   * 为什么不像路由链路那样只存内存：这里也一样 —— 重启丢失游标的代价只是
+   * 下一次从第一个账号重新开始，没有任何正确性损失；而落盘会让每次换号都
+   * 多一次全量 state.json 重写（账号池的写是全文档替换），得不偿失。
+   */
+  accountRotation = /* @__PURE__ */ new Map();
   /** 是否已完成首次载入。 */
   loaded = false;
   /**
@@ -35067,6 +35110,8 @@ var AccountPool = class {
       this.modelCache = state.disabledModels;
       this.gatewayEnabledCache = state.gatewayEnabled !== false;
       this.providerOrderCache = state.providerOrder ?? [];
+      this.accountStrategyCache = sanitizeAccountStrategy(state.accountStrategy);
+      this.accountStickyCache = sanitizeAccountSticky(state.accountStickyLimit);
     }
     this.loadLocks(state);
   }
@@ -35145,7 +35190,9 @@ var AccountPool = class {
         // ⚠️ 必须与账号、黑名单取自**同一时刻**的快照（见本方法的注释）：
         // 分两次快照会让同一份文档里的字段互相矛盾。
         gatewayEnabled: this.gatewayEnabledCache,
-        providerOrder: this.providerOrderCache
+        providerOrder: this.providerOrderCache,
+        accountStrategy: this.accountStrategyCache,
+        accountStickyLimit: this.accountStickyCache
       });
       if (typeof this.store.mtimeMs === "function") {
         this.loadedMtimeMs = this.store.mtimeMs();
@@ -35227,6 +35274,51 @@ var AccountPool = class {
    *
    * 空数组 = 用户尚未自定义（或老文档没有该键），展示侧按声明顺序渲染。
    */
+  /** 某 provider 的账号选择策略（缺键 = 顺序模式，即历史行为）。 */
+  accountStrategyFor(provider) {
+    this.ensureLoaded();
+    return this.accountStrategyCache[provider] ?? "sequential";
+  }
+  /** 某 provider 轮询时每账号连续用几次（缺键 = 默认值）。 */
+  accountStickyFor(provider) {
+    this.ensureLoaded();
+    const n = this.accountStickyCache[provider];
+    return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : DEFAULT_ACCOUNT_STICKY_LIMIT;
+  }
+  /**
+   * 读取账号选择策略与轮询次数（供账号界面渲染开关）。
+   *
+   * 返回的是**全部 provider 的当前值**，缺键补成默认值 —— 前端不必再猜
+   * 「没返回值是什么意思」。
+   */
+  accountStrategy(provider) {
+    return {
+      strategy: this.accountStrategyFor(provider),
+      stickyLimit: this.accountStickyFor(provider)
+    };
+  }
+  /**
+   * 设置账号选择策略与轮询次数（账号界面的开关）。
+   *
+   * `stickyLimit` 只在 `'round-robin'` 下有意义，但**照样存下来**：
+   * 用户先调次数、再打开轮询是常见顺序，丢掉它会让开关一开就跳回默认值。
+   */
+  async setAccountStrategy(provider, strategy, stickyLimit) {
+    if (strategy !== "sequential" && strategy !== "round-robin") {
+      throw new Error(`unknown account strategy: ${String(strategy)}`);
+    }
+    this.ensureLoaded();
+    this.accountStrategyCache = { ...this.accountStrategyCache, [provider]: strategy };
+    if (stickyLimit !== void 0) {
+      const n = Number.isFinite(stickyLimit) ? Math.min(1e3, Math.max(1, Math.trunc(stickyLimit))) : void 0;
+      if (n !== void 0) {
+        this.accountStickyCache = { ...this.accountStickyCache, [provider]: n };
+      }
+    }
+    this.accountRotation.delete(provider);
+    await this.queueStoreSave();
+    return this.accountStrategy(provider);
+  }
   providerOrder() {
     this.ensureLoaded();
     return this.providerOrderCache;
@@ -35806,6 +35898,22 @@ var AccountPool = class {
       return resetAt === void 0 || resetAt === 0 || Date.now() >= resetAt;
     });
     if (candidates.length === 0) return null;
+    const strategy = this.accountStrategyFor(provider);
+    if (strategy === "round-robin" && candidates.length > 1) {
+      const sticky = this.accountStickyFor(provider);
+      const cursor = this.accountRotation.get(provider) ?? { index: 0, used: 0 };
+      const index = Math.min(Math.max(cursor.index, 0), candidates.length - 1);
+      const rotated = [...candidates.slice(index), ...candidates.slice(0, index)];
+      const next = excludeAccountIds === void 0 ? cursor : cursor;
+      if (excludeAccountIds === void 0) {
+        const used = next.used + 1;
+        this.accountRotation.set(
+          provider,
+          used >= sticky ? { index: (index + 1) % candidates.length, used: 0 } : { index, used }
+        );
+      }
+      candidates.splice(0, candidates.length, ...rotated);
+    }
     const failures = [];
     for (const entry of candidates) {
       let resolved;
@@ -67743,13 +67851,27 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
               });
             }
             const verifyAt = Number(account.verificationBlockedAtMs);
-            if (Number.isFinite(verifyAt) && verifyAt > 0 && now - verifyAt <= 24 * 60 * 60 * 1e3) {
+            const VERIFY_VISIBLE_MS = 60 * 60 * 1e3;
+            if (Number.isFinite(verifyAt) && verifyAt > 0 && now - verifyAt <= VERIFY_VISIBLE_MS) {
               anomalies.push({
                 provider,
                 accountId: account.id,
                 accountName: account.nickname || account.id,
                 kind: "verification-blocked",
-                resetAtMs: verifyAt
+                /**
+                 * ⚠️ **不要**把过去时刻塞进 `resetAtMs`（2026-11-04 用户报
+                 * 「异常列表里有两个早就过了解封时间，还在列表里面」）。
+                 *
+                 * 那是「解禁时刻」字段，界面按它渲染「解禁时间」并把 `<= now`
+                 * 读成「已经该解封了」，可这条异常根本没有冷却期 —— 它只是
+                 * 「上次因缺浏览器内核没能产出验证参数」。实测两条 ZCode 记录
+                 * 因此长期显示凌晨 02:24 却一直挂在列表上。
+                 *
+                 * 现在：`resetAtMs` 置 0（无解禁时间），发生时刻走 `happenedAtMs`，
+                 * 界面据此显示「上次发生」而不是一个撒谎的解封时间。
+                 */
+                resetAtMs: 0,
+                happenedAtMs: verifyAt
               });
             }
             const limits = Object.entries(account.modelRateLimits ?? {}).filter(([, resetAt]) => Number(resetAt) > now);
@@ -68385,6 +68507,52 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           };
         }
         return { ok: true, value: void 0 };
+      }
+      case "account.getStrategy": {
+        const req = payload;
+        if (typeof req.provider !== "string" || req.provider.length === 0) {
+          return { ok: false, error: { code: "bad-request", message: "provider \u5FC5\u586B" } };
+        }
+        const view = pool.accountStrategy(req.provider);
+        let usable = 0;
+        try {
+          const accounts = await pool.listAllAccounts();
+          usable = accounts.filter((a) => a.provider === req.provider && a.enabled !== false).length;
+        } catch {
+          usable = 0;
+        }
+        const value = {
+          strategy: view.strategy,
+          stickyLimit: view.stickyLimit,
+          usableAccounts: usable
+        };
+        return { ok: true, value };
+      }
+      case "account.setStrategy": {
+        const req = payload;
+        if (typeof req.provider !== "string" || req.provider.length === 0) {
+          return { ok: false, error: { code: "bad-request", message: "provider \u5FC5\u586B" } };
+        }
+        if (req.strategy !== "sequential" && req.strategy !== "round-robin") {
+          return { ok: false, error: { code: "bad-request", message: "strategy \u53EA\u80FD\u662F sequential \u6216 round-robin" } };
+        }
+        try {
+          const value = await pool.setAccountStrategy(
+            req.provider,
+            req.strategy,
+            req.stickyLimit
+          );
+          const resolved = pool.accountStrategy(req.provider);
+          ctx.logger?.info?.(
+            `[channel-pack] ${req.provider} \u8D26\u53F7\u7B56\u7565 \u2192 ${req.strategy}` + (req.strategy === "round-robin" ? `\uFF08\u6BCF\u8D26\u53F7\u8FDE\u7EED ${resolved.stickyLimit} \u6B21\uFF09` : "")
+          );
+          return { ok: true, value };
+        } catch (error) {
+          return {
+            ok: false,
+            error: { code: "bad-request", message: error instanceof Error ? error.message : String(error) }
+          };
+        }
       }
       case "account.refresh": {
         const req = payload;

@@ -75,6 +75,8 @@ const suites = [
   //（11-04 那次递归把 CPU 打满、桌面端起不来）。
   ['adapter-event-loop-guard', 'adapter-event-loop-guard-test.mjs', []],
   ['codearts-context-remote', 'codearts-context-remote-test.mjs', []],
+  ['account-rotation', 'account-rotation-test.mjs', []],
+  ['anomaly-expiry', 'anomaly-expiry-test.mjs', []],
   ['open-external', 'open-external-test.mjs', []],
   ['forward-boot', 'forward-boot-test.mjs', []],
   ['standalone', 'standalone-test.mjs', []],
