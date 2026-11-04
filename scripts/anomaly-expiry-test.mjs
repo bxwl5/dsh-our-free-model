@@ -21,26 +21,37 @@ export function verifyAnomalyExpiry() {
   assert.match(types, /happenedAtMs\?: number/, '要有 happenedAtMs 承载「已经发生」的时刻')
   assert.match(types, /resetAtMs: number/, 'resetAtMs 保留（限流/风控仍用它表示解禁）')
 
-  // ② 后端：verification 条目不得再把过去时刻塞进 resetAtMs
+  // ② 后端：无解封时间的错误按「发生时刻 + 1 小时」折算
   const rpc = read('vendor/channel-pack/src/channel-pack-rpc.ts')
-  const verifyBlock = rpc.slice(rpc.indexOf("kind: 'verification-blocked'"))
-  const block = verifyBlock.slice(0, verifyBlock.indexOf('})') + 2)
-  assert.match(block, /resetAtMs: 0/, 'verification-blocked 的 resetAtMs 必须置 0（没有解禁时间）')
-  assert.match(block, /happenedAtMs: verifyAt/, '发生时刻必须走 happenedAtMs')
+  // 从常量声明切到条目 push 结束，覆盖「折算 → 判据 → 字段」整段
+  const from = rpc.indexOf('const VERIFY_DEFAULT_COOLDOWN_MS')
+  assert.ok(from > 0, '找不到 1 小时折算常量')
+  const block = rpc.slice(from, rpc.indexOf('}', rpc.indexOf('happenedAtMs: verifyAt')) + 1)
+  assert.match(block, /VERIFY_DEFAULT_COOLDOWN_MS = 60 \* 60 \* 1000/,
+    '无解封时间的错误要按 1 小时折算')
+  assert.match(block, /const verifyResetAt = verifyAt \+ VERIFY_DEFAULT_COOLDOWN_MS/,
+    'resetAtMs 必须是「发生时刻 + 1 小时」，不能是发生时刻本身')
+  assert.match(block, /resetAtMs: verifyResetAt/, '折算结果必须写进 resetAtMs')
+  assert.match(block, /happenedAtMs: verifyAt/, '发生时刻仍要保留在 happenedAtMs')
+  assert.match(block, /if \(verifyResetAt > now\)/, '过期条目必须不再列出')
+  // ⚠️ 正是老 bug：把发生时刻直接当解封时间
+  assert.doesNotMatch(block, /resetAtMs: 0/, '不得再置 0（那一列只有「解封时间」一种语义）')
+  assert.doesNotMatch(block, /resetAtMs: verifyAt\b/, '不得把发生时刻直接当解封时间')
 
-  // ③ 窗口收窄：不再是 24 小时
-  assert.match(rpc, /VERIFY_VISIBLE_MS = 60 \* 60 \* 1000/, '验证受阻的可见窗口应为 1 小时')
+  // ③ 不再靠「24 小时发生过」判据
   assert.doesNotMatch(
     rpc,
     /verifyAt > 0 && now - verifyAt <= 24 \* 60 \* 60 \* 1000/,
     '不得退回 24 小时窗口（会让凌晨的记录挂满一天）',
   )
 
-  // ④ 界面：验证受阻显示「上次发生」，不是解封时间
+  // ④ 界面：解封时间一列统一读 resetAtMs，不再按 kind 分叉
   const client = read('client.js')
-  assert.match(client, /row\.happenedAtMs \? absolute\(row\.happenedAtMs\)/, '界面要渲染 happenedAtMs')
+  assert.match(client, /absolute\(row\.resetAtMs\)/, '界面要渲染 resetAtMs')
+  assert.doesNotMatch(client, /row\.kind === 'verification-blocked' \? '—' : remaining/,
+    '验证受阻也要显示剩余时间（它现在有 1 小时冷却）')
 
-  console.log('ok  异常条目：verification-blocked 不再伪装成「解禁时间」，可见窗口收窄到 1 小时')
+  console.log('ok  异常条目：无解封时间的错误按「发生时刻 + 1 小时」显示，过期即从列表消失')
 }
 
 verifyAnomalyExpiry()

@@ -4459,19 +4459,22 @@ window.__ModuleLoader__.load({
                * 用户白等一个不存在的冷却，所以两列都改成「上次发生」+「—」。
                */
               /**
-               * ⚠️ 「验证受阻」渲染的是**上次发生时刻**，不是解禁时间
-               * （2026-11-04 用户报「有两个早就过了解封时间还在列表里」）。
+               * 解封时间一律显示 `resetAtMs`。
                *
-               * 后端此前把过去时刻填进了 `resetAtMs`，这里照原样渲染成「解禁
-               * 时间」，于是同一行既显示一个早就过去的时刻、又迟迟不消失，
-               * 看起来像清理逻辑坏了。现在取 `happenedAtMs`，语义与文案一致。
+               * 上游**没给**解封时间的错误（`verification-blocked` 这类「我们这侧
+               * 缺件」的现场），后端按 `happenedAtMs + 1 小时` 折算出一个解封
+               * 时刻填进 `resetAtMs`（用户 2026-11-04 定的规则：「实际上没有给
+               * 解封时间的错误，按照 1 个小时来显示」）。
+               *
+               * 这样一来这一列只有一种语义 —— 解封时间 —— 不再需要按 kind 分叉
+               * 渲染，也不会再出现「显示一个早就过去的时刻却不过期」。
                */
-              row.kind === 'verification-blocked'
-                ? h('span', { className: 'ofm_anomalycell until', role: 'cell', title: t('chan.anomaly.verifyHint') },
-                  row.happenedAtMs ? absolute(row.happenedAtMs) : '—')
-                : h('span', { className: 'ofm_anomalycell until', role: 'cell' }, absolute(row.resetAtMs)),
+              h('span', {
+                className: 'ofm_anomalycell until', role: 'cell',
+                title: row.kind === 'verification-blocked' ? t('chan.anomaly.verifyHint') : undefined,
+              }, absolute(row.resetAtMs)),
               h('span', { className: 'ofm_anomalycell remaining', role: 'cell' },
-                row.kind === 'verification-blocked' ? '—' : remaining(row.resetAtMs)))))) : null)
+                remaining(row.resetAtMs)))))) : null)
     }
 
     /**

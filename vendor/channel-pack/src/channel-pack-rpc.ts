@@ -1765,38 +1765,36 @@ function registerChannelPackEndpoints(
              */
             const verifyAt = Number(account.verificationBlockedAtMs)
             /**
-             * 只看**最近一小时内**的。
+             * ★ **上游没给解封时间的错误，按 1 小时算**（用户 2026-11-04 定的规则：
+             * 「实际上没有给解封时间的错误，按照 1 个小时来显示」）。
              *
-             * 原来放 24 小时：一个昨天凌晨的失败会把「异常汇总」占满一整天，
-             * 而那个时间点的环境状况早就没参考价值了 —— 用户瞄一眼列表以为
-             * 「现在还是坏的」，实际只是历史留痕（2026-11-04：实测列表里挂着
-             * 16.7 小时前的记录，用户直接理解为「过期了还在列表里」）。
+             * 「验证受阻」就是这类：上游只告诉我们「这次领取需要安全验证」，没有
+             * 任何冷却参数 —— 它甚至不是上游对账号的惩罚，而是我们这侧缺件。
              *
-             * 一小时足够覆盖「刚试过、现在正困惑」的现场；更早的留在
-             * `state.json` 里供排障，不上汇总。
+             * 所以在这里**折算**出一个解封时刻 = 发生时刻 + 1 小时，填进
+             * `resetAtMs`。这样：
+             * - 「解封时间」这一列对**所有**异常只有一种语义，界面不需要按 kind 分叉；
+             * - 一小时后条目自然从汇总消失（`resetAtMs <= now` 即不再列出），
+             *   不会再出现「早就过了解封时间还挂在列表里」的观感
+             *   （用户此前实测看到两条 02:24 的记录挂了一整天）。
+             *
+             * ⚠️ 不要把发生时刻本身当成解封时间填进去：那正是此前的老 bug ——
+             * 界面显示一个早已过去的「解封时间」，却因为判据是「24 小时内发生过」
+             * 而一直不消失。
              */
-            const VERIFY_VISIBLE_MS = 60 * 60 * 1000
-            if (Number.isFinite(verifyAt) && verifyAt > 0 && now - verifyAt <= VERIFY_VISIBLE_MS) {
-              anomalies.push({
-                provider,
-                accountId: account.id,
-                accountName: account.nickname || account.id,
-                kind: 'verification-blocked',
-                /**
-                 * ⚠️ **不要**把过去时刻塞进 `resetAtMs`（2026-11-04 用户报
-                 * 「异常列表里有两个早就过了解封时间，还在列表里面」）。
-                 *
-                 * 那是「解禁时刻」字段，界面按它渲染「解禁时间」并把 `<= now`
-                 * 读成「已经该解封了」，可这条异常根本没有冷却期 —— 它只是
-                 * 「上次因缺浏览器内核没能产出验证参数」。实测两条 ZCode 记录
-                 * 因此长期显示凌晨 02:24 却一直挂在列表上。
-                 *
-                 * 现在：`resetAtMs` 置 0（无解禁时间），发生时刻走 `happenedAtMs`，
-                 * 界面据此显示「上次发生」而不是一个撒谎的解封时间。
-                 */
-                resetAtMs: 0,
-                happenedAtMs: verifyAt,
-              })
+            const VERIFY_DEFAULT_COOLDOWN_MS = 60 * 60 * 1000
+            if (Number.isFinite(verifyAt) && verifyAt > 0) {
+              const verifyResetAt = verifyAt + VERIFY_DEFAULT_COOLDOWN_MS
+              if (verifyResetAt > now) {
+                anomalies.push({
+                  provider,
+                  accountId: account.id,
+                  accountName: account.nickname || account.id,
+                  kind: 'verification-blocked',
+                  resetAtMs: verifyResetAt,
+                  happenedAtMs: verifyAt,
+                })
+              }
             }
             const limits = Object.entries(account.modelRateLimits ?? {})
               .filter(([, resetAt]) => Number(resetAt) > now)
