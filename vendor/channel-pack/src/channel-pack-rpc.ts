@@ -2640,46 +2640,41 @@ function registerChannelPackEndpoints(
       }
 
       case 'account.getStrategy': {
-        const req = payload as RpcGetAccountStrategyRequest
-        if (typeof req.provider !== 'string' || req.provider.length === 0) {
-          return { ok: false, error: { code: 'bad-request', message: 'provider 必填' } }
-        }
-        const view = pool.accountStrategy(req.provider)
-        // 顺便告诉前端「这家有几个可用账号」：轮询开关在 <2 个账号时没有意义，
-        // 界面上要能解释为什么开着也没效果。
-        let usable = 0
+        const view = pool.accountStrategy()
+        /**
+         * 顺便统计「有多少个渠道会受影响」：全局设置只有在 ≥2 个可用账号的
+         * 渠道上才看得出来。数一遍全部账号，按 provider 归并。
+         */
+        let usableProviders = 0
         try {
           const accounts = await pool.listAllAccounts()
-          usable = accounts.filter(a => a.provider === req.provider && a.enabled !== false).length
+          const perProvider = new Map<string, number>()
+          for (const account of accounts) {
+            if (account.enabled === false) continue
+            perProvider.set(account.provider, (perProvider.get(account.provider) ?? 0) + 1)
+          }
+          for (const count of perProvider.values()) if (count > 1) usableProviders += 1
         } catch {
-          usable = 0
+          usableProviders = 0
         }
         const value: RpcGetAccountStrategyResponse = {
           strategy: view.strategy,
           stickyLimit: view.stickyLimit,
-          usableAccounts: usable,
+          usableProviders,
         }
         return { ok: true, value }
       }
 
       case 'account.setStrategy': {
         const req = payload as RpcSetAccountStrategyRequest
-        if (typeof req.provider !== 'string' || req.provider.length === 0) {
-          return { ok: false, error: { code: 'bad-request', message: 'provider 必填' } }
-        }
         if (req.strategy !== 'sequential' && req.strategy !== 'round-robin') {
           return { ok: false, error: { code: 'bad-request', message: 'strategy 只能是 sequential 或 round-robin' } }
         }
         try {
-          const value = await pool.setAccountStrategy(
-            req.provider,
-            req.strategy as AccountStrategy,
-            req.stickyLimit,
-          )
-          const resolved = pool.accountStrategy(req.provider)
+          const value = await pool.setAccountStrategy(req.strategy as AccountStrategy, req.stickyLimit)
           ctx.logger?.info?.(
-            `[channel-pack] ${req.provider} 账号策略 → ${req.strategy}`
-            + (req.strategy === 'round-robin' ? `（每账号连续 ${resolved.stickyLimit} 次）` : ''),
+            `[channel-pack] 账号轮询（渠道内，全局）→ ${req.strategy}`
+            + (req.strategy === 'round-robin' ? `，每账号连续 ${value.stickyLimit} 次后切换` : ''),
           )
           return { ok: true, value }
         } catch (error) {

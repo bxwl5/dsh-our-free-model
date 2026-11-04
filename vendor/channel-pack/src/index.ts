@@ -501,6 +501,17 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
       })
       .map(a => ({ id: a.id, credentialRef: a.credentialRef }))
 
+    /*
+     * 账号轮询（全局）：本函数**自己按候选顺序选号**，不走 `getAvailableAccount`，
+     * 所以必须在这里也过一次轮转 —— 否则 buddy / workbuddy 的多账号永远不会换
+     * （2026-11-04 实测：6 次真实请求全部落在同一个 buddy 账号，即此漏网）。
+     *
+     * ⚠️ 只在这里调**一次**：下面的免费路径与余额分档路径共用这同一份顺序，
+     * 两处各调一次会让一次请求推进两次游标，用户设的「连续 N 次」直接减半。
+     */
+    const ordered = pool.rotateCandidates(options.product.id, candidates)
+    candidates.splice(0, candidates.length, ...ordered)
+
     // 免费模型（消耗 0 积分）不受「锁定永久积分」约束：锁定要保护的是
     // 「别把永久积分烧掉」，而免费模型既不扣临时积分也不扣永久积分，
     // 却被那道门一并拦下，报出「账号有余额却没有可用账号」的矛盾错误（真实报障）。

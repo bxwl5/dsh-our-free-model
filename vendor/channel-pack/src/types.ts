@@ -253,24 +253,28 @@ export interface RpcRefreshAccountRequest {
 export type AccountStrategy = 'sequential' | 'round-robin'
 
 /** 读取某 provider 的账号选择策略（账号界面的开关初值）。 */
-export interface RpcGetAccountStrategyRequest {
-  provider: string
-}
+/**
+ * 读取**全局**账号轮询设置（无参数）。
+ *
+ * ⚠️ 与路由轮询无关：路由轮询（`combos.js` 的 combo 成员轮转）管「**渠道之间**
+ * 怎么轮」，这里管「**同一渠道内部**多个账号之间怎么轮」。两套机制独立，
+ * 字段与文案都不得混用（用户 2026-11-04 明确区分）。
+ */
+export interface RpcGetAccountStrategyRequest {}
 export interface RpcGetAccountStrategyResponse {
   strategy: AccountStrategy
   stickyLimit: number
   /**
-   * 该 provider 当前有几个**可用**账号（已启用、未限流）。
+   * 全局设置下**多少个渠道**真正有 ≥2 个可用账号。
    *
-   * 界面上「轮询」开关只在 ≥2 个账号时才有意义，返回给前端用于禁用/提示，
-   * 而不是让用户打开一个永远不生效的开关。
+   * 轮询只在多渠道上看得出来，前端据此提示「目前有 N 个渠道会受影响」，
+   * 而不是让用户以为开了没效果。
    */
-  usableAccounts: number
+  usableProviders: number
 }
 
 /** 设置账号选择策略与轮询次数。 */
 export interface RpcSetAccountStrategyRequest {
-  provider: string
   strategy: AccountStrategy
   /** 只在 `round-robin` 下生效；省略则保持当前值。 */
   stickyLimit?: number

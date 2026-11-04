@@ -4,6 +4,7 @@ import type { BuddyCredential } from './buddy.js'
 import type { BuddyProduct } from './product.js'
 import { createChannelPackStore, mergeLegacyLoomyLock, sanitizeAccounts, sanitizeDisabledModels, sanitizePermanentLocks,
   sanitizeAccountStrategy,
+  ACCOUNT_STRATEGY_GLOBAL_KEY,
   sanitizeAccountSticky,
   DEFAULT_ACCOUNT_STICKY_LIMIT,
   type AccountStrategy,
@@ -456,40 +457,47 @@ export class AccountPool {
    *
    * 空数组 = 用户尚未自定义（或老文档没有该键），展示侧按声明顺序渲染。
    */
-  /** 某 provider 的账号选择策略（缺键 = 顺序模式，即历史行为）。 */
-  private accountStrategyFor(provider: string): AccountStrategy {
+  /**
+   * 账号选择策略 —— **全局一项，对全部渠道生效**。
+   *
+   * 用户 2026-11-04：「我想了一下不单独加在账号渠道卡片里面了，加在渠道接入
+   * 上面的大卡片里面去，设置对全部渠道生效。」
+   *
+   * ⚠️ 与**路由轮询**（`src/combos.js` 的 combo 成员轮转，成员之间通常就是
+   * 不同渠道）是两套完全独立的东西：这里管的是「**同一个渠道内部**多个账号
+   * 之间怎么轮」，路由管的是「**渠道之间**怎么轮」。措辞与字段都不得混用。
+   */
+  private accountStrategyValue(): AccountStrategy {
     this.ensureLoaded()
-    return this.accountStrategyCache[provider] ?? 'sequential'
+    return this.accountStrategyCache[ACCOUNT_STRATEGY_GLOBAL_KEY] ?? 'sequential'
   }
 
-  /** 某 provider 轮询时每账号连续用几次（缺键 = 默认值）。 */
-  private accountStickyFor(provider: string): number {
+  /** 轮询时每个账号连续用几次 —— 与策略同源，同样全局。 */
+  private accountStickyValue(): number {
     this.ensureLoaded()
-    const n = this.accountStickyCache[provider]
+    const n = this.accountStickyCache[ACCOUNT_STRATEGY_GLOBAL_KEY]
     return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : DEFAULT_ACCOUNT_STICKY_LIMIT
   }
 
   /**
-   * 读取账号选择策略与轮询次数（供账号界面渲染开关）。
+   * 读取全局账号策略与轮询次数（供渠道接入页顶部卡片渲染开关）。
    *
-   * 返回的是**全部 provider 的当前值**，缺键补成默认值 —— 前端不必再猜
-   * 「没返回值是什么意思」。
+   * 缺键补成默认值 —— 前端不必再猜「没返回值是什么意思」。
    */
-  accountStrategy(provider: string): { strategy: AccountStrategy; stickyLimit: number } {
+  accountStrategy(): { strategy: AccountStrategy; stickyLimit: number } {
     return {
-      strategy: this.accountStrategyFor(provider),
-      stickyLimit: this.accountStickyFor(provider),
+      strategy: this.accountStrategyValue(),
+      stickyLimit: this.accountStickyValue(),
     }
   }
 
   /**
-   * 设置账号选择策略与轮询次数（账号界面的开关）。
+   * 设置全局账号策略与轮询次数。
    *
    * `stickyLimit` 只在 `'round-robin'` 下有意义，但**照样存下来**：
    * 用户先调次数、再打开轮询是常见顺序，丢掉它会让开关一开就跳回默认值。
    */
   async setAccountStrategy(
-    provider: string,
     strategy: AccountStrategy,
     stickyLimit?: number,
   ): Promise<{ strategy: AccountStrategy; stickyLimit: number }> {
@@ -497,18 +505,24 @@ export class AccountPool {
       throw new Error(`unknown account strategy: ${String(strategy)}`)
     }
     this.ensureLoaded()
-    this.accountStrategyCache = { ...this.accountStrategyCache, [provider]: strategy }
+    this.accountStrategyCache = { ...this.accountStrategyCache, [ACCOUNT_STRATEGY_GLOBAL_KEY]: strategy }
     if (stickyLimit !== undefined) {
       const n = Number.isFinite(stickyLimit) ? Math.min(1000, Math.max(1, Math.trunc(stickyLimit))) : undefined
       if (n !== undefined) {
-        this.accountStickyCache = { ...this.accountStickyCache, [provider]: n }
+        this.accountStickyCache = { ...this.accountStickyCache, [ACCOUNT_STRATEGY_GLOBAL_KEY]: n }
       }
     }
-    // 策略一变就把游标归零：否则从 round-robin 切回 sequential 再切回来，
-    // 会从一个陈旧的中间位置开始，用户以为是随机的。
-    this.accountRotation.delete(provider)
+    /*
+     * 策略一变就把**全部**渠道的游标归零：否则从 round-robin 切回 sequential
+     * 再切回来，会从各自陈旧的中间位置开始，用户以为是随机的。
+     *
+     * ⚠️ 游标本身仍按 provider 分开存（`accountRotation` 的 key）—— 策略是全局
+     * 的，但「下一个该轮到谁」必须每个渠道各记一份，否则 20 个渠道会共享一个
+     * 游标，某个渠道多打几次就把别的渠道的次序带偏。
+     */
+    this.accountRotation.clear()
     await this.queueStoreSave()
-    return this.accountStrategy(provider)
+    return this.accountStrategy()
   }
 
   providerOrder(): string[] {
@@ -1162,6 +1176,36 @@ export class AccountPool {
    * 在池这一层排除（而非让调用方自己跳过）是必要的：调用方只能拿到
    * 「池认为最优的一个」，无法枚举候选自己去重。
    */
+  /**
+   * 按**全局账号轮询**策略重排候选，并（可选）推进轮转游标。
+   *
+   * 策略是全局一项（对全部渠道生效）；**游标按 provider 各记一份** ——
+   * 共用一份会让 20 个渠道互相带偏次序。
+   *
+   * 语义（`sequential` 时原样返回，保持「手动顺序优先」的历史行为）：
+   * - `round-robin`：把游标指向的账号挪到队首，其余保持手动顺序；
+   *   每个账号连续用 `sticky` 次后游标前进一位。
+   * - 游标按**当前候选集合**取模：候选会因限流/停用增减，用索引直接取会越界。
+   *
+   * @param advance - 本次调用是否代表一次真正的「选号」。
+   *   换号重试（带排除集）必须传 false，否则一次用户请求会推进多次轮转。
+   */
+  rotateCandidates<T>(provider: string, candidates: T[], options: { advance?: boolean } = {}): T[] {
+    if (candidates.length <= 1) return candidates
+    if (this.accountStrategyValue() !== 'round-robin') return candidates
+    const sticky = this.accountStickyValue()
+    const cursor = this.accountRotation.get(provider) ?? { index: 0, used: 0 }
+    const index = Math.min(Math.max(cursor.index, 0), candidates.length - 1)
+    if (options.advance !== false) {
+      const used = cursor.used + 1
+      this.accountRotation.set(
+        provider,
+        used >= sticky ? { index: (index + 1) % candidates.length, used: 0 } : { index, used },
+      )
+    }
+    return [...candidates.slice(index), ...candidates.slice(0, index)]
+  }
+
   async getAvailableAccount(
     provider: string,
     modelId: string,
@@ -1184,34 +1228,35 @@ export class AccountPool {
      * 用户原话：「默认是按照顺序来进行使用的，非要把账号1用到封禁/限流/欠费，
      * 才会用账号2。这个很不合理，要加入轮询/顺序开关，还有轮询次数的设置。」
      *
-     * 策略按 provider 独立配置：
+     * 策略是**全局一项**（对全部渠道生效，用户 2026-11-04 改的口径）：
      * - `sequential`（缺键默认）：保持历史行为 —— 永远用排在最前的那个，
      *   直到它被限流/封禁（上面那层 filter 把它踢出候选）才轮到下一个。
      * - `round-robin`：按顺序轮流用，每个账号连续用 `sticky` 次后换下一个。
+     *
+     * ⚠️ **策略全局、游标按渠道**：`accountRotation` 的 key 仍是 provider。
+     * 共用一份游标会让 20 个渠道互相带偏次序。
+     *
+     * ⚠️ 与**路由轮询**（`combos.js` 的 combo 成员轮转）无关：那个轮的是
+     * 成员/渠道之间，这个轮的是同一渠道内的账号。
      *
      * ⚠️ 轮转只在**通过过滤的候选**里进行：被限流/停用的账号本来就不在
      * `candidates` 里，不会占用轮转位置 —— 否则它们会让健康账号少轮几次。
      * 这里用 `excludeAccountIds` 的重试场景也要保持轮转：调用方拿「下一个」
      * 时游标必须前进，不然换号重试会原地打转（与路由链路同一坑）。
      */
-    const strategy = this.accountStrategyFor(provider)
-    if (strategy === 'round-robin' && candidates.length > 1) {
-      const sticky = this.accountStickyFor(provider)
-      const cursor = this.accountRotation.get(provider) ?? { index: 0, used: 0 }
-      // 游标按**当前候选集合**取模：候选会因限流增减，用索引直接取会越界。
-      const index = Math.min(Math.max(cursor.index, 0), candidates.length - 1)
-      // 轮转：把游标指向的那个账号挪到队首，其余保持手动顺序。
-      const rotated = [...candidates.slice(index), ...candidates.slice(0, index)]
-      const next = excludeAccountIds === undefined ? cursor : cursor
-      if (excludeAccountIds === undefined) {
-        const used = next.used + 1
-        this.accountRotation.set(
-          provider,
-          used >= sticky ? { index: (index + 1) % candidates.length, used: 0 } : { index, used },
-        )
-      }
-      candidates.splice(0, candidates.length, ...rotated)
-    }
+    /*
+     * 轮转顺序由 `rotateCandidates` 统一负责。
+     *
+     * ⚠️ **不能只在这里做轮转**：buddy / workbuddy 走 `pickBuddyCredential`
+     * （先按余额分档选号，再取凭据），根本不经过本方法 —— 2026-11-04 实测
+     * 6 次真实请求全部落在同一个 buddy 账号，就是这条漏网。故轮转必须做成
+     * 池的公共能力，任何「按候选顺序取第一个」的路径都要过它。
+     */
+    const rotated = this.rotateCandidates(provider, candidates, {
+      // 带排除集 = 换号重试的中间步骤，不推进游标（否则一次请求吃掉多次配额）。
+      advance: excludeAccountIds === undefined,
+    })
+    candidates.splice(0, candidates.length, ...rotated)
     // 候选顺序即**用户在 Channel Pack 拖拽设定的手动顺序**（`reorderAccounts` 写入）。
     //
     // 为什么不再按「限流重置时间最早到期」重排（早期实现如此）：

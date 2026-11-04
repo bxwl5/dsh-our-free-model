@@ -13,8 +13,19 @@ let transformSync
 try {
   const standaloneRequire = createRequire(new URL('../packages/standalone/package.json', import.meta.url))
   ;({ transformSync } = standaloneRequire('esbuild'))
-} catch {
-  console.log('ok  standalone-page-lifecycle skipped: esbuild is not installed (the offline job installs nothing)')
+  /*
+   * 「装了但跑不起来」也要跳过，不能只判「装没装」。
+   *
+   * 真实场景：仓库放在 NTFS/exFAT 等不支持 Unix 权限位的挂载盘上时，
+   * `node_modules/@esbuild/<平台>/bin/esbuild` 没有可执行位，`chmod +x` 也不生效
+   * （实测 2026-11-04），`transformSync` 会抛 EACCES。这不是被测代码的问题，
+   * 按环境不满足跳过即可 —— 与「未安装」同一条降级路径。
+   */
+  transformSync('const a = 1', { loader: 'ts' })
+} catch (error) {
+  console.log(
+    `ok  standalone-page-lifecycle skipped: esbuild unavailable (${error?.code ?? error?.message ?? error})`,
+  )
   process.exit(0)
 }
 

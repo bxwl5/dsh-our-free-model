@@ -17,6 +17,13 @@ export function ChannelBrowser({ rpc, summary }: { rpc: Rpc; summary: Summary & 
   const [selected, select] = useState<string>()
   const [auto, setAuto] = useState<{ enabled: boolean; running?: boolean; ranToday?: boolean }>()
   const [busy, setBusy] = useState(false)
+  /**
+   * 账号轮询（**同一渠道内**多个账号之间怎么轮）—— 全局一项，对全部渠道生效。
+   *
+   * ⚠️ 与**路由轮询**（combo 成员之间、通常就是不同渠道）是两套独立机制，
+   * 文案里必须点明，否则用户会混淆（用户 2026-11-04 明确区分过）。
+   */
+  const [strategy, setStrategy] = useState<{ strategy: string; stickyLimit: number; usableProviders: number }>()
   const mounted = useRef(false)
   const sequence = useRef(0)
   const detailHeading = useRef<HTMLHeadingElement>(null)
@@ -36,6 +43,9 @@ export function ChannelBrowser({ rpc, summary }: { rpc: Rpc; summary: Summary & 
     void reload()
     void rpc('usage.autoCheckin', {}).then(value => {
       if (mounted.current) setAuto(value.autoCheckin)
+    }).catch(() => {})
+    void rpc('account.getStrategy', {}).then(value => {
+      if (mounted.current) setStrategy(value)
     }).catch(() => {})
     const timer = setInterval(() => { void reload() }, 45000)
     return () => { mounted.current = false; sequence.current++; clearInterval(timer) }
@@ -86,6 +96,33 @@ export function ChannelBrowser({ rpc, summary }: { rpc: Rpc; summary: Summary & 
               .catch(failure => { if (mounted.current) setError(failure.message) }).finally(() => { if (mounted.current) setBusy(false) })
           }}><span /></button>
       </div>
+      {strategy && (strategy.usableProviders ?? 0) > 0 ? <div className="account-strategy-control">
+        <span className="strategy-label">账号轮询<small>渠道内多账号，全局生效</small></span>
+        <button type="button" role="switch" aria-label="账号轮询" aria-checked={strategy.strategy === 'round-robin'}
+          className={`ui-switch ${strategy.strategy === 'round-robin' ? 'on' : ''}`} disabled={busy} onClick={() => {
+            const next = strategy.strategy === 'round-robin' ? 'sequential' : 'round-robin'
+            setBusy(true)
+            void rpc('account.setStrategy', { strategy: next, stickyLimit: strategy.stickyLimit })
+              .then(() => rpc('account.getStrategy', {})).then(value => { if (mounted.current) setStrategy(value) })
+              .catch(failure => { if (mounted.current) setError(failure.message) }).finally(() => { if (mounted.current) setBusy(false) })
+          }}><span /></button>
+        <label className="strategy-count">每个账号连续
+          <Input type="number" min={1} max={1000} aria-label="轮询时每个账号连续使用次数"
+            value={String(strategy.stickyLimit)} disabled={busy || strategy.strategy !== 'round-robin'}
+            onChange={event => setStrategy({ ...strategy, stickyLimit: Number(event.target.value) || 1 })}
+            onBlur={event => {
+              setBusy(true)
+              void rpc('account.setStrategy', { strategy: 'round-robin', stickyLimit: Number(event.target.value) || 1 })
+                .then(() => rpc('account.getStrategy', {})).then(value => { if (mounted.current) setStrategy(value) })
+                .catch(failure => { if (mounted.current) setError(failure.message) }).finally(() => { if (mounted.current) setBusy(false) })
+            }} />
+          次后切换</label>
+        <span className="strategy-hint">
+          {strategy.strategy === 'round-robin'
+            ? `全部渠道生效：${strategy.usableProviders} 个多渠道轮流使用账号`
+            : `全部渠道生效：每个渠道始终用排在最前的账号（${strategy.usableProviders} 个多渠道受影响）`}
+        </span>
+      </div> : null}
     </div>
     {error && <div className="channel-error" role="alert"><CircleAlert size={16} /><span>{error}</span><Button variant="ghost" onClick={() => { void reload() }}>重试</Button></div>}
     {selectedProvider ? <div className="provider-detail" data-testid="provider-detail">

@@ -258,6 +258,18 @@ window.__ModuleLoader__.load({
         'chan.test.ok': '连接正常（{ms} ms）',
         'chan.test.failed': '测试失败：{reason}',
         'chan.claim.result': '已领取 {count} 个账号，共 {credit} 积分。',
+        /**
+         * 账号轮询（渠道内）—— 与**路由轮询**（combo 成员之间）是两套东西，
+         * 文案必须点明「同一渠道」与「多个账号」，否则用户会与路由的轮询混淆。
+         */
+        'chan.strategy.title': '账号轮询',
+        'chan.strategy.sub': '同一渠道内多个账号之间怎么轮（与「路由」的渠道轮询无关）',
+        'chan.strategy.switch': '开启账号轮询',
+        'chan.strategy.every': '每个账号连续',
+        'chan.strategy.times': '次后切换',
+        'chan.strategy.everyAria': '轮询时每个账号连续使用次数',
+        'chan.strategy.on': '全部渠道生效：{n} 个多渠道会轮流使用账号；任一账号被限流/封禁/欠费立即换下一个。',
+        'chan.strategy.off': '全部渠道生效：每个渠道始终用排在最前的账号，直到它被限流/封禁/欠费才换（{n} 个多渠道受影响）。',
         'chan.claim.none': '今天没有可领取的积分。',
         'chan.model.free': '免费额度',
         'chan.model.dead': '已下架',
@@ -757,6 +769,14 @@ window.__ModuleLoader__.load({
         'chan.test.ok': 'Connection healthy ({ms} ms)',
         'chan.test.failed': 'Test failed: {reason}',
         'chan.claim.result': 'Claimed for {count} account(s), {credit} credits in total.',
+        'chan.strategy.title': 'Account rotation',
+        'chan.strategy.sub': 'How accounts rotate inside one channel (unrelated to route rotation between channels)',
+        'chan.strategy.switch': 'Enable account rotation',
+        'chan.strategy.every': 'Keep each account for',
+        'chan.strategy.times': 'requests',
+        'chan.strategy.everyAria': 'Requests per account while rotating',
+        'chan.strategy.on': 'Applies to all channels: {n} multi-account channels take turns; a rate-limited, blocked or unpaid account is skipped immediately.',
+        'chan.strategy.off': 'Applies to all channels: each channel keeps using its top account until it is rate-limited, blocked or unpaid ({n} multi-account channels affected).',
         'chan.claim.none': 'Nothing to claim today.',
         'chan.model.free': 'Free quota',
         'chan.model.dead': 'Retired',
@@ -1065,6 +1085,17 @@ window.__ModuleLoader__.load({
 .ofm_pagetitle{display:flex;flex-direction:column;gap:6px;min-width:0}
 .ofm_pagetitle h2{margin:0;font-size:23px;font-weight:760;letter-spacing:-.6px;line-height:1.2;background:linear-gradient(120deg,var(--dsw-alias-label-primary) 20%,color-mix(in srgb,var(--dsw-alias-label-primary) 55%,var(--dsw-alias-state-business-primary)));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
 .ofm_pagesub{margin:0;font-size:12.5px;color:var(--dsw-alias-label-secondary);max-width:70ch}
+/* ── 账号轮询（渠道内，全局）────────────────────────────────────────────
+   放在渠道接入页顶部 hero 里，作用于全部渠道。与「路由轮询」（combo 成员
+   之间，通常就是不同渠道）是两套独立机制，样式上也单独成行以示区分。 */
+.ofm_strategyrow{align-items:center;gap:10px;padding:9px 12px;border-radius:12px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 70%,transparent);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 55%,transparent)}
+.ofm_strategylabel{display:flex;flex-direction:column;gap:1px;min-width:0}
+.ofm_strategytitle{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary)}
+.ofm_strategysub{font-size:11px;line-height:1.35;color:var(--dsw-alias-label-tertiary)}
+.ofm_strategynum{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--dsw-alias-label-secondary)}
+.ofm_strategynum input{width:4.2rem;padding:3px 6px;font-size:12px;text-align:center;border-radius:7px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 80%,transparent);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
+.ofm_strategynum input:disabled{opacity:.45}
+.ofm_strategynote{margin-left:auto;font-size:11px;line-height:1.4;color:var(--dsw-alias-label-tertiary);text-align:right;max-width:46ch}
 .ofm_pagehead .ofm_pills{margin-left:auto}
 .ofm_pills{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
 .ofm_pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 78%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 4%);font-size:11.5px;color:var(--dsw-alias-label-secondary);white-space:nowrap;transition:border-color .16s ease,color .16s ease}
@@ -4153,6 +4184,34 @@ window.__ModuleLoader__.load({
         try { const value = await rpc('usage.autoCheckin', {}, 30_000); setAuto(value?.autoCheckin ?? null) } catch { setAuto(null) }
       }, [available, rpc])
       useEffect(() => { void loadAuto() }, [loadAuto])
+      /**
+       * ★ **账号轮询（渠道内）** —— 全局一项，对全部渠道生效（用户 2026-11-04：
+       * 「我想了一下不单独加在账号渠道卡片里面了，加在渠道接入上面的大卡片
+       * 里面去，设置对全部渠道生效」）。
+       *
+       * ⚠️ 与**路由轮询**是两回事，别混：路由（`deepseek-flash（路由）` 这类
+       * combo）轮的是**成员之间**、通常就是不同渠道，每成员连续 N 次由
+       * combo 自己管；这里轮的是**同一渠道内部的多个账号**。
+       */
+      const [strategy, setStrategy] = useState(undefined)
+      const loadStrategy = useCallback(async () => {
+        if (!available) return
+        try { setStrategy(await rpc('account.getStrategy', {})) } catch { setStrategy(undefined) }
+      }, [available, rpc])
+      useEffect(() => { void loadStrategy() }, [loadStrategy])
+      /**
+       * 提交策略。
+       *
+       * 写完直接回读：`setAccountStrategy` 会把次数夹到 1..1000、也会在没传
+       * 次数时保留原值，前端照自己那份 state 猜会与后端不一致。
+       */
+      const applyStrategy = useCallback(async (next, stickyLimit) => {
+        try {
+          await rpc('account.setStrategy', { strategy: next, stickyLimit })
+        } finally {
+          await loadStrategy()
+        }
+      }, [rpc, loadStrategy])
       const toggleAuto = async () => {
         try { const value = await rpc('usage.autoCheckin', { enabled: auto?.enabled !== true }, 60_000); setAuto(value?.autoCheckin ?? null) } catch { /* the status refresh tells */ }
       }
@@ -4306,6 +4365,39 @@ window.__ModuleLoader__.load({
                   .replace('{amounts}', amounts)
               return h('span', { className: 'ofm_note' }, text)
             })())),
+        /*
+         * 账号轮询（渠道内）开关 —— 放在渠道接入页顶部大卡片里，**全局生效**。
+         *
+         * 只在确实有 ≥2 个账号的渠道时显示：一个都没有时摆放一个点了没效果的
+         * 开关比不摆更糟。`usableProviders` 由后端算好，前端不重复拼。
+         */
+        strategy && (strategy.usableProviders ?? 0) > 0 ? h('div', { className: 'ofm_row ofm_strategyrow' },
+          h('div', { className: 'ofm_strategylabel' },
+            h('span', { className: 'ofm_strategytitle' }, t('chan.strategy.title')),
+            h('span', { className: 'ofm_strategysub' }, t('chan.strategy.sub'))),
+          h(Switch, {
+            checked: strategy.strategy === 'round-robin',
+            label: t('chan.strategy.switch'),
+            onChange: () => void applyStrategy(strategy.strategy === 'round-robin' ? 'sequential' : 'round-robin', strategy.stickyLimit),
+          }),
+          h('label', { className: 'ofm_strategynum' }, t('chan.strategy.every'),
+            h('input', {
+              type: 'number', min: 1, max: 1000,
+              'aria-label': t('chan.strategy.everyAria'),
+              value: strategy.stickyLimit,
+              // 顺序模式下这个数字没有意义（永远用第一个号），置灰比隐藏好：
+              // 用户能看见「轮询开到几次」的既有设定。
+              disabled: strategy.strategy !== 'round-robin',
+              onChange: event => setStrategy({ ...strategy, stickyLimit: Number(event.target.value) || 1 }),
+              // 失焦提交：不要每敲一个数字就写一次盘
+              onBlur: event => void applyStrategy('round-robin', Number(event.target.value) || 1),
+            }),
+            t('chan.strategy.times')),
+          h('span', { className: 'ofm_strategynote' },
+            strategy.strategy === 'round-robin'
+              ? t('chan.strategy.on').replace('{n}', String(strategy.usableProviders))
+              : t('chan.strategy.off').replace('{n}', String(strategy.usableProviders))),
+        ) : null,
         failed ? h('div', { className: 'ofm_callout ofm_error' },
           h('div', null, t('chan.pack.failed').replace('{reason}', pack.error ?? ''), h('div', { className: 'ofm_note' }, t('chan.pack.hint')))) : null,
         !available ? h('div', { className: 'ofm_callout' }, h('div', null, t('chan.rpc.unavailable'))) : null,

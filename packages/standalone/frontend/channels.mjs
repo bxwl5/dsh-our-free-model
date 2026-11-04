@@ -41,32 +41,22 @@ function ChannelTools({ summary }) {
   const [accounts, setAccounts] = React.useState([])
   const [account, setAccount] = React.useState('')
   const [nickname, setNickname] = React.useState('')
-  /**
-   * 账号选择策略（2026-11-04 用户要求）。
-   *
-   * 用户原话：「默认是按照顺序来进行使用的，非要把账号1用到封禁/限流/欠费，
-   * 才会用账号2。这个很不合理，要加入轮询/顺序开关，还有轮询次数的设置。」
-   */
-  const [strategy, setStrategy] = React.useState({ strategy: 'sequential', stickyLimit: 1, usableAccounts: 0 })
   const file = React.useRef()
   const generation = React.useRef(0)
   const reload = React.useCallback(async () => {
     const started = ++generation.current
-    const [statuses, value, nextLock, nextStrategy] = await Promise.all([
+    const [statuses, value, nextLock] = await Promise.all([
       rpc('provider.status', { providers: [provider] }),
       rpc('account.list', { provider }),
       lockedProviders.has(provider) ? rpc('credits.permanentLock', { provider }) : undefined,
-      rpc('account.getStrategy', { provider }),
     ])
     if (started !== generation.current) return
     setStatus(statuses.statuses[provider])
     setAccounts(value.accounts)
     setLock(nextLock)
-    if (nextStrategy) setStrategy(nextStrategy)
   }, [provider])
   React.useEffect(() => {
     setStatus(undefined); setLock(undefined); setAccounts([]); setAccount(''); setNickname(''); setMessage('')
-    setStrategy({ strategy: 'sequential', stickyLimit: 1, usableAccounts: 0 })
     let active = true
     void reload().catch(error => { if (active) setMessage(error.message) })
     return () => { active = false; generation.current++ }
@@ -115,49 +105,6 @@ function ChannelTools({ summary }) {
       h('button', { className: 'ofm_btn', disabled: !account || busy, onClick: () => run(() => rpc('account.update', { accountId: account, patch: { nickname } })) }, '保存昵称'),
       h('button', { className: 'ofm_btn', disabled: !account || busy, onClick: () => run(() => rpc('account.reorder', { provider, orderedIds: [account, ...accounts.filter(row => row.id !== account).map(row => row.id)] })) }, '优先使用'),
       h('button', { className: 'ofm_btn', disabled: !account || busy, onClick: () => run(() => rpc('account.reset', { accountId: account })) }, '重置限流标记')),
-    /**
-     * 账号使用方式（2026-11-04 用户要求）。
-     *
-     * 放在账号选择器**下面**，因为它是「多个账号之间怎么分配请求」的规则，
-     * 与上面针对单个账号的操作是不同粒度。
-     */
-    h('div', { className: 'ofm_row' },
-      h('label', null,
-        h('input', {
-          type: 'checkbox',
-          checked: strategy.strategy === 'round-robin',
-          disabled: busy,
-          onChange: event => run(() => rpc('account.setStrategy', {
-            provider,
-            strategy: event.target.checked ? 'round-robin' : 'sequential',
-            stickyLimit: strategy.stickyLimit,
-          })),
-        }),
-        ' 账号轮询'),
-      h('label', null, '每个账号连续 ',
-        h('input', {
-          type: 'number',
-          min: 1,
-          max: 1000,
-          value: strategy.stickyLimit,
-          disabled: busy || strategy.strategy !== 'round-robin',
-          style: { width: '5rem' },
-          'aria-label': '轮询时每个账号连续使用次数',
-          onChange: event => setStrategy({ ...strategy, stickyLimit: Number(event.target.value) || 1 }),
-          // 失焦时提交，避免每敲一个数字就写一次盘
-          onBlur: event => run(() => rpc('account.setStrategy', {
-            provider,
-            strategy: 'round-robin',
-            stickyLimit: Number(event.target.value) || 1,
-          })),
-        }),
-        ' 次后切换'),
-    ),
-    h('p', { className: 'ofm_note' },
-      strategy.strategy === 'round-robin'
-        ? `轮询模式：${strategy.usableAccounts} 个可用账号按顺序轮流，每个连续用 ${strategy.stickyLimit} 次后换下一个；遇到限流/封禁立即换。`
-        : '顺序模式：始终使用排在最前的那一个账号，直到它被限流、封禁或欠费才换下一个。勾选「账号轮询」改为轮流使用。'
-      + (strategy.usableAccounts < 2 ? '（当前只有 1 个可用账号，轮询暂时不会有区别。）' : '')),
     h('div', { className: 'ofm_row ofm_acts' },
       h('button', { className: 'ofm_btn', disabled: busy, onClick: () => run(backup) }, '导出账号备份'),
       h('button', { className: 'ofm_btn', disabled: busy, onClick: () => file.current.click() }, '导入账号备份'),

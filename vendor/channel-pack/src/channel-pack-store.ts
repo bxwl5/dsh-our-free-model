@@ -225,13 +225,24 @@ export function sanitizeProviderOrder(raw: unknown): string[] {
  * 于是该 provider 回落到 `'sequential'` —— 也就是升级前的行为。
  * 宁可回到顺序模式，也不要猜成一个会让账号被上游风控的轮询模式。
  */
+/**
+ * 账号策略在 state 里的**唯一**键。
+ *
+ * 账号轮询是「同一渠道内部多个账号之间怎么轮」，用户 2026-11-04 要求它
+ * 「设置对全部渠道生效」⇒ 只有一份全局值，不再按 provider 存。
+ *
+ * ⚠️ 用 `'*'` 而不是把字段改成标量：两个 dict 字段已在 2.5.7 里落过盘，
+ * 改结构要同时处理 Schema、老文档迁移和读取端；用通配键则天然兼容 ——
+ * 旧文档里的 per-provider 记录在 {@link sanitizeAccountStrategy} 里被丢弃，
+ * 等价于「回到默认的顺序模式」，与用户升级前的实际行为一致。
+ */
+export const ACCOUNT_STRATEGY_GLOBAL_KEY = '*'
+
 export function sanitizeAccountStrategy(raw: unknown): Record<string, AccountStrategy> {
   const out: Record<string, AccountStrategy> = {}
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return out
-  for (const [provider, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (typeof provider !== 'string' || provider.length === 0) continue
-    if (value === 'sequential' || value === 'round-robin') out[provider] = value
-  }
+  const value = (raw as Record<string, unknown>)[ACCOUNT_STRATEGY_GLOBAL_KEY]
+  if (value === 'sequential' || value === 'round-robin') out[ACCOUNT_STRATEGY_GLOBAL_KEY] = value
   return out
 }
 
@@ -244,12 +255,10 @@ export function sanitizeAccountStrategy(raw: unknown): Record<string, AccountStr
 export function sanitizeAccountSticky(raw: unknown): Record<string, number> {
   const out: Record<string, number> = {}
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return out
-  for (const [provider, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (typeof provider !== 'string' || provider.length === 0) continue
-    const n = typeof value === 'number' ? value : Number(value)
-    if (!Number.isFinite(n)) continue
-    out[provider] = Math.min(1000, Math.max(1, Math.trunc(n)))
-  }
+  const value = (raw as Record<string, unknown>)[ACCOUNT_STRATEGY_GLOBAL_KEY]
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(n)) return out
+  out[ACCOUNT_STRATEGY_GLOBAL_KEY] = Math.min(1000, Math.max(1, Math.trunc(n)))
   return out
 }
 

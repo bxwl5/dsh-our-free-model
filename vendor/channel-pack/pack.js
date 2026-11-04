@@ -34612,24 +34612,21 @@ function sanitizeProviderOrder(raw) {
   }
   return result;
 }
+var ACCOUNT_STRATEGY_GLOBAL_KEY = "*";
 function sanitizeAccountStrategy(raw) {
   const out = {};
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return out;
-  for (const [provider, value] of Object.entries(raw)) {
-    if (typeof provider !== "string" || provider.length === 0) continue;
-    if (value === "sequential" || value === "round-robin") out[provider] = value;
-  }
+  const value = raw[ACCOUNT_STRATEGY_GLOBAL_KEY];
+  if (value === "sequential" || value === "round-robin") out[ACCOUNT_STRATEGY_GLOBAL_KEY] = value;
   return out;
 }
 function sanitizeAccountSticky(raw) {
   const out = {};
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return out;
-  for (const [provider, value] of Object.entries(raw)) {
-    if (typeof provider !== "string" || provider.length === 0) continue;
-    const n = typeof value === "number" ? value : Number(value);
-    if (!Number.isFinite(n)) continue;
-    out[provider] = Math.min(1e3, Math.max(1, Math.trunc(n)));
-  }
+  const value = raw[ACCOUNT_STRATEGY_GLOBAL_KEY];
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return out;
+  out[ACCOUNT_STRATEGY_GLOBAL_KEY] = Math.min(1e3, Math.max(1, Math.trunc(n)));
   return out;
 }
 function sanitizePermanentLocks(raw) {
@@ -35274,50 +35271,58 @@ var AccountPool = class {
    *
    * 空数组 = 用户尚未自定义（或老文档没有该键），展示侧按声明顺序渲染。
    */
-  /** 某 provider 的账号选择策略（缺键 = 顺序模式，即历史行为）。 */
-  accountStrategyFor(provider) {
+  /**
+   * 账号选择策略 —— **全局一项，对全部渠道生效**。
+   *
+   * 用户 2026-11-04：「我想了一下不单独加在账号渠道卡片里面了，加在渠道接入
+   * 上面的大卡片里面去，设置对全部渠道生效。」
+   *
+   * ⚠️ 与**路由轮询**（`src/combos.js` 的 combo 成员轮转，成员之间通常就是
+   * 不同渠道）是两套完全独立的东西：这里管的是「**同一个渠道内部**多个账号
+   * 之间怎么轮」，路由管的是「**渠道之间**怎么轮」。措辞与字段都不得混用。
+   */
+  accountStrategyValue() {
     this.ensureLoaded();
-    return this.accountStrategyCache[provider] ?? "sequential";
+    return this.accountStrategyCache[ACCOUNT_STRATEGY_GLOBAL_KEY] ?? "sequential";
   }
-  /** 某 provider 轮询时每账号连续用几次（缺键 = 默认值）。 */
-  accountStickyFor(provider) {
+  /** 轮询时每个账号连续用几次 —— 与策略同源，同样全局。 */
+  accountStickyValue() {
     this.ensureLoaded();
-    const n = this.accountStickyCache[provider];
+    const n = this.accountStickyCache[ACCOUNT_STRATEGY_GLOBAL_KEY];
     return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : DEFAULT_ACCOUNT_STICKY_LIMIT;
   }
   /**
-   * 读取账号选择策略与轮询次数（供账号界面渲染开关）。
+   * 读取全局账号策略与轮询次数（供渠道接入页顶部卡片渲染开关）。
    *
-   * 返回的是**全部 provider 的当前值**，缺键补成默认值 —— 前端不必再猜
-   * 「没返回值是什么意思」。
+   * 缺键补成默认值 —— 前端不必再猜「没返回值是什么意思」。
    */
-  accountStrategy(provider) {
+  accountStrategy() {
     return {
-      strategy: this.accountStrategyFor(provider),
-      stickyLimit: this.accountStickyFor(provider)
+      strategy: this.accountStrategyValue(),
+      stickyLimit: this.accountStickyValue()
     };
   }
   /**
-   * 设置账号选择策略与轮询次数（账号界面的开关）。
+   * 设置全局账号策略与轮询次数。
    *
    * `stickyLimit` 只在 `'round-robin'` 下有意义，但**照样存下来**：
    * 用户先调次数、再打开轮询是常见顺序，丢掉它会让开关一开就跳回默认值。
    */
-  async setAccountStrategy(provider, strategy, stickyLimit) {
+  async setAccountStrategy(strategy, stickyLimit) {
     if (strategy !== "sequential" && strategy !== "round-robin") {
       throw new Error(`unknown account strategy: ${String(strategy)}`);
     }
     this.ensureLoaded();
-    this.accountStrategyCache = { ...this.accountStrategyCache, [provider]: strategy };
+    this.accountStrategyCache = { ...this.accountStrategyCache, [ACCOUNT_STRATEGY_GLOBAL_KEY]: strategy };
     if (stickyLimit !== void 0) {
       const n = Number.isFinite(stickyLimit) ? Math.min(1e3, Math.max(1, Math.trunc(stickyLimit))) : void 0;
       if (n !== void 0) {
-        this.accountStickyCache = { ...this.accountStickyCache, [provider]: n };
+        this.accountStickyCache = { ...this.accountStickyCache, [ACCOUNT_STRATEGY_GLOBAL_KEY]: n };
       }
     }
-    this.accountRotation.delete(provider);
+    this.accountRotation.clear();
     await this.queueStoreSave();
-    return this.accountStrategy(provider);
+    return this.accountStrategy();
   }
   providerOrder() {
     this.ensureLoaded();
@@ -35890,6 +35895,35 @@ var AccountPool = class {
    * 在池这一层排除（而非让调用方自己跳过）是必要的：调用方只能拿到
    * 「池认为最优的一个」，无法枚举候选自己去重。
    */
+  /**
+   * 按**全局账号轮询**策略重排候选，并（可选）推进轮转游标。
+   *
+   * 策略是全局一项（对全部渠道生效）；**游标按 provider 各记一份** ——
+   * 共用一份会让 20 个渠道互相带偏次序。
+   *
+   * 语义（`sequential` 时原样返回，保持「手动顺序优先」的历史行为）：
+   * - `round-robin`：把游标指向的账号挪到队首，其余保持手动顺序；
+   *   每个账号连续用 `sticky` 次后游标前进一位。
+   * - 游标按**当前候选集合**取模：候选会因限流/停用增减，用索引直接取会越界。
+   *
+   * @param advance - 本次调用是否代表一次真正的「选号」。
+   *   换号重试（带排除集）必须传 false，否则一次用户请求会推进多次轮转。
+   */
+  rotateCandidates(provider, candidates, options = {}) {
+    if (candidates.length <= 1) return candidates;
+    if (this.accountStrategyValue() !== "round-robin") return candidates;
+    const sticky = this.accountStickyValue();
+    const cursor = this.accountRotation.get(provider) ?? { index: 0, used: 0 };
+    const index = Math.min(Math.max(cursor.index, 0), candidates.length - 1);
+    if (options.advance !== false) {
+      const used = cursor.used + 1;
+      this.accountRotation.set(
+        provider,
+        used >= sticky ? { index: (index + 1) % candidates.length, used: 0 } : { index, used }
+      );
+    }
+    return [...candidates.slice(index), ...candidates.slice(0, index)];
+  }
   async getAvailableAccount(provider, modelId, excludeAccountIds) {
     const candidates = this.readAccounts().filter((a) => a.provider === provider && a.enabled).filter((a) => excludeAccountIds === void 0 || !excludeAccountIds.has(a.id)).filter((a) => {
       if (modelId.length === 0) return true;
@@ -35898,22 +35932,11 @@ var AccountPool = class {
       return resetAt === void 0 || resetAt === 0 || Date.now() >= resetAt;
     });
     if (candidates.length === 0) return null;
-    const strategy = this.accountStrategyFor(provider);
-    if (strategy === "round-robin" && candidates.length > 1) {
-      const sticky = this.accountStickyFor(provider);
-      const cursor = this.accountRotation.get(provider) ?? { index: 0, used: 0 };
-      const index = Math.min(Math.max(cursor.index, 0), candidates.length - 1);
-      const rotated = [...candidates.slice(index), ...candidates.slice(0, index)];
-      const next = excludeAccountIds === void 0 ? cursor : cursor;
-      if (excludeAccountIds === void 0) {
-        const used = next.used + 1;
-        this.accountRotation.set(
-          provider,
-          used >= sticky ? { index: (index + 1) % candidates.length, used: 0 } : { index, used }
-        );
-      }
-      candidates.splice(0, candidates.length, ...rotated);
-    }
+    const rotated = this.rotateCandidates(provider, candidates, {
+      // 带排除集 = 换号重试的中间步骤，不推进游标（否则一次请求吃掉多次配额）。
+      advance: excludeAccountIds === void 0
+    });
+    candidates.splice(0, candidates.length, ...rotated);
     const failures = [];
     for (const entry of candidates) {
       let resolved;
@@ -68500,42 +68523,35 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         return { ok: true, value: void 0 };
       }
       case "account.getStrategy": {
-        const req = payload;
-        if (typeof req.provider !== "string" || req.provider.length === 0) {
-          return { ok: false, error: { code: "bad-request", message: "provider \u5FC5\u586B" } };
-        }
-        const view = pool.accountStrategy(req.provider);
-        let usable = 0;
+        const view = pool.accountStrategy();
+        let usableProviders = 0;
         try {
           const accounts = await pool.listAllAccounts();
-          usable = accounts.filter((a) => a.provider === req.provider && a.enabled !== false).length;
+          const perProvider = /* @__PURE__ */ new Map();
+          for (const account of accounts) {
+            if (account.enabled === false) continue;
+            perProvider.set(account.provider, (perProvider.get(account.provider) ?? 0) + 1);
+          }
+          for (const count2 of perProvider.values()) if (count2 > 1) usableProviders += 1;
         } catch {
-          usable = 0;
+          usableProviders = 0;
         }
         const value = {
           strategy: view.strategy,
           stickyLimit: view.stickyLimit,
-          usableAccounts: usable
+          usableProviders
         };
         return { ok: true, value };
       }
       case "account.setStrategy": {
         const req = payload;
-        if (typeof req.provider !== "string" || req.provider.length === 0) {
-          return { ok: false, error: { code: "bad-request", message: "provider \u5FC5\u586B" } };
-        }
         if (req.strategy !== "sequential" && req.strategy !== "round-robin") {
           return { ok: false, error: { code: "bad-request", message: "strategy \u53EA\u80FD\u662F sequential \u6216 round-robin" } };
         }
         try {
-          const value = await pool.setAccountStrategy(
-            req.provider,
-            req.strategy,
-            req.stickyLimit
-          );
-          const resolved = pool.accountStrategy(req.provider);
+          const value = await pool.setAccountStrategy(req.strategy, req.stickyLimit);
           ctx.logger?.info?.(
-            `[channel-pack] ${req.provider} \u8D26\u53F7\u7B56\u7565 \u2192 ${req.strategy}` + (req.strategy === "round-robin" ? `\uFF08\u6BCF\u8D26\u53F7\u8FDE\u7EED ${resolved.stickyLimit} \u6B21\uFF09` : "")
+            `[channel-pack] \u8D26\u53F7\u8F6E\u8BE2\uFF08\u6E20\u9053\u5185\uFF0C\u5168\u5C40\uFF09\u2192 ${req.strategy}` + (req.strategy === "round-robin" ? `\uFF0C\u6BCF\u8D26\u53F7\u8FDE\u7EED ${value.stickyLimit} \u6B21\u540E\u5207\u6362` : "")
           );
           return { ok: true, value };
         } catch (error) {
@@ -76102,6 +76118,8 @@ function apply(ctx, config = {}) {
       const resetAt = a.modelRateLimits[key];
       return resetAt === void 0 || resetAt === 0 || Date.now() >= resetAt;
     }).map((a) => ({ id: a.id, credentialRef: a.credentialRef }));
+    const ordered = pool.rotateCandidates(options.product.id, candidates);
+    candidates.splice(0, candidates.length, ...ordered);
     if (options.isFreeModel === true) {
       for (const candidate of candidates) {
         const credential = await resolveBuddyCredentialByRef(candidate.credentialRef);
