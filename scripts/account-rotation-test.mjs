@@ -274,6 +274,59 @@ export async function verifyBuddyRotationRuntime() {
   console.log('ok  运行时：buddy 真的会轮询换号（10 次一换，顺序模式不变）')
 }
 
+/**
+ * ★ **落盘往返**：开关必须扛得住重启/重载（用户 2026-11-04：
+ * 「为什么每次重启，重载，这个轮询按钮都被关了」）。
+ *
+ * 真实缺陷根因：`FileStore.load()` 与 `SettingsStore.load()` 都是**白名单重建**
+ * 返回对象，只列了 accounts / disabledModels / loomyPermanentLocked /
+ * gatewayEnabled / providerOrder，**漏了 accountStrategy 与 accountStickyLimit**。
+ * 而 `save()` 那边（FileStore 是原样写出）一直带着它们 —— 于是磁盘上写着
+ * `round-robin`，读回来却是 `undefined` ⇒ 回落 `sequential` ⇒ 界面开关「自己关了」。
+ *
+ * 本用例用**真实 FileStore + 临时目录**走完整的「写盘 → 全新实例重读」，
+ * 只有真的跨实例读回来才算通过（单实例内读内存 cache 会假阳性）。
+ */
+export async function verifyStrategyPersistence() {
+  const fsx = await import('node:fs')
+  const pathx = await import('node:path')
+  const { createChannelPackStore, DEFAULT_ACCOUNT_STICKY_LIMIT: STICKY } =
+    await import('../vendor/channel-pack/src/channel-pack-store.ts')
+  const { AccountPool } = await import('../vendor/channel-pack/src/account-pool.ts')
+
+  const home = fsx.mkdtempSync(pathx.join(os.tmpdir(), 'ofm-strategy-persist-'))
+  const makeCtx = () => ({
+    home,
+    store: createChannelPackStore({ home, logger: { warn() {}, info() {} } }),
+    logger: { warn() {}, info() {} },
+    credentials: { resolve: async () => undefined, describe: async () => undefined, set: async () => {}, unset: async () => {} },
+    permanentLocks: undefined,
+  })
+
+  // 第一次启动：拨到轮询 + 10
+  const pool1 = new AccountPool(makeCtx())
+  await pool1.addAccount({ id: 'b1', provider: 'buddy', nickname: '一号', enabled: true, credentialRef: 'B1', createdAt: 1 })
+  await pool1.setAccountStrategy('round-robin', STICKY)
+  assert.deepEqual(pool1.accountStrategy(), { strategy: 'round-robin', stickyLimit: 10 }, '拨动后当场生效')
+
+  // 模拟重启：**全新实例**读同一份磁盘（这点是关键，单实例读 cache 测不出本缺陷）
+  const pool2 = new AccountPool(makeCtx())
+  assert.deepEqual(
+    pool2.accountStrategy(),
+    { strategy: 'round-robin', stickyLimit: 10 },
+    '⚠️ 重启后轮询开关必须还是开着（否则用户每次都要手动再拨一次）',
+  )
+
+  // 反过来也要守：关掉之后重启仍然是关的（不能变成「永远开着」）
+  await pool2.setAccountStrategy('sequential', STICKY)
+  const pool3 = new AccountPool(makeCtx())
+  assert.equal(pool3.accountStrategy().strategy, 'sequential', '关掉之后重启必须仍是关的')
+
+  fsx.rmSync(home, { recursive: true, force: true })
+  console.log('ok  运行时：轮询开关扛得住重启/重载（真实 FileStore 落盘往返）')
+}
+
 verifyAccountRotation()
 await verifyBuddyRotationRuntime()
+await verifyStrategyPersistence()
 hooks.deregister()

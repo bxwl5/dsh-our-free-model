@@ -34690,7 +34690,10 @@ var SettingsStore = class {
       // 老文档没这个键 → 启用，与升级前行为一致。
       gatewayEnabled: sanitizeGatewayEnabled(value.gatewayEnabled),
       // 老文档没这个键 → 空数组（未自定义），展示侧按声明顺序渲染。
-      providerOrder: sanitizeProviderOrder(value.providerOrder)
+      providerOrder: sanitizeProviderOrder(value.providerOrder),
+      // ★ 与 FileStore.load 同因（白名单重建，漏了就静默丢）；见那里的详细说明。
+      accountStrategy: sanitizeAccountStrategy(value.accountStrategy),
+      accountStickyLimit: sanitizeAccountSticky(value.accountStickyLimit)
     };
   }
   async save(state) {
@@ -34703,7 +34706,18 @@ var SettingsStore = class {
       // 开关丢失只会让网关回到默认启用（可逆），故接受老版本重写时丢掉本键。
       gatewayEnabled: state.gatewayEnabled !== false,
       // 顺序丢失只会回到声明顺序（可逆，重拖一次即恢复），同理接受丢失。
-      providerOrder: state.providerOrder ?? []
+      providerOrder: state.providerOrder ?? [],
+      /*
+       * ★ 账号轮询也必须写进 settings 后端（2026-11-04）。
+       *
+       * `save()` 同样是**白名单**构造：只写上面那几个键。原先漏了这两项 ⇒
+       * 在走 settings 后端的宿主上，拨了开关当场有效、下次启动就回到 `sequential`。
+       *
+       * ⚠️ 与 `FileStore` 的行为必须一致：两条后端路径写出的字段集合不同，
+       * 就会「换台机器/换版本后行为不一样」，这类差异极难排查。
+       */
+      accountStrategy: state.accountStrategy ?? {},
+      accountStickyLimit: state.accountStickyLimit ?? {}
     });
   }
 };
@@ -34807,7 +34821,21 @@ var FileStore = class {
         // 老文档没这个键 → 启用，与升级前行为一致。
         gatewayEnabled: sanitizeGatewayEnabled(value.gatewayEnabled),
         // 老文档没这个键 → 空数组（未自定义），展示侧按声明顺序渲染。
-        providerOrder: sanitizeProviderOrder(value.providerOrder)
+        providerOrder: sanitizeProviderOrder(value.providerOrder),
+        /*
+         * ★ 账号轮询（2026-11-04 真实缺陷：用户报「每次重启、重载，轮询按钮都被关了」）。
+         *
+         * 根因：**写盘时带了、读盘时没带**。`save()` 是把整个 `state` 原样写出，
+         * 所以磁盘上一直有这两个键（实测 state.json 里就是 `round-robin`）；而本方法
+         * 当时按白名单**重建**返回对象，漏了这两个字段 ⇒ `AccountPool.ensureLoaded`
+         * 拿到 `undefined` ⇒ `sanitizeAccountStrategy(undefined)` 得空表 ⇒ 回落
+         * `sequential`。于是每次重启/重载开关都「自己关掉」了。
+         *
+         * ⚠️ 加字段时必须同时改 `save()` 与 settings 后端的 load/save：
+         * 这个对象是**白名单重建**，不是透传 —— 漏一个就静默丢一个。
+         */
+        accountStrategy: sanitizeAccountStrategy(value.accountStrategy),
+        accountStickyLimit: sanitizeAccountSticky(value.accountStickyLimit)
       };
     } catch (error) {
       this.logger?.warn(`[channel-pack] \u8BFB\u53D6 ${this.path} \u5931\u8D25\uFF0C\u672C\u6B21\u4EE5\u7A7A\u5217\u8868\u542F\u52A8: ${String(error)}`);
