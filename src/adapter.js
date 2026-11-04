@@ -320,8 +320,20 @@ export class FreeModelAdapter {
       }
       const reason = result.verdict === null || result.verdict === undefined ? 'failed' : describeVerdict(result.verdict)
       this.markFaulty(candidate.id, result.verdict)
-      // 失败成员也要把游标推到它之后：额度按自然日结算，冷却到期并不等于
-      // 下回合它就能用，先让健康成员接手。
+      /**
+       * 失败成员：**跳过本轮，不占它的 10 次**（2026-11-04 用户明确的规则）。
+       *
+       * > 渠道3 坏了就只在本轮跳过，直接到渠道4，一圈转到渠道2 之后
+       * > 还是要再试渠道3。
+       *
+       * `advanceComboCursor` 把游标推到它之后并归零计数：接手的那家从 0 数
+       * 满自己的 `stickyLimit`，坏成员本轮占 0 次；游标绕一圈回来仍会轮到它，
+       * 届时再试。
+       *
+       * ⚠️ 与 `markFaulty` 的冷却并**不冲突**：冷却只是把它挪到队尾（让同回合
+       * 内的后备顺序更合理），不阻止它下回合被尝试 —— 真到了下一次轮到它，
+       * 它会作为队首被如实再试一遍。
+       */
       advanceComboCursor(entry, snapshot.catalog, candidate.id)
       tried.push(`${candidate.id} (${reason})`)
       this.deps.warn?.(`our-free-model: chain "${entry.name}" advanced past ${candidate.id} — ${reason}`)

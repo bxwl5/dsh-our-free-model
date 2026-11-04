@@ -221,6 +221,20 @@ export function advanceComboCursor(entry, catalog, afterId) {
   if (members.length <= 1) return
   const at = members.indexOf(afterId)
   if (at < 0) return
+  /**
+   * 语义（2026-11-04 用户明确）：
+   *
+   * > 渠道3 坏了就**只在本轮跳过**（不占它那 10 次），直接到渠道4，
+   * > 一圈转到渠道2 之后**还是要再试渠道3**。
+   *
+   * 所以这里做两件事，缺一不可：
+   *  1. 游标前移到失败成员的下一个 —— 坏成员在本轮**占 0 次**；
+   *  2. 计数归零 —— 接手的那一家要从 0 数满自己的 `stickyLimit` 次，
+   *     而不是继承失败者剩下的次数。
+   *
+   * ⚠️ 坏成员**不会**因此消失：游标绕一圈回来仍会轮到它，届时再试一次
+   * （失败就再跳一个）。这就是「跳过只是跳过本轮」。
+   */
   rotation.set(entry.id, { index: (at + 1) % members.length, used: 0 })
 }
 
