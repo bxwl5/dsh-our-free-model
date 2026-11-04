@@ -66591,6 +66591,7 @@ function sanitizeResults(raw) {
     const amountRaw = Number(record.amount);
     const unit = record.unit === "token" ? "token" : "credit";
     const message2 = typeof record.message === "string" && record.message !== "" ? record.message.slice(0, 200) : void 0;
+    const day2 = typeof record.day === "string" && DATE_RE.test(record.day) ? record.day : void 0;
     out.push({
       provider: record.provider,
       accountId: record.accountId,
@@ -66598,7 +66599,8 @@ function sanitizeResults(raw) {
       outcome,
       amount: Number.isFinite(amountRaw) && amountRaw > 0 ? amountRaw : 0,
       unit,
-      ...message2 === void 0 ? {} : { message: message2 }
+      ...message2 === void 0 ? {} : { message: message2 },
+      ...day2 === void 0 ? {} : { day: day2 }
     });
     if (out.length >= MAX_RESULT_ENTRIES) break;
   }
@@ -66662,7 +66664,37 @@ var AUTO_CHECKIN_MAX_ATTEMPTS_PER_DAY = 3;
 var AUTO_CHECKIN_MIN_RETRY_MS = 30 * 6e4;
 var AUTO_CHECKIN_STALE_RETRY_MS = 30 * 6e4;
 var AUTO_CHECKIN_REFRESH_HOUR_UTC8 = 10;
+var ZCODE_CHECKIN_OPEN_HOUR_UTC8 = 19;
+var ZCODE_TOKEN_RESET_HOUR_UTC8 = 9;
+var ZCODE_MAX_ATTEMPTS_PER_DAY = 2;
 var DAY_MS = 864e5;
+function utc8HourOfDay(nowMs = Date.now()) {
+  const shifted = new Date(nowMs + QODER_BILLING_UTC_OFFSET_MS);
+  return shifted.getUTCHours();
+}
+function zcodeCheckinDayString(nowMs = Date.now()) {
+  return utc8DateString(nowMs - ZCODE_TOKEN_RESET_HOUR_UTC8 * 36e5);
+}
+function inZcodeCheckinWindow(nowMs = Date.now()) {
+  const hour2 = utc8HourOfDay(nowMs);
+  return hour2 >= ZCODE_CHECKIN_OPEN_HOUR_UTC8 || hour2 < ZCODE_TOKEN_RESET_HOUR_UTC8;
+}
+function nextZcodeWindowOpenMs(nowMs = Date.now()) {
+  if (inZcodeCheckinWindow(nowMs)) return nowMs;
+  const shifted = nowMs + QODER_BILLING_UTC_OFFSET_MS;
+  const dayStartShifted = Math.floor(shifted / DAY_MS) * DAY_MS;
+  const openShifted = dayStartShifted + ZCODE_CHECKIN_OPEN_HOUR_UTC8 * 36e5;
+  return openShifted - QODER_BILLING_UTC_OFFSET_MS;
+}
+function checkinDayString(provider, nowMs = Date.now()) {
+  return provider === ZCODE.id ? zcodeCheckinDayString(nowMs) : utc8DateString(nowMs);
+}
+function checkinWindowOpen(provider, nowMs = Date.now()) {
+  return provider === ZCODE.id ? inZcodeCheckinWindow(nowMs) : true;
+}
+function maxAttemptsPerDay(provider) {
+  return provider === ZCODE.id ? ZCODE_MAX_ATTEMPTS_PER_DAY : AUTO_CHECKIN_MAX_ATTEMPTS_PER_DAY;
+}
 function utc8DayStartMs(nowMs = Date.now()) {
   const shifted = nowMs + QODER_BILLING_UTC_OFFSET_MS;
   return Math.floor(shifted / DAY_MS) * DAY_MS - QODER_BILLING_UTC_OFFSET_MS;
@@ -66670,10 +66702,13 @@ function utc8DayStartMs(nowMs = Date.now()) {
 function utc8RefreshBoundaryMs(nowMs = Date.now()) {
   return utc8DayStartMs(nowMs) + AUTO_CHECKIN_REFRESH_HOUR_UTC8 * 36e5;
 }
-function nextAttemptAt(entry, nowMs = Date.now()) {
-  if (entry === void 0 || entry.day !== utc8DateString(nowMs)) return nowMs;
+function nextAttemptAt(entry, nowMs = Date.now(), provider) {
+  if (provider !== void 0 && !checkinWindowOpen(provider, nowMs)) {
+    return nextZcodeWindowOpenMs(nowMs);
+  }
+  if (entry === void 0 || entry.day !== checkinDayString(provider ?? "", nowMs)) return nowMs;
   if (entry.status !== "pending") return null;
-  if (entry.attempts >= AUTO_CHECKIN_MAX_ATTEMPTS_PER_DAY) return null;
+  if (entry.attempts >= maxAttemptsPerDay(provider ?? "")) return null;
   const last = entry.lastAt > 0 ? entry.lastAt : nowMs;
   if (entry.lastOutcome === "stale" || entry.lastOutcome === "none") {
     const boundary = utc8RefreshBoundaryMs(nowMs);
@@ -66681,17 +66716,16 @@ function nextAttemptAt(entry, nowMs = Date.now()) {
   }
   return last + AUTO_CHECKIN_MIN_RETRY_MS;
 }
-function providerNeedsRun(entry, nowMs = Date.now()) {
-  const at = nextAttemptAt(entry, nowMs);
+function providerNeedsRun(entry, nowMs = Date.now(), provider) {
+  const at = nextAttemptAt(entry, nowMs, provider);
   return at !== null && at <= nowMs;
 }
 function pendingProviderCount(providers, nowMs = Date.now(), only) {
-  const day2 = utc8DateString(nowMs);
   const keys = only ?? Object.keys(providers);
   let count2 = 0;
   for (const provider of keys) {
     const entry = providers[provider];
-    if (entry !== void 0 && entry.day === day2 && entry.status === "pending") count2 += 1;
+    if (entry !== void 0 && entry.day === checkinDayString(provider, nowMs) && entry.status === "pending") count2 += 1;
   }
   return count2;
 }
@@ -66700,7 +66734,7 @@ function nextPendingAttemptAt(providers, nowMs = Date.now(), only) {
   const keys = only ?? Object.keys(providers);
   let best = null;
   for (const provider of keys) {
-    const at = nextAttemptAt(providers[provider], nowMs);
+    const at = nextAttemptAt(providers[provider], nowMs, provider);
     if (at === null || at >= endOfDay) continue;
     if (best === null || at < best) best = at;
   }
@@ -66774,7 +66808,7 @@ function isUnsupportedCheckin(message2) {
   return message2.includes("\u4E0D\u652F\u6301\u6BCF\u65E5\u7B7E\u5230") || message2.includes("unsupported provider");
 }
 function isAutoCheckinExcluded(provider) {
-  return provider === ZCODE.id;
+  return false;
 }
 function describeRun(totals) {
   const parts = [];
@@ -66870,6 +66904,7 @@ function createAutoCheckin(deps) {
   let inflight = null;
   let pending = null;
   let followUp = null;
+  let windowTimer = null;
   const today = () => utc8DateString(now());
   function state() {
     return {
@@ -66889,27 +66924,38 @@ function createAutoCheckin(deps) {
        * ⚠️ 只返回**今天**的行：跨日后旧行留在磁盘上无妨（下次写会归零），
        * 但界面上「今日领取」不能显示昨天的记录。
        *
-       * ⚠️ 判据是 `resultsDay` 而**不是** `lastDate`：后者只由自动签到那一轮写，
+       * ⚠️ 判据是「这一行自己的签到日」而**不是** `lastDate`：后者只由自动签到那一轮写，
        * 手动领取不会动它 —— 用 `lastDate` 会把手动领到的行判成"昨天的"而清空。
+       *
+       * ★ 2026-11-04：日界**逐行判**（`row.day ?? doc.resultsDay` 与该渠道的今日比）。
+       * 全局 `resultsDay === today()` 有两个副作用：
+       * 1. zcode 的签到日是 09:00 分界（`19:00 → 次日 09:00`）—— `00:30` 时全局
+       *    判据会把昨晚 20:00 领的 zcode 行判成「昨天」而清空，与用户要求的
+       *    「09:00 刷新」相反；
+       * 2. 反过来，任何一次按 zcode 日界写的 `resultsDay` 都会污染其他渠道的行。
+       * 逐行携带日界后，两边互不影响。
        */
-      results: doc.resultsDay === today() ? doc.results.map((row) => ({ ...row })) : [],
+      results: doc.results.filter((row) => {
+        const day2 = row.day ?? doc.resultsDay;
+        return day2 !== "" && day2 === checkinDayString(row.provider, now());
+      }).map((row) => ({ ...row })),
       // 面板据它决定要不要渲染那行常驻状态文字
       dismissed: doc.lastAt > 0 && doc.dismissedRunAt === doc.lastAt
     };
   }
   function ledgerEntry(provider) {
     const entry = doc.providers[provider];
-    return entry !== void 0 && entry.day === today() ? entry : void 0;
+    return entry !== void 0 && entry.day === checkinDayString(provider, now()) ? entry : void 0;
   }
   function shouldRunProvider(provider) {
-    return providerNeedsRun(ledgerEntry(provider), now());
+    return providerNeedsRun(ledgerEntry(provider), now(), provider);
   }
   function withLedger(providers, provider, entry) {
     return { ...providers, [provider]: entry };
   }
   async function performRun(providerIds) {
     const totals = emptyTotals2();
-    const day2 = today();
+    const dayOf = (provider) => checkinDayString(provider, now());
     const runAt = now();
     const providers = [...providerIds];
     const due = new Set(providers.filter((provider) => shouldRunProvider(provider)));
@@ -66926,6 +66972,7 @@ function createAutoCheckin(deps) {
       if (!due.has(provider)) continue;
       const previous = ledgerEntry(provider);
       const attempts = (previous?.attempts ?? 0) + 1;
+      const day2 = dayOf(provider);
       const base = {
         day: day2,
         status: "pending",
@@ -66938,6 +66985,19 @@ function createAutoCheckin(deps) {
         totals.skipped += 1;
         texts.set(provider, "\u9700\u624B\u52A8\u7B7E\u5230");
         ledgers = withLedger(ledgers, provider, { ...base, attempts: 0, lastOutcome: "skipped", status: "skipped", lastText: "\u9700\u624B\u52A8\u7B7E\u5230" });
+        continue;
+      }
+      if (!checkinWindowOpen(provider, now())) {
+        const hour2 = ZCODE_CHECKIN_OPEN_HOUR_UTC8;
+        const text2 = `\u6BCF\u65E5 ${hour2}:00 \u540E\u53EF\u7B7E\u5230`;
+        texts.set(provider, text2);
+        ledgers = withLedger(ledgers, provider, {
+          ...base,
+          attempts: previous?.attempts ?? 0,
+          lastOutcome: "none",
+          status: "pending",
+          lastText: text2
+        });
         continue;
       }
       const settle = (outcome, text2) => {
@@ -67019,7 +67079,9 @@ function createAutoCheckin(deps) {
       // 面板那句「今日已自动签到」读的就是它 —— 若整轮全失败也写成今天，界面会
       // 说「今日已签到」而用户一分没领到（方向不可逆的误报）。「今天还要不要再跑」
       // 完全看 `providers`，与这个展示字段无关。
-      lastDate: totals.coversToday > 0 ? day2 : doc.lastDate,
+      // ⚠️ `lastDate` 走**全局 00:00 口径**（`utc8DateString`），不是 per-provider 日界：
+      // 它是面板那句「今日已自动签到」的数据源，改动会波及所有渠道的展示。
+      lastDate: totals.coversToday > 0 ? utc8DateString(runAt) : doc.lastDate,
       lastResult: result,
       lastAt: runAt,
       providers: pruned,
@@ -67048,7 +67110,7 @@ function createAutoCheckin(deps) {
     }
     const left = pendingProviderCount(pruned, runAt, providers);
     deps.warn?.(
-      left === 0 ? `[channel-pack] \u81EA\u52A8\u7B7E\u5230\u5B8C\u6210\uFF08${day2}\uFF09\uFF1A${result}` : `[channel-pack] \u81EA\u52A8\u7B7E\u5230\u672C\u8F6E\u7ED3\u675F\uFF08${day2}\uFF09\uFF0C${left} \u4E2A\u6E20\u9053\u5F85\u8865\u8DD1\uFF1A${result}`
+      left === 0 ? `[channel-pack] \u81EA\u52A8\u7B7E\u5230\u5B8C\u6210\uFF08${utc8DateString(runAt)}\uFF09\uFF1A${result}` : `[channel-pack] \u81EA\u52A8\u7B7E\u5230\u672C\u8F6E\u7ED3\u675F\uFF08${utc8DateString(runAt)}\uFF09\uFF0C${left} \u4E2A\u6E20\u9053\u5F85\u8865\u8DD1\uFF1A${result}`
     );
   }
   function giveUpOrRetry(base, outcome, text) {
@@ -67073,6 +67135,26 @@ function createAutoCheckin(deps) {
     followUp = (deps.schedule ?? defaultSchedule)(fire, ms);
     deps.warn?.(`[channel-pack] \u81EA\u52A8\u7B7E\u5230\uFF1A${Math.round(ms / 6e4)} \u5206\u949F\u540E\u8865\u8DD1\u672A\u5B8C\u6210\u7684\u6E20\u9053`);
   }
+  function scheduleWindowWake(providerIds) {
+    if (!doc.enabled) return;
+    if (windowTimer !== null) return;
+    const windowed = providerIds.filter((provider) => checkinWindowOpen(provider, now()) === false);
+    if (windowed.length === 0) return;
+    const at = nextZcodeWindowOpenMs(now());
+    if (at <= now()) return;
+    const ms = at - now();
+    if (ms > DAY_MS) return;
+    const fire = () => {
+      windowTimer = null;
+      if (!doc.enabled) return;
+      deps.warn?.("[channel-pack] \u81EA\u52A8\u7B7E\u5230\uFF1Azcode \u7B7E\u5230\u7A97\u53E3\u5DF2\u6253\u5F00\uFF0819:00\uFF09\uFF0C\u5F00\u59CB\u8DD1\u4E00\u8F6E");
+      void runIfDue();
+    };
+    windowTimer = (deps.schedule ?? defaultSchedule)(fire, ms);
+    deps.warn?.(
+      `[channel-pack] \u81EA\u52A8\u7B7E\u5230\uFF1Azcode \u7B7E\u5230\u7A97\u53E3\u5C06\u4E8E ${Math.round(ms / 6e4)} \u5206\u949F\u540E\u6253\u5F00\uFF0C\u5DF2\u6392\u5B9A\u5230\u70B9\u81EA\u52A8\u8DD1`
+    );
+  }
   function runIfDue() {
     if (inflight !== null) return inflight;
     if (!doc.enabled) return Promise.resolve();
@@ -67088,6 +67170,7 @@ function createAutoCheckin(deps) {
       }
       if (!providerIds.some((provider) => shouldRunProvider(provider))) {
         if (pendingProviderCount(doc.providers, now(), providerIds) > 0) scheduleFollowUp(providerIds);
+        scheduleWindowWake(providerIds);
         return;
       }
       running2 = true;
@@ -67097,6 +67180,7 @@ function createAutoCheckin(deps) {
         followUp?.cancel();
         followUp = null;
       }
+      scheduleWindowWake(providerIds);
     })().catch((error) => {
       deps.warn?.(`[channel-pack] \u81EA\u52A8\u7B7E\u5230\u5F02\u5E38: ${String(error)}`);
     }).finally(() => {
@@ -67114,6 +67198,8 @@ function createAutoCheckin(deps) {
       if (!enabled) {
         followUp?.cancel();
         followUp = null;
+        windowTimer?.cancel();
+        windowTimer = null;
       }
       if (enabled) void runIfDue();
       return state();
@@ -67134,20 +67220,51 @@ function createAutoCheckin(deps) {
     runIfDue,
     async recordClaimResult(provider, value) {
       if (value === void 0) return;
-      const day2 = today();
+      const day2 = checkinDayString(provider, now());
       const summary = value.summary;
       if (summary === void 0) return;
       const coversToday = summary.coversToday ?? summary.claimed + summary.alreadyClaimed;
       if (coversToday <= 0) return;
       const incoming = aggregateAccountRows(provider, value.results ?? []);
       if (incoming.length === 0) return;
-      const base = doc.resultsDay === day2 ? doc.results : [];
+      for (const row of incoming) row.day = day2;
+      const base = doc.results.filter((row) => (row.day ?? doc.resultsDay) === day2);
       const merged = new Map(base.map((row) => [`${row.provider}\0${row.accountId}`, row]));
       for (const row of incoming) {
         const key = `${row.provider}\0${row.accountId}`;
         merged.set(key, mergeAccountResult(merged.get(key), row));
       }
-      doc = { ...doc, results: [...merged.values()], resultsDay: day2 };
+      const text = describeChannel(summary);
+      const previousLedger = ledgerEntry(provider);
+      const sameDay = previousLedger?.day === day2;
+      const rankOf = (outcome) => outcome === "claimed" ? 3 : outcome === "already-claimed" ? 2 : outcome === "failed" ? 1 : 0;
+      const incomingOutcome = summary.claimed > 0 ? "claimed" : "already-claimed";
+      const keepPrevious = sameDay === true && rankOf(previousLedger?.lastOutcome) > rankOf(incomingOutcome);
+      const ledger2 = {
+        day: day2,
+        status: "done",
+        // 手动领取不是自动那一轮的「尝试」，别虚增重试计数（虚增会让
+        // `given-up` 提前触发，自动签到少试几次）。
+        attempts: sameDay ? previousLedger.attempts : 0,
+        lastAt: now(),
+        lastOutcome: keepPrevious ? previousLedger.lastOutcome : incomingOutcome,
+        lastText: keepPrevious ? previousLedger.lastText : text
+      };
+      const channels = doc.channels.some((entry) => entry.provider === provider) ? doc.channels.map((entry) => entry.provider === provider ? { provider, text: ledger2.lastText } : entry) : [...doc.channels, { provider, text: ledger2.lastText }];
+      const others = doc.results.filter((row) => {
+        if (row.provider === provider) return false;
+        const rowDay = row.day ?? doc.resultsDay;
+        return rowDay !== "" && rowDay === checkinDayString(row.provider, now());
+      });
+      doc = {
+        ...doc,
+        results: [...others, ...merged.values()],
+        // 全局字段只服务**旧文档**（行上没有 `day` 时回落到它）：保持 00:00 口径，
+        // 不写 zcode 的 09:00 日界，否则会给其他渠道的旧行换了参照系。
+        resultsDay: utc8DateString(now()),
+        providers: withLedger(doc.providers, provider, ledger2),
+        channels: sanitizeChannels(channels)
+      };
       try {
         await deps.store.save(doc);
       } catch (error) {
@@ -67168,6 +67285,8 @@ function createAutoCheckin(deps) {
       pending = null;
       followUp?.cancel();
       followUp = null;
+      windowTimer?.cancel();
+      windowTimer = null;
     }
   };
 }

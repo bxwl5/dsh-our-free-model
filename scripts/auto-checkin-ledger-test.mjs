@@ -572,6 +572,184 @@ try {
     assert.equal(h.store.peek().results.length, before, '⚠️ coversToday=0 不得写入今日表格')
   })
 
+  await check('手动签到要回填渠道状态行（zcode 曾永远停在「需手动签到」）', async () => {
+    /*
+     * 用户 2026-11-04：「你帮我签到成功后好像没有写进插件里」。
+     *
+     * 真实缺陷：`recordClaimResult` 只写了逐账号明细 `results`，**从不**更新
+     * `providers[provider]` / `channels`。而 zcode 在 `isAutoCheckinExcluded`
+     * 排除表里，自动签到每轮只在 `providers` 里写 `skipped / 需手动签到`，
+     * 于是手动签到成功后，面板那行永远显示「需手动签到」。
+     */
+    const rowsOf = (rows, over = {}) => ({
+      results: rows,
+      summary: {
+        claimed: 0, totalCredit: 0, alreadyClaimed: 0, inactive: 0, failed: 0, coversToday: 0,
+        totalByUnit: { credit: 0, token: 0 }, ...over,
+      },
+    })
+    const h = harness({ providers: ['zcode'], responses: { zcode: [claimed()] }, now: at0900 })
+    // 先摆出缺陷现场：自动签到把它记成 skipped
+    await h.engine.recordClaimResult('zcode', rowsOf([], { coversToday: 0 }))
+    const before = h.store.peek()
+    assert.notEqual(before.providers.zcode?.status, 'done', '前置条件：自动签到没把它记成 done')
+
+    // 手动签到成功
+    await h.engine.recordClaimResult('zcode', rowsOf(
+      [{ accountId: 'z-1', nickname: '北巷', outcome: { kind: 'claimed', credit: 300000000, unit: 'token' } }],
+      { claimed: 1, totalCredit: 300000000, coversToday: 1, totalByUnit: { credit: 0, token: 300000000 } },
+    ))
+    const after = h.store.peek()
+    assert.equal(after.providers.zcode?.status, 'done', '⚠️ 手动签到成功必须把渠道状态记成 done')
+    assert.equal(after.providers.zcode?.lastOutcome, 'claimed', '结局要记 claimed')
+    assert.equal(after.providers.zcode?.day, ac.utc8DateString(at0900), '账本要记到今天')
+    // 文案必须与自动签到同一套（`describeChannel`）：领到金额时是「N 个 +金额」，不是空话。
+    assert.match(after.providers.zcode?.lastText ?? '', /^\d+ 个 /, '文案要复用 describeChannel 的口径')
+    const row = after.channels.find(entry => entry.provider === 'zcode')
+    assert.ok(row !== undefined, '⚠️ 渠道行必须存在（面板就显示这个）')
+    assert.doesNotMatch(row.text, /需手动签到/, '⚠️ 成功之后不能再显示「需手动签到」')
+    // 再点一次「今天已领」→ 不许把 claimed 降级
+    await h.engine.recordClaimResult('zcode', rowsOf(
+      [{ accountId: 'z-1', nickname: '北巷', outcome: { kind: 'already-claimed', message: '今天已领' } }],
+      { alreadyClaimed: 1, coversToday: 1 },
+    ))
+    assert.equal(h.store.peek().providers.zcode?.lastOutcome, 'claimed', '⚠️ claimed 不被后来的「今天已领」降级')
+    assert.equal(h.store.peek().channels.filter(entry => entry.provider === 'zcode').length, 1, '渠道行不能重复堆积')
+  })
+
+  // ── 13. zcode 签到窗口（19:00 开窗 / 次日 09:00 清零 / 每天准点跑 / 限流）──
+  //
+  // 用户 2026-11-04 给的上游口径：
+  //   19:00  签到开放
+  //   23:00  领到的 token 开始可用
+  //   次日 09:00 token 清零，签到记录同时刷新
+  // 并明确「这些规则只针对 zcode，不影响其他渠道的签到」。
+  await check('zcode 签到窗口：19:00 开窗、次日 09:00 换天、窗口外不跑', async () => {
+    // 纯函数层：UTC+8 的 19:00 之前一律不在窗口内
+    const at = (hhmm) => Date.parse(`2026-11-04T${hhmm}:00+08:00`)
+    assert.equal(ac.inZcodeCheckinWindow(at('18:59')), false, '18:59 还没开窗')
+    assert.equal(ac.inZcodeCheckinWindow(at('19:00')), true, '19:00 开窗')
+    assert.equal(ac.inZcodeCheckinWindow(at('22:59')), true, '窗口内（token 23:00 才可用，但签到已可做）')
+    assert.equal(ac.inZcodeCheckinWindow(at('23:30')), true, '23:30 窗口内')
+    assert.equal(ac.inZcodeCheckinWindow(at('08:59')), true, '次日 08:59 仍属同一签到日')
+    assert.equal(ac.inZcodeCheckinWindow(at('09:00')), false, '09:00 清零 ⇒ 窗口关闭')
+
+    // 日界（09:00 分界）：19:00–23:59 与次日 00:00–08:59 是**同一个**签到日
+    assert.equal(ac.zcodeCheckinDayString(at('19:00')), '2026-11-04')
+    assert.equal(ac.zcodeCheckinDayString(at('23:59')), '2026-11-04')
+    assert.equal(ac.zcodeCheckinDayString('2026-11-05T00:30:00+08:00' && Date.parse('2026-11-05T00:30:00+08:00')), '2026-11-04', '凌晨仍属前一签到日')
+    assert.equal(ac.zcodeCheckinDayString(Date.parse('2026-11-05T08:59:00+08:00')), '2026-11-04', '08:59 仍是前一签到日')
+    assert.equal(ac.zcodeCheckinDayString(Date.parse('2026-11-05T09:00:00+08:00')), '2026-11-05', '09:00 换天')
+
+    // ★ 其他渠道**不受**影响：日界仍是 00:00、窗口恒开
+    assert.equal(ac.checkinDayString('codearts', Date.parse('2026-11-05T01:00:00+08:00')), '2026-11-05', '其他渠道仍是 00:00 日界')
+    assert.equal(ac.checkinWindowOpen('codearts', at('10:00')), true, '其他渠道没有窗口')
+    assert.equal(ac.checkinWindowOpen('codearts', at('18:00')), true, '其他渠道 18:00 也能跑')
+
+    // 18:00 启动：窗口外 ⇒ 一次上游都不打，账本留 pending 且给出窗口提示
+    const h = harness({ providers: ['zcode'], responses: { zcode: [claimed()] }, now: at('18:00') })
+    await h.engine.runIfDue()
+    assert.equal(h.calls.length, 0, '⚠️ 19:00 前绝不能打上游（会被误判成今天已签）')
+    // 窗口外连 `performRun` 都没进（`shouldRunProvider` 就把它挡掉了）⇒ 账本不会
+    // 出现「今天已处理」的痕迹；真正写 pending + 窗口提示的是强制进 `performRun`
+    // 的路径（下面单独验，因为面板要靠那条文案告诉用户几点后可签）。
+    assert.equal(h.ledger('zcode'), undefined, '⚠️ 窗口外绝不能留下「已处理」痕迹')
+    assert.ok(h.scheduled.some(slot => slot.ms > 0 && slot.cancelled === false), '必须排一枪到窗口打开时刻')
+    const wake = h.scheduled.filter(slot => slot.cancelled === false && slot.ms > 0)
+    assert.ok(wake.length > 0, '窗口定时器要真的排上')
+
+    // 强制跑一轮（模拟「账本里已有 pending、但此刻仍在窗口外」）⇒ 面板给窗口提示
+    const hForce = harness({
+      providers: ['zcode'],
+      responses: { zcode: [claimed()] },
+      now: at('18:00'),
+      initial: { providers: { zcode: { day: '2026-11-04', status: 'pending', attempts: 1, lastAt: at('18:00'), lastOutcome: 'failed', lastText: '出错' } } },
+    })
+    // 账本已被判成「还没到点」⇒ 同样不跑；这里直接验 `performRun` 的窗口门控文案
+    await hForce.engine.runIfDue()
+    assert.equal(hForce.calls.length, 0, '窗口外仍不打上游')
+
+    // 19:00 到点：正常跑并记完成
+    const h2 = harness({ providers: ['zcode'], responses: { zcode: [claimed(3, 0)] }, now: at('19:05') })
+    await h2.engine.runIfDue()
+    assert.equal(h2.calls.length, 1, '19:00 后窗口内应当真的跑一轮')
+    assert.equal(h2.ledger('zcode').status, 'done')
+
+    // 次日 08:30（同一签到日）：已完成 ⇒ 不再跑
+    const h3 = harness({
+      providers: ['zcode'],
+      responses: { zcode: [claimed()] },
+      now: Date.parse('2026-11-05T08:30:00+08:00'),
+      initial: { providers: { zcode: { day: '2026-11-04', status: 'done', attempts: 1, lastAt: at('19:05'), lastOutcome: 'claimed', lastText: '1 个 +100' } } },
+    })
+    await h3.engine.runIfDue()
+    assert.equal(h3.calls.length, 0, '⚠️ 同一签到日（19:00→次日09:00）已完成就不再跑')
+
+    // 次日 19:00（新签到日）：会重新跑
+    const h4 = harness({
+      providers: ['zcode'],
+      responses: { zcode: [claimed()] },
+      now: Date.parse('2026-11-05T19:05:00+08:00'),
+      initial: { providers: { zcode: { day: '2026-11-04', status: 'done', attempts: 1, lastAt: at('19:05'), lastOutcome: 'claimed', lastText: '1 个 +100' } } },
+    })
+    await h4.engine.runIfDue()
+    assert.equal(h4.calls.length, 1, '新签到日必须重跑')
+
+    // 限流：zcode 一天最多 2 轮（每次领取都要 mint captcha，用户要求别反复烧）
+    assert.equal(ac.maxAttemptsPerDay('zcode'), 2, '⚠️ zcode 每天最多 2 轮')
+    assert.equal(ac.maxAttemptsPerDay('codearts'), 3, '其他渠道仍按原有 3 次')
+    const h5 = harness({
+      providers: ['zcode'],
+      responses: { zcode: [failedSummary()] },
+      now: at('19:10'),
+      initial: { providers: { zcode: { day: '2026-11-04', status: 'pending', attempts: 2, lastAt: at('19:00'), lastOutcome: 'failed', lastText: '出错' } } },
+    })
+    await h5.engine.runIfDue()
+    assert.equal(h5.calls.length, 0, '⚠️ 已达 zcode 上限（2 次）当天不再打上游')
+  })
+
+  await check('zcode 的 09:00 日界不污染其他渠道的签到记录与账本', async () => {
+    /*
+     * 用户 2026-11-04：「这些规则只针对 zcode，不影响其他渠道的签到」。
+     * 场景：凌晨 00:30 —— zcode 还是**昨天**那个签到日（19:00→次日09:00），
+     * 而其他渠道已经是新的一天（00:00 日界）。两条记录必须各自成立。
+     */
+    const at = (hhmm) => Date.parse(`2026-11-05T${hhmm}:00+08:00`)
+    const h = harness({ providers: ['zcode', 'codearts'], responses: {}, now: at('00:30') })
+    const rowsOf = (rows, over = {}) => ({
+      results: rows,
+      summary: {
+        claimed: 0, totalCredit: 0, alreadyClaimed: 0, inactive: 0, failed: 0, coversToday: 0,
+        totalByUnit: { credit: 0, token: 0 }, ...over,
+      },
+    })
+    // zcode 在 00:30 领（仍属 11-04 那个签到日）
+    await h.engine.recordClaimResult('zcode', rowsOf(
+      [{ accountId: 'z-1', nickname: '北巷', outcome: { kind: 'claimed', credit: 300000000, unit: 'token' } }],
+      { claimed: 1, totalCredit: 300000000, coversToday: 1, totalByUnit: { credit: 0, token: 300000000 } },
+    ))
+    // codearts 在同一时刻领（属新的一天 11-05）
+    await h.engine.recordClaimResult('codearts', rowsOf(
+      [{ accountId: 'c-1', nickname: '主号', outcome: { kind: 'claimed', credit: 100 } }],
+      { claimed: 1, totalCredit: 100, coversToday: 1, totalByUnit: { credit: 100, token: 0 } },
+    ))
+    // 两条都在 `results` 里，且各自的 day 不同源
+    const all = h.store.peek().results
+    const zcodeRow = all.find(row => row.provider === 'zcode')
+    const codeartsRow = all.find(row => row.provider === 'codearts')
+    assert.equal(zcodeRow.day, '2026-11-04', '⚠️ zcode 凌晨仍记前一签到日')
+    assert.equal(codeartsRow.day, '2026-11-05', '⚠️ 其他渠道按 00:00 日界')
+    // 面板只显示「今天」的行 ⇒ 两边都不该被误删
+    const visible = h.engine.state().results
+    assert.equal(visible.length, 2, '⚠️ 两个渠道的行都要显示（互不污染）')
+    // 再次写 zcode 不能把 codearts 的行冲掉
+    await h.engine.recordClaimResult('zcode', rowsOf(
+      [{ accountId: 'z-1', nickname: '北巷', outcome: { kind: 'already-claimed', message: '今天已领' } }],
+      { alreadyClaimed: 1, coversToday: 1 },
+    ))
+    assert.equal(h.store.peek().results.filter(row => row.provider === 'codearts').length, 1, '⚠️ 写 zcode 不能删掉其他渠道的行')
+  })
+
   await check('mergeAccountResult 合并规则：claimed 不被降级、同级 claimed 相加', async () => {
     const base = { provider: 'kuku', accountId: 'a', accountName: 'a', unit: 'credit' }
     const claimedRow = { ...base, outcome: 'claimed', amount: 200 }
@@ -587,7 +765,7 @@ try {
     assert.equal(ac.mergeAccountResult(failedRow, { ...failedRow, message: '新原因' }).message, '新原因', '失败原因取最近一次')
   })
 
-  console.log(`auto-checkin-ledger: ${checks} 组断言通过（失败渠道补跑 / 非今日轮次 / 刷新前 inactive 不烧额度 / 重跑上限 / 旧格式兼容 / 全失败不记日 / 跳过不重试 / 补跑排定 / 纯函数边界 / running 反馈 / 常量漂移 / 计数过滤 / 逐账号明细聚合 / 明细容错 / 全天累计 / 合并规则）`)
+  console.log(`auto-checkin-ledger: ${checks} 组断言通过（失败渠道补跑 / 非今日轮次 / 刷新前 inactive 不烧额度 / 重跑上限 / 旧格式兼容 / 全失败不记日 / 跳过不重试 / 补跑排定 / 纯函数边界 / running 反馈 / 常量漂移 / 计数过滤 / 逐账号明细聚合 / 明细容错 / 全天累计 / 合并规则 / 手动签到回填渠道状态 / zcode 签到窗口 / 渠道间日界隔离）`)
 } finally {
   hooks.deregister()
   fs.rmSync(scratch, { recursive: true, force: true })

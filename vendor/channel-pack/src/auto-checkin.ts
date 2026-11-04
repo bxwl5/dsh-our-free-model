@@ -176,6 +176,17 @@ export interface AutoCheckinAccountResult {
   unit: 'token' | 'credit'
   /** 异常原因 / 提示文案（`failed` 与 `already-claimed` 时给出）。 */
   message?: string
+  /**
+   * ★ 这一行属于哪个「签到日」（per-row，2026-11-04）。
+   *
+   * 为什么不是全局 `resultsDay`：zcode 的签到日是 **09:00 分界**（`19:00 → 次日
+   * 09:00`），而其余渠道是 00:00 分界。用全局字段会让 `00:30` 时把 zcode 昨晚
+   * 20:00 领的那行判成「昨天」而清空（用户要求「09:00 刷新」），也会反过来影响
+   * 其他渠道的展示。故日界随行携带。
+   *
+   * ⚠️ 缺省（旧文档）回落到 `resultsDay`，见 `state()` 的读取逻辑。
+   */
+  day?: string
 }
 
 /**
@@ -341,6 +352,7 @@ function sanitizeResults(raw: unknown): AutoCheckinAccountResult[] {
     const amountRaw = Number(record.amount)
     const unit = record.unit === 'token' ? 'token' : 'credit'
     const message = typeof record.message === 'string' && record.message !== '' ? record.message.slice(0, 200) : undefined
+    const day = typeof record.day === 'string' && DATE_RE.test(record.day) ? record.day : undefined
     out.push({
       provider: record.provider,
       accountId: record.accountId,
@@ -351,6 +363,7 @@ function sanitizeResults(raw: unknown): AutoCheckinAccountResult[] {
       amount: Number.isFinite(amountRaw) && amountRaw > 0 ? amountRaw : 0,
       unit,
       ...(message === undefined ? {} : { message }),
+      ...(day === undefined ? {} : { day }),
     })
     if (out.length >= MAX_RESULT_ENTRIES) break
   }
@@ -495,7 +508,114 @@ export const AUTO_CHECKIN_STALE_RETRY_MS = 30 * 60_000
  */
 export const AUTO_CHECKIN_REFRESH_HOUR_UTC8 = 10
 
+/**
+ * ★ ZCode 的签到窗口（UTC+8，2026-11-04 用户确认的**上游业务口径**）。
+ *
+ * 一天的真实循环是：
+ *
+ * ```
+ * 09:00  token 清零（当日额度作废，签到记录同时刷新）      ← 日界
+ * 19:00  签到开放（此后开展「今天」的签到窗口）
+ * 23:00  领到的 token 开始可用
+ * 次日 09:00  token 再次清零（循环回到第一行）
+ * ```
+ *
+ * 三处都必须照这个窗口对齐，缺一个就会踩坑：
+ *
+ * - **日界不是 00:00 而是 09:00**：账本按 `utc8DateString` 记日（00:00 分界）时，
+ *   19:00 领完、00:05 再启动一次就会被判成「新的一天、还没签」⇒ 白跑一轮
+ *   （每次都是 3 个账号各 mint 一次 captcha）。故 zcode 的账本日界用
+ *   {@link zcodeCheckinDayString}（09:00 分界）。
+ * - **19:00 之前不能跑**：`preview` 在窗口外回的是**空列表**，而
+ *   `fetchCheckinStatus` 只能靠「有没有可领 plan」推断今天签没签 ⇒ 早跑会被
+ *   判成 `already-claimed` / `coversToday` 为真，把当天记成 `done` 后
+ *   **19:00 之后再也不跑**（真漏签）。故要显式门控。
+ * - **09:00 前不算「今天」**：与第一条同源，`19:00–24:00` 与 `00:00–09:00`
+ *   属于**同一个** zcode 签到日。
+ */
+export const ZCODE_CHECKIN_OPEN_HOUR_UTC8 = 19
+
+/** ZCode 的 token 生效时刻（UTC+8）：领到的额度这时候才能真正用于推理。 */
+export const ZCODE_TOKEN_USABLE_HOUR_UTC8 = 23
+
+/** ZCode 的 token 清零 / 签到记录刷新时刻（UTC+8）：也就是它的**日界**。 */
+export const ZCODE_TOKEN_RESET_HOUR_UTC8 = 9
+
+/**
+ * ZCode 当天最多跑几轮 `claimAll`。
+ *
+ * 比通用的 {@link AUTO_CHECKIN_MAX_ATTEMPTS_PER_DAY}（3）更紧：每次领取要现场
+ * 产一个阿里云 captcha，而阿里云按**设备**限流「同设备每小时 150 次」——
+ * 3 个账号失败 3 轮就是 9 次 captcha，纯烧设备配额（用户明确要求限流）。
+ * 取 2：够覆盖「19:00 刚到、上游还没投放」这一类时序抖动一次。
+ */
+export const ZCODE_MAX_ATTEMPTS_PER_DAY = 2
+
 const DAY_MS = 86_400_000
+
+/** UTC+8 的「此刻是几点」（0–23）。 */
+export function utc8HourOfDay(nowMs: number = Date.now()): number {
+  const shifted = new Date(nowMs + QODER_BILLING_UTC_OFFSET_MS)
+  return shifted.getUTCHours()
+}
+
+/**
+ * ZCode 的签到日（**09:00 分界**，不是 00:00）。
+ *
+ * `19:00 → 次日 09:00` 是同一天：所以把时刻整体**往前推 9 小时**再取 UTC+8
+ * 日期，日界自然落在 09:00。例：
+ * - `11-04 20:00` → 推 9h = `11-04 11:00` → `2026-11-04`
+ * - `11-05 08:00` → 推 9h = `11-04 23:00` → `2026-11-04`（**同一天** ✓）
+ * - `11-05 09:00` → 推 9h = `11-05 00:00` → `2026-11-05`（换天 ✓）
+ */
+export function zcodeCheckinDayString(nowMs: number = Date.now()): string {
+  return utc8DateString(nowMs - ZCODE_TOKEN_RESET_HOUR_UTC8 * 3_600_000)
+}
+
+/**
+ * 此刻是否在 ZCode 的签到窗口内（`19:00 – 次日 09:00`）。
+ *
+ * ⚠️ 窗口外的 `preview` 是空列表，跑一轮只会被误判成「今天已签」而**锁死当天**
+ * （见 {@link ZCODE_CHECKIN_OPEN_HOUR_UTC8} 的说明）—— 所以这不是「优化」，
+ * 是正确性前提。
+ */
+export function inZcodeCheckinWindow(nowMs: number = Date.now()): boolean {
+  const hour = utc8HourOfDay(nowMs)
+  return hour >= ZCODE_CHECKIN_OPEN_HOUR_UTC8 || hour < ZCODE_TOKEN_RESET_HOUR_UTC8
+}
+
+/**
+ * 下一次 zcode 签到窗口打开的绝对毫秒（窗口外才需要；窗口内返回 `nowMs`）。
+ *
+ * 用途：窗口外启动时把补跑排到 19:00，而不是干等到下次启动。
+ */
+export function nextZcodeWindowOpenMs(nowMs: number = Date.now()): number {
+  if (inZcodeCheckinWindow(nowMs)) return nowMs
+  const shifted = nowMs + QODER_BILLING_UTC_OFFSET_MS
+  const dayStartShifted = Math.floor(shifted / DAY_MS) * DAY_MS
+  const openShifted = dayStartShifted + ZCODE_CHECKIN_OPEN_HOUR_UTC8 * 3_600_000
+  return openShifted - QODER_BILLING_UTC_OFFSET_MS
+}
+
+/**
+ * 该渠道的「今天」是哪一天（账本日界）。
+ *
+ * ⚠️ 只有 zcode 特殊（09:00 分界）：其余渠道的上游刷新口径各不相同，但都没有
+ * 一个「19:00 才开放、09:00 就清零」的硬窗口，故沿用 00:00（`utc8DateString`）。
+ */
+export function checkinDayString(provider: string, nowMs: number = Date.now()): string {
+  return provider === ZCODE.id ? zcodeCheckinDayString(nowMs) : utc8DateString(nowMs)
+}
+
+/** 该渠道此刻是否**允许**跑（zcode 有窗口，其余渠道恒真）。 */
+export function checkinWindowOpen(provider: string, nowMs: number = Date.now()): boolean {
+  return provider === ZCODE.id ? inZcodeCheckinWindow(nowMs) : true
+}
+
+/** 该渠道当天最多跑几次（zcode 更紧，见 {@link ZCODE_MAX_ATTEMPTS_PER_DAY}）。 */
+export function maxAttemptsPerDay(provider: string): number {
+  return provider === ZCODE.id ? ZCODE_MAX_ATTEMPTS_PER_DAY : AUTO_CHECKIN_MAX_ATTEMPTS_PER_DAY
+}
 
 /**
  * 「UTC+8 当天 00:00」的绝对毫秒。
@@ -537,10 +657,20 @@ export function utc8RefreshBoundaryMs(nowMs: number = Date.now()): number {
 export function nextAttemptAt(
   entry: AutoCheckinProviderLedger | undefined,
   nowMs: number = Date.now(),
+  provider?: string,
 ): number | null {
-  if (entry === undefined || entry.day !== utc8DateString(nowMs)) return nowMs
+  /**
+   * ⚠️ 窗口门控必须**先于**账本判断（zcode）：
+   * 窗口外的 `preview` 是空列表，跑了会被误判成「今天已签」并锁死当天
+   * （见 {@link ZCODE_CHECKIN_OPEN_HOUR_UTC8}）。故窗口外一律返回「窗口打开时刻」，
+   * 无论是「今天还没跑」还是「待补跑」。
+   */
+  if (provider !== undefined && !checkinWindowOpen(provider, nowMs)) {
+    return nextZcodeWindowOpenMs(nowMs)
+  }
+  if (entry === undefined || entry.day !== checkinDayString(provider ?? '', nowMs)) return nowMs
   if (entry.status !== 'pending') return null
-  if (entry.attempts >= AUTO_CHECKIN_MAX_ATTEMPTS_PER_DAY) return null
+  if (entry.attempts >= maxAttemptsPerDay(provider ?? '')) return null
   const last = entry.lastAt > 0 ? entry.lastAt : nowMs
   if (entry.lastOutcome === 'stale' || entry.lastOutcome === 'none') {
     const boundary = utc8RefreshBoundaryMs(nowMs)
@@ -553,8 +683,9 @@ export function nextAttemptAt(
 export function providerNeedsRun(
   entry: AutoCheckinProviderLedger | undefined,
   nowMs: number = Date.now(),
+  provider?: string,
 ): boolean {
-  const at = nextAttemptAt(entry, nowMs)
+  const at = nextAttemptAt(entry, nowMs, provider)
   return at !== null && at <= nowMs
 }
 
@@ -570,12 +701,12 @@ export function pendingProviderCount(
   nowMs: number = Date.now(),
   only?: readonly string[],
 ): number {
-  const day = utc8DateString(nowMs)
   const keys = only ?? Object.keys(providers)
   let count = 0
   for (const provider of keys) {
     const entry = providers[provider]
-    if (entry !== undefined && entry.day === day && entry.status === 'pending') count += 1
+    // ⚠️ 日界必须 per-provider（zcode 是 09:00 分界，见 `checkinDayString`）。
+    if (entry !== undefined && entry.day === checkinDayString(provider, nowMs) && entry.status === 'pending') count += 1
   }
   return count
 }
@@ -596,7 +727,7 @@ export function nextPendingAttemptAt(
   const keys = only ?? Object.keys(providers)
   let best: number | null = null
   for (const provider of keys) {
-    const at = nextAttemptAt(providers[provider], nowMs)
+    const at = nextAttemptAt(providers[provider], nowMs, provider)
     if (at === null || at >= endOfDay) continue
     if (best === null || at < best) best = at
   }
@@ -780,7 +911,19 @@ export function isUnsupportedCheckin(message: string): boolean {
  *   浏览器弹出来是用户自己能理解的交互。
  */
 export function isAutoCheckinExcluded(provider: string): boolean {
-  return provider === ZCODE.id
+  /**
+   * ★ 2026-11-04：**不再排除 zcode**（用户要求实现自动签到）。
+   *
+   * 原排除理由是「每次领取都要现场产 captcha，会拉起 headful Chromium，且
+   * 阿里云按设备限流」。用户的接受条件是「一天一次、失败限流」—— 这两条现在都由
+   * {@link ZCODE_MAX_ATTEMPTS_PER_DAY}（2 轮/天）+ 签到窗口
+   * （{@link ZCODE_CHECKIN_OPEN_HOUR_UTC8}：19:00 前不跑）保证：
+   * 一个 zcode 签到日最多 2 轮 × 3 账号 = 6 次 captcha，且窗口外一次都不跑。
+   *
+   * ⚠️ 保留本函数（而不是删掉）：将来若又出现「必须用户在场」的渠道，登记点在这里；
+   * 且它仍被 `performRun` 显式调用，删掉会改变调用图（守护用例也在）。
+   */
+  return false
 }
 
 /** 把一轮结果拼成一句中文摘要（给状态灯提示与日志用）。 */
@@ -1078,6 +1221,17 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
    * 静默吞掉。两者都由 `stop()` 取消。
    */
   let followUp: { cancel(): void } | null = null
+  /**
+   * ★ **签到窗口打开**那一枪（2026-11-04，用户要求「每天 19:00 准点自动跑一次」）。
+   *
+   * 与 {@link followUp} 的区别：`followUp` 排的是「待补跑渠道的最早可跑时刻」
+   * （`nextPendingAttemptAt`，账本里**已有** pending 条目才算），而启动时若账本里
+   * 还没有 zcode 今天的条目（例如上午 10 点启动、19 点才开窗），`followUp` 排不出
+   * 任何东西 —— 用户就得等到下次启动。这个槽专门为「窗口打开」补上那一枪。
+   *
+   * 三个槽互不复用：共用会让「已排定」的判断互相吞掉（见 {@link followUp} 的说明）。
+   */
+  let windowTimer: { cancel(): void } | null = null
 
   const today = (): string => utc8DateString(now())
 
@@ -1099,10 +1253,23 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
        * ⚠️ 只返回**今天**的行：跨日后旧行留在磁盘上无妨（下次写会归零），
        * 但界面上「今日领取」不能显示昨天的记录。
        *
-       * ⚠️ 判据是 `resultsDay` 而**不是** `lastDate`：后者只由自动签到那一轮写，
+       * ⚠️ 判据是「这一行自己的签到日」而**不是** `lastDate`：后者只由自动签到那一轮写，
        * 手动领取不会动它 —— 用 `lastDate` 会把手动领到的行判成"昨天的"而清空。
+       *
+       * ★ 2026-11-04：日界**逐行判**（`row.day ?? doc.resultsDay` 与该渠道的今日比）。
+       * 全局 `resultsDay === today()` 有两个副作用：
+       * 1. zcode 的签到日是 09:00 分界（`19:00 → 次日 09:00`）—— `00:30` 时全局
+       *    判据会把昨晚 20:00 领的 zcode 行判成「昨天」而清空，与用户要求的
+       *    「09:00 刷新」相反；
+       * 2. 反过来，任何一次按 zcode 日界写的 `resultsDay` 都会污染其他渠道的行。
+       * 逐行携带日界后，两边互不影响。
        */
-      results: doc.resultsDay === today() ? doc.results.map((row) => ({ ...row })) : [],
+      results: doc.results
+        .filter((row) => {
+          const day = row.day ?? doc.resultsDay
+          return day !== '' && day === checkinDayString(row.provider, now())
+        })
+        .map((row) => ({ ...row })),
       // 面板据它决定要不要渲染那行常驻状态文字
       dismissed: doc.lastAt > 0 && doc.dismissedRunAt === doc.lastAt,
     }
@@ -1111,12 +1278,14 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
   /** 今天这个渠道的账本条目（跨日的条目一律视为不存在，见 `nextAttemptAt`）。 */
   function ledgerEntry(provider: string): AutoCheckinProviderLedger | undefined {
     const entry = doc.providers[provider]
-    return entry !== undefined && entry.day === today() ? entry : undefined
+    // ⚠️ 日界 per-provider：zcode 的一天是 `19:00 → 次日 09:00`（09:00 分界），
+    // 用全局 `today()`（00:00 分界）会把同一个 zcode 签到日劈成两天。
+    return entry !== undefined && entry.day === checkinDayString(provider, now()) ? entry : undefined
   }
 
   /** 本轮要不要跑这个渠道（跳过 = 今天已完成 / 已放弃 / 还没到重试时刻）。 */
   function shouldRunProvider(provider: string): boolean {
-    return providerNeedsRun(ledgerEntry(provider), now())
+    return providerNeedsRun(ledgerEntry(provider), now(), provider)
   }
 
   /** 把一条账本写回（返回新文档对象，不改 `doc` 里的旧账本）。 */
@@ -1130,7 +1299,12 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
 
   async function performRun(providerIds: readonly string[]): Promise<void> {
     const totals = emptyTotals()
-    const day = today()
+    /**
+     * ⚠️ 账本日界**不能**在这里算一次全局值：zcode 的一天是 `19:00 → 次日 09:00`
+     * （{@link zcodeCheckinDayString}），与其它渠道的 00:00 不同源。故每个渠道
+     * 各取一次（`dayOf(provider)`）。
+     */
+    const dayOf = (provider: string): string => checkinDayString(provider, now())
     const runAt = now()
     const providers = [...providerIds]
     // ★ 本轮要跑的渠道 = 今天还没处理完的那些（per-provider 判据）。
@@ -1155,6 +1329,7 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
       const attempts = (previous?.attempts ?? 0) + 1
       // 记录一次「真跑过 claimAll」的尝试（跳过不计）。先落盘尝试次数，再打上游：
       // 万一这一轮把宿主拖崩，下次启动也不会把「没记过的重试」变成无限重试。
+      const day = dayOf(provider)
       const base: AutoCheckinProviderLedger = {
         day,
         status: 'pending',
@@ -1164,13 +1339,36 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
         lastText: previous?.lastText ?? '',
       }
       // ⚠️ 排除表先于**任何**上游请求生效（见 isAutoCheckinExcluded 的说明）：
-      // zcode 的代价发生在**调用期间**（拉起浏览器产 captcha），事后再判断已经
-      // 太晚 —— 必须在调 `claim` 之前就把它摘掉。
+      // 代价发生在**调用期间**（拉起浏览器产 captcha），事后再判断已经太晚 ——
+      // 必须在调 `claim` 之前就把它摘掉。
       if (isAutoCheckinExcluded(provider)) {
         totals.skipped += 1
         texts.set(provider, '需手动签到')
         // 排除的渠道今天不再跑（重试没有意义，且每次都有代价）。
         ledgers = withLedger(ledgers, provider, { ...base, attempts: 0, lastOutcome: 'skipped', status: 'skipped', lastText: '需手动签到' })
+        continue
+      }
+      /**
+       * ★ 签到窗口门控（2026-11-04，用户要求「每天 19:00 之后才能签」）。
+       *
+       * 窗口外**绝不**打上游：zcode 的 `preview` 在窗口外回空列表，跑了只会被
+       * 误判成「今天已签」而不写 `lastDate` ⇒ 每次启动重来（白烧 captcha），
+       * 更糟的是会把当天记成 `done` 而**19:00 之后不再跑**（真漏签）。
+       *
+       * 记账上留 `pending` 且 `attempts` 不增：这不是一次尝试，只是「还没到点」。
+       * 面板给出可读的窗口提示，用户不必猜为什么没动静。
+       */
+      if (!checkinWindowOpen(provider, now())) {
+        const hour = ZCODE_CHECKIN_OPEN_HOUR_UTC8
+        const text = `每日 ${hour}:00 后可签到`
+        texts.set(provider, text)
+        ledgers = withLedger(ledgers, provider, {
+          ...base,
+          attempts: previous?.attempts ?? 0,
+          lastOutcome: 'none',
+          status: 'pending',
+          lastText: text,
+        })
         continue
       }
       /**
@@ -1278,7 +1476,9 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
       // 面板那句「今日已自动签到」读的就是它 —— 若整轮全失败也写成今天，界面会
       // 说「今日已签到」而用户一分没领到（方向不可逆的误报）。「今天还要不要再跑」
       // 完全看 `providers`，与这个展示字段无关。
-      lastDate: totals.coversToday > 0 ? day : doc.lastDate,
+      // ⚠️ `lastDate` 走**全局 00:00 口径**（`utc8DateString`），不是 per-provider 日界：
+      // 它是面板那句「今日已自动签到」的数据源，改动会波及所有渠道的展示。
+      lastDate: totals.coversToday > 0 ? utc8DateString(runAt) : doc.lastDate,
       lastResult: result,
       lastAt: runAt,
       providers: pruned,
@@ -1309,8 +1509,8 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
     const left = pendingProviderCount(pruned, runAt, providers)
     deps.warn?.(
       left === 0
-        ? `[channel-pack] 自动签到完成（${day}）：${result}`
-        : `[channel-pack] 自动签到本轮结束（${day}），${left} 个渠道待补跑：${result}`,
+        ? `[channel-pack] 自动签到完成（${utc8DateString(runAt)}）：${result}`
+        : `[channel-pack] 自动签到本轮结束（${utc8DateString(runAt)}），${left} 个渠道待补跑：${result}`,
     )
   }
 
@@ -1348,6 +1548,42 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
     deps.warn?.(`[channel-pack] 自动签到：${Math.round(ms / 60_000)} 分钟后补跑未完成的渠道`)
   }
 
+  /**
+   * 排一枪「下一个签到窗口打开时再跑」（目前只有 zcode 有窗口）。
+   *
+   * 调用点在 `start()` 与 `runIfDue()` 末尾：窗口外启动 → 排到 19:00；
+   * 到点跑完（无论成败）→ 这里会因为「已在窗口内」而不排，避免自旋。
+   *
+   * ⚠️ 与 `followUp` 一样必须 `unref()`（见 `defaultSchedule`），否则一个等到
+   * 19:00 的定时器会拖住宿主进程退出。
+   */
+  function scheduleWindowWake(providerIds: readonly string[]): void {
+    if (!doc.enabled) return
+    if (windowTimer !== null) return
+    // 只有真有窗口的渠道在场时才排（其余渠道没有窗口，排了就是空转）。
+    const windowed = providerIds.filter((provider) => checkinWindowOpen(provider, now()) === false)
+    if (windowed.length === 0) return
+    const at = nextZcodeWindowOpenMs(now())
+    if (at <= now()) return
+    const ms = at - now()
+    /**
+     * @cap 24 小时：`nextZcodeWindowOpenMs` 正常不会给出更远的时刻（最多当天 19:00），
+     * 但 `setTimeout` 的 32 位溢出（> 约 24.8 天会立刻触发）必须挡住 —— 溢出的
+     * 后果是「一排就立刻跑」，那是窗口外跑 zcode，会被误判成今天已签。
+     */
+    if (ms > DAY_MS) return
+    const fire = (): void => {
+      windowTimer = null
+      if (!doc.enabled) return
+      deps.warn?.('[channel-pack] 自动签到：zcode 签到窗口已打开（19:00），开始跑一轮')
+      void runIfDue()
+    }
+    windowTimer = (deps.schedule ?? defaultSchedule)(fire, ms)
+    deps.warn?.(
+      `[channel-pack] 自动签到：zcode 签到窗口将于 ${Math.round(ms / 60_000)} 分钟后打开，已排定到点自动跑`,
+    )
+  }
+
   function runIfDue(): Promise<void> {
     if (inflight !== null) return inflight
     if (!doc.enabled) return Promise.resolve()
@@ -1375,6 +1611,9 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
         // 失败过）⇒ 把补跑排到最早那一刻，别让用户非等到下次启动。
         // ⚠️ `scheduleFollowUp` 取的是**未来**时刻，故不会自旋（见那里的说明）。
         if (pendingProviderCount(doc.providers, now(), providerIds) > 0) scheduleFollowUp(providerIds)
+        // ★ 19:00 前启动的常见形态就落在这里（zcode 还没到窗口）⇒ 必须排窗口枪，
+        // 否则用户上午开 DSH、晚上一直开着，就永远不会自动签。
+        scheduleWindowWake(providerIds)
         return
       }
       running = true
@@ -1386,6 +1625,9 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
         followUp?.cancel()
         followUp = null
       }
+      // 窗口外（19:00 之前 / 09:00 之后已跑完的那种）⇒ 排到窗口打开时刻。
+      // 窗口内调用恒不排（`scheduleWindowWake` 自己判），故不会自旋。
+      scheduleWindowWake(providerIds)
     })().catch((error: unknown) => {
       deps.warn?.(`[channel-pack] 自动签到异常: ${String(error)}`)
     }).finally(() => {
@@ -1405,6 +1647,8 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
       if (!enabled) {
         followUp?.cancel()
         followUp = null
+        windowTimer?.cancel()
+        windowTimer = null
       }
       // 打开开关时立刻尝试一轮（今天已跑过则由 runIfDue 内部拦住）。
       // ⚠️ 不 await：一轮要串行打十几个上游，让按钮等它会让界面像卡死；
@@ -1429,7 +1673,8 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
     runIfDue,
     async recordClaimResult(provider, value) {
       if (value === undefined) return
-      const day = today()
+      // ⚠️ 手动签到与自动签到共用本方法 ⇒ 日界必须与自动那边同源（zcode 09:00）。
+      const day = checkinDayString(provider, now())
       const summary = value.summary
       if (summary === undefined) return
       // 与 `providers` 的记账判据同源：只收**覆盖今天**的结果。
@@ -1438,14 +1683,82 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
       if (coversToday <= 0) return
       const incoming = aggregateAccountRows(provider, value.results ?? [])
       if (incoming.length === 0) return
-      // 跨日归零：昨天的明细不能混进「今日领取」。
-      const base = doc.resultsDay === day ? doc.results : []
+      // ★ 每行带上自己的签到日（zcode 09:00 分界，其余 00:00；见 `checkinDayString`）。
+      for (const row of incoming) row.day = day
+      /**
+       * 跨日归零：**只**与同一签到日的旧行合并（逐行判，不是全局 `resultsDay`）。
+       * 否则 zcode 的 09:00 日界会把其他渠道昨天的行一起保留/清掉。
+       */
+      const base = doc.results.filter((row) => (row.day ?? doc.resultsDay) === day)
       const merged = new Map(base.map((row) => [`${row.provider}\u0000${row.accountId}`, row]))
       for (const row of incoming) {
         const key = `${row.provider}\u0000${row.accountId}`
         merged.set(key, mergeAccountResult(merged.get(key), row))
       }
-      doc = { ...doc, results: [...merged.values()], resultsDay: day }
+      /*
+       * ★ 同步更新**渠道级**状态（真实缺陷，用户 2026-11-04 报「你帮我签到成功后
+       * 好像没有写进插件里」）。
+       *
+       * 症状：手动点「一键领取」成功、逐账号明细也落了盘，但面板上该渠道那行
+       * 永远停在自动签到留下的旧文案 —— zcode 就是「需手动签到」，因为它在
+       * `isAutoCheckinExcluded` 排除表里，自动签到每轮都只在 `providers` 里写
+       * `skipped`，**从不**由 claim 结果回填。于是用户看到「签到成功了」与
+       * 「面板还说要手动签到」并存，无法判断到底成没成。
+       *
+       * 口径与自动签到那一轮一致（`performRun` 的 `coversToday > 0` 分支）：
+       * 覆盖到今天就把状态记成 `done`，文案用同一套 `describeChannel`，
+       * 保证手动与自动写出来的行**长得一样**。
+       *
+       * ⚠️ 只覆盖 `done`，不动 `pending`/`given-up`：那是自动签到「还要再试」
+       * 的判断依据，手动领一笔不该把它清掉。
+       */
+      const text = describeChannel(summary)
+      const previousLedger = ledgerEntry(provider)
+      const sameDay = previousLedger?.day === day
+      /*
+       * ★ 结局**只许升级、不许降级**：同一天里领到过（`claimed`）之后，用户再点
+       * 一次「一键领取」上游只会回「今天已领」——若照抄那条，面板就从「2 个 +600M」
+       * 退回「1 个今天已领」，看起来像刚才那笔没了（与 `mergeAccountResult` 同一条
+       * 语义，两处必须一致，否则表格说领到了、状态行说没领到）。
+       */
+      const rankOf = (outcome: AutoCheckinProviderLedger['lastOutcome'] | undefined): number =>
+        outcome === 'claimed' ? 3 : outcome === 'already-claimed' ? 2 : outcome === 'failed' ? 1 : 0
+      const incomingOutcome: AutoCheckinProviderLedger['lastOutcome'] =
+        summary.claimed > 0 ? 'claimed' : 'already-claimed'
+      const keepPrevious = sameDay === true && rankOf(previousLedger?.lastOutcome) > rankOf(incomingOutcome)
+      const ledger: AutoCheckinProviderLedger = {
+        day,
+        status: 'done',
+        // 手动领取不是自动那一轮的「尝试」，别虚增重试计数（虚增会让
+        // `given-up` 提前触发，自动签到少试几次）。
+        attempts: sameDay ? previousLedger.attempts : 0,
+        lastAt: now(),
+        lastOutcome: keepPrevious ? previousLedger.lastOutcome : incomingOutcome,
+        lastText: keepPrevious ? previousLedger.lastText : text,
+      }
+      const channels = doc.channels.some((entry) => entry.provider === provider)
+        ? doc.channels.map((entry) => (entry.provider === provider ? { provider, text: ledger.lastText } : entry))
+        : [...doc.channels, { provider, text: ledger.lastText }]
+      /**
+       * ⚠️ 写回时**保留其他渠道仍在有效期内的行**（真实隐患）：
+       * `merged` 只含「本渠道同一签到日」的行，直接整体替换会把别的渠道刚领的
+       * 行一起删掉 —— 尤其 `00:30` 这类「zcode 还是昨天、其他渠道已是今天」的
+       * 时刻，zcode 领一次就会清空其他渠道当天的表格。
+       */
+      const others = doc.results.filter((row) => {
+        if (row.provider === provider) return false
+        const rowDay = row.day ?? doc.resultsDay
+        return rowDay !== '' && rowDay === checkinDayString(row.provider, now())
+      })
+      doc = {
+        ...doc,
+        results: [...others, ...merged.values()],
+        // 全局字段只服务**旧文档**（行上没有 `day` 时回落到它）：保持 00:00 口径，
+        // 不写 zcode 的 09:00 日界，否则会给其他渠道的旧行换了参照系。
+        resultsDay: utc8DateString(now()),
+        providers: withLedger(doc.providers, provider, ledger),
+        channels: sanitizeChannels(channels),
+      }
       try {
         await deps.store.save(doc)
       } catch (error) {
@@ -1469,6 +1782,8 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
       pending = null
       followUp?.cancel()
       followUp = null
+      windowTimer?.cancel()
+      windowTimer = null
     },
   }
 }
