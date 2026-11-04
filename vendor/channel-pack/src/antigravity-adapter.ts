@@ -24,7 +24,6 @@ import {
   isContextWindowExceededError,
   LlmAdapter,
   LlmError,
-  ReasoningEffortId,
 } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions,

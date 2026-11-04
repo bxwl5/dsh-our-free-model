@@ -316,7 +316,19 @@ async function convertMessage(
   if (!raw || typeof raw !== 'object') throw new OpenAiGatewayError('messages entries must be objects')
   const value = raw as OpenAiChatMessage
   const role = value.role
-  if (role === 'system') {
+  /**
+   * ⚠️ `developer` 必须与 `system` **同等对待**（2026-11-04 审查 P1-3）。
+   *
+   * OpenAI 自 o1 起用 `developer` 取代 `system` 承载指令层，各家客户端
+   * （Codex CLI 等）已经在发它。而 `/v1/responses`（本文件同目录的
+   * `responses.ts:463`）早就把两者并列接受 —— **只有 Chat 端点拒收** ⇒
+   * 同一份提示词换个端点就 400 `unsupported message role: developer`，
+   * 用户完全无从判断为什么。
+   *
+   * DSH 侧没有 `developer` 角色，语义上它就是「以开发者身份下发的系统指令」，
+   * 故一律落到 `system`。
+   */
+  if (role === 'system' || role === 'developer') {
     // ⚠️ 上游后端有**内容级**风控：客户端自带的模板句（如 ZCode 的 gitStatus
     // 注入）会让整轮请求 400 + 11128。自 2026-11-04 起改写是**全渠道**的
     // （用户要求「全部模型、包含免费模型」），规则表见 ../content-fingerprint.ts；

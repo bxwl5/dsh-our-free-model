@@ -21,6 +21,7 @@ import {
   registerAdapterIdempotent,
 } from './llm-register-compat.js'
 import { reportLedgerAccount } from './token-ledger.js'
+import { baseHttpErrorCode, serializeMessages as originSerializeMessages } from './openai-compat.js'
 
 export const CHAT_API_BASE = 'https://snap-access.cn-north-4.myhuaweicloud.com/api/v2'
 export const PROVIDER = 'codearts'
@@ -131,73 +132,21 @@ function contentToText(content: unknown): string {
  * 判据恒不命中 → 工具调用被 `resolveToolPairing` 整体剔除。
  */
 export function serializeMessages(messages: readonly { role: string; content: unknown }[]): Array<Record<string, unknown>> {
-  const normalized = normalizeHarnessMessages(messages)
-  const wire: Array<Record<string, unknown>> = []
-  // 剔除无法配对的工具调用/结果（详见 resolveToolPairing）：孤儿 tool_calls
-  // 会让后端对之后每一条消息都返回 400，整个会话永久报废。
-  const { keepCallIds, keepResultIds } = resolveToolPairing(normalized)
-  for (const message of normalized) {
-    if (message.role === 'assistant') {
-      // 存量自愈：清洗历史里已持久化的行首 `course` / `课` 泄漏
-      // （见 `stripCourseLeakFromHistoryContent`）。只清 assistant ——
-      // 判据只对模型自己的输出成立，清洗用户输入等于篡改用户的话。
-      const content = stripCourseLeakFromHistoryContent(
-        message.role,
-        Array.isArray(message.content) ? message.content : [],
-      )
-      const toolCalls = content
-        .filter((block): block is { type: string; id: unknown; name: unknown; arguments: unknown } =>
-          typeof block === 'object' && block !== null && (block as { type?: unknown }).type === 'tool-call')
-        .filter(block => keepCallIds.has(String(block.id)))
-        .map((block) => ({
-          id: String(block.id),
-          type: 'function' as const,
-          function: { name: String(block.name), arguments: normalizeToolArguments(String(block.arguments)) },
-        }))
-      const reasoning = content
-        .filter((block): block is { type: string; text: unknown } =>
-          typeof block === 'object' && block !== null && (block as { type?: unknown }).type === 'reasoning')
-        .map((block) => String(block.text))
-        .join('')
-      const text = contentToText(content)
-      if (text.trim().length === 0 && toolCalls.length === 0) continue
-      wire.push({
-        role: 'assistant',
-        content: text,
-        // 后端（deepseek-v4-flash/pro）校验要求 assistant 消息必须包含
-        // reasoning_content 字段：历史里的推理块在上一轮被持久化，回传时
-        // 若缺失该字段会直接 400（"Missing `reasoning_content` field"）。
-        // 始终携带该字段（无推理时为空串），确保字段存在。
-        reasoning_content: reasoning,
-        ...toolCalls.length > 0 ? { tool_calls: toolCalls } : {},
-      })
-      continue
-    }
-    if (message.role === 'system') {
-      wire.push({ role: 'system', content: contentToText(message.content) })
-      continue
-    }
-    // user 角色：工具结果搭载在 harness 用户消息中；将每个展开为
-    // 独立的 role:'tool' 传输消息，与 deepseek 适配器的行为一致。
-    const content = Array.isArray(message.content) ? message.content : []
-    const toolResults = content.filter((block): block is { type: string; toolCallId: unknown; content: unknown } =>
-      typeof block === 'object' && block !== null && (block as { type?: unknown }).type === 'tool-result')
-    // 纯文本 user 消息（字符串 content）需原样传递：contentToText 处理
-    // 字符串时直接返回，但这里不能用 `content`（非数组时为 []）——否则
-    // 字符串 user 消息会被序列化成空串，模型看不到任务指令。
-    const text = contentToText(message.content)
-    if (text.trim().length > 0) wire.push({ role: 'user', content: text })
-    for (const result of toolResults) {
-      // 丢弃孤儿工具结果：没有对应 tool_call 其结果同样会让后端 400。
-      if (!keepResultIds.has(String(result.toolCallId))) continue
-      wire.push({
-        role: 'tool',
-        tool_call_id: String(result.toolCallId),
-        content: contentToText(result.content) || '(no output)',
-      })
-    }
-  }
-  return wire
+  /**
+   * ⚠️ **不要再在本文件里维护第二份实现**（2026-11-04 全仓审查 M-1）。
+   *
+   * 这里原先有 127 行的独立副本，与 `openai-compat.ts` 那份逻辑同构。
+   * 代价不是「重复」本身，而是**修复只落到一处**：`resolveToolPairing`
+   * 的配对规则改进过一次，当时只改了 `openai-compat`，CodeArts 继续发孤儿
+   * `tool_calls` ⇒ 后端 400、会话永久报废（正是该函数注释里记录的
+   * 「任务突然中断、此后发任何内容都没有回复」事故）。
+   *
+   * CodeArts 的形态差异只有两条，都通过策略开关表达：
+   * - `reasoningContent: 'always'` —— deepseek-v4 后端**校验要求**该字段存在，
+   *   缺失直接 400 `Missing \`reasoning_content\` field`；
+   * - 正文为空 + 有工具调用时 content 发**空串**（不是 null）—— 该网关只收字符串。
+   */
+  return originSerializeMessages(messages, { reasoningContent: 'always' })
 }
 
 /**
@@ -567,21 +516,12 @@ function errorDetail(body: string): string {
  * 而不是不可重试的 HTTP_400，避免长会话在接近窗口上限时直接中断。
  */
 function httpErrorCode(status: number, body: string): string {
-  if (status === 401 || status === 403) return 'AUTH'
+  // ① 纯状态码部分统一走共享表（2026-11-04 全仓审查 M-3）。
+  // ② 再叠加本适配器特有的**响应体**分类（CodeArts 的额度文案与上下文超限措辞）。
   const detail = errorDetail(body)
   if (isQuotaExceededError(detail)) return QUOTA_EXCEEDED_CODE
-  // ⚠️ HTTP 402 必须显式归一（2026-11-04 全仓审查）：`402 Payment Required`
-  // 是**额度用尽**的规范码，与 429（限流，等一会儿会恢复）用户动作完全相反。
-  // 原先落进兜底 `HTTP_402` ⇒ 不在 harness 的可重试集合里、也不触发换号，
-  // 于是「额度已用尽」被当成一个陌生的 HTTP 错误直接抛给用户。
-  if (status === 402) return QUOTA_EXCEEDED_CODE
-  if (status === 429) return 'RATE_LIMIT'
-  if (status === 400) {
-    if (isContextWindowExceededError(detail)) return CONTEXT_WINDOW_EXCEEDED_CODE
-    return 'INVALID_REQUEST'
-  }
-  if (status >= 500) return 'SERVER'
-  return `HTTP_${status}`
+  if (status === 400 && isContextWindowExceededError(detail)) return CONTEXT_WINDOW_EXCEEDED_CODE
+  return baseHttpErrorCode(status)
 }
 
 /** 可中止的休眠；当信号中止时立即 resolve。 */
@@ -1911,21 +1851,28 @@ export class CodeArtsAdapter extends LlmAdapter {
             }
           }
           if (data.usage) {
-            const promptTokens = data.usage.prompt_tokens ?? 0
+            // ⚠️ 与 `openai-compat.ts` 同口径（2026-11-04 审查 P1-6）：缺失字段
+            // **不得**写成 0，否则「未上报」被下游记成「报了 0」，面板显示
+            // 「0 token」而不是 `—`，台账也照记 0。两个关键字段都缺 ⇒ 不发帧。
+            const promptTokens = data.usage.prompt_tokens
             const cachedTokens = (data.usage as { prompt_tokens_details?: { cached_tokens?: number } }).prompt_tokens_details?.cached_tokens
               ?? (data.usage as { prompt_cache_hit_tokens?: number }).prompt_cache_hit_tokens
-              ?? 0
             const cacheWriteTokens = (data.usage as { prompt_tokens_details?: { cache_write_tokens?: number } }).prompt_tokens_details?.cache_write_tokens
+            const outputTokens = data.usage.completion_tokens
             const reasoningTokens = (data.usage as { completion_tokens_details?: { reasoning_tokens?: number } }).completion_tokens_details?.reasoning_tokens
-            yield {
-              type: 'usage',
-              usage: {
-                inputTokens: cachedTokens > 0 ? promptTokens - cachedTokens : promptTokens,
-                outputTokens: data.usage.completion_tokens ?? 0,
-                ...cachedTokens > 0 ? { cacheReadTokens: cachedTokens } : {},
-                ...cacheWriteTokens !== undefined && cacheWriteTokens > 0 ? { cacheWriteTokens } : {},
-                ...reasoningTokens !== undefined && reasoningTokens > 0 ? { reasoningTokens } : {},
-              },
+            // ⚠️ 同 `openai-compat.ts`：字段必填、稀疏不可行 ⇒ 两个关键字段
+            // 都拿到才发帧，否则整帧不发（= 如实「未上报」）。
+            if (promptTokens !== undefined && outputTokens !== undefined) {
+              yield {
+                type: 'usage',
+                usage: {
+                  inputTokens: cachedTokens !== undefined && cachedTokens > 0 ? promptTokens - cachedTokens : promptTokens,
+                  outputTokens,
+                  ...cachedTokens !== undefined && cachedTokens > 0 ? { cacheReadTokens: cachedTokens } : {},
+                  ...cacheWriteTokens !== undefined && cacheWriteTokens > 0 ? { cacheWriteTokens } : {},
+                  ...reasoningTokens !== undefined && reasoningTokens > 0 ? { reasoningTokens } : {},
+                },
+              }
             }
           }
         }

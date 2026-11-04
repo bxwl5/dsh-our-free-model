@@ -102,3 +102,44 @@ import { exitIfDirectRun } from './lib/direct-run.mjs'
 if (!exitIfDirectRun(import.meta.url, 'channel-error-codes-test')) {
   await verifyChannelErrorCodes()
 }
+
+/**
+ * 第二部分：`{error:{...}}` 帧必须**分类**，不能一律 `SERVER`。
+ *
+ * ## 背景（2026-11-04 审查 P2-3）
+ *
+ * `SERVER` 在 harness 的 `DEFAULT_RETRYABLE_CODES` 里。一个「模型不存在」被归成
+ * `SERVER` 就会被**白退避重试 5 次**（≈15.5 秒），用户看到「重试延迟：7220毫秒」，
+ * 真正的原因被重试掩盖。同文件里「Qoder 风格错误帧」早就做了区分，只有这条
+ * 最常见的 OpenAI 形态没做。
+ */
+export async function verifyErrorFrameClassification() {
+  const compat = await import('../vendor/channel-pack/src/openai-compat.ts')
+  assert.equal(typeof compat.classifyErrorFrame, 'function', 'classifyErrorFrame 必须导出')
+
+  const cases = [
+    // [error 帧, 期望码, 理由]
+    [{ code: 'model_not_found', message: 'model xyz does not exist' }, 'INVALID_REQUEST', '模型不存在是确定性的'],
+    [{ type: 'invalid_request_error', message: 'bad param' }, 'INVALID_REQUEST', '参数非法'],
+    [{ code: 'billing_error', message: 'billing daily count exceeded' }, 'QUOTA_EXCEEDED', '额度耗尽'],
+    [{ code: 'insufficient_quota', message: 'no balance' }, 'QUOTA_EXCEEDED', '余额不足'],
+    [{ code: 'invalid_api_key', message: 'bad key' }, 'AUTH', '凭据坏了，重试必然再坏'],
+    [{ code: 'rate_limit_exceeded', message: 'slow down' }, 'RATE_LIMIT', '限流是可以等的'],
+    [{ code: 'context_length_exceeded', message: 'too long' }, 'CONTEXT_WINDOW_EXCEEDED', '交给 compaction'],
+    [{ code: 'unknown_thing', message: 'mystery' }, 'SERVER', '拿不准就保持历史行为（可重试）'],
+    [{ message: 'upstream exploded' }, 'SERVER', '只有 message 时保守归 SERVER'],
+  ]
+  for (const [frame, expected, why] of cases) {
+    assert.equal(compat.classifyErrorFrame(frame), expected,
+      `${JSON.stringify(frame)} 应归 ${expected}（${why}）`)
+  }
+
+  // ⚠️ 关键：确定性的错误**不得**是 SERVER（否则被白重试 5 次）。
+  const retryable = new Set(['RATE_LIMIT', 'SERVER', 'TIMEOUT', 'TRANSPORT', 'EMPTY_RESPONSE'])
+  for (const frame of [{ code: 'model_not_found' }, { code: 'billing_error' }, { code: 'invalid_api_key' }]) {
+    assert.equal(retryable.has(compat.classifyErrorFrame(frame)), false,
+      `${JSON.stringify(frame)} 不能被归成可重试码`)
+  }
+
+  console.log('ok  错误帧分类：确定性错误不再落 SERVER（模型不存在/额度/鉴权/上下文超限）')
+}

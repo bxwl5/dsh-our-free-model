@@ -759,7 +759,22 @@ export async function* consumeGeminiSse(
   // **不会重试**。
   if (!sawAnyChunk) throw new Error('antigravity: 模型未返回任何内容块')
 
-  yield { type: 'usage', usage: { inputTokens: 0, outputTokens: 0, ...usage } }
+  /**
+   * ⚠️ **不得** `{ inputTokens: 0, outputTokens: 0, ...usage }`（2026-11-04 审查 P1-1）。
+   *
+   * 那个写法把「上游压根没给 usageMetadata」（`usage === undefined`）硬说成
+   * 「报了 0 token」。下游 `llm-register-compat` 把「收到 usage 帧」等价于
+   * `usageReported = true` ⇒ 面板显示 `0`（读起来像「瞬间完成、没花额度」），
+   * 台账也照记 0，与真实消耗完全脱节。
+   *
+   * 正确口径与 `cline-adapter.ts` 一致：**未收到就不发帧**，展示层自然会显示 `—`。
+   * `readGeminiUsage` 本身已经是稀疏的 `Partial<TokenUsage>`，直接透传即可。
+   */
+  // ⚠️ `TokenUsage.inputTokens/outputTokens` 是必填的，故这里也必须给齐两个
+  // 关键字段；上游只给了 totalTokenCount 这类残缺 usage 时整帧不发。
+  if (usage !== undefined && usage.inputTokens !== undefined && usage.outputTokens !== undefined) {
+    yield { type: 'usage', usage: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, ...usage } }
+  }
   yield { type: 'finish', reason: mapGeminiFinish(finishReason, toolCount) }
 }
 

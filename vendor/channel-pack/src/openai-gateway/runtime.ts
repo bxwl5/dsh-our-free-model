@@ -64,11 +64,6 @@ export function registerGatewayFactory(create: GatewayFactory): void {
   }
 }
 
-/** 读取用户选择的期望状态。 */
-export function gatewayDesiredEnabled(): boolean {
-  return desiredEnabled
-}
-
 /** 记录用户选择的期望状态（**不**启停，由 {@link applyGatewayDesiredState} 收敛）。 */
 export function setGatewayDesiredEnabled(enabled: boolean): void {
   desiredEnabled = enabled

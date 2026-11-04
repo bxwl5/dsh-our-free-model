@@ -734,11 +734,35 @@ export interface OfficeAceTokenRate {
 }
 
 const TOKEN_RATES_TTL_MS = 20 * 60 * 1000
-let tokenRatesCache: { at: number; map: Map<string, number> } = { at: 0, map: new Map() }
+
+/**
+ * 倍率缓存 —— **按凭据隔离**（2026-11-04 审查 P1-6）。
+ *
+ * ## 为什么必须带凭据维度
+ *
+ * 原实现是一个模块级单例 `{ at, map }`。多账号场景下：
+ * 账号 A 拉了倍率表 → 5 分钟后切到账号 B → B 直接命中 A 的缓存，
+ * **展示的是 A 的倍率**。而 `resolveSubscriptionGateway(credential)` 说明
+ * 每个账号可能落在**不同的网关**（`modelgw-xxxx`），倍率表本来就不是同一份。
+ *
+ * 后果不是「数字略偏」：倍率决定**积分消耗**，A 的 0.08x 与 B 的 2.38x
+ * 差近 30 倍，用户会据此判断「这个模型值不值得用」。
+ *
+ * ## 键取什么
+ *
+ * `base_url + app_key`：同一账号换 secret 轮换时仍命中（`app_key` 才是身份），
+ * 同一 app_key 落在不同网关时**不**共用（那是不同上游）。
+ * ⚠️ **不**把 `app_secret` 放进键：它是机密，且键可能在诊断日志里出现。
+ */
+function tokenRatesCacheKey(credential: OfficeAceCredential): string {
+  return `${credential.base_url}\u0000${credential.app_key}`
+}
+
+const tokenRatesCache = new Map<string, { at: number; map: Map<string, number> }>()
 
 /** 清空倍率缓存（测试隔离用）。 */
 export function resetOfficeAceTokenRatesCache(): void {
-  tokenRatesCache = { at: 0, map: new Map() }
+  tokenRatesCache.clear()
 }
 
 export async function fetchTokenRates(
@@ -746,13 +770,16 @@ export async function fetchTokenRates(
   credential: OfficeAceCredential,
   options: { signal?: AbortSignal } = {},
 ): Promise<Map<string, number>> {
-  if (Date.now() - tokenRatesCache.at < TOKEN_RATES_TTL_MS && tokenRatesCache.map.size > 0) {
-    return tokenRatesCache.map
+  const cacheKey = tokenRatesCacheKey(credential)
+  const cached = tokenRatesCache.get(cacheKey)
+  if (cached !== undefined && Date.now() - cached.at < TOKEN_RATES_TTL_MS && cached.map.size > 0) {
+    return cached.map
   }
-  // 失败路径：保留旧缓存并重置计时（20 分钟内不重复打失败的上游）。
+  // 失败路径：保留**本凭据**的旧缓存并重置计时（20 分钟内不重复打失败的上游）。
   const keepStale = (): Map<string, number> => {
-    tokenRatesCache = { at: Date.now(), map: tokenRatesCache.map }
-    return tokenRatesCache.map
+    const previous = tokenRatesCache.get(cacheKey)?.map ?? new Map<string, number>()
+    tokenRatesCache.set(cacheKey, { at: Date.now(), map: previous })
+    return previous
   }
 
   let response: Response
@@ -788,7 +815,7 @@ export async function fetchTokenRates(
   }
   if (map.size === 0) return keepStale()
 
-  tokenRatesCache = { at: Date.now(), map }
+  tokenRatesCache.set(cacheKey, { at: Date.now(), map })
   return map
 }
 

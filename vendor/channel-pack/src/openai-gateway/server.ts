@@ -90,21 +90,49 @@ function readJson(request: IncomingMessage, signal: AbortSignal): Promise<OpenAi
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
     let size = 0
-    const abort = () => reject(new OpenAiGatewayError('request was aborted', 499, 'aborted', 'aborted'))
+    /**
+     * ⚠️ `settled` 标志（2026-11-04 审查 P2-5）。
+     *
+     * Promise 只 settle 一次，所以重复 `reject` 本身无害 —— 真正的问题是
+     * **后面那些处理器仍会跑完**：
+     * - 超限后 `request.destroy()` 触发的 `'end'`/`'error'` 仍会执行，
+     *   `end` 里会对**不完整**的 `chunks` 做一次无用的 `JSON.parse`；
+     * - 更实际的是 **abort 监听器泄漏**：它只在 `end` 里被移除，
+     *   走 `error`/超限路径时**永远不会移除** —— 长连接上每次失败都留一个。
+     *
+     * 有了标志位，所有后续处理器直接短路，监听器在任何终态都清掉。
+     */
+    let settled = false
+    const finish = (): boolean => {
+      if (settled) return false
+      settled = true
+      signal.removeEventListener('abort', abort)
+      return true
+    }
+    const fail = (error: OpenAiGatewayError): void => { if (finish()) reject(error) }
+    const abort = () => fail(new OpenAiGatewayError('request was aborted', 499, 'aborted', 'aborted'))
     signal.addEventListener('abort', abort, { once: true })
     request.on('data', (chunk: Buffer | string) => {
+      if (settled) return
       const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
       size += data.length
       if (size > BODY_LIMIT) {
-        reject(new OpenAiGatewayError('request body is too large', 413, 'invalid_request_error', 'request_too_large'))
+        fail(new OpenAiGatewayError('request body is too large', 413, 'invalid_request_error', 'request_too_large'))
         request.destroy()
         return
       }
       chunks.push(data)
     })
-    request.on('error', reject)
-    request.on('end', () => {
+    request.on('error', (error: Error) => {
+      // 超限我们已经 reject 过了：这里不能再 settle，但仍要保证监听器已清掉
+      //（`finish()` 幂等，重复调用无副作用）。
+      if (settled) { finish(); return }
+      settled = true
       signal.removeEventListener('abort', abort)
+      reject(error)
+    })
+    request.on('end', () => {
+      if (!finish()) return
       try {
         const value = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown
         if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('body must be an object')

@@ -91,10 +91,10 @@
  * 本文件保留两样东西：
  * 1. **上面的实测证据表**（哪一句被拦、改成什么放行、在哪个端点验的）—— 这是
  *    唯一能证明「这条规则不是凭空加的」的记录，删掉就等于把结论变成传说；
- * 2. 两个**兼容导出**（{@link isTencentContentFingerprintProvider} /
- *    {@link rewriteTencentContentFingerprints}），因为
- *    `openai-gateway/messages.ts`、`responses.ts`、`buddy-adapter.ts` 与
- *    `scripts/tencent-fingerprint-test.mjs` 仍在调它们。
+ * 2. **兼容导出** {@link isTencentContentFingerprintProvider}：`buddy-adapter.ts`
+ *    与 `scripts/tencent-fingerprint-test.mjs` 仍在调它（**不是**零引用，
+ *    2026-11-04 复核时对照了全仓 grep，避免误删）。
+ *    `TENCENT_PROVIDERS` 常量已于同日删除 —— 它确实全仓零引用。
  *
  * ⚠️ `isTencentContentFingerprintProvider` 现在**恒为 true**：清洗不再按 provider
  * 开关。它留着只为让「调用点先判 provider 再清」的旧写法继续编译与运行 —— 那种
@@ -102,9 +102,6 @@
  */
 
 import { rewriteContentFingerprints } from '../content-fingerprint.js'
-
-/** 曾经需要特殊处理的两个腾讯系后端（保留给诊断信息与历史对照）。 */
-export const TENCENT_PROVIDERS: readonly string[] = ['buddy', 'workbuddy']
 
 /**
  * 该 provider 是否走「内容级风控指纹清洗」。

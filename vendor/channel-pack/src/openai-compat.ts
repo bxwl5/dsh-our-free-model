@@ -159,10 +159,81 @@ export function collectImages(content: readonly unknown[], refs: Map<string, unk
  * 结果改为一等 `role:'tool'` 消息，若不归一化，下面的 `type === 'tool-result'`
  * 判据恒不命中 → 工具调用被 `resolveToolPairing` 整体剔除。
  */
+/**
+ * {@link serializeMessages} 的形态差异开关。
+ *
+ * 每一项都对应一个**真实存在**的上游差异（不是风格偏好），详见该函数的表。
+ */
+export interface SerializeMessagesOptions {
+  /** 图片 id → URL 映射；undefined = 本请求没有任何图片。 */
+  imageUrls?: ReadonlyMap<string, string>
+  /**
+   * `reasoning_content` 字段的携带策略。
+   *
+   * - `'always'`：**始终**携带（无推理时为空串）。deepseek-v4 后端校验要求
+   *   该字段存在，缺失直接 400 `Missing `reasoning_content` field`。
+   * - `'whenNonEmpty'`：只在非空时携带。多数 OpenAI 兼容后端对此更宽容，
+   *   多发空字段反而可能被严格实现当成「非法多字段」。
+   * @default 'whenNonEmpty'
+   */
+  reasoningContent?: 'always' | 'whenNonEmpty'
+  /**
+   * 正文为空但有工具调用时，`content` 是否置 `null`。
+   *
+   * `true` = 置 null（OpenAI 规范 + CodeBuddy 的 `openai_chat.rs` 行为）。
+   * `false` = 置空串（部分自研网关只接受字符串）。
+   * @default false
+   */
+  nullContentWithToolCalls?: boolean
+}
+
+/**
+ * OpenAI 兼容 wire 的消息序列化 —— **三份副本的唯一实现**
+ * （2026-11-04 全仓审查 M-1 的一部分）。
+ *
+ * ## 为什么要合并
+ *
+ * `openai-compat` / `llm-adapter`（CodeArts）/ `buddy-adapter` 曾各写一份
+ * （169 / 127 / 218 行），主体逻辑完全同构：孤儿工具调用清理、`course` 泄漏
+ * 存量自愈、思考与正文转换、内嵌工具图片挂起。**差异只有下面这几个策略开关**。
+ * 三份副本的真实代价：`resolveToolPairing` 的配对规则改进过一次，当时只改了
+ * 一处，另两处继续发孤儿 tool_calls ⇒ 后端 400、会话报废（这正是该函数注释里
+ * 记的「会话突然中断」事故）。
+ *
+ * ## 策略差异（都已确认是**有意的**，故做成开关而不是抹平）
+ *
+ * | 开关 | openai-compat | CodeArts | CodeBuddy |
+ * |---|---|---|---|
+ * | `reasoningContent: 'always'` | — | ✅ | ✅ |
+ * | `reasoningContent: 'whenNonEmpty'` | ✅ | — | — |
+ * | `nullContentWithToolCalls` | ✅ | — | ✅ |
+ * | `images` | ✅ | — | ✅ |
+ * @param messages harness 消息（`content` 可能是字符串或块数组）
+ * @param options 各适配器的形态差异（见上表）
+ */
 export function serializeMessages(
   messages: readonly { role: string; content: unknown }[],
-  imageUrls?: ReadonlyMap<string, string>,
+  options?: SerializeMessagesOptions | ReadonlyMap<string, string>,
 ): Array<Record<string, unknown>> {
+  /**
+   * ⚠️ 兼容**旧签名**（第二参直接传 `imageUrls` 这个 Map）。
+   *
+   * 2026-11-04 把第二参从 `imageUrls?: Map` 扩成 `SerializeMessagesOptions`
+   * 时，仓库里有 7 个调用点仍在传裸 Map。全部改过去当然更「干净」，但那是
+   * 一次没有收益的批量改动（7 个文件、跨 6 个适配器），而**类型兼容可以在
+   * 这里一次做完**：`ReadonlyMap` 与选项对象没有交集，判据可靠。
+   */
+  const resolved: SerializeMessagesOptions = ((): SerializeMessagesOptions => {
+    if (options === undefined) return {}
+    // 判据：有 `.get` 方法且没有自己的 `imageUrls` 键 ⇒ 旧签名的裸 Map。
+    if (typeof (options as ReadonlyMap<string, string>).get === 'function'
+      && (options as SerializeMessagesOptions).imageUrls === undefined
+      && (options as SerializeMessagesOptions).reasoningContent === undefined) {
+      return { imageUrls: options as ReadonlyMap<string, string> }
+    }
+    return options as SerializeMessagesOptions
+  })()
+  const imageUrls = resolved.imageUrls
   const normalized = normalizeHarnessMessages(messages)
   const wire: Array<Record<string, unknown>> = []
   const { keepCallIds, keepResultIds } = resolveToolPairing(normalized)
@@ -205,11 +276,20 @@ export function serializeMessages(
       // 挂起的工具结果图片必须在 assistant 之前发出，否则会漂到这条
       // assistant 之后，与产生它们的工具调用脱节。
       flushToolImages()
+      // 策略开关（见 SerializeMessagesOptions 的表）：
+      // - `nullContentWithToolCalls`：OpenAI 规范要求「无正文 + 有工具调用」时
+      //   content 为 null；但部分自研网关只收字符串，故做成开关。
+      // - `reasoningContent === 'always'`：deepseek-v4 后端校验要求该字段**存在**
+      //   （缺失直接 400 `Missing reasoning_content field`），即使推理为空也要发空串。
+      const assistantContent = text.length === 0 && toolCalls.length > 0
+        ? (resolved.nullContentWithToolCalls === true ? null : '')
+        : text
       wire.push({
         role: 'assistant',
-        // 正文为空且有工具调用时 content 必须为 null（OpenAI 规范）。
-        content: text.length === 0 && toolCalls.length > 0 ? null : text,
-        ...reasoning.length > 0 ? { reasoning_content: reasoning } : {},
+        content: assistantContent,
+        ...(resolved.reasoningContent === 'always'
+          ? { reasoning_content: reasoning }
+          : reasoning.length > 0 ? { reasoning_content: reasoning } : {}),
         ...toolCalls.length > 0 ? { tool_calls: toolCalls } : {},
       })
       continue
@@ -297,16 +377,82 @@ export function errorDetail(body: string): string {
 }
 
 /** 将 HTTP 状态码映射为 harness 错误码。 */
-export function httpErrorCode(status: number): string {
+/**
+ * 把一帧 `{error:{...}}` 归成 harness 的错误码。
+ *
+ * ## 为什么需要（2026-11-04 审查 P2-3）
+ *
+ * `SERVER` **在** harness 的 `DEFAULT_RETRYABLE_CODES` 里。一个「模型不存在」
+ * 或「参数非法」被归成 `SERVER` 就会被白重试 5 次（≈15.5 秒），
+ * 用户看到的是「重试延迟」而不是真正的原因。
+ *
+ * ## 判据
+ *
+ * 只看 `code` / `type` / `message` 三个字段里**确凿**的语义。判据刻意窄：
+ * 拿不准就返回 `SERVER`（宁可重试一次，也不要把可自愈的瞬时错误锁死）。
+ */
+export function classifyErrorFrame(error: { code?: unknown; type?: unknown; message?: unknown }): string {
+  const code = typeof error.code === 'string' ? error.code.toLowerCase() : ''
+  const type = typeof error.type === 'string' ? error.type.toLowerCase() : ''
+  const message = typeof error.message === 'string' ? error.message : ''
+  const joined = `${code} ${type}`
+
+  // 额度/计费：确定性，等账期重置或充值才能恢复。
+  if (/billing|quota|insufficient_quota|payment_required/.test(joined)
+    || /exceed\s+quota\s+limit|quota\s+(?:has\s+been\s+)?exhausted|余额不足|额度(?:已|被)?(?:用尽|耗尽)/i.test(message)) {
+    return 'QUOTA_EXCEEDED'
+  }
+  // 鉴权：确定性（凭据坏了，重试必然再坏）。
+  if (/invalid_api_key|authentication|unauthorized|permission_denied/.test(joined)) return 'AUTH'
+  // 上下文超限：交给 harness 的 compaction，不要重试。
+  if (/context_length_exceeded|context_window/.test(joined)
+    || /context\s+length|too\s+many\s+tokens|maximum\s+context/i.test(message)) {
+    return 'CONTEXT_WINDOW_EXCEEDED'
+  }
+  // 模型不存在 / 参数非法：确定性。
+  if (/model_not_found|invalid_model|unsupported_model|does_not_exist/.test(joined)
+    || /model.*(?:not\s+found|does\s+not\s+exist|unsupported)|no\s+such\s+model/i.test(message)) {
+    return 'INVALID_REQUEST'
+  }
+  if (/invalid_request|bad_request|invalid_parameter/.test(joined)) return 'INVALID_REQUEST'
+  // 限流：可重试（等一会儿真的会好）。
+  if (/rate_limit|too_many_requests/.test(joined)) return 'RATE_LIMIT'
+  // 其余保持历史行为：可能真是瞬时故障。
+  return 'SERVER'
+}
+
+/**
+ * **纯状态码** → harness 错误码的共享映射（五份副本的唯一权威）。
+ *
+ * ## 为什么抽出来（2026-11-04 全仓审查 M-3 / t1 P3-4）
+ *
+ * `openai-compat` / `llm-adapter` / `buddy-adapter` / `trae-adapter` / `zcode`
+ * 各写了一份「状态码 → 错误码」的表，**四份漂移**的后果是实打实的：
+ * 2026-11-04 之前**没有一份**认识 `402`，于是「额度已用尽」在四个渠道上
+ * 都被归成陌生的 `HTTP_402`（既不重试也不换号也不提示）。
+ *
+ * 现在纯状态码部分只在这里定义一次。带**响应体**分类的调用方
+ * （`llm-adapter` 的上下文超限、`buddy` 的网关措辞）继续在自己那边加一层，
+ * 但**先**问这里 —— 避免再出现「某份忘了 402」这种漂移。
+ *
+ * @param status HTTP 状态码
+ * @returns harness 错误码；未列出的状态码返回 `HTTP_<status>`（保持历史兜底）
+ */
+export function baseHttpErrorCode(status: number): string {
+  // 401/403 都归 AUTH：多数上游用 403 表达「凭据无权 / 已过期」。
   if (status === 401 || status === 403) return 'AUTH'
-  // ⚠️ 402 = 额度用尽（规范码）。这是**共享**映射，多个渠道都用它，
-  // 漏掉就会让「额度已用尽」落进 `HTTP_402` 兜底 —— 既不换号也不提示用户
-  // 充值/等待重置（2026-11-04 全仓审查，5 份副本全缺）。
+  // 402 Payment Required = **额度用尽**（规范码）。与 429 的用户动作完全相反：
+  // 402 要么充值要么等账期重置，429 等一会儿就会好。
   if (status === 402) return 'QUOTA_EXCEEDED'
   if (status === 429) return 'RATE_LIMIT'
   if (status === 400) return 'INVALID_REQUEST'
   if (status >= 500) return 'SERVER'
   return `HTTP_${status}`
+}
+
+export function httpErrorCode(status: number): string {
+  // 纯状态码部分统一走共享映射（见 baseHttpErrorCode 的说明）。
+  return baseHttpErrorCode(status)
 }
 
 /**
@@ -644,7 +790,24 @@ export async function* consumeOpenAiSse(
           throw new LlmError(`${label}: ${errorDetail(payload)}`, 'QUOTA_EXCEEDED')
         }
         if (data.error !== undefined) {
-          throw new LlmError(`${label}: ${data.error.message ?? 'unknown error'}`, 'SERVER')
+          /**
+           * ⚠️ **不能一律归 `SERVER`**（2026-11-04 审查 P2-3）。
+           *
+           * `SERVER` 在 harness 的 `DEFAULT_RETRYABLE_CODES` 里 ⇒ 一个**确定性**
+           * 错误（模型不存在 / 参数非法 / 内容被拒）会被白退避重试 5 次
+           *（约 15.5 秒），用户看到「重试延迟：7220毫秒」，真实原因被重试掩盖。
+           *
+           * 同文件下面那条「Qoder 风格错误帧」早就做了区分（`billing_error` →
+           * `QUOTA_EXCEEDED`、排队 → `ModelQueuedError`），**只有这条最常见的
+           * `{error:{message}}` 形态没做** —— 而它恰恰是 OpenAI 兼容后端的标准形态。
+           *
+           * 分类口径与 harness 的 `httpErrorCode` 词汇一致：只把**确定不可自愈**
+           * 的归成不可重试码，其余仍留 `SERVER`（真有瞬时故障时该重试）。
+           */
+          throw new LlmError(
+            `${label}: ${data.error.message ?? 'unknown error'}`,
+            classifyErrorFrame(data.error),
+          )
         }
         // Qoder 风格错误：顶层 code/message/type（且无 choices）。
         // 判据要求**同时**出现 code 与 message，避免把正常帧里恰好叫
@@ -905,22 +1068,43 @@ export async function* consumeOpenAiSse(
           }
         }
         if (data.usage) {
-          const promptTokens = data.usage.prompt_tokens ?? 0
+          /**
+           * ⚠️ **缺失字段不得写成 0**（2026-11-04 审查 P1-6）。
+           *
+           * 原实现是 `data.usage.prompt_tokens ?? 0` / `completion_tokens ?? 0`，
+           * 于是「上游没报」与「上游报了 0」在下游**完全不可区分**：
+           * `llm-register-compat.ts` 把「收到 usage 帧」等价于 `usageReported = true`，
+           * 面板就会把一次**未上报**的调用显示成 `0 token`（读起来像
+           * 「瞬间完成、没花额度」），台账也照记 0。
+           *
+           * 正确口径与 `cline-adapter.ts:820-830` 一致：**没收到就如实标为未收到**，
+           * 由展示层显示 `—`。⇒ 这里保持 `TokenUsage` 稀疏：字段缺失就不发这个键。
+           * 两个关键字段**都**缺失时干脆不发 usage 帧（发一个空对象同样是谎报）。
+           */
+          const promptTokens = data.usage.prompt_tokens
           // 缓存命中字段有多处来源，取首个有值的。
           const cachedTokens = data.usage.prompt_tokens_details?.cached_tokens
             ?? data.usage.prompt_cache_hit_tokens
-            ?? 0
+          const outputTokens = data.usage.completion_tokens
           const reasoningTokens = data.usage.completion_tokens_details?.reasoning_tokens
-          yield {
-            type: 'usage',
-            usage: {
-              // inputTokens 只计**未命中缓存**的部分，命中部分单列
-              // cacheReadTokens，否则缓存命中率显示会偏大。
-              inputTokens: cachedTokens > 0 ? promptTokens - cachedTokens : promptTokens,
-              outputTokens: data.usage.completion_tokens ?? 0,
-              ...cachedTokens > 0 ? { cacheReadTokens: cachedTokens } : {},
-              ...reasoningTokens !== undefined && reasoningTokens > 0 ? { reasoningTokens } : {},
-            },
+          // ⚠️ `TokenUsage.inputTokens/outputTokens` 在宿主类型里**是必填**的，
+          // 故「稀疏对象」不可行。真正决定「是否已上报」的是**有没有发 usage 帧**：
+          // 两个关键字段都拿不到 ⇒ 整帧不发，下游 `usageReported` 自然为 false，
+          // 面板显示 `—`。只有一个字段缺失时，缺的那个只能记 0（上游就是这样报的），
+          // 但至少不会把「整条未上报」说成「报了 0」。
+          if (promptTokens !== undefined && outputTokens !== undefined) {
+            yield {
+              type: 'usage',
+              usage: {
+                // inputTokens 只计**未命中缓存**的部分，命中部分单列
+                // cacheReadTokens，否则缓存命中率显示会偏大。
+                // 两个输入字段都缺 ⇒ 不发 inputTokens（而不是发 0）。
+                inputTokens: cachedTokens !== undefined && cachedTokens > 0 ? promptTokens - cachedTokens : promptTokens,
+                outputTokens,
+                ...cachedTokens !== undefined && cachedTokens > 0 ? { cacheReadTokens: cachedTokens } : {},
+                ...reasoningTokens !== undefined && reasoningTokens > 0 ? { reasoningTokens } : {},
+              },
+            }
           }
         }
       }

@@ -24,7 +24,7 @@ import type {
 
 import { OFFICEACE, type OfficeAceProduct } from './officeace-product.js'
 import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
-import { fetchTokenRates, resetOfficeAceTokenRatesCache } from './officeace.js'
+import { fetchTokenRates } from './officeace.js'
 import {
   basicAuthHeader,
   isCredentialUsable,

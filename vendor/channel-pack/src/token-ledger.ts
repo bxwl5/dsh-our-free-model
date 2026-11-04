@@ -175,10 +175,52 @@ let ledger: TokenLedgerEntry[] = []
  *   这是把改动收敛到侧信道的**有意取舍**（全量精确需改 13 个适配器的
  *   内部状态机，收益比不符）。
  */
+import { AsyncLocalStorage } from 'node:async_hooks'
+
+/**
+ * **请求域**的账号归属表（2026-11-04 审查 P1-7）。
+ *
+ * ## 为什么必须是请求域，而不是「每个 provider 一个最后值」
+ *
+ * 原实现是 `Map<provider, accountId>`，写发生在**适配器内部解析凭据时**、
+ * 读发生在**usage 帧到达时** —— 两者之间隔着整条 SSE 流（可能几十秒）。
+ * 同一 provider 下**两个账号并发**时（DSH 的并发 agent、多开标签页都会），
+ * B 的凭据解析会覆盖 A 的槽位，A 的 usage 就记到 B 头上。这不是「不精确」，
+ * 是**记错号**，而账本是用户看成本的主界面。
+ *
+ * ## 为什么不用「栈 + pop」
+ *
+ * 审查报告建议过这个折中，但它**不成立**：写与读之间隔着整条流，并发下
+ * 两条流的写/读顺序任意交错，pop 会把账号配给**另一个请求**。栈只能解决
+ * 「同序配对」，解决不了「乱序」。
+ *
+ * ## 为什么不用改 13 个适配器
+ *
+ * `AsyncLocalStorage` 会沿着 `await` / 异步迭代**自动传播**上下文：只要在
+ * 请求入口 `run()` 一次，适配器里那些同步的 `reportLedgerAccount(...)` 调用
+ * 就自动落进**自己那条流**的槽位 —— 适配器代码一个字都不用改。这是本仓库
+ * 现有侧信道设计的自然升级，而不是推翻它。
+ *
+ * ⚠️ 拿不到上下文时（单测直调、宿主走了非包装路径）退回旧的最后值语义，
+ * 保持向后兼容 —— 宁可「不精确」也不能「记账直接失效」。
+ */
+const ledgerScope = new AsyncLocalStorage<Map<string, string>>()
+
+/** 无请求域时的兜底槽位（旧语义）。 */
 const reportedAccounts = new Map<string, string>()
 
 /**
- * 回报「该 provider 最近解析出的账号」（凭据解析点调用）。
+ * 在**请求域**里运行一次流式调用。
+ *
+ * 由 `llm-register-compat.ts` 的记账包装层在生成器启动时调用一次；适配器
+ * 内部所有 `reportLedgerAccount` / `peekLedgerAccount` 就都落在自己的槽位上。
+ */
+export function runWithLedgerScope<T>(run: () => T): T {
+  return ledgerScope.run(new Map<string, string>(), run)
+}
+
+/**
+ * 回报「该 provider 本次请求解析出的账号」（凭据解析点调用）。
  *
  * ⚠️ 绝不抛错：它与 {@link recordTokenUsage} 同在推理关键路径上。
  * 空串 / 非串入参直接忽略（不清空旧值 —— 清空语义属于 {@link clearLedgerAccount}）。
@@ -187,15 +229,31 @@ export function reportLedgerAccount(provider: string, accountId: string): void {
   try {
     if (typeof provider !== 'string' || provider.length === 0) return
     if (typeof accountId !== 'string' || accountId.length === 0) return
-    reportedAccounts.set(provider.slice(0, 64), accountId.slice(0, 64))
+    const key = provider.slice(0, 64)
+    const value = accountId.slice(0, 64)
+    // ① 有请求域上下文 ⇒ 记进**本请求自己**的槽位（并发安全的唯一办法）。
+    const scope = ledgerScope.getStore()
+    if (scope !== undefined) {
+      scope.set(key, value)
+      return
+    }
+    // ② 无上下文（旧调用点 / 单测直调）⇒ 退回旧的最后值语义。
+    reportedAccounts.set(key, value)
   } catch {
     // 回报失败绝不反噬推理。
   }
 }
 
-/** 读取该 provider 当前记录的账号（包装层在 usage 帧到达时调用）。 */
+/**
+ * 读取该 provider 本次请求记录的账号。
+ *
+ * 优先取**本请求域**里的槽位；没有上下文时退回旧语义（最后回报值）。
+ */
 export function peekLedgerAccount(provider: string): string {
-  return reportedAccounts.get(provider) ?? ''
+  const key = provider.slice(0, 64)
+  const scope = ledgerScope.getStore()
+  if (scope !== undefined) return scope.get(key) ?? ''
+  return reportedAccounts.get(key) ?? ''
 }
 
 /**

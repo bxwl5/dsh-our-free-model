@@ -332,6 +332,15 @@ export async function probeCredential(
  * - `image_id` / `host_id` 必填（缺了会 400 参数错误）
  * - `task_type: 'chat'` 表示轻量对话（不建沙箱）
  */
+/**
+ * 判定「僵尸任务」的活跃度阈值。
+ *
+ * 超过这么久没刷过 `lastActiveAt` 就认为它已经死了（可以安全停掉以解开
+ * 10811 占用）。取值 10 分钟：正常推理期间上游每几秒就会刷新一次活跃时间，
+ * 10 分钟不动基本只剩「进程已经没了、状态没来得及回收」这一种可能。
+ */
+const MONKEYCODE_STALE_TASK_MS = 10 * 60 * 1000
+
 export async function createTask(
   fetcher: typeof fetch,
   product: MonkeyCodeProduct,
@@ -396,12 +405,41 @@ export async function* streamChat(
   // 2026-10-26 用户实测连续多轮 10811，只能干等）。
   const existing = await listMonkeyCodeTasks(fetcher, product, credential, options.signal)
   const running = existing.filter(task => task.status !== 'completed' && task.status !== 'finished' && task.status !== 'error')
-  if (running.length > 0) {
-    for (const task of running) {
+  /**
+   * ⚠️ **只停「确实已经死掉」的遗留任务**（2026-11-04 审查 P2-4）。
+   *
+   * 原实现把该账号下**所有**非终态任务一律停掉。它无法区分：
+   * - 「上次会话崩了留下的僵尸任务」（要清，否则 10811 挡死）；
+   * - 「用户此刻在网页端 / 另一个 DSH 会话里**正在跑**的任务」（不该动）。
+   *
+   * 上游任务结构里没有「谁创建的」字段（只有 `id`/`status`/`createdAt`/
+   * `lastActiveAt`），所以我们**无法**精确判定归属。故退一步用**活跃度**：
+   * 只有 `lastActiveAt` 已经停更超过 {@link MONKEYCODE_STALE_TASK_MS} 的才
+   * 当作僵尸清理 —— 正在跑的任务会持续刷新活跃时间，不会被误杀。
+   *
+   * 仍然清理的理由没变：不清就会一直撞 10811（用户 2026-10-26 实测连撞多轮）。
+   */
+  const staleBefore = Date.now() - MONKEYCODE_STALE_TASK_MS
+  const stale = running.filter((task) => {
+    const lastActive = task.lastActiveAt ?? task.createdAt
+    return Number.isFinite(lastActive) && lastActive > 0 && lastActive < staleBefore
+  })
+  if (stale.length > 0) {
+    for (const task of stale) {
+      // ⚠️ 必须留日志：这是**破坏性**操作，用户事后要能查到「谁停了我的任务」。
+      console.warn(
+        `[monkeycode] 清理僵尸任务 ${task.id}（status=${task.status}, `
+        + `lastActive=${new Date(task.lastActiveAt ?? task.createdAt).toISOString()}）`,
+      )
       await stopMonkeyCodeTask({ fetcher, product, credential, taskId: task.id, ...(options.signal === undefined ? {} : { signal: options.signal }) })
     }
     // 停止是异步生效的，稍等上游切换状态。
     await new Promise(resolve => setTimeout(resolve, 1500))
+  } else if (running.length > 0) {
+    // 有在跑的任务但我们判定它「还活着」⇒ 不动它，交给 10811 报错路径给用户可操作的提示。
+    console.warn(
+      `[monkeycode] 检测到 ${running.length} 个仍活跃的任务，未自动停止（可能正在别处使用）`,
+    )
   }
   let taskId = ''
   try {

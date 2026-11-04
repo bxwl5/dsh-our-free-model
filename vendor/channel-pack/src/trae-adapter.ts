@@ -26,29 +26,22 @@ import { AccountPool, providerCatalogVisible } from './account-pool.js'
 import { reasoningRankOf } from './reasoning-ladder.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
 import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
-import { settingsNamespaceFor } from './settings-compat.js'
 import {
-  TRAE_DEFAULT_MODEL,
   TRAE_MAX_CONTEXT_TOKENS,
-  TRAE_REQUEST_TIMEOUT_MS,
   clampTraeMaxTokens,
   isTraeExpired,
   parseTraeSSELine,
-  buildOpenAIChunk,
-  OPENAI_DONE,
-  readStringField,
-  readNumberField,
   isTraeModelCallable,
   traeMaxModeFields,
   traeSOLOHeaders,
   transformToSOLOBody,
   type TraeCredential,
-  type TraeSSEEvent,
   type TraeReasoningConfig,
   type TraeRemoteModel,
 } from './trae.js'
 import { TRAE, type TraeFallbackModel, type TraeProduct } from './trae-product.js'
-import { classifyTraeError, recordsTraeRateLimit, shouldRotateTraeAccount } from './trae-errors.js'
+import { classifyTraeError, classifyTraeStreamCode, recordsTraeRateLimit, shouldRotateTraeAccount } from './trae-errors.js'
+import { baseHttpErrorCode } from './openai-compat.js'
 import { normalizeHarnessMessages } from './message-shape.js'
 import { createBlankReasoningSuppressor, createReasoningLoopDetector, hasUsableToolName, isProseTruncatedByStopString, isReasoningLoopGuardEnabled, isTruncatedArguments, normalizeToolArguments, readWithIdleTimeout, reasoningLoopFailure, resolveEmptyResponseReason, resolveToolPairing, splitThinkTaggedContent, stripBareThinkCloseTagIfEnabled, stripCourseLeakFromHistoryContent, stripCourseLeakIfEnabled } from './sse.js'
 import {
@@ -200,8 +193,19 @@ const TRAE_ROTATABLE_STREAM_ERROR = 'TRAE_ROTATABLE_STREAM_ERROR'
  * `quota-exceeded`(4008) 都换号；`4001`（模型不可调用）换号无意义
  * —— 换账号也是同一个模型被拒，故**不换号**，直接如实报错。
  */
+/**
+ * 该流内业务码是否值得**换号重发**。
+ *
+ * ⚠️ 判据来自 `trae-errors.ts` 的权威表（2026-11-04 审查 P2-2）。
+ * 这里曾另写一份 `code === 1005 || code === 4008 || code === 4011`，
+ * 与 `classifyTraeError` 是同一批码的两套判据 —— 上游新增码值时必然漂移。
+ *
+ * 语义：**额度类或频率类**都值得换号（换一个号可能还有额度），
+ * 其它（如 4001 模型不可调用）换号没用。
+ */
 function isRotatableStreamError(code: number): boolean {
-  return code === 1005 || code === 4008 || code === 4011
+  const kind = classifyTraeStreamCode(code)
+  return kind === 'quota-exceeded' || kind === 'soft-rate' || kind === 'hard-plan'
 }
 
 /**
@@ -529,14 +533,9 @@ function errorDetail(body: string): string {
 
 /** HTTP 状态码映射。 */
 function httpErrorCode(status: number): string {
-  if (status === 401 || status === 403) return 'AUTH'
-  // ⚠️ 402 = 额度用尽（规范码），与 429 限流的用户动作完全相反；
-  // 不归一就会落进 `HTTP_402` 兜底、既不换号也不提示（2026-11-04 审查）。
-  if (status === 402) return 'QUOTA_EXCEEDED'
-  if (status === 429) return 'RATE_LIMIT'
-  if (status === 400) return 'INVALID_REQUEST'
-  if (status >= 500) return 'SERVER'
-  return `HTTP_${status}`
+  // 纯状态码映射统一走共享表（2026-11-04 全仓审查 M-3）：四份副本曾各自漂移，
+  // 402 一度全军覆没。trae 不需要 body 分类，故直接委托。
+  return baseHttpErrorCode(status)
 }
 
 /**

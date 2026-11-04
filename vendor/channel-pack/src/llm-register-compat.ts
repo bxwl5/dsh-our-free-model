@@ -115,7 +115,7 @@ export interface AdapterRegisterTarget {
   registerAdapter(providers: readonly string[], adapter: unknown): unknown
 }
 
-import { recordTokenUsage, peekLedgerAccount } from './token-ledger.js'
+import { recordTokenUsage, peekLedgerAccount, runWithLedgerScope } from './token-ledger.js'
 import { channelOfOptions } from './openai-gateway/channel.js'
 
 /**
@@ -290,7 +290,27 @@ export function wrapAdapterWithTokenLedger<T extends object>(providers: readonly
  * - 抛错 ⇒ 记失败行后**原样再抛**（记账不吞错）；
  * - `finally` 兜底记 `durationMs`（cancel/提前 return 也算一笔）。
  */
-export async function* recordThroughStream(
+export function recordThroughStream(
+  openStream: () => AsyncIterable<unknown>,
+  meta: { channel: 'direct' | 'gateway'; provider: string; model: string; startedAt: number },
+): AsyncIterable<unknown> {
+  /**
+   * ⚠️ **必须在这里建立请求域**（2026-11-04 审查 P1-7）。
+   *
+   * 账号归属的写（适配器解析凭据时）与读（usage 帧到达时）隔着整条 SSE 流。
+   * 没有请求域时，同一 provider 的并发流会互相覆盖槽位 ⇒ usage 记到**错的账号**。
+   *
+   * 用 `runWithLedgerScope` 把整个记账骨架跑在自己的 `AsyncLocalStorage` 上下文里：
+   * 适配器内部那些同步的 `reportLedgerAccount(...)` 会沿着 `await` / 异步迭代
+   * **自动**落进本请求的槽位 —— 13 个适配器一个字都不用改。
+   *
+   * ⚠️ 作用域必须包住**整条流的生命周期**（含 finally 里的记账读），
+   * 故不是包「创建生成器」那一瞬，而是包住整个内层 async 函数。 */
+  return runWithLedgerScope(() => recordStreamInScope(openStream, meta))
+}
+
+/** {@link recordThroughStream} 的实体（在请求域内执行）。 */
+async function* recordStreamInScope(
   openStream: () => AsyncIterable<unknown>,
   meta: { channel: 'direct' | 'gateway'; provider: string; model: string; startedAt: number },
 ): AsyncIterable<unknown> {

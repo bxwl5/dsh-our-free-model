@@ -20,13 +20,15 @@ import {
 import { AccountPool, providerCatalogVisible } from './account-pool.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
 import { readModelCatalog, writeModelCatalogClosingNew } from './model-catalog-cache.js'
-import { settingsNamespaceFor } from './settings-compat.js'
 import {
   RATE_LIMIT_FALLBACK_MS,
   isModelSaturationError,
   isRateLimited,
   parseRateLimitError,
 } from './llm-adapter.js'
+// 按自然日（UTC+8）结算的账期边界 —— 与 qoder 的额度标记同一份实现，
+// 避免两个渠道对「一天」的边界理解不同。
+import { nextUtc8DayStartMs } from './model-queue.js'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import {
@@ -49,6 +51,7 @@ import {
   registerAdapterIdempotent,
 } from './llm-register-compat.js'
 import { reportLedgerAccount } from './token-ledger.js'
+import { baseHttpErrorCode, serializeMessages as originSerializeMessages } from './openai-compat.js'
 
 /**
  * CodeBuddy（中国版）的 chat completions 基址。
@@ -251,142 +254,30 @@ function serializeMessages(
   messages: readonly { role: string; content: unknown }[],
   imageUrls?: ReadonlyMap<string, string>,
 ): Array<Record<string, unknown>> {
-  const wire: Array<Record<string, unknown>> = []
-
-  // 工具结果内嵌图片（read_image 等）不能并入 `role:'tool'` 消息：OpenAI 兼容
-  // 协议要求每条 tool 消息紧跟其 assistant tool_call，中间插入任何消息都会 400。
-  // 故与官方 deepseek 适配器一致：挂起到其后的独立 user 消息统一发出。
-  let pendingToolImages: Array<Record<string, unknown>> = []
-  const flushToolImages = (): void => {
-    if (pendingToolImages.length === 0) return
-    wire.push({
-      role: 'user',
-      content: [{ type: 'text', text: TOOL_RESULT_IMAGE_TEXT }, ...pendingToolImages],
-    })
-    pendingToolImages = []
-  }
-
-  // ── 孤儿工具调用清理（会话续命的关键）──
-  // OpenAI 兼容协议要求：带 `tool_calls` 的 assistant 消息，其**每一个**
-  // tool_call id 都必须紧跟一条对应的 `role:'tool'` 结果消息；反之，
-  // `role:'tool'` 消息也必须有对应的前置 tool_call。缺任一侧，后端都会以
-  // 400 拒绝整个请求。
-  //
-  // 工具执行失败时（参数非法、超时、工具不存在……）harness 会把 assistant
-  // 的 tool_calls 持久化进会话历史，却写不回结果消息。这条坏历史随后被
-  // **每次请求原样重放**，于是后端对之后每一条用户消息都返回 400——表现为
-  // "任务突然中断，此后发送任何内容都没有回复"，整个会话彻底报废。
-  //
-  // 适配器是最后一道防线：发出请求前把无法配对的 tool_calls 与 tool 结果
-  // 一并剔除，让会话自愈。宁可丢失一轮工具上下文，也好过整条会话死亡。
-  // ⚠️ 先归一化 DSH 0.1.7 的消息形状（见 `message-shape.ts`）：0.1.7 把工具结果
-  // 改为一等 `role:'tool'` 消息，不再有 `tool-result` 块。若不归一化，下面所有
-  // 按 `type === 'tool-result'` 的判据恒不命中 → 结果 id 集合为空 →
-  // `resolveToolPairing` 把**全部 tool_calls 剔除**，模型看不到自己调用过什么，
-  // 表现为「无工具调用即判对话结束」或「陷入循环思考」。
-  const normalized = normalizeHarnessMessages(messages)
-  const { keepCallIds, keepResultIds } = resolveToolPairing(normalized)
-
-  for (const message of normalized) {
-    if (message.role === 'assistant') {
-      // 存量自愈：清洗历史里已持久化的行首 `course` / `课` 泄漏
-      // （见 `stripCourseLeakFromHistoryContent`）。只清 assistant ——
-      // 判据只对模型自己的输出成立，清洗用户输入等于篡改用户的话。
-      const content = stripCourseLeakFromHistoryContent(
-        message.role,
-        Array.isArray(message.content) ? message.content : [],
-      )
-      const toolCallBlocks = content
-        .filter((block): block is { type: string; id: unknown; name: unknown; arguments: unknown } =>
-          typeof block === 'object' && block !== null && (block as { type?: unknown }).type === 'tool-call')
-        .filter(block => keepCallIds.has(String(block.id)))
-      const toolCalls = toolCallBlocks.map((block) => ({
-        id: String(block.id),
-        type: 'function' as const,
-        function: { name: String(block.name), arguments: normalizeToolArguments(String(block.arguments)) },
-      }))
-      const reasoning = content
-        .filter((block): block is { type: string; text: unknown } =>
-          typeof block === 'object' && block !== null && (block as { type?: unknown }).type === 'reasoning')
-        .map((block) => String(block.text))
-        .join('')
-      const text = contentToText(content)
-      if (text.trim().length === 0 && toolCalls.length === 0) continue
-      // 挂起的工具结果图片必须在 assistant 之前发出（对齐官方适配器）：
-      // 否则它们会漂到这条 assistant 之后，与产生它们的工具调用脱节。
-      flushToolImages()
-      wire.push({
-        role: 'assistant',
-        // 正文为空且有工具调用时 content 必须为 null（对齐 openai_chat.rs）。
-        content: text.length === 0 && toolCalls.length > 0 ? null : text,
-        reasoning_content: reasoning,
-        ...toolCalls.length > 0 ? { tool_calls: toolCalls } : {},
-      })
-      continue
-    }
-    if (message.role === 'system') {
-      flushToolImages()
-      wire.push({ role: 'system', content: contentToText(message.content) })
-      continue
-    }
-    // user 角色：工具结果搭载在 harness 用户消息中；展开为独立的 role:'tool' 消息。
-    const content = Array.isArray(message.content) ? message.content : []
-    const toolResults = content.filter((block): block is { type: string; toolCallId: unknown; content: unknown } =>
-      typeof block === 'object' && block !== null && (block as { type?: unknown }).type === 'tool-result')
-    const text = contentToText(message.content)
-    // 工具结果之外的常规内容（含顶层图片）。
-    const regular = content.filter((block) =>
-      !(typeof block === 'object' && block !== null && (block as { type?: unknown }).type === 'tool-result'))
-    // 含图片时 content 升级为 OpenAI 多模态 parts（CodeBuddy 唯一接受的图片
-    // 形态；{type:'image'} 会以 `unsupported content type ... image` 400）。
-    //
-    // 注意：这里**不能**把「空 Map」也降级为 undefined。`imageUrls` 为 undefined
-    // 只发生在整个请求都没有图片时；若图片存在但全部读取失败，map 是**空的**
-    // 而非 undefined。降级成 undefined 会让 `[image unavailable]` 占位符也被跳过，
-    // 图片静默消失；只有部分失败时（map 非空）才会出现占位符 —— 同一故障两种
-    // 表现。保留空 Map 可让 `userContentParts` 统一产出占位符。
-    const regularImageUrls = imageUrls
-    const parts = regularImageUrls === undefined
-      ? undefined
-      : userContentParts(regular, regularImageUrls)
-    if (parts !== undefined) {
-      flushToolImages()
-      wire.push({ role: 'user', content: parts })
-    } else if (text.trim().length > 0) {
-      flushToolImages()
-      wire.push({ role: 'user', content: text })
-    }
-    for (const result of toolResults) {
-      // 丢弃孤儿工具结果：没有对应 assistant tool_call 其结果同样会让后端 400。
-      if (!keepResultIds.has(String(result.toolCallId))) continue
-      // 工具结果内嵌的图片（read_image 等）单独收集：文本继续走 `role:'tool'`，
-      // 图片挂起到其后的 user 消息 —— 与原实现相比，这里补上了递归分支，
-      // 否则图片会被 contentToText 静默丢弃（只留元数据文本）。
-      let resultText = '(no output)'
-      if (regularImageUrls !== undefined && Array.isArray(result.content)) {
-        const resultParts = userContentParts(result.content, regularImageUrls)
-        if (resultParts !== undefined) {
-          pendingToolImages.push(...resultParts.filter((part) => part.type !== 'text'))
-          const joined = resultParts
-            .filter((part) => part.type === 'text')
-            .map((part) => String(part.text))
-            .join('')
-          if (joined.length > 0) resultText = joined
-        } else {
-          resultText = contentToText(result.content) || '(no output)'
-        }
-      } else {
-        resultText = contentToText(result.content) || '(no output)'
-      }
-      wire.push({
-        role: 'tool',
-        tool_call_id: String(result.toolCallId),
-        content: resultText,
-      })
-    }
-  }
-  flushToolImages()
-  return wire
+  /**
+   * ⚠️ **不要再在本文件里维护第三份实现**（2026-11-04 全仓审查 M-1）。
+   *
+   * 这里原先有 218 行的独立副本，与 `openai-compat.ts` 那份逻辑同构。
+   * 三份副本的代价已经真实兑现过：`resolveToolPairing` 的配对规则改进只落到
+   * 一处，另两处继续发孤儿 `tool_calls` ⇒ 后端 400、会话报废。
+   *
+   * CodeBuddy 的形态差异（都通过策略开关表达）：
+   * - `reasoningContent: 'always'` —— 对齐其 `openai_chat.rs` 的字段要求；
+   * - `nullContentWithToolCalls: true` —— 正文为空 + 有工具调用时 content 为
+   *   `null`（OpenAI 规范 + 该后端实现）；
+   * - `imageUrls` —— 多模态 parts（`{type:'image'}` 会被
+   *   `unsupported content type ... image` 400，故必须走 parts 形态）。
+   *
+   * ⚠️ 保留的一点差异：本适配器**不**把空 Map 降级为 undefined。
+   * `imageUrls === undefined` 只代表「整个请求没有图片」；图片存在但全部读取
+   * 失败时 map 是**空**的，降级会让 `[image unavailable]` 占位符也被跳过。
+   * 共享实现内部用的正是「undefined 才跳过」的判据，与此一致。
+   */
+  return originSerializeMessages(messages, {
+    ...(imageUrls === undefined ? {} : { imageUrls }),
+    reasoningContent: 'always',
+    nullContentWithToolCalls: true,
+  })
 }
 
 /** 安全读取 Error.message。 */
@@ -450,8 +341,12 @@ function isContentRejection(body: string): boolean {
  * - 30 分钟也限制了误伤窗口：标记**只随时间到期失效**（`getAvailableAccount`
  *   的判据是 `Date.now() >= resetAt`，见 `src/account-pool.ts:578`），
  *   所以时长直接等于「这个账号在该模型上被藏起来多久」。
- *   ⚠️ 别指望 `sweepExpiredRateLimits` 来清 —— 它在生产代码里**没有任何调用方**
- *   （只有 `account-pool.spec.ts` 用），到期完全靠上面那个时间比较。
+ *   ⚠️ 到期判定**不依赖**任何清理动作：`getAvailableAccount` 用
+ *   `Date.now() >= resetAt` 现算，标记过期即刻不算数。`sweepExpiredRateLimits`
+ *   只是**持久化层**的收尾（把过期的键从 `state.json` 里删掉，免得越堆越大），
+ *   由 `index.ts` 的 6 小时定时器调用（`index.ts:2213`）——
+ *   2026-11-04 修正：此处曾写「生产代码里没有任何调用方」，那是旧状态，
+ *   修复已在 `index.ts` 落地但本注释没同步。
  *
  * ⚠️ 与 cline / lobsterai / trae 的 `*_RATE_LIMIT_FALLBACK_MS`（均 1 小时）**不同源**：
  * 那三个是「解析不到限流重置时间」的兜底，本常量是「服务端压根不给时间」的策略拦截冷却。
@@ -653,21 +548,14 @@ const GATEWAY_PROMPT_TOO_LONG = /\bprompt\s+is\s+too\s+long\b[\s\S]{0,40}?\b\d[\
  * 整个会话不可恢复。方向因此取「宁可多判一次溢出」。
  */
 function httpErrorCode(status: number, body: string): string {
-  if (status === 401 || status === 403) return 'AUTH'
-  // ⚠️ 402 = 额度用尽（规范码），与 429 限流的用户动作完全相反；
-  // 不归一就会落进 `HTTP_402` 兜底、既不换号也不提示（2026-11-04 审查）。
-  if (status === 402) return 'QUOTA_EXCEEDED'
-  if (status === 429) return 'RATE_LIMIT'
-  if (status === 400) {
-    // 先判上下文超限，再退回通用 INVALID_REQUEST。
-    // 两条判据：harness 的通用分类器 + 本仓库补的网关措辞（见上）。
-    if (isContextWindowExceededError(body) || GATEWAY_PROMPT_TOO_LONG.test(body)) {
-      return CONTEXT_WINDOW_EXCEEDED_CODE
-    }
-    return 'INVALID_REQUEST'
+  // ① 400 的上下文超限措辞是 buddy 特有（腾讯网关的「提示词过长」文案），
+  //    必须在共享表把它归成 INVALID_REQUEST **之前**判掉。
+  // ② 其余纯状态码统一走共享表（2026-11-04 全仓审查 M-3）。
+  if (status === 400
+    && (isContextWindowExceededError(body) || GATEWAY_PROMPT_TOO_LONG.test(body))) {
+    return CONTEXT_WINDOW_EXCEEDED_CODE
   }
-  if (status >= 500) return 'SERVER'
-  return `HTTP_${status}`
+  return baseHttpErrorCode(status)
 }
 
 /**
@@ -712,6 +600,34 @@ function resolveChunkTimeoutMs(): number {
  * 会撞同一堵墙 —— 实测 4 个不同腾讯 uid 在 20 秒内全部被同一个 14003 拒绝。
  * 换号只会白烧掉「还有额度」的账号，正是本次要修的缺陷。
  */
+/**
+ * 额度类错误的**文案判据**（与「频率限制」区分开）。
+ *
+ * ## 为什么要区分（2026-11-04 审查 P1-4）
+ *
+ * 限流标记的时长决定「这个账号在该模型上被藏起来多久」。腾讯侧：
+ * - **频率限制**（"please try again later" 一类）⇒ 分钟级，`RATE_LIMIT_FALLBACK_MS`（1 小时）够用；
+ * - **额度耗尽**（当天/当月配额用尽）⇒ **按自然日或账期结算**，1 小时后就解禁是错的：
+ *   标记过早失效 ⇒ 用户 1 小时后**再撞同一堵墙**，而 UI 还显示「已恢复」。
+ *
+ * `qoder-adapter.ts` 早已识别这同一类问题（用 `nextUtc8DayStartMs()` 自己算
+ * 「UTC+8 当日 24:00」），本处此前没有 —— 两者是同一厂商的同一套结算方式。
+ *
+ * ⚠️ 判据刻意**窄**：只认确凿的额度措辞。泛词（`limit`、`quota`）会误伤
+ * 模型正文里恰好讨论额度内容的场景（与 qoder 的 `looksLikeBillingError` 同因）。
+ */
+const BUDDY_QUOTA_TEXT = /daily\s+(?:count|quota)\s+exceeded|billing_error|exceed\s+quota\s+limit|quota\s+(?:has\s+been\s+)?exhausted|额度(?:已|被)?(?:用尽|耗尽|不足)|余额不足/i
+
+/**
+ * 该响应是否是**额度类**（而非频率限制类）错误。
+ *
+ * ⚠️ 402 直接算额度类：它是 `Payment Required` 规范码，语义就是「没额度了」。
+ */
+function isBuddyQuotaExhausted(body: string, status: number): boolean {
+  if (status === 402) return true
+  return BUDDY_QUOTA_TEXT.test(body)
+}
+
 const BUDDY_SATURATION_MAX_RETRIES = 2
 
 /**
@@ -1610,7 +1526,9 @@ export class BuddyAdapter extends LlmAdapter {
       // 用户报障正是这个：第一次用 `buddy/space-bunny` 就报
       // 「模型 space-bunny 所有账号均受限」。
       //
-      // 实测四条证据（`scripts/probe-buddy-*.mjs`，2026-10-05）：
+      // 实测四条证据（2026-10-05；⚠️ 原始探针脚本 `scripts/probe-buddy-*.mjs`
+      // 已在后续清理中删除，2026-11-04 复核确认本 checkout 内不存在 ——
+      // 结论本身仍由下面的观测记录支撑，只是不再能一键复跑）：
       // | 观测 | 结果 |
       // |---|---|
       // | 4 个**不同腾讯 uid** 的账号 | 20 秒内**全部**被写 `space-bunny` 标记 |
@@ -1707,10 +1625,33 @@ export class BuddyAdapter extends LlmAdapter {
             && !rateLimitMarked.has(currentAccountId)) {
             rateLimitMarked.add(currentAccountId)
             const parsed = parseRateLimitError(errorText, options.model, response.status)
+            /**
+             * ⚠️ 额度类错误必须标到**账期结束**，不能吃 1 小时兜底
+             * （2026-11-04 审查 P1-4）。
+             *
+             * `parsed.resetTimeMs` 只在服务端**明说**了重置时刻时才可信；腾讯侧的
+             * 额度耗尽**不带**时刻（只有频率限制才带「将在…重置」），于是旧写法
+             * 一律落到 `RATE_LIMIT_FALLBACK_MS`（1 小时）。按自然日结算的额度
+             * 被标成「1 小时后解禁」⇒ 用户 1 小时后撞同一堵墙，而 UI 说「已恢复」。
+             *
+             * 顺序：服务端给的时刻 > 额度类用自然日末 > 频率限制用 1 小时兜底。
+             */
             await this.options.accountPool.updateModelRateLimit(
               currentAccountId,
+              /**
+               * ⚠️ 这里的 `parsed?.modelId ?? options.model` **两个分支等价**
+               * （2026-11-04 审查 P3-7 核实）：`parseRateLimitError` 的所有返回
+               * 路径里 `modelId` 都是它自己的入参 `currentModel`，而调用处传的正是
+               * `options.model`。保留写法而不直接写成 `options.model` 是因为
+               * `parsed` 可能为 `null`（非限流体），`??` 在这里承担**空值兜底**的
+               * 职责 —— 这不是死代码，是「左值恒等」的冗余。
+               * 真要简化需要同时改 `parseRateLimitError` 的返回契约，收益不抵风险。
+               */
               parsed?.modelId ?? options.model,
-              parsed?.resetTimeMs ?? Date.now() + RATE_LIMIT_FALLBACK_MS,
+              parsed?.resetTimeMs
+                ?? (isBuddyQuotaExhausted(errorText, response.status)
+                  ? nextUtc8DayStartMs()
+                  : Date.now() + RATE_LIMIT_FALLBACK_MS),
             )
           }
           // 取下一个未尝试过的可用账号（同样按本产品 id 过滤，否则 WorkBuddy
@@ -2133,26 +2074,33 @@ export class BuddyAdapter extends LlmAdapter {
             }
           }
           if (data.usage) {
-            const promptTokens = data.usage.prompt_tokens ?? 0
+            // ⚠️ 与 codearts / openai-compat 同口径（2026-11-04 审查 P1-2）：
+            // 缺失字段**不得**写成 0 —— 「未上报」被下游记成「报了 0」后，
+            // 面板显示 0 token（像「瞬间完成没花额度」）、台账也照记 0。
+            // 两个关键字段都缺 ⇒ 不发 usage 帧。
+            const promptTokens = data.usage.prompt_tokens
             // 后端在六处回传缓存信息，其中 cached_tokens 同时出现在
             // prompt_tokens_details 与 completion_tokens_details 里，但后者
             // **恒为 0**（实测）——只认 prompt_tokens_details，误取会永远读到 0。
             const cachedTokens = data.usage.prompt_tokens_details?.cached_tokens
               ?? data.usage.prompt_cache_hit_tokens
-              ?? 0
             const cacheWriteTokens = data.usage.prompt_tokens_details?.cache_write_tokens
+            const outputTokens = data.usage.completion_tokens
             const reasoningTokens = data.usage.completion_tokens_details?.reasoning_tokens
-            yield {
-              type: 'usage',
-              usage: {
-                // 与 codearts 一致：inputTokens 只计**未命中缓存**的部分，
-                // 命中部分单列 cacheReadTokens，否则缓存命中率显示会偏大。
-                inputTokens: cachedTokens > 0 ? promptTokens - cachedTokens : promptTokens,
-                outputTokens: data.usage.completion_tokens ?? 0,
-                ...cachedTokens > 0 ? { cacheReadTokens: cachedTokens } : {},
-                ...cacheWriteTokens !== undefined && cacheWriteTokens > 0 ? { cacheWriteTokens } : {},
-                ...reasoningTokens !== undefined && reasoningTokens > 0 ? { reasoningTokens } : {},
-              },
+            // ⚠️ 同 codearts / openai-compat：两个关键字段都拿到才发帧。
+            if (promptTokens !== undefined && outputTokens !== undefined) {
+              yield {
+                type: 'usage',
+                usage: {
+                  // 与 codearts 一致：inputTokens 只计**未命中缓存**的部分，
+                  // 命中部分单列 cacheReadTokens，否则缓存命中率显示会偏大。
+                  inputTokens: cachedTokens !== undefined && cachedTokens > 0 ? promptTokens - cachedTokens : promptTokens,
+                  outputTokens,
+                  ...cachedTokens !== undefined && cachedTokens > 0 ? { cacheReadTokens: cachedTokens } : {},
+                  ...cacheWriteTokens !== undefined && cacheWriteTokens > 0 ? { cacheWriteTokens } : {},
+                  ...reasoningTokens !== undefined && reasoningTokens > 0 ? { reasoningTokens } : {},
+                },
+              }
             }
           }
         }

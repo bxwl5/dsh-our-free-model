@@ -40,7 +40,6 @@ import {
 } from './cline-rate-limit.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
 import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
-import { settingsNamespaceFor } from './settings-compat.js'
 import { isClineExpired, clineHeaders, type ClineCredential } from './cline.js'
 import {
   clineDisplayName,

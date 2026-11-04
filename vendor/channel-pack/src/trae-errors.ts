@@ -150,6 +150,28 @@ export function recordsTraeRateLimit(kind: TraeErrorKind): boolean {
 }
 
 /**
+ * **流内业务码** → 错误类别（权威表，`trae-adapter.ts` 必须复用这份）。
+ *
+ * ## 为什么单独抽出来（2026-11-04 审查 P2-2）
+ *
+ * `trae-adapter.ts` 里原本另写了一份 `isRotatableStreamError(code)`：
+ * `code === 1005 || code === 4008 || code === 4011`。它与本文件的
+ * `classifyTraeError` 是**同一批业务码的两套判据** —— 任何一处调整（比如
+ * 上游新增 `4029` 也算额度）都得记得改两处，漏一处就漂移。
+ *
+ * ⚠️ 与 `classifyTraeError` 的区别：那个吃 **HTTP 响应体**（做子串匹配），
+ * 这个吃 **流内 `event:error` 的业务码**（已是整数，无需猜）。
+ * 两者覆盖的是同一批语义，故共用下面的 `kind` 判定。
+ */
+export function classifyTraeStreamCode(code: number): TraeErrorKind {
+  // 与 QUOTA_EXCEEDED_MARKERS / 4011 判据保持同一批码值。
+  if (code === 4008) return 'quota-exceeded'
+  if (code === 4011) return 'soft-rate'
+  if (code === 1005) return 'hard-plan'
+  return 'none'
+}
+
+/**
  * 该类别是否属于终态（重试无意义，只能重新登录）。
  */
 export function isTraeTerminalError(kind: TraeErrorKind): boolean {

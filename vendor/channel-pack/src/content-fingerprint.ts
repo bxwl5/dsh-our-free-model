@@ -233,14 +233,15 @@ function scrubContentBlocks(content: readonly unknown[]): readonly unknown[] {
   let changed: unknown[] | undefined
   content.forEach((block, index) => {
     if (block === null || typeof block !== 'object') return
-    const record = block as { type?: unknown, text?: unknown }
-    if (typeof record.type !== 'string' || !BLOCK_TEXT_TYPES.has(record.type)) return
-    if (typeof record.text !== 'string') return
-    const next = rewriteContentFingerprints(record.text)
-    if (next === record.text) return
+    // ⚠️ harness 形状的块**必须**带 type，故 allowUntyped=false
+    //（与 wire 侧共用同一份判定，避免两套口径再次漂移）。
+    const text = blockTextToScrub(block, false)
+    if (text === undefined) return
+    const next = rewriteContentFingerprints(text)
+    if (next === text) return
     // 惰性拷贝：只有第一次命中才建新数组，全未命中时保持原引用。
     const target = (changed ??= [...content])
-    target[index] = { ...record, text: next }
+    target[index] = { ...(block as Record<string, unknown>), text: next }
   })
   return changed ?? content
 }
@@ -447,12 +448,36 @@ function scrubJsonBody(body: Record<string, unknown>): boolean {
       if (Array.isArray(calls)) {
         for (const call of calls) {
           if (call === null || typeof call !== 'object') continue
+          // ① OpenAI 形态：`tool_calls[].function.arguments`（JSON 字符串）
           const fn = (call as Record<string, unknown>).function
-          if (fn === null || typeof fn !== 'object') continue
-          const args = (fn as Record<string, unknown>).arguments
-          if (typeof args !== 'string') continue
-          const next = rewriteContentFingerprints(args)
-          if (next !== args) { (fn as Record<string, unknown>).arguments = next; listChanged = true }
+          if (fn !== null && typeof fn === 'object') {
+            const args = (fn as Record<string, unknown>).arguments
+            if (typeof args === 'string') {
+              const next = rewriteContentFingerprints(args)
+              if (next !== args) { (fn as Record<string, unknown>).arguments = next; listChanged = true }
+            }
+          }
+          /**
+           * ② **Anthropic 形态**：`tool_calls[].input`（对象或字符串）。
+           *
+           * 原实现只认 ①（2026-11-04 审查 P2-2）。Claude 兼容层客户端经网关
+           * 发 tool_use 历史时用的是 `input`，于是**参数里的指纹漏洗** ——
+           * 而工具参数恰恰是模型最容易把自己的身份句写进去的地方
+           * （「You are an AI agent powered by …」被当成某个字段值）。
+           *
+           * 字符串形态直接洗；对象形态递归洗其**字符串叶子**（工具参数是任意
+           * JSON 结构，指纹可能嵌在很深的层里）。
+           */
+          if ('input' in (call as Record<string, unknown>)) {
+            const record = call as Record<string, unknown>
+            const input = record.input
+            if (typeof input === 'string') {
+              const next = rewriteContentFingerprints(input)
+              if (next !== input) { record.input = next; listChanged = true }
+            } else if (input !== null && typeof input === 'object') {
+              if (scrubDeepStrings(input)) listChanged = true
+            }
+          }
         }
       }
     }
@@ -463,22 +488,89 @@ function scrubJsonBody(body: Record<string, unknown>): boolean {
 }
 
 /**
- * 清洗块数组里的文本（`{type:'text'|'input_text'|'output_text', text}` 与
- * Gemini 的 `{text}`）。返回新数组或**原数组**（无改动时保持身份）。
+ * 递归清洗**任意 JSON 结构里的字符串叶子**（就地修改）。
+ *
+ * 用途：工具参数的 `input` 形态是任意结构的对象，指纹可能嵌在任何深度。
+ *
+ * @returns 是否有改动（无改动时调用方保持原引用，保住前缀缓存）。
+ *
+ * ⚠️ 只处理 `string` 叶子，**不**进入 `Map`/`Set`/`Date` 等特殊对象 ——
+ * 那类对象不该出现在 JSON wire body 里，万一出现也不该被我们改写。
  */
-function scrubTextBlocks(blocks: readonly unknown[]): readonly unknown[] {
+function scrubDeepStrings(value: unknown, depth = 0): boolean {
+  // 深度上限：恶意/异常结构（圆形之外的超深嵌套）不该把栈打爆。
+  if (depth > 32) return false
+  if (Array.isArray(value)) {
+    let changed = false
+    for (const item of value) {
+      if (scrubDeepStrings(item, depth + 1)) changed = true
+    }
+    return changed
+  }
+  if (value === null || typeof value !== 'object') return false
+  // 只递归「普通对象」：原型是 Object.prototype 或无原型。
+  const proto = Object.getPrototypeOf(value) as object | null
+  if (proto !== null && proto !== Object.prototype) return false
+  let changed = false
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof item === 'string') {
+      const next = rewriteContentFingerprints(item)
+      if (next !== item) {
+        ;(value as Record<string, unknown>)[key] = next
+        changed = true
+      }
+    } else if (scrubDeepStrings(item, depth + 1)) {
+      changed = true
+    }
+  }
+  return changed
+}
+
+/**
+ * 清洗块数组里的文本（wire 形状：`{type:'text'|'input_text'|'output_text', text}`、
+ * Gemini 的 `{text}`，以及 harness 的 `{type:'reasoning', text}`）。
+ *
+ * 返回新数组或**原数组**（无改动时保持身份）。
+ *
+ * ## 与 {@link scrubContentBlocks} 的关系（2026-11-04 审查 P2-1）
+ *
+ * 这两处原先**各写一套口径**，最直接的差异是：本函数不检查 `type`，
+ * 而 `scrubContentBlocks` 用 `BLOCK_TEXT_TYPES` 白名单。三处实现（加上
+ * `scrubJsonBody` 的字段遍历）意味着「同一份内容在两条路径上可能清洗结果不同」，
+ * 而两层覆盖面不一致正是 P0-1（签名被破坏）的根因。
+ *
+ * 现在统一到 {@link blockTextToScrub} 这一份判定上。**保留 `allowUntyped`
+ * 开关**而不是强行统一：wire 侧的裸 `{text}` 可能来自 Gemini 的 `parts`
+ * （合法）或调用方自定义结构（此时**不该**动，但调用点已用 role 过滤兜住）。
+ */
+function scrubTextBlocks(blocks: readonly unknown[], allowUntyped = true): readonly unknown[] {
   let changed: unknown[] | undefined
   blocks.forEach((block, index) => {
     if (block === null || typeof block !== 'object') return
-    const record = block as Record<string, unknown>
-    const text = record.text
-    if (typeof text !== 'string') return
+    const text = blockTextToScrub(block, allowUntyped)
+    if (text === undefined) return
     const next = rewriteContentFingerprints(text)
     if (next === text) return
     const target = (changed ??= [...blocks])
-    target[index] = { ...record, text: next }
+    target[index] = { ...(block as Record<string, unknown>), text: next }
   })
   return changed ?? blocks
+}
+
+/**
+ * 统一的「这个块该不该洗、洗哪段文本」判定（**唯一口径**）。
+ *
+ * @param block 待判定的块（已确认为非 null 对象）
+ * @param allowUntyped 没有 `type` 字段时是否仍然清洗（wire 侧的裸 `{text}`）
+ * @returns 需要清洗的文本；不该洗时返回 `undefined`
+ */
+function blockTextToScrub(block: object, allowUntyped: boolean): string | undefined {
+  const record = block as { type?: unknown, text?: unknown }
+  if (typeof record.text !== 'string') return undefined
+  if (typeof record.type === 'string') {
+    return BLOCK_TEXT_TYPES.has(record.type) ? record.text : undefined
+  }
+  return allowUntyped ? record.text : undefined
 }
 
 /** 解码请求体字节（支持 UTF-8 字符串与字节数组；其它形态返回 undefined）。 */
@@ -528,6 +620,24 @@ export function scrubJsonText(text: string): string | undefined {
 }
 
 /**
+ * 「带 body 的 `Request` 形态未被清洗」的一次性告警。
+ *
+ * ⚠️ 只告警**一次**：这条路径若真被用上，每个请求都会命中，逐条打日志会把
+ * 日志淹没（用户报「日志刷屏」时反而更难看出真正原因）。
+ */
+let unscrubbedRequestWarned = false
+function warnUnscrubbedRequestOnce(method: string): void {
+  if (unscrubbedRequestWarned) return
+  unscrubbedRequestWarned = true
+  // 不抛错：清洗是「尽力而为」，绝不能因为清洗让请求发不出去。
+  console.warn(
+    `[content-fingerprint] 收到带 body 的 Request 形态请求（${method}），`
+    + '出口层清洗对它是同步不友好的，本次未清洗。请改用 fetch(url, { body }) 形态，'
+    + '或在 channel-fetch 里 async 化并 input.clone() 重建。',
+  )
+}
+
+/**
  * 底层出口的清洗入口：把 `fetch(input, init)` 的入参过一遍。
  *
  * @returns 无需改动时返回 `null`（调用方**原样**转发，零开销）；
@@ -547,12 +657,25 @@ export function scrubFetchArguments(
       const scrubbed = scrubJsonText(fromInit)
       return scrubbed === undefined ? null : { input, init: { ...init, body: scrubbed } }
     }
-    // ② body 在 Request 里（构造好的 Request 对象）
-    if (typeof Request === 'function' && input instanceof Request) {
-      // ⚠️ 不能 `await input.text()`：这会**消耗** body 流，原请求就废了。
-      // 这里只在调用方已经显式给了 `duplex`/`body` 之外的场景需要读流，
-      // 而我们的所有 POST 都把 body 放在 init 上 —— 因此 Request 形态只在
-      // **没有 body** 时才是安全的，此时必然没有指纹可清。
+    /**
+     * ② body 在 `Request` 里（`new Request(url, { method:'POST', body })` 形态）。
+     *
+     * ⚠️ **不能改成 `async` 去 `await input.text()`**：那会**消耗** body 流，
+     * 原请求就废了。但旧实现因此**整类放弃**清洗（直接 `return null`），
+     * 与模块头「这是全部渠道最终请求的绕不过去的出口」自相矛盾（2026-11-04 审查 P1-5）。
+     *
+     * 本函数是同步的、且 `channel-fetch` 的调用点是同步的，无法在这里读流。
+     * 正确做法是**不做**（而不是假装做了），但必须**可观测** —— 否则将来有人
+     * 用 `Request` 形态发请求时，指纹会静默原样出网，没有任何线索。
+     *
+     * ⇒ 这里改为：**只有带 body 的 Request 才告警**（`GET`/无体请求没风险，
+     *   告警会把日志刷满）。真正要支持就该在 `channel-fetch` 里 async 化并
+     *   `input.clone()` 重建 Request —— 见该函数处的说明。
+     *
+     * 现状：全仓所有 POST 都用 `fetch(url, { body })` 形态，此路径**当前不可达**。
+     */
+    if (typeof Request === 'function' && input instanceof Request && input.body !== null) {
+      warnUnscrubbedRequestOnce(input.method)
       return null
     }
     return null

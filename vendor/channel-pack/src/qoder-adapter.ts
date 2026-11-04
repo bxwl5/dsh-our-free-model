@@ -26,7 +26,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
-import { randomUUID } from 'node:crypto'
 import { AccountPool, providerCatalogVisible } from './account-pool.js'
 import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import { isQoderExpired, type QoderCredential } from './qoder.js'
@@ -41,7 +40,6 @@ import {
 import {
   collectImages,
   consumeOpenAiSse,
-  contentToText,
   errorDetail,
   httpErrorCode,
   isTransportError,
@@ -1099,6 +1097,21 @@ export class QoderAdapter extends LlmAdapter {
     // 中国版那条「等 2 秒就能成功」的瞬时排队也因走错路径而反复失败。
     const queueDeadline = Date.now() + resolveQueueTimeoutMs()
     let queueAttempts = 0
+    /**
+     * ⚠️ **总轮次**硬上限（2026-11-04 审查 P2-3）。
+     *
+     * `queueDeadline` 只约束「排队等待」，而这条 `for (;;)` 里还有**别的**
+     * `continue` 出口（切账号、凭据续期、SSE 层 ModelQueuedError 回流）。
+     * 那些路径**都不过** `queueDeadline` 检查 —— 只要账号池持续返回「另一个可用
+     * 账号」、或上游持续以不同理由拒绝，循环就能一直转下去：用户看到的是
+     * 「一直转圈、内存缓慢增长」，且没有任何日志能说明它为什么不停。
+     *
+     * 上限取 20：正常路径最多是「切号几次 + 排队几次 + 续期一次」，
+     * 乘以账号数（个位数）也远低于这个数；真撞到 20 说明上游行为异常，
+     * 该如实报错而不是继续空转。
+     */
+    const QODER_MAX_ATTEMPTS = 20
+    let totalAttempts = 0
     let authRefreshed = false
     let duplicateRetried = false
     let response: Response
@@ -1131,6 +1144,12 @@ export class QoderAdapter extends LlmAdapter {
     // SSE 消费器归为 `SERVER` 直接抛给 harness，以 500…8000ms 快退避重试
     // 5 次，而服务端要求等 30 秒，**永远等不到**）。
     for (;;) {
+      if (++totalAttempts > QODER_MAX_ATTEMPTS) {
+        throw new LlmError(
+          `qoder: 重试 ${QODER_MAX_ATTEMPTS} 轮仍未成功（上游持续拒绝/换号），已中止以免空转`,
+          'SERVER',
+        )
+      }
       response = await this.sendEncrypted(await buildRequest(credential), options)
 
       if (!response.ok && (response.status === 401 || response.status === 403)) {
@@ -1323,7 +1342,8 @@ export class QoderAdapter extends LlmAdapter {
         `qoder: 排队重试超过上限（${QUEUE_MAX_ATTEMPTS} 次）`,
         'QUEUE',
       )
-    }    if (options.signal?.aborted === true) {
+    }
+    if (options.signal?.aborted === true) {
       throw new LlmError('qoder: 排队等待期间请求已取消', 'QUEUE')
     }
     const waitMs = qoderQueueDelayMs(queueInfo)

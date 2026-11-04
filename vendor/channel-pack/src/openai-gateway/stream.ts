@@ -207,6 +207,19 @@ export async function* toOpenAiSse(
       }
     }
     if (state.finishReason === undefined) {
+      /**
+       * ⚠️ usage 帧**不能**因为这个分支被丢掉（2026-11-04 审查 P2-4）。
+       *
+       * 「上游没发 finish 就断」与「有没有用量」是**两个正交维度**：
+       * 上游完全可能先发完 usage 再异常断连。原实现直接 `return`，
+       * 已经收到的 `state.usage` 被静默丢弃 ⇒ 客户端少一笔账单/用量。
+       *
+       * 顺序上 usage 必须在错误帧**之前**：OpenAI 客户端把 `usage`
+       * 当作「这一轮已结算」的信号，放在 error 之后有些实现会直接忽略。
+       */
+      if (state.usage !== undefined) {
+        yield line({ id: requestId, object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model, choices: [], usage: usageJson(state.usage) })
+      }
       yield line({ id: requestId, object: 'chat.completion.chunk', model, choices: [], error: { message: 'upstream stream ended before finish', type: 'server_error', code: 'incomplete_stream' } })
       yield 'data: [DONE]\n\n'
       return
