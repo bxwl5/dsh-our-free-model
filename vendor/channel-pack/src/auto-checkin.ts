@@ -1293,6 +1293,19 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
     return { ...providers, [provider]: entry }
   }
 
+  /**
+   * 一轮自动签到：逐渠道发起、按结局记账、补排下次重试。
+   *
+   * ## 结构说明（为什么 236 行不拆）
+   *
+   * 单渠道结算的全部状态都在循环体内：`base`（本渠道账本）、`totals`（累计）、
+   * `ledgers`/`texts`（逐渠道产物）、`settle` 闭包（复用这四者）。若提成顶层
+   * 函数，这些都要变成参数或上下文对象——签名比函数体还长，且 4 轮正确性
+   * 修复（2026-10-26 缺陷 A/B、2026-11-04 zcode 窗口/日界、2026-11-05 上限
+   * per-provider）每处都依赖局部语境，拆开只会把「一处改动」变成「跨函数追参」。
+   * 审查建议（2026-11-05）评估后**维持现状**：以 `settle` 闭包为结算单元，
+   * 各分支已有注释与 20 组测试守护。
+   */
   async function performRun(providerIds: readonly string[]): Promise<void> {
     const totals = emptyTotals()
     /**

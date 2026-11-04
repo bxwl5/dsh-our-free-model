@@ -236,6 +236,7 @@ window.__ModuleLoader__.load({
         'chan.expires.never': '长效',
         'chan.expires.expired': '已到期，请续期',
         'chan.disabled': '已停用',
+        'chan.acct.ratelimited': '限流至 {time}',
         'chan.login.title': '登录 {name}',
         'chan.login.step1': '在浏览器中完成登录（若没有自动打开，点下面的按钮）。',
         'chan.login.step2': '登录成功后本页会自动完成，无需复制任何东西。',
@@ -747,6 +748,7 @@ window.__ModuleLoader__.load({
         'chan.expires.never': 'Long-lived',
         'chan.expires.expired': 'Expired — refresh needed',
         'chan.disabled': 'Disabled',
+        'chan.acct.ratelimited': 'Rate-limited until {time}',
         'chan.login.title': 'Sign in to {name}',
         'chan.login.step1': 'Finish the sign-in in your browser (if it did not open, use the button below).',
         'chan.login.step2': 'This page completes by itself once the browser flow does — nothing to copy.',
@@ -1549,6 +1551,8 @@ window.__ModuleLoader__.load({
 .ofm_acct.pending{border-style:dashed}
 .ofm_acctname{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px}
 .ofm_acctmeta{font-size:10.5px;color:var(--dsw-alias-label-tertiary);white-space:nowrap}
+/* 账号行的限流角标（2026-11-05 轮询透明度）：一眼看出「为什么一直同一号」。 */
+.ofm_acctlimit{color:var(--dsw-alias-state-warn,#b45309)}
 .ofm_balanceerror{flex-basis:100%;overflow-wrap:anywhere;color:var(--dsw-alias-state-error-primary);font-size:11px}
 .ofm_acctacts{margin-left:auto;display:flex;gap:5px;flex-wrap:wrap}
 .ofm_modellist{display:flex;flex-direction:column;gap:4px;max-height:238px;overflow:auto;padding-right:2px}
@@ -3983,7 +3987,22 @@ window.__ModuleLoader__.load({
                 const pending = row.refreshable !== true && !Number.isFinite(row.expiresAt)
                 return h('div', { className: 'ofm_acct' + (pending ? ' pending' : ''), key: row.id },
                   h('span', { className: 'ofm_acctname', title: row.nickname ?? row.id }, row.nickname ?? row.id),
-                  h('span', { className: 'ofm_acctmeta' }, row.enabled === false ? t('chan.disabled') : t('chan.enabled'), ' · ', expiryText(row, t)),
+                  h('span', { className: 'ofm_acctmeta' },
+                    row.enabled === false ? t('chan.disabled') : t('chan.enabled'),
+                    ' · ',
+                    expiryText(row, t),
+                    // ★ 轮询透明度（待办 2026-11-04）：账号被限流时用户看不出
+                    // 「为什么一直同一号」。条目自带 modelRateLimits（池条目字段），
+                    // 这里把仍未过期的标记显示成「限流至 HH:MM」角标。
+                    (() => {
+                      const limits = row.modelRateLimits ?? {}
+                      const soon = Object.values(limits).filter(value => Number(value) > Date.now())
+                      if (soon.length === 0) return null
+                      const time = new Date(Math.max(...soon))
+                      const label = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`
+                      return h('span', { className: 'ofm_acctlimit', title: Object.keys(limits).join(', ') },
+                        ' · ', t('chan.acct.ratelimited').replace('{time}', label))
+                    })()),
                   (() => {
                     const balance = balanceOf(row.id)
                     // 今日已领的增量（可能为 null：今天没领到或还没领）。

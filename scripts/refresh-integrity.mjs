@@ -99,8 +99,22 @@ function main() {
     console.log(`ok  integrity 与 HEAD 一致（${record.files.length} 个文件，version ${record.version}）`)
     return
   }
-  writeFileSync(target, format(record), 'utf8')
-  console.log(`integrity 已刷新：${record.files.length} 个文件，version ${record.version}`)
+  // ★ 写后自检（2026-11-05）：出现过一次「刷新完成」但磁盘上仍是旧记录
+  //   （字节数没变），重跑才对。根因未定位（疑似 vfat 写入缓存/同步时序），
+  //   这里在写回后**重新从磁盘读取**并与刚算的记录比对，不一致就重试一次，
+  //   仍失败则非零退出——绝不允许脚本谎报「已刷新」。
+  const desired = format(record)
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    writeFileSync(target, desired, 'utf8')
+    const onDisk = readFileSync(target, 'utf8')
+    if (onDisk === desired) {
+      console.log(`integrity 已刷新：${record.files.length} 个文件，version ${record.version}` + (attempt > 1 ? '（第 2 次写入才生效）' : ''))
+      return
+    }
+    if (attempt === 1) console.error('integrity 写回后与预期不一致（磁盘读到旧值），重试一次…')
+  }
+  console.error('integrity 写回两次仍未生效——检查文件系统/权限，不要带着旧记录发布！')
+  process.exitCode = 1
 }
 
 const isDirectRun = process.argv[1] !== undefined
