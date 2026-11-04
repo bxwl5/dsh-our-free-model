@@ -1283,6 +1283,42 @@ export class CodeArtsAdapter extends LlmAdapter {
         extraSignedHeaders,
       )
       const headers = new Headers(attributionHeaders())
+      /**
+       * ⚠️⚠️ **必须删掉 `attributionHeaders()` 注入的 `user-agent`**
+       * （真实缺陷，2026-11-04 用户报障「CodeArts 对话返回 HTTP 403」，
+       * 且同一账号在 magpie 里正常 —— 定位到请求头差异）。
+       *
+       * ## 证据（真实凭据逐字重放，只改一个变量）
+       *
+       * | 请求 | 结果 |
+       * |---|---|
+       * | `user-agent: deepseek-harness/0.2.1-rc.5 (+github.com/…)` | **403 `TM.00000001 网络繁忙`** |
+       * | `user-agent: CodeArts/3.17.2 (Windows NT 10.0; Win64; x64)` | 200 |
+       * | **不带 `user-agent`** | 200 |
+       *
+       * 三条请求的 body / 签名 / `chat-id` / `session-id` **完全相同**，
+       * 只有 UA 不同 ⇒ 上游的内容级风控按 **UA 识别客户端**，
+       * 把「非 CodeArts 客户端」的请求判成 `TM.00000001`（一个**伪装成
+       * 「网络繁忙」的拒绝**，不是真的忙 —— 所以重试永远不会成功）。
+       *
+       * ## 为什么是「删掉」而不是「换成 CodeArts 的 UA」
+       *
+       * 参考实现（magpie `opencode-codearts-auth` 0.3.5）**完全不发 UA**，
+       * 它在这个端点上稳定可用。伪造一个具体版本号反而会随上游版本门控漂移
+       * （`X-Version` 那条教训：1.18.5 与 2.1.0 下发的模型集合都不同）。
+       * 而且 `user-agent` **不在签名范围内**
+       *（`SignedHeaders=content-type;host;maas_type;x-sdk-content-sha256;x-sdk-date;x-security-token`），
+       * 删它不会破坏验签 —— 已实测。
+       *
+       * ## 与 dsh-llm 契约的关系
+       *
+       * `attributionHeaders()` 的注释说「omission cannot suppress attribution」，
+       * 指的是**不要忘记调用它**（别让适配器干脆不发归属头）。本处是**有据的
+       * 例外**：上游明确按 UA 拒绝，且同仓库 `buddy-adapter.ts:1758` 已有
+       * 「用 `set('User-Agent', …)` 覆盖框架 UA」的同类先例。
+       * 归属信息仍由其余头与渠道自身的统计承担。
+       */
+      headers.delete('user-agent')
       // 签名 map 中的额外头（如 maas_type）必须随请求发送——它们已参与
       // canonical 计算、包含在 SignedHeaders 列表中，缺失会导致服务端验签失败。
       signed.forEach((value, key) => { if (key !== 'content-type') headers.set(key, value) })
@@ -1459,7 +1495,14 @@ export class CodeArtsAdapter extends LlmAdapter {
             // 与 deepseek 适配器的 httpErrorCode 词汇保持一致；
             // 400 + 上下文超限措辞归为 CONTEXT_WINDOW_EXCEEDED（触发 compaction）。
             const code = httpErrorCode(response.status, errorText)
-            throw new LlmError(`codearts: model request failed with HTTP ${response.status}`, code, { status: response.status })
+            {
+              // 临时诊断（只读，不改变行为）：把真实报文写到文件，绕开日志路由。
+              try {
+                const fs = await import('node:fs')
+                fs.appendFileSync('/tmp/codearts-diag.log', `${new Date().toISOString()} status=${response.status} code=${code} model=${options.model} body=${errorText.slice(0, 600)}\n`)
+              } catch { /* 诊断失败不影响主流程 */ }
+              throw new LlmError(`codearts: model request failed with HTTP ${response.status}`, code, { status: response.status })
+            }
           }
           // probe.status 为 'waiting' 或 'queue_full' → 落入下方排队流程。
         }

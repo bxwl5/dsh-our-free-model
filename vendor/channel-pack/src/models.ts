@@ -507,8 +507,46 @@ export function setBenefitMemoryCache(ids: string[] | undefined): void {
  * 与 `glm-5.3-flash` 名字形态相同，benefit 属性却相反。唯一权威来源是
  * gateway/config 的模型清单 + 兜底表。
  */
+/**
+ * 去掉模型 id 尾部的 **4 位日期版本号**（与本文件外的同名助手同规则）。
+ *
+ * `deepseek-v4.1-flash-1017` → `deepseek-v4.1-flash`、`deepseek-v4-flash-0731`
+ * → `deepseek-v4-flash`。**只用于判定**：发给上游的 id 保留日期
+ * （带日期的才是已注册的免费模型，裸名是另一个计费模型）。
+ *
+ * ⚠️ 与 `llm-adapter.ts` 的 `normalizeModelId` 是**同一规则的两份实现**，
+ * 因为本文件被 `models.ts` 的调用方独立引用（不能反向依赖适配器）。
+ * 改动时两处必须同步 —— 有测试 `channel-context-window-test` 钉住行为。
+ */
+function stripDateSuffix(id: string): string {
+  if (id.length <= 5) return id
+  const suffix = id.slice(-5)
+  if (suffix.startsWith('-') && /^\d{4}$/.test(suffix.slice(1))) return id.slice(0, -5)
+  return id
+}
+
+/**
+ * 该模型是否走 **benefit（免费额度）通道**（需 `maas_type: benefit` 头）。
+ *
+ * ## ⚠️ 必须**同时**匹配带日期与不带的形态（真实缺陷，2026-11-04 用户报障）
+ *
+ * 目录里下发的真实 id 是 **带日期**的（`deepseek-v4.1-flash-1017`），
+ * 而本表只有裸名（`deepseek-v4.1-flash`）。原先直接 `includes(model)`
+ * ⇒ 带日期的 id **永远判成非 benefit** ⇒ 不发 `maas_type: benefit` 头
+ * ⇒ 上游按**非 benefit 通道**处理该模型 ⇒ 403 / 并发上限等一串失败。
+ *
+ * 实测（2026-11-04，真实凭据）：
+ * - `glm-5.3-flash` + benefit 头 → `InferHub.4004.200 benefit not found`
+ *   （该账号当天未领免费额度），**不带头**则正常出流；
+ * - `deepseek-v4.1-flash-1017` 不带头 → `TM.00001041 并发会话数已达上限`。
+ *
+ * ⇒ 判定必须认带日期形态，否则「剥头重试」这条自愈路径根本不会触发。
+ */
 export function isCodeArtsBenefitModel(model: string): boolean {
   if (benefitMemoryCache === undefined) benefitMemoryCache = loadBenefitCache()
-  if (benefitMemoryCache !== undefined && benefitMemoryCache.includes(model)) return true
-  return CODEARTS_BENEFIT_FALLBACK.includes(model)
+  const candidates = [model, stripDateSuffix(model)]
+  const inList = (list: readonly string[]): boolean =>
+    candidates.some((candidate) => list.includes(candidate))
+  if (benefitMemoryCache !== undefined && inList(benefitMemoryCache)) return true
+  return inList(CODEARTS_BENEFIT_FALLBACK)
 }

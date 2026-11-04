@@ -274,3 +274,51 @@ export async function verifyAutoClawRefusalClassification() {
 
   console.log('ok  AutoClaw 拒绝分类：额度/封禁/鉴权分流，「非法模型」不再误报密钥无效')
 }
+
+/**
+ * 第五部分：CodeArts **不得发送 DSH 框架 UA**（真实缺陷，2026-11-04）。
+ *
+ * ## 症状与定位
+ *
+ * 用户报「CodeArts 对话返回 HTTP 403」，且**同一账号在 magpie 里正常**。
+ * 逐字重放插件实际发出的请求（body / 签名 / chat-id / session-id 全同），
+ * 只改一个变量：
+ *
+ * | user-agent | 结果 |
+ * |---|---|
+ * | `deepseek-harness/0.2.1-rc.5 (+github.com/…)` | **403 `TM.00000001 网络繁忙`** |
+ * | `CodeArts/3.17.2 (Windows NT 10.0; Win64; x64)` | 200 |
+ * | 不带 | 200 |
+ *
+ * ⇒ 上游内容级风控按 **UA 识别客户端**，把非 CodeArts 客户端判成
+ * `TM.00000001` —— 一个**伪装成「网络繁忙」的拒绝**，所以重试永远不成功。
+ *
+ * 本用例用**源码守卫**钉住它（这条是「不发某个头」的负向约束，行为测试
+ * 在离线桩上测不出来 —— 需要真上游才有 403）。
+ */
+export async function verifyCodeArtsUserAgent() {
+  const fs = await import('node:fs')
+  const url = new URL('../vendor/channel-pack/src/llm-adapter.ts', import.meta.url)
+  const source = fs.readFileSync(url, 'utf8')
+
+  // 取 codearts 的请求头构造段（attributionHeaders 之后到 fetchImpl 之前）
+  const start = source.indexOf('const headers = new Headers(attributionHeaders())')
+  assert.ok(start >= 0, '未找到 CodeArts 的请求头构造点')
+  const end = source.indexOf('response = await this.fetchImpl(url', start)
+  assert.ok(end > start, '未找到 fetchImpl 调用点')
+  const section = source.slice(start, end)
+
+  assert.ok(section.includes("headers.delete('user-agent')"),
+    'CodeArts 必须删掉 attributionHeaders() 注入的框架 UA —— '
+    + '否则上游按非 CodeArts 客户端判 403 TM.00000001（实测：只改 UA 即 200）')
+
+  // 反向守卫：不得用「伪造 CodeArts 版本号」的方式绕过（会随版本门控漂移）
+  assert.equal(/headers\.set\(\s*['"]user-agent['"]\s*,\s*['"`]CodeArts\//i.test(section), false,
+    '不要伪造具体 CodeArts 版本号：参考实现根本不发 UA，伪造会随上游版本门控漂移')
+
+  // 删 UA 不得影响签名：user-agent 不在 SignedHeaders 范围内（实测确认）
+  assert.ok(section.includes("if (key !== 'content-type')"),
+    'signed 头合并逻辑应保持不变')
+
+  console.log('ok  CodeArts 不发框架 UA（TM.00000001 伪装成「网络繁忙」的拒绝已修）')
+}
