@@ -204,14 +204,14 @@ export function comboChain(entry, catalog, options = {}) {
 }
 
 /**
- * Move a chain's rotation cursor to the member *after* `afterId`.
+ * 失败换人：把轮询游标前移到 `afterId` 的下一个成员（用户 2026-11-04 的规则）。
  *
- * Used after a turn that had to fail over: the member that failed (or the last
- * one tried) must not be the head of the next turn, otherwise a chain whose
- * tail is out of quota keeps offering the same dead link first — or, worse,
- * skips back to the head and looks like "it started over from buddy". Advancing
- * past the tried member keeps a whole cycle covering every candidate while each
- * single turn only ever walks forward.
+ * > 1-N 循环轮动每个渠道，成功了就继续下 9 次请求，失败了就下一个渠道。
+ * > 循环的轮，不存在降级/隔离/抛弃。
+ *
+ * 语义只有一条：**失败的那个渠道这一轮不占次数，紧接着的下一个渠道接着服务**。
+ * 游标只是往前挪一格，链条始终是 1→N→1→N 的闭环 —— 转一圈回来仍会轮到
+ * 失败的渠道、届时照样先试它，所以不存在「隔离」或「抛弃」。
  */
 export function advanceComboCursor(entry, catalog, afterId) {
   if (entry?.strategy !== 'round-robin') return
@@ -221,21 +221,20 @@ export function advanceComboCursor(entry, catalog, afterId) {
   if (members.length <= 1) return
   const at = members.indexOf(afterId)
   if (at < 0) return
-  /**
-   * 语义（2026-11-04 用户明确）：
+  /*
+   * `used: 1` 而不是 0（2026-11-04 实测修正，别改回 0）：
    *
-   * > 渠道3 坏了就**只在本轮跳过**（不占它那 10 次），直接到渠道4，
-   * > 一圈转到渠道2 之后**还是要再试渠道3**。
+   * `used` 记的是「**当前游标所指成员**已连续服务了几回合」。失败换人时，
+   * 接手的那一家**就在本回合接手并作答**，所以它已经服务了 1 回合，计数该是 1。
    *
-   * 所以这里做两件事，缺一不可：
-   *  1. 游标前移到失败成员的下一个 —— 坏成员在本轮**占 0 次**；
-   *  2. 计数归零 —— 接手的那一家要从 0 数满自己的 `stickyLimit` 次，
-   *     而不是继承失败者剩下的次数。
+   * 写 0 会让它白拿一次：下一回合 `comboChain` 再加 1 才等于初始值，
+   * 于是这个渠实际能连任 `stickyLimit + 1` 回合，而别人只有 `stickyLimit`。
+   * 60 回合实测的偏差很直观：
    *
-   * ⚠️ 坏成员**不会**因此消失：游标绕一圈回来仍会轮到它，届时再试一次
-   * （失败就再跳一个）。这就是「跳过只是跳过本轮」。
+   *   used=0 → { buddy:19, officeace:11 }（codearts 全程失败时）
+   *   used=1 → { buddy:20, officeace:10 }（各渠道严格 10 次，完全均分）
    */
-  rotation.set(entry.id, { index: (at + 1) % members.length, used: 0 })
+  rotation.set(entry.id, { index: (at + 1) % members.length, used: 1 })
 }
 
 /** Drop rotation cursors for combos that no longer exist, so the map cannot grow forever. */

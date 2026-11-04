@@ -301,12 +301,20 @@ export class FreeModelAdapter {
           + `, strategy ${entry.strategy ?? 'fallback'}`
           + `${entry.strategy === 'round-robin' ? `, sticky ${entry.stickyLimit ?? 1}` : ''})`,
         )
-        // 只有**发生过降级**（答出来的不是队首那个）才推游标：这时下一回合
-        // 的起点应该是「刚答出来的这个成员的下一个」，而不是回到队首重新开始
-        // ——否则链尾的 zcode 一打光，用户每一回合都先撞一次 zcode、再由 buddy
-        // 兜掉，看起来就是「一直在轮 buddy」。队首直接答出来时不推，粘滞
-        // （stickyLimit）对提示缓存的价值才保得住。
-        if (index > 0) advanceComboCursor(entry, snapshot.catalog, candidate.id)
+        /*
+         * ★ 成功作答后**不动游标**（用户 2026-11-04 的轮询规则）：
+         *
+         * > 1-N 循环轮动每个渠道，成功了就继续下 9 次请求，失败了就下一个渠道。
+         * > 循环的轮，不存在降级/隔离/抛弃。
+         *
+         * 「成功」的含义就是**这个渠道接着服务**：游标原地不动，靠 `comboChain`
+         * 的 `used` 计数攒满 `stickyLimit` 次后才自然前移一位。
+         *
+         * ⚠️ 这里原先写的是 `advanceComboCursor(...)` —— 那是**失败换人**用的
+         * （前移到下一个渠道），拿它处理「成功」等于「刚答出来的渠道立刻被跳
+         * 过」，且计数被清零 ⇒ 它永远攒不满 10 次。于是队首渠道反复兜底、
+         * 其它渠道几乎不出现（用户截图里 officeace 只出现 1 次就是它）。
+         */
         this.deps.recordTurn?.({ at: started, model: entry.id, ok: result?.ok === true, recovered: result?.recovered === true, attempts: index + 1, origin: 'harness' })
         return
       }
@@ -321,18 +329,17 @@ export class FreeModelAdapter {
       const reason = result.verdict === null || result.verdict === undefined ? 'failed' : describeVerdict(result.verdict)
       this.markFaulty(candidate.id, result.verdict)
       /**
-       * 失败成员：**跳过本轮，不占它的 10 次**（2026-11-04 用户明确的规则）。
+       * 失败 ⇒ **下一个渠道**（用户 2026-11-04 的轮询规则）：
        *
-       * > 渠道3 坏了就只在本轮跳过，直接到渠道4，一圈转到渠道2 之后
-       * > 还是要再试渠道3。
+       * > 1-N 循环轮动每个渠道，成功了就继续下 9 次请求，失败了就下一个渠道。
+       * > 循环的轮，不存在降级/隔离/抛弃。
        *
-       * `advanceComboCursor` 把游标推到它之后并归零计数：接手的那家从 0 数
-       * 满自己的 `stickyLimit`，坏成员本轮占 0 次；游标绕一圈回来仍会轮到它，
-       * 届时再试。
+       * `advanceComboCursor` 把游标前移到失败成员的下一位并清零计数：
+       *  - 失败的渠道在本轮**占 0 次**，直接轮到下一个；
+       *  - 接手的那家从 0 开始攒自己的一轮。
        *
-       * ⚠️ 与 `markFaulty` 的冷却并**不冲突**：冷却只是把它挪到队尾（让同回合
-       * 内的后备顺序更合理），不阻止它下回合被尝试 —— 真到了下一次轮到它，
-       * 它会作为队首被如实再试一遍。
+       * ⚠️ 它**不是**「隔离/抛弃」：游标只是挪了一格，循环转一圈回来仍会轮到
+       * 这个渠道、届时照样先试它一次。整条链始终是 1→N→1→N 的闭环。
        */
       advanceComboCursor(entry, snapshot.catalog, candidate.id)
       tried.push(`${candidate.id} (${reason})`)

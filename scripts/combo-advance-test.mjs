@@ -65,7 +65,7 @@ process.env.OUR_FREE_MODEL_BASE = `http://127.0.0.1:${server.address().port}`
 
 const { FreeModelAdapter, ROUTE_MAIN } = await import('../src/adapter.js')
 const { buildCatalog } = await import('../src/catalog.js')
-const { buildComboCatalog, normalizeCombos, comboId, comboChain } = await import('../src/combos.js')
+const { buildComboCatalog, normalizeCombos, comboId, comboChain, advanceComboCursor } = await import('../src/combos.js')
 
 const MODELS = ['deepseek-v4-flash-free', 'mimo-v2.5-free', 'mimo-v2.6-flash-free']
 const COMBO_ID = 'combo:failover'
@@ -257,11 +257,21 @@ for (const [status, type, message, attempts] of [
   if (attempts === 2) assert.equal(run.text, ANSWER)
 })
 
-await check('a spent head hands the rotation to the member after the one that answered', async () => {
-  // 用户实测：链路 [buddy, qodercn, officeace, zcode] 里 zcode 额度打光以后，
-  // 每一回合都从 buddy 重新开始轮 —— 因为轮转游标在粘滞期内不动，队首那个
-  // 死成员就被反复先撞一次。正确的行为是：失败 / 答出之后把游标推到刚试过的
-  // 那个成员的下一个，下一回合从那里接着走。
+await check('a dead head is skipped for the rest of its slot, but the rotation stays cyclic', async () => {
+  /*
+   * 规则（用户 2026-11-04）：
+   *
+   * > 1-N 循环轮动每个渠道，成功了就继续下 9 次请求，失败了就下一个渠道。
+   * > 循环的轮，不存在降级/隔离/抛弃。
+   *
+   * 本用例守两件事：
+   *  1. 队首额度打光时，**这一轮**直接顺延到下一个渠道作答（不白撞死链）；
+   *  2. 「成功」不会把游标搬到别处 —— 作答的渠道接着服务它剩下的次数，
+   *     次序始终跟着用户在路由里排的顺序走。
+   *
+   * ⚠️ 这里原先把「成功之后也要推进游标」写成了期望，那正是导致
+   *    「一直轮 buddy、别的渠道几乎不出现」的原因，已按用户规则改掉。
+   */
   const adapter = new FreeModelAdapter({
     state: () => ({
       catalog: CATALOG,
@@ -298,12 +308,24 @@ await check('a spent head hands the rotation to the member after the one that an
   assert.deepEqual(first.scenario.requests.map(row => row.body.model), [MODELS[0], MODELS[1]],
     'the first turn walks the stored order past the dead head')
 
+  /*
+   * 第二回合：游标已被失败换人推走，不该再从死掉的队首开始；
+   * 但也不该跳过**正在服务**的那个渠道 —— 它要在自己的名额里继续。
+   */
   const second = await turn([ok])
   assert.equal(second.finish?.kind, 'stop')
   assert.notEqual(second.scenario.requests[0].body.model, MODELS[0],
-    'the next turn does not start again at the dead head')
-  assert.equal(second.scenario.requests[0].body.model, MODELS[2],
-    'it continues after the member that answered, not after the dead one')
+    '下一回合不能再从死掉的队首开始（那样每回合都白撞一次）')
+  assert.equal(second.scenario.requests[0].body.model, MODELS[1],
+    '成功作答的渠道要继续服务它自己的名额，不被提前跳过')
+
+  /*
+   * 第三回合：连着成功也不改变次序 —— 仍然是 `MODELS[1]` 在自己那 10 次里，
+   * `stickyLimit` 到了才整体前移。这条断言防的正是「成功后偷偷搬游标」。
+   */
+  const third = await turn([ok])
+  assert.equal(third.scenario.requests[0].body.model, MODELS[1],
+    '连续成功期间，作答渠道保持不变（粘滞生效，不按成败搬游标）')
 })
 
 await check('a candidate that hit its quota is deprioritised next turn, never dropped', async () => {
@@ -354,6 +376,98 @@ await check('a candidate that hit its quota is deprioritised next turn, never dr
   assert.equal(comboChain(CATALOG.find(row => row.id === COMBO_ID), CATALOG).length, 2,
     'the chain itself is unchanged — the member is only deprioritised')
 })
+
+/**
+ * ★ 路由轮询的次序（用户 2026-11-04）：
+ *
+ * > 1-N 循环轮动每个渠道，成功了就继续下 9 次请求，失败了就下一个渠道。
+ * > 循环的轮，不存在降级/隔离/抛弃。
+ *
+ * ## 锁死三件事
+ *
+ * 1. **成功不动游标**。原先成功分支调的是 `advanceComboCursor`（那是失败换人用的），
+ *    等于「刚答出来的渠道立刻被跳过」且计数被清零 —— 它永远攒不满 10 次，
+ *    队首渠道反复兜底、其它渠道几乎不出现（用户截图里 officeace 只出现 1 次）。
+ * 2. **失败就下一个渠道**，失败者本轮占 0 次，但**留在闭环里**（转一圈仍重试）。
+ * 3. **每个健康渠道严格拿满 `stickyLimit` 次**，且次序与用户排的顺序一致。
+ *    失败换人那一回合由接手者实际作答，故 `used` 从 1 起算（写 0 会让它白拿一次）。
+ */
+{
+  const MEMBERS = ['buddy', 'qodercn', 'trae', 'raccoon', 'codearts', 'officeace']
+  const catalog = MEMBERS.map(name => ({ id: `channel:${name}/m` }))
+  const tally = list => list.reduce((map, name) => (map[name] = (map[name] ?? 0) + 1, map), {})
+  /** 忠实走 `runCombo` 的循环：逐候选试，失败才推进游标，成功立即停手。 */
+  const runTurns = (id, bad, turns) => {
+    const entry = { id, combo: catalog.map(row => row.id), strategy: 'round-robin', stickyLimit: 10 }
+    const served = []
+    for (let turn = 0; turn < turns; turn += 1) {
+      const chain = comboChain(entry, catalog)
+      let winner = null
+      for (const candidate of chain) {
+        if (bad.has(candidate.id)) { advanceComboCursor(entry, catalog, candidate.id); continue }
+        winner = candidate
+        break
+      }
+      if (winner === null) { served.push('全部失败'); break }
+      served.push(winner.id.split('/')[0].replace('channel:', ''))
+    }
+    return served
+  }
+
+  // ① 全健康：严格 10 次一换，次序等于用户排的顺序，闭环回到队首
+  const healthy = runTurns('chain-healthy', new Set(), 70)
+  assert.deepEqual(tally(healthy), { buddy: 20, qodercn: 10, trae: 10, raccoon: 10, codearts: 10, officeace: 10 },
+    '⚠️ 全健康时每个渠道必须严格 10 次；buddy 多出的 10 次是第二圈的开头')
+  const firstCycle = healthy.slice(0, 60)
+  MEMBERS.forEach((name, slot) => {
+    assert.deepEqual(firstCycle.slice(slot * 10, slot * 10 + 10), Array(10).fill(name),
+      `⚠️ 第一圈第 ${slot + 1} 个渠道 ${name} 必须连续服务满 10 次（次序=用户在路由里排的顺序）`)
+  })
+
+  // ② 中间渠道全坏：它占 0 次，下一家直接接手，其余渠道仍是严格 10 次
+  const broken = runTurns('chain-broken', new Set(['channel:codearts/m']), 60)
+  assert.equal(tally(broken).codearts, undefined, '⚠️ 全程失败的渠道本轮占 0 次')
+  assert.deepEqual(tally(broken), { buddy: 20, qodercn: 10, trae: 10, raccoon: 10, officeace: 10 },
+    '⚠️ 坏渠道不能连带其它渠道的次数（曾经出现过 officeace 只拿 1 次 / 拿 11 次的偏差）')
+
+  /*
+   * ③ 坏掉的渠道**留在闭环里**：转一圈回来仍会重试它（不隔离、不抛弃）。
+   *
+   * ⚠️ 期望值别写大：一个渠道只有在**轮到它当队首**时才会被试，
+   *    所以是「每圈一次」—— 6 个渠道 × 10 次 = 60 回合才一圈。
+   *    跑 3 圈（180 回合）应看到 3 次左右，而不是每回合都撞它。
+   */
+  const CIRCLE = MEMBERS.length * 10
+  const probe = { id: 'chain-retry', combo: catalog.map(row => row.id), strategy: 'round-robin', stickyLimit: 10 }
+  const attemptsOnDead = []
+  for (let turn = 0; turn < CIRCLE * 3; turn += 1) {
+    const chain = comboChain(probe, catalog)
+    for (const candidate of chain) {
+      if (candidate.id === 'channel:codearts/m') { attemptsOnDead.push(turn); advanceComboCursor(probe, catalog, candidate.id); continue }
+      break
+    }
+  }
+  assert.equal(attemptsOnDead.length, 3,
+    `⚠️ 坏渠道必须每圈被重试一次（3 圈 = 3 次），实际 ${attemptsOnDead.length} 次 —— 少了说明被隔离/抛弃，多了说明每回合都在撞死链`)
+  /*
+   * 相邻两次尝试之间正好隔「一圈健康渠道」：这正是「循环的轮」。
+   *
+   * ⚠️ 间隔是 `(成员数-1) × stickyLimit` 而不是 `成员数 × stickyLimit`：
+   *    坏渠道自己**不占次数**（用户规则的「失败了就下一个渠道」），
+   *    所以它那一格是 0 回合，一圈只由剩下 5 个健康渠道各 10 次构成。
+   */
+  const HEALTHY_CIRCLE = (MEMBERS.length - 1) * 10
+  for (let i = 1; i < attemptsOnDead.length; i += 1) {
+    assert.equal(attemptsOnDead[i] - attemptsOnDead[i - 1], HEALTHY_CIRCLE,
+      '⚠️ 重试间隔必须严格等于一圈健康渠道（说明它在闭环里按序回来，而不是被随机/永久跳过）')
+  }
+
+  // ④ 队首全坏：第一格被跳过后，第二格从第一格的位置开始服务
+  const headBroken = runTurns('chain-head-broken', new Set(['channel:buddy/m']), 60)
+  assert.equal(tally(headBroken).buddy, undefined, '⚠️ 队首坏掉时它占 0 次')
+  assert.deepEqual(tally(headBroken), { qodercn: 20, trae: 10, raccoon: 10, codearts: 10, officeace: 10 },
+    '⚠️ 队首坏掉后其余渠道仍须严格 10 次')
+}
 
 server.close()
 if (failures > 0) console.error(`combo-advance-test: ${failures} failure(s)`)
