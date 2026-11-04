@@ -35020,7 +35020,7 @@ function allAccountsRateLimitedForModel(accounts, modelId, now = Date.now()) {
   }
   return earliest === void 0 ? void 0 : { resetAtMs: earliest, accountCount: accounts.length };
 }
-var AccountPool = class {
+var AccountPool = class _AccountPool {
   constructor(ctx) {
     this.ctx = ctx;
     this.store = createChannelPackStore(ctx);
@@ -35095,6 +35095,14 @@ var AccountPool = class {
    * 为什么不像路由链路那样只存内存：这里也一样 —— 重启丢失游标的代价只是
    * 下一次从第一个账号重新开始，没有任何正确性损失；而落盘会让每次换号都
    * 多一次全量 state.json 重写（账号池的写是全文档替换），得不偿失。
+   */
+  /**
+   * 账号轮询游标（按 provider 各一份）。
+   *
+   * `accountId` 记录「`index` 当前指向的是哪个账号」—— 名额计数（`used`）属于
+   * **那个账号**，不属于位置。候选集合变化（账号被删/停用）会让 index 指到
+   * 别人，此时计数必须归零，否则新指到的账号会平白继承别人剩下的名额
+   * （2026-11-04 实测：B 在名额第 7 次时被剔除 → C 继承 used=7 → 只剩 3 次）。
    */
   accountRotation = /* @__PURE__ */ new Map();
   /** 是否已完成首次载入。 */
@@ -35937,23 +35945,32 @@ var AccountPool = class {
    * @param advance - 本次调用是否代表一次真正的「选号」。
    *   换号重试（带排除集）必须传 false，否则一次用户请求会推进多次轮转。
    */
+  /** 候选元素可能是 ProviderAccountEntry 或 {id, credentialRef}：两者都有字符串 id。 */
+  static accountIdOf(row) {
+    const id = row?.id;
+    return typeof id === "string" ? id : void 0;
+  }
   rotateCandidates(provider, candidates, options = {}) {
     if (candidates.length <= 1) return candidates;
     if (this.accountStrategyValue() !== "round-robin") return candidates;
     const sticky = this.accountStickyValue();
     const cursor = this.accountRotation.get(provider) ?? { index: 0, used: 0 };
     const index = Math.min(Math.max(cursor.index, 0), candidates.length - 1);
+    const headId = _AccountPool.accountIdOf(candidates[index]);
+    const carried = cursor.accountId !== void 0 && cursor.accountId !== headId ? 0 : cursor.used;
     if (options.advance !== false) {
-      const used = cursor.used + 1;
+      const used = carried + 1;
       this.accountRotation.set(
         provider,
-        used >= sticky ? { index: (index + 1) % candidates.length, used: 0 } : { index, used }
+        used >= sticky ? { index: (index + 1) % candidates.length, used: 0, accountId: _AccountPool.accountIdOf(candidates[(index + 1) % candidates.length]) } : { index, used, accountId: headId }
       );
     }
     return [...candidates.slice(index), ...candidates.slice(0, index)];
   }
   async getAvailableAccount(provider, modelId, excludeAccountIds) {
+    const roundRobin = this.accountStrategyValue() === "round-robin";
     const candidates = this.readAccounts().filter((a) => a.provider === provider && a.enabled).filter((a) => excludeAccountIds === void 0 || !excludeAccountIds.has(a.id)).filter((a) => {
+      if (roundRobin) return true;
       if (modelId.length === 0) return true;
       if (!a.modelRateLimits) return true;
       const resetAt = a.modelRateLimits[modelId];
@@ -76261,7 +76278,9 @@ function apply(ctx, config = {}) {
   });
   const pickBuddyCredential = async (options) => {
     const tried = /* @__PURE__ */ new Set();
+    const roundRobin = pool.accountStrategy().strategy === "round-robin";
     const candidates = pool.listAccountsByProvider(options.product.id).filter((a) => a.enabled).filter((a) => {
+      if (roundRobin) return true;
       const key = options.modelId ?? "";
       if (key.length === 0) return true;
       if (!a.modelRateLimits) return true;
@@ -76757,13 +76776,25 @@ function apply(ctx, config = {}) {
      * 过滤失效（早期实现传空串 `''`，等于「不按模型过滤」）。
      */
     resolveCredential: async (modelId) => {
+      const loomyRoundRobin = pool.accountStrategy().strategy === "round-robin";
       const candidates = pool.listAccountsByProvider(LOOMY.id).filter((a) => a.enabled).filter((a) => {
+        if (loomyRoundRobin) return true;
         const key = modelId ?? "";
         if (key.length === 0) return true;
         if (!a.modelRateLimits) return true;
         const resetAt = a.modelRateLimits[key];
         return resetAt === void 0 || resetAt === 0 || Date.now() >= resetAt;
       }).map((a) => ({ id: a.id, credentialRef: a.credentialRef }));
+      if (loomyRoundRobin && candidates.length > 1) {
+        const ordered = pool.rotateCandidates(LOOMY.id, candidates);
+        candidates.splice(0, candidates.length, ...ordered);
+        const head = candidates[0];
+        const credential = await resolveLoomyCredentialByRef(head.credentialRef);
+        if (credential !== void 0) {
+          reportLedgerAccount(LOOMY.id, head.id);
+          return credential;
+        }
+      }
       const allowPermanent = !pool.permanentLocked(LOOMY.id);
       if (candidates.length > 0) {
         const picked = await loomyBalanceSelector.select(candidates, { allowPermanent });
@@ -76804,7 +76835,10 @@ function apply(ctx, config = {}) {
       return JSON.parse(resolved.value);
     },
     nextAccount: async (modelId, tried) => {
-      const candidates = pool.listAccountsByProvider(LOOMY.id).filter((account) => account.enabled && !tried.has(account.id)).filter((account) => !account.modelRateLimits?.[modelId] || Date.now() >= account.modelRateLimits[modelId]).map((account) => ({ id: account.id, credentialRef: account.credentialRef }));
+      const candidates = pool.listAccountsByProvider(LOOMY.id).filter((account) => account.enabled && !tried.has(account.id)).filter((account) => {
+        if (pool.accountStrategy().strategy === "round-robin") return true;
+        return !account.modelRateLimits?.[modelId] || Date.now() >= account.modelRateLimits[modelId];
+      }).map((account) => ({ id: account.id, credentialRef: account.credentialRef }));
       const picked = await loomyBalanceSelector.select(candidates, { allowPermanent: !pool.permanentLocked(LOOMY.id) });
       if (!picked.ok) return void 0;
       const credential = await resolveLoomyCredentialByRef(picked.account.credentialRef);

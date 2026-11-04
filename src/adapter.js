@@ -53,6 +53,9 @@ export class FreeModelAdapter {
    * @param {(message: string) => void} [dependencies.warn]
    */
   constructor(dependencies) {
+    // 诊断通道（2026-11-05 排查 qodercn 跳过问题）：runtime 注入 fs，
+    // runCombo 用它把「配置列表 vs 执行列表」落文件。
+    if (dependencies?.traceFs) globalThis.__comboTraceFs = dependencies.traceFs
     this.deps = dependencies
     /**
      * 链路成员的临时禁用期：模型 id -> 解禁时刻（ms）。
@@ -245,7 +248,33 @@ export class FreeModelAdapter {
       yield { type: 'finish', reason: { kind: 'error', failure: { message: 'our free model is switched off in its settings page', code: 'CONFIG_DISABLED' } } }
       return
     }
-    const candidates = this.orderByCooldown(comboChain(entry, snapshot.catalog))
+    /**
+     * ★ 轮询铁律（用户 2026-11-05）：**无视禁期、无视限流**。
+     *
+     * `orderByCooldown` 是给 fallback（质量阶梯）用的：把禁期成员压到队尾，
+     * 让健康的先上。但轮询的次序必须严格等于 `comboChain` 按名额排出来的
+     * 顺序 —— 重排会让「本轮名额的主人」掉到队尾，别人顶上，游标名义在转
+     * 实际名额全乱（探针实测：officeace 头部 ×10 不动，就是重排+失败换人
+     * 互相拉扯的结果）。
+     *
+     * 轮到坏成员怎么办？本回合内顺延到下一个候选（循环里的失败分支），
+     * 名额不被它占用 —— 与路由/账号轮询统一的「失败占 0 次」。
+     */
+    const isRoundRobin = entry.strategy === 'round-robin'
+    const candidates = isRoundRobin
+      ? comboChain(entry, snapshot.catalog)
+      : this.orderByCooldown(comboChain(entry, snapshot.catalog))
+    // ★ 排查通道（2026-11-05，用户要求对比「显示列表 vs 执行列表」）：
+    //   configured = combo 配置里的成员顺序（用户在路由编辑器看到的）
+    //   executing  = 实际要逐个试的执行顺序
+    try {
+      const fsx = globalThis.__comboTraceFs
+      const fmt = list => (Array.isArray(list) ? list.map(row => row?.id ?? String(row)).join(' , ') : String(list))
+      const line = `[${new Date().toISOString()}] chain=${entry.name} mode=${entry.strategy ?? 'fallback'}\n`
+        + `  configured(${entry.combo?.length ?? 0}): ${fmt(entry.combo)}\n`
+        + `  executing(${candidates.length}): ${fmt(candidates)}\n`
+      fsx?.appendFileSync?.('/tmp/ofm-combo-trace.log', line)
+    } catch { /* 诊断失败不影响主流程 */ }
     if (candidates.length === 0) {
       rejectedTurn(0)
       yield { type: 'finish', reason: { kind: 'error', failure: { message: `the chain "${entry.name}" has no model available on this egress`, code: CODE.server } } }
@@ -327,6 +356,11 @@ export class FreeModelAdapter {
         return
       }
       const reason = result.verdict === null || result.verdict === undefined ? 'failed' : describeVerdict(result.verdict)
+      // ★ 失败详情必须落日志（2026-11-04 排查 qodercn「路由内一直失败、直测却通」）：
+      // 只记 verdict 概括看不出是 429、还是派发层错误。`failure.message` 带着上游
+      // 的原始报错，是定位这类「单测通、链路死」问题的唯一线索。
+      const failureMessage = result?.failure?.message ?? result?.error?.message ?? ''
+      this.deps.warn?.(`our-free-model: chain "${entry.name}" candidate ${candidate.id} failed — ${reason}${failureMessage ? `: ${failureMessage.slice(0, 300)}` : ''}`)
       this.markFaulty(candidate.id, result.verdict)
       /**
        * 失败 ⇒ **下一个渠道**（用户 2026-11-04 的轮询规则）：
@@ -341,7 +375,13 @@ export class FreeModelAdapter {
        * ⚠️ 它**不是**「隔离/抛弃」：游标只是挪了一格，循环转一圈回来仍会轮到
        * 这个渠道、届时照样先试它一次。整条链始终是 1→N→1→N 的闭环。
        */
-      advanceComboCursor(entry, snapshot.catalog, candidate.id)
+      // ★ 轮询铁律：失败不动游标（used 不归零、index 不前移）。
+      // 轮到谁的名额，谁的名额就按 comboChain 的计数走完；这一发失败了
+      // 只在本回合内顺延到下一个候选。advanceComboCursor 的「换人」语义
+      // 会把游标拽到失败者下一位并清零计数 —— 名额与次序就乱了
+      // （探针实测游标被钉死在 officeace）。
+      // markFaulty 的禁期照记（供 fallback 用），轮询模式只是不再读它重排。
+      if (!isRoundRobin) advanceComboCursor(entry, snapshot.catalog, candidate.id)
       tried.push(`${candidate.id} (${reason})`)
       this.deps.warn?.(`our-free-model: chain "${entry.name}" advanced past ${candidate.id} — ${reason}`)
     }
@@ -452,6 +492,7 @@ export class FreeModelAdapter {
     if (locked.reasoningEffort !== undefined) forwarded.reasoningEffort = locked.reasoningEffort
     let ok = false
     let committed = false
+    let lastFailureMessage = ''
     /**
      * 渠道适配器报告失败有**两种**形态，都必须当成候选失败处理：
      *
@@ -470,18 +511,25 @@ export class FreeModelAdapter {
         if (chunk?.type === 'tool-call-delta') committed = true
         if (chunk?.type === 'finish') {
           if (chunk.reason?.kind === 'stop') ok = true
-          else if (chunk.reason?.kind === 'error') failed = true
+          else if (chunk.reason?.kind === 'error') {
+            failed = true
+            lastFailureMessage = chunk.reason?.failure?.message ?? String(chunk.reason?.failure ?? '')
+          }
         }
         yield chunk
       }
     } catch (error) {
-      this.deps.recordTurn?.({ at: started, model: entry.id, ok: false, recovered: false, attempts: 1, origin: 'harness' })
+      const message = String(error?.message ?? error)
+      this.deps.recordTurn?.({ at: started, model: entry.id, ok: false, recovered: false, attempts: 1, origin: 'harness', message })
       // Before any answer-bearing delta this is still an invisible candidate
       // fault, so a chain may move on; afterwards the caller already saw output.
-      yield fail(`channel ${target.provider} failed: ${String(error?.message ?? error)}`, CODE.server)
+      yield fail(`channel ${target.provider} failed: ${message}`, CODE.server)
       return { advance: !committed, verdict: null, ok: false }
     }
-    this.deps.recordTurn?.({ at: started, model: entry.id, ok: !failed && ok, recovered: false, attempts: 1, origin: 'harness' })
+    // ⚠️ 把最后的 finish 错误块一并带给 recordTurn（2026-11-04 排查 qodercn 用）：
+    // 渠道适配器把上游业务错误规整成 `finish(error)`，那个 reason 里才有真话。
+    this.deps.recordTurn?.({ at: started, model: entry.id, ok: !failed && ok, recovered: false, attempts: 1, origin: 'harness',
+      message: lastFailureMessage })
     // 已经交出内容就不能再换模型（调用方看得到那段输出）；还没交出的失败
     // 才是「换一个再来」的场景。
     return { advance: failed && !committed, verdict: null, ok: !failed && ok }

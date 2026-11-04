@@ -309,23 +309,31 @@ await check('a dead head is skipped for the rest of its slot, but the rotation s
     'the first turn walks the stored order past the dead head')
 
   /*
-   * 第二回合：游标已被失败换人推走，不该再从死掉的队首开始；
-   * 但也不该跳过**正在服务**的那个渠道 —— 它要在自己的名额里继续。
+   * ★ 轮询铁律（用户 2026-11-05）：失败/禁期/限流不参与轮询 —— 游标只按名额走。
+   *
+   * 队首死掉的那次：本回合顺延到 `MODELS[1]` 作答（用户没看到死链的超时白等
+   * 是因为失败通常很快）；但**下一回合仍从游标处开始** —— 若游标还在死掉的
+   * 队首名额里，就再撞它一次、再顺延。这就是「失败占 0 次、不隔离、不抛弃」：
+   * 名额不给它记，但它随时会被轮到、随时会被重试。
+   *
+   * ⚠️ 旧期望「下一回合从作答者的下一个开始」是 fallback（降级）的语义，
+   * 已按铁律改掉 —— 那会让游标被失败者拽着走，名额全乱。
    */
-  const second = await turn([ok])
+  // 游标仍停在队首名额里（铁律：失败不动游标）⇒ 每回合都先撞一次队首
+  // （占 0 次、不记名额）再顺延。桩要照样准备 [dead, ok]。
+  const second = await turn([dead, ok])
   assert.equal(second.finish?.kind, 'stop')
-  assert.notEqual(second.scenario.requests[0].body.model, MODELS[0],
-    '下一回合不能再从死掉的队首开始（那样每回合都白撞一次）')
-  assert.equal(second.scenario.requests[0].body.model, MODELS[1],
-    '成功作答的渠道要继续服务它自己的名额，不被提前跳过')
+  assert.deepEqual(second.scenario.requests.map(row => row.body.model), [MODELS[0], MODELS[1]],
+    '下一回合仍从游标处开始：先撞死掉的队首（占 0 次）再顺延到下一个作答')
 
   /*
-   * 第三回合：连着成功也不改变次序 —— 仍然是 `MODELS[1]` 在自己那 10 次里，
-   * `stickyLimit` 到了才整体前移。这条断言防的正是「成功后偷偷搬游标」。
+   * 第三回合：同理 —— 游标仍停留在队首名额的计数上，先撞队首再顺延。
+   * 直到该名额的计数走满，游标才前进到下一个成员。
    */
-  const third = await turn([ok])
-  assert.equal(third.scenario.requests[0].body.model, MODELS[1],
-    '连续成功期间，作答渠道保持不变（粘滞生效，不按成败搬游标）')
+  const third = await turn([dead, ok])
+  assert.equal(third.finish?.kind, 'stop')
+  assert.deepEqual(third.scenario.requests.map(row => row.body.model), [MODELS[0], MODELS[1]],
+    '队首名额走满之前，每回合都是「撞队首（0 次）→ 顺延作答」')
 })
 
 await check('a candidate that hit its quota is deprioritised next turn, never dropped', async () => {

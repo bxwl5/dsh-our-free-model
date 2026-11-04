@@ -228,7 +228,15 @@ export class AccountPool {
    * 下一次从第一个账号重新开始，没有任何正确性损失；而落盘会让每次换号都
    * 多一次全量 state.json 重写（账号池的写是全文档替换），得不偿失。
    */
-  private readonly accountRotation = new Map<string, { index: number; used: number }>()
+  /**
+   * 账号轮询游标（按 provider 各一份）。
+   *
+   * `accountId` 记录「`index` 当前指向的是哪个账号」—— 名额计数（`used`）属于
+   * **那个账号**，不属于位置。候选集合变化（账号被删/停用）会让 index 指到
+   * 别人，此时计数必须归零，否则新指到的账号会平白继承别人剩下的名额
+   * （2026-11-04 实测：B 在名额第 7 次时被剔除 → C 继承 used=7 → 只剩 3 次）。
+   */
+  private readonly accountRotation = new Map<string, { index: number; used: number; accountId?: string }>()
   /** 是否已完成首次载入。 */
   private loaded = false
   /**
@@ -1190,17 +1198,32 @@ export class AccountPool {
    * @param advance - 本次调用是否代表一次真正的「选号」。
    *   换号重试（带排除集）必须传 false，否则一次用户请求会推进多次轮转。
    */
+  /** 候选元素可能是 ProviderAccountEntry 或 {id, credentialRef}：两者都有字符串 id。 */
+  private static accountIdOf(row: unknown): string | undefined {
+    const id = (row as { id?: unknown } | undefined)?.id
+    return typeof id === 'string' ? id : undefined
+  }
+
   rotateCandidates<T>(provider: string, candidates: T[], options: { advance?: boolean } = {}): T[] {
     if (candidates.length <= 1) return candidates
     if (this.accountStrategyValue() !== 'round-robin') return candidates
     const sticky = this.accountStickyValue()
     const cursor = this.accountRotation.get(provider) ?? { index: 0, used: 0 }
     const index = Math.min(Math.max(cursor.index, 0), candidates.length - 1)
+    /**
+     * ★ 名额归属校验（2026-11-04）：`used` 属于「游标所指的那个账号」。
+     * 游标指向的账号不在候选里了（被删/停用/上一轮换人后游标未动）⇒
+     * index 会钳到别的账号上 —— 此时计数必须从 0 重新起算，不能继承。
+     */
+    const headId = AccountPool.accountIdOf(candidates[index])
+    const carried = cursor.accountId !== undefined && cursor.accountId !== headId ? 0 : cursor.used
     if (options.advance !== false) {
-      const used = cursor.used + 1
+      const used = carried + 1
       this.accountRotation.set(
         provider,
-        used >= sticky ? { index: (index + 1) % candidates.length, used: 0 } : { index, used },
+        used >= sticky
+          ? { index: (index + 1) % candidates.length, used: 0, accountId: AccountPool.accountIdOf(candidates[(index + 1) % candidates.length]) }
+          : { index, used, accountId: headId },
       )
     }
     return [...candidates.slice(index), ...candidates.slice(0, index)]
@@ -1211,11 +1234,30 @@ export class AccountPool {
     modelId: string,
     excludeAccountIds?: ReadonlySet<string>,
   ): Promise<{ entry: ProviderAccountEntry; credential: CodeArtsCredential | BuddyCredential } | null> {
+    /**
+     * ★ 账号轮询铁律（用户 2026-11-05）：**与路由轮询同一套纯轮询** ——
+     * 无视限流、无视封禁、无视健康度。
+     *
+     * `round-robin` 时**不**按 `modelRateLimits` 剔号：轮到谁就交谁，上游若拒
+     * （额度用尽/限流/封禁），适配器内部的换号重试会在**本次请求内**顺延到下一个
+     * 账号 —— 失败占 0 次名额，游标严格按 `stickyLimit` 走。
+     *
+     * 旧逻辑在这里按限流过滤，后果有两个：
+     *  1. 被限流的账号整段时间从候选里消失（用户看到「一直同一个账号」——
+     *     zcode 4 号里 2 个被标记整天，候选只剩 1 个，轮无从发生）；
+     *  2. 候选集合缩放让游标 index 钳位、`used` 计数被错误继承（B 在名额第 7 次
+     *     被剔除 → C 平白只剩 3 次）。
+     *
+     * `sequential`（顺序模式）保持旧行为：限流账号仍被跳过 —— 那是
+     * 「质量优先」模式，一直用第一个直到它死。
+     */
+    const roundRobin = this.accountStrategyValue() === 'round-robin'
     const candidates = this.readAccounts()
       .filter(a => a.provider === provider && a.enabled)
       .filter(a => excludeAccountIds === undefined || !excludeAccountIds.has(a.id))
       .filter(a => {
-        // 空 modelId（未知目标模型）：无可比对的键，保持候选不变。
+        if (roundRobin) return true
+        // 顺序模式才做限流过滤。空 modelId（未知目标模型）：无可比对的键，不过滤。
         if (modelId.length === 0) return true
         if (!a.modelRateLimits) return true
         const resetAt = a.modelRateLimits[modelId]

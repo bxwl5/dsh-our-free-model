@@ -326,7 +326,90 @@ export async function verifyStrategyPersistence() {
   console.log('ok  运行时：轮询开关扛得住重启/重载（真实 FileStore 落盘往返）')
 }
 
+/**
+ * ★ 轮询铁律（用户 2026-11-05）：账号轮询与路由轮询同一套 —— 无视限流/封禁/
+ * 健康度，游标只按名额走。
+ *
+ * 锁死两件事：
+ *  1. 被限流的账号**不被剔出候选**：轮到它照样交出去（适配器内部失败时在
+ *     本请求内顺延），它不会从轮换里消失 —— zcode 那种「2 个号被标记整天、
+ *     候选只剩 1 个、永远同一号」的形态不会再有。
+ *  2. 名额归属校验：候选集合变化导致游标 index 指到别的账号时，`used`
+ *     必须归零，不能把 A 剩下的名额平白记到 B 头上。
+ */
+export async function verifyRoundRobinIgnoresRateLimits() {
+  const { AccountPool } = await import('../vendor/channel-pack/src/account-pool.ts')
+  const { DEFAULT_ACCOUNT_STICKY_LIMIT: STICKY } =
+    await import('../vendor/channel-pack/src/channel-pack-store.ts')
+
+  const state = {
+    accounts: [
+      { id: 'a1', provider: 'zcode', enabled: true, credentialRef: 'A1', createdAt: 1 },
+      { id: 'a2', provider: 'zcode', enabled: true, credentialRef: 'A2', createdAt: 2 },
+      { id: 'a3', provider: 'zcode', enabled: true, credentialRef: 'A3', createdAt: 3 },
+    ],
+    disabledModels: {}, loomyPermanentLocked: false, gatewayEnabled: true, providerOrder: [],
+  }
+  const store = { kind: 'file', mtimeMs: () => 1000, load: () => JSON.parse(JSON.stringify(state)), save: async () => {} }
+  const ctx = {
+    store, logger: { warn() {}, info() {} },
+    credentials: { resolve: async () => ({ value: '{}' }), describe: async () => undefined, set: async () => {}, unset: async () => {} },
+    permanentLocks: undefined,
+  }
+  const pool = new AccountPool(ctx)
+  Object.defineProperty(pool, 'store', { value: store, writable: true, configurable: true })
+  Object.defineProperty(pool, 'loaded', { value: false, writable: true, configurable: true })
+  await pool.setAccountStrategy('round-robin', STICKY)
+
+  // a2 被限流到明天 —— 旧逻辑会把它剔出候选；铁律下必须照常轮到它
+  await pool.updateModelRateLimit('a2', 'glm', Date.now() + 86_400_000)
+  const picks = []
+  for (let i = 0; i < 33; i += 1) {
+    const hit = await pool.getAvailableAccount('zcode', 'glm')
+    picks.push(hit ? hit.entry.id : 'null')
+  }
+  assert.deepEqual(picks.slice(0, 30), [...Array(10).fill('a1'), ...Array(10).fill('a2'), ...Array(10).fill('a3')],
+    '⚠️ 轮询必须无视限流：a2 被标记整天也要按名额轮到（每号 10 次、按用户顺序）')
+
+  // 名额归属：把游标手动推到 a2 名额第 7 次，然后删掉 a2 —— a3 接手时 used 必须归零
+  // ⚠ pool2 必须感知「外部删除」：store 的 mtime 是恒定的 1000，直接换一个
+  //   mtime 会变的假 store，否则 ensureLoaded 认为「自己写的、无需重读」。
+  let mtime = 2000
+  // ⚠️ save 必须把池写下的字段（含 accountStrategy）真写回 state：
+  // FileStore 会持久化它们；假 store 若丢弃，下一次重读就会把策略回落成
+  // sequential（缺键默认），轮换「莫名其妙停了」—— 那测的是脚手架不是产品。
+  const store2 = {
+    kind: 'file',
+    mtimeMs: () => mtime,
+    load: () => JSON.parse(JSON.stringify(state)),
+    save: async (next) => {
+      Object.assign(state, JSON.parse(JSON.stringify(next)))
+      mtime += 1
+    },
+  }
+  const ctx2 = { ...ctx, store: store2 }
+  const pool2 = new AccountPool(ctx2)
+  Object.defineProperty(pool2, 'store', { value: store2, writable: true, configurable: true })
+  Object.defineProperty(pool2, 'loaded', { value: false, writable: true, configurable: true })
+  await pool2.setAccountStrategy('round-robin', STICKY)
+  for (let i = 0; i < 17; i += 1) await pool2.getAvailableAccount('zcode', 'glm')  // a1×10, a2×7
+  state.accounts.splice(1, 1)  // 删 a2（外部改）
+  mtime += 1000  // 让池在下一次访问时感知外部改动
+  const after = []
+  for (let i = 0; i < 12; i += 1) {
+    const hit = await pool2.getAvailableAccount('zcode', 'glm')
+    after.push(hit ? hit.entry.id : 'null')
+  }
+  assert.equal(after[0], 'a3', '游标原在 a2（index1），a2 删除后应落到下一个健康号 a3')
+  assert.deepEqual(after.slice(0, 10), Array(10).fill('a3'),
+    '⚠️ 接手者必须从 0 数满自己的名额（a3 10 次），不能继承 a2 剩下的 3 次就提前换人')
+  assert.equal(after[10], 'a1', 'a3 名额走满后按序回到 a1')
+
+  console.log('ok  运行时：账号轮询无视限流（被标记整天的号照常轮到）、名额归属不串')
+}
+
 verifyAccountRotation()
 await verifyBuddyRotationRuntime()
 await verifyStrategyPersistence()
+await verifyRoundRobinIgnoresRateLimits()
 hooks.deregister()

@@ -488,11 +488,17 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
     isFreeModel?: boolean
   }): Promise<{ credential?: BuddyCredential; tried: Set<string> }> => {
     const tried = new Set<string>()
+    /**
+     * ★ 账号轮询铁律（用户 2026-11-05）：round-robin 时不按限流剔号 ——
+     * 与 `getAvailableAccount` 的口径一致（那里有详细说明）。
+     * 顺序模式保持旧行为：限流账号跳过（质量优先）。
+     */
+    const roundRobin = pool.accountStrategy().strategy === 'round-robin'
     const candidates = pool
       .listAccountsByProvider(options.product.id)
       .filter(a => a.enabled)
-      .filter((a) => {
-        // 与 `getAvailableAccount` 的限流判据保持一致（空 modelId = 不过滤）。
+      .filter(a => {
+        if (roundRobin) return true
         const key = options.modelId ?? ''
         if (key.length === 0) return true
         if (!a.modelRateLimits) return true
@@ -1330,11 +1336,16 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
       // ⚠️ 先按「模型未受限 + 未停用」筛出候选，**再**按余额分档选号。
       // 余额排序只在这批候选内部进行 —— 即你的要求：
       // 「策略建立在模型没有受限且账户没有被设置为停用的基础上」。
+      //
+      // ★ 账号轮询铁律（2026-11-05）：round-robin 时不按限流剔号，且轮转顺序
+      // 优先于余额分档 —— 轮到谁就交谁的凭据（与 getAvailableAccount 同口径）。
+      // 顺序模式保持旧行为：限流账号跳过 + 余额分档选号。
+      const loomyRoundRobin = pool.accountStrategy().strategy === 'round-robin'
       const candidates = pool
         .listAccountsByProvider(LOOMY.id)
         .filter(a => a.enabled)
-        .filter((a) => {
-          // 与 `getAvailableAccount` 的限流判据保持一致（空 modelId = 不过滤）。
+        .filter(a => {
+          if (loomyRoundRobin) return true
           const key = modelId ?? ''
           if (key.length === 0) return true
           if (!a.modelRateLimits) return true
@@ -1342,6 +1353,17 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
           return resetAt === undefined || resetAt === 0 || Date.now() >= resetAt
         })
         .map(a => ({ id: a.id, credentialRef: a.credentialRef }))
+      if (loomyRoundRobin && candidates.length > 1) {
+        const ordered = pool.rotateCandidates(LOOMY.id, candidates)
+        candidates.splice(0, candidates.length, ...ordered)
+        const head = candidates[0]
+        const credential = await resolveLoomyCredentialByRef(head.credentialRef)
+        if (credential !== undefined) {
+          reportLedgerAccount(LOOMY.id, head.id)
+          return credential
+        }
+        // 首选凭据解析失败：落到下面的余额分档路径兜底（候选里其余账号仍在）。
+      }
 
       // 「锁定永久积分」：只允许消耗今日赠送额度（用户要求，且持久化）。
       // 开关按 provider 存（CodeBuddy / WorkBuddy 各有一份，互不影响）。
@@ -1400,9 +1422,13 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
       return JSON.parse(resolved.value) as LoomyCredential
     },
     nextAccount: async (modelId, tried) => {
+      // ★ 轮询铁律：换号重试也只按「排除已试过的」取下一个，不看限流标记。
       const candidates = pool.listAccountsByProvider(LOOMY.id)
         .filter(account => account.enabled && !tried.has(account.id))
-        .filter(account => !account.modelRateLimits?.[modelId] || Date.now() >= account.modelRateLimits[modelId]!)
+        .filter(account => {
+          if (pool.accountStrategy().strategy === 'round-robin') return true
+          return !account.modelRateLimits?.[modelId] || Date.now() >= account.modelRateLimits[modelId]!
+        })
         .map(account => ({ id: account.id, credentialRef: account.credentialRef }))
       const picked = await loomyBalanceSelector.select(candidates, { allowPermanent: !pool.permanentLocked(LOOMY.id) })
       if (!picked.ok) return undefined

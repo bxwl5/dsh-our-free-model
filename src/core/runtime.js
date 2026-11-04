@@ -151,8 +151,24 @@ export function createModelRuntime({
       recordUsage(stats, record)
       stats.edit(value => pruneDays(value, 120))
     },
-    recordTurn: record => { if (!disposed) recordTurn(stats, record) },
-    warn: message => logger.warn?.(message) ?? logger.log?.(message),
+    recordTurn: record => {
+      if (!disposed) recordTurn(stats, record)
+      /*
+       * ★ 2026-11-04 排查「qodercn 路由内一直失败、直测却通」：把失败的原始
+       * 报错落日志 —— recordTurn 只累计数，看不到失败原因；adapter 里能拿到
+       * `failure.message` 的地方（runSingle/runChannel 的 fail 分支）已经记了
+       * `model`，这里按它过滤打印。
+       */
+      if (record?.ok === false && typeof record?.message === 'string' && record.message !== '') {
+        logger.warn?.(`our-free-model turn failed: ${record.model} — ${record.message.slice(0, 300)}`)
+      }
+    },
+    warn: message => {
+      logger.warn?.(message)
+      try { fs.appendFileSync('/tmp/ofm-combo-trace.log', `${new Date().toISOString()} ${message}\n`) } catch { /* 诊断通道失败不影响主流程 */ }
+    },
+    /** 诊断通道：adapter 里把「配置列表 vs 执行列表」落文件（见 runCombo）。 */
+    traceFs: fs,
     onRegionBlocked: () => {
       if (disposed || reprobeTimer !== undefined) return
       reprobeTimer = setTimeout(() => {
