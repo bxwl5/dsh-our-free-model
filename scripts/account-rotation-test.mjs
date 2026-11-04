@@ -96,8 +96,18 @@ export function verifyAccountRotation() {
   assert.ok(fold.length > 0, '找不到账号折叠区')
   assert.doesNotMatch(fold.slice(0, 1500), /ofm_acctstrategy|getStrategy/, '账号折叠区里不得有策略控件（已改为全局）')
 
+  // ⑤b 布局：设置区必须是「控件行 + 提示行」两段，不能挤成一排
+  assert.match(client, /ofm_strategymain/, '要有控件行容器')
+  assert.match(client, /ofm_strategycontrols/, '开关与次数要成组')
+  const css = client.slice(client.indexOf('.ofm_strategyrow{'))
+  assert.match(css.slice(0, 400), /align-items:center/, '设置区单行居中（提示行已按用户要求删掉）')
+  // 用户 2026-11-04：「全部渠道生效：6 个多渠道会轮流使用账号…这个文案不需要了」
+  assert.doesNotMatch(client, /ofm_strategynote|chan\.strategy\.(on|off)/, '说明文案已按用户要求移除')
+  assert.match(css.slice(0, 2000), /\.ofm_strategynum input\{[^}]*box-sizing:border-box/, '次数输入框要固定盒模型，否则宽度失控')
+
   // ⑥ 文案必须与「路由轮询」区分开
   assert.match(client, /'chan\.strategy\.sub': '[^']*同一渠道内多个账号/, '中文文案要点明「同一渠道内多个账号」')
+  assert.match(client, /'chan\.strategy\.sub': '[^']*本机设置/, '文案要标明是本机设置（多设备各存一份，别让人以为是云端开关）')
   assert.match(client, /'chan\.strategy\.sub': '[^']*unrelated to route rotation/, '英文文案要点明与路由轮询无关')
 
   console.log('ok  账号轮询（渠道内，全局生效）：策略/RPC/顶部大卡片齐备，且与路由轮询区分')
