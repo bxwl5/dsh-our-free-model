@@ -39,6 +39,33 @@ export const COMBO_STRATEGIES = ['fallback', 'round-robin']
 /** Rotation cursors, keyed by combo id. In-memory on purpose (see the header). */
 const rotation = new Map()
 
+/**
+ * 每条链路**最近一次真正答出内容的成员**（诊断用，键 = combo id）。
+ *
+ * ## 为什么需要（2026-11-04 用户反馈「设了 10 次就换，一直没实现」）
+ *
+ * 轮询本身是生效的（实测 stickyLimit=10 时前 10 回合用首个成员、第 11 回合切到
+ * 第二个），但**外面完全看不出来**：`bench` 与报告里的 `model` 字段始终是链路名
+ * `combo:xxx`，不告诉你这一回合实际打到哪个成员。于是「它到底有没有轮」只能靠
+ * 猜 —— 用户自然得出「没实现」的结论。
+ *
+ * 记下来之后，`testModel` 与链路日志都能如实显示「本轮由谁作答」。
+ * 内存即可：它只是可观测性，重启丢失无影响。
+ */
+const lastServed = new Map()
+
+/** 记下某条链路这一回合最终由谁作答。 */
+export function noteComboServed(comboIdValue, memberId) {
+  if (typeof comboIdValue !== 'string' || comboIdValue === '') return
+  if (typeof memberId !== 'string' || memberId === '') return
+  lastServed.set(comboIdValue, memberId)
+}
+
+/** 读某条链路上一次由谁作答（没有则空串）。 */
+export function comboLastServed(comboIdValue) {
+  return lastServed.get(comboIdValue) ?? ''
+}
+
 export function isComboEntry(entry) {
   return entry?.channel === COMBO_CHANNEL && Array.isArray(entry.combo)
 }
@@ -201,5 +228,6 @@ export function advanceComboCursor(entry, catalog, afterId) {
 export function pruneRotation(combos) {
   const live = new Set(combos.map(combo => combo.id))
   for (const key of rotation.keys()) if (!live.has(key)) rotation.delete(key)
+  for (const key of lastServed.keys()) if (!live.has(key)) lastServed.delete(key)
 }
 

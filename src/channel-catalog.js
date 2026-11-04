@@ -137,7 +137,30 @@ export function buildChannelCatalog(rosters) {
  * @param {(provider: string, error: unknown) => void} [onError]
  * @returns {Promise<{rows: Array<object>, providers: string[]}>}
  */
-export async function readChannelRosters(llm, packProviders, onError) {
+export async function readChannelRosters(llm, packProviders, onError, options = {}) {
+  /**
+   * `light` 模式：**只问「这一家当前启用了哪些模型」**，不逐模型解析容量。
+   *
+   * ## 为什么要这个模式（2026-11-04 用户要求）
+   *
+   * 「点『添加成员』时看到最新的已启用模型」这个需求，只需要知道**启用清单**；
+   * 而本函数的重开销全在 `resolveModelInfo`（每个模型一次，会打到适配器的
+   * `ensureRemoteModels`，含读盘）—— 那是为了拿 contextWindow / maxOutput，
+   * 与「哪些模型开着」**无关**。
+   *
+   * 走 light 模式时：
+   * - 仍会问 `llm.listModels(provider)`（宿主返回的本就是**已启用**的模型，
+   *   适配器的 `listModels` 内部已按黑名单过滤）⇒ 开关立刻反映；
+   * - 复用 `previousRows` 里同 id 行的容量元数据（上次完整扫描的结果）；
+   * - 新出现的行用兜底值，下一次完整扫描会补齐。
+   *
+   * @type {{ light?: boolean, previousRows?: readonly object[] }}
+   */
+  const light = options.light === true
+  const previous = new Map()
+  for (const row of Array.isArray(options.previousRows) ? options.previousRows : []) {
+    if (typeof row?.id === 'string') previous.set(row.id, row)
+  }
   const rows = []
   const providers = []
   if (llm === undefined || llm === null) return { rows, providers }
@@ -156,17 +179,49 @@ export async function readChannelRosters(llm, packProviders, onError) {
   // 产品兜底表 + 静态表三级），所以这里逐模型补一次查询；失败不阻塞目录，
   // 那一行保持未知而不是编一个假数字。
   const resolve = typeof llm.resolveModelInfo === 'function' ? llm.resolveModelInfo.bind(llm) : undefined
+  const startedAt = Date.now()
   for (const info of listed) {
     const provider = typeof info?.id === 'string' ? info.id : ''
     if (provider === '' || OWN_ROUTES.has(provider)) continue
     if (!packProviders.has(provider)) continue
+    /**
+     * ⚠️ **超时就收工，绝不无限期扫下去**（2026-11-04 事故）。
+     *
+     * 这个函数在**启动路径上被 `await`**（`runtime.js` 的 `refreshCatalog`）：
+     * 它每慢一秒，宿主就晚一秒开始监听 HTTP。实测「20 个渠道 × 每家几十个模型
+     * 各调一次 `resolveModelInfo`」会拖到分钟级 —— 而每次 `resolveModelInfo`
+     * 都打到适配器的 `ensureRemoteModels()`（含 `statSync` 读盘、cordis 响应式
+     * 代理开销），冷启动时尤其重。表现就是「CPU 飙升、HTTP 端口无响应、
+     * 桌面端 watchdog 报 Harness service is not listening」。
+     *
+     * ⇒ 预算 {@link ROSTER_BUDGET_MS} 内拿到多少就返回多少，剩下的下一轮再说。
+     * 目录是**建议性**的（picker/路由成员候选），少几个模型不影响已有链路可用；
+     * 而卡死启动是致命故障 —— 两害相权取轻。
+     */
+    if (Date.now() - startedAt > ROSTER_BUDGET_MS) {
+      onError?.(provider, new Error(`roster budget ${ROSTER_BUDGET_MS}ms exhausted; remaining providers deferred`))
+      break
+    }
     try {
       const models = await llm.listModels(provider)
       const roster = Array.isArray(models) ? models : []
       if (roster.length === 0) continue
       providers.push(provider)
-      if (resolve !== undefined && roster.length <= 64) {
-        await Promise.all(roster.map(async model => {
+      if (light) {
+        // 复用上次完整扫描拿到的容量（同 id 才算），新行留给兜底值。
+        for (const model of roster) {
+          const prior = previous.get(channelModelId(provider, String(model?.id ?? '')))
+          if (prior === undefined) continue
+          const context = Number(prior.contextWindow)
+          const maxOutput = Number(prior.maxOutput)
+          if (Number.isFinite(context) && context > 0) model.contextWindow = Math.trunc(context)
+          if (Number.isFinite(maxOutput) && maxOutput > 0) model.maxOutput = Math.trunc(maxOutput)
+        }
+      } else if (resolve !== undefined && roster.length <= 64) {
+        await mapWithConcurrency(roster, ROSTER_RESOLVE_CONCURRENCY, async model => {
+          // 预算耗尽就不再解析容量：行仍然进目录，只是 contextWindow 保持
+          // `listModels` 给的兜底值（未知好过让整轮超时）。
+          if (Date.now() - startedAt > ROSTER_BUDGET_MS) return
           try {
             const resolved = await resolve(provider, model.id)
             const context = Number(resolved?.context?.contextWindow)
@@ -176,7 +231,7 @@ export async function readChannelRosters(llm, packProviders, onError) {
           } catch {
             // 单个模型解析失败只影响它自己那一行。
           }
-        }))
+        })
       }
       rows.push(...buildChannelCatalog([{ provider, models: roster }]))
     } catch (error) {
@@ -184,4 +239,42 @@ export async function readChannelRosters(llm, packProviders, onError) {
     }
   }
   return { rows, providers }
+}
+
+/**
+ * 一次名册扫描的**时间预算**（毫秒）。
+ *
+ * 冷启动实测：不设预算时全部渠道扫完可达分钟级，直接把宿主启动拖死。
+ * 6 秒是「足够扫完常见小目录、又不至于让启动明显变慢」的折中；
+ * 剩余渠道由后续轮询补齐（渠道目录本身也不是秒级变化的东西）。
+ */
+const ROSTER_BUDGET_MS = 6_000
+
+/**
+ * `resolveModelInfo` 的并发上限。
+ *
+ * ⚠️ 原来是一个 `Promise.all` 把**全部模型**一次性打出去：几十上千个并发请求
+ * 同时压向 `ensureRemoteModels()`，每个都可能读盘 —— 不是「更快」，而是把
+ * 主线程与 IO 同时打满。4 路并发足够掩盖单次 RTT，又能让超时预算真正生效。
+ */
+const ROSTER_RESOLVE_CONCURRENCY = 4
+
+/**
+ * 有并发上限的 map（保持输出顺序，内联不引依赖）。
+ *
+ * @param {readonly unknown[]} items
+ * @param {number} limit
+ * @param {(item: unknown) => Promise<void>} run
+ */
+async function mapWithConcurrency(items, limit, run) {
+  const size = Math.max(1, Math.trunc(Number(limit)) || 1)
+  let cursor = 0
+  const workers = Array.from({ length: Math.min(size, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor
+      cursor += 1
+      await run(items[index])
+    }
+  })
+  await Promise.all(workers)
 }

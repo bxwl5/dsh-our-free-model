@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { FreeModelAdapter, ROUTE_MAIN, ROUTE_REGION } from '../adapter.js'
 import { buildCatalog, buildKiloCatalog, isKiloEntry, parseListing, reviveKiloCatalog } from '../catalog.js'
-import { buildComboCatalog, isComboEntry, normalizeCombos, pruneRotation } from '../combos.js'
+import { buildComboCatalog, isComboEntry, normalizeCombos, pruneRotation, comboLastServed } from '../combos.js'
 import { isChannelEntry, readChannelRosters } from '../channel-catalog.js'
 import { JsonStore, SETTINGS_INITIAL, STATS_INITIAL, STATS_VERSION, migrateStats, pruneDays, recordTurn, recordUsage, isModelHidden } from '../store.js'
 import { STATE, detectEgress, probeCatalog } from '../probe.js'
@@ -237,14 +237,23 @@ export function createModelRuntime({
    * 单家失败降级为「这家本轮没有目录」——一个渠道的凭据过期不该让整张
    * 候选清单变空，否则用户连别的渠道也选不了。
    */
-  async function refreshChannelCatalog() {
+  /**
+   * 重读渠道名册。
+   *
+   * @param {{ light?: boolean }} [options] `light: true` 时**只问各渠道当前启用了
+   *   哪些模型**，跳过逐模型 `resolveModelInfo`（见 `readChannelRosters` 的说明）。
+   *   路由编辑器的「添加成员」走的就是这条轻量路径：它只要启用清单，
+   *   不需要为了容量元数据去逐个解析（那是启动/定时轮询才需要的完整扫描）。
+   */
+  async function refreshChannelCatalog(options = {}) {
     if (disposed) return channelCatalog
+    const light = options.light === true
     const { rows, providers } = await readChannelRosters(llm, packProviders, (provider, error) => {
       onChannelError?.(provider, error)
       if (provider !== 'listProviders') {
         logger.warn?.(`our-free-model: channel ${provider} model list unavailable (${String(error?.message ?? error)}); skipping this round`)
       }
-    })
+    }, light ? { light: true, previousRows: channelCatalog } : {})
     if (disposed) return channelCatalog
     channelCatalog = rows
     channelProviders = providers
@@ -371,7 +380,19 @@ export function createModelRuntime({
       }, entry, state()), { signal: linkedSignal })
       if (linkedSignal.aborted || disposed) throw new UpstreamError('Text test cancelled', CODE.aborted)
       const persisted = persist({ state: STATE.available, source: 'manual', at: Date.now(), ttftMs: measured.ttftMs, latencyMs: measured.totalMs })
-      return { model: entry.id, effort: selectedEffort, ok: true, ...measured, persisted }
+      /**
+       * 链路（combo）要如实告诉调用方**这一轮实际由谁作答**。
+       *
+       * 否则 `model` 字段永远是 `combo:xxx`，用户看不出轮询有没有在工作
+       * （2026-11-04 反馈「设了 10 次就换，一直没实现」—— 其实在轮，
+       * 只是看不出来）。非链路模型没有这个字段，行为不变。
+       */
+      const served = isComboEntry(entry) ? comboLastServed(entry.id) : ''
+      return {
+        model: entry.id,
+        ...served === '' ? {} : { member: served },
+        effort: selectedEffort, ok: true, ...measured, persisted,
+      }
     } catch (error) {
       // Cancellation is a user action, not a fresh availability verdict. Other failures
       // remain unknown instead of silently banning a paid/region-gated route.

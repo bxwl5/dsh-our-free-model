@@ -46,6 +46,8 @@ import { saverConfig } from './src/token-saver/index.js'
 import { CAVEMAN_LEVELS, PONYTAIL_LEVELS } from './src/token-saver/prompts.js'
 import { OPTIMIZATIONS } from './src/local-optimize.js'
 import { createModelRuntime, createRuntimeStores } from './src/core/runtime.js'
+// 渠道行的身份前缀（`channel:<provider>`）。路由成员候选只认它们 ——
+// 本机免费车道（`free`）、Kilo（`kilo`）、链路（`combo`）都不属于渠道模型。
 
 export { fromOpenAiMessages } from './src/core/completion.js'
 import { buildStats } from './src/core/stats.js'
@@ -165,6 +167,14 @@ export function apply(ctx, config) {
    */
   const packProviders = new Set()
 
+/**
+ * 上次为路由编辑器重读渠道名册的时刻（毫秒）。
+ *
+ * 用于 `GET /combos` 的节流：编辑器在加载与每次保存后都会重拉，没必要
+ * 每次都全量扫名册。见 `combos.list` 的说明。
+ */
+let channelRosterReadAt = 0
+
   const modelRuntime = createModelRuntime({
     ...stores,
     logger,
@@ -210,6 +220,8 @@ export function apply(ctx, config) {
   ctx.on?.('loader/volatile-update', () => {
     registration.replace(routes())
   })
+
+
 
   /**
    * A freshly started outlet needs a moment before its nodes carry traffic: the
@@ -780,22 +792,83 @@ export function apply(ctx, config) {
     onVisibilityChanged: emitTopology,
     // ── fallback chains ─────────────────────────────────────────────────────
     combos: {
-      list: () => ({
+      /**
+       * 路由编辑器读的模型候选。
+       *
+       * ## ⚠️ 必须先重读渠道名册（真实缺陷，2026-11-04 用户报障）
+       *
+       * 症状：「在渠道页开启了模型，回到路由点添加成员却找不到它，得热重载
+       * 或重启才出现」。
+       *
+       * 原因：`state().catalog` 里的渠道行是**上一次 `refreshChannelCatalog()`
+       * 的快照**，而那个函数只在启动、定时轮询、以及（早期的）事件监听里跑。
+       * 渠道页的开关写的是渠道包自己的持久化状态，并不会让这份快照失效。
+       *
+       * ## 为什么用「按需读」而不是「订阅事件」
+       *
+       * 第一版修复是订阅渠道包的 `llm/adapters-updated` 事件去刷新。但本插件
+       * 的 `emitTopology()` **自己也 emit 同一事件**，于是
+       * `监听器 → refreshChannelCatalog → emitTopology → emit → 监听器 → …`
+       * 无限递归，把主线程钉死在 100%（CPU 飙升、HTTP 无响应、桌面端起不来），
+       * 只能禁用插件。
+       *
+       * 用户提的按需方案更简单也更可靠：**打开编辑器时读一遍**就够了 ——
+       * 不遗漏（每次都是当下的真实列表），也没有任何事件时序/递归风险。
+       * `readChannelRosters` 自带时间预算与并发上限（见 `channel-catalog.js`），
+       * 所以这里的等待是有界的，不会重演启动卡死。
+       */
+      list: async () => {
+        /**
+         * 节流：编辑器在页面加载、每次保存后都会重拉 `/combos`，
+         * 每次都全量扫一遍渠道名册太浪费（`readChannelRosters` 要问每个
+         * provider 的 `listModels` + 逐模型 `resolveModelInfo`）。
+         *
+         * 3 秒足够覆盖「用户刚在渠道页关掉开关、立刻切到路由页点添加成员」
+         * 这个真实操作节奏，又能把连点/重复渲染合并掉。
+         */
+        if (Date.now() - channelRosterReadAt > 3_000) {
+          // 有界刷新：失败也继续用旧快照，绝不让「打开编辑器」变成一次硬失败。
+          // ⚠️ 用 **light** 模式：这里只要「各渠道当前启用了哪些模型」，
+          // 不需要为容量元数据逐模型 resolveModelInfo（那是启动/定时轮询的事）。
+          try {
+            await modelRuntime.refreshChannelCatalog({ light: true })
+            channelRosterReadAt = Date.now()
+          } catch (error) {
+            logger.warn?.(`our-free-model: channel roster re-read for the routing editor failed (${String(error?.message ?? error)}); showing the last known list`)
+          }
+        }
+        return {
         combos: normalizeCombos(settings.get().combos),
         // Every id a chain may reference, with the display name the picker uses —
         // the editor offers a searchable list instead of a free-text field, so a
         // typo cannot become a chain link that silently never resolves.
-        models: state().catalog.map(entry => ({
-          id: entry.id, name: entry.name, channel: entry.channel ?? 'free', vision: entry.vision === true,
-          contextWindow: entry.contextWindow, maxOutput: entry.maxOutput,
-          // 分组键：渠道模型的 provider 就是它自己的 channel，免费车道与 Kilo
-          // 各有固定标签。前端据此「一家供应商一张卡片」，而不是把三十多个
-          // 模型平铺成一列——平铺时同名的 GLM-5.3 会来自好几家，用户无从分辨。
-          ...entry.provider === undefined ? {} : { provider: entry.provider },
-        })),
+        models: state().catalog
+          /**
+           * 成员候选 = **本插件的全部模型**，只排除链路自身（2026-11-04 用户明确）。
+           *
+           * 保留：渠道模型（`channel:<provider>`）、本机免费车道（`free`）、
+           * Kilo（`kilo`）—— 它们都是本插件供的模型，都能当链路成员。
+           *
+           * 排除：`combo` 行。理由不是「不想要」，而是**链路不能嵌套**：
+           * `buildComboCatalog` 建索引时就是 `if (!isComboEntry(entry)) byId.set(...)`，
+           * 嵌套链路在那里永远解析不到，选进去也只会变成一个死成员。
+           *
+           * ⚠️ 早期这里没有过滤，于是两个链路会互相出现在对方的成员候选里，
+           * 选了之后静默失效。
+           */
+          .filter(entry => !isComboEntry(entry))
+          .map(entry => ({
+            id: entry.id, name: entry.name, channel: entry.channel ?? 'free', vision: entry.vision === true,
+            contextWindow: entry.contextWindow, maxOutput: entry.maxOutput,
+            // 分组键：渠道模型的 provider 就是它自己的 channel，免费车道与 Kilo
+            // 各有固定标签。前端据此「一家供应商一张卡片」，而不是把三十多个
+            // 模型平铺成一列——平铺时同名的 GLM-5.3 会来自好几家，用户无从分辨。
+            ...entry.provider === undefined ? {} : { provider: entry.provider },
+          })),
         usable: state().catalog.filter(isComboEntry).map(publicCombo),
         strategies: ['fallback', 'round-robin'],
-      }),
+        }
+      },
       preview: patch => {
         if (patch === null || typeof patch !== 'object' || !Array.isArray(patch.models)
           || patch.models.length > 1000 || patch.models.some(id => typeof id !== 'string' || id.length > 300)) {
@@ -1127,6 +1200,15 @@ export function apply(ctx, config) {
       })
   }, 120_000)
 
+  /**
+   * 通知外部「适配器目录变了」。
+   *
+   * ⚠️ 本插件**不订阅** `llm/adapters-updated`（早期版本订阅过，结果是
+   * 「emit → 监听 → refreshChannelCatalog → emit → …」无限递归，主线程
+   * 100% 卡死、HTTP 无响应、桌面端起不来，2026-11-04 实际事故）。
+   * 渠道模型的时效性改由**按需读取**保证：`GET /combos`（点「添加成员」
+   * 时必然调用）会先重读一次渠道名册，见 `combos.list` 的说明。
+   */
   function emitTopology() {
     try { ctx.emit?.('llm/adapters-updated') } catch { /* no listener surface */ }
     registration.replace(routes())
@@ -1285,7 +1367,7 @@ export function createApiRoutes(deps) {
       }
       // ── fallback chains ────────────────────────────────────────────────────
       if (method === 'GET' && routePath === '/combos') {
-        return send(200, deps.combos.list())
+        return send(200, await deps.combos.list())
       }
       if (method === 'POST' && routePath === '/combos') {
         const body = await readJson(req)

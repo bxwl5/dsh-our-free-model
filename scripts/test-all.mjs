@@ -71,6 +71,9 @@ const suites = [
   ['login-failure-reporting', 'login-failure-reporting-test.mjs', []],
   // 元测试：只导出 verify* 的测试模块必须有「直接运行即失败」的守卫（防假绿复发）。
   ['test-entrypoint-guard', 'test-entrypoint-guard-test.mjs', []],
+  // 守卫：路由候选必须按需重读渠道名册，且不得订阅 llm/adapters-updated
+  //（11-04 那次递归把 CPU 打满、桌面端起不来）。
+  ['adapter-event-loop-guard', 'adapter-event-loop-guard-test.mjs', []],
   ['open-external', 'open-external-test.mjs', []],
   ['forward-boot', 'forward-boot-test.mjs', []],
   ['standalone', 'standalone-test.mjs', []],

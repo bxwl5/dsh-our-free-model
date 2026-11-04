@@ -26,7 +26,7 @@ import { DEFAULT_LEVEL, MIN_BUDGET, budgetFor, defaultEffortFor, effortPatchFor,
 import { createChannel } from './channel.js'
 import { recoveryPolicy, canRecover, canRecoverSilentStop, recoveryMessages, continuationMessages, checkpointFits, addUsage, createBlockTracker } from './recovery.js'
 import { isKiloEntry } from './catalog.js'
-import { isComboEntry, comboChain, advanceComboCursor } from './combos.js'
+import { isComboEntry, comboChain, advanceComboCursor, noteComboServed } from './combos.js'
 import { isChannelEntry, parseChannelModelId } from './channel-catalog.js'
 import { applyTokenSavers, saverConfig } from './token-saver/index.js'
 import { classifyFailure, describeVerdict, shouldAdvance } from './route/classify.js'
@@ -286,6 +286,21 @@ export class FreeModelAdapter {
         // 这个成员刚刚答出来了，禁期立刻作废 —— 否则一次误判会让它在队尾
         // 待满整个冷却时长。
         this.chainCooldown.delete(candidate.id)
+        /**
+         * ⚠️ 记下「本轮实际由谁作答」并**打日志**（2026-11-04 用户反馈
+         * 「设了 10 次就换，一直没实现」）。
+         *
+         * 轮询本来是生效的（实测 stickyLimit=10 时第 11 回合才切换），但
+         * 对外只暴露链路名 `combo:xxx`，用户无法确认它到底有没有轮 ——
+         * 「看不到」等于「没实现」。这条日志让每次作答都留下可核对的记录。
+         */
+        noteComboServed(entry.id, candidate.id)
+        this.deps.log?.(
+          `our-free-model: chain "${entry.name}" served by ${candidate.id}`
+          + ` (candidate ${index + 1}/${candidates.length}`
+          + `, strategy ${entry.strategy ?? 'fallback'}`
+          + `${entry.strategy === 'round-robin' ? `, sticky ${entry.stickyLimit ?? 1}` : ''})`,
+        )
         // 只有**发生过降级**（答出来的不是队首那个）才推游标：这时下一回合
         // 的起点应该是「刚答出来的这个成员的下一个」，而不是回到队首重新开始
         // ——否则链尾的 zcode 一打光，用户每一回合都先撞一次 zcode、再由 buddy
