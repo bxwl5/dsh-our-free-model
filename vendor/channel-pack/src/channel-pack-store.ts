@@ -126,12 +126,16 @@ export interface ChannelPackState {
 export type AccountStrategy = 'sequential' | 'round-robin'
 
 /**
- * 轮询模式下的默认粘滞次数。
+ * 轮询模式下的粘滞次数（每个账号连续用几次再换）。
  *
- * 选 1 表示「每次请求都换号」——这正是用户说的「轮询」的直觉含义；
- * 想减少切换开销可以调大（粘滞对上游的提示缓存更友好）。
+ * ★ 2026-11-04 由 1 改为 **10**（用户决定）：「轮询次数固定 10，不再显示了设置
+ * 轮询次数了」。选 1（每次请求都换号）会把同一会话的连续请求打到不同账号上，
+ * 上游的提示缓存几乎必然失效；10 次既摊薄单账号的抖动，又不至于让另一个号等太久。
+ *
+ * ⚠️ 前端 `client.js` 的 `ACCOUNT_STICKY_LIMIT` 必须同值：前端只在用户拨动开关时
+ * 把这个数写下去，两边不一致会让「用户什么都没改」的状态在首次开关后跳变。
  */
-export const DEFAULT_ACCOUNT_STICKY_LIMIT = 1
+export const DEFAULT_ACCOUNT_STICKY_LIMIT = 10
 
 /** 持久化后端的能力标识，供调用方决定要不要告警。 */
 export type ChannelPackStoreKind = 'settings' | 'file' | 'memory'

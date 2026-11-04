@@ -1689,7 +1689,7 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
        * 跨日归零：**只**与同一签到日的旧行合并（逐行判，不是全局 `resultsDay`）。
        * 否则 zcode 的 09:00 日界会把其他渠道昨天的行一起保留/清掉。
        */
-      const base = doc.results.filter((row) => (row.day ?? doc.resultsDay) === day)
+      const base = doc.results.filter((row) => row.provider === provider && (row.day ?? doc.resultsDay) === day)
       const merged = new Map(base.map((row) => [`${row.provider}\u0000${row.accountId}`, row]))
       for (const row of incoming) {
         const key = `${row.provider}\u0000${row.accountId}`
@@ -1750,9 +1750,23 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
         const rowDay = row.day ?? doc.resultsDay
         return rowDay !== '' && rowDay === checkinDayString(row.provider, now())
       })
+      /**
+       * ★ 用「provider\0accountId」为键**再合一次**，而不是直接拼数组
+       * （真实缺陷，2026-11-04 用户报「签到结果栏炸了，一堆签到结果」）。
+       *
+       * 原写法 `[...others, ...merged.values()]` 依赖「两者不相交」这个隐含前提，
+       * 而 `base` 当时没按 provider 过滤 ⇒ 本渠道的行同时进了 `merged` 和 `others`，
+       * 于是每写一次结果就多出一份（当场表格里同一条记录出现 3 次）。
+       *
+       * 以 Map 重建是**结构上**免疫：只要键相同就只有一行，不依赖调用方是否守规矩；
+       * 顺带把历史文档里已经写进去的重复行收敛回一行（自愈，不必手工清盘）。
+       */
+      const final = new Map<string, AutoCheckinAccountResult>()
+      for (const row of others) final.set(`${row.provider}\u0000${row.accountId}`, row)
+      for (const row of merged.values()) final.set(`${row.provider}\u0000${row.accountId}`, row)
       doc = {
         ...doc,
-        results: [...others, ...merged.values()],
+        results: [...final.values()],
         // 全局字段只服务**旧文档**（行上没有 `day` 时回落到它）：保持 00:00 口径，
         // 不写 zcode 的 09:00 日界，否则会给其他渠道的旧行换了参照系。
         resultsDay: utc8DateString(now()),

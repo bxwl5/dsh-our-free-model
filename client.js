@@ -261,13 +261,14 @@ window.__ModuleLoader__.load({
         /**
          * 账号轮询（渠道内）—— 与**路由轮询**（combo 成员之间）是两套东西，
          * 文案必须点明「同一渠道」与「多个账号」，否则用户会与路由的轮询混淆。
+         *
+         * ★ 2026-11-04：开关并进顶部卡片的自动签到行，次数固定 10 且不再暴露
+         * 输入框（用户要求），故 `sub` / `every` / `times` / `everyAria` 全部删除；
+         * 「每个账号连续 10 次」这层含义并入开关自身的标题文案里，因为界面上
+         * 已经没有那个数字可看了。
          */
-        'chan.strategy.title': '账号轮询',
-        'chan.strategy.sub': '同一渠道内多个账号之间怎么轮 · 与「路由」的渠道轮询无关 · 本机设置',
-        'chan.strategy.switch': '开启账号轮询',
-        'chan.strategy.every': '每个账号连续',
-        'chan.strategy.times': '次后切换',
-        'chan.strategy.everyAria': '轮询时每个账号连续使用次数',
+        'chan.strategy.sub': '同一渠道内的多个账号轮流使用，每个账号连续 10 次后切换 · 与「路由」的渠道轮询无关 · 本机设置',
+        'chan.strategy.switch': '开启账号轮询（每号连续 10 次）',
         'chan.claim.none': '今天没有可领取的积分。',
         'chan.model.free': '免费额度',
         'chan.model.dead': '已下架',
@@ -767,12 +768,8 @@ window.__ModuleLoader__.load({
         'chan.test.ok': 'Connection healthy ({ms} ms)',
         'chan.test.failed': 'Test failed: {reason}',
         'chan.claim.result': 'Claimed for {count} account(s), {credit} credits in total.',
-        'chan.strategy.title': 'Account rotation',
-        'chan.strategy.sub': 'How accounts rotate inside one channel · unrelated to route rotation between channels · per device',
-        'chan.strategy.switch': 'Enable account rotation',
-        'chan.strategy.every': 'Keep each account for',
-        'chan.strategy.times': 'requests',
-        'chan.strategy.everyAria': 'Requests per account while rotating',
+        'chan.strategy.sub': 'Rotate between accounts inside one channel, 10 requests per account · unrelated to route rotation between channels · per device',
+        'chan.strategy.switch': 'Enable account rotation (10 per account)',
         'chan.claim.none': 'Nothing to claim today.',
         'chan.model.free': 'Free quota',
         'chan.model.dead': 'Retired',
@@ -1082,21 +1079,20 @@ window.__ModuleLoader__.load({
 .ofm_pagetitle h2{margin:0;font-size:23px;font-weight:760;letter-spacing:-.6px;line-height:1.2;background:linear-gradient(120deg,var(--dsw-alias-label-primary) 20%,color-mix(in srgb,var(--dsw-alias-label-primary) 55%,var(--dsw-alias-state-business-primary)));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
 .ofm_pagesub{margin:0;font-size:12.5px;color:var(--dsw-alias-label-secondary);max-width:70ch}
 /* ── 账号轮询（渠道内，全局）────────────────────────────────────────────
-   放在渠道接入页顶部 hero 里，作用于全部渠道。与「路由轮询」（combo 成员
-   之间，通常就是不同渠道）是两套独立机制，样式上也单独成行以示区分。 */
-.ofm_strategyrow{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:10px 12px;border-radius:12px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 70%,transparent);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 55%,transparent)}
-.ofm_strategymain{display:flex;align-items:center;gap:16px;flex-wrap:wrap;min-width:0}
-.ofm_strategylabel{display:flex;flex-direction:column;gap:1px;min-width:0}
-.ofm_strategytitle{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary)}
-.ofm_strategysub{font-size:11px;line-height:1.35;color:var(--dsw-alias-label-tertiary)}
-/* 开关与次数是一组：两者间距小于它们与标题的间距，视觉上才成「一整套设置」。 */
-.ofm_strategycontrols{display:inline-flex;align-items:center;gap:14px;flex-wrap:wrap}
-.ofm_strategynum{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-secondary)}
-.ofm_strategynum input{box-sizing:border-box;width:3.4rem;min-width:0;padding:3px 4px;font-size:12px;text-align:center;border-radius:7px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 80%,transparent);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums}
-.ofm_strategynum input:disabled{opacity:.45}
+   2026-11-04 起**并入顶部卡片的自动签到那一行**（用户要求），不再单独成块。
+   与「路由轮询」（combo 成员之间，通常就是不同渠道）是两套独立机制。
+
+   次数固定 10，没有输入框 —— 用户明确「轮询次数固定 10，不再显示了设置
+   轮询次数了」，故原先那套独立设置块的样式一并删除（保留了带分隔线的开关容器）。 */
+/* ⚠️ 2026-11-04 用户反馈「前面多了一个竖线」「按钮对齐别扭」：
+   原先这里用 ::before 画了一道 1px 分隔线，而 align-self:stretch 让它随行高
+   （含 Pill 的 padding）一起变长，看起来就是一根突兀的竖杠 —— 直接删除。
+   对齐改用统一的行内盒高（见 .ofm_row 的 min-height）。
+   ⚠️ 本段位于模板字符串内：注释里**不能出现反引号**，否则会提前截断字符串。 */
+.ofm_autostrategy{display:inline-flex;align-items:center;gap:6px;min-width:0}
 .ofm_pagehead .ofm_pills{margin-left:auto}
 .ofm_pills{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
-.ofm_pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 78%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 4%);font-size:11.5px;color:var(--dsw-alias-label-secondary);white-space:nowrap;transition:border-color .16s ease,color .16s ease}
+.ofm_pill{display:inline-flex;align-items:center;gap:6px;min-height:20px;padding:0 10px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 78%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 4%);font-size:11.5px;color:var(--dsw-alias-label-secondary);white-space:nowrap;transition:border-color .16s ease,color .16s ease}
 .ofm_pill.strong{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2)}
 .ofm_dot{width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-label-tertiary);flex:none}
 @keyframes ofm-dot-breathe{0%,100%{opacity:1}50%{opacity:.55}}
@@ -1144,7 +1140,12 @@ window.__ModuleLoader__.load({
 .ofm_panel{padding:10px 12px;border-radius:12px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 82%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 5%),0 2px 6px rgb(0 0 0 / 4%);display:flex;flex-direction:column;gap:7px}
 .ofm_paneltitle{font-size:12px;font-weight:680;letter-spacing:.2px;color:var(--dsw-alias-label-secondary);display:flex;align-items:center;gap:8px}
 .ofm_paneltitle .ofm_sec_hint{font-weight:400;letter-spacing:0}
-.ofm_row{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+/* ★ 2026-11-04：行内控件（开关按钮、胶囊、说明文字）高度不一时，align-items:center
+   会让它们各自按自身盒高居中 —— 看起来就是「按钮没对齐」。这里给整行定一个
+   最小行高，开关与胶囊的视觉中心才落在同一条线上。
+   ⚠️ 本段在模板字符串内：注释里不能出现反引号。 */
+.ofm_row{display:flex;gap:7px;align-items:center;flex-wrap:wrap;min-height:24px}
+.ofm_row > *{flex-shrink:0}
 /*
  * 模型列表的三个批量按钮：「全部开启 / 全部关闭 / 刷新模型」并列等宽。
  *
@@ -1219,7 +1220,7 @@ window.__ModuleLoader__.load({
 .ofm_input:hover{border-color:color-mix(in srgb,var(--dsw-alias-border-l2) 60%,var(--dsw-alias-label-tertiary))}
 .ofm_input:focus{outline:none;border-color:var(--dsw-alias-state-business-primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--dsw-alias-state-business-primary) 20%,transparent)}
 /* ══ 开关（spring 滑块） ═══════════════════════════════════════════════ */
-.ofm_switch{display:inline-flex;align-items:center;gap:9px;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;appearance:none;background:transparent;border:0;padding:0;font:inherit;color:inherit}
+.ofm_switch{display:inline-flex;align-items:center;min-height:20px;gap:9px;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;appearance:none;background:transparent;border:0;padding:0;font:inherit;color:inherit}
 .ofm_switch i{width:32px;height:18px;border-radius:999px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);box-shadow:inset 0 1px 3px rgb(0 0 0 / 8%);position:relative;transition:background .2s ease,border-color .2s ease,box-shadow .2s ease;flex:none}
 .ofm_switch:hover i{filter:brightness(1.05)}
 .ofm_switch[aria-checked="true"]:hover i{filter:brightness(1.08)}
@@ -3183,6 +3184,18 @@ window.__ModuleLoader__.load({
      * *state* comes from the pack over RPC. `accent` drives each card's stripe
      * and logo tile; `login` picks the flow the card offers.
      */
+    /**
+     * ★ 账号轮询的固定切换阈值（用户 2026-11-04：「轮询次数固定 10，不再显示了
+     * 设置轮询次数了」）。
+     *
+     * 固定值而非可配置项：那个输入框只服务一个几乎没人会调的旋钮，却占着顶部卡片
+     * 一行、还要求用户先理解「连续 N 次」是什么意思。10 次既够摊薄单账号的抖动，
+     * 又不至于让另一个号等太久。
+     *
+     * ⚠️ 与后端 `ACCOUNT_STRATEGY_STICKY_LIMIT_DEFAULT` 必须是同一个数：前端只在
+     * 「用户拨开关」时把它写下去，**不改**已有值（见 `applyStrategy` 的说明）。
+     */
+    const ACCOUNT_STICKY_LIMIT = 10
     const CHANNEL_PROVIDERS = [
       { id: 'codearts', name: 'CodeArts', org: '华为云', accent: '#C7000B', note: 'DeepSeek · GLM · openPangu，每日免费额度', login: 'browser' },
       { id: 'buddy', name: 'WorkBuddy 国内版', org: '腾讯 · copilot.tencent.com', accent: '#0A7AFF', note: 'CodeBuddy 同一端点：DeepSeek · Kimi · GLM 免费线，每日积分', login: 'browser' },
@@ -4362,39 +4375,30 @@ window.__ModuleLoader__.load({
                   .replace('{accounts}', String(claimedRows.length))
                   .replace('{amounts}', amounts)
               return h('span', { className: 'ofm_note' }, text)
-            })())),
-        /*
-         * 账号轮询（渠道内）开关 —— 放在渠道接入页顶部大卡片里，**全局生效**。
-         *
-         * 只在确实有 ≥2 个账号的渠道时显示：一个都没有时摆放一个点了没效果的
-         * 开关比不摆更糟。`usableProviders` 由后端算好，前端不重复拼。
-         */
-        strategy && (strategy.usableProviders ?? 0) > 0 ? h('div', { className: 'ofm_strategyrow' },
-          h('div', { className: 'ofm_strategymain' },
-            h('div', { className: 'ofm_strategylabel' },
-              h('span', { className: 'ofm_strategytitle' }, t('chan.strategy.title')),
-              h('span', { className: 'ofm_strategysub' }, t('chan.strategy.sub'))),
-            h('div', { className: 'ofm_strategycontrols' },
-              h(Switch, {
-                checked: strategy.strategy === 'round-robin',
-                label: t('chan.strategy.switch'),
-                onChange: () => void applyStrategy(strategy.strategy === 'round-robin' ? 'sequential' : 'round-robin', strategy.stickyLimit),
-              }),
-              h('label', { className: 'ofm_strategynum' },
-                h('span', null, t('chan.strategy.every')),
-                h('input', {
-                  type: 'number', min: 1, max: 1000,
-                  'aria-label': t('chan.strategy.everyAria'),
-                  value: strategy.stickyLimit,
-                  // 顺序模式下这个数字没有意义（永远用第一个号），置灰比隐藏好：
-                  // 用户能看见「轮询开到几次」的既有设定。
-                  disabled: strategy.strategy !== 'round-robin',
-                  onChange: event => setStrategy({ ...strategy, stickyLimit: Number(event.target.value) || 1 }),
-                  // 失焦提交：不要每敲一个数字就写一次盘
-                  onBlur: event => void applyStrategy('round-robin', Number(event.target.value) || 1),
-                }),
-                h('span', null, t('chan.strategy.times'))))),
-        ) : null,
+            })(),
+            /*
+             * ★ 账号轮询开关（渠道内，全局生效）—— 与自动签到**同一行**
+             * （用户 2026-11-04：「把轮询开关图二做到上面的卡片里面去吧」）。
+             *
+             * 次数固定 {@link ACCOUNT_STICKY_LIMIT}（10），不再给输入框：用户明确
+             * 「轮询次数固定 10，不再显示了设置轮询次数了」。
+             *
+             * 只在确实有可轮询渠道（`usableProviders` ≥ 1，即有渠道存在 ≥2 个账号）
+             * 时显示 —— 摆一个点了没效果的开关比不摆更糟。口径由后端算好。
+             *
+             * ⚠️ 与**路由轮询**（combo 成员之间）无关：这里轮的是同一渠道内的多个账号。
+             */
+            strategy && (strategy.usableProviders ?? 0) > 0
+              ? h('div', { className: 'ofm_autostrategy', title: t('chan.strategy.sub') },
+                h(Switch, {
+                  checked: strategy.strategy === 'round-robin',
+                  label: t('chan.strategy.switch'),
+                  onChange: () => void applyStrategy(
+                    strategy.strategy === 'round-robin' ? 'sequential' : 'round-robin',
+                    ACCOUNT_STICKY_LIMIT,
+                  ),
+                }))
+              : null)),
         failed ? h('div', { className: 'ofm_callout ofm_error' },
           h('div', null, t('chan.pack.failed').replace('{reason}', pack.error ?? ''), h('div', { className: 'ofm_note' }, t('chan.pack.hint')))) : null,
         !available ? h('div', { className: 'ofm_callout' }, h('div', null, t('chan.rpc.unavailable'))) : null,
@@ -4578,7 +4582,26 @@ window.__ModuleLoader__.load({
      * 列宽只受声明控制（与 AnomalyPanel 同样的教训）。
      */
     function CheckinPanel(props) {
-      const { results, channelName, t } = props
+      const { channelName, t } = props
+      /**
+       * ★ 按「渠道 + 账号」去重（2026-11-04 用户报「签到结果栏炸了，一堆签到结果」）。
+       *
+       * 根因在后端（写回时把其他渠道的行重复收进了 `merged`），已在
+       * `auto-checkin.ts` 修掉并加了回归用例；这里保留一层**渲染侧兜底**：
+       * 面板是最后一个能拦住脏数据的地方，历史文档、旧版本写下的行、
+       * 将来再有人改坏合并逻辑，都不该让用户看到同一条记录出现三次。
+       *
+       * 后写覆盖先写 —— 与后端 `mergeAccountResult` 的「最近一次为准」同语义。
+       */
+      const results = (() => {
+        const raw = Array.isArray(props.results) ? props.results : []
+        const seen = new Map()
+        for (const row of raw) {
+          if (row === null || typeof row !== 'object') continue
+          seen.set(`${row.provider}\u0000${row.accountId}`, row)
+        }
+        return [...seen.values()]
+      })()
       // 默认**折叠**（用户 2026-10-28 要求）：签到明细是「事后核对」用的，
       // 平时不需要占版面；摘要（今日 N 个渠道 / M 个账号 / 领取总额）在渠道卡片
       // 的自动签到板块里已经有了，这里折叠不丢信息。

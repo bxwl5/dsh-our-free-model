@@ -34588,7 +34588,7 @@ function suppressAutoSettingsPage(ctx) {
 
 // vendor/channel-pack/src/channel-pack-store.ts
 var CHANNEL_PACK_NS = "channel-pack";
-var DEFAULT_ACCOUNT_STICKY_LIMIT = 1;
+var DEFAULT_ACCOUNT_STICKY_LIMIT = 10;
 var channelPackSchema = Schema.object({
   accounts: Schema.array(Schema.any()).default([]),
   disabledModels: Schema.dict(Schema.any()).default({}),
@@ -67228,7 +67228,7 @@ function createAutoCheckin(deps) {
       const incoming = aggregateAccountRows(provider, value.results ?? []);
       if (incoming.length === 0) return;
       for (const row of incoming) row.day = day2;
-      const base = doc.results.filter((row) => (row.day ?? doc.resultsDay) === day2);
+      const base = doc.results.filter((row) => row.provider === provider && (row.day ?? doc.resultsDay) === day2);
       const merged = new Map(base.map((row) => [`${row.provider}\0${row.accountId}`, row]));
       for (const row of incoming) {
         const key = `${row.provider}\0${row.accountId}`;
@@ -67256,9 +67256,12 @@ function createAutoCheckin(deps) {
         const rowDay = row.day ?? doc.resultsDay;
         return rowDay !== "" && rowDay === checkinDayString(row.provider, now());
       });
+      const final = /* @__PURE__ */ new Map();
+      for (const row of others) final.set(`${row.provider}\0${row.accountId}`, row);
+      for (const row of merged.values()) final.set(`${row.provider}\0${row.accountId}`, row);
       doc = {
         ...doc,
-        results: [...others, ...merged.values()],
+        results: [...final.values()],
         // 全局字段只服务**旧文档**（行上没有 `day` 时回落到它）：保持 00:00 口径，
         // 不写 zcode 的 09:00 日界，否则会给其他渠道的旧行换了参照系。
         resultsDay: utc8DateString(now()),

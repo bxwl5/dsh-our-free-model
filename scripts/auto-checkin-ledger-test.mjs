@@ -750,6 +750,58 @@ try {
     assert.equal(h.store.peek().results.filter(row => row.provider === 'codearts').length, 1, '⚠️ 写 zcode 不能删掉其他渠道的行')
   })
 
+  // ── 14. 结果行不能重复（用户 2026-11-04 报「签到结果栏炸了，一堆签到结果」）──
+  await check('结果行不重复：连续写多个渠道，每条记录只出现一次', async () => {
+    /*
+     * 真实缺陷：`base` 当初没按 provider 过滤，于是本渠道的行同时进了 `merged`
+     * 与 `others`，每写一次结果就多一份 —— 用户当场看到同一条记录出现 3 次
+     * （39 行里 13 条各重复 3 遍）。
+     */
+    const at = Date.parse('2026-11-04T20:00:00+08:00')
+    const h = harness({ providers: ['zcode', 'buddy', 'codearts'], responses: {}, now: at })
+    const rowsOf = (rows, over = {}) => ({
+      results: rows,
+      summary: {
+        claimed: 0, totalCredit: 0, alreadyClaimed: 0, inactive: 0, failed: 0, coversToday: 1,
+        totalByUnit: { credit: 0, token: 0 }, ...over,
+      },
+    })
+    // 三个渠道各写两次（模拟「自动一轮 + 手动点一次」的常见序列）
+    for (const round of [1, 2]) {
+      for (const provider of ['zcode', 'buddy', 'codearts']) {
+        await h.engine.recordClaimResult(provider, rowsOf(
+          [{ accountId: `${provider}-a1`, nickname: '测试号', outcome: { kind: 'claimed', credit: 100 } }],
+          { claimed: 1, totalCredit: 100, coversToday: 1, totalByUnit: { credit: 100, token: 0 } },
+        ))
+      }
+    }
+    const rows = h.store.peek().results
+    const key = (row) => `${row.provider}\u0000${row.accountId}`
+    const seen = new Set()
+    for (const row of rows) {
+      assert.equal(seen.has(key(row)), false, `⚠️ 结果行重复了：${row.provider}/${row.accountId}`)
+      seen.add(key(row))
+    }
+    assert.equal(rows.length, 3, `3 个渠道各 1 行，实际 ${rows.length} 行`)
+
+    // 历史脏数据自愈：文档里已有重复行时，下一次写入要收敛回一行
+    const dup = (name, provider) => ({
+      provider, accountId: `${provider}-a1`, accountName: name, outcome: 'claimed', amount: 100, unit: 'credit',
+      day: '2026-11-04',
+    })
+    const h2 = harness({
+      providers: ['buddy'],
+      responses: {},
+      now: at,
+      initial: { results: [dup('测试号', 'buddy'), dup('测试号', 'buddy'), dup('测试号', 'buddy')], resultsDay: '2026-11-04' },
+    })
+    await h2.engine.recordClaimResult('buddy', rowsOf(
+      [{ accountId: 'buddy-a1', nickname: '测试号', outcome: { kind: 'already-claimed', message: '今天已领' } }],
+      { alreadyClaimed: 1, coversToday: 1 },
+    ))
+    assert.equal(h2.store.peek().results.length, 1, '⚠️ 历史重复行应被收敛成一行')
+  })
+
   await check('mergeAccountResult 合并规则：claimed 不被降级、同级 claimed 相加', async () => {
     const base = { provider: 'kuku', accountId: 'a', accountName: 'a', unit: 'credit' }
     const claimedRow = { ...base, outcome: 'claimed', amount: 200 }
@@ -765,7 +817,7 @@ try {
     assert.equal(ac.mergeAccountResult(failedRow, { ...failedRow, message: '新原因' }).message, '新原因', '失败原因取最近一次')
   })
 
-  console.log(`auto-checkin-ledger: ${checks} 组断言通过（失败渠道补跑 / 非今日轮次 / 刷新前 inactive 不烧额度 / 重跑上限 / 旧格式兼容 / 全失败不记日 / 跳过不重试 / 补跑排定 / 纯函数边界 / running 反馈 / 常量漂移 / 计数过滤 / 逐账号明细聚合 / 明细容错 / 全天累计 / 合并规则 / 手动签到回填渠道状态 / zcode 签到窗口 / 渠道间日界隔离）`)
+  console.log(`auto-checkin-ledger: ${checks} 组断言通过（失败渠道补跑 / 非今日轮次 / 刷新前 inactive 不烧额度 / 重跑上限 / 旧格式兼容 / 全失败不记日 / 跳过不重试 / 补跑排定 / 纯函数边界 / running 反馈 / 常量漂移 / 计数过滤 / 逐账号明细聚合 / 明细容错 / 全天累计 / 合并规则 / 手动签到回填渠道状态 / zcode 签到窗口 / 渠道间日界隔离 / 结果行不重复）`)
 } finally {
   hooks.deregister()
   fs.rmSync(scratch, { recursive: true, force: true })
