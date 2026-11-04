@@ -19,8 +19,8 @@
     },
     {
       "path": "client.js",
-      "size": 461115,
-      "sha256": "a434e20cac8fc5317e16babb29f0d8083409ffb18a82044bc42c0ef1c362cd25"
+      "size": 462344,
+      "sha256": "61456c5e6a61b218a37796f258c426eab29d157122def58d296028ef44199aa2"
     },
     {
       "path": "cordis.patch.yml",
@@ -34,8 +34,8 @@
     },
     {
       "path": "index.js",
-      "size": 83152,
-      "sha256": "9b80e572e2ff558634940c283254621ccd1c98964501518b4cebd68af8f2b645"
+      "size": 83013,
+      "sha256": "fbdcc0a23c101e1cee9a520d540f207b9fd8d0afad1c04121b9b1140282de63d"
     },
     {
       "path": "locale/en.json",
@@ -89,8 +89,8 @@
     },
     {
       "path": "src/core/channel-usage.js",
-      "size": 12421,
-      "sha256": "fa48425cd656ad559a48eabe0187b78651662c0d2c5a49376ba1451c6c944707"
+      "size": 14734,
+      "sha256": "167b2100543adecbb95252d6db30a618a546298ba97f24a80b02e474e886c7f7"
     },
     {
       "path": "src/core/completion.js",
@@ -104,8 +104,8 @@
     },
     {
       "path": "src/core/stats.js",
-      "size": 6472,
-      "sha256": "4ed958d9cd3e6c48290bc0b5a986413dfcef9870c0468676cb9ae7e1f97d5e08"
+      "size": 7727,
+      "sha256": "70c981329363a319b2a2c199096e8761e7f8f22f07713971b55a4b5a0354fed0"
     },
     {
       "path": "src/deferred-response.js",
@@ -324,8 +324,8 @@
     },
     {
       "path": "vendor/channel-pack/pack.js",
-      "size": 3266089,
-      "sha256": "fb00d0dedcc7ea80bee14b33a8654862a1a499d94405f0cce79c20d827277dd3"
+      "size": 3269986,
+      "sha256": "35c5b03de743e42735dd83e8c6212e4223b85d5887e77a5b1e21b51aba0edae5"
     },
     {
       "path": "vendor/channel-pack/qoder-auth-wasm.wasm",
