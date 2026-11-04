@@ -163,12 +163,7 @@ export function createModelRuntime({
         logger.warn?.(`our-free-model turn failed: ${record.model} — ${record.message.slice(0, 300)}`)
       }
     },
-    warn: message => {
-      logger.warn?.(message)
-      try { fs.appendFileSync('/tmp/ofm-combo-trace.log', `${new Date().toISOString()} ${message}\n`) } catch { /* 诊断通道失败不影响主流程 */ }
-    },
-    /** 诊断通道：adapter 里把「配置列表 vs 执行列表」落文件（见 runCombo）。 */
-    traceFs: fs,
+    warn: message => logger.warn?.(message) ?? logger.log?.(message),
     onRegionBlocked: () => {
       if (disposed || reprobeTimer !== undefined) return
       reprobeTimer = setTimeout(() => {

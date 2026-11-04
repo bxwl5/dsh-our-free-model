@@ -64,6 +64,7 @@ server.unref()
 process.env.OUR_FREE_MODEL_BASE = `http://127.0.0.1:${server.address().port}`
 
 const { FreeModelAdapter, ROUTE_MAIN } = await import('../src/adapter.js')
+console.log('[probe] static fn type:', typeof FreeModelAdapter.classifyStreamOutcomes, '| url:', import.meta.url)
 const { buildCatalog } = await import('../src/catalog.js')
 const { buildComboCatalog, normalizeCombos, comboId, comboChain, advanceComboCursor } = await import('../src/combos.js')
 

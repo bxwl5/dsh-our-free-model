@@ -2,11 +2,17 @@ import { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { BuddyCredential } from './buddy.js'
 import type { BuddyProduct } from './product.js'
-import { createChannelPackStore, mergeLegacyLoomyLock, sanitizeAccounts, sanitizeDisabledModels, sanitizePermanentLocks,
-  sanitizeAccountStrategy,
+import {
   ACCOUNT_STRATEGY_GLOBAL_KEY,
-  sanitizeAccountSticky,
+  createChannelPackStore,
   DEFAULT_ACCOUNT_STICKY_LIMIT,
+  mergeLegacyLoomyLock,
+  sanitizeAccountSticky,
+  sanitizeAccountStrategy,
+  sanitizeAccounts,
+  sanitizeDisabledModels,
+  sanitizePermanentLocks,
+  sanitizeProviderOrder,
   type AccountStrategy,
 } from './channel-pack-store.js'
 import type { ChannelPackStore, ChannelPackState, ModelDisableMap, PermanentLockMap } from './channel-pack-store.js'
@@ -63,38 +69,7 @@ export const RATE_LIMIT_KEEP_MS = 7 * 24 * 60 * 60 * 1000
 export const RISK_FIRST_COOLDOWN_MS = 30 * 60 * 1000
 export const RISK_REPEAT_COOLDOWN_MS = 24 * 60 * 60 * 1000
 
-/**
- * 判定「某 provider 的启用账号是否**全部**因目标模型处于限流期」。
- *
- * ## 为什么需要它
- *
- * 选号按 `modelRateLimits[modelId]` 过滤候选（见本类的 `getAvailableAccount`
- * 与 `src/index.ts` 的 `pickBuddyCredential`）。当一个 provider 只有**一个**
- * 启用账号、而它恰好被标记了该模型的限流时，候选集变成空集，调用链一路
- * 返回 `undefined`，最终由适配器抛出「no usable credential; log in from the
- * Channel Pack panel first」—— 而**凭据其实是好的、账号也是启用的**，用户被指去
- * 重新登录，方向完全错。
- *
- * 本函数把这种情形**证明**出来：返回非 `undefined` 即表示「这批账号全都因
- * 该模型受限」，调用方据此报带解禁时刻的明确错误。
- *
- * ⚠️ **判据必须窄**，两条边界都不能松：
- * - 空 `modelId`（未知目标模型）直接返回 `undefined` —— 与选号侧约定一致
- *   （空 modelId 不做限流过滤），否则会把「未登录」误报成「限流」。
- *   这条**不是**冗余守卫：`updateModelRateLimit` 不校验 modelId，理论上可能
- *   落下一个 `modelRateLimits['']` 脏键，没有它就会被当成真实限流上报；
- * - 只要**任一**账号没有该模型的未过期标记，整体即不成立 —— 那种情况下
- *   候选本就非空，轮不到本函数说话。
- *
- * ℹ️ 空 `accounts` 无需单独早退：循环不执行 → `earliest` 保持 `undefined`
- * → 末尾守卫返回 `undefined`。（曾写过一条 `accounts.length === 0` 早退，
- * 反向验证证明它**不可区分**、纯冗余，故删除。）
- *
- * @param accounts - 该 provider 的**启用**账号（调用方负责按 `enabled` 过滤）。
- * @param modelId - 目标模型 id；空串表示不判定。
- * @param now - 当前时刻（毫秒），供测试注入。
- * @returns 最早的解禁时刻与账号数；不满足条件时为 `undefined`。
- */
+
 /**
  * 列出该渠道**当前仍可用**的模型（用于限流报错里给出可执行的替代建议）。
  *
@@ -130,6 +105,27 @@ export function availableModelsForChannel(
   return usable
 }
 
+/**
+ * 判定「某 provider 的启用账号是否**全部**因目标模型处于限流期」。
+ *
+ * ## 为什么需要它
+ *
+ * 选号按 `modelRateLimits[modelId]` 过滤候选（见本类的 `getAvailableAccount`
+ * 与 `src/index.ts` 的 `pickBuddyCredential`）。当一个 provider 只有**一个**
+ * 启用账号、而它恰好被标记了该模型的限流时，候选集变成空集，调用链一路
+ * 返回 `undefined`，最终由适配器抛出「no usable credential; log in from the
+ * Channel Pack panel first」—— 而**凭据其实是好的、账号也是启用的**，用户被指去
+ * 重新登录，方向完全错。
+ *
+ * 本函数把这种情形**证明**出来：返回非 `undefined` 即表示「这批账号全都因
+ * 该模型受限」，调用方据此报带解禁时刻的明确错误。
+ *
+ * ⚠️ **判据必须窄**，两条边界都不能松：
+ * - 空 `modelId`（未知目标模型）直接返回 `undefined` —— 与选号侧约定一致
+ *   （空 modelId 不做限流过滤），否则会把「未登录」误报成「限流」。
+ *   这条**不是**冗余守卫：`updateModelRateLimit` 不校验 modelId，理论上可能
+ *   落下一个 `modelRateLimits['']` 脏键，没有它就会被当成真实限流上报；
+ */
 export function allAccountsRateLimitedForModel(
   accounts: readonly ProviderAccountEntry[],
   modelId: string,
@@ -575,6 +571,10 @@ export class AccountPool {
    * 可接受的小体积换语义正确。
    */
   async setModelDisabled(provider: string, modelId: string, disabled: boolean): Promise<void> {
+    // ★ 与同类写路径对齐（审查 2026-11-05）：此前是唯一不调 ensureLoaded 的写路径，
+    //   冷启动后首个 RPC 就是 model.setDisabled 时会用空 cache 整体覆盖磁盘，
+    //   抹掉其它 provider 的账号与黑名单（教训同 setAccountsEnabled:681 的注释）。
+    this.ensureLoaded()
     const next: ModelDisableMap = { ...this.modelCache }
     const perProvider = { ...(next[provider] ?? {}) }
     if (disabled) perProvider[modelId] = true
@@ -1240,7 +1240,10 @@ export class AccountPool {
      *
      * `round-robin` 时**不**按 `modelRateLimits` 剔号：轮到谁就交谁，上游若拒
      * （额度用尽/限流/封禁），适配器内部的换号重试会在**本次请求内**顺延到下一个
-     * 账号 —— 失败占 0 次名额，游标严格按 `stickyLimit` 走。
+     * 账号 —— 上游拒绝不占名额，游标严格按 `stickyLimit` 走。
+     * （⚠️ 边界：凭据损坏/占位条目在下面的解析循环里跳过时**仍占名额**——
+     * 池层无法区分「凭据坏」与「上游拒」，前者是数据完整性问题，走
+     * `account.retest` 修复。）
      *
      * 旧逻辑在这里按限流过滤，后果有两个：
      *  1. 被限流的账号整段时间从候选里消失（用户看到「一直同一个账号」——
@@ -1281,8 +1284,10 @@ export class AccountPool {
      * ⚠️ 与**路由轮询**（`combos.js` 的 combo 成员轮转）无关：那个轮的是
      * 成员/渠道之间，这个轮的是同一渠道内的账号。
      *
-     * ⚠️ 轮转只在**通过过滤的候选**里进行：被限流/停用的账号本来就不在
-     * `candidates` 里，不会占用轮转位置 —— 否则它们会让健康账号少轮几次。
+     * ⚠️ 2026-11-05 铁律后口径：round-robin **不**按限流剔号（轮到谁交谁，
+     *     上游拒由适配器在本请求内换号顺延）；本段「过滤」只剩 `enabled`
+     *     与调用方的排除集。旧注「限流账号不在 candidates 里」仅对
+     *     sequential（顺序模式仍过滤限流）成立。
      * 这里用 `excludeAccountIds` 的重试场景也要保持轮转：调用方拿「下一个」
      * 时游标必须前进，不然换号重试会原地打转（与路由链路同一坑）。
      */
@@ -1309,6 +1314,9 @@ export class AccountPool {
     //
     // 注意 candidates 来自 readAccounts() 的 filter，而 filter 保持原数组
     // 顺序，故这里天然就是手动顺序，无需任何排序。
+    // （限流标记已不影响 round-robin 的候选集——见本方法头部的铁律说明；
+    //   仅 sequential 模式仍按限流过滤。凭据级损坏的占位条目仍会被下面的
+    //   解析循环跳过：那是数据完整性问题，不是轮询语义。）
     //
     // 逐个尝试解析凭据，跳过占位/损坏条目（并记录原因，避免静默失败）
     const failures: string[] = []
@@ -1653,6 +1661,12 @@ export class AccountPool {
       accounts: [...this.cache],
       disabledModels,
       ...this.lockFields(),
+      // ★ 备份要带走全部开关（审查 2026-11-05）：缺这四个会让换机恢复后
+      //   轮询开关/网关开关/供应商顺序静默回落默认——「重启丢开关」的备份版。
+      accountStrategy: { ...this.accountStrategyCache },
+      accountStickyLimit: { ...this.accountStickyCache },
+      gatewayEnabled: this.gatewayEnabledCache,
+      providerOrder: [...this.providerOrderCache],
     }
   }
 
@@ -1672,6 +1686,7 @@ export class AccountPool {
     accounts: readonly ProviderAccountEntry[],
     disabledModels: ModelDisableMap,
     permanentLocks?: PermanentLockMap,
+    switches?: { accountStrategy?: Record<string, AccountStrategy>; accountStickyLimit?: Record<string, number>; gatewayEnabled?: boolean; providerOrder?: string[] },
   ): Promise<void> {
     const next = sanitizeAccounts(accounts)
     this.cache = next
@@ -1681,6 +1696,20 @@ export class AccountPool {
     // 给出表时**整体替换**（备份就是完整状态快照），并同样过滤脏值。
     if (permanentLocks !== undefined) {
       this.permanentLockCache = sanitizePermanentLocks(permanentLocks)
+    }
+    // ★ 开关同约定（审查 2026-11-05）：老备份不含这些字段时保持现值，
+    //   新备份给出则整体替换——否则换机恢复后轮询开关静默回落 sequential。
+    if (switches?.accountStrategy !== undefined) {
+      this.accountStrategyCache = sanitizeAccountStrategy(switches.accountStrategy)
+    }
+    if (switches?.accountStickyLimit !== undefined) {
+      this.accountStickyCache = sanitizeAccountSticky(switches.accountStickyLimit)
+    }
+    if (switches?.gatewayEnabled !== undefined) {
+      this.gatewayEnabledCache = switches.gatewayEnabled !== false
+    }
+    if (switches?.providerOrder !== undefined) {
+      this.providerOrderCache = sanitizeProviderOrder(switches.providerOrder)
     }
     this.loaded = true
     // 一次落盘三件事：锁定表进**独立文档**，账号与黑名单进 state.json，

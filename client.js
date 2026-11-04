@@ -263,9 +263,8 @@ window.__ModuleLoader__.load({
          * 文案必须点明「同一渠道」与「多个账号」，否则用户会与路由的轮询混淆。
          *
          * ★ 2026-11-04：开关并进顶部卡片的自动签到行，次数固定 10 且不再暴露
-         * 输入框（用户要求），故 `sub` / `every` / `times` / `everyAria` 全部删除；
-         * 「每个账号连续 10 次」这层含义并入开关自身的标题文案里，因为界面上
-         * 已经没有那个数字可看了。
+         * 输入框（用户要求），`every` / `times` / `everyAria` / `title` 已删除；
+         * `sub` 降级为开关的悬停提示（title 属性），仍被引用 —— 别删。
          */
         'chan.strategy.sub': '同一渠道内的多个账号轮流使用，每个账号连续 10 次后切换 · 与「路由」的渠道轮询无关 · 本机设置',
         'chan.strategy.switch': '开启账号轮询（每号连续 10 次）',
@@ -323,6 +322,7 @@ window.__ModuleLoader__.load({
         'dash.today': '今日数据',
         'dash.all': '全部历史',
         'dash.refresh': '刷新',
+        'dash.loadFailed': '台账读取失败：{reason}',
         'dash.kpiToday': '今日消耗 Token',
         'dash.kpiScopeAll': '范围内消耗 Token',
         'dash.kpiCumulative': '累计消耗 Token',
@@ -420,6 +420,7 @@ window.__ModuleLoader__.load({
         // 签到汇总（用户 2026-10-27）：不再只看上一句结果，改为
         // 「今日 N 个渠道 M 个账号领取 xxx分」。
         'chan.auto.summary': '今日 {channels} 个渠道 {accounts} 个账号领取 {amounts}',
+        'chan.unit.credit': '分',
         'chan.auto.summaryNone': '今日 {channels} 个渠道签到，未领到积分',
         // 签到结果表格
         'chan.checkin.title': '签到结果',
@@ -822,6 +823,7 @@ window.__ModuleLoader__.load({
         'dash.today': 'Today',
         'dash.all': 'All time',
         'dash.refresh': 'Refresh',
+        'dash.loadFailed': 'Ledger failed to load: {reason}',
         'dash.kpiToday': 'Tokens today',
         'dash.kpiScopeAll': 'Tokens in scope',
         'dash.kpiCumulative': 'Tokens all time',
@@ -917,6 +919,7 @@ window.__ModuleLoader__.load({
         'chan.auto.off': 'Not checked in today',
         'chan.auto.last': 'Last result: {result}',
         'chan.auto.summary': 'Today: {channels} channels, {accounts} accounts claimed {amounts}',
+        'chan.unit.credit': 'pts',
         'chan.auto.summaryNone': 'Today: {channels} channels checked in, nothing claimed',
         'chan.checkin.title': 'Check-in results',
         'chan.checkin.col.channel': 'Channel',
@@ -2660,7 +2663,6 @@ window.__ModuleLoader__.load({
       const limited = lead(roster.filter(m => !m.channel && m.route === 'our-free-model-region'))
       // Kilo 单独一组：它是聚合车道，和"某一家渠道"不是一类东西；混在一列里
       // 时 Kilo 的十八条会把真正的渠道挤到后面，用户找一个渠道要滚很久。
-      const lanes = lead(roster.filter(m => Boolean(m.channel) && m.channel !== 'kilo'))
       const kiloRows = lead(roster.filter(m => m.channel === 'kilo'))
       const unlisted = lead(roster.filter(m => !m.channel && m.route !== 'our-free-model' && m.route !== 'our-free-model-region'))
       const toggleModel = onApply === undefined ? undefined : model => {
@@ -3853,7 +3855,7 @@ window.__ModuleLoader__.load({
         }
         if (!Number.isFinite(amount) || amount <= 0) return null
         // token 与积分量纲不同（见 credits.ts 的 totalByUnit 说明），不能混写。
-        return unit === 'token' ? `${formatTokens(amount)}token` : amount.toLocaleString()
+        return unit === 'token' ? `${formatTokens(amount)}token` : `${amount.toLocaleString()}${t('chan.unit.credit')}`
       }
 
       const card = h('article', {
@@ -4217,8 +4219,19 @@ window.__ModuleLoader__.load({
        * 次数时保留原值，前端照自己那份 state 猜会与后端不一致。
        */
       const applyStrategy = useCallback(async (next, stickyLimit) => {
+        /**
+         * stickyLimit 缺省 = 只切模式（后端保留原值）。
+         * ★ 加 catch（审查 2026-11-05）：RPC 失败原先变成 unhandled rejection，
+         * 且 finally 的 loadStrategy 拿不到值会把开关整块静默消失。
+         */
         try {
-          await rpc('account.setStrategy', { strategy: next, stickyLimit })
+          await rpc('account.setStrategy', stickyLimit === undefined
+            ? { strategy: next }
+            : { strategy: next, stickyLimit })
+        } catch (error) {
+          // ★ 失败吞进 loadStrategy：重读后端真值，开关保持有效状态而不是消失。
+          //   （本组件的 setError 声明在本 hook 之后，此处不可用；告警走控制台。）
+          console.warn('[our-free-model] account.setStrategy failed:', String(error?.message ?? error))
         } finally {
           await loadStrategy()
         }
@@ -4365,7 +4378,7 @@ window.__ModuleLoader__.load({
                 if (row.unit === 'token') token += amount; else credit += amount
               }
               const amounts = [
-                credit > 0 ? `${credit.toLocaleString()}分` : '',
+                credit > 0 ? `${credit.toLocaleString()}${t('chan.unit.credit')}` : '',
                 token > 0 ? `${formatTokens(token)}token` : '',
               ].filter(Boolean).join(' ')
               const text = amounts === ''
@@ -4393,9 +4406,13 @@ window.__ModuleLoader__.load({
                 h(Switch, {
                   checked: strategy.strategy === 'round-robin',
                   label: t('chan.strategy.switch'),
+                  /**
+                   * ★ 只切模式，不传 stickyLimit（审查 2026-11-05）：后端在缺省时
+                   * 保留原值 —— 用户若自定义过次数（1..1000），拨开关不该把它
+                   * 悄悄覆写成 10。
+                   */
                   onChange: () => void applyStrategy(
                     strategy.strategy === 'round-robin' ? 'sequential' : 'round-robin',
-                    ACCOUNT_STICKY_LIMIT,
                   ),
                 }))
               : null)),
@@ -4612,7 +4629,8 @@ window.__ModuleLoader__.load({
         const value = Number(row.amount)
         if (!Number.isFinite(value) || value <= 0) return ''
         if (row.unit === 'token') return `+${formatTokens(value)}token`
-        return `+${value.toLocaleString()}`
+        // credit 金额原先裸数字（审查 2026-11-05）：与 token 侧不一致，补单位。
+        return `+${value.toLocaleString()}${t('chan.unit.credit')}`
       }
 
       const claimed = results.filter(row => row.outcome === 'claimed')
@@ -4884,6 +4902,15 @@ window.__ModuleLoader__.load({
           h(PageHero, { title: t('dash.title'), sub: t('dash.sub') }),
           h('div', { className: 'ofm_callout' }, h('div', null, t('chan.rpc.unavailable'))))
       }
+      // ★ error 分支（审查 2026-11-05）：useLedger 失败时 status='error'，
+      //   此前没人接 —— `!loaded` 恒真 ⇒ 永久骨架屏，用户看不到任何出错迹象。
+      if (ledger.status === 'error') {
+        return h('div', { className: 'ofm_page' },
+          h(PageHero, { title: t('dash.title'), sub: t('dash.sub') },
+            h(Button, { onClick: () => void ledger.reload() }, t('dash.refresh'))),
+          h('div', { className: 'ofm_callout ofm_error' },
+            h('div', null, t('dash.loadFailed').replace('{reason}', ledger.error ?? ''))))
+      }
       return h('div', { className: 'ofm_page' },
         // ⚠️ PageHero 只解构 {title, sub}（见其定义），传 t/titleKey 会让
         // 标题渲染为空 —— standalone 构建脚本曾为此打 replaceOnce 补丁
@@ -4980,6 +5007,9 @@ window.__ModuleLoader__.load({
           h(Switch, { checked: auto, label: t('logs.auto'), onChange: () => setAuto(value => !value) }),
           h(Button, { onClick: () => void reload() }, t('dash.refresh'))),
         ledger.status === 'unavailable' ? h('div', { className: 'ofm_callout' }, h('div', null, t('chan.rpc.unavailable'))) : null,
+        // ★ error 分支（审查 2026-11-05）：此前三分支皆不含 error ⇒ 静默空白。
+        ledger.status === 'error' ? h('div', { className: 'ofm_callout ofm_error' },
+          h('div', null, t('dash.loadFailed').replace('{reason}', ledger.error ?? ''))) : null,
         ledger.status === 'loading' ? h('div', { className: 'ofm_skel', style: { minHeight: 200 } }) : null,
         ledger.status === 'ready' ? h(Section, {
           title: t('logs.title'),
@@ -5504,7 +5534,6 @@ window.__ModuleLoader__.load({
           .catch(() => setQuotas(current => ({ ...current, [provider]: { loading: false, value: null, failed: true } })))
           .finally(() => { pending.current.delete(provider) })
       }
-      const lanes = LANE_LABEL(t)
       const needle = query.trim().toLowerCase()
       // 渠道模型的名字会跨供应商重复（GLM-5.3 在不止一家），所以候选必须按
       // provider 分组展示：平铺成一列时两个同名条目长得一样，用户选中哪个只能猜。
@@ -5649,7 +5678,6 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false)
       const [error, setError] = useState('')
       const byId = new Map(models.map(row => [row.id, row]))
-      const lanes = LANE_LABEL(t)
       const preview = useAsync(() => members.length
         ? post('/combos/preview', { models: members })
         : Promise.resolve({ capacity: null }), [members, models])
@@ -5799,7 +5827,6 @@ window.__ModuleLoader__.load({
      */
     function ChainCard(props) {
       const { t, chain, resolved, missing, lookup, onEdit, onDelete, confirming, index, capacity } = props
-      const lanes = LANE_LABEL(t)
       const usable = chain.enabled !== false && resolved.length > 0
       return h('div', { className: 'ofm_card ofm_rise', style: { animationDelay: `${Math.min(index, 8) * 22}ms` } },
         h('div', { className: 'ofm_cardhead' },
@@ -6044,7 +6071,6 @@ window.__ModuleLoader__.load({
           h('span', { className: 'ofm_tabglider', style: { transform: `translate(${glider.left}px, ${glider.top}px)`, width: `${glider.width}px`, height: `${glider.height}px` } }),
           tabs.map(([id, label, num]) => h('button', {
             key: id, type: 'button', role: 'tab', 'aria-selected': tab === id ? 'true' : 'false', className: 'ofm_tab', 'data-on': tab === id ? 'true' : 'false',
-            'aria-selected': tab === id ? 'true' : 'false',
             ref: node => { tabRefs.current[id] = node },
             onClick: () => setTab(id),
           }, label, num === null ? null : h('span', { className: 'ofm_tabnum' }, String(num))))),

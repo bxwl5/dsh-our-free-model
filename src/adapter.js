@@ -26,7 +26,7 @@ import { DEFAULT_LEVEL, MIN_BUDGET, budgetFor, defaultEffortFor, effortPatchFor,
 import { createChannel } from './channel.js'
 import { recoveryPolicy, canRecover, canRecoverSilentStop, recoveryMessages, continuationMessages, checkpointFits, addUsage, createBlockTracker } from './recovery.js'
 import { isKiloEntry } from './catalog.js'
-import { isComboEntry, comboChain, advanceComboCursor, noteComboServed } from './combos.js'
+import { isComboEntry, comboChain, noteComboServed } from './combos.js'
 import { isChannelEntry, parseChannelModelId } from './channel-catalog.js'
 import { applyTokenSavers, saverConfig } from './token-saver/index.js'
 import { classifyFailure, describeVerdict, shouldAdvance } from './route/classify.js'
@@ -53,9 +53,6 @@ export class FreeModelAdapter {
    * @param {(message: string) => void} [dependencies.warn]
    */
   constructor(dependencies) {
-    // 诊断通道（2026-11-05 排查 qodercn 跳过问题）：runtime 注入 fs，
-    // runCombo 用它把「配置列表 vs 执行列表」落文件。
-    if (dependencies?.traceFs) globalThis.__comboTraceFs = dependencies.traceFs
     this.deps = dependencies
     /**
      * 链路成员的临时禁用期：模型 id -> 解禁时刻（ms）。
@@ -257,24 +254,13 @@ export class FreeModelAdapter {
      * 实际名额全乱（探针实测：officeace 头部 ×10 不动，就是重排+失败换人
      * 互相拉扯的结果）。
      *
-     * 轮到坏成员怎么办？本回合内顺延到下一个候选（循环里的失败分支），
-     * 名额不被它占用 —— 与路由/账号轮询统一的「失败占 0 次」。
+     * 轮到坏成员：本回合内顺延到下一个候选（循环里的失败分支），
+     * 该发请求不给它记名额。
      */
     const isRoundRobin = entry.strategy === 'round-robin'
     const candidates = isRoundRobin
       ? comboChain(entry, snapshot.catalog)
       : this.orderByCooldown(comboChain(entry, snapshot.catalog))
-    // ★ 排查通道（2026-11-05，用户要求对比「显示列表 vs 执行列表」）：
-    //   configured = combo 配置里的成员顺序（用户在路由编辑器看到的）
-    //   executing  = 实际要逐个试的执行顺序
-    try {
-      const fsx = globalThis.__comboTraceFs
-      const fmt = list => (Array.isArray(list) ? list.map(row => row?.id ?? String(row)).join(' , ') : String(list))
-      const line = `[${new Date().toISOString()}] chain=${entry.name} mode=${entry.strategy ?? 'fallback'}\n`
-        + `  configured(${entry.combo?.length ?? 0}): ${fmt(entry.combo)}\n`
-        + `  executing(${candidates.length}): ${fmt(candidates)}\n`
-      fsx?.appendFileSync?.('/tmp/ofm-combo-trace.log', line)
-    } catch { /* 诊断失败不影响主流程 */ }
     if (candidates.length === 0) {
       rejectedTurn(0)
       yield { type: 'finish', reason: { kind: 'error', failure: { message: `the chain "${entry.name}" has no model available on this egress`, code: CODE.server } } }
@@ -356,32 +342,21 @@ export class FreeModelAdapter {
         return
       }
       const reason = result.verdict === null || result.verdict === undefined ? 'failed' : describeVerdict(result.verdict)
-      // ★ 失败详情必须落日志（2026-11-04 排查 qodercn「路由内一直失败、直测却通」）：
-      // 只记 verdict 概括看不出是 429、还是派发层错误。`failure.message` 带着上游
-      // 的原始报错，是定位这类「单测通、链路死」问题的唯一线索。
+      // ★ 失败详情落日志（2026-11-05）：`failure` 由 runSingle/runChannel 的
+      // 失败 return 顺带带出；只记 verdict 概括看不出是 429 还是派发层错误。
       const failureMessage = result?.failure?.message ?? result?.error?.message ?? ''
       this.deps.warn?.(`our-free-model: chain "${entry.name}" candidate ${candidate.id} failed — ${reason}${failureMessage ? `: ${failureMessage.slice(0, 300)}` : ''}`)
       this.markFaulty(candidate.id, result.verdict)
       /**
-       * 失败 ⇒ **下一个渠道**（用户 2026-11-04 的轮询规则）：
+       * ★ 失败的成员（轮询铁律，2026-11-05）：
        *
-       * > 1-N 循环轮动每个渠道，成功了就继续下 9 次请求，失败了就下一个渠道。
        * > 循环的轮，不存在降级/隔离/抛弃。
        *
-       * `advanceComboCursor` 把游标前移到失败成员的下一位并清零计数：
-       *  - 失败的渠道在本轮**占 0 次**，直接轮到下一个；
-       *  - 接手的那家从 0 开始攒自己的一轮。
-       *
-       * ⚠️ 它**不是**「隔离/抛弃」：游标只是挪了一格，循环转一圈回来仍会轮到
-       * 这个渠道、届时照样先试它一次。整条链始终是 1→N→1→N 的闭环。
+       * 本回合内顺延到下一个候选作答；**游标不动** —— 名额归属只在
+       * `comboChain`（回合开始计一次），被跳过的成员不额外占名额，也不被
+       * 剔出循环：转一圈回来仍会轮到它、届时照样先试。markFaulty 的禁期
+       * 照记，但只有 fallback（顺序降级）模式读它重排。
        */
-      // ★ 轮询铁律：失败不动游标（used 不归零、index 不前移）。
-      // 轮到谁的名额，谁的名额就按 comboChain 的计数走完；这一发失败了
-      // 只在本回合内顺延到下一个候选。advanceComboCursor 的「换人」语义
-      // 会把游标拽到失败者下一位并清零计数 —— 名额与次序就乱了
-      // （探针实测游标被钉死在 officeace）。
-      // markFaulty 的禁期照记（供 fallback 用），轮询模式只是不再读它重排。
-      if (!isRoundRobin) advanceComboCursor(entry, snapshot.catalog, candidate.id)
       tried.push(`${candidate.id} (${reason})`)
       this.deps.warn?.(`our-free-model: chain "${entry.name}" advanced past ${candidate.id} — ${reason}`)
     }
@@ -472,9 +447,10 @@ export class FreeModelAdapter {
     try {
       handle = await prepare(target.provider, target.model, options.signal)
     } catch (error) {
-      this.deps.recordTurn?.({ at: started, model: entry.id, ok: false, recovered: false, attempts: 0, origin: 'harness' })
-      yield fail(`channel ${target.provider} could not resolve "${target.model}": ${String(error?.message ?? error)}`, CODE.server)
-      return { advance: false, verdict: null, ok: false }
+      const message = String(error?.message ?? error)
+      this.deps.recordTurn?.({ at: started, model: entry.id, ok: false, recovered: false, attempts: 0, origin: 'harness', message })
+      yield fail(`channel ${target.provider} could not resolve "${target.model}": ${message}`, CODE.server)
+      return { advance: false, verdict: null, ok: false, failure: { message } }
     }
 
     /**
@@ -524,7 +500,9 @@ export class FreeModelAdapter {
       // Before any answer-bearing delta this is still an invisible candidate
       // fault, so a chain may move on; afterwards the caller already saw output.
       yield fail(`channel ${target.provider} failed: ${message}`, CODE.server)
-      return { advance: !committed, verdict: null, ok: false }
+      // ★ failure 随 return 带出（审查 2026-11-05）：runCombo 的失败日志靠它，
+      //   否则 `failureMessage` 恒空、排查「轮到某成员就换人」没有线索。
+      return { advance: !committed, verdict: null, ok: false, failure: { message } }
     }
     // ⚠️ 把最后的 finish 错误块一并带给 recordTurn（2026-11-04 排查 qodercn 用）：
     // 渠道适配器把上游业务错误规整成 `finish(error)`，那个 reason 里才有真话。
@@ -533,6 +511,30 @@ export class FreeModelAdapter {
     // 已经交出内容就不能再换模型（调用方看得到那段输出）；还没交出的失败
     // 才是「换一个再来」的场景。
     return { advance: failed && !committed, verdict: null, ok: !failed && ok }
+  }
+
+  /**
+   * 结局分类的纯函数（审查 2026-11-05：runSingle 359 行的拆分边界③）。
+   *
+   * 「这次流结束该走哪条恢复路径」的三选一判定：推理中断续写（interrupted）、
+   * 正文撞上限续写（maxTokensCut）、空停续写（silentStop）。无副作用，只读入参。
+   *
+   * ⚠️ 判据必须与原版逐字一致（2026-11-05 实测教训：第一版把
+   * `reason.kind === 'max-tokens'` 误写成 `outcome.finish === 'length'` ——
+   * finishReason 的 max-tokens 映射覆盖 length/max_tokens/max_output_tokens/
+   * incomplete 四种 token，写成单值会让其余三种漏掉续写、直接报错）。
+   * `reasonKind` 必须传调用方算好的 `reason.kind`（含 brokenToolCall 强制
+   * max-tokens 的三元），不要在函数里重算。
+   */
+  static classifyStreamOutcomes({ outcome, policy, elapsed, recovering, reasonKind }) {
+    const interrupted = canRecover(outcome, policy, elapsed)
+    const maxTokensCut = policy.enabled && !recovering && reasonKind === 'max-tokens' && outcome.brokenToolCall !== true
+      && outcome.sawText === true && outcome.sawToolCall !== true
+      && typeof outcome.answerText === 'string' && outcome.answerText.trim() !== ''
+    const silentStop = !interrupted && !maxTokensCut && reasonKind === 'stop'
+      && (outcome.finish === undefined || ['stop', 'end_turn', 'stop_sequence'].includes(outcome.finish))
+      && canRecoverSilentStop(outcome, policy, elapsed)
+    return { interrupted, maxTokensCut, silentStop }
   }
 
   /**
@@ -620,7 +622,7 @@ export class FreeModelAdapter {
     }
     const blocks = createBlockTracker()
     let turnRecorded = false
-    const finishTurn = (ok, recovered = false, attempts = 1) => {
+    const finishTurn = (ok, recovered = false, attempts = 1, message) => {
       if (turnRecorded) return
       turnRecorded = true
       if (plan.recordTurn === false) return
@@ -631,6 +633,9 @@ export class FreeModelAdapter {
         recovered,
         attempts,
         origin: 'harness',
+        // ★ 失败原因随 turn 记录带出（审查 2026-11-05）：runtime 失败日志按
+        //   record.message 过滤打印，免费车道失败原本没有这条线索。
+        ...(message ? { message } : {}),
       })
     }
 
@@ -760,9 +765,11 @@ export class FreeModelAdapter {
        * this predicate and the commit rule stay two views of one definition.
        */
       const advanceVerdict = (code, message, status) => {
-        if (plan.allowAdvance !== true || options.signal?.aborted === true || sawAnswer) return { advance: false, verdict: null }
+        if (plan.allowAdvance !== true || options.signal?.aborted === true || sawAnswer) {
+          return { advance: false, verdict: null, ...(message ? { failure: { message } } : {}) }
+        }
         const verdict = classifyFailure({ status, code, message })
-        return { advance: shouldAdvance(verdict) || code === CODE.client || code === CODE.region, verdict }
+        return { advance: shouldAdvance(verdict) || code === CODE.client || code === CODE.region, verdict, failure: { message } }
       }
       try {
         const reader = readStream(channel.read(), wire, renameMap, () => Date.now(), {
@@ -796,7 +803,7 @@ export class FreeModelAdapter {
         usageAdded = true
         if (options.signal?.aborted === true) {
           record(false, outcome, { aborted: true })
-          finishTurn(false, false, attempt + 1)
+          finishTurn(false, false, attempt + 1, 'request aborted')
           yield { type: 'usage', usage: totalUsage }
           yield { type: 'finish', reason: { kind: 'aborted', failure: { message: 'request aborted', code: CODE.aborted } } }
           return { advance: false, verdict: null, ok: false }
@@ -804,18 +811,9 @@ export class FreeModelAdapter {
         const reason = outcome.brokenToolCall === true ? { kind: 'max-tokens' } : finishReason(outcome.finish)
         // finishReason 是兜底映射，failed/cancelled 也会落成 stop：正常收尾的判定必须显式查原 token。
         const elapsed = Date.now() - started
-        const interrupted = canRecover(outcome, policy, elapsed)
-        // 正文撞输出上限被截断（finish=length）：把已出正文回灌成 assistant 轮、
-        // 用剩余预算自动续写一次，替代宿主提示的「发送继续」手动接力（#28）。
-        // 只在首段触发（recovering 段自己也撞墙就如实报 max-tokens，不无限续），
-        // 且不与断流/空停续写共用 attempt 名额以外的路径。
-        const maxTokensCut = policy.enabled && !recovering && reason.kind === 'max-tokens' && outcome.brokenToolCall !== true
-          && outcome.sawText === true && outcome.sawToolCall !== true
-          && typeof outcome.answerText === 'string' && outcome.answerText.trim() !== ''
-        const silentStop = !interrupted && !maxTokensCut && reason.kind === 'stop'
-          // 无 token 的正常收尾（message_stop / response.done 不带 status）也算停收；failed、length 这类有 token 的收尾仍被挡在外面。
-          && (outcome.finish === undefined || ['stop', 'end_turn', 'stop_sequence'].includes(outcome.finish))
-          && canRecoverSilentStop(outcome, policy, elapsed)
+        // 三选一恢复路径判定收敛在 classifyStreamOutcomes（纯函数，判据见其说明）；
+        // interrupted 的判定也一并入内（与调用点的 canRecover 同一入参同一结果）。
+        const { interrupted, maxTokensCut, silentStop } = FreeModelAdapter.classifyStreamOutcomes({ outcome, policy, elapsed, recovering, reasonKind: reason.kind })
         if (!recovering && (interrupted || silentStop || maxTokensCut)) {
           const remainingTokens = budget - (outcome.sawUsage ? outcome.usage.outputTokens ?? 0 : 0)
           const continuationBudget = Math.min(remainingTokens, policy.maxOutputTokens)
@@ -850,14 +848,14 @@ export class FreeModelAdapter {
               ? `our free model closed the stream after ${seconds}s, before its finish token; automatic recovery was not safe`
               : 'our free model closed the stream before its finish token, without answering; retrying'
           record(false, outcome, { truncated: true })
-          finishTurn(false, false, attempt + 1)
+          finishTurn(false, false, attempt + 1, message)
           yield { type: 'usage', usage: totalUsage }
           yield { type: 'finish', reason: { kind: 'error', failure: { message, code } } }
           return { ok: false, ...advanceVerdict(code, message, undefined) }
         }
         if (outcome.sawText !== true && outcome.sawToolCall !== true && outcome.sawReasoning !== true && reason.kind === 'stop') {
           record(false, outcome)
-          finishTurn(false, false, attempt + 1)
+          finishTurn(false, false, attempt + 1, 'our free model returned an empty response')
           yield { type: 'usage', usage: totalUsage }
           yield { type: 'finish', reason: { kind: 'error', failure: { message: 'our free model returned an empty response', code: CODE.empty } } }
           return { ok: false, ...advanceVerdict(CODE.empty, 'empty response') }
@@ -885,14 +883,14 @@ export class FreeModelAdapter {
         }
         if (!usageAdded) partialOutcome = collectUsage(partialOutcome)
         record(false, partialOutcome, { ...(recovering || expired) ? { truncated: true } : {}, ...aborted ? { aborted: true } : {} })
-        finishTurn(false, false, attempt + 1)
+        finishTurn(false, false, attempt + 1, failure.message)
         for (const chunk of blocks.close()) yield chunk
         if (recovering || partialOutcome?.sawUsage === true) yield { type: 'usage', usage: totalUsage }
         yield { type: 'finish', reason: { kind: aborted ? 'aborted' : 'error', failure } }
         return {
           ok: false,
           ...aborted
-            ? { advance: false, verdict: null }
+            ? { advance: false, verdict: null, failure: { message: failure.message } }
             : advanceVerdict(failure.code, failure.message, failure.status),
         }
       } finally {

@@ -153,7 +153,8 @@ export async function verifyChannelCreditsUi() {
   assert.ok(app.text().includes('剩余积分 0'), '零余额必须显示，不能变成查询失败')
   // 用户 2026-10-28：「删掉今日已领 xx，直接放在剩余积分 xx (+200)」——
   // 因此这里断言的是余额徽标里的增量，而不是独立的「今日已领」徽标。
-  assert.ok(app.text().includes('(+10)'), '签到状态只解包一次（作为余额增量显示）')
+  // 2026-11-05：credit 金额补单位（+10分）——与 token 侧（+x token）一致。
+  assert.ok(app.text().includes('(+10分)'), '签到状态只解包一次（作为余额增量显示，credit 带单位）')
   fail = true
   app.button('刷新余额').props.onClick()
   await settle()

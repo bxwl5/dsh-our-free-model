@@ -163,7 +163,11 @@ export function verifyAccountRotation() {
   const rowCss = client.slice(client.indexOf('.ofm_row{display:flex'))
   assert.match(rowCss.slice(0, 200), /min-height:24px/, '行容器要有最小行高')
   assert.match(client, /account\.getStrategy', \{\}/, '界面读全局策略（无参数）')
-  assert.match(client, /account\.setStrategy', \{ strategy/, '界面写全局策略（无 provider）')
+  // ★ 2026-11-05：开关只切模式（不传 stickyLimit，后端保留原值）——
+  //   旧断言要求每次都带次数，那会把用户自定义过的值悄悄覆写成 10。
+  assert.match(client, /account\.setStrategy', stickyLimit === undefined/, '界面切模式时不覆写次数')
+  // 前端常量仍须与后端默认同值（首次拨开关时后端按缺省兜底到 10）
+  assert.match(client, /const ACCOUNT_STICKY_LIMIT = 10/, '前端默认次数常量仍为 10')
 
   // ⚠️ 不得再出现在单个渠道的账号折叠区里
   const fold = client.slice(client.indexOf("open === 'accounts' ? h('div'"))

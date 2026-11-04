@@ -46,7 +46,7 @@
  *   但**记账逻辑照样写全局日期** ⇒ 10:00 后刷新出来的新轮次当天整天没人领。
  *
  * 现在记账粒度是**逐渠道**（`AutoCheckinDoc.providers`），判据仍是
- * `summary.coversToday`（与 `shouldMarkToday` 同一口径，不另立判据）：
+ * `summary.coversToday`（本轮记账的唯一判据，不另立口径）：
  *
  * | 本轮该渠道的结局 | 记账 | 会不会再跑 |
  * |---|---|---|
@@ -536,7 +536,6 @@ export const AUTO_CHECKIN_REFRESH_HOUR_UTC8 = 10
 export const ZCODE_CHECKIN_OPEN_HOUR_UTC8 = 19
 
 /** ZCode 的 token 生效时刻（UTC+8）：领到的额度这时候才能真正用于推理。 */
-export const ZCODE_TOKEN_USABLE_HOUR_UTC8 = 23
 
 /** ZCode 的 token 清零 / 签到记录刷新时刻（UTC+8）：也就是它的**日界**。 */
 export const ZCODE_TOKEN_RESET_HOUR_UTC8 = 9
@@ -848,7 +847,7 @@ interface RunTotals {
   /**
    * 其中**能证明「今天这一轮已被处理」**的账号数（来自 `summary.coversToday`）。
    *
-   * ⚠️ 这是 {@link shouldMarkToday} **唯一**该看的口径 —— 不能用
+   * ⚠️ 这是判「今天这一轮已被处理」的**唯一**口径 —— 不能用
    * `claimed + alreadyClaimed`：那两项里混着「刷新前那一轮」的痕迹
    * （Qoder 活动 10:00 UTC+8 才刷新），拿它们记账会让当天新额度整天漏领。
    * 字段语义见 `src/credits.ts` 的 `ClaimOutcomeCommon.coversToday`。
@@ -977,9 +976,6 @@ export function describeRun(totals: RunTotals): string {
  * 好账号）；新行为只把成功的那些记 `done`、失败的留 `pending` —— 幂等请求只发给
  * 真正需要的渠道，这正是本缺陷的修法。
  */
-export function shouldMarkToday(totals: RunTotals): boolean {
-  return totals.coversToday > 0
-}
 
 /**
  * 把 `claimAll` 的逐账号结果**按账号聚合**成表格行。
@@ -1379,7 +1375,7 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
        * 原因供 UI 展示」，故文字里带出原因与「今日已放弃」。
        */
       const settle = (outcome: AutoCheckinProviderLedger['lastOutcome'], text: string): void => {
-        const entry = giveUpOrRetry(base, outcome, text)
+        const entry = giveUpOrRetry(provider, base, outcome, text)
         if (entry.status === 'given-up') {
           totals.givenUp += 1
           // 账本与面板文字都带上「今日已放弃」：用户要能看出**今天不会**再自动补救了，
@@ -1470,6 +1466,27 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
       const entry = ledgers[provider]
       if (entry !== undefined) pruned[provider] = entry
     }
+    /**
+     * ★ 与 recordClaimResult 的并发合并（审查 2026-11-05，P3 竞态）：
+     * 自动轮打 zcode（captcha 可达数十秒）期间，用户手动领取其它渠道会经
+     * `recordClaimResult` 写入 providers[ch]=done 与 channels 文案。上面的
+     * `ledgers`/`texts` 都是**回合开始前的快照**，直接 `providers: pruned`
+     * 整体替换会把那笔手动记录覆盖回旧值——正是用户报过的
+     * 「签到成功但没写进插件」的复发路径。
+     *
+     * 处理：写盘前从**最新 doc** 逐键合并——providers 先并（本轮快照优先，
+     * 但本轮没碰的键保留最新值），channels 按 provider 合并（本轮文字优先，
+     * 本轮没写的渠道保留手动回填的文案）。
+     */
+    const latest = doc.providers
+    const mergedProviders: Record<string, AutoCheckinProviderLedger> = {}
+    for (const [provider, entry] of Object.entries(latest)) {
+      if (providers.includes(provider)) continue  // 本轮写过的渠道：以本轮快照为准（旧条目已被 pruned 过滤）
+      mergedProviders[provider] = entry
+    }
+    Object.assign(mergedProviders, pruned)
+    const latestChannels = doc.channels.filter(entry => !providers.includes(entry.provider))
+    const runChannels = providers.filter((provider) => texts.has(provider)).map((provider) => ({ provider, text: texts.get(provider) ?? '' }))
     doc = {
       ...doc,
       // ⚠️ `lastDate` 保留**旧语义**：只有「今天确实有渠道被处理过」才写成今天。
@@ -1481,9 +1498,9 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
       lastDate: totals.coversToday > 0 ? utc8DateString(runAt) : doc.lastDate,
       lastResult: result,
       lastAt: runAt,
-      providers: pruned,
-      // 逐渠道文字按 provider 顺序（与遍历顺序一致，面板按它渲染）
-      channels: providers.filter((provider) => texts.has(provider)).map((provider) => ({ provider, text: texts.get(provider) ?? '' })),
+      providers: mergedProviders,
+      // 逐渠道文字：本轮渠道按遍历顺序 + 本轮未触碰渠道的既有文案（并发保护）
+      channels: [...runChannels, ...latestChannels],
       /**
        * 逐账号明细：**沿用 `doc.results`**，本函数不再重建它。
        *
@@ -1519,11 +1536,14 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
    * （由 `nextAttemptAt` 算出下次可跑时刻）。
    */
   function giveUpOrRetry(
+    provider: string,
     base: AutoCheckinProviderLedger,
     outcome: AutoCheckinProviderLedger['lastOutcome'],
     text: string,
   ): AutoCheckinProviderLedger {
-    const exhausted = base.attempts >= AUTO_CHECKIN_MAX_ATTEMPTS_PER_DAY
+    // ★ 上限 per-provider（审查 2026-11-05）：zcode 是 2（ZCODE_MAX_ATTEMPTS_PER_DAY），
+    //   其余 3。原先用全局常量 ⇒ zcode 永远不会置「今日已放弃」，面板停显失败原因。
+    const exhausted = base.attempts >= maxAttemptsPerDay(provider)
     return {
       ...base,
       status: exhausted ? 'given-up' : 'pending',

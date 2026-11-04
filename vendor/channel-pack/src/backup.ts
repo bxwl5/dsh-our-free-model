@@ -26,6 +26,12 @@ export interface BackupPool {
     accounts: readonly ProviderAccountEntry[],
     disabledModels: ModelDisableMap,
     permanentLocks?: PermanentLockMap,
+    switches?: {
+      accountStrategy?: Record<string, 'sequential' | 'round-robin'>
+      accountStickyLimit?: Record<string, number>
+      gatewayEnabled?: boolean
+      providerOrder?: string[]
+    },
   ): Promise<void>
 }
 
@@ -103,6 +109,12 @@ export async function exportBackup(
       credentials: exported,
       accounts: state.accounts,
       disabledModels: state.disabledModels,
+      // ★ 开关随备份走（审查 2026-11-05）：缺了会让换机恢复后轮询/网关开关
+      //   静默回落默认。老版本读到多余字段会忽略——向后兼容。
+      accountStrategy: state.accountStrategy,
+      accountStickyLimit: state.accountStickyLimit,
+      gatewayEnabled: state.gatewayEnabled,
+      providerOrder: state.providerOrder,
       // 权威表 + Loomy 兼容字段**同源**（老版本只读后者，缺了会看到
       // 「锁定悄悄失效」，而失效的后果是真把永久积分烧掉了）。
       permanentLocks: locks,
@@ -208,7 +220,13 @@ export async function importBackup(
       skipped.push(refName)
     }
   }
-  await pool.replaceAll(payload.accounts, payload.disabledModels, locksFromPayload(payload))
+  await pool.replaceAll(payload.accounts, payload.disabledModels, locksFromPayload(payload), {
+    // 老备份没有这些字段（undefined）⇒ replaceAll 保持现值，不重置。
+    accountStrategy: payload.accountStrategy,
+    accountStickyLimit: payload.accountStickyLimit,
+    gatewayEnabled: payload.gatewayEnabled,
+    providerOrder: payload.providerOrder,
+  })
   // 统计已过期账号：expiresAt 是毫秒时间戳，缺失或 NaN 视为「未知」不算过期
   const now = Date.now()
   const expiredAccounts = payload.accounts.filter((entry) =>

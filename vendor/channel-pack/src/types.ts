@@ -1363,6 +1363,20 @@ export interface BackupPayload {
    * 属于不可逆损失，所以宁可留一个冗余字段。
    */
   loomyPermanentLocked?: boolean
+  /**
+   * ★ 全局开关随备份走（2026-11-05）：缺了会让换机恢复后轮询/网关开关
+   * 静默回落默认——「重启丢开关」的备份版。
+   *
+   * ⚠️ **可选**：老备份文件里没有这些字段，导入时保持当前值（不重置），
+   * 因此不需要提升 {@link BACKUP_VERSION}。
+   */
+  accountStrategy?: Record<string, 'sequential' | 'round-robin'>
+  /** 轮询粘滞次数（provider id → 次数；权威键是 `'*'`）。 */
+  accountStickyLimit?: Record<string, number>
+  /** 本机 OpenAI 网关开关（缺省启用）。 */
+  gatewayEnabled?: boolean
+  /** 供应商自定义显示顺序。 */
+  providerOrder?: string[]
 }
 
 /** RPC: 导出备份响应。 */

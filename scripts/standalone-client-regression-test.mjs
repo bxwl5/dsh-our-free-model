@@ -165,8 +165,9 @@ console.log('ok  client probe isolation/retry, account action labels, hidden sta
   const withLedger = await claimedCard({
     results: [{ provider: 'codearts', accountId: 'account', accountName: 'Fixture', outcome: 'claimed', amount: 1000, unit: 'credit' }],
   })
-  assert.ok(texts(withLedger).some(text => text.includes('(+1,000)')),
-    '台账里有今天的领取记录时，余额徽标必须带「(+1,000)」增量')
+  // 2026-11-05：credit 金额补单位（+1,000分），与 token 侧一致。
+  assert.ok(texts(withLedger).some(text => text.includes('(+1,000分)')),
+    '台账里有今天的领取记录时，余额徽标必须带「(+1,000分)」增量')
   assert.equal(texts(withLedger).some(text => text.includes('今日已领')), false,
     '独立的「今日已领」徽标必须已经删掉（用户 2026-10-28：太挤了）')
 
@@ -479,7 +480,7 @@ console.log('ok  model picker toggles a member instead of appending it')
   assert.ok(onlyClaimed.collapsed, '只有 claimed 时表格必须渲染出来，而不是 null/崩溃')
   assert.equal(onlyClaimed.collapsed.type, 'section')
   assert.ok(!texts(onlyClaimed.collapsed).includes('+1,000'), '默认折叠时明细行不应渲染')
-  assert.ok(texts(onlyClaimed.tree).includes('+1,000'), 'claimed 行必须显示带千分位的金额')
+  assert.ok(texts(onlyClaimed.tree).some(text => text.includes('+1,000')), 'claimed 行必须显示带千分位的金额')
   // 绿色底徽章：复用 zcode 余量那两个类
   assert.ok(nodes(onlyClaimed.tree).some(node => String(node.props.className ?? '').includes('ofm_quotabadge')),
     '领取金额必须用绿色底徽章（与 zcode 余量同一个类）')

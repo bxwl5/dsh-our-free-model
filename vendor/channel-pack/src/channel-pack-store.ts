@@ -613,13 +613,8 @@ class FileStore implements ChannelPackStore {
     }
   }
 
-  /** 最近一次**由本进程**写盘后的 mtime，供账号池区分「自己写的」与「外部改的」。 */
+  /** 最近一次**由本进程**写盘后的 mtime（写盘后同步，避免「刚写完就被判外部改动」）。 */
   private lastWriteMtimeMs: number | undefined
-
-  /** 最近一次写盘后的 mtime（账号池用来避免「自己写完立刻重读」）。 */
-  get writtenMtimeMs(): number | undefined {
-    return this.lastWriteMtimeMs
-  }
 
   private write(state: ChannelPackState): void {
     mkdirSync(join(this.home, 'channel-pack'), { recursive: true })

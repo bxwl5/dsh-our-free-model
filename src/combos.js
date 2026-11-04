@@ -177,9 +177,8 @@ function number(value) {
  *
  * @param {object} entry - a combo catalog row
  * @param {Array<object>} catalog
- * @param {{peek?: boolean}} [options] - `peek` computes the order without consuming a turn
  */
-export function comboChain(entry, catalog, options = {}) {
+export function comboChain(entry, catalog) {
   const ids = Array.isArray(entry?.combo) ? entry.combo : []
   const byId = new Map()
   for (const row of catalog) byId.set(row.id, row)
@@ -196,22 +195,20 @@ export function comboChain(entry, catalog, options = {}) {
    * 之后由 `advanceComboCursor` 把游标推到「刚试过的那个成员的下一个」。
    */
   const ordered = [...members.slice(index), ...members.slice(0, index)]
-  if (options.peek !== true) {
-    const used = cursor.used + 1
-    rotation.set(entry.id, used >= limit ? { index: (index + 1) % members.length, used: 0 } : { index, used })
-  }
+  // 每回合消耗一次名额；数满 `stickyLimit` 才前移。回合内失败顺延不占额外名额
+  //（成员的实答次数 = sticky − 该名额期内它被跳过的回合数）。
+  const used = cursor.used + 1
+  rotation.set(entry.id, used >= limit ? { index: (index + 1) % members.length, used: 0 } : { index, used })
   return ordered
 }
 
 /**
- * 失败换人：把轮询游标前移到 `afterId` 的下一个成员（用户 2026-11-04 的规则）。
+ * 把轮询游标前移到 `afterId` 的下一个成员并清零计数。
  *
- * > 1-N 循环轮动每个渠道，成功了就继续下 9 次请求，失败了就下一个渠道。
- * > 循环的轮，不存在降级/隔离/抛弃。
- *
- * 语义只有一条：**失败的那个渠道这一轮不占次数，紧接着的下一个渠道接着服务**。
- * 游标只是往前挪一格，链条始终是 1→N→1→N 的闭环 —— 转一圈回来仍会轮到
- * 失败的渠道、届时照样先试它，所以不存在「隔离」或「抛弃」。
+ * ⚠️ **生产路径已不调用**（2026-11-05 铁律：轮询无视禁期/限流，失败只在回合内
+ * 顺延、游标按名额走 —— 名额归属在 `comboChain`，这里不再参与）。保留本函数
+ * 仅因 `scripts/combo-advance-test.mjs` 用它构造「失败换人」场景来验证
+ * `comboChain` 的计数边界；别在生产代码里调它。
  */
 export function advanceComboCursor(entry, catalog, afterId) {
   if (entry?.strategy !== 'round-robin') return
