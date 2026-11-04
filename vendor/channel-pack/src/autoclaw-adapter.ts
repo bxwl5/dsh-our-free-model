@@ -122,8 +122,64 @@ const AUTO_CLAW_EFFORT_NAMES: Readonly<Record<string, string>> = {
  * 对话端点认 `X-Authorization`，用错头得到的报错与「token 真失效」一模一样）。
  * 故调用方把上游原话一并带进 message，让用户与排查者看得到真实报文。
  */
+/**
+ * 从上游拒绝体里**只读** `code` / `message` 两个字段（magpie `said()` 同款）。
+ *
+ * ⚠️ 只认这两个字段、不扫整个 body：正文里恰好出现「token」「额度」等词会
+ * 造成误判（与 `qoder` 的 `looksLikeBillingError` 同因）。
+ */
+function refusalSaid(text: string): { code: string; message: string } {
+  let d: unknown
+  try { d = JSON.parse(text) } catch { return { code: '', message: '' } }
+  if (d === null || typeof d !== 'object' || Array.isArray(d)) return { code: '', message: '' }
+  const o = d as Record<string, unknown>
+  const err = (o.error !== null && typeof o.error === 'object' ? o.error : {}) as Record<string, unknown>
+  return {
+    code: String(o.code ?? err.code ?? ''),
+    message: String(o.message ?? o.msg ?? err.message ?? '').trim(),
+  }
+}
+
+/**
+ * **账号级封禁**（magpie `BANNED_CODES` / `BANNED_WORDS` 同款）。
+ *
+ * 403 `{"code":410004,"message":"The account has been banned"}` 是**账号被封**，
+ * 不是登录失效：重新登录拿到同一个账号、同样被拒。旧实现把它当 AUTH
+ * ⇒ 显示「API 密钥无效」⇒ 用户反复重新登录，magpie 的注释记过这次事故
+ * （Discord 2026-10-23）。故这类要**保留登录**并原样上报上游的话。
+ */
+const AUTOCLAW_BANNED_CODES = new Set(['410004'])
+const AUTOCLAW_BANNED_WORDS = /\bbanned\b|封禁|封号|账号异常|账户异常|account (has been |is |was )?(suspended|frozen|disabled|blocked|restricted)|账[号户](已|已被|被)?(冻结|停用|禁用)/i
+
+/**
+ * **额度耗尽**（magpie `QUOTA_CODES` / `QUOTA_WORDS` 同款）。
+ *
+ * ⚠️ 最关键的一条：上游对额度耗尽的账号会用 **`400 {"message":"非法模型"}`**
+ * 这种含糊报文拒绝（magpie `plugins#274` 实测，注释原话：「"非法模型" …
+ * Such a refusal is the account's quota」）。把它当「模型名错误」或 AUTH
+ * 都会误导用户 —— 正确动作是归额度/限流，并**保留登录**。
+ */
+const AUTOCLAW_QUOTA_CODES = new Set(['810000'])
+const AUTOCLAW_QUOTA_WORDS = /额度|余额不足|用完|用尽|quota|insufficient[_ ]?(balance|credit)|exhausted|非法模型/i
+
 export function isAutoClawAuthFailure(text: string): boolean {
+  const { code, message } = refusalSaid(text)
+  // 封禁 / 额度都**不是**凭据失效，必须先排除，否则又会渲染成「API 密钥无效」。
+  if (AUTOCLAW_BANNED_CODES.has(code) || AUTOCLAW_BANNED_WORDS.test(message)) return false
+  if (AUTOCLAW_QUOTA_CODES.has(code) || AUTOCLAW_QUOTA_WORDS.test(message)) return false
   return /invalid\s+token|token\s+(?:is\s+)?(?:invalid|expired|revoked)|unauthoriz|authentication\s+(?:failed|required)|请(?:重新)?登录|凭据(?:已)?(?:失效|过期)/i.test(text)
+}
+
+/** 该拒绝是否是**账号被封**（保留登录，原样上报上游的话）。 */
+export function isAutoClawAccountBanned(text: string): boolean {
+  const { code, message } = refusalSaid(text)
+  return AUTOCLAW_BANNED_CODES.has(code) || AUTOCLAW_BANNED_WORDS.test(message)
+}
+
+/** 该拒绝是否是**额度耗尽**（归 QUOTA_EXCEEDED / 限流，保留登录）。 */
+export function isAutoClawQuotaRefusal(text: string): boolean {
+  const { code, message } = refusalSaid(text)
+  return AUTOCLAW_QUOTA_CODES.has(code) || AUTOCLAW_QUOTA_WORDS.test(message)
 }
 
 export function autoClawDisplayName(model: AutoClawModelRow): string {
@@ -448,25 +504,47 @@ export class AutoClawAdapter extends LlmAdapter {
        * 判据：报文出现确凿的 token/凭据字样才算鉴权失败；否则按状态码
        * 走通用分类，让真实原因浮出来。
        */
+      /**
+       * 拒绝分类的**优先级**（参考 magpie `refusedNotSignIn`）：
+       *   额度 → 封禁 → 真鉴权 → 通用状态码。
+       *
+       * 前两类都**保留登录**（不是 AUTH），否则 UI 会渲染「API 密钥无效」，
+       * 把用户引向重新登录，而问题根本不在凭据。
+       */
+      const suffix = detail === '' ? '' : `：${detail}`
+      if (isAutoClawQuotaRefusal(text)) {
+        throw new LlmError(
+          `AutoClaw：额度已用尽或套餐不含该模型（HTTP ${response.status}）${suffix}`,
+          'QUOTA_EXCEEDED',
+          { status: response.status },
+        )
+      }
+      if (isAutoClawAccountBanned(text)) {
+        throw new LlmError(
+          `AutoClaw：账号被限制（HTTP ${response.status}）${suffix}`,
+          'PERMISSION',
+          { status: response.status },
+        )
+      }
       if (response.status === 401 || response.status === 403) {
         if (isAutoClawAuthFailure(text)) {
           throw new LlmError(
-            `AutoClaw：凭据无效或已过期（HTTP ${response.status}）${detail === '' ? '' : `：${detail}`}`,
+            `AutoClaw：凭据无效或已过期（HTTP ${response.status}）${suffix}`,
             'AUTH',
             { status: response.status },
           )
         }
         throw new LlmError(
-          `AutoClaw：上游拒绝（HTTP ${response.status}）${detail === '' ? '' : `：${detail}`}`,
+          `AutoClaw：上游拒绝（HTTP ${response.status}）${suffix}`,
           httpErrorCode(response.status),
           { status: response.status },
         )
       }
       if (response.status === 429) {
-        throw new LlmError(`AutoClaw：触发限流（HTTP 429）${detail === '' ? '' : `：${detail}`}`, 'RATE_LIMIT', { status: 429 })
+        throw new LlmError(`AutoClaw：触发限流（HTTP 429）${suffix}`, 'RATE_LIMIT', { status: 429 })
       }
       throw new LlmError(
-        `AutoClaw：上游返回 HTTP ${response.status}${detail === '' ? '' : `：${detail}`}`,
+        `AutoClaw：上游返回 HTTP ${response.status}${suffix}`,
         httpErrorCode(response.status),
         { status: response.status },
       )

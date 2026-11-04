@@ -32540,6 +32540,9 @@ function normalizeAutoClawSystem(text) {
       out = out.replace(new RegExp(from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), to);
     }
   }
+  for (const [pattern, to] of AUTOCLAW_FOREIGN_IDENTITY_PATTERNS) {
+    out = out.replace(pattern, to);
+  }
   if (out.startsWith(AUTOCLAW_IDENTITY_LINE)) return out;
   return `${AUTOCLAW_IDENTITY_PREFIX}
 ${out}`;
@@ -32593,7 +32596,7 @@ async function fetchAutoClawWallets(options) {
   }
   return void 0;
 }
-var AUTOCLAW_SMS_APP_ID, AUTOCLAW_SMS_APP_KEY, AUTOCLAW_SEND_CODE_PATH, AUTOCLAW_LOGIN_PATH, AUTOCLAW_SOURCE_ID, REQUEST_TIMEOUT_MS2, PHONE_RE, stripBearer, AUTOCLAW_REFRESH_PATHS, AUTOCLAW_USERAPI_VERSION, AUTOCLAW_TASK_COMPLETE_PATH, AUTOCLAW_DAILY_SIGNIN_TASK, AUTOCLAW_ROUTE_PREFIXES, AUTOCLAW_DEFAULT_ROUTE, AUTOCLAW_MODEL_ROUTES, AUTOCLAW_IDENTITY_LINE, AUTOCLAW_IDENTITY_PREFIX, AUTOCLAW_MAX_TOKENS_FLOOR, AUTOCLAW_FOREIGN_IDENTITIES, AUTOCLAW_WALLET_V2_PATH, AUTOCLAW_WALLET_V1_PATH, AUTOCLAW_AUTH_EXPIRED_CODES;
+var AUTOCLAW_SMS_APP_ID, AUTOCLAW_SMS_APP_KEY, AUTOCLAW_SEND_CODE_PATH, AUTOCLAW_LOGIN_PATH, AUTOCLAW_SOURCE_ID, REQUEST_TIMEOUT_MS2, PHONE_RE, stripBearer, AUTOCLAW_REFRESH_PATHS, AUTOCLAW_USERAPI_VERSION, AUTOCLAW_TASK_COMPLETE_PATH, AUTOCLAW_DAILY_SIGNIN_TASK, AUTOCLAW_ROUTE_PREFIXES, AUTOCLAW_DEFAULT_ROUTE, AUTOCLAW_MODEL_ROUTES, AUTOCLAW_IDENTITY_LINE, AUTOCLAW_IDENTITY_PREFIX, AUTOCLAW_MAX_TOKENS_FLOOR, AUTOCLAW_FOREIGN_IDENTITIES, AUTOCLAW_FOREIGN_IDENTITY_PATTERNS, AUTOCLAW_WALLET_V2_PATH, AUTOCLAW_WALLET_V1_PATH, AUTOCLAW_AUTH_EXPIRED_CODES;
 var init_autoclaw_sms = __esm({
   "vendor/channel-pack/src/autoclaw-sms.ts"() {
     "use strict";
@@ -32628,8 +32631,28 @@ var init_autoclaw_sms = __esm({
       ["You are Claude Code", "You are a coding assistant"],
       ["You are ZCode", "You are an interactive coding agent"],
       ["You are an AI agent powered by DeepSeek Harness", "You are an AI agent powered by a local coding harness"],
+      // ── 2026-11-04 参考 magpie autoclaw-auth 0.2.14 的 FLAGGED 表补齐 ──
+      // 上游 406 的闸门认的是「别家 agent 的身份句」，客户端越多越容易撞上。
+      // 这些是 magpie 实测/记录过的形态（Discord / plugins#466 等），我们此前没有。
+      ["You are a Claude agent, built on Anthropic", "You are a coding assistant"],
+      ["Claude Agent SDK", "the agent framework"],
+      ["Codex CLI", "Codex command-line tool"],
+      ["You are opencode", "You are the opencode agent"],
+      ["You are Cursor", "You are the Cursor agent"],
+      ["You are Cline", "You are the Cline agent"],
+      ["You are Qwen Code", "You are the Qwen Code agent"],
+      ["operating inside pi, a coding agent harness", "operating inside the pi coding agent harness"],
+      ["You are CodeBuddy Code", "You are the CodeBuddy Code CLI"],
+      ["Hermes Agent", "Hermes-Agent"],
+      ["You are Hermes", "You are the agent Hermes"],
+      ["You are Gemini CLI", "You are the Gemini CLI agent"],
+      ["You are Kimi Code CLI", "You are the Kimi Code CLI agent"],
+      ["You are goose", "You are the goose agent"],
       // 放最后：它最短、最通用，必须让上面更长的 Codex CLI 句式先有机会命中。
       ["You are Codex", "You are a coding agent"]
+    ];
+    AUTOCLAW_FOREIGN_IDENTITY_PATTERNS = [
+      [/This conversation is powered by GLM-([\w-]+(?:\.[\w-]+)*)/gi, "This conversation is powered by the GLM-$1 model"]
     ];
     AUTOCLAW_WALLET_V2_PATH = "/agent-assetmgr/api/v2/wallets?biz_app_id=autoclaw";
     AUTOCLAW_WALLET_V1_PATH = "/agent-assetmgr/api/v1/wallet-instances?wallet_type=all&wallet_scope=all";
@@ -49538,8 +49561,38 @@ var AUTO_CLAW_EFFORT_NAMES = {
   minimal: "\u6700\u5C11",
   xhigh: "\u6781\u9AD8"
 };
+function refusalSaid(text) {
+  let d;
+  try {
+    d = JSON.parse(text);
+  } catch {
+    return { code: "", message: "" };
+  }
+  if (d === null || typeof d !== "object" || Array.isArray(d)) return { code: "", message: "" };
+  const o = d;
+  const err = o.error !== null && typeof o.error === "object" ? o.error : {};
+  return {
+    code: String(o.code ?? err.code ?? ""),
+    message: String(o.message ?? o.msg ?? err.message ?? "").trim()
+  };
+}
+var AUTOCLAW_BANNED_CODES = /* @__PURE__ */ new Set(["410004"]);
+var AUTOCLAW_BANNED_WORDS = /\bbanned\b|封禁|封号|账号异常|账户异常|account (has been |is |was )?(suspended|frozen|disabled|blocked|restricted)|账[号户](已|已被|被)?(冻结|停用|禁用)/i;
+var AUTOCLAW_QUOTA_CODES = /* @__PURE__ */ new Set(["810000"]);
+var AUTOCLAW_QUOTA_WORDS = /额度|余额不足|用完|用尽|quota|insufficient[_ ]?(balance|credit)|exhausted|非法模型/i;
 function isAutoClawAuthFailure(text) {
+  const { code, message: message2 } = refusalSaid(text);
+  if (AUTOCLAW_BANNED_CODES.has(code) || AUTOCLAW_BANNED_WORDS.test(message2)) return false;
+  if (AUTOCLAW_QUOTA_CODES.has(code) || AUTOCLAW_QUOTA_WORDS.test(message2)) return false;
   return /invalid\s+token|token\s+(?:is\s+)?(?:invalid|expired|revoked)|unauthoriz|authentication\s+(?:failed|required)|请(?:重新)?登录|凭据(?:已)?(?:失效|过期)/i.test(text);
+}
+function isAutoClawAccountBanned(text) {
+  const { code, message: message2 } = refusalSaid(text);
+  return AUTOCLAW_BANNED_CODES.has(code) || AUTOCLAW_BANNED_WORDS.test(message2);
+}
+function isAutoClawQuotaRefusal(text) {
+  const { code, message: message2 } = refusalSaid(text);
+  return AUTOCLAW_QUOTA_CODES.has(code) || AUTOCLAW_QUOTA_WORDS.test(message2);
 }
 function autoClawDisplayName(model) {
   const parts = [model.name];
@@ -49765,25 +49818,40 @@ var AutoClawAdapter = class extends LlmAdapter12 {
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       const detail = errorDetail(text);
+      const suffix = detail === "" ? "" : `\uFF1A${detail}`;
+      if (isAutoClawQuotaRefusal(text)) {
+        throw new LlmError16(
+          `AutoClaw\uFF1A\u989D\u5EA6\u5DF2\u7528\u5C3D\u6216\u5957\u9910\u4E0D\u542B\u8BE5\u6A21\u578B\uFF08HTTP ${response.status}\uFF09${suffix}`,
+          "QUOTA_EXCEEDED",
+          { status: response.status }
+        );
+      }
+      if (isAutoClawAccountBanned(text)) {
+        throw new LlmError16(
+          `AutoClaw\uFF1A\u8D26\u53F7\u88AB\u9650\u5236\uFF08HTTP ${response.status}\uFF09${suffix}`,
+          "PERMISSION",
+          { status: response.status }
+        );
+      }
       if (response.status === 401 || response.status === 403) {
         if (isAutoClawAuthFailure(text)) {
           throw new LlmError16(
-            `AutoClaw\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF08HTTP ${response.status}\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`,
+            `AutoClaw\uFF1A\u51ED\u636E\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF08HTTP ${response.status}\uFF09${suffix}`,
             "AUTH",
             { status: response.status }
           );
         }
         throw new LlmError16(
-          `AutoClaw\uFF1A\u4E0A\u6E38\u62D2\u7EDD\uFF08HTTP ${response.status}\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`,
+          `AutoClaw\uFF1A\u4E0A\u6E38\u62D2\u7EDD\uFF08HTTP ${response.status}\uFF09${suffix}`,
           httpErrorCode(response.status),
           { status: response.status }
         );
       }
       if (response.status === 429) {
-        throw new LlmError16(`AutoClaw\uFF1A\u89E6\u53D1\u9650\u6D41\uFF08HTTP 429\uFF09${detail === "" ? "" : `\uFF1A${detail}`}`, "RATE_LIMIT", { status: 429 });
+        throw new LlmError16(`AutoClaw\uFF1A\u89E6\u53D1\u9650\u6D41\uFF08HTTP 429\uFF09${suffix}`, "RATE_LIMIT", { status: 429 });
       }
       throw new LlmError16(
-        `AutoClaw\uFF1A\u4E0A\u6E38\u8FD4\u56DE HTTP ${response.status}${detail === "" ? "" : `\uFF1A${detail}`}`,
+        `AutoClaw\uFF1A\u4E0A\u6E38\u8FD4\u56DE HTTP ${response.status}${suffix}`,
         httpErrorCode(response.status),
         { status: response.status }
       );

@@ -534,8 +534,36 @@ const AUTOCLAW_FOREIGN_IDENTITIES: ReadonlyArray<[string, string]> = [
   ['You are Claude Code', 'You are a coding assistant'],
   ['You are ZCode', 'You are an interactive coding agent'],
   ['You are an AI agent powered by DeepSeek Harness', 'You are an AI agent powered by a local coding harness'],
+  // ── 2026-11-04 参考 magpie autoclaw-auth 0.2.14 的 FLAGGED 表补齐 ──
+  // 上游 406 的闸门认的是「别家 agent 的身份句」，客户端越多越容易撞上。
+  // 这些是 magpie 实测/记录过的形态（Discord / plugins#466 等），我们此前没有。
+  ['You are a Claude agent, built on Anthropic', 'You are a coding assistant'],
+  ['Claude Agent SDK', 'the agent framework'],
+  ['Codex CLI', 'Codex command-line tool'],
+  ['You are opencode', 'You are the opencode agent'],
+  ['You are Cursor', 'You are the Cursor agent'],
+  ['You are Cline', 'You are the Cline agent'],
+  ['You are Qwen Code', 'You are the Qwen Code agent'],
+  ['operating inside pi, a coding agent harness', 'operating inside the pi coding agent harness'],
+  ['You are CodeBuddy Code', 'You are the CodeBuddy Code CLI'],
+  ['Hermes Agent', 'Hermes-Agent'],
+  ['You are Hermes', 'You are the agent Hermes'],
+  ['You are Gemini CLI', 'You are the Gemini CLI agent'],
+  ['You are Kimi Code CLI', 'You are the Kimi Code CLI agent'],
+  ['You are goose', 'You are the goose agent'],
   // 放最后：它最短、最通用，必须让上面更长的 Codex CLI 句式先有机会命中。
   ['You are Codex', 'You are a coding agent'],
+]
+
+/**
+ * **正则形态**的身份句改写（magpie `FLAGGED` 里带捕获组的两条）。
+ *
+ * 字面串表处理不了「版本号」这种动态内容，故单独列一条：
+ * - `This conversation is powered by GLM-<任意版本>` → 插入冠词与「model」，
+ *   上游对原句式**任何** GLM 版本都回 406（magpie `plugins#466`）。
+ */
+const AUTOCLAW_FOREIGN_IDENTITY_PATTERNS: ReadonlyArray<[RegExp, string]> = [
+  [/This conversation is powered by GLM-([\w-]+(?:\.[\w-]+)*)/gi, 'This conversation is powered by the GLM-$1 model'],
 ]
 
 /**
@@ -557,6 +585,9 @@ export function normalizeAutoClawSystem(text: string): string {
     if (out.toLowerCase().includes(from.toLowerCase())) {
       out = out.replace(new RegExp(from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), to)
     }
+  }
+  for (const [pattern, to] of AUTOCLAW_FOREIGN_IDENTITY_PATTERNS) {
+    out = out.replace(pattern, to)
   }
   // 已经以身份句开头时只改写、不再前置（幂等：官方客户端自己的请求就带
   // OpenClaw 提示词，重复前缀会把提示词写两遍）。

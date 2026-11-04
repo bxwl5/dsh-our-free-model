@@ -205,3 +205,72 @@ export async function verifyForbiddenIsNotAuth() {
 
   console.log('ok  403 不再一律当「API 密钥无效」（上游繁忙/模型无权/安全策略各自归类）')
 }
+
+/**
+ * 第四部分：AutoClaw 的**拒绝语义分类**（参考 magpie autoclaw-auth 0.2.14）。
+ *
+ * ## 为什么需要
+ *
+ * magpie 0.2.14 的 `refusedNotSignIn` 把 401/403 分成四类，优先级：
+ * 额度 → 封禁 → 真鉴权 → 通用。前两类都**保留登录**，因为重新登录拿到的是
+ * 同一个账号、同样被拒；当 AUTH 报出去，UI 就渲染「API 密钥无效」，
+ * 用户会反复重新登录。
+ *
+ * 最关键的一条：上游对额度耗尽的账号用 `400 {"message":"非法模型"}` 这种
+ * 含糊报文拒绝（magpie `plugins#274` 注释原话：「"非法模型" … Such a refusal
+ * is the account's quota」）。把它当「模型名错误」或 AUTH 都会误导用户。
+ */
+export async function verifyAutoClawRefusalClassification() {
+  const ac = await import('../vendor/channel-pack/src/autoclaw-adapter.ts')
+
+  assert.equal(typeof ac.isAutoClawAuthFailure, 'function')
+  assert.equal(typeof ac.isAutoClawQuotaRefusal, 'function')
+  assert.equal(typeof ac.isAutoClawAccountBanned, 'function')
+
+  // ── 额度：含「非法模型」──
+  const quotaBodies = [
+    '{"message":"非法模型"}',
+    '{"code":810000,"message":"quota exhausted"}',
+    '{"message":"额度已用尽"}',
+    '{"message":"insufficient balance"}',
+  ]
+  for (const body of quotaBodies) {
+    assert.equal(ac.isAutoClawQuotaRefusal(body), true, `应判额度：${body}`)
+    assert.equal(ac.isAutoClawAuthFailure(body), false, `额度拒绝**不得**判鉴权：${body}`)
+  }
+
+  // ── 封禁 ──
+  const bannedBodies = [
+    '{"code":410004,"message":"The account has been banned"}',
+    '{"message":"账号异常，已被限制使用"}',
+  ]
+  for (const body of bannedBodies) {
+    assert.equal(ac.isAutoClawAccountBanned(body), true, `应判封禁：${body}`)
+    assert.equal(ac.isAutoClawAuthFailure(body), false, `封禁**不得**判鉴权：${body}`)
+  }
+
+  // ── 真鉴权（仍要认出来）──
+  for (const body of [
+    '{"error":"Invalid token"}',
+    '{"message":"token expired"}',
+    '{"message":"凭据已失效"}',
+  ]) {
+    assert.equal(ac.isAutoClawAuthFailure(body), true, `应判鉴权：${body}`)
+    assert.equal(ac.isAutoClawQuotaRefusal(body), false)
+  }
+
+  // ── 非拒绝体：三个判据都应为 false（不误伤正常错误）──
+  for (const body of ['', 'not json', '{"message":"model not found"}']) {
+    assert.equal(ac.isAutoClawQuotaRefusal(body), false, `不该判额度：${body}`)
+    assert.equal(ac.isAutoClawAccountBanned(body), false, `不该判封禁：${body}`)
+  }
+
+  // ── 身份句改写：正则形态（GLM 版本号）──
+  const sms = await import('../vendor/channel-pack/src/autoclaw-sms.ts')
+  const normalized = sms.normalizeAutoClawSystem('This conversation is powered by GLM-5.3-flash. Hello.')
+  assert.ok(normalized.includes('the GLM-5.3-flash model'),
+    `GLM 版本句式必须被改写（上游对原句式任何版本都回 406），实际：${normalized.slice(0, 120)}`)
+  assert.ok(normalized.includes('Hello.'), '客户端提示词要逐字保留在身份前缀之后')
+
+  console.log('ok  AutoClaw 拒绝分类：额度/封禁/鉴权分流，「非法模型」不再误报密钥无效')
+}
