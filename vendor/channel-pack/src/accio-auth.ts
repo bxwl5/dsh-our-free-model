@@ -424,7 +424,9 @@ export async function* streamChat(
   let buffer = ''
   try {
     for (;;) {
-      const { done, value } = await reader.read()
+      // ⚠️ 不得裸 `reader.read()`（2026-11-04 审查）：半开连接下它会**永久挂起**，
+      // 整个调用没有超时出口。空转 120s 即判 TIMEOUT，交由上层重试/换号。
+      const { done, value } = await readWithIdleTimeout(reader, DEFAULT_SSE_IDLE_TIMEOUT_MS, 'Accio', options.signal)
       if (done) break
       buffer += decoder.decode(value, { stream: true })
       let newline = buffer.indexOf('\n')
@@ -464,6 +466,7 @@ export async function* streamChat(
 
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
+import { DEFAULT_SSE_IDLE_TIMEOUT_MS, readWithIdleTimeout } from './sse.js'
 
 // ⚠️ AccioProduct / AccioCredential 已在文件顶部从**同一对文件**导入；
 // 这里曾经重复导入（TS2300 Duplicate identifier，2026-10-31 门禁）——

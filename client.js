@@ -2719,10 +2719,16 @@ window.__ModuleLoader__.load({
       // 快照，这一行单独刷新，让「刚发完一条消息」的用户不用整页重载就能看到
       // 这一回合的 token 去向。聊天窗属于宿主内核，插件无法在对话流里注入，
       // 这是插件表面能做到的最接近实时的位置。
-      const [fresh, setFresh] = useState(null)
+      // ⚠ 只留 `samples`，不要把整个 `/stats` 载荷塞进 state（2026-11-04 审查）。
+      // 这个轮询唯一的消费方是下面的 `lastSample`，而整包里有 days/models/grand
+      // 等大数组 —— 每分钟替换一次整份快照，既白占内存又制造「两份 stats 并存」
+      // 的错觉（谁也说不清页面上哪个数字来自哪一份）。
+      const [freshSamples, setFreshSamples] = useState(null)
       useEffect(() => {
         let alive = true
-        const timer = setInterval(() => api('/stats').then(data => { if (alive) setFresh(data) }).catch(() => {}), 60_000)
+        const timer = setInterval(() => api('/stats')
+          .then(data => { if (alive && Array.isArray(data?.samples)) setFreshSamples(data.samples) })
+          .catch(() => {}), 60_000)
         return () => { alive = false; clearInterval(timer) }
       }, [])
       // The host already dropped the windows it could not measure and took out of
@@ -2774,7 +2780,7 @@ window.__ModuleLoader__.load({
 
       // 最近一回合（#26）：取最新一条调用样本，输入/输出 token、首帧、速度，
       // 失败的调用也如实标出。数据源优先用轮询到的新快照，退回页面加载时的。
-      const lastSample = (fresh?.samples ?? stats.samples ?? []).slice(-1)[0] ?? null
+      const lastSample = (freshSamples ?? stats.samples ?? []).slice(-1)[0] ?? null
       const nameOfModel = id => models.find(m => m.model === id)?.name ?? id
       const agoOf = at => {
         const seconds = Math.max(0, Math.round((Date.now() - at) / 1000))
@@ -2980,7 +2986,20 @@ window.__ModuleLoader__.load({
               h('code', { className: 'ofm_mono', style: { padding: '4px 8px', flex: 1, minWidth: 200, letterSpacing: lanShown ? 0 : 1 } }, lanKey === '' ? '…' : lanShown ? lanKey : '•'.repeat(24)),
               h(Button, { kind: 'ghost', onClick: () => setLanShown(value => !value) }, lanShown ? t('forward.hide') : t('forward.show')),
               h(Button, { kind: 'ghost', onClick: () => doCopy('lanKey', lanKey) }, copied === 'lanKey' ? t('forward.copied') : t('forward.copy')),
-              h(Button, { kind: 'ghost', title: t('forward.lanRotateWarn'), onClick: async () => { const payload = await post('/forward/lan/rotate'); setLanKey(payload.key ?? ''); setLanShown(true) } }, t('forward.rotate')))) : null))
+              h(Button, { kind: 'ghost', title: t('forward.lanRotateWarn'), onClick: async () => {
+                // ⚠ 与同面板 `/forward/rotate` 对齐（2026-11-04 审查）：那个按钮
+                // 2026-11-01 已补 try/catch，这个孪生按钮漏了 —— `api()` 超时/
+                // 后端异常会 reject，`onClick` 里没人接就是 unhandled rejection，
+                // 用户点了「重新生成」没有任何反应（连错误都看不到）。
+                try {
+                  const payload = await post('/forward/lan/rotate')
+                  setLanKey(payload.key ?? '')
+                  setLanShown(true)
+                  showToast({ title: t('forward.rotateDone'), tone: 'ok', holdMs: 4000 })
+                } catch (error) {
+                  showToast({ title: t('forward.rotateFail'), body: String(error?.message ?? error).slice(0, 160), tone: 'warn' })
+                }
+              } }, t('forward.rotate')))) : null))
     }
 
     // ── egress outlet ─────────────────────────────────────────────────────────

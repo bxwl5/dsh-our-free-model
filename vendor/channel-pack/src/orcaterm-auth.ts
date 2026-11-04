@@ -28,6 +28,7 @@ import {
   parseChatFrame,
   type OrcaTermCredential,
 } from './orcaterm.js'
+import { DEFAULT_SSE_IDLE_TIMEOUT_MS, readWithIdleTimeout } from './sse.js'
 
 /** 流式对话的选项。 */
 export interface ChatOptions {
@@ -163,7 +164,9 @@ export async function* streamChat(
   let buffer = ''
   try {
     for (;;) {
-      const { done, value } = await reader.read()
+      // ⚠️ 不得裸 `reader.read()`（2026-11-04 审查）：半开连接下它会**永久挂起**，
+      // 整个调用没有超时出口。空转 120s 即判 TIMEOUT，交由上层重试/换号。
+      const { done, value } = await readWithIdleTimeout(reader, DEFAULT_SSE_IDLE_TIMEOUT_MS, 'OrcaTerm', options.signal)
       if (done) break
       buffer += decoder.decode(value, { stream: true })
       let newline = buffer.indexOf('\n')

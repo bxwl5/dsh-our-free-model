@@ -27796,6 +27796,387 @@ ${captureLines}` : capture.stack;
   }
 });
 
+// vendor/channel-pack/src/message-shape.ts
+function isWrappedToolResult(block) {
+  return typeof block === "object" && block !== null && block.type === "tool-result";
+}
+function isToolRoleMessage(message2) {
+  return message2.role === "tool";
+}
+function detectMessageShape(messages) {
+  let sawLegacy = false;
+  for (const message2 of messages) {
+    if (isToolRoleMessage(message2)) return "tool-role";
+    const content = message2.content;
+    if (Array.isArray(content) && content.some(isWrappedToolResult)) sawLegacy = true;
+  }
+  return sawLegacy ? "legacy" : "none";
+}
+function normalizeHarnessMessages(messages) {
+  const shape = detectMessageShape(messages);
+  const hasDeveloper = messages.some((message2) => message2.role === "developer");
+  if (shape !== "tool-role" && !hasDeveloper) {
+    return messages;
+  }
+  const normalized = [];
+  for (const message2 of messages) {
+    if (message2.role === "developer") continue;
+    if (!isToolRoleMessage(message2)) {
+      normalized.push(message2);
+      continue;
+    }
+    const source = message2.source;
+    const sourceCallId = typeof source === "object" && source !== null ? source.callId : void 0;
+    const toolCallId = message2.toolCallId ?? sourceCallId;
+    const block = {
+      type: "tool-result",
+      toolCallId,
+      content: message2.content
+    };
+    if (message2.isError !== void 0) block.isError = message2.isError;
+    normalized.push({ role: "user", content: [block] });
+  }
+  return normalized;
+}
+function collectHarnessSystem(messages) {
+  const parts = [];
+  for (const message2 of messages) {
+    if (message2 === null || typeof message2 !== "object" || message2.role !== "system") continue;
+    const content = message2.content;
+    const text = typeof content === "string" ? content : Array.isArray(content) ? content.filter((block) => typeof block === "object" && block !== null && block.type === "text" && typeof block.text === "string").map((block) => block.text).join("\n") : "";
+    if (text !== "") parts.push(text);
+  }
+  return parts.join("\n\n");
+}
+var init_message_shape = __esm({
+  "vendor/channel-pack/src/message-shape.ts"() {
+    "use strict";
+  }
+});
+
+// vendor/channel-pack/src/sse.ts
+import { EMPTY_RESPONSE_CODE, LlmError } from "@deepseek-ai/dsh-llm";
+async function readWithIdleTimeout(reader, timeoutMs, label, signal, phase = "chunk") {
+  if (signal?.aborted) throw signal.reason ?? new Error("aborted");
+  let timer;
+  const onUserAbort = () => {
+    if (timer) clearTimeout(timer);
+  };
+  signal?.addEventListener("abort", onUserAbort, { once: true });
+  const readPromise = reader.read();
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new LlmError(`${label}: sse ${phase} timeout after ${timeoutMs}ms`, "TIMEOUT"));
+    }, timeoutMs);
+  });
+  try {
+    const result = await Promise.race([readPromise, timeoutPromise]);
+    return { done: result.done, value: result.value };
+  } catch (error) {
+    if (signal?.aborted) throw signal.reason ?? error;
+    if (error instanceof LlmError) {
+      await reader.cancel().catch(() => {
+      });
+      throw error;
+    }
+    throw error;
+  } finally {
+    if (timer) clearTimeout(timer);
+    signal?.removeEventListener("abort", onUserAbort);
+  }
+}
+function hasUsableToolName(name2) {
+  return typeof name2 === "string" && name2.trim().length > 0;
+}
+function resolveEmptyResponseReason(reason, blockCount) {
+  if (blockCount > 0 || reason.kind !== "stop") return reason;
+  return {
+    kind: "error",
+    failure: {
+      message: "model returned a completed response with no content",
+      code: EMPTY_RESPONSE_CODE
+    }
+  };
+}
+function createBlankReasoningSuppressor() {
+  let accumulated = "";
+  let emitting = false;
+  return {
+    feed(text) {
+      accumulated += text;
+      if (emitting) return text;
+      if (text.trim() === "") return void 0;
+      emitting = true;
+      return accumulated;
+    },
+    text() {
+      return accumulated;
+    }
+  };
+}
+function resolveToolPairing(messages) {
+  const normalized = normalizeHarnessMessages(messages);
+  const allResultIds = /* @__PURE__ */ new Set();
+  for (const message2 of normalized) {
+    const content = Array.isArray(message2.content) ? message2.content : [];
+    for (const block of content) {
+      if (typeof block === "object" && block !== null && block.type === "tool-result") {
+        allResultIds.add(String(block.toolCallId));
+      }
+    }
+  }
+  const keepCallIds = /* @__PURE__ */ new Set();
+  for (const message2 of normalized) {
+    if (message2.role !== "assistant") continue;
+    const content = Array.isArray(message2.content) ? message2.content : [];
+    const calls = content.filter((block) => typeof block === "object" && block !== null && block.type === "tool-call");
+    if (calls.length === 0) continue;
+    const usable = calls.filter((block) => hasUsableToolName(block.name));
+    if (usable.length === 0) continue;
+    if (usable.every((block) => allResultIds.has(String(block.id)))) {
+      for (const block of usable) keepCallIds.add(String(block.id));
+    }
+  }
+  const keepResultIds = /* @__PURE__ */ new Set();
+  for (const id of keepCallIds) {
+    if (allResultIds.has(id)) keepResultIds.add(id);
+  }
+  return { keepCallIds, keepResultIds };
+}
+function normalizeToolArguments(raw) {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return "{}";
+  let parsed;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return "{}";
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return "{}";
+  return trimmed;
+}
+function isTruncatedArguments(raw) {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return false;
+  try {
+    JSON.parse(trimmed);
+    return false;
+  } catch {
+    return true;
+  }
+}
+function resolveSliceChars(raw) {
+  const value = raw ?? 64;
+  return Number.isFinite(value) ? Math.max(1, value) : 64;
+}
+function createReasoningLoopDetector(options = {}) {
+  const windowChars = options.windowChars ?? 3e3;
+  const maxDistinctLineRatio = options.maxDistinctLineRatio ?? 0.35;
+  const minLines = options.minLines ?? 40;
+  const minLoopChars = options.minLoopChars ?? 2e3;
+  const sliceChars = resolveSliceChars(options.sliceChars);
+  let text = "";
+  let detected = false;
+  let cutAt;
+  let runStart = 0;
+  let runChars = 0;
+  let hitLines = 0;
+  let hitDistinct = 0;
+  function feedPiece(piece) {
+    text += piece;
+    const window = text.slice(Math.max(0, text.length - windowChars));
+    const lines = window.split("\n").map((line2) => line2.trim()).filter((line2) => line2.length > 0);
+    const looping = lines.length >= minLines && new Set(lines).size / lines.length < maxDistinctLineRatio;
+    if (!looping) {
+      runStart = 0;
+      runChars = 0;
+      return false;
+    }
+    if (runChars === 0) runStart = text.length - piece.length;
+    runChars += piece.length;
+    if (runChars < minLoopChars) return false;
+    detected = true;
+    cutAt = runStart;
+    hitLines = lines.length;
+    hitDistinct = new Set(lines).size;
+    return true;
+  }
+  return {
+    get detected() {
+      return detected;
+    },
+    get cutAt() {
+      return cutAt;
+    },
+    get diagnostics() {
+      if (!detected) return void 0;
+      return {
+        observedChars: text.length,
+        runChars,
+        lines: hitLines,
+        distinctLines: hitDistinct,
+        distinctLineRatio: hitLines === 0 ? 1 : hitDistinct / hitLines
+      };
+    },
+    observe(delta) {
+      if (detected) return false;
+      if (delta.length === 0) return false;
+      for (let offset = 0; offset < delta.length; offset += sliceChars) {
+        if (feedPiece(delta.slice(offset, offset + sliceChars))) return true;
+      }
+      return false;
+    }
+  };
+}
+function reasoningLoopFailure(diagnostics, maxTokens, channel) {
+  const label = channel === "reasoning" ? "\u601D\u8003" : "\u6B63\u6587";
+  const parts = [
+    `\u6A21\u578B${label}\u9677\u5165\u75C5\u6001\u91CD\u590D\uFF0C\u5DF2\u4E2D\u6B62\u672C\u8F6E\uFF08**\u4E0D\u662F**\u8F93\u51FA token \u4E0A\u9650\uFF09\u3002`
+  ];
+  if (diagnostics !== void 0) {
+    parts.push(
+      `\u5224\u636E\uFF1A\u5C3E\u90E8 ${diagnostics.lines} \u884C\u91CC\u53EA\u6709 ${diagnostics.distinctLines} \u884C\u4E0D\u91CD\u590D\uFF08\u53BB\u91CD\u7387 ${diagnostics.distinctLineRatio.toFixed(3)}\uFF0C\u9608\u503C <0.35\uFF09\uFF0C\u8FDE\u7EED\u5FAA\u73AF\u4F53\u91CF ${diagnostics.runChars} \u5B57\u7B26\u3002`
+    );
+  }
+  if (diagnostics !== void 0 && maxTokens !== void 0 && maxTokens > 0) {
+    const usedTokens = Math.ceil(diagnostics.observedChars / 3.5);
+    const remaining = Math.max(0, maxTokens - usedTokens);
+    parts.push(
+      `\u672C\u6B21${label}\u4EC5\u4EA7\u51FA\u7EA6 ${diagnostics.observedChars} \u5B57\u7B26\uFF08\u7EA6 ${usedTokens} token\uFF09\uFF0C\u989D\u5EA6 ${maxTokens} token \u4E2D**\u8FD8\u5269\u7EA6 ${remaining}**\uFF08\u4F30\u7B97\u503C\uFF09\u2014\u2014\u989D\u5EA6\u6CA1\u6709\u5360\u6EE1\uFF0C\u53EF\u4EE5\u76F4\u63A5\u7EE7\u7EED\u4EFB\u52A1\u3002`
+    );
+  } else {
+    parts.push(`\u989D\u5EA6\u6CA1\u6709\u5360\u6EE1\uFF0C\u53EF\u4EE5\u76F4\u63A5\u7EE7\u7EED\u4EFB\u52A1\u3002`);
+  }
+  parts.push("\u82E5\u7EE7\u7EED\u540E\u518D\u6B21\u9677\u5165\u540C\u4E00\u5FAA\u73AF\uFF0C\u5EFA\u8BAE\u964D\u4F4E\u601D\u8003\u6863\u4F4D\u6216\u66F4\u6362\u6A21\u578B\u3002");
+  return { message: parts.join(""), code: REASONING_LOOP_CODE };
+}
+function resolveReasoningLoopGuardFlag(raw) {
+  if (raw === void 0) return true;
+  const value = raw.trim().toLowerCase();
+  return !(value === "0" || value === "false" || value === "no" || value === "off");
+}
+function isReasoningLoopGuardEnabled() {
+  return resolveReasoningLoopGuardFlag(process.env.DSH_REASONING_LOOP_GUARD);
+}
+function splitThinkTaggedContent(raw) {
+  if (raw.length === 0) return void 0;
+  const re = new RegExp(THINK_CLOSE_TAG_RE.source, "g");
+  let last;
+  for (let m = re.exec(raw); m !== null; m = re.exec(raw)) last = m;
+  if (last === void 0) return void 0;
+  if (isQuotedThinkTag(raw, last.index)) return void 0;
+  const boundary = last.index;
+  const textStart = boundary + last[0].length;
+  const reasoning = raw.slice(0, boundary).replace(new RegExp(THINK_ANY_TAG_RE.source, "g"), "");
+  return { reasoning, text: raw.slice(textStart), textStart };
+}
+function isQuotedThinkTag(raw, index) {
+  const before = raw.slice(0, index).trimEnd();
+  if (before.endsWith("`")) return true;
+  const after = raw.slice(index).trimStart();
+  const tagEnd = raw.indexOf(">", index);
+  if (tagEnd !== -1 && raw.slice(tagEnd + 1).trimStart().startsWith("`")) return true;
+  if ((before.match(/`/g) ?? []).length % 2 === 1) return true;
+  const fences = raw.slice(0, index).match(/```/g);
+  if (fences !== null && fences.length % 2 === 1) return true;
+  const lineStart = before.lastIndexOf("\n") + 1;
+  const lineBefore = raw.slice(lineStart, index);
+  if ((lineBefore.match(/'/g) ?? []).length % 2 === 1) return true;
+  if ((lineBefore.match(/"/g) ?? []).length % 2 === 1) return true;
+  return false;
+}
+function stripCourseLeak(text) {
+  if (text.length === 0) return text;
+  if (!text.includes("course") && !text.includes("\u8BFE")) return text;
+  const lines = text.split("\n");
+  let changed = false;
+  const cleaned = lines.map((line2) => {
+    const match = /^([ \t]*)(course|课)(.*)$/.exec(line2);
+    if (match === null) return line2;
+    const [, indent, word, rest] = match;
+    if (word === "course") {
+      const first = rest[0];
+      if (first !== void 0 && ASCII_LETTER_RE.test(first)) return line2;
+      const trimmed2 = rest.startsWith(" ") ? rest.slice(1) : rest;
+      changed = true;
+      return indent + trimmed2;
+    }
+    const trimmed = rest.startsWith(" ") ? rest.slice(1) : rest;
+    changed = true;
+    return indent + trimmed;
+  });
+  return changed ? cleaned.join("\n") : text;
+}
+function resolveCourseLeakStripFlag(raw) {
+  if (raw === void 0) return true;
+  const value = raw.trim().toLowerCase();
+  return !(value === "0" || value === "false" || value === "no" || value === "off");
+}
+function isCourseLeakStripEnabled() {
+  return resolveCourseLeakStripFlag(process.env.DSH_COURSE_LEAK_STRIP);
+}
+function stripCourseLeakIfEnabled(text) {
+  return isCourseLeakStripEnabled() ? stripCourseLeak(text) : text;
+}
+function stripCourseLeakFromHistoryContent(role, content) {
+  if (role !== "assistant") return content;
+  if (!isCourseLeakStripEnabled()) return content;
+  let changed = false;
+  const cleaned = content.map((raw) => {
+    if (typeof raw !== "object" || raw === null) return raw;
+    const block = raw;
+    if (block.type !== "text" && block.type !== "reasoning") return raw;
+    if (typeof block.text !== "string" || block.text.length === 0) return raw;
+    const stripped = stripCourseLeak(block.text);
+    if (stripped === block.text) return raw;
+    changed = true;
+    return { ...block, text: stripped };
+  });
+  return changed ? cleaned : content;
+}
+function resolveThinkLeakStripFlag(raw) {
+  if (raw === void 0) return false;
+  const value = raw.trim().toLowerCase();
+  return value === "1" || value === "true" || value === "yes" || value === "on";
+}
+function isThinkLeakStripEnabled() {
+  return resolveThinkLeakStripFlag(process.env.DSH_THINK_LEAK_STRIP);
+}
+function stripBareThinkCloseTagIfEnabled(text) {
+  return isThinkLeakStripEnabled() ? stripBareThinkCloseTag(text) : text;
+}
+function stripBareThinkCloseTag(text) {
+  const trimmed = text.trim();
+  if (/^`.*<\/think>.*`$/.test(trimmed)) return text;
+  let backtickCount = 0;
+  for (const ch of text) if (ch === "`") backtickCount++;
+  if (backtickCount % 2 === 1) return text;
+  const stripped = trimmed.replace(/<\/think>/g, "").trim();
+  if (stripped.length === 0) return "";
+  return text;
+}
+function isProseTruncatedByStopString(text) {
+  if (text.length === 0) return false;
+  const tail = text.trimEnd();
+  if (tail.length === 0) return false;
+  let ticks = 0;
+  for (const ch of tail) if (ch === "`") ticks += 1;
+  if (ticks % 2 === 0) return false;
+  return /`$/.test(tail) || /<$/.test(tail) || /<\/think$/.test(tail);
+}
+var DEFAULT_SSE_IDLE_TIMEOUT_MS, REASONING_LOOP_CODE, THINK_CLOSE_TAG_RE, THINK_ANY_TAG_RE, ASCII_LETTER_RE;
+var init_sse = __esm({
+  "vendor/channel-pack/src/sse.ts"() {
+    "use strict";
+    init_message_shape();
+    DEFAULT_SSE_IDLE_TIMEOUT_MS = 12e4;
+    REASONING_LOOP_CODE = "REASONING_LOOP";
+    THINK_CLOSE_TAG_RE = /<\/think(?::[0-9a-f]+)?>/g;
+    THINK_ANY_TAG_RE = /<\/?think(?::[0-9a-f]+)?>/g;
+    ASCII_LETTER_RE = /[A-Za-z]/;
+  }
+});
+
 // vendor/channel-pack/src/commandcode-product.ts
 var commandcode_product_exports = {};
 __export(commandcode_product_exports, {
@@ -30036,7 +30417,7 @@ async function* streamChat3(fetcher, product, credential, options) {
   let buffer = "";
   try {
     for (; ; ) {
-      const { done, value } = await reader.read();
+      const { done, value } = await readWithIdleTimeout(reader, DEFAULT_SSE_IDLE_TIMEOUT_MS, "KukuAI", options.signal);
       if (done) break;
       buffer += decoder2.decode(value, { stream: true });
       let newline = buffer.indexOf("\n");
@@ -30242,6 +30623,7 @@ var init_kuku_auth = __esm({
     "use strict";
     init_kuku_product();
     init_kuku();
+    init_sse();
     init_kuku_qr_login();
     KUKU_CLAIMABLE_TASK_TYPES = ["LOGIN", "CHAT"];
     KUKU_TRIPLE_TTL_MS = 6e5;
@@ -30793,7 +31175,7 @@ async function* streamChat4(fetcher, product, credential, options) {
   let buffer = "";
   try {
     for (; ; ) {
-      const { done, value } = await reader.read();
+      const { done, value } = await readWithIdleTimeout(reader, DEFAULT_SSE_IDLE_TIMEOUT_MS, "Accio", options.signal);
       if (done) break;
       buffer += decoder2.decode(value, { stream: true });
       let newline = buffer.indexOf("\n");
@@ -30915,6 +31297,7 @@ var init_accio_auth = __esm({
     "use strict";
     init_accio_product();
     init_accio();
+    init_sse();
     init_accio_product();
     init_accio();
     AccioRefreshRejectedError = class extends Error {
@@ -36187,12 +36570,14 @@ function rewriteContentFingerprints(text) {
 function scrubbableRole(role) {
   return role === "system" || role === "assistant" || role === "developer";
 }
+var BLOCK_TEXT_TYPES = /* @__PURE__ */ new Set(["text", "reasoning", "thinking", "reasoning_text", "input_text", "output_text"]);
 function scrubContentBlocks(content) {
   let changed;
   content.forEach((block, index) => {
     if (block === null || typeof block !== "object") return;
     const record = block;
-    if (record.type !== "text" || typeof record.text !== "string") return;
+    if (typeof record.type !== "string" || !BLOCK_TEXT_TYPES.has(record.type)) return;
+    if (typeof record.text !== "string") return;
     const next = rewriteContentFingerprints(record.text);
     if (next === record.text) return;
     const target = changed ??= [...content];
@@ -36202,16 +36587,39 @@ function scrubContentBlocks(content) {
 }
 function scrubWireMessage(message2) {
   if (!scrubbableRole(message2.role)) return message2;
-  const content = message2.content;
+  let next = message2;
+  const content = next.content;
   if (typeof content === "string") {
-    const next = rewriteContentFingerprints(content);
-    return next === content ? message2 : { ...message2, content: next };
+    const rewritten = rewriteContentFingerprints(content);
+    if (rewritten !== content) next = { ...next, content: rewritten };
+  } else if (Array.isArray(content)) {
+    const blocks = scrubContentBlocks(content);
+    if (blocks !== content) next = { ...next, content: blocks };
   }
-  if (Array.isArray(content)) {
-    const next = scrubContentBlocks(content);
-    return next === content ? message2 : { ...message2, content: next };
+  for (const key of REASONING_KEYS) {
+    const value = next[key];
+    if (typeof value !== "string") continue;
+    const rewritten = rewriteContentFingerprints(value);
+    if (rewritten !== value) next = { ...next, [key]: rewritten };
   }
-  return message2;
+  const calls = next.tool_calls;
+  if (Array.isArray(calls)) {
+    let changedCalls;
+    calls.forEach((call2, index) => {
+      if (call2 === null || typeof call2 !== "object") return;
+      const record = call2;
+      const fn = record.function;
+      if (fn === null || typeof fn !== "object") return;
+      const args = fn.arguments;
+      if (typeof args !== "string") return;
+      const rewritten = rewriteContentFingerprints(args);
+      if (rewritten === args) return;
+      const target = changedCalls ??= [...calls];
+      target[index] = { ...record, function: { ...fn, arguments: rewritten } };
+    });
+    if (changedCalls !== void 0) next = { ...next, tool_calls: changedCalls };
+  }
+  return next;
 }
 function scrubGenerateOptions(options) {
   if (typeof options !== "object" || options === null) return options;
@@ -36237,7 +36645,8 @@ function scrubGenerateOptions(options) {
 }
 var MESSAGE_KEYS = ["messages", "input", "contents"];
 var SYSTEM_KEYS = ["system", "instructions"];
-var TEXT_KEYS = ["content", "text", "parts"];
+var TEXT_KEYS = ["content", "text", "parts", "reasoning_content", "reasoning", "reasoning_text"];
+var REASONING_KEYS = ["reasoning_content", "reasoning", "reasoning_text", "thinking"];
 function scrubJsonBody(body) {
   let changed = false;
   for (const key of SYSTEM_KEYS) {
@@ -36608,10 +37017,12 @@ function createChannelFetch(options = {}) {
   const fetchImpl = (input, init) => (options.fetchImpl ?? globalThis.fetch)(input, init);
   const fetcher = async (input, init) => {
     if (closed) throw new Error("\u6E20\u9053\u51FA\u7F51\u670D\u52A1\u5DF2\u505C\u6B62");
-    const scrubbed = scrubFetchArguments(input, init);
-    if (scrubbed !== null) {
-      input = scrubbed.input;
-      init = scrubbed.init;
+    if (options.skipScrub !== true) {
+      const scrubbed = scrubFetchArguments(input, init);
+      if (scrubbed !== null) {
+        input = scrubbed.input;
+        init = scrubbed.init;
+      }
     }
     const target = new URL(input instanceof Request ? input.url : String(input));
     const signal = init?.signal ?? (input instanceof Request ? input.signal : void 0);
@@ -36716,6 +37127,8 @@ function createDirectFetch(options = {}) {
   const outlet = options.outlet;
   const network = createChannelFetch({
     ...options,
+    // 签名车道：body 已在签名前清好，出口层再动一次就会让签名失配（403）。
+    skipScrub: true,
     fetchImpl: send,
     outlet: outlet && {
       active: () => outlet.active(),
@@ -37089,373 +37502,9 @@ function isCodeArtsBenefitModel(model) {
   return CODEARTS_BENEFIT_FALLBACK.includes(model);
 }
 
-// vendor/channel-pack/src/message-shape.ts
-function isWrappedToolResult(block) {
-  return typeof block === "object" && block !== null && block.type === "tool-result";
-}
-function isToolRoleMessage(message2) {
-  return message2.role === "tool";
-}
-function detectMessageShape(messages) {
-  let sawLegacy = false;
-  for (const message2 of messages) {
-    if (isToolRoleMessage(message2)) return "tool-role";
-    const content = message2.content;
-    if (Array.isArray(content) && content.some(isWrappedToolResult)) sawLegacy = true;
-  }
-  return sawLegacy ? "legacy" : "none";
-}
-function normalizeHarnessMessages(messages) {
-  const shape = detectMessageShape(messages);
-  const hasDeveloper = messages.some((message2) => message2.role === "developer");
-  if (shape !== "tool-role" && !hasDeveloper) {
-    return messages;
-  }
-  const normalized = [];
-  for (const message2 of messages) {
-    if (message2.role === "developer") continue;
-    if (!isToolRoleMessage(message2)) {
-      normalized.push(message2);
-      continue;
-    }
-    const source = message2.source;
-    const sourceCallId = typeof source === "object" && source !== null ? source.callId : void 0;
-    const toolCallId = message2.toolCallId ?? sourceCallId;
-    const block = {
-      type: "tool-result",
-      toolCallId,
-      content: message2.content
-    };
-    if (message2.isError !== void 0) block.isError = message2.isError;
-    normalized.push({ role: "user", content: [block] });
-  }
-  return normalized;
-}
-function collectHarnessSystem(messages) {
-  const parts = [];
-  for (const message2 of messages) {
-    if (message2 === null || typeof message2 !== "object" || message2.role !== "system") continue;
-    const content = message2.content;
-    const text = typeof content === "string" ? content : Array.isArray(content) ? content.filter((block) => typeof block === "object" && block !== null && block.type === "text" && typeof block.text === "string").map((block) => block.text).join("\n") : "";
-    if (text !== "") parts.push(text);
-  }
-  return parts.join("\n\n");
-}
-
-// vendor/channel-pack/src/sse.ts
-import { EMPTY_RESPONSE_CODE, LlmError } from "@deepseek-ai/dsh-llm";
-async function readWithIdleTimeout(reader, timeoutMs, label, signal, phase = "chunk") {
-  if (signal?.aborted) throw signal.reason ?? new Error("aborted");
-  let timer;
-  const onUserAbort = () => {
-    if (timer) clearTimeout(timer);
-  };
-  signal?.addEventListener("abort", onUserAbort, { once: true });
-  const readPromise = reader.read();
-  const timeoutPromise = new Promise((_, reject) => {
-    timer = setTimeout(() => {
-      reject(new LlmError(`${label}: sse ${phase} timeout after ${timeoutMs}ms`, "TIMEOUT"));
-    }, timeoutMs);
-  });
-  try {
-    const result = await Promise.race([readPromise, timeoutPromise]);
-    return { done: result.done, value: result.value };
-  } catch (error) {
-    if (signal?.aborted) throw signal.reason ?? error;
-    if (error instanceof LlmError) {
-      await reader.cancel().catch(() => {
-      });
-      throw error;
-    }
-    throw error;
-  } finally {
-    if (timer) clearTimeout(timer);
-    signal?.removeEventListener("abort", onUserAbort);
-  }
-}
-function hasUsableToolName(name2) {
-  return typeof name2 === "string" && name2.trim().length > 0;
-}
-function resolveEmptyResponseReason(reason, blockCount) {
-  if (blockCount > 0 || reason.kind !== "stop") return reason;
-  return {
-    kind: "error",
-    failure: {
-      message: "model returned a completed response with no content",
-      code: EMPTY_RESPONSE_CODE
-    }
-  };
-}
-function createBlankReasoningSuppressor() {
-  let accumulated = "";
-  let emitting = false;
-  return {
-    feed(text) {
-      accumulated += text;
-      if (emitting) return text;
-      if (text.trim() === "") return void 0;
-      emitting = true;
-      return accumulated;
-    },
-    text() {
-      return accumulated;
-    }
-  };
-}
-function resolveToolPairing(messages) {
-  const normalized = normalizeHarnessMessages(messages);
-  const allResultIds = /* @__PURE__ */ new Set();
-  for (const message2 of normalized) {
-    const content = Array.isArray(message2.content) ? message2.content : [];
-    for (const block of content) {
-      if (typeof block === "object" && block !== null && block.type === "tool-result") {
-        allResultIds.add(String(block.toolCallId));
-      }
-    }
-  }
-  const keepCallIds = /* @__PURE__ */ new Set();
-  for (const message2 of normalized) {
-    if (message2.role !== "assistant") continue;
-    const content = Array.isArray(message2.content) ? message2.content : [];
-    const calls = content.filter((block) => typeof block === "object" && block !== null && block.type === "tool-call");
-    if (calls.length === 0) continue;
-    const usable = calls.filter((block) => hasUsableToolName(block.name));
-    if (usable.length === 0) continue;
-    if (usable.every((block) => allResultIds.has(String(block.id)))) {
-      for (const block of usable) keepCallIds.add(String(block.id));
-    }
-  }
-  const keepResultIds = /* @__PURE__ */ new Set();
-  for (const id of keepCallIds) {
-    if (allResultIds.has(id)) keepResultIds.add(id);
-  }
-  return { keepCallIds, keepResultIds };
-}
-function normalizeToolArguments(raw) {
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return "{}";
-  let parsed;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    return "{}";
-  }
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return "{}";
-  return trimmed;
-}
-function isTruncatedArguments(raw) {
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return false;
-  try {
-    JSON.parse(trimmed);
-    return false;
-  } catch {
-    return true;
-  }
-}
-var REASONING_LOOP_CODE = "REASONING_LOOP";
-function resolveSliceChars(raw) {
-  const value = raw ?? 64;
-  return Number.isFinite(value) ? Math.max(1, value) : 64;
-}
-function createReasoningLoopDetector(options = {}) {
-  const windowChars = options.windowChars ?? 3e3;
-  const maxDistinctLineRatio = options.maxDistinctLineRatio ?? 0.35;
-  const minLines = options.minLines ?? 40;
-  const minLoopChars = options.minLoopChars ?? 2e3;
-  const sliceChars = resolveSliceChars(options.sliceChars);
-  let text = "";
-  let detected = false;
-  let cutAt;
-  let runStart = 0;
-  let runChars = 0;
-  let hitLines = 0;
-  let hitDistinct = 0;
-  function feedPiece(piece) {
-    text += piece;
-    const window = text.slice(Math.max(0, text.length - windowChars));
-    const lines = window.split("\n").map((line2) => line2.trim()).filter((line2) => line2.length > 0);
-    const looping = lines.length >= minLines && new Set(lines).size / lines.length < maxDistinctLineRatio;
-    if (!looping) {
-      runStart = 0;
-      runChars = 0;
-      return false;
-    }
-    if (runChars === 0) runStart = text.length - piece.length;
-    runChars += piece.length;
-    if (runChars < minLoopChars) return false;
-    detected = true;
-    cutAt = runStart;
-    hitLines = lines.length;
-    hitDistinct = new Set(lines).size;
-    return true;
-  }
-  return {
-    get detected() {
-      return detected;
-    },
-    get cutAt() {
-      return cutAt;
-    },
-    get diagnostics() {
-      if (!detected) return void 0;
-      return {
-        observedChars: text.length,
-        runChars,
-        lines: hitLines,
-        distinctLines: hitDistinct,
-        distinctLineRatio: hitLines === 0 ? 1 : hitDistinct / hitLines
-      };
-    },
-    observe(delta) {
-      if (detected) return false;
-      if (delta.length === 0) return false;
-      for (let offset = 0; offset < delta.length; offset += sliceChars) {
-        if (feedPiece(delta.slice(offset, offset + sliceChars))) return true;
-      }
-      return false;
-    }
-  };
-}
-function reasoningLoopFailure(diagnostics, maxTokens, channel) {
-  const label = channel === "reasoning" ? "\u601D\u8003" : "\u6B63\u6587";
-  const parts = [
-    `\u6A21\u578B${label}\u9677\u5165\u75C5\u6001\u91CD\u590D\uFF0C\u5DF2\u4E2D\u6B62\u672C\u8F6E\uFF08**\u4E0D\u662F**\u8F93\u51FA token \u4E0A\u9650\uFF09\u3002`
-  ];
-  if (diagnostics !== void 0) {
-    parts.push(
-      `\u5224\u636E\uFF1A\u5C3E\u90E8 ${diagnostics.lines} \u884C\u91CC\u53EA\u6709 ${diagnostics.distinctLines} \u884C\u4E0D\u91CD\u590D\uFF08\u53BB\u91CD\u7387 ${diagnostics.distinctLineRatio.toFixed(3)}\uFF0C\u9608\u503C <0.35\uFF09\uFF0C\u8FDE\u7EED\u5FAA\u73AF\u4F53\u91CF ${diagnostics.runChars} \u5B57\u7B26\u3002`
-    );
-  }
-  if (diagnostics !== void 0 && maxTokens !== void 0 && maxTokens > 0) {
-    const usedTokens = Math.ceil(diagnostics.observedChars / 3.5);
-    const remaining = Math.max(0, maxTokens - usedTokens);
-    parts.push(
-      `\u672C\u6B21${label}\u4EC5\u4EA7\u51FA\u7EA6 ${diagnostics.observedChars} \u5B57\u7B26\uFF08\u7EA6 ${usedTokens} token\uFF09\uFF0C\u989D\u5EA6 ${maxTokens} token \u4E2D**\u8FD8\u5269\u7EA6 ${remaining}**\uFF08\u4F30\u7B97\u503C\uFF09\u2014\u2014\u989D\u5EA6\u6CA1\u6709\u5360\u6EE1\uFF0C\u53EF\u4EE5\u76F4\u63A5\u7EE7\u7EED\u4EFB\u52A1\u3002`
-    );
-  } else {
-    parts.push(`\u989D\u5EA6\u6CA1\u6709\u5360\u6EE1\uFF0C\u53EF\u4EE5\u76F4\u63A5\u7EE7\u7EED\u4EFB\u52A1\u3002`);
-  }
-  parts.push("\u82E5\u7EE7\u7EED\u540E\u518D\u6B21\u9677\u5165\u540C\u4E00\u5FAA\u73AF\uFF0C\u5EFA\u8BAE\u964D\u4F4E\u601D\u8003\u6863\u4F4D\u6216\u66F4\u6362\u6A21\u578B\u3002");
-  return { message: parts.join(""), code: REASONING_LOOP_CODE };
-}
-function resolveReasoningLoopGuardFlag(raw) {
-  if (raw === void 0) return true;
-  const value = raw.trim().toLowerCase();
-  return !(value === "0" || value === "false" || value === "no" || value === "off");
-}
-function isReasoningLoopGuardEnabled() {
-  return resolveReasoningLoopGuardFlag(process.env.DSH_REASONING_LOOP_GUARD);
-}
-var THINK_CLOSE_TAG_RE = /<\/think(?::[0-9a-f]+)?>/g;
-var THINK_ANY_TAG_RE = /<\/?think(?::[0-9a-f]+)?>/g;
-function splitThinkTaggedContent(raw) {
-  if (raw.length === 0) return void 0;
-  const re = new RegExp(THINK_CLOSE_TAG_RE.source, "g");
-  let last;
-  for (let m = re.exec(raw); m !== null; m = re.exec(raw)) last = m;
-  if (last === void 0) return void 0;
-  if (isQuotedThinkTag(raw, last.index)) return void 0;
-  const boundary = last.index;
-  const textStart = boundary + last[0].length;
-  const reasoning = raw.slice(0, boundary).replace(new RegExp(THINK_ANY_TAG_RE.source, "g"), "");
-  return { reasoning, text: raw.slice(textStart), textStart };
-}
-function isQuotedThinkTag(raw, index) {
-  const before = raw.slice(0, index).trimEnd();
-  if (before.endsWith("`")) return true;
-  const after = raw.slice(index).trimStart();
-  const tagEnd = raw.indexOf(">", index);
-  if (tagEnd !== -1 && raw.slice(tagEnd + 1).trimStart().startsWith("`")) return true;
-  if ((before.match(/`/g) ?? []).length % 2 === 1) return true;
-  const fences = raw.slice(0, index).match(/```/g);
-  if (fences !== null && fences.length % 2 === 1) return true;
-  const lineStart = before.lastIndexOf("\n") + 1;
-  const lineBefore = raw.slice(lineStart, index);
-  if ((lineBefore.match(/'/g) ?? []).length % 2 === 1) return true;
-  if ((lineBefore.match(/"/g) ?? []).length % 2 === 1) return true;
-  return false;
-}
-var ASCII_LETTER_RE = /[A-Za-z]/;
-function stripCourseLeak(text) {
-  if (text.length === 0) return text;
-  if (!text.includes("course") && !text.includes("\u8BFE")) return text;
-  const lines = text.split("\n");
-  let changed = false;
-  const cleaned = lines.map((line2) => {
-    const match = /^([ \t]*)(course|课)(.*)$/.exec(line2);
-    if (match === null) return line2;
-    const [, indent, word, rest] = match;
-    if (word === "course") {
-      const first = rest[0];
-      if (first !== void 0 && ASCII_LETTER_RE.test(first)) return line2;
-      const trimmed2 = rest.startsWith(" ") ? rest.slice(1) : rest;
-      changed = true;
-      return indent + trimmed2;
-    }
-    const trimmed = rest.startsWith(" ") ? rest.slice(1) : rest;
-    changed = true;
-    return indent + trimmed;
-  });
-  return changed ? cleaned.join("\n") : text;
-}
-function resolveCourseLeakStripFlag(raw) {
-  if (raw === void 0) return true;
-  const value = raw.trim().toLowerCase();
-  return !(value === "0" || value === "false" || value === "no" || value === "off");
-}
-function isCourseLeakStripEnabled() {
-  return resolveCourseLeakStripFlag(process.env.DSH_COURSE_LEAK_STRIP);
-}
-function stripCourseLeakIfEnabled(text) {
-  return isCourseLeakStripEnabled() ? stripCourseLeak(text) : text;
-}
-function stripCourseLeakFromHistoryContent(role, content) {
-  if (role !== "assistant") return content;
-  if (!isCourseLeakStripEnabled()) return content;
-  let changed = false;
-  const cleaned = content.map((raw) => {
-    if (typeof raw !== "object" || raw === null) return raw;
-    const block = raw;
-    if (block.type !== "text" && block.type !== "reasoning") return raw;
-    if (typeof block.text !== "string" || block.text.length === 0) return raw;
-    const stripped = stripCourseLeak(block.text);
-    if (stripped === block.text) return raw;
-    changed = true;
-    return { ...block, text: stripped };
-  });
-  return changed ? cleaned : content;
-}
-function resolveThinkLeakStripFlag(raw) {
-  if (raw === void 0) return false;
-  const value = raw.trim().toLowerCase();
-  return value === "1" || value === "true" || value === "yes" || value === "on";
-}
-function isThinkLeakStripEnabled() {
-  return resolveThinkLeakStripFlag(process.env.DSH_THINK_LEAK_STRIP);
-}
-function stripBareThinkCloseTagIfEnabled(text) {
-  return isThinkLeakStripEnabled() ? stripBareThinkCloseTag(text) : text;
-}
-function stripBareThinkCloseTag(text) {
-  const trimmed = text.trim();
-  if (/^`.*<\/think>.*`$/.test(trimmed)) return text;
-  let backtickCount = 0;
-  for (const ch of text) if (ch === "`") backtickCount++;
-  if (backtickCount % 2 === 1) return text;
-  const stripped = trimmed.replace(/<\/think>/g, "").trim();
-  if (stripped.length === 0) return "";
-  return text;
-}
-function isProseTruncatedByStopString(text) {
-  if (text.length === 0) return false;
-  const tail = text.trimEnd();
-  if (tail.length === 0) return false;
-  let ticks = 0;
-  for (const ch of tail) if (ch === "`") ticks += 1;
-  if (ticks % 2 === 0) return false;
-  return /`$/.test(tail) || /<$/.test(tail) || /<\/think$/.test(tail);
-}
+// vendor/channel-pack/src/llm-adapter.ts
+init_message_shape();
+init_sse();
 
 // vendor/channel-pack/src/dead-model-store.ts
 import { existsSync as existsSync4, mkdirSync as mkdirSync4, readFileSync as readFileSync4, renameSync as renameSync4, writeFileSync as writeFileSync4 } from "node:fs";
@@ -38440,6 +38489,7 @@ function httpErrorCode(status, body) {
   if (status === 401 || status === 403) return "AUTH";
   const detail = errorDetail(body);
   if (isQuotaExceededError(detail)) return QUOTA_EXCEEDED_CODE;
+  if (status === 402) return QUOTA_EXCEEDED_CODE;
   if (status === 429) return "RATE_LIMIT";
   if (status === 400) {
     if (isContextWindowExceededError(detail)) return CONTEXT_WINDOW_EXCEEDED_CODE;
@@ -38998,7 +39048,11 @@ var CodeArtsAdapter = class extends LlmAdapter {
                 parsed.resetTimeMs
               );
             }
-            const next = await this.options.accountPool.getAvailableAccount("codearts", options.model);
+            const next = await this.options.accountPool.getAvailableAccount(
+              "codearts",
+              options.model,
+              rateLimitTried
+            );
             if (next && !rateLimitTried.has(next.entry.id)) {
               rateLimitTried.add(next.entry.id);
               credential = next.credential;
@@ -39141,8 +39195,12 @@ var CodeArtsAdapter = class extends LlmAdapter {
           }
           throw error;
         }
-        if (done) break;
-        buffer += decoder2.decode(value, { stream: true });
+        if (done) {
+          if (buffer.trim() === "") break;
+          buffer += "\n";
+        } else {
+          buffer += decoder2.decode(value, { stream: true });
+        }
         let newline;
         while ((newline = buffer.indexOf("\n")) !== -1) {
           const line2 = buffer.slice(0, newline).trim();
@@ -40410,6 +40468,9 @@ function resolveUserAgent(product, model) {
   return product.userAgent;
 }
 
+// vendor/channel-pack/src/buddy-adapter.ts
+init_message_shape();
+
 // vendor/channel-pack/src/openai-gateway/tencent-fingerprint.ts
 function isTencentContentFingerprintProvider(_provider) {
   return true;
@@ -40455,6 +40516,7 @@ function isPositiveFinite(value) {
 }
 
 // vendor/channel-pack/src/buddy-adapter.ts
+init_sse();
 function isDeepSeekModel(model) {
   return /^deepseek/i.test(model.trim());
 }
@@ -40670,6 +40732,7 @@ function errorDetail2(body) {
 var GATEWAY_PROMPT_TOO_LONG = /\bprompt\s+is\s+too\s+long\b[\s\S]{0,40}?\b\d[\d,]*\s+tokens?\s*>/i;
 function httpErrorCode2(status, body) {
   if (status === 401 || status === 403) return "AUTH";
+  if (status === 402) return "QUOTA_EXCEEDED";
   if (status === 429) return "RATE_LIMIT";
   if (status === 400) {
     if (isContextWindowExceededError2(body) || GATEWAY_PROMPT_TOO_LONG.test(body)) {
@@ -42772,6 +42835,8 @@ function buildCosyHeaders(body, requestUrl, identity, now = Date.now()) {
 }
 
 // vendor/channel-pack/src/openai-compat.ts
+init_sse();
+init_message_shape();
 import { LlmError as LlmError5, ToolCallId as ToolCallId3 } from "@deepseek-ai/dsh-llm";
 function contentToText3(content) {
   if (typeof content === "string") return content;
@@ -42924,6 +42989,7 @@ function errorDetail3(body) {
 }
 function httpErrorCode3(status) {
   if (status === 401 || status === 403) return "AUTH";
+  if (status === 402) return "QUOTA_EXCEEDED";
   if (status === 429) return "RATE_LIMIT";
   if (status === 400) return "INVALID_REQUEST";
   if (status >= 500) return "SERVER";
@@ -42993,7 +43059,10 @@ async function* consumeOpenAiSse(response, options, config) {
         }
         throw error;
       }
-      if (result.done) break;
+      if (result.done) {
+        if (buffer.trim() === "") break;
+        buffer += "\n";
+      }
       const decoded = decoder2.decode(result.value, { stream: true });
       if (!sawDataFrame && config.isQuotaError !== void 0 && rawJson.length < 65536) {
         rawJson = (rawJson + decoded).slice(0, 65536);
@@ -44991,6 +45060,8 @@ function isTraeTerminalError(kind) {
 }
 
 // vendor/channel-pack/src/trae-adapter.ts
+init_message_shape();
+init_sse();
 var TRAE_EFFORT_NAMES = {
   light: "Light",
   minimal: "Minimal",
@@ -45186,6 +45257,7 @@ function errorDetail4(body) {
 }
 function httpErrorCode4(status) {
   if (status === 401 || status === 403) return "AUTH";
+  if (status === 402) return "QUOTA_EXCEEDED";
   if (status === 429) return "RATE_LIMIT";
   if (status === 400) return "INVALID_REQUEST";
   if (status >= 500) return "SERVER";
@@ -47274,6 +47346,7 @@ init_commandcode_auth();
 import { LlmAdapter as LlmAdapter6, LlmError as LlmError10 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/zcode-anthropic.ts
+init_sse();
 import { LlmError as LlmError9, ToolCallId as ToolCallId5 } from "@deepseek-ai/dsh-llm";
 function parseToolArguments(raw) {
   if (raw === void 0 || raw === null) return {};
@@ -48422,6 +48495,7 @@ function contentToText8(content) {
 
 // vendor/channel-pack/src/orcaterm-auth.ts
 import { randomUUID as randomUUID4 } from "node:crypto";
+init_sse();
 async function createConversation(fetcher, product, credential, signal) {
   const id = randomUUID4();
   const response = await fetcher(`${product.lightaiBase}${ORCATERM_CONVERSATION_PATH}`, {
@@ -48519,7 +48593,7 @@ async function* streamChat2(fetcher, product, credential, options) {
   let buffer = "";
   try {
     for (; ; ) {
-      const { done, value } = await reader.read();
+      const { done, value } = await readWithIdleTimeout(reader, DEFAULT_SSE_IDLE_TIMEOUT_MS, "OrcaTerm", options.signal);
       if (done) break;
       buffer += decoder2.decode(value, { stream: true });
       let newline = buffer.indexOf("\n");
@@ -58217,6 +58291,9 @@ function hasZcodeUnusualActivity(body) {
   if (code !== void 0) return isZcodeUnusualActivityCode(code);
   return mentionsZcodeUnusualActivity(body);
 }
+function hasZcodeCode(body, code) {
+  return new RegExp(`(?<![0-9A-Za-z_-])${code}(?![0-9A-Za-z_-])`).test(body);
+}
 function looksLikeZcodeUnusualActivity(body) {
   return /(?<![0-9A-Za-z_-])3012(?![0-9A-Za-z_-])/.test(body);
 }
@@ -58935,7 +59012,7 @@ async function fetchCodingPlanApiKey(credential, fetchImpl = fetch) {
 }
 function shouldFallbackToOtherChannel(status, body) {
   if (status !== 429) return false;
-  return body.includes("1005") || body.includes("1113");
+  return hasZcodeCode(body, 1005) || hasZcodeCode(body, 1113);
 }
 
 // vendor/channel-pack/src/zcode-auth.ts
@@ -61240,38 +61317,38 @@ var ZcodeAdapter = class extends LlmAdapter15 {
               break;
             }
           }
+          if (shouldFallbackToOtherChannel(response.status, text) && !switchedAccount && captchaParam === void 0 && attempt < this.product.concurrencyRetryMax) {
+            const current = requestChannel;
+            const other = current === "start-plan" ? "coding-plan" : "start-plan";
+            const otherReady = describeChannels(credential).find((i) => i.channel === other)?.available === true;
+            if (otherReady) {
+              this.options.log?.(
+                `zcode: ${current} \u989D\u5EA6\u7528\u5C3D\uFF08HTTP ${response.status}\uFF09\u21D2 \u6362 ${other} \u91CD\u53D1\u4E00\u6B21`
+              );
+              const otherRequest = buildChannelRequest(credential, other, JSON.stringify(body));
+              const otherResponse = await this.sendUpstream({
+                url: otherRequest.url,
+                headers: otherRequest.headers,
+                body,
+                signal: controller.signal,
+                userSignal: options.signal,
+                timeoutMs,
+                model: options.model
+              });
+              if (otherResponse.ok) {
+                response = otherResponse;
+                break;
+              }
+              this.options.log?.(
+                `zcode: \u6362 ${other} \u4ECD\u5931\u8D25\uFF08HTTP ${otherResponse.status}\uFF09\u21D2 \u56DE\u5230 ${current} \u7684\u9519\u8BEF\u5904\u7406`
+              );
+            }
+          }
           throw new LlmError19(
             `zcode: ${describeUpstreamError(response.status, text)}`,
             "QUOTA_EXCEEDED",
             { status: response.status }
           );
-        }
-        if (shouldFallbackToOtherChannel(response.status, text) && !switchedAccount && captchaParam === void 0 && attempt < this.product.concurrencyRetryMax) {
-          const current = requestChannel;
-          const other = current === "start-plan" ? "coding-plan" : "start-plan";
-          const otherReady = describeChannels(credential).find((i) => i.channel === other)?.available === true;
-          if (otherReady) {
-            this.options.log?.(
-              `zcode: ${current} \u989D\u5EA6\u7528\u5C3D\uFF08HTTP ${response.status}\uFF09\u21D2 \u6362 ${other} \u91CD\u53D1\u4E00\u6B21`
-            );
-            const otherRequest = buildChannelRequest(credential, other, JSON.stringify(body));
-            const otherResponse = await this.sendUpstream({
-              url: otherRequest.url,
-              headers: otherRequest.headers,
-              body,
-              signal: controller.signal,
-              userSignal: options.signal,
-              timeoutMs,
-              model: options.model
-            });
-            if (otherResponse.ok) {
-              response = otherResponse;
-              break;
-            }
-            this.options.log?.(
-              `zcode: \u6362 ${other} \u4ECD\u5931\u8D25\uFF08HTTP ${otherResponse.status}\uFF09\u21D2 \u56DE\u5230 ${current} \u7684\u9519\u8BEF\u5904\u7406`
-            );
-          }
         }
         if (isZcodeConcurrencyLimited(response.status, text) && attempt < this.product.concurrencyRetryMax) {
           const waitMs = zcodeConcurrencyRetryDelayMs(attempt, this.product.concurrencyRetryBaseMs);
@@ -61291,7 +61368,7 @@ var ZcodeAdapter = class extends LlmAdapter15 {
           probeRejected = true;
           continue;
         }
-        const diagnostic = text.includes("3012") ? formatZcodeDiagnostic({
+        const diagnostic = looksLikeZcodeUnusualActivity(text) ? formatZcodeDiagnostic({
           accountId: activeAccountId,
           sentAt: upstreamStartedAt,
           status: response.status,
@@ -61531,13 +61608,13 @@ function isZcodeConcurrencyLimited(status, body) {
 }
 function isZcodeQuotaExhausted(status, body) {
   if (isZcodeConcurrencyLimited(status, body)) return false;
-  if (body.includes("1113") || body.includes("\u4F59\u989D\u4E0D\u8DB3")) return true;
-  if (body.includes("1005")) return true;
+  if (hasZcodeCode(body, 1113) || body.includes("\u4F59\u989D\u4E0D\u8DB3")) return true;
+  if (hasZcodeCode(body, 1005)) return true;
   return /exceed\s+quota\s+limit|quota\s+(?:has\s+been\s+)?exhausted/i.test(body);
 }
 function isZcodeCaptchaRejected(status, body) {
   void status;
-  return body.includes("3007") || /captcha\s+verify\s+failed/i.test(body);
+  return hasZcodeCode(body, 3007) || /captcha\s+verify\s+failed/i.test(body);
 }
 function zcodeConcurrencyRetryDelayMs(attempt, baseMs) {
   const base = baseMs > 0 ? baseMs : 1500;
@@ -61560,13 +61637,13 @@ function describeUpstreamError(status, body, diagnostic) {
   } catch {
   }
   const suffix = typeof message2 === "string" && message2.length > 0 ? message2 : trimmed.slice(0, 200);
-  if (code === 3009 || trimmed.includes("3009")) {
+  if (code === 3009 || hasZcodeCode(trimmed, 3009)) {
     return `\u4E0A\u6E38\u5E76\u53D1\u9650\u6D41\uFF083009 model concurrency limit exceeded\uFF09\u2014\u2014\u5DF2\u6309\u9000\u907F\u91CD\u8BD5\u4ECD\u672A\u901A\u8FC7\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002\u539F\u59CB\u54CD\u5E94\uFF1A${suffix}`;
   }
-  if (code === 1005 || trimmed.includes("1005")) {
+  if (code === 1005 || hasZcodeCode(trimmed, 1005)) {
     return `\u989D\u5EA6\u7528\u5C3D\uFF081005 exceed quota limit\uFF09\u2014\u2014\u8BE5\u8D26\u53F7\u6B64\u6A21\u578B\u7684\u514D\u8D39\u989D\u5EA6\u5DF2\u7528\u5B8C\uFF0C\u8BF7\u7B49\u91CD\u7F6E\u6216\u6362\u8D26\u53F7\u3002\u539F\u59CB\u54CD\u5E94\uFF1A${suffix}`;
   }
-  if (code === 3007 || trimmed.includes("3007")) {
+  if (code === 3007 || hasZcodeCode(trimmed, 3007)) {
     return `\u963F\u91CC\u4E91 captcha \u6821\u9A8C\u5931\u8D25\uFF083007\uFF09\u3002\u8BF7\u91CD\u8BD5\uFF1B\u82E5\u6301\u7EED\u5931\u8D25\uFF0C\u68C0\u67E5\u6D4F\u89C8\u5668\u662F\u5426\u53EF\u7528\u3002`;
   }
   if (hasZcodeUnusualActivity(trimmed)) {
@@ -61579,10 +61656,11 @@ function describeUpstreamError(status, body, diagnostic) {
 }
 function httpErrorCodeForZcode(status, body) {
   const trimmed = body.trim();
-  if (trimmed.includes("3007")) return "RATE_LIMIT";
+  if (hasZcodeCode(trimmed, 3007)) return "RATE_LIMIT";
   if (hasZcodeUnusualActivity(trimmed)) return "PERMISSION";
-  if (trimmed.includes("1113") || trimmed.includes("\u4F59\u989D\u4E0D\u8DB3")) return "QUOTA_EXCEEDED";
-  if (status === 401 || trimmed.includes("1002")) return "AUTH";
+  if (hasZcodeCode(trimmed, 1113) || trimmed.includes("\u4F59\u989D\u4E0D\u8DB3")) return "QUOTA_EXCEEDED";
+  if (status === 401 || hasZcodeCode(trimmed, 1002)) return "AUTH";
+  if (status === 402) return "QUOTA_EXCEEDED";
   if (status === 429) return "RATE_LIMIT";
   if (status >= 500) return "SERVER";
   if (status === 400) return "INVALID_REQUEST";
@@ -64424,6 +64502,8 @@ import {
 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/antigravity-messages.ts
+init_message_shape();
+init_sse();
 import { ToolCallId as ToolCallId6 } from "@deepseek-ai/dsh-llm";
 function canonicalArgs(args) {
   if (args === void 0 || args === null) return "{}";
@@ -72195,6 +72275,7 @@ function mountOpenAiGateway(ctx, pool) {
 }
 
 // vendor/channel-pack/src/loop-recovery.ts
+init_sse();
 import { createUserMessage as createUserMessage2, LlmError as LlmError23 } from "@deepseek-ai/dsh-llm";
 var LOOP_RESUME_PROMPT = "\u7EE7\u7EED\u672A\u5B8C\u6210\u7684\u4EFB\u52A1\u3002\u4E0A\u4E00\u8F6E\u4F60\u7684\u601D\u8003\u9677\u5165\u4E86\u91CD\u590D\uFF08\u540C\u4E00\u6BB5\u63A8\u7406\u53CD\u590D\u51FA\u73B0\uFF09\u800C\u88AB\u4E2D\u6B62 \u2014\u2014 \u8BF7\u6362\u4E00\u79CD\u601D\u8DEF\uFF0C\u4E0D\u8981\u91CD\u590D\u521A\u624D\u90A3\u6BB5\u63A8\u7406\uFF0C\u76F4\u63A5\u63A8\u8FDB\u4EFB\u52A1\u3002";
 var LOOP_RESUME_DEFAULT_MAX = 2;
@@ -73333,6 +73414,8 @@ function parseMinimaxModelsPayload(payload) {
 import { LlmAdapter as LlmAdapter17, LlmError as LlmError24, ReasoningEffortId as ReasoningEffortId17 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/minimax-messages.ts
+init_message_shape();
+init_sse();
 import { ToolCallId as ToolCallId7 } from "@deepseek-ai/dsh-llm";
 function buildMinimaxMessagesPayload(options) {
   const payload = {
@@ -73646,7 +73729,7 @@ async function* consumeMinimaxSse(options) {
   };
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      const { done, value } = await readWithIdleTimeout(reader, DEFAULT_SSE_IDLE_TIMEOUT_MS, "minimax", options.signal);
       if (done) {
         buffer += decoder2.decode();
         if (buffer !== "") {
@@ -73894,12 +73977,25 @@ var MinimaxAdapter = class extends LlmAdapter17 {
       requiresAdaptiveThinking,
       ...images === void 0 ? {} : { images }
     });
-    const response = await fetch(`${this.product.apiHost}${MINIMAX_INFER_PATH}`, {
-      method: "POST",
-      headers: minimaxInferHeaders(credential),
-      body: JSON.stringify(payload),
-      signal: options.signal
-    });
+    let response;
+    try {
+      response = await fetch(`${this.product.apiHost}${MINIMAX_INFER_PATH}`, {
+        method: "POST",
+        headers: minimaxInferHeaders(credential),
+        body: JSON.stringify(payload),
+        signal: options.signal
+      });
+    } catch (error) {
+      if (options.signal?.aborted === true) throw error;
+      if (isTransportError3(error)) {
+        throw new LlmError24(
+          `minimax: transport error: ${error instanceof Error ? error.message : String(error)}`,
+          "TRANSPORT",
+          { cause: error }
+        );
+      }
+      throw error;
+    }
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       const code = response.status === 402 ? "QUOTA_EXCEEDED" : httpErrorCode3(response.status);
@@ -75473,7 +75569,20 @@ var OpencodeAdapter = class extends LlmAdapter18 {
       // **不动全局**（两个插件抢全局槽位会互相短路整个路由层）。
       ...slot2.proxy === void 0 ? {} : { dispatcher: buildProxyDispatcher(slot2.proxy) }
     };
-    const response = await fetch(`${OPENCODE.baseUrl}${OPENCODE.chatPath}`, init);
+    let response;
+    try {
+      response = await fetch(`${OPENCODE.baseUrl}${OPENCODE.chatPath}`, init);
+    } catch (error) {
+      if (options.signal?.aborted === true) throw error;
+      if (isTransportError3(error)) {
+        throw new LlmError25(
+          `opencode: transport error: ${error instanceof Error ? error.message : String(error)}`,
+          "TRANSPORT",
+          { cause: error }
+        );
+      }
+      throw error;
+    }
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       const retryAfterMs = retryAfterMsFromResponse(response.headers);

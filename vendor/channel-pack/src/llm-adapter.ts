@@ -570,6 +570,11 @@ function httpErrorCode(status: number, body: string): string {
   if (status === 401 || status === 403) return 'AUTH'
   const detail = errorDetail(body)
   if (isQuotaExceededError(detail)) return QUOTA_EXCEEDED_CODE
+  // ⚠️ HTTP 402 必须显式归一（2026-11-04 全仓审查）：`402 Payment Required`
+  // 是**额度用尽**的规范码，与 429（限流，等一会儿会恢复）用户动作完全相反。
+  // 原先落进兜底 `HTTP_402` ⇒ 不在 harness 的可重试集合里、也不触发换号，
+  // 于是「额度已用尽」被当成一个陌生的 HTTP 错误直接抛给用户。
+  if (status === 402) return QUOTA_EXCEEDED_CODE
   if (status === 429) return 'RATE_LIMIT'
   if (status === 400) {
     if (isContextWindowExceededError(detail)) return CONTEXT_WINDOW_EXCEEDED_CODE
@@ -1406,7 +1411,13 @@ export class CodeArtsAdapter extends LlmAdapter {
                 currentAccountId, parsed.modelId, parsed.resetTimeMs,
               )
             }
-            const next = await this.options.accountPool.getAvailableAccount('codearts', options.model)
+            // ⚠️ 必须传 `tried`（2026-11-04 审查）：另两处调用都传了，只有这里是裸调用。
+            // 池按用户手排顺序返回候选，刚被限流那个**往往仍排第一** ⇒ 拿回来立刻
+            // 命中下面的 `rateLimitTried.has(next.entry.id)` ⇒ 直接抛「所有账号均受限」，
+            // 明明还有可用账号却不切 —— 换号逻辑在 429 路径上等于摆设。
+            const next = await this.options.accountPool.getAvailableAccount(
+              'codearts', options.model, rateLimitTried,
+            )
             if (next && !rateLimitTried.has(next.entry.id)) {
               rateLimitTried.add(next.entry.id)
               credential = next.credential as CodeArtsCredential
@@ -1708,8 +1719,16 @@ export class CodeArtsAdapter extends LlmAdapter {
           }
           throw error
         }
-        if (done) break
-        buffer += decoder.decode(value!, { stream: true })
+        // ⚠️ 上游末条事件可能**不带尾换行**（2026-11-04 审查发现）：直接 break 会让
+        // 残留在 `buffer` 里的整条被丢弃 —— 丢 `usage` 帧则用量恒 0 且被记成
+        // 「已上报」，丢 `delta` 则回答静默截断。补一个换行让下面同一套逻辑吃掉它；
+        // 下一轮 read 在已结束的流上立即返回 done，随后正常退出。
+        if (done) {
+          if (buffer.trim() === '') break
+          buffer += '\n'
+        } else {
+          buffer += decoder.decode(value!, { stream: true })
+        }
         let newline: number
         while ((newline = buffer.indexOf('\n')) !== -1) {
           const line = buffer.slice(0, newline).trim()

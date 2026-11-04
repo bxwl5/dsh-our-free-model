@@ -374,6 +374,12 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   // 也要走 `createChannelFetch` 的真实出口路径（`.js` → `.ts` 由本文件的 hooks 重映射）。
   const { verifyContentFingerprint } = await import('./content-fingerprint-test.mjs')
   await verifyContentFingerprint()
+  // SSE 末帧收尾（2026-11-04 审查）：末条事件不带尾换行时不得丢 delta / usage。
+  const { verifySseResidual } = await import('./sse-residual-test.mjs')
+  await verifySseResidual()
+  // 上游错误码归类（2026-11-04 审查）：数字片段不得假阳性 + HTTP 402 必须归额度用尽。
+  const { verifyChannelErrorCodes } = await import('./channel-error-codes-test.mjs')
+  await verifyChannelErrorCodes()
   const { verifyCommandCodeAuth } = await import('./commandcode-auth-test.mjs')
   await verifyCommandCodeAuth()
   const { verifyCommandCodeAdapter } = await import('./commandcode-adapter-test.mjs')

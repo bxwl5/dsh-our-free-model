@@ -299,6 +299,10 @@ export function errorDetail(body: string): string {
 /** 将 HTTP 状态码映射为 harness 错误码。 */
 export function httpErrorCode(status: number): string {
   if (status === 401 || status === 403) return 'AUTH'
+  // ⚠️ 402 = 额度用尽（规范码）。这是**共享**映射，多个渠道都用它，
+  // 漏掉就会让「额度已用尽」落进 `HTTP_402` 兜底 —— 既不换号也不提示用户
+  // 充值/等待重置（2026-11-04 全仓审查，5 份副本全缺）。
+  if (status === 402) return 'QUOTA_EXCEEDED'
   if (status === 429) return 'RATE_LIMIT'
   if (status === 400) return 'INVALID_REQUEST'
   if (status >= 500) return 'SERVER'
@@ -532,7 +536,15 @@ export async function* consumeOpenAiSse(
         }
         throw error
       }
-      if (result.done) break
+      // ⚠️ 上游末条事件可能**不带尾换行**（2026-11-04 审查发现）：直接 break 会让
+      // 残留在 `buffer` 里的整条被丢弃 —— 丢 `usage` 帧则用量恒 0 且被记成
+      // 「已上报」，丢 `delta` 则回答静默截断。补一个换行让下面同一套逻辑吃掉它；
+      // 下一轮 read 在已结束的流上立即返回 done，随后正常退出。
+      // （`antigravity-messages` / `minimax-messages` 早就有这层收尾，这里漏了。）
+      if (result.done) {
+        if (buffer.trim() === '') break
+        buffer += '\n'
+      }
       const decoded = decoder.decode(result.value, { stream: true })
       if (!sawDataFrame && config.isQuotaError !== undefined && rawJson.length < 65_536) {
         rawJson = (rawJson + decoded).slice(0, 65_536)

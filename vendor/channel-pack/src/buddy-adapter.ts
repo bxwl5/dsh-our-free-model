@@ -654,6 +654,9 @@ const GATEWAY_PROMPT_TOO_LONG = /\bprompt\s+is\s+too\s+long\b[\s\S]{0,40}?\b\d[\
  */
 function httpErrorCode(status: number, body: string): string {
   if (status === 401 || status === 403) return 'AUTH'
+  // ⚠️ 402 = 额度用尽（规范码），与 429 限流的用户动作完全相反；
+  // 不归一就会落进 `HTTP_402` 兜底、既不换号也不提示（2026-11-04 审查）。
+  if (status === 402) return 'QUOTA_EXCEEDED'
   if (status === 429) return 'RATE_LIMIT'
   if (status === 400) {
     // 先判上下文超限，再退回通用 INVALID_REQUEST。

@@ -152,7 +152,16 @@ export function readChannelUsage(file) {
       out.failures += row.failed
       const lifetime = out.models[row.model] ?? {
         model: row.model, input: 0, output: 0, reasoning: 0, cacheRead: 0, calls: 0, failed: 0,
+        ttftMs: 0, ttftSamples: 0, decodeMs: 0, decodeTokens: 0,
       }
+      /**
+       * ⚠ 生命周期行**必须**带上计时量（2026-11-04 审查）。
+       *
+       * 原先只累加 token/次数，`decodeMs`/`decodeTokens`/`ttftMs`/`ttftSamples`
+       * 一个都不写 —— 于是 `mergeChannelStats()` 把渠道行并进主表时，
+       * `row` 侧没有计时量可加，重算出的 `tps` 恒为 null，反而**丢掉**主表原有的
+       * 有效速度值。这里补上后，合并两侧都是真实计时量，公式才自洽。
+       */
       out.models[row.model] = {
         ...lifetime,
         input: lifetime.input + row.input,
@@ -161,6 +170,10 @@ export function readChannelUsage(file) {
         cacheRead: lifetime.cacheRead + row.cacheRead,
         calls: lifetime.calls + row.calls,
         failed: lifetime.failed + row.failed,
+        ttftMs: lifetime.ttftMs + row.ttftMs,
+        ttftSamples: lifetime.ttftSamples + row.ttftSamples,
+        decodeMs: lifetime.decodeMs + decodeMs,
+        decodeTokens: lifetime.decodeTokens + decodeTokens,
       }
     }
     out.days[day] = { models: modelRows }
@@ -235,10 +248,27 @@ export function mergeChannelStats(payload, usage, { includeCacheRead = false } =
   for (const row of Object.values(usage.models)) {
     const existing = models.findIndex((item) => item.model === row.model)
     if (existing === -1) {
-      models.push({ ...row, name: nameOf(row.model), tps: null, avgTtftMs: null })
+      // ⚠ 渠道独有的模型原本写死 `tps: null` / `avgTtftMs: null`（2026-11-04 审查）。
+      // 渠道桶里**有** `decodeMs`/`decodeTokens`/`ttftMs`/`ttftSamples`，把这些
+      // 现成的量丢掉，等于「从渠道来的模型在统计页永远显示不出速度与首字延迟」——
+      // 而它们恰恰是最需要速度指标的免费通道。改为与主表同源的口径。
+      models.push({
+        ...row,
+        name: nameOf(row.model),
+        tps: rowTps(row),
+        avgTtftMs: row.ttftSamples > 0 ? Math.round(row.ttftMs / row.ttftSamples) : null,
+      })
     } else {
       const previous = models[existing]
-      models[existing] = {
+      /**
+       * ⚠ 合并时**必须把计时量一起累加再重算**（2026-11-04 审查）。
+       *
+       * 原实现只累加 token/次数，`tps`/`avgTtftMs` 直接从 `previous` 原样带过来：
+       * 于是「宿主直连 + 渠道」两个来源合并后，速度显示的是**合并前那一个来源**的值，
+       * 与合并后的 token 总量对不上（用户会看到「输出 tokens 翻倍但 tok/s 不变」）。
+       * `ttftSamples` 为 0 时重算结果自然是 null，不会伪造数据。
+       */
+      const combined = {
         ...previous,
         input: (previous.input ?? 0) + row.input,
         output: (previous.output ?? 0) + row.output,
@@ -246,6 +276,15 @@ export function mergeChannelStats(payload, usage, { includeCacheRead = false } =
         cacheRead: (previous.cacheRead ?? 0) + row.cacheRead,
         calls: (previous.calls ?? 0) + row.calls,
         failed: (previous.failed ?? 0) + row.failed,
+        ttftMs: (previous.ttftMs ?? 0) + (row.ttftMs ?? 0),
+        ttftSamples: (previous.ttftSamples ?? 0) + (row.ttftSamples ?? 0),
+        decodeMs: (previous.decodeMs ?? 0) + (row.decodeMs ?? 0),
+        decodeTokens: (previous.decodeTokens ?? 0) + (row.decodeTokens ?? 0),
+      }
+      models[existing] = {
+        ...combined,
+        tps: rowTps(combined),
+        avgTtftMs: combined.ttftSamples > 0 ? Math.round(combined.ttftMs / combined.ttftSamples) : null,
       }
     }
   }

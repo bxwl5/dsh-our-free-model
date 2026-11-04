@@ -954,7 +954,6 @@ export function apply(ctx, config) {
       reloadedAt: settings.get().reloadedAt ?? 0,
       reloadCount: settings.get().reloadCount ?? 0,
       dataDir,
-      autoReloadWatch: settings.get().autoReloadWatch === true,
       lastReload: globalThis[Symbol.for('our-free-model.last-reload')] ?? undefined,
       purgeSample: globalThis[Symbol.for('our-free-model.purge-sample')] ?? undefined,
     }),
@@ -1329,7 +1328,7 @@ export function createApiRoutes(deps) {
         const patch = await readJson(req)
         const visibility = validateModelVisibility(patch)
         const current = deps.settings.get()
-        const next = sanitizeSettings({ ...current, ...pick(patch, ['enabled', 'exposeRegionModels', 'probeIntervalMinutes', 'defaultMaxTokens', 'autoReloadWatch']), ...visibility }, current)
+        const next = sanitizeSettings({ ...current, ...pick(patch, ['enabled', 'exposeRegionModels', 'probeIntervalMinutes', 'defaultMaxTokens']), ...visibility }, current)
         if (patch.forward !== undefined) {
           const forward = { ...(current.forward ?? {}), ...pick(patch.forward, ['enabled', 'host', 'port']) }
           // The listener spends this machine's lane, and a routable bind address
@@ -1651,7 +1650,6 @@ function publicSettings(settings, forwardInfo, egressInfo) {
     exposeRegionModels: settings.exposeRegionModels !== false,
     probeIntervalMinutes: settings.probeIntervalMinutes ?? 15,
     defaultMaxTokens: settings.defaultMaxTokens ?? 32768,
-    autoReloadWatch: settings.autoReloadWatch === true,
     reloadedAt: settings.reloadedAt ?? 0,
     reloadCount: settings.reloadCount ?? 0,
     tokenSaver: publicTokenSaver(settings.tokenSaver),

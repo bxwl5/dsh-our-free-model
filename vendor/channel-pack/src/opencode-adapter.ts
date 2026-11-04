@@ -42,6 +42,7 @@ import {
   isReachableOpencodeModel,
   type OpencodeErrorInfo, type OpencodeErrorKind, type OpencodeFallbackModel,
 } from './opencode-product.js'
+import { isTransportError } from './openai-compat.js'
 import { listIdentitySlots, type IdentitySlot } from './opencode-auth.js'
 import { deriveSessionId, opencodeHeaders, opencodeUserAgent } from './opencode.js'
 import { buildOpencodePayloadWithToolMap } from './opencode-messages.js'
@@ -604,7 +605,23 @@ export class OpencodeAdapter extends LlmAdapter {
       // **不动全局**（两个插件抢全局槽位会互相短路整个路由层）。
       ...slot.proxy === undefined ? {} : { dispatcher: buildProxyDispatcher(slot.proxy) as never },
     }
-    const response = await fetch(`${OPENCODE.baseUrl}${OPENCODE.chatPath}`, init)
+    // ⚠️ 同上（2026-11-04 审查）：裸 fetch 抛的原生 TypeError 不进 harness 的
+    // 可重试集合，本文件 :469 的 catch 与 :509 的 transport 换槽路径因此**永远收不到**
+    // 网络异常 —— 一次抖动就击穿整条链路。归一成 `TRANSPORT` 才让它们生效。
+    let response: Response
+    try {
+      response = await fetch(`${OPENCODE.baseUrl}${OPENCODE.chatPath}`, init)
+    } catch (error) {
+      if (options.signal?.aborted === true) throw error
+      if (isTransportError(error)) {
+        throw new LlmError(
+          `opencode: transport error: ${error instanceof Error ? error.message : String(error)}`,
+          'TRANSPORT',
+          { cause: error as Error },
+        )
+      }
+      throw error
+    }
     if (!response.ok) {
       // ⚠️ **必须先读体**：Zen 的限流语义（`GoUsageLimitError`）在响应体里，
       // 而 body 只能读一次 —— 读了不传下去，轮换层就只能按状态码猜，

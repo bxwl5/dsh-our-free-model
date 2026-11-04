@@ -22,12 +22,18 @@ export function createDirectFetch(options: DirectFetchOptions = {}): { fetch: ty
   const lifetime = new AbortController()
   let closing: Promise<void> | undefined
   const send: typeof fetch = async (input, init) => {
-    // ⚠️ **签名车道（CodeArts）不在这里清洗**（2026-11-04 实测踩过）：
+    // ⚠️ **签名车道（CodeArts）的 body 在出口层绝不能改**（2026-11-04 实测踩过）：
     // `llm-adapter` 先用 HMAC 对 `body` 算签名、再把**同一份** `body` 发出去。
-    // 在这里改 body 会让服务端重算的哈希与签名对不上，稳定回
+    // 在出口层改 body 会让服务端重算的哈希与签名对不上，稳定回
     // `APIG.0301 verify ak sk signature fail` / HTTP 403 —— 三条真实调用实测：
     // 挂上这层 = codearts 403，撤掉 = 正常。
-    // 该车道的清洗在**签名之前**做：见 `llm-adapter.ts` 的 `body` 构造处。
+    //
+    // 该车道的清洗在**签名之前**由两处完成，缺一不可：
+    //   ① `llm-adapter.ts` 构造 `body` 时清 `messages`（签名对象就是它）；
+    //   ② 消息层 `scrubWireMessage` 覆盖 `content` / 思考字段 / `tool_calls` 参数，
+    //      保证出口层没有「消息层漏了、只有出口层会改」的字段。
+    // 所以下面 `createChannelFetch` 必须传 `skipScrub: true`（见 :62）—— 此前漏传，
+    // 出口层照样会洗，等于把「签名前已清好」的保证又推翻了一次。
     const injected = options.fetchImpl ?? directLane.fetch
     if (injected) return injected(input, init)
     const dispatcher = (init as RequestInit & { dispatcher?: unknown })?.dispatcher ?? agent
@@ -50,6 +56,8 @@ export function createDirectFetch(options: DirectFetchOptions = {}): { fetch: ty
   const outlet = options.outlet
   const network = createChannelFetch({
     ...options,
+    // 签名车道：body 已在签名前清好，出口层再动一次就会让签名失配（403）。
+    skipScrub: true,
     fetchImpl: send,
     outlet: outlet && {
       active: () => outlet.active(),

@@ -25,6 +25,18 @@ export type SsePhase = 'first-token' | 'chunk'
  * @param label - 提供者标签，仅用于错误消息前缀（如 'codearts' / 'buddy'）。
  * @param phase - 仅用于错误消息区分首 token 超时与 chunk 间超时。
  */
+/**
+ * SSE 空闲读取的**默认**上限（毫秒）。
+ *
+ * 用途：给那些「拿不到 provider 级超时配置」的旁路 SSE 消费者（账号/额度/建会话
+ * 这类 auth 侧调用）一个兜底 —— 半开连接下裸 `reader.read()` 会**永久挂起**，
+ * 用户看到的是「界面卡死、停止按钮也没反应」。
+ *
+ * 取值参考仓库既有口径：`antigravity` 用 120s，各 `*-adapter` 的 chunk 超时用 300s。
+ * auth 侧请求体小、上游不会长思考，120s 足够。
+ */
+export const DEFAULT_SSE_IDLE_TIMEOUT_MS = 120_000
+
 export async function readWithIdleTimeout(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   timeoutMs: number,

@@ -95,6 +95,16 @@ function networkFailure(error: unknown, route: string): Error {
 
 export interface ChannelFetchOptions {
   outlet?: ChannelOutlet
+  /**
+   * 关闭本层的指纹清洗。
+   *
+   * ⚠️ **签名车道必须开**（`direct-fetch` 就是这么传的）：CodeArts 在 `llm-adapter`
+   * 里对 `body` 算 HMAC 签名，再把**同一份** body 发出去；本层若在这之后改写 body，
+   * 服务端重算的哈希与签名对不上，稳定回 `APIG.0301` / HTTP 403。
+   * 那条车道的清洗在**签名之前**做（`llm-adapter` 构造 body 处 + 消息层
+   * `scrubWireMessage`），所以这里关掉不会漏洗。
+   */
+  skipScrub?: boolean
   /** 以下依赖可注入，用于离线验证，不读取测试机的真实代理配置。 */
   environment?: NodeJS.ProcessEnv
   platform?: NodeJS.Platform
@@ -121,10 +131,14 @@ export function createChannelFetch(options: ChannelFetchOptions = {}): { fetch: 
     // ⚠️ 必须放在 loopback / outlet / 代理判定**之前**：否则走出口代理或本机
     // relay 的请求会带着未清洗的 body 出去。
     // ⚠️ 未命中任何指纹时返回 null，原样转发（零字节改动，保住前缀缓存）。
-    const scrubbed = scrubFetchArguments(input as RequestInfo | URL, init)
-    if (scrubbed !== null) {
-      input = scrubbed.input as typeof input
-      init = scrubbed.init
+    // ⚠️ 签名车道（`options.skipScrub`）整个跳过 —— 它的 body 已经签过名，
+    //    在这里改写必然 403；它的清洗更早（消息层 + 构造 body 处）。
+    if (options.skipScrub !== true) {
+      const scrubbed = scrubFetchArguments(input as RequestInfo | URL, init)
+      if (scrubbed !== null) {
+        input = scrubbed.input as typeof input
+        init = scrubbed.init
+      }
     }
     const target = new URL(input instanceof Request ? input.url : String(input))
     const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined)

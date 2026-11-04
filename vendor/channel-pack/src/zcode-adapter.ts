@@ -111,7 +111,9 @@ import {
   describeZcodeRequestShape,
   formatZcodeDiagnostic,
   formatZcodeUnusualActivityMessage,
+  hasZcodeCode,
   hasZcodeUnusualActivity,
+  looksLikeZcodeUnusualActivity,
   noteZcodeRequestFailed,
   noteZcodeRequestOk,
   noteZcodeRequestSent,
@@ -1311,7 +1313,7 @@ export class ZcodeAdapter extends LlmAdapter {
         const text = await response.text().catch(() => '')
         noteZcodeRequestFailed(activeAccountId)
 
-        // ① 额度用尽 / 无权益 → **换账号**（不是重试）
+        // ① 额度用尽 / 无权益 → **先换账号，再换通道**
         if (isZcodeQuotaExhausted(response.status, text)) {
           if (quotaRound < this.product.quotaSwitchMax) {
             const switched = await this.switchAccountOnQuota(options, tried, activeAccountId)
@@ -1322,9 +1324,61 @@ export class ZcodeAdapter extends LlmAdapter {
               break
             }
           }
+
           /**
-           * 无法再切（没有账号池 / 池里没有别的可用账号 / 已切够轮数）——
-           * 如实报 `QUOTA_EXCEEDED`。
+           * ★ **换另一条通道重试一次**（2026-10-03 引入，2026-11-04 审查救活）。
+           *
+           * ⚠⚠ 它原先被放在 ① **之后**，而 `shouldFallbackToOtherChannel` 的判据
+           * （429 + `1005`/`1113`）**完全被 `isZcodeQuotaExhausted` 覆盖**，
+           * 且 ① 在切号失败后**直接 throw**。⇒ 这段换腿逻辑**从来没有执行过**，
+           * 「积分通道与订阅通道额度独立、换腿能救」这个设计一次都没生效。
+           *
+           * 现在的顺序：先换账号（同一通道、按账号计额度）→ 换不动才换通道
+           * （另一条通道是**独立额度池**）→ 都不行才如实报 QUOTA_EXCEEDED。
+           *
+           * 换腿**不重产 captcha**：`captchaParam` 是一次性的，上一发已被上游消费；
+           * 故只在 `captchaParam === undefined`（上游当下不索要验证）时换腿。
+           * 带了 param 的那一发被拒属于另一类问题，走 ③ 的 3007 分支。
+           */
+          if (
+            shouldFallbackToOtherChannel(response.status, text)
+            && !switchedAccount
+            && captchaParam === undefined
+            && attempt < this.product.concurrencyRetryMax
+          ) {
+            const current: ZcodeChannel = requestChannel
+            const other: ZcodeChannel = current === 'start-plan' ? 'coding-plan' : 'start-plan'
+            const otherReady = describeChannels(credential).find((i) => i.channel === other)?.available === true
+            if (otherReady) {
+              this.options.log?.(
+                `zcode: ${current} 额度用尽（HTTP ${response.status}）⇒ 换 ${other} 重发一次`,
+              )
+              const otherRequest = buildChannelRequest(credential, other, JSON.stringify(body))
+              const otherResponse = await this.sendUpstream({
+                url: otherRequest.url,
+                headers: otherRequest.headers,
+                body,
+                signal: controller.signal,
+                userSignal: options.signal,
+                timeoutMs,
+                model: options.model,
+              })
+              if (otherResponse.ok) {
+                // 换腿成功 ⇒ 把它当作本轮的正式响应继续往下走（读流 / usage）
+                response = otherResponse
+                break
+              }
+              // 换腿也失败 ⇒ 落回原有错误处理（报**原**通道的 status/text，
+              //   免得把「换腿失败」报成用户看到的那个错误）
+              this.options.log?.(
+                `zcode: 换 ${other} 仍失败（HTTP ${otherResponse.status}）⇒ 回到 ${current} 的错误处理`,
+              )
+            }
+          }
+
+          /**
+           * 无法再切（没有账号池 / 池里没有别的可用账号 / 已切够轮数），
+           * 另一条通道也不可用 —— 如实报 `QUOTA_EXCEEDED`。
            *
            * ⚠ 必须是**不可重试**的码：`SERVER` 在 harness 的
            * `DEFAULT_RETRYABLE_CODES` 里，会让「额度已用尽」这种**确定性**
@@ -1335,57 +1389,6 @@ export class ZcodeAdapter extends LlmAdapter {
             'QUOTA_EXCEEDED',
             { status: response.status },
           )
-        }
-
-        // ①′ ★ **额度/资源包用尽 ⇒ 换另一条通道重试一次**（2026-10-03）。
-        //
-        // 位置在①之后：① 已经**切过账号**或已耗尽切号轮次
-        // （`isZcodeQuotaExhausted` 覆盖的码比这里宽），这时换通道
-        // （换端点 + 换凭据）比直接报 QUOTA_EXCEEDED 更有价值 ——
-        // 积分通道的额度与订阅通道的额度是**两份独立的**。
-        //
-        // ⚠ 只认 429 + 1005/1113（见 `shouldFallbackToOtherChannel`）：
-        // 401/1002（凭据失效）与 3012（风控，重试会加重冷却惩罚）都不换。
-        // ⚠ 换腿前先确认**另一条通道真的可用**（`describeChannels`），
-        //   否则等于用一个没有凭据的端点再撞一次 401，把一次明确失败变成两次。
-        // ⚠ ⚠⚠ 换腿**不重产 captcha**：`captchaParam` 是**一次性**的，
-        //   上一发已被上游消费；重发必须**现产新的**。这里保守起见只在
-        //   `captchaParam === undefined`（上游当下不索要验证）时换腿 ——
-        //   带了 param 的那一发被拒属于另一类问题，走 ③ 的 3007 分支。
-        if (
-          shouldFallbackToOtherChannel(response.status, text)
-          && !switchedAccount
-          && captchaParam === undefined
-          && attempt < this.product.concurrencyRetryMax
-        ) {
-          const current: ZcodeChannel = requestChannel
-          const other: ZcodeChannel = current === 'start-plan' ? 'coding-plan' : 'start-plan'
-          const otherReady = describeChannels(credential).find((i) => i.channel === other)?.available === true
-          if (otherReady) {
-            this.options.log?.(
-              `zcode: ${current} 额度用尽（HTTP ${response.status}）⇒ 换 ${other} 重发一次`,
-            )
-            const otherRequest = buildChannelRequest(credential, other, JSON.stringify(body))
-            const otherResponse = await this.sendUpstream({
-              url: otherRequest.url,
-              headers: otherRequest.headers,
-              body,
-              signal: controller.signal,
-              userSignal: options.signal,
-              timeoutMs,
-              model: options.model,
-            })
-            if (otherResponse.ok) {
-              // 换腿成功 ⇒ 把它当作本轮的正式响应继续往下走（读流 / usage）
-              response = otherResponse
-              break
-            }
-            // 换腿也失败 ⇒ 落回原有错误处理（用**原**通道的 status/text，
-            //   免得把「换腿失败」报成用户看到的那个错误）
-            this.options.log?.(
-              `zcode: 换 ${other} 仍失败（HTTP ${otherResponse.status}）⇒ 回到 ${current} 的错误处理`,
-            )
-          }
         }
 
         // ② 并发限流 → 退避后再试（**不**换账号：换谁都一样撞）
@@ -1460,7 +1463,7 @@ export class ZcodeAdapter extends LlmAdapter {
          * ⚠ 上面的 {@link noteZcodeRequestFailed} 已经把本次算作一次失败，
          * 故这里诊断到的「失败 N」含本次，这是有意的（用户看到的就是当次）。
          */
-        const diagnostic = text.includes('3012')
+        const diagnostic = looksLikeZcodeUnusualActivity(text)
           ? formatZcodeDiagnostic({
             accountId: activeAccountId,
             sentAt: upstreamStartedAt,
@@ -1924,8 +1927,8 @@ export function isZcodeConcurrencyLimited(status: number, body: string): boolean
  */
 export function isZcodeQuotaExhausted(status: number, body: string): boolean {
   if (isZcodeConcurrencyLimited(status, body)) return false
-  if (body.includes('1113') || body.includes('余额不足')) return true
-  if (body.includes('1005')) return true
+  if (hasZcodeCode(body, 1113) || body.includes('余额不足')) return true
+  if (hasZcodeCode(body, 1005)) return true
   // 文案兜底：`1005` 这个码值由服务端下发，若上游改用别的码值表达同一语义，
   // 只认码会漏判。关键词**必须窄** —— `quota`/`balance` 之类泛词会误伤
   // 模型正文里恰好讨论「额度」的内容（与 qoder 的 `looksLikeBillingError` 同因）。
@@ -1946,7 +1949,7 @@ export function isZcodeQuotaExhausted(status: number, body: string): boolean {
  */
 export function isZcodeCaptchaRejected(status: number, body: string): boolean {
   void status
-  return body.includes('3007') || /captcha\s+verify\s+failed/i.test(body)
+  return hasZcodeCode(body, 3007) || /captcha\s+verify\s+failed/i.test(body)
 }
 
 /**
@@ -2047,19 +2050,19 @@ export function describeUpstreamError(
    * - `3009` 并发限流：**等一下再试**（我们已经退避重试过，仍失败说明窗口更长）
    * - `1005` 额度用尽：等额度重置或**换账号**（重试无意义）
    */
-  if (code === 3009 || trimmed.includes('3009')) {
+  if (code === 3009 || hasZcodeCode(trimmed, 3009)) {
     return (
       `上游并发限流（3009 model concurrency limit exceeded）——` +
       `已按退避重试仍未通过，请稍后重试。原始响应：${suffix}`
     )
   }
-  if (code === 1005 || trimmed.includes('1005')) {
+  if (code === 1005 || hasZcodeCode(trimmed, 1005)) {
     return (
       `额度用尽（1005 exceed quota limit）——` +
       `该账号此模型的免费额度已用完，请等重置或换账号。原始响应：${suffix}`
     )
   }
-  if (code === 3007 || trimmed.includes('3007')) {
+  if (code === 3007 || hasZcodeCode(trimmed, 3007)) {
     return `阿里云 captcha 校验失败（3007）。请重试；若持续失败，检查浏览器是否可用。`
   }
   if (hasZcodeUnusualActivity(trimmed)) {
@@ -2120,10 +2123,11 @@ export function describeUpstreamError(
  */
 export function httpErrorCodeForZcode(status: number, body: string): string {
   const trimmed = body.trim()
-  if (trimmed.includes('3007')) return 'RATE_LIMIT'
+  if (hasZcodeCode(trimmed, 3007)) return 'RATE_LIMIT'
   if (hasZcodeUnusualActivity(trimmed)) return 'PERMISSION'
-  if (trimmed.includes('1113') || trimmed.includes('余额不足')) return 'QUOTA_EXCEEDED'
-  if (status === 401 || trimmed.includes('1002')) return 'AUTH'
+  if (hasZcodeCode(trimmed, 1113) || trimmed.includes('余额不足')) return 'QUOTA_EXCEEDED'
+  if (status === 401 || hasZcodeCode(trimmed, 1002)) return 'AUTH'
+  if (status === 402) return 'QUOTA_EXCEEDED'
   if (status === 429) return 'RATE_LIMIT'
   if (status >= 500) return 'SERVER'
   if (status === 400) return 'INVALID_REQUEST'

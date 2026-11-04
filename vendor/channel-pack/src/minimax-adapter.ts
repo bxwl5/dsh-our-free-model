@@ -54,6 +54,7 @@ import {
   consumeMinimaxSse,
   type MinimaxInlineImage,
 } from './minimax-messages.js'
+import { isTransportError } from './openai-compat.js'
 import {
   isMinimaxExpired,
   minimaxFallbackEntries,
@@ -444,12 +445,30 @@ export class MinimaxAdapter extends LlmAdapter {
       ...images === undefined ? {} : { images },
     })
 
-    const response = await fetch(`${this.product.apiHost}${MINIMAX_INFER_PATH}`, {
-      method: 'POST',
-      headers: minimaxInferHeaders(credential),
-      body: JSON.stringify(payload),
-      signal: options.signal,
-    })
+    // ⚠️ 必须自己接住传输层异常（2026-11-04 审查发现）：裸 `await fetch` 抛的是
+    // 原生 TypeError（undici），它没有 `code` 字段、也不在 harness 的
+    // 「可重试」集合里 —— 一次网络抖动会直接穿透整个换号/重试逻辑，
+    // 且与仓库记过的 `llm/retry carries non-JSON-serializable data` 事故同型。
+    // 收敛成 `TRANSPORT` 后，换号与重试策略才看得见它。
+    let response: Response
+    try {
+      response = await fetch(`${this.product.apiHost}${MINIMAX_INFER_PATH}`, {
+        method: 'POST',
+        headers: minimaxInferHeaders(credential),
+        body: JSON.stringify(payload),
+        signal: options.signal,
+      })
+    } catch (error) {
+      if (options.signal?.aborted === true) throw error
+      if (isTransportError(error)) {
+        throw new LlmError(
+          `minimax: transport error: ${error instanceof Error ? error.message : String(error)}`,
+          'TRANSPORT',
+          { cause: error as Error },
+        )
+      }
+      throw error
+    }
 
     if (!response.ok) {
       const text = await response.text().catch(() => '')

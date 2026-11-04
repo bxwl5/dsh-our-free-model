@@ -215,7 +215,16 @@ function scrubbableRole(role: unknown): boolean {
 }
 
 /**
- * 清洗一条消息里的 `text` 块（harness 形状：`content` 是块数组）。
+ * 承载可清洗文本的块类型。
+ *
+ * ⚠️ 必须含 `reasoning` / `thinking`（2026-11-04 审查）：assistant 的思考块也是
+ * assistant 产出，与 `text` 块同属「要一起改」的判据（见模块头）。此前只认 `text`，
+ * 直接违反本模块自己写的规则。
+ */
+const BLOCK_TEXT_TYPES = new Set(['text', 'reasoning', 'thinking', 'reasoning_text', 'input_text', 'output_text'])
+
+/**
+ * 清洗一条消息里的文本块（harness 形状：`content` 是块数组）。
  *
  * @returns 有块被改写时返回**新数组**；否则返回原数组引用（身份不变，
  *   调用方据此判断「这条消息不用换」）。
@@ -225,7 +234,8 @@ function scrubContentBlocks(content: readonly unknown[]): readonly unknown[] {
   content.forEach((block, index) => {
     if (block === null || typeof block !== 'object') return
     const record = block as { type?: unknown, text?: unknown }
-    if (record.type !== 'text' || typeof record.text !== 'string') return
+    if (typeof record.type !== 'string' || !BLOCK_TEXT_TYPES.has(record.type)) return
+    if (typeof record.text !== 'string') return
     const next = rewriteContentFingerprints(record.text)
     if (next === record.text) return
     // 惰性拷贝：只有第一次命中才建新数组，全未命中时保持原引用。
@@ -245,16 +255,43 @@ function scrubContentBlocks(content: readonly unknown[]): readonly unknown[] {
  */
 export function scrubWireMessage<T extends ScrubbableMessage>(message: T): T {
   if (!scrubbableRole(message.role)) return message
-  const content = message.content
+  let next: T = message
+  const content = next.content
   if (typeof content === 'string') {
-    const next = rewriteContentFingerprints(content)
-    return next === content ? message : ({ ...message, content: next } as T)
+    const rewritten = rewriteContentFingerprints(content)
+    if (rewritten !== content) next = { ...next, content: rewritten } as T
+  } else if (Array.isArray(content)) {
+    const blocks = scrubContentBlocks(content)
+    if (blocks !== content) next = { ...next, content: blocks } as T
   }
-  if (Array.isArray(content)) {
-    const next = scrubContentBlocks(content)
-    return next === content ? message : ({ ...message, content: next } as T)
+  // ② 与 `content` 平级的思考字段（CodeArts / OpenAI 兼容两家都这么放）。
+  for (const key of REASONING_KEYS) {
+    const value = next[key]
+    if (typeof value !== 'string') continue
+    const rewritten = rewriteContentFingerprints(value)
+    if (rewritten !== value) next = { ...next, [key]: rewritten } as T
   }
-  return message
+  // ③ `tool_calls[].function.arguments` 是模型产出的文本，会随历史每轮回传。
+  //    出口层（`scrubJsonBody`）一直在清它，消息层此前漏了 —— 两层差集正是
+  //    签名车道被出口层二次改写的来源（见 direct-fetch 的注释）。
+  const calls = next.tool_calls
+  if (Array.isArray(calls)) {
+    let changedCalls: unknown[] | undefined
+    calls.forEach((call, index) => {
+      if (call === null || typeof call !== 'object') return
+      const record = call as Record<string, unknown>
+      const fn = record.function
+      if (fn === null || typeof fn !== 'object') return
+      const args = (fn as Record<string, unknown>).arguments
+      if (typeof args !== 'string') return
+      const rewritten = rewriteContentFingerprints(args)
+      if (rewritten === args) return
+      const target = (changedCalls ??= [...calls])
+      target[index] = { ...record, function: { ...(fn as Record<string, unknown>), arguments: rewritten } }
+    })
+    if (changedCalls !== undefined) next = { ...next, tool_calls: changedCalls } as T
+  }
+  return next
 }
 
 /**
@@ -338,8 +375,18 @@ const MESSAGE_KEYS = ['messages', 'input', 'contents'] as const
 /** 该 JSON 对象里可能是**独立 system 提示词**的字段名。 */
 const SYSTEM_KEYS = ['system', 'instructions'] as const
 
-/** 一条 wire 消息里可能承载文本的字段名（Chat / Claude / Gemini 三种拼写）。 */
-const TEXT_KEYS = ['content', 'text', 'parts'] as const
+/**
+ * 一条 wire 消息里可能承载文本的字段名（Chat / Claude / Gemini 三种拼写）。
+ *
+ * ⚠️ `reasoning_content` / `reasoning` / `reasoning_text` 必须在列表里（2026-11-04
+ * 审查发现）：CodeArts（`llm-adapter`）与 OpenAI 兼容通道（`openai-compat`）都把
+ * assistant 的思考放在与 `content` **平级**的字段上。漏掉它们等于 assistant 那一侧
+ * 漏洗，指纹原文会随下一轮回传被上游看到。
+ */
+const TEXT_KEYS = ['content', 'text', 'parts', 'reasoning_content', 'reasoning', 'reasoning_text'] as const
+
+/** 与 `content` 平级的思考字段：消息层单独走一遍时用同一份口径。 */
+const REASONING_KEYS = ['reasoning_content', 'reasoning', 'reasoning_text', 'thinking'] as const
 
 /**
  * 清洗一个**任意 wire 形状**的 JSON 请求体（就地修改并返回是否有改动）。

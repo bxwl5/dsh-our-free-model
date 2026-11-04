@@ -1,4 +1,4 @@
-import { MIN_DECODE_MS } from '../store.js'
+import { MAX_CREDIBLE_TPS, MIN_DECODE_MS } from '../store.js'
 import { describeSavingsTotal, emptySavings, savingsPercent } from '../token-saver/index.js'
 
 export function buildStats(stats, catalog, options = {}) {
@@ -69,6 +69,14 @@ export function buildStats(stats, catalog, options = {}) {
       cacheRead: largerOr(lifetime.cacheRead, row.cacheRead),
       calls: largerOr(lifetime.calls, row.calls),
       failed: largerOr(lifetime.failed, row.failed),
+      // ⚠ 计时量必须**与 token 同源**取大（2026-11-04 审查）：下面 `tps` 若仍按
+      // 原始 `row` 算，就会出现「输出 tokens 用 lifetime 上限（更大）、速度却按
+      // 本次运行的分母算」—— 分子分母不是同一次统计，算出来的 tok/s 与旁边那列
+      // tokens 互相对不上。首字延迟同理（`avgTtftMs` 也吃 ttftMs/ttftSamples）。
+      ttftMs: largerOr(lifetime.ttftMs, row.ttftMs),
+      ttftSamples: largerOr(lifetime.ttftSamples, row.ttftSamples),
+      decodeMs: largerOr(lifetime.decodeMs, row.decodeMs),
+      decodeTokens: largerOr(lifetime.decodeTokens, row.decodeTokens),
     }
     return {
       ...physical,
@@ -77,8 +85,16 @@ export function buildStats(stats, catalog, options = {}) {
       recoveredTurns: logicalModels[model]?.recovered ?? 0,
       name: catalog.find(entry => entry.id === model)?.name ?? model,
       // A rate over too few measurable calls is a rounding error with a unit on it.
-      tps: row.decodeMs >= MIN_DECODE_MS ? Math.round(row.decodeTokens / (row.decodeMs / 1000)) : null,
-      avgTtftMs: row.ttftSamples > 0 ? Math.round(row.ttftMs / row.ttftSamples) : null,
+      // ⚠ 与 `channel-usage.js` 的 `rowTps()` 保持**同一套判据**（2026-11-04 审查）：
+      // 除了 `MIN_DECODE_MS` 下限，还要挡掉 `MAX_CREDIBLE_TPS` 以上的离谱值
+      //（时钟跳变 / 上游 usage 回包错乱都会产生），否则同一份数据在 /stats 与
+      // 渠道合并行上会给出两个不同的 tok/s。
+      tps: (() => {
+        if (!(physical.decodeMs >= MIN_DECODE_MS) || !(physical.decodeTokens > 0)) return null
+        const value = Math.round(physical.decodeTokens / (physical.decodeMs / 1000))
+        return Number.isFinite(value) && value <= MAX_CREDIBLE_TPS ? value : null
+      })(),
+      avgTtftMs: physical.ttftSamples > 0 ? Math.round(physical.ttftMs / physical.ttftSamples) : null,
     }
   })
   const physicalFailed = named.reduce((sum, row) => sum + row.failed, 0)

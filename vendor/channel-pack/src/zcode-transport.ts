@@ -27,6 +27,7 @@
 import type { ZcodeCredential } from './zcode.js'
 import { buildZcodeHeaders, zcodeMessagesUrl } from './zcode-upstream.js'
 import { resolveZcodeAppVersion } from './zcode.js'
+import { hasZcodeCode } from './zcode-diagnostics.js'
 
 /** ZCode 的两条上游通道。 */
 export type ZcodeChannel = 'start-plan' | 'coding-plan'
@@ -312,5 +313,5 @@ export async function fetchCodingPlanApiKey(
  */
 export function shouldFallbackToOtherChannel(status: number, body: string): boolean {
   if (status !== 429) return false
-  return body.includes('1005') || body.includes('1113')
+  return hasZcodeCode(body, 1005) || hasZcodeCode(body, 1113)
 }

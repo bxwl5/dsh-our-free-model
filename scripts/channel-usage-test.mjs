@@ -99,3 +99,41 @@ assert.equal(resolveChannelLedgerPath('/home/x'), path.join('/tmp/override-state
 delete process.env.DSH_CHANNEL_PACK_STATE_DIR
 
 console.log('channel-usage: 7 组断言通过（台账聚合 / 容错 / 口径 / 路径一致）')
+
+// ── 8. 合并行必须带速度与新首字延迟（2026-11-04 审查修复点） ─────────────────
+//
+// 原缺陷两处：
+//   a) 渠道独有模型写死 `tps: null` / `avgTtftMs: null` —— 台账里明明有
+//      `tpsSum/tpsCount` 与 `ttftSumMs/ttftCount`，速度一栏却永远空白；
+//   b) 与主表同模型合并时只累加 token/次数，`tps` 从 `previous` 原样带过来，
+//      于是「输出 tokens 翻倍、tok/s 不变」。修法是计时量一起累加后重算。
+{
+  const merged = mergeChannelStats(buildStats(stats, [], { includeCacheRead: true }), usage, { includeCacheRead: true })
+
+  const channelOnly = merged.days.find(row => row.day === '2026-10-24').models
+    .find(row => row.model === 'workbuddy/wb-model-b')
+  assert.ok(channelOnly !== undefined, '渠道独有模型应出现在日期行里')
+  assert.ok(channelOnly.tps !== null && channelOnly.tps > 0, '渠道独有模型必须有速度（不再恒为 null）')
+  assert.ok(channelOnly.avgTtftMs !== null && channelOnly.avgTtftMs > 0, '渠道独有模型必须有首字延迟')
+
+  // 渠道模型并进主表同名行：主表有 tps，渠道行也有 tps ⇒ 合并后应按总计时量重算，
+  // 而不是原样继承主表那一个值。
+  const sameModel = mergeChannelStats(
+    buildStats({
+      days: { '2026-10-24': { total: 0, models: { 'raccoon/sn-model-a': { input: 0, output: 300, reasoning: 0, cacheRead: 0, calls: 3, failed: 0, ttftMs: 600, ttftSamples: 3, decodeMs: 3000, decodeTokens: 300 } } } },
+      requests: 3, failedRequests: 0,
+      models: { 'raccoon/sn-model-a': { input: 0, output: 300, reasoning: 0, cacheRead: 0, calls: 3, failed: 0, ttftMs: 600, ttftSamples: 3, decodeMs: 3000, decodeTokens: 300 } },
+      samples: [],
+    }, [], { includeCacheRead: true }),
+    usage, { includeCacheRead: true },
+  )
+  const hostRow = sameModel.models.find(row => row.model === 'raccoon/sn-model-a')
+  const hostOnly = buildStats({
+    models: { 'raccoon/sn-model-a': { input: 0, output: 300, reasoning: 0, cacheRead: 0, calls: 3, failed: 0, ttftMs: 600, ttftSamples: 3, decodeMs: 3000, decodeTokens: 300 } },
+    days: {}, requests: 3, failedRequests: 0, samples: [],
+  }, [], { includeCacheRead: true }).models.find(row => row.model === 'raccoon/sn-model-a')
+  assert.ok(hostRow.tps !== null, '合并后仍应给出速度')
+  // 渠道侧 decodeTokens 更大（台账口径），合并后分母也相应变大 ⇒ 不可能是「原值不变」。
+  assert.notEqual(hostRow.tps, hostOnly.tps, '合并后必须重算速度，不能原样继承单侧的值')
+}
+console.log('ok  合并行速度/首字延迟同源（渠道独有行有值、同名行按合计重算）')

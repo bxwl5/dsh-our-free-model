@@ -38,7 +38,29 @@ const dirtyBodies = () => ({
     { role: 'user', parts: [{ text: 'master' }] },
     { role: 'model', parts: [{ text: `${GIT}: master` }, { text: `${IDENTITY}.` }] },
   ] },
+  // 思考字段与工具参数：CodeArts / OpenAI 兼容两家把 assistant 的思考放在与
+  // `content` **平级**的 `reasoning_content` 上，工具参数则是模型产出的 JSON 字符串。
+  // 这两处都是 assistant 自己的产出，会随历史每轮回传 —— 必须一起清（2026-11-04）。
+  codearts: { model: 'm', messages: [
+    { role: 'system', content: `${IDENTITY}.` },
+    { role: 'user', content: 'run it' },
+    {
+      role: 'assistant',
+      content: 'ok',
+      reasoning_content: `thinking… ${WEBGUI} whose URL…`,
+      tool_calls: [{ id: 'c1', type: 'function', function: { name: 'write', arguments: JSON.stringify({ text: `${CLAUDE}.` }) } }],
+    },
+    { role: 'tool', tool_call_id: 'c1', content: 'done' },
+  ] },
 })
+
+/** 递归判断 JSON 里是否还残留任一指纹（含工具参数这种被序列化进字符串的字段）。 */
+const stillDirtyDeep = value => {
+  if (typeof value === 'string') return stillDirty(value)
+  if (Array.isArray(value)) return value.some(stillDirtyDeep)
+  if (value && typeof value === 'object') return Object.values(value).some(stillDirtyDeep)
+  return false
+}
 
 /** 该字符串是否仍含任一指纹。 */
 const stillDirty = text => [IDENTITY, WEBGUI, CLAUDE, GIT].some(fingerprint => text.includes(fingerprint))
@@ -64,7 +86,27 @@ async function verifyMessageSemantics() {
   assert.equal(pack.scrubMessages([clean])[0], clean, '未命中的消息必须是同一个对象（不重建）')
   // 不原地改调用方数组
   assert.equal(messages[0].content[0].text, `${IDENTITY}.`, '调用方入参不被就地修改')
-  console.log('ok  消息层：system/assistant/developer 改写，user/tool 逐字保留，未命中零重建，入参不被就地修改')
+
+  // ── 思考字段 + 工具参数（2026-11-04 审查补的两处缺口）──
+  const thinking = {
+    role: 'assistant',
+    content: 'hi',
+    reasoning_content: `${WEBGUI} whose URL…`,
+    tool_calls: [{ id: 'c1', type: 'function', function: { name: 'w', arguments: JSON.stringify({ t: `${IDENTITY}.` }) } }],
+  }
+  const scrubbedThinking = pack.scrubWireMessage(thinking)
+  assert.equal(stillDirty(scrubbedThinking.reasoning_content), false, '平级 reasoning_content 必须被清洗（此前漏洗 = 指纹随历史回传）')
+  assert.equal(stillDirty(scrubbedThinking.tool_calls[0].function.arguments), false, 'tool_calls 参数必须被清洗（此前只有出口层管，签名车道因此 403）')
+  assert.equal(scrubbedThinking.content, 'hi', 'content 不受影响')
+  assert.equal(scrubbedThinking.tool_calls[0].function.name, 'w', '工具名不动')
+  // 带推理块的 harness 形状：块类型 reasoning 也要清（此前只认 text）
+  const reasoningBlock = { role: 'assistant', content: [{ type: 'reasoning', text: `${IDENTITY}.` }] }
+  assert.equal(stillDirty(pack.scrubWireMessage(reasoningBlock).content[0].text), false, 'reasoning 块必须被清洗')
+  // 未命中时仍是同一个对象
+  const cleanThinking = { role: 'assistant', content: 'a', reasoning_content: 'b' }
+  assert.equal(pack.scrubWireMessage(cleanThinking), cleanThinking, '未命中的 thinking 消息不重建')
+
+  console.log('ok  消息层：system/assistant/developer 改写，user/tool 逐字保留，未命中零重建，入参不被就地修改；思考字段与工具参数一并清洗')
 }
 
 async function verifyTransport() {
@@ -74,6 +116,8 @@ async function verifyTransport() {
     const scrubbed = pack.scrubJsonText(text)
     assert.ok(scrubbed !== undefined, `${wire}: 脏请求体必须被清洗`)
     assert.equal(stillDirty(scrubbed), false, `${wire}: 清洗后不得残留任何指纹`)
+    // 深检：工具参数是「字符串里再套 JSON」，浅层文本搜索可能漏判
+    assert.equal(stillDirtyDeep(JSON.parse(scrubbed)), false, `${wire}: 深层（含工具参数/思考字段）也不得残留`)
     // 结构不能丢：消息条数、角色顺序保持
     const before = JSON.parse(text)
     const after = JSON.parse(scrubbed)
@@ -123,7 +167,26 @@ async function verifyChannelOutlet() {
   } finally {
     await outlet.close()
   }
-  console.log('ok  渠道出口层：createChannelFetch 清洗脏请求、干净请求原字节转发')
+
+  // ── 签名车道（`skipScrub`）：出口层必须一个字节都不改 ──
+  // CodeArts 的 body 在 `llm-adapter` 里已签过名，这里再改就会 403（APIG.0301）。
+  const signedSent = []
+  const signedOutlet = createChannelFetch({
+    skipScrub: true,
+    fetchImpl: async (input, init) => {
+      signedSent.push({ url: String(input), body: init?.body })
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+    },
+    readSystemProxy: async () => '',
+  })
+  try {
+    const signedBody = JSON.stringify(dirtyBodies().codearts)
+    await signedOutlet.fetch('https://api.example.com/v1/chat/completions', { method: 'POST', body: signedBody })
+    assert.equal(signedSent.at(-1).body, signedBody, '签名车道：出口层不得改写 body（否则与服务端重算的哈希对不上）')
+  } finally {
+    await signedOutlet.close()
+  }
+  console.log('ok  渠道出口层：createChannelFetch 清洗脏请求、干净请求原字节转发、签名车道 skipScrub 零改动')
 }
 
 export async function verifyContentFingerprint() {

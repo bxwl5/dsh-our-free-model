@@ -208,6 +208,27 @@ export function hasZcodeUnusualActivity(body: string): boolean {
  * 上游真实形态 `{"code":3012,"msg":"…"}` 与自然语言 `error: 3012 blocked`
  * 因此照常命中。
  */
+/**
+ * 业务码 `code` 在正文里是否以**独立词**出现（而非某个更长标识符的数字片段）。
+ *
+ * ## 为什么必须词边界（2026-11-04 全仓审查）
+ *
+ * 同一文件的 `isZcodeQuotaExhausted` / `isZcodeCaptchaRejected` / `describeUpstreamError`
+ * 一直用裸 `body.includes('1005')` 这类匹配，而 `3012` 早已修成词边界 + 语义共现。
+ * 裸匹配的误命中后果不是「文案难看」：
+ * - `isZcodeQuotaExhausted` 误命中 ⇒ 把**好账号**标记「当日限流」并切号；
+ * - `isZcodeCaptchaRejected` 误命中 ⇒ **白产一个 captcha 并重发**，多扣一次
+ *   设备级配额（Alibaba captcha 对设备有硬上限）。
+ *
+ * 边界集与 `looksLikeZcodeUnusualActivity` 一致：`[0-9A-Za-z_-]`。
+ *
+ * @param body 上游响应正文（可能是 JSON，也可能是自然语言文案）
+ * @param code 业务码，如 1005 / 1113 / 3007 / 3009
+ */
+export function hasZcodeCode(body: string, code: number): boolean {
+  return new RegExp(`(?<![0-9A-Za-z_-])${code}(?![0-9A-Za-z_-])`).test(body)
+}
+
 export function looksLikeZcodeUnusualActivity(body: string): boolean {
   return /(?<![0-9A-Za-z_-])3012(?![0-9A-Za-z_-])/.test(body)
 }

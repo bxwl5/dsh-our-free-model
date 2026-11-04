@@ -5,8 +5,20 @@
  * against the live gateway.
  *
  * Run: node scripts/host-selftest.mjs [--model <id>] [--skip-effort]
+ *
+ * ⚠ **渠道包（`vendor/channel-pack/pack.js`）在裸 `node` 下必然报
+ * `free-channel pack unavailable (Cannot find package '@deepseek-ai/dsh-llm')`**
+ * —— 这不是缺陷，是本脚本的环境限制。打包产物按设计把 `@deepseek-ai/*`
+ * 留作 external（必须共享宿主那一份实例，否则 cordis 上下文与 llm 注册表的
+ * 身份校验会断），而解析它们需要 dsh 的 `node_modules`；只有真宿主从自己的
+ * 安装路径加载时才有这条链。看到那行 warn 时，用
+ * `curl /api/our-free-model/summary` 看 `channel:*` 模型是否存在来判断渠道包
+ * 在**真实宿主**里是否加载成功（本机实测 23 个渠道模型正常）。
  */
-import { apply, ANNOUNCEMENT_VERSION } from '../index.js'
+// ⚠️ 只导入仍然存在的导出（2026-11-04 审查）：公告中心在 95657a7 被裁撤，
+// `ANNOUNCEMENT_VERSION` 已删除，留着这行会让本脚本 import 阶段直接崩 ——
+// 而它是 Host 半唯一打真网关的自测入口。
+import { apply } from '../index.js'
 
 const logs = []
 const captured = { adapters: [], routes: [], registrations: [], events: [], configurable: null, discovery: null }
@@ -232,23 +244,14 @@ else {
   console.log(`  GET  /summary  -> ${summary.status} models=${summary.json?.catalog?.length} egress=${JSON.stringify(summary.json?.egress)} probedAt=${summary.json?.probedAt > 0}`)
   const stats = await call('GET', '/api/our-free-model/stats')
   console.log(`  GET  /stats    -> ${stats.status} requests=${stats.json?.requests} models=${stats.json?.models?.length} days=${stats.json?.days?.length}`)
-  const announce = await call('GET', '/api/our-free-model/announcement')
-  console.log(`  GET  /announcement -> ${announce.status} version=${announce.json?.version === ANNOUNCEMENT_VERSION} ack=${announce.json?.acknowledged}`)
   const bench = await call('POST', '/api/our-free-model/bench', { model: target.id, effort: 'light' })
   console.log(`  POST /bench    -> ${bench.status} ${JSON.stringify(bench.json?.ttftMs ?? bench.json?.error)}ms ttft, ${bench.json?.tokensPerSecond === null ? 'no measurable rate' : JSON.stringify(bench.json?.tokensPerSecond)} tok/s`)
 
-  console.log('\n--- 6b. the new distribution surface (meta / announcements / update) ---')
+  // ⚠️ 公告中心与 updater 已随 95657a7 裁撤（`/announcements*`、`/update/status`
+  // 都不再由 index.js 提供服务），此处只验证仍存在的 meta（2026-11-04 审查）。
+  console.log('\n--- 6b. the distribution surface that still exists (meta) ---')
   const meta = await call('GET', '/api/our-free-model/meta')
   console.log(`  GET  /meta          -> ${meta.status} version=${JSON.stringify(meta.json?.version)} generation=${meta.json?.generation}`)
-  const anns = await call('GET', '/api/our-free-model/announcements')
-  console.log(`  GET  /announcements -> ${anns.status} items=${anns.json?.items?.length} unread=${anns.json?.unread} error=${JSON.stringify(anns.json?.error?.slice(0, 60) ?? '')}`)
-  const refreshed = await call('POST', '/api/our-free-model/announcements/refresh')
-  console.log(`  POST /announcements/refresh -> ${refreshed.status} items=${refreshed.json?.view?.items?.length} fetchedAt=${refreshed.json?.view?.fetchedAt > 0}`)
-  const withArrivals = refreshed.json?.view?.items?.length > 0
-  if (withArrivals) {
-    const acked = await call('POST', '/api/our-free-model/announcements/ack', { id: refreshed.json.view.items[0].id })
-    console.log(`  POST /announcements/ack -> ${acked.status} unread=${acked.json?.view?.unread}`)
-  }
   const fence = await (async () => {
     const res = { status: 0, body: '', writeHead: code => { res.status = code }, end: text => { res.body = String(text ?? '') }, get headersSent() { return res.status !== 0 } }
     const hostile = new Readable_stub('GET', '/api/our-free-model/summary')
@@ -257,8 +260,6 @@ else {
     return res.status
   })()
   console.log(`  GET  /summary from a non-loopback Host -> ${fence} (must be 403)`)
-  const update = await call('GET', '/api/our-free-model/update/status')
-  console.log(`  GET  /update/status -> ${update.status} current=${JSON.stringify(update.json?.current)} latest=${JSON.stringify(update.json?.latest)} err=${JSON.stringify(update.json?.error?.slice(0, 60) ?? '')}`)
 }
 
 console.log('\n=== 7. forward listener (OpenAI compatible) ===')

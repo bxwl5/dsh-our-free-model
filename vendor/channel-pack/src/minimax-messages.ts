@@ -65,7 +65,7 @@ import type {
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { collectHarnessSystem, normalizeHarnessMessages, type HarnessMessageInput } from './message-shape.js'
 import { type NormalizedHarnessMessage } from './message-shape.js'
-import { resolveToolPairing } from './sse.js'
+import { DEFAULT_SSE_IDLE_TIMEOUT_MS, readWithIdleTimeout, resolveToolPairing } from './sse.js'
 
 /**
  * 构造 Anthropic Messages 请求体。
@@ -632,7 +632,9 @@ export async function* consumeMinimaxSse(
 
   try {
     while (true) {
-      const { done, value } = await reader.read()
+      // ⚠️ 不得裸 `reader.read()`（2026-11-04 审查）：半开连接下它会**永久挂起**，
+      // 整个调用没有超时出口。空转 120s 即判 TIMEOUT，交由上层重试/换号。
+      const { done, value } = await readWithIdleTimeout(reader, DEFAULT_SSE_IDLE_TIMEOUT_MS, 'minimax', options.signal)
       if (done) {
         // ⚠️ 收尾：先刷出解码器里可能残留的不完整多字节序列，
         // 再把 buffer 余量**按整行**走一遍 —— 否则最后一条事件被丢弃
