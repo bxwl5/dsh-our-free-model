@@ -36815,6 +36815,27 @@ var CONTENT_FINGERPRINTS = [
     note: "DSH WEB_SURFACE_PROMPT \u9996\u53E5\uFF1B2026-10-25 \u5B9E\u6D4B copilot.tencent.com \u5355\u53E5\u653E\u884C\u3001\u4E24\u53E5\u7EC4\u5408\u62E6\u622A"
   },
   {
+    /**
+     * ★ 上游**组合检测**的第二个锚点：品牌词短串 `DeepSeek Harness Web GUI`。
+     *
+     * 2026-10-21 Windows 排查记录（用户 2026-11-05 提供）实测：网关对 system
+     * 做「多短语 AND 检测」——「身份句」与「`DeepSeek Harness Web GUI`」同时出现
+     * 才拒绝；只替换其中一处仍 BLOCKED，替换 0+2 才 ok。
+     *
+     * 上面那条长串规则（`You are interacting with the user through …`）只在
+     * 该短语以整句开头时命中；若同一品牌词出现在别的上下文（或 DSH 改了
+     * WEB_SURFACE_PROMPT 的措辞），长串就会漏。故再补一条**短串兜底**：
+     * 去掉 `DeepSeek Harness ` 品牌前缀，保留 `Web GUI`，语义等义、逐字符
+     * 只删一个词，前缀缓存友好。
+     *
+     * ⚠ 顺序：放在长串规则**之后**。长串先做整句精确替换（结果里已无品牌词），
+     *   短串随后自然不命中，不会二次改写；只有长串没覆盖到的位置才由短串兜住。
+     */
+    find: "DeepSeek Harness Web GUI",
+    replace: "Web GUI",
+    note: "2026-10-21 Windows \u9010\u5904\u66FF\u6362\u5B9E\u6D4B\uFF1A\u4E0E\u8EAB\u4EFD\u53E5 AND \u7EC4\u5408\u89E6\u53D1\uFF1B\u5355\u72EC\u6539\u4EFB\u4E00\u5904\u4ECD BLOCKED"
+  },
+  {
     // 其它客户端（Claude Code 兼容层 / 第三方 agent）注入的身份句。
     // 2026-10-25 本机实测（`copilot.tencent.com`，同账号同模型，max_tokens=8）：
     //   system = `You are Claude Code, Anthropic's official CLI for Claude.` → ❌ 400/11128
@@ -36835,6 +36856,44 @@ var CONTENT_FINGERPRINTS = [
     find: "Main branch (you will usually use this for PRs)",
     replace: "Main branch (PRs usually go here)",
     note: "Gitee IKJNA1\uFF1B\u672C\u673A 2026-10-05 \u5BF9 workbuddy / CodeBuddy \u53CC\u7AEF\u70B9\u5B9E\u6D4B\u590D\u73B0"
+  },
+  {
+    /**
+     * ★★ DSH 系统提示里的**路径说明组合**（用户 2026-11-05 NAS 连报三轮
+     * 11128 的真正根因，前两轮全误判成「接线没接上」）。
+     *
+     * 上游锚定的不是单句，而是下列**两句紧邻组合**（逐字、大小写不敏感）：
+     *
+     * ```
+     * Tokens prefixed with @ are paths the user explicitly referenced.
+     * Relative paths resolve from the workspace root; …
+     * ```
+     *
+     * NAS（DSH 0.2.1-rc.2 / buddy / hy4free）逐组实测（2026-11-05 14:1x）：
+     *
+     * | 探针 | 结果 |
+     * |---|---|
+     * | 句 0 单独 | ✅ 200 |
+     * | 句 1 单独 | ✅ 200 |
+     * | 句 0 + 句 1 前半（紧邻） | ❌ 400/11128 |
+     * | 句 0 + 别的文字 + 句 1（中间插入） | ✅ 200 |
+     * | 句 0 改写开头 + 句 1 | ✅ 200 |
+     * | 句 0 + 句 1 改写 | ✅ 200 |
+     * | 句 0 全小写 + 句 1 | ❌ 400/11128（大小写不敏感） |
+     *
+     * ⇒ 判据是「**逐字字面量 + 紧邻**」，与 WEB_SURFACE_PROMPT 两句组合同规律。
+     * 只改句 0 的两个词（`are paths` → `denote paths`）即可破坏锚定，语义等义、
+     * 不动结构与用户原话、未命中时零重建（保前缀缓存）。
+     *
+     * ⚠️ 这条**必须**存在：完整 DSH system（20 段、5797 字符）里第 3 段就是它，
+     * 且 GUI 对话**每一轮**都会注入。缺了它，无论消息层/适配器层/出口层/
+     * 全局 fetch 接得多严，都会稳定 11128 —— 这正是前两轮修复「看起来都对、
+     * 实测仍拦」的原因：我们一直在测 `You are an AI assistant.`（那本就是
+     * 中性替换后的句子），从没测过原始 system 全文。
+     */
+    find: "Tokens prefixed with @ are paths the user explicitly referenced.",
+    replace: "Tokens prefixed with @ denote paths the user explicitly referenced.",
+    note: '2026-11-05 NAS \u9010\u7EC4\u5B9E\u6D4B\uFF1A\u4E0E "Relative paths resolve from the workspace root" \u7D27\u90BB\u7EC4\u5408\u89E6\u53D1 400/11128\uFF1B\u4E2D\u95F4\u63D2\u5165/\u6539\u5199\u4EFB\u4E00\u5373\u653E\u884C'
   }
 ];
 function escapeRegExp(literal) {
@@ -37096,6 +37155,45 @@ function scrubJsonText(text) {
   } catch {
     return void 0;
   }
+}
+var GLOBAL_FETCH_SCRUB_TAG = Symbol.for("our-free-model.global-fetch-scrub");
+var globalFetchGeneration = 0;
+var SCRUBBED_INITS = /* @__PURE__ */ new WeakSet();
+function scrubbedFetch(original, input, init) {
+  let scrubbedInput = input;
+  let scrubbedInit = init;
+  try {
+    const scrubbed = scrubFetchArguments(input, init);
+    if (scrubbed !== null) {
+      scrubbedInput = scrubbed.input;
+      scrubbedInit = scrubbed.init;
+    }
+  } catch {
+  }
+  return original(scrubbedInput, scrubbedInit);
+}
+function installGlobalFetchScrub() {
+  const original = globalThis.fetch;
+  if (typeof original === "function" && original[GLOBAL_FETCH_SCRUB_TAG] !== void 0) {
+    return () => {
+    };
+  }
+  const generation = ++globalFetchGeneration;
+  const wrapped = ((input, init) => {
+    if (init !== void 0 && typeof init === "object" && SCRUBBED_INITS.has(init)) {
+      return original(input, init);
+    }
+    if (init !== void 0 && typeof init === "object") SCRUBBED_INITS.add(init);
+    return scrubbedFetch(original, input, init);
+  });
+  wrapped[GLOBAL_FETCH_SCRUB_TAG] = generation;
+  globalThis.fetch = wrapped;
+  return () => {
+    const current = globalThis.fetch;
+    if (typeof current === "function" && current[GLOBAL_FETCH_SCRUB_TAG] === generation) {
+      globalThis.fetch = original;
+    }
+  };
 }
 var unscrubbedRequestWarned = false;
 function warnUnscrubbedRequestOnce(method) {
@@ -76321,6 +76419,9 @@ function makeReadImageRequest(ctx) {
   };
 }
 function apply(ctx, config = {}) {
+  const detachGlobalFetchScrub = config.disableGlobalFetchScrub === true ? () => {
+  } : installGlobalFetchScrub();
+  ctx.effect(() => detachGlobalFetchScrub, "global-fetch-scrub");
   const network = createChannelFetch({ outlet: config.outlet });
   const signedNetwork = createDirectFetch({ outlet: config.outlet });
   const detachSignedNetwork = attachDirectFetch(signedNetwork.fetch);

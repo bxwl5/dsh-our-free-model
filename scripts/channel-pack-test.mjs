@@ -118,7 +118,9 @@ try {
   const { apply } = pack
   signedLane = pack.directLane
   if (signedLane) { savedSignedFetch = signedLane.fetch; signedLane.fetch = offlineFetch }
-  apply(ctx, { disableOpencode: true })
+  // 离线测试桩的 fetch 会自引用转发，装全局包装会无限回环 ⇒ 测试关掉这一层。
+  // 全局兜底本身由 content-fingerprint-test 的 verifyGlobalFetchScrub 单独验证。
+  apply(ctx, { disableOpencode: true, disableGlobalFetchScrub: true })
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(adapters.has('opencode'), false, 'disabled account provider is not registered')
   // 20 个账号渠道（OpenCode 由 disableOpencode 关闭不计入；LobsterAI 与 AutoClaw 国际版已于 2026-10-25 移除）。

@@ -97,6 +97,7 @@ import { deriveProjectId, opencodeUserAgent, opencodeUserAgentForVersion } from 
 import { primeOpencodeCapabilities, refreshOpencodeCapabilities } from './opencode-capability.js'
 import { closeAllProxyDispatchers } from './opencode-proxy.js'
 import { createChannelFetch } from './channel-fetch.js'
+import { installGlobalFetchScrub } from './content-fingerprint.js'
 import { attachDirectFetch, createDirectFetch, type SignedChannelOutlet } from './direct-fetch.js'
 export { directFetch, directLane, createDirectFetch, closeDirectFetch } from './direct-fetch.js'
 export { createChannelFetch, parseWindowsProxy, channelProxyBypassed } from './channel-fetch.js'
@@ -311,7 +312,24 @@ export interface ChannelPackMount {
   providers: string[]
 }
 
-export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?: SignedChannelOutlet } = {}): ChannelPackMount {
+export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?: SignedChannelOutlet; disableGlobalFetchScrub?: boolean } = {}): ChannelPackMount {
+  /**
+   * ★ ★ **全局 fetch 指纹清洗兜底**（用户 2026-11-05：「不管怎么样，发出去的
+   * 请求，一定是指纹清洗过的」）。
+   *
+   * 消息层 / 适配器层 / 出口层都是接线式的，任何新入口、新 DSH 版本、热重载
+   * 残留旧路由都可能漏；而 globalThis.fetch 是**所有 HTTP 请求唯一的最终出口**
+   * （签名车道走独立 undici Agent，不在此列且其 body 已在签名前清洗）。
+   * 在这一层无差别清洗，才与客户端/平台/版本/派发链完全解耦。
+   *
+   * ⚠ 必须在任何适配器创建之前安装；disposer 只摘自己（fiber 重启竞态纪律）。
+   */
+  // ⚠️ 离线测试桩的 fetch 会「检测全局 fetch 不是自己就转发回全局」，与包装器
+  //    形成无限回环。故测试挂载时通过 config 关掉这一层（生产恒装上）。
+  const detachGlobalFetchScrub = config.disableGlobalFetchScrub === true
+    ? () => {}
+    : installGlobalFetchScrub()
+  ctx.effect(() => detachGlobalFetchScrub, 'global-fetch-scrub')
   const network = createChannelFetch({ outlet: config.outlet })
   const signedNetwork = createDirectFetch({ outlet: config.outlet })
   const detachSignedNetwork = attachDirectFetch(signedNetwork.fetch)

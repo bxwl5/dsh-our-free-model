@@ -132,6 +132,27 @@ const CONTENT_FINGERPRINTS: readonly ContentFingerprint[] = [
     note: 'DSH WEB_SURFACE_PROMPT 首句；2026-10-25 实测 copilot.tencent.com 单句放行、两句组合拦截',
   },
   {
+    /**
+     * ★ 上游**组合检测**的第二个锚点：品牌词短串 `DeepSeek Harness Web GUI`。
+     *
+     * 2026-10-21 Windows 排查记录（用户 2026-11-05 提供）实测：网关对 system
+     * 做「多短语 AND 检测」——「身份句」与「`DeepSeek Harness Web GUI`」同时出现
+     * 才拒绝；只替换其中一处仍 BLOCKED，替换 0+2 才 ok。
+     *
+     * 上面那条长串规则（`You are interacting with the user through …`）只在
+     * 该短语以整句开头时命中；若同一品牌词出现在别的上下文（或 DSH 改了
+     * WEB_SURFACE_PROMPT 的措辞），长串就会漏。故再补一条**短串兜底**：
+     * 去掉 `DeepSeek Harness ` 品牌前缀，保留 `Web GUI`，语义等义、逐字符
+     * 只删一个词，前缀缓存友好。
+     *
+     * ⚠ 顺序：放在长串规则**之后**。长串先做整句精确替换（结果里已无品牌词），
+     *   短串随后自然不命中，不会二次改写；只有长串没覆盖到的位置才由短串兜住。
+     */
+    find: 'DeepSeek Harness Web GUI',
+    replace: 'Web GUI',
+    note: '2026-10-21 Windows 逐处替换实测：与身份句 AND 组合触发；单独改任一处仍 BLOCKED',
+  },
+  {
     // 其它客户端（Claude Code 兼容层 / 第三方 agent）注入的身份句。
     // 2026-10-25 本机实测（`copilot.tencent.com`，同账号同模型，max_tokens=8）：
     //   system = `You are Claude Code, Anthropic's official CLI for Claude.` → ❌ 400/11128
@@ -152,6 +173,44 @@ const CONTENT_FINGERPRINTS: readonly ContentFingerprint[] = [
     find: 'Main branch (you will usually use this for PRs)',
     replace: 'Main branch (PRs usually go here)',
     note: 'Gitee IKJNA1；本机 2026-10-05 对 workbuddy / CodeBuddy 双端点实测复现',
+  },
+  {
+    /**
+     * ★★ DSH 系统提示里的**路径说明组合**（用户 2026-11-05 NAS 连报三轮
+     * 11128 的真正根因，前两轮全误判成「接线没接上」）。
+     *
+     * 上游锚定的不是单句，而是下列**两句紧邻组合**（逐字、大小写不敏感）：
+     *
+     * ```
+     * Tokens prefixed with @ are paths the user explicitly referenced.
+     * Relative paths resolve from the workspace root; …
+     * ```
+     *
+     * NAS（DSH 0.2.1-rc.2 / buddy / hy4free）逐组实测（2026-11-05 14:1x）：
+     *
+     * | 探针 | 结果 |
+     * |---|---|
+     * | 句 0 单独 | ✅ 200 |
+     * | 句 1 单独 | ✅ 200 |
+     * | 句 0 + 句 1 前半（紧邻） | ❌ 400/11128 |
+     * | 句 0 + 别的文字 + 句 1（中间插入） | ✅ 200 |
+     * | 句 0 改写开头 + 句 1 | ✅ 200 |
+     * | 句 0 + 句 1 改写 | ✅ 200 |
+     * | 句 0 全小写 + 句 1 | ❌ 400/11128（大小写不敏感） |
+     *
+     * ⇒ 判据是「**逐字字面量 + 紧邻**」，与 WEB_SURFACE_PROMPT 两句组合同规律。
+     * 只改句 0 的两个词（`are paths` → `denote paths`）即可破坏锚定，语义等义、
+     * 不动结构与用户原话、未命中时零重建（保前缀缓存）。
+     *
+     * ⚠️ 这条**必须**存在：完整 DSH system（20 段、5797 字符）里第 3 段就是它，
+     * 且 GUI 对话**每一轮**都会注入。缺了它，无论消息层/适配器层/出口层/
+     * 全局 fetch 接得多严，都会稳定 11128 —— 这正是前两轮修复「看起来都对、
+     * 实测仍拦」的原因：我们一直在测 `You are an AI assistant.`（那本就是
+     * 中性替换后的句子），从没测过原始 system 全文。
+     */
+    find: 'Tokens prefixed with @ are paths the user explicitly referenced.',
+    replace: 'Tokens prefixed with @ denote paths the user explicitly referenced.',
+    note: '2026-11-05 NAS 逐组实测：与 "Relative paths resolve from the workspace root" 紧邻组合触发 400/11128；中间插入/改写任一即放行',
   },
 ]
 
@@ -616,6 +675,97 @@ export function scrubJsonText(text: string): string | undefined {
   } catch {
     // 结构异常（循环引用等）：放行原请求，绝不因为清洗让请求发不出去。
     return undefined
+  }
+}
+
+// ── 全局 fetch 兜底（「不管怎么样，发出去的请求一定是指纹清洗过的」）──────
+//
+// ## 为什么必须有这一层
+//
+// 消息层 / 适配器层 / 出口层都是**接线式**的：只要某个新入口、某个 DSH 版本、
+// 某次热重载残留的旧路由没接上，就有漏网请求原样出网。用户 2026-11-05 连报
+// 三轮（本机行 NAS 不行、gateway 行 direct 不行、重启后仍不行）正是这个代价。
+//
+// 全局 `fetch` 是**所有 HTTP 请求唯一的最终出口**（`undici` 的签名车道除外，
+// 它走独立 Agent、不经过 globalThis.fetch，且其 body 已在签名前清洗）。
+// 在这一层做无差别清洗，与「谁发的、从哪发的、哪个客户端/平台/DSH 版本、
+// 插件是否热重载」全部无关 —— 这是唯一能给出「保证」的位置。
+//
+// ⚠ 幂等 + disposer 只摘自己：插件 fiber 重启时「新 apply 挂载」与「旧 fiber
+//   异步 dispose」交错执行，无条件把 globalThis.fetch 还原会把新实例刚挂上的
+//   包装摘掉（与 attachTokenLedgerStore / attachAnomalyPool 同款纪律）。
+// ⚠ 只对「含指纹的 JSON body」改写；未命中时**原字节原样转发**（零拷贝、
+//   保住上游前缀缓存）。清洗函数本身绝不抛错（见 scrubFetchArguments）。
+
+/** 标记「当前 globalThis.fetch 是我们的包装」，同时避免重复包装。 */
+const GLOBAL_FETCH_SCRUB_TAG: unique symbol = Symbol.for('our-free-model.global-fetch-scrub')
+interface TaggedFetch extends Function { [GLOBAL_FETCH_SCRUB_TAG]?: number }
+
+let globalFetchGeneration = 0
+/**
+ * 防回环：某些宿主/测试环境的 `fetch` 实现会反过来再调 `globalThis.fetch`
+ * （例如离线测试桩里 `offlineFetch` 检测「全局 fetch 不是自己」就转发回去），
+ * 且转发可能跨 `await` —— 同步的调用栈计数挡不住。
+ *
+ * 改用**已处理对象标记**：包装器把本代处理过的 `init` 记进 WeakSet，若同一个
+ * `init` 再次进来（回环），直接透传给 original，递归链断开。
+ * 生产环境每个请求都是新 init 对象，恒不命中，零开销。
+ */
+const SCRUBBED_INITS = new WeakSet<object>()
+
+/**
+ * 单个请求的**最终兜底清洗**（与全局安装解耦，便于纯逻辑单测）。
+ *
+ * 任意调用方传来的 `fetch(input, init)` 都过这里：含指纹的 JSON body 被改写，
+ * 未命中 / 非 JSON / 清洗失败一律原样转发给 `original`。
+ */
+export function scrubbedFetch(
+  original: typeof fetch,
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  let scrubbedInput = input
+  let scrubbedInit = init
+  try {
+    const scrubbed = scrubFetchArguments(input, init)
+    if (scrubbed !== null) {
+      scrubbedInput = scrubbed.input
+      scrubbedInit = scrubbed.init
+    }
+  } catch {
+    // 清洗失败一律放行原请求：上游 400 比请求发不出去好。
+  }
+  return original(scrubbedInput, scrubbedInit)
+}
+
+/**
+ * 安装全局 `fetch` 指纹清洗兜底。
+ *
+ * @returns 只摘自己这一代的 disposer（供 `ctx.effect` 使用）
+ */
+export function installGlobalFetchScrub(): () => void {
+  const original = globalThis.fetch as TaggedFetch
+  // 已装过就不再叠一层（叠层会让同一个 body 被反复 JSON 序列化）
+  if (typeof original === 'function' && original[GLOBAL_FETCH_SCRUB_TAG] !== undefined) {
+    return () => { /* 已由上一代持有，dispose 时什么都不做 */ }
+  }
+  const generation = ++globalFetchGeneration
+  const wrapped: typeof fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    // 同一个 init 已在本代处理过 ⇒ 宿主/测试桩的回环，直接透传不递归。
+    if (init !== undefined && typeof init === 'object' && SCRUBBED_INITS.has(init)) {
+      return (original as typeof fetch)(input, init)
+    }
+    if (init !== undefined && typeof init === 'object') SCRUBBED_INITS.add(init)
+    return scrubbedFetch(original as typeof fetch, input, init)
+  }) as typeof fetch
+  ;(wrapped as TaggedFetch)[GLOBAL_FETCH_SCRUB_TAG] = generation
+  globalThis.fetch = wrapped
+  return () => {
+    // 只摘自己：若期间有更新一代的包装挂上，旧 disposer 不得把它还原。
+    const current = globalThis.fetch as TaggedFetch
+    if (typeof current === 'function' && current[GLOBAL_FETCH_SCRUB_TAG] === generation) {
+      globalThis.fetch = original as typeof fetch
+    }
   }
 }
 

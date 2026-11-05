@@ -171,7 +171,23 @@ async function verifyTransport() {
   const officialOnly = JSON.stringify({ system: zcodeSystem.slice(0, 3), messages: [] })
   assert.equal(pack.scrubJsonText(officialOnly), undefined, '纯官方身份块不含指纹 → 零重建')
 
-  console.log('ok  出口层：chat/responses/Claude/Gemini 四种 wire 都被清洗，结构不变，user 原样，干净请求零重建，非 JSON 体不猜；ZCode 官方身份块逐字保留 + cache_control 不丢')
+  // ★ 组合检测的所有锚点（2026-10-21 Windows 文档 + 2026-11-05 NAS 实测）：
+  //   上游对 system 做多短语 AND 检测，规则表缺任一条都会稳定 11128。
+  const comboSystem = [
+    'You are an AI agent powered by DeepSeek Harness.',
+    'You are a coding agent powered by the hy4free model.',
+    'Tokens prefixed with @ are paths the user explicitly referenced. Relative paths resolve from the workspace root; absolute paths identify files or directories on the host.',
+    'You are interacting with the user through the Web GUI whose URL the runtime context names.',
+  ].join('\n\n')
+  const comboOut = pack.scrubJsonText(JSON.stringify({ model: 'm', messages: [{ role: 'system', content: comboSystem }] }))
+  assert.ok(comboOut !== undefined, '组合锚点：必须被清洗')
+  const comboAfter = JSON.parse(comboOut).messages[0].content
+  assert.ok(!comboAfter.includes('DeepSeek Harness'), '身份句品牌词必须去掉')
+  assert.ok(!comboAfter.includes('DeepSeek Harness Web GUI'), '组合锚点短串必须去掉')
+  assert.ok(!comboAfter.includes('Tokens prefixed with @ are paths'), '路径句组合首句必须改写')
+  assert.ok(comboAfter.includes('denote paths'), '路径句改成等义表达')
+
+  console.log('ok  出口层：chat/responses/Claude/Gemini 四种 wire 都被清洗，结构不变，user 原样，干净请求零重建，非 JSON 体不猜；ZCode 官方身份块逐字保留 + cache_control 不丢；组合检测三锚点（身份句/WebGUI短串/路径句）全部改写')
 }
 
 async function verifyChannelOutlet() {
@@ -275,11 +291,64 @@ export async function verifyAllAdaptersWired() {
   console.log(`ok  全渠道出口层接线：${starts.length} 个适配器全部注入 network.fetch（minimax/opencode 已改用实例 fetch）`)
 }
 
+/**
+ * ★ ★ 全局 fetch 兜底（「不管怎么样，发出去的请求一定是指纹清洗过的」）。
+ *
+ * 这是唯一不依赖任何接线的层：直接把 globalThis.fetch 包一层，任意调用方
+ * （适配器、旧路由、热重载残留、外部库）发出的带指纹请求都会被清。
+ */
+export async function verifyGlobalFetchScrub() {
+  const pack = await import('../vendor/channel-pack/src/content-fingerprint.ts')
+  const sent = []
+  const original = async (input, init) => {
+    sent.push({ url: String(input), body: init?.body })
+    return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+  }
+  const dirty = JSON.stringify({ model: 'm', messages: [
+    { role: 'system', content: `${IDENTITY}.` },
+    { role: 'user', content: 'hi' },
+  ] })
+  const clean = JSON.stringify({ model: 'm', messages: [{ role: 'user', content: 'hi' }] })
+
+  // ① 任意路径发出的脏请求：经 scrubbedFetch 必被清洗（这是全局兜底的核心）
+  await pack.scrubbedFetch(original, 'https://any.example.com/v1/chat', { method: 'POST', body: dirty })
+  assert.ok(!sent.at(-1).body.includes(IDENTITY), '任意路径脏请求的指纹必须被清掉')
+  assert.ok(sent.at(-1).body.includes('You are an AI assistant'), '替换成中性表达')
+
+  // ② 干净请求零改动（保前缀缓存）
+  await pack.scrubbedFetch(original, 'https://any.example.com/v1/chat', { method: 'POST', body: clean })
+  assert.equal(sent.at(-1).body, clean, '干净请求必须原字节转发')
+
+  // ③ 非 JSON 体 / 无 body 不猜、不破坏
+  await pack.scrubbedFetch(original, 'https://any.example.com/v1/chat', { method: 'POST', body: new Uint8Array([1,2,3]) })
+  assert.deepEqual(sent.at(-1).body, new Uint8Array([1,2,3]), '非字符串体原样')
+  await pack.scrubbedFetch(original, 'https://any.example.com/health', { method: 'GET' })
+  assert.equal(sent.at(-1).body, undefined, 'GET 无体请求原样')
+
+  // ④ installGlobalFetchScrub 幂等 + disposer 只摘自己（不污染其它用例的全局态）
+  //    汇总套件里 apply() 可能已经装过包装 ⇒ before 本身就是包装器，此时安装
+  //    应幂等跳过；用「先确保干净起点」的方式隔离：记录当前，装一次，再验证
+  //    「重复装不叠层」和「跳过那代的 disposer 不摘掉已有包装」。
+  const before = globalThis.fetch
+  const a = pack.installGlobalFetchScrub()
+  const afterA = globalThis.fetch
+  const b = pack.installGlobalFetchScrub()
+  assert.equal(globalThis.fetch, afterA, '重复安装不叠层')
+  b() // B 是「跳过」的那一代，dispose 不得摘掉 A（或已有包装）
+  assert.equal(globalThis.fetch, afterA, 'B 的 disposer 不得摘掉已有包装')
+  a()
+  // 未装过的情况下 A 会还原；已装过的情况下 A 是「跳过」代，什么都不做。
+  assert.ok(globalThis.fetch === before || globalThis.fetch === afterA,
+    'A 的 disposer 只还原自己那一代，不越权')
+  console.log('ok  全局 fetch 兜底：任意路径脏请求必清洗、干净请求零改动、非 JSON 不猜、幂等不叠层、disposer 只摘自己')
+}
+
 export async function verifyContentFingerprint() {
   await verifyMessageSemantics()
   await verifyTransport()
   await verifyChannelOutlet()
   await verifyAllAdaptersWired()
+  await verifyGlobalFetchScrub()
 }
 
 import { exitIfDirectRun } from './lib/direct-run.mjs'
