@@ -243,6 +243,8 @@ window.__ModuleLoader__.load({
         'chan.login.open': '打开登录页',
         'chan.login.embedded.kuku': '请用百度 App 扫描二维码登录',
         'chan.login.embedded.kukuHint': '二维码有效期约 3 分钟；过期后点「刷新二维码」。',
+        'chan.login.embedded.monkeycode': '请用微信扫描二维码登录百智云',
+        'chan.login.embedded.monkeycodeHint': '扫码后在手机上确认；过期后点「刷新二维码」。登录成功后会自动换出 MonkeyCode 会话。',
         'chan.login.embedded.reload': '刷新二维码',
         'chan.login.embedded.phone': '手机号',
         'chan.login.embedded.phonePlaceholder': '11 位手机号',
@@ -755,6 +757,8 @@ window.__ModuleLoader__.load({
         'chan.login.open': 'Open sign-in page',
         'chan.login.embedded.kuku': 'Scan the QR code with the Baidu app to sign in',
         'chan.login.embedded.kukuHint': 'The QR code expires in ~3 minutes; tap Refresh when it does.',
+        'chan.login.embedded.monkeycode': 'Scan the QR code with WeChat to sign in to Baizhi Cloud',
+        'chan.login.embedded.monkeycodeHint': 'Confirm on your phone after scanning; tap Refresh if it expires. A MonkeyCode session is created automatically on success.',
         'chan.login.embedded.reload': 'Refresh QR code',
         'chan.login.embedded.phone': 'Phone',
         'chan.login.embedded.phonePlaceholder': '11-digit phone number',
@@ -3218,7 +3222,7 @@ window.__ModuleLoader__.load({
       // 卡片恢复「刷新模型」按钮；首拉失败时适配器回落静态兜底表。
       { id: 'antigravity', name: 'Antigravity', org: 'Google', accent: '#4285F4', note: 'Google Antigravity 免费线', login: 'browser' },
       { id: 'commandcode', name: 'Command Code', org: 'Command Code', accent: '#111827', note: '浏览器授权，自动回调', login: 'browser' },
-      { id: 'monkeycode', name: 'MonkeyCode', org: '长亭科技', accent: '#F97316', note: '粘贴 Cookie；每日签到 100 积分', login: 'cookie', loginPage: 'https://monkeycode-ai.com', cookieName: 'baizhi_session（百智云，推荐·自动换出 MonkeyCode 会话）或 monkeycode_ai_session（旧版 nebula_session 也收）' },
+      { id: 'monkeycode', name: 'MonkeyCode', org: '长亭科技', accent: '#F97316', note: '微信扫码登录（百智云），每日签到 100 积分', login: 'browser' },
       // noRemoteCatalog: OrcaTerm 没有模型目录端点（模型表是静态白名单）。
       { id: 'orcaterm', name: 'OrcaTerm', org: '腾讯云', accent: '#00A4FF', note: '粘贴 Cookie，支持完整对话', login: 'cookie', loginPage: 'https://orcaterm.cloud.tencent.com', cookieName: 'ot_sid（旧版叫 ot_session，两个都收）', noRemoteCatalog: true },
       { id: 'kuku', name: 'KukuAI', org: '百度文库', accent: '#2932E1', note: '百度 App 扫码登录', login: 'browser' },
@@ -3644,13 +3648,15 @@ window.__ModuleLoader__.load({
           //（127.0.0.1 远程浏览器打不开），account.create 直接回 flowId 与二维码，
           // 由本卡片渲染并经 DSH 路由驱动。url 存在与否区分两种形态。
           const loginKind = value?.loginKind === 'kuku-qr' || value?.loginKind === 'autoclaw-sms'
+            || value?.loginKind === 'monkeycode-qr'
             ? value.loginKind : null
           setLogin({
             accountId,
             url: typeof url === 'string' ? url : '',
             loginKind,
             flowId: loginKind === null ? '' : String(value?.flowId ?? ''),
-            qrDataUrl: loginKind === 'kuku-qr' ? String(value?.qrDataUrl ?? '') : '',
+            qrDataUrl: (loginKind === 'kuku-qr' || loginKind === 'monkeycode-qr')
+              ? String(value?.qrDataUrl ?? '') : '',
             startedAt: Date.now(),
           })
           setOpen('accounts')
@@ -3702,19 +3708,21 @@ window.__ModuleLoader__.load({
 
       // kuku 卡片：驱动服务端轮询上游扫码状态。expired → 换一张二维码重试。
       useEffect(() => {
-        if (login?.loginKind !== 'kuku-qr' || login.flowId === '') return undefined
+        const qrKind = login?.loginKind === 'kuku-qr' ? 'kuku'
+          : login?.loginKind === 'monkeycode-qr' ? 'monkeycode' : null
+        if (qrKind === null || login.flowId === '') return undefined
         let alive = true
         let busy = false
         const timer = setInterval(async () => {
           if (busy || !alive) return
           busy = true
           try {
-            const response = await fetch(`/api/channel-pack/login/kuku/poll?flow=${encodeURIComponent(login.flowId)}`, { method: 'GET' })
+            const response = await fetch(`/api/channel-pack/login/${qrKind}/poll?flow=${encodeURIComponent(login.flowId)}`, { method: 'GET' })
             const value = await response.json().catch(() => null)
             if (!alive) return
             if (value?.state === 'expired') {
               try {
-                const reload = await fetch(`/api/channel-pack/login/kuku/reload?flow=${encodeURIComponent(login.flowId)}`, { method: 'GET' })
+                const reload = await fetch(`/api/channel-pack/login/${qrKind}/reload?flow=${encodeURIComponent(login.flowId)}`, { method: 'GET' })
                 const next = await reload.json().catch(() => null)
                 if (typeof next?.qrDataUrl === 'string' && next.qrDataUrl !== '') {
                   setLogin(prev => (prev === null ? prev : { ...prev, qrDataUrl: next.qrDataUrl }))
@@ -4111,19 +4119,26 @@ window.__ModuleLoader__.load({
       const [smsMessage, setSmsMessage] = useState('')
 
       const embeddedLogin = login?.loginKind === 'kuku-qr' || login?.loginKind === 'autoclaw-sms'
+        || login?.loginKind === 'monkeycode-qr'
         ? login : null
       const embeddedBody = (() => {
         if (embeddedLogin === null) return null
-        if (embeddedLogin.loginKind === 'kuku-qr') {
+        if (embeddedLogin.loginKind === 'kuku-qr' || embeddedLogin.loginKind === 'monkeycode-qr') {
+          const isMonkey = embeddedLogin.loginKind === 'monkeycode-qr'
+          const qrKind = isMonkey ? 'monkeycode' : 'kuku'
           return h('div', { className: 'ofm_embedlogin' },
             h('img', { className: 'ofm_embedqr', src: embeddedLogin.qrDataUrl, alt: 'QR' }),
-            h('div', { className: 'ofm_embedtext strong' }, t('chan.login.embedded.kuku')),
-            h('div', { className: 'ofm_embedtext ofm_dim' }, t('chan.login.embedded.kukuHint')),
+            isMonkey
+              ? h('div', { className: 'ofm_embedtext strong' }, t('chan.login.embedded.monkeycode'))
+              : h('div', { className: 'ofm_embedtext strong' }, t('chan.login.embedded.kuku')),
+            isMonkey
+              ? h('div', { className: 'ofm_embedtext ofm_dim' }, t('chan.login.embedded.monkeycodeHint'))
+              : h('div', { className: 'ofm_embedtext ofm_dim' }, t('chan.login.embedded.kukuHint')),
             h('button', {
               type: 'button', className: 'ofm_btn ghost',
               onClick: async () => {
                 try {
-                  const response = await fetch(`/api/channel-pack/login/kuku/reload?flow=${encodeURIComponent(embeddedLogin.flowId)}`, { method: 'GET' })
+                  const response = await fetch(`/api/channel-pack/login/${qrKind}/reload?flow=${encodeURIComponent(embeddedLogin.flowId)}`, { method: 'GET' })
                   const next = await response.json().catch(() => null)
                   if (typeof next?.qrDataUrl === 'string' && next.qrDataUrl !== '') {
                     setLogin(prev => (prev === null ? prev : { ...prev, qrDataUrl: next.qrDataUrl }))

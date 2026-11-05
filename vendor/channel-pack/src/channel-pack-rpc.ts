@@ -37,11 +37,11 @@ import type { TraeAuth } from './trae-auth.js'
 import type { ClineAuth } from './cline-auth.js'
 import { LOOMY } from './loomy-product.js'
 import { buddyExpiringWindowDays } from './buddy-balance-rank.js'
-import { normalizeCookie as normalizeMonkeyCodeCookie } from './monkeycode.js'
 import { isCredentialUsable as isOrcaTermCredentialUsable, normalizeCookie as normalizeOrcaTermCookie, type OrcaTermCredential } from './orcaterm.js'
 import { KUKU } from './kuku-product.js'
 import type { KukuCredential } from './kuku.js'
 import { startKukuLoginFlow, type KukuLoginFlow } from './kuku-qr-login-page.js'
+import { startMonkeyCodeLoginFlow, type MonkeyCodeLoginFlow } from './monkeycode-qr-login-page.js'
 import { parseCredential as parseAutoClawCredential, type AutoClawCredential } from './autoclaw.js'
 import type { AccioCredential } from './accio.js'
 import { ACCIO, ACCIO_CN } from './accio-product.js'
@@ -271,7 +271,10 @@ export const CAPTCHA_CARRIER_PATH = '/api/channel-pack/captcha-carrier'
 export const KUKU_POLL_PATH = '/api/channel-pack/login/kuku/poll'
 export const KUKU_RELOAD_PATH = '/api/channel-pack/login/kuku/reload'
 export const AUTOCLAW_SEND_PATH = '/api/channel-pack/login/autoclaw/send'
-export const AUTOCLAW_VERIFY_PATH = '/api/channel-pack/login/autoclaw/verify' 
+export const AUTOCLAW_VERIFY_PATH = '/api/channel-pack/login/autoclaw/verify'
+/** MonkeyCode（百智云）微信扫码登录：卡片内嵌，照 kuku 两条路由。 */
+export const MONKEYCODE_POLL_PATH = '/api/channel-pack/login/monkeycode/poll'
+export const MONKEYCODE_RELOAD_PATH = '/api/channel-pack/login/monkeycode/reload'
 /** Gateway RPC 端点名（connection.rpc.call 的 endpoint 参数） */
 const CHANNEL_PACK_ENDPOINT = 'channel-pack'
 
@@ -1105,7 +1108,7 @@ function registerChannelPackEndpoints(
    * 不再有 127.0.0.1 本地页 —— 远程浏览器（NAS 场景）直接可用。
    * 键 = flowId（account.create 生成并返回给前端），值 = 流程对象。
    */
-  const embeddedLoginFlows = new Map<string, KukuLoginFlow | AutoclawLoginFlow>()
+  const embeddedLoginFlows = new Map<string, KukuLoginFlow | AutoclawLoginFlow | MonkeyCodeLoginFlow>()
 
   /**
    * 记录一条后台登录失败原因，供下一次 `login.poll` 读走。
@@ -1307,6 +1310,45 @@ function registerChannelPackEndpoints(
       try {
         await (flow as KukuLoginFlow).reload()
         return embeddedJson({ qrDataUrl: (flow as KukuLoginFlow).qrDataUrl })
+      } catch (error) {
+        return embeddedJson({ state: 'expired', error: error instanceof Error ? error.message : String(error) })
+      }
+    },
+  })
+
+  connection.fetch.register({
+    path: MONKEYCODE_POLL_PATH,
+    methods: ['GET'],
+    requestBody: 'buffered' as const,
+    async fetch(request: Request): Promise<Response> {
+      if (request.method !== 'GET') return embeddedJson({ error: 'method not allowed' }, 405)
+      const flowId = new URL(request.url ?? '/', 'http://127.0.0.1').searchParams.get('flow') ?? ''
+      const flow = flowId === '' ? undefined : embeddedLoginFlows.get(flowId)
+      if (flow === undefined || !('poll' in flow) || flowId.startsWith('kuku-') || flowId.startsWith('autoclaw-')) {
+        return embeddedJson({ error: 'not found' }, 404)
+      }
+      try {
+        return embeddedJson(await (flow as MonkeyCodeLoginFlow).poll())
+      } catch (error) {
+        return embeddedJson({ state: 'expired', error: error instanceof Error ? error.message : String(error) })
+      }
+    },
+  })
+
+  connection.fetch.register({
+    path: MONKEYCODE_RELOAD_PATH,
+    methods: ['GET'],
+    requestBody: 'buffered' as const,
+    async fetch(request: Request): Promise<Response> {
+      if (request.method !== 'GET') return embeddedJson({ error: 'method not allowed' }, 405)
+      const flowId = new URL(request.url ?? '/', 'http://127.0.0.1').searchParams.get('flow') ?? ''
+      const flow = flowId === '' ? undefined : embeddedLoginFlows.get(flowId)
+      if (flow === undefined || !('reload' in flow) || flowId.startsWith('kuku-') || flowId.startsWith('autoclaw-')) {
+        return embeddedJson({ error: 'not found' }, 404)
+      }
+      try {
+        await (flow as MonkeyCodeLoginFlow).reload()
+        return embeddedJson({ qrDataUrl: (flow as MonkeyCodeLoginFlow).qrDataUrl })
       } catch (error) {
         return embeddedJson({ state: 'expired', error: error instanceof Error ? error.message : String(error) })
       }
@@ -1633,25 +1675,6 @@ function registerChannelPackEndpoints(
           return { ok: false, error: { code: 'bad-request', message: 'credential is empty' } }
         }
         let parsed = channel.parse(text)
-        // MonkeyCode 特例：粘贴的是**百智云** cookie 时，先走 OIDC 桥接换出
-        // `monkeycode_ai_session`（异步，故放在通用同步 parse 之外）。
-        // 官方桌面端同款链路（desktop/src/baizhi/monkeycode.rs 的
-        // login_monkeycode），纯 HTTP 完成、无需浏览器。
-        if (provider === MONKEYCODE.id && /(?:^|;\s*)baizhi_session\s*=/.test(text)) {
-          try {
-            const { loginWithBaizhiSession } = await import('./monkeycode-auth.js')
-            const credential = await loginWithBaizhiSession(codeartsFetcher, MONKEYCODE, text)
-            parsed = { ...credential, created_at: Date.now() }
-          } catch (error) {
-            return {
-              ok: false,
-              error: {
-                code: 'bad-request',
-                message: `百智云桥接失败：${error instanceof Error ? error.message : String(error)}`,
-              },
-            }
-          }
-        }
         if (parsed === undefined) {
           return { ok: false, error: { code: 'bad-request', message: `凭据形状不合法，应为：${channel.hint}` } }
         }
@@ -1974,6 +1997,41 @@ function registerChannelPackEndpoints(
             createdAt: Date.now(),
           })
           return { ok: true, value: { accountId: id, loginKind: 'kuku-qr', flowId, qrDataUrl: flow.qrDataUrl } }
+        } else if (provider === MONKEYCODE.id) {
+          // MonkeyCode（百智云）微信扫码登录 —— 卡片内嵌，照 kuku 形态。
+          // 官方桌面端 desktop/src/baizhi/wechat.rs 同款协议：微信 qrconnect 长轮询
+          // → 百智云回调拿 baizhi_session → loginWithBaizhiSession() OIDC 桥接换出
+          // monkeycode_ai_session。二维码 data URL 直接渲染进卡片，NAS 远程可用。
+          //
+          // ⚠️ 旧的「粘贴 Cookie」入口（account.adopt）保留不动：仍是有效退路。
+          const flow = await startMonkeyCodeLoginFlow({ fetcher: codeartsFetcher })
+          const flowId = `monkeycode-${id}`
+          embeddedLoginFlows.set(flowId, flow)
+          const cleanup = (): void => { embeddedLoginFlows.delete(flowId) }
+          flow.result.then(async (credential) => {
+            cleanup()
+            await ctx.credentials.set(credentialRef(refName), JSON.stringify(credential))
+            await pool.updateAccount(id, {
+              nickname: credential.nickname ?? id,
+              // Cookie 型渠道没有续期端点，只能重新扫码/粘贴。
+              refreshable: false,
+            })
+          }).catch((error: unknown) => {
+            cleanup()
+            ctx.logger.warn(`[channel-pack] background ${MONKEYCODE.id} QR login failed for ${id}: ${String(error)}`)
+            recordLoginFailure(id, error)
+            void pool.removeAccount(id).catch(() => {})
+          })
+          await pool.addAccount({
+            id,
+            provider,
+            nickname: id,
+            enabled: true,
+            credentialRef: refName,
+            refreshable: false,
+            createdAt: Date.now(),
+          })
+          return { ok: true, value: { accountId: id, loginKind: 'monkeycode-qr', flowId, qrDataUrl: flow.qrDataUrl } }
         } else if (provider === 'commandcode') {
           // Command Code：浏览器 OAuth + 本地回调（端口 5959 起）。
           // 与 codearts 同款两步式：先返回 loginUrl 让前端立刻 window.open，
@@ -5687,19 +5745,10 @@ interface AdoptableChannel {
 
 /** 粘贴型渠道表。键是 provider id。 */
 const ADOPTABLE_CHANNELS: Readonly<Record<string, AdoptableChannel>> = {
-  monkeycode: {
-    // ⚠️ 两种 cookie 都收，自动识别：
-    // - **百智云**（baizhi.cloud，含 `baizhi_session`）→ 走 OIDC 桥接换出
-    //   `monkeycode_ai_session`（官方桌面端同款链路，纯 HTTP，见
-    //   monkeycode-auth.ts 的 loginWithBaizhiSession）。这是**推荐**方式：
-    //   百智云会话长期有效，过期后重新桥接即可，不必再翻 DevTools。
-    // - **MonkeyCode**（含 `monkeycode_ai_session`）→ 原样收下（老路径兜底）。
-    hint: '百智云 Cookie（含 baizhi_session=…，推荐）或 MonkeyCode Cookie（含 monkeycode_ai_session=…）',
-    parse: (text) => {
-      const cookie = normalizeMonkeyCodeCookie(text)
-      return cookie === undefined ? undefined : { access_token: cookie, created_at: Date.now() }
-    },
-  },
+  // monkeycode 已改为「卡片内微信扫码登录」（account.create → loginKind:
+  // 'monkeycode-qr'）。用户 2026-11-05 明确「只留一个卡片内扫码，粘贴 Cookie
+  // 麻烦」，故不再作为粘贴型渠道出现在 ADOPTABLE_CHANNELS 里。
+  // 百智云会话→MonkeyCode 会话的 OIDC 桥接仍由扫码流程内部调用。
   orcaterm: {
     hint: '浏览器 Cookie（必须含 ot_session=…）',
     parse: (text) => {

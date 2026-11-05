@@ -56,6 +56,9 @@ const suites = [
   // 自动签到的逐渠道记账（2026-10-26）：失败渠道当天可补跑 / coversToday=false
   // 不记日（Qoder 10:00 窗口）/ 重跑上限 / 旧格式兼容。假上游 + 内存 store。
   ['auto-checkin-ledger', 'auto-checkin-ledger-test.mjs', []],
+  // MonkeyCode 微信扫码登录（卡片内嵌）：授权页/uuid/二维码、408-405 状态机、
+  // 百智云回调换 cookie、OIDC 桥接落 MonkeyCode 凭据、过期自动换码。
+  ['monkeycode-qr-login', 'monkeycode-qr-login-test.mjs', []],
   // 实测成功即清异常标记（2026-11-05）：成功才清、失败/空流/无账号/未注入不清、
   // 用内部 modelId、只清命中项、清风控、幂等。一处覆盖全部 20 渠道。
   ['anomaly-clearing', 'anomaly-clearing-test.mjs', []],

@@ -1,7 +1,7 @@
 # 渠道登录方式矩阵
 
 > 一句话：22 个账号渠道里，**18 个的登录全自动完成**（浏览器/本地页/短信码/扫码，不需要手抄凭据），
-> **1 个（`loomy`）在微信未绑手机号时会在弹窗内补要短信码**，**3 个只能粘贴凭据**。本文的「一键」指：点「添加账号」后只需在浏览器内完成授权，
+> **1 个（`loomy`）在微信未绑手机号时会在弹窗内补要短信码**，**1 个只能粘贴凭据**。本文的「一键」指：点「添加账号」后只需在浏览器内完成授权，
 > 插件自己把 token 收回来，**不需要手动复制任何东西**。
 
 ## 1. 总表
@@ -24,12 +24,12 @@
 | 15 | `accio-cn` | 同 `accio`（国内端点） | ✅ | 浏览器登录 | 是 | 同上 |
 | 16 | `loomy` | 微信扫码，本地页承载 | ⚠️ | 微信扫码（未绑手机号时补短信码） | 是 | `channel-pack-rpc.ts:1793` 起 |
 | 17 | `raccoon` | 微信扫码（服务端下发 code）/ 短信，本地页承载 | ✅ | 微信扫码或短信 | 是 | `raccoon-login-page.ts`、`raccoon-oauth.ts` 的 `/api/iam/v1` 函数 |
-| 18 | `monkeycode` | 粘贴 Cookie（`nebula_session`） | ❌ | 手动复制 Cookie | 否 | `channel-pack-rpc.ts:4448` |
+| 18 | `monkeycode` | 微信扫码（百智云 OIDC），**卡片内嵌二维码**（2026-11-05，无本地页） | ✅ | 手机扫码 + 确认 | 否 | `monkeycode-qr-login.ts`、`monkeycode-qr-login-page.ts`，驱动路由 `/api/channel-pack/login/monkeycode/*` |
 | 19 | `orcaterm` | 粘贴 Cookie（`ot_session`） | ❌ | 手动复制 Cookie | 否 | `channel-pack-rpc.ts:4455` |
 | 20 | `kuku` | 百度 App 扫码，**卡片内嵌二维码**（2026-10-30，无本地页） | ✅ | 手机扫码 + 确认 | 否 | `kuku-qr-login.ts`、`kuku-qr-login-page.ts` |
 | 21 | `autoclaw` | 手机号 + 短信验证码，**卡片内嵌表单**（2026-10-30，无本地页） | ✅ | 输手机号 + 验证码 | 否 | `autoclaw-login-page.ts`、`autoclaw-sms.ts` |
 
-统计：**一键 17 / 半自动 1 / 纯粘贴 2**（共 20 个渠道；2026-10-25 移除 `autoclaw-intl` 与 `lobsterai`）。
+统计：**一键 18 / 半自动 1 / 纯粘贴 1**（共 20 个渠道；2026-10-25 移除 `autoclaw-intl` 与 `lobsterai`；2026-11-05 `monkeycode` 由粘贴改为微信扫码）。
 
 ## 2. 三种流为什么不能统一
 
@@ -111,7 +111,7 @@
 | `kuku` 扫码登录 | **已实现** | 百度 passport 扫码：`kuku-qr-login.ts`（协议）+ `kuku-qr-login-page.ts`（流程对象；2026-10-30 起卡片内嵌二维码，本地页已删），驱动路由 `/api/channel-pack/login/kuku/*`。两个只有真连才暴露的坑已修：`/channel/unicast` 是**长轮询**（未扫码约 30s 才回，需 45s 超时）；`bdusslogin` **成功响应没有 errno**（写 `errno===0` 会判失败每次真登录）。 |
 | ~~`autoclaw-intl` OAuth~~ | 渠道已移除 | 2026-10-25 按用户要求整渠道删除（Z.ai OAuth loopback + 阿里滑块，自动化成本高）。 |
 | `orcaterm` 书签收号 | 半自动，待实测 | `ot_session` 非 HttpOnly，用户在已登录页点一次书签回传；未知项是 https 页 → `http://127.0.0.1` 的 PNA/混合内容限制。 |
-| `monkeycode` | 维持粘贴 | 设备码 client_id 写死 `monkeyai-runtime`、scope 仅 `device:*`；会话 Cookie HttpOnly ⇒ 内嵌浏览器也取不到。 |
+| `monkeycode` | **已实现，卡片内微信扫码** | 2026-11-05 按用户要求「只留一个卡片内扫码，粘贴 Cookie 麻烦」：照官方桌面端 `desktop/src/baizhi/wechat.rs` 移植 qrconnect 长轮询协议（`monkeycode-qr-login.ts`），扫码确认后拿 `baizhi_session` 走 `loginWithBaizhiSession()` OIDC 桥接换出 `monkeycode_ai_session`。粘贴入口已从 `ADOPTABLE_CHANNELS` 与前端移除；驱动路由 `/api/channel-pack/login/monkeycode/{poll,reload}`，NAS 远程浏览器可用。 |
 | 未登录展示模型列表 | **默认隐藏（已恢复原逻辑）** | 见 §4：候选里不进、设置页照常显示；`DSH_HIDE_MODELS_WITHOUT_ACCOUNT=0` 可预览；登录后自动刷新进候选。 |
 | 登录失败无反馈 | **已修** | 12 个渠道原先失败只写日志；现统一 `recordLoginFailure`，`login.poll` 能拿到原因（`scripts/login-failure-reporting-test.mjs` 守卫）。 |
 

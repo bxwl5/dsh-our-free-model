@@ -24,12 +24,12 @@ const TOKEN = 'autoclaw-token-1234567890'
 async function main() {
   const { adoptableChannelHint } = await import('../vendor/channel-pack/src/channel-pack-rpc.ts')
 
-  // 5 条粘贴入口都必须有提示文案（3 个纯粘贴 + Accio 家族的 2 条兜底）；
+  // 4 条粘贴入口都必须有提示文案（2 个纯粘贴 + Accio 家族的 2 条兜底）；
   // UI 据此决定「添加账号」的交互形态。
   // 真·粘贴型：上游没有可脚本化的 OAuth，只能由用户复制 Cookie / 令牌。
   // AutoClaw 国内站已改为「本地页 + 短信验证码」登录（autoclaw-login-page.ts），
   // 只有国际站仍只能粘贴令牌。
-  const pasteOnly = ['monkeycode', 'orcaterm']
+  const pasteOnly = ['orcaterm']
   for (const provider of pasteOnly) {
     const hint = adoptableChannelHint(provider)
     assert.equal(typeof hint, 'string', `${provider} 必须有粘贴提示`)
@@ -90,7 +90,6 @@ async function rpcProbes({ call, creds }) {
 
   // 1) 非法输入全部拒收：bad-request，不落盘、不进账号池
   for (const [provider, bad] of [
-    ['monkeycode', 'nebula_session=abc'],
     ['orcaterm', 'foo=bar'],
   ]) {
     const result = await call('account.adopt', { provider, credential: bad })
@@ -99,9 +98,15 @@ async function rpcProbes({ call, creds }) {
   }
   assert.deepEqual([...keysNow()].filter(k => !before.has(k)), [], '非法输入不产生任何凭据写入')
 
+  // monkeycode 已改为「卡片内微信扫码登录」（用户 2026-11-05 要求只留扫码），
+  // 不再是粘贴型渠道：account.adopt 必须明确拒绝，避免 UI 残留旧入口。
+  const mcAdopt = await call('account.adopt', { provider: 'monkeycode', credential: `nebula_session=${SESSION}` })
+  assert.equal(mcAdopt.ok, false, 'monkeycode 不再支持粘贴 Cookie')
+  assert.equal(mcAdopt.error.code, 'bad-request', '拒收码 bad-request')
+  assert.deepEqual([...keysNow()].filter(k => !before.has(k)), [], 'monkeycode adopt 不产生凭据写入')
+
   // 2) 噪声输入清洗后收下：落盘值即清洗值，账号池有条目
   for (const [provider, noisy, expectedToken] of [
-    ['monkeycode', `  Cookie: "nebula_session=${SESSION}; Path=/; HttpOnly"`, `nebula_session=${SESSION}`],
     ['orcaterm', `Bearer ot_session=${SESSION}\r\n`, `ot_session=${SESSION}`],
   ]) {
     const result = await call('account.adopt', { provider, credential: noisy })
@@ -120,7 +125,7 @@ async function rpcProbes({ call, creds }) {
   }
 
   // 3) 空凭据：RPC 层最小判据（空文本）直接拒绝
-  const empty = await call('account.adopt', { provider: 'monkeycode', credential: '   ' })
+  const empty = await call('account.adopt', { provider: 'orcaterm', credential: '   ' })
   assert.equal(empty.ok, false)
   assert.equal(empty.error.code, 'bad-request')
 

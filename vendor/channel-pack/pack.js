@@ -37277,7 +37277,7 @@ async function openSocks5Tunnel(proxy, host, port) {
     s.once("connect", () => resolve2(s));
     s.once("error", reject);
   });
-  const fail = (error) => {
+  const fail2 = (error) => {
     throw error;
   };
   const write = (bytes) => new Promise((resolve2, reject) => {
@@ -37336,9 +37336,9 @@ async function openSocks5Tunnel(proxy, host, port) {
       const pass = Buffer.from(decodeURIComponent(parsed.password), "utf8");
       await write(new Uint8Array([1, user.length, ...user, pass.length, ...pass]));
       const authReply = await read(2);
-      if (authReply[1] !== 0) fail(new Error("SOCKS5 \u7528\u6237\u540D/\u5BC6\u7801\u8BA4\u8BC1\u5931\u8D25"));
+      if (authReply[1] !== 0) fail2(new Error("SOCKS5 \u7528\u6237\u540D/\u5BC6\u7801\u8BA4\u8BC1\u5931\u8D25"));
     } else if (method !== 0) {
-      fail(new Error(`SOCKS5 \u670D\u52A1\u7AEF\u8981\u6C42\u672A\u77E5\u8BA4\u8BC1\u65B9\u5F0F 0x${(method ?? 0).toString(16)}`));
+      fail2(new Error(`SOCKS5 \u670D\u52A1\u7AEF\u8981\u6C42\u672A\u77E5\u8BA4\u8BC1\u65B9\u5F0F 0x${(method ?? 0).toString(16)}`));
     }
     const target = Buffer.from(host, "utf8");
     await write(new Uint8Array([
@@ -37353,13 +37353,13 @@ async function openSocks5Tunnel(proxy, host, port) {
     ]));
     const reply2 = await read(4);
     if (reply2[1] !== 0) {
-      fail(new Error(`SOCKS5 CONNECT \u88AB\u62D2\u7EDD\uFF08\u5E94\u7B54\u7801 0x${(reply2[1] ?? 0).toString(16)}\uFF09`));
+      fail2(new Error(`SOCKS5 CONNECT \u88AB\u62D2\u7EDD\uFF08\u5E94\u7B54\u7801 0x${(reply2[1] ?? 0).toString(16)}\uFF09`));
     }
     const atyp = reply2[3];
     if (atyp === 1) await read(4 + 2);
     else if (atyp === 4) await read(16 + 2);
     else if (atyp === 3) await read(1).then((lenByte) => read((lenByte[0] ?? 0) + 2));
-    else fail(new Error(`SOCKS5 \u5E94\u7B54\u7684\u5730\u5740\u7C7B\u578B 0x${(atyp ?? 0).toString(16)} \u4E0D\u53D7\u652F\u6301`));
+    else fail2(new Error(`SOCKS5 \u5E94\u7B54\u7684\u5730\u5740\u7C7B\u578B 0x${(atyp ?? 0).toString(16)} \u4E0D\u53D7\u652F\u6301`));
     return socket;
   } catch (error) {
     socket.destroy();
@@ -62422,7 +62422,6 @@ function rankBuddyAccountsByBalance(accounts, options = {}) {
 }
 
 // vendor/channel-pack/src/channel-pack-rpc.ts
-init_monkeycode();
 init_kuku_product();
 
 // vendor/channel-pack/src/kuku-qr-login-page.ts
@@ -62497,6 +62496,230 @@ async function startKukuLoginFlow(options) {
     closed = true;
   });
   return { qrDataUrl: state.qrDataUrl, poll, reload, result, close };
+}
+
+// vendor/channel-pack/src/monkeycode-qr-login-page.ts
+init_monkeycode_auth();
+init_monkeycode_product();
+
+// vendor/channel-pack/src/monkeycode-qr-login.ts
+init_monkeycode_auth();
+var WECHAT_LP_BASE = "https://lp.open.weixin.qq.com";
+var MONKEYCODE_QR_TIMEOUT_MS = 10 * 6e4;
+var QRCODE_UUID_RE = /\/connect\/qrcode\/([A-Za-z0-9_-]+)/;
+var WX_ERRCODE_RE = /wx_errcode=(\d+)/;
+var WX_CODE_RE = /wx_code='([^']*)'/;
+function urlEncode(s) {
+  let out = "";
+  for (let i = 0; i < s.length; i += 1) {
+    const c = s.charCodeAt(i);
+    if (c >= 65 && c <= 90 || c >= 97 && c <= 122 || c >= 48 && c <= 57 || c === 45 || c === 95 || c === 46 || c === 126) out += s[i];
+    else out += `%${c.toString(16).toUpperCase().padStart(2, "0")}`;
+  }
+  return out;
+}
+function absorbSetCookie(jar, response) {
+  const list = typeof response.headers.getSetCookie === "function" ? response.headers.getSetCookie() : [];
+  for (const raw of list) {
+    const pair = (raw.split(";")[0] ?? "").trim();
+    const eq = pair.indexOf("=");
+    if (eq <= 0) continue;
+    jar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
+  }
+}
+function cookieHeader(jar) {
+  return [...jar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
+}
+function fail(message2) {
+  throw new Error(`MonkeyCode \u626B\u7801\u767B\u5F55\uFF1A${message2}`);
+}
+async function startMonkeyCodeQrLogin(options) {
+  const { fetcher } = options;
+  const bz = (options.baizhiBase ?? MONKEYCODE_BAIZHI_BASE).replace(/\/+$/, "");
+  const redirect = urlEncode(`${bz}/`);
+  const loginUrl = `${bz}/api/v1/user/oauth/login?platform=wechat&redirect_url=${redirect}`;
+  const first = await fetcher(loginUrl, { method: "GET", headers: { Accept: "application/json" } });
+  if (!first.ok) fail(`\u83B7\u53D6\u5FAE\u4FE1\u6388\u6743\u5730\u5740\u5931\u8D25\uFF08HTTP ${first.status}\uFF09`);
+  const envelope = await first.json();
+  const authUrlStr = typeof envelope?.data?.url === "string" ? envelope.data.url : "";
+  if (authUrlStr === "") fail("\u5FAE\u4FE1\u6388\u6743\u5730\u5740\u4E3A\u7A7A");
+  let authUrl;
+  try {
+    authUrl = new URL(authUrlStr);
+  } catch {
+    fail(`\u5FAE\u4FE1\u6388\u6743\u5730\u5740\u5F02\u5E38\uFF1A${authUrlStr}`);
+  }
+  const state = authUrl.searchParams.get("state") ?? "";
+  const callbackUrl = authUrl.searchParams.get("redirect_uri") ?? "";
+  if (state === "" || callbackUrl === "") fail("\u5FAE\u4FE1\u6388\u6743\u5730\u5740\u7F3A\u5C11 state/redirect_uri");
+  const qrBase = `${authUrl.protocol}//${authUrl.host}`;
+  const page = await fetcher(authUrlStr, {
+    method: "GET",
+    headers: { Accept: "text/html", "User-Agent": "Mozilla/5.0" }
+  });
+  if (!page.ok) fail(`\u52A0\u8F7D\u5FAE\u4FE1\u6388\u6743\u9875\u5931\u8D25\uFF08HTTP ${page.status}\uFF09`);
+  const html = await page.text();
+  const uuid = QRCODE_UUID_RE.exec(html)?.[1];
+  if (uuid === void 0) fail("\u5FAE\u4FE1\u6388\u6743\u9875\u91CC\u6CA1\u627E\u5230\u4E8C\u7EF4\u7801\uFF08\u9875\u9762\u7ED3\u6784\u53EF\u80FD\u5DF2\u53D8\u5316\uFF09");
+  const img = await fetcher(`${qrBase}/connect/qrcode/${uuid}`, {
+    method: "GET",
+    headers: { Accept: "image/jpeg", Referer: authUrlStr }
+  });
+  if (!img.ok) fail(`\u83B7\u53D6\u5FAE\u4FE1\u4E8C\u7EF4\u7801\u5931\u8D25\uFF08HTTP ${img.status}\uFF09`);
+  const bytes = new Uint8Array(await img.arrayBuffer());
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 32768) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 32768));
+  }
+  const contentType = img.headers.get("content-type") || "image/jpeg";
+  const qrDataUrl = `data:${contentType};base64,${btoa(binary)}`;
+  return {
+    qrDataUrl,
+    session: { uuid, state, callbackUrl, qrBase }
+  };
+}
+async function pollMonkeyCodeQrLogin(options) {
+  const { fetcher, session } = options;
+  const bz = (options.baizhiBase ?? MONKEYCODE_BAIZHI_BASE).replace(/\/+$/, "");
+  const lpBase = (options.lpBase ?? WECHAT_LP_BASE).replace(/\/+$/, "");
+  const lpUrl = `${lpBase}/connect/l/qrconnect?uuid=${urlEncode(session.uuid)}&_=${Date.now()}`;
+  const response = await fetcher(lpUrl, {
+    method: "GET",
+    headers: { Accept: "*/*", Referer: `${session.qrBase}/` }
+  });
+  const text = await response.text();
+  const errcode = Number(WX_ERRCODE_RE.exec(text)?.[1] ?? "NaN");
+  if (!Number.isFinite(errcode)) fail(`\u626B\u7801\u72B6\u6001\u54CD\u5E94\u5F02\u5E38\uFF1A${text.slice(0, 120)}`);
+  switch (errcode) {
+    case 408:
+      return { state: "pending" };
+    case 404:
+      return { state: "scanned" };
+    case 403:
+      return { state: "canceled" };
+    case 402:
+    case 500:
+      return { state: "expired" };
+    case 405: {
+      const code = WX_CODE_RE.exec(text)?.[1] ?? "";
+      if (code === "") fail("\u626B\u7801\u786E\u8BA4\u6210\u529F\u4F46\u672A\u8FD4\u56DE\u6388\u6743\u7801");
+      const baizhiCookie = await completeWechatCallback(fetcher, session, code, bz);
+      return { state: "confirmed", baizhiCookie };
+    }
+    default:
+      fail(`\u672A\u77E5\u626B\u7801\u72B6\u6001 wx_errcode=${errcode}`);
+  }
+}
+async function completeWechatCallback(fetcher, session, code, bz) {
+  const jar = /* @__PURE__ */ new Map();
+  const cb = new URL(session.callbackUrl);
+  cb.searchParams.set("code", code);
+  cb.searchParams.set("state", session.state);
+  const response = await fetcher(cb.toString(), { method: "GET", redirect: "manual" });
+  absorbSetCookie(jar, response);
+  if (response.status >= 400) {
+    const body = await response.text().catch(() => "");
+    fail(`\u5FAE\u4FE1\u767B\u5F55\u56DE\u8C03\u88AB\u62D2\uFF08HTTP ${response.status}\uFF09${body.slice(0, 120)}`);
+  }
+  let hops = 0;
+  let current = response.headers.get("location");
+  while (current !== null && current !== "" && hops < 6) {
+    const next = new URL(current, bz).toString();
+    const hop = await fetcher(next, { method: "GET", redirect: "manual", headers: { Cookie: cookieHeader(jar) } });
+    absorbSetCookie(jar, hop);
+    current = hop.headers.get("location");
+    hops += 1;
+  }
+  const cookie = cookieHeader(jar);
+  if (!/(?:^|;\s*)baizhi_session\s*=/.test(cookie)) {
+    fail("\u5FAE\u4FE1\u767B\u5F55\u56DE\u8C03\u672A\u4E0B\u53D1 baizhi_session \u4F1A\u8BDD");
+  }
+  const profile = await fetcher(`${bz}/api/v1/user/profile`, {
+    method: "GET",
+    headers: { Cookie: cookie, Accept: "application/json" }
+  });
+  if (profile.status === 401 || profile.status === 403) {
+    fail("\u5FAE\u4FE1\u767B\u5F55\u672A\u751F\u6548\uFF08\u56DE\u8C03\u5DF2\u8D70\u901A\u4F46\u4F1A\u8BDD\u65E0\u6548\uFF09");
+  }
+  return cookie;
+}
+
+// vendor/channel-pack/src/monkeycode-qr-login-page.ts
+async function startMonkeyCodeLoginFlow(options) {
+  const { fetcher, baizhiBase, lpBase } = options;
+  const flowOptions = { fetcher, baizhiBase, lpBase };
+  let qrDataUrl = "";
+  let session;
+  const fresh = async () => {
+    const started = await startMonkeyCodeQrLogin(flowOptions);
+    qrDataUrl = started.qrDataUrl;
+    session = started.session;
+  };
+  await fresh();
+  let resolveResult;
+  let rejectResult;
+  const result = new Promise((resolve2, reject) => {
+    resolveResult = resolve2;
+    rejectResult = reject;
+  });
+  result.catch(() => {
+  });
+  let settled = false;
+  const settleOk = (value) => {
+    if (settled) return;
+    settled = true;
+    resolveResult(value);
+  };
+  const settleErr = (error) => {
+    if (settled) return;
+    settled = true;
+    rejectResult(error);
+  };
+  let polling = false;
+  const reload = async () => {
+    await fresh();
+  };
+  const poll = async () => {
+    if (settled) return { state: "confirmed" };
+    if (polling) return { state: "pending" };
+    polling = true;
+    try {
+      if (session === void 0) throw new Error("\u626B\u7801\u4F1A\u8BDD\u672A\u521D\u59CB\u5316");
+      const polled = await pollMonkeyCodeQrLogin({ ...flowOptions, session });
+      if (polled.state === "confirmed" && polled.baizhiCookie !== void 0) {
+        const credential = await loginWithBaizhiSession(fetcher, MONKEYCODE, polled.baizhiCookie);
+        settleOk({ ...credential, created_at: Date.now() });
+        return { state: "confirmed" };
+      }
+      if (polled.state === "expired" || polled.state === "canceled") {
+        await fresh();
+        return { state: "expired" };
+      }
+      return { state: polled.state };
+    } catch (error) {
+      settleErr(error);
+      return { state: "expired", error: error instanceof Error ? error.message : String(error) };
+    } finally {
+      polling = false;
+    }
+  };
+  let closed = false;
+  const close = async () => {
+    if (closed) return;
+    closed = true;
+    settleErr(new Error("monkeycode: \u767B\u5F55\u6D41\u7A0B\u5DF2\u5173\u95ED"));
+  };
+  const timeoutMs = options.timeoutMs ?? MONKEYCODE_QR_TIMEOUT_MS;
+  const timer = setTimeout(() => {
+    settleErr(new Error(`monkeycode: \u767B\u5F55\u8D85\u65F6\uFF08${Math.round(timeoutMs / 1e3)} \u79D2\u5185\u672A\u5B8C\u6210\uFF09`));
+  }, timeoutMs);
+  timer.unref?.();
+  void result.catch(() => {
+  }).finally(() => {
+    clearTimeout(timer);
+    closed = true;
+  });
+  return { qrDataUrl, poll, reload, result, close };
 }
 
 // vendor/channel-pack/src/channel-pack-rpc.ts
@@ -66450,7 +66673,7 @@ function slotNamesOf(apiKey) {
   return { id: `${OPENCODE.id}-${tail.toLowerCase()}`, refName: `OPENCODE_ACCOUNT_${tail.toUpperCase()}` };
 }
 async function handleOpencodeRpc(ctx, pool, method, payload) {
-  const fail = (message2) => ({ ok: false, error: { code: "bad-request", message: message2 } });
+  const fail2 = (message2) => ({ ok: false, error: { code: "bad-request", message: message2 } });
   const done = (value) => ({ ok: true, value });
   const call2 = { method, payload };
   try {
@@ -66459,7 +66682,7 @@ async function handleOpencodeRpc(ctx, pool, method, payload) {
         const req = call2.payload;
         const apiKey = typeof req?.apiKey === "string" ? req.apiKey.trim() : "";
         if (!KEY_PATTERN.test(apiKey)) {
-          return fail("API key \u5F62\u72B6\u4E0D\u5BF9\uFF08\u5E94\u4EE5 sk- \u5F00\u5934\u3001\u81F3\u5C11 20 \u4F4D\uFF1B\u53EF\u5728 https://opencode.ai/auth \u751F\u6210\uFF09");
+          return fail2("API key \u5F62\u72B6\u4E0D\u5BF9\uFF08\u5E94\u4EE5 sk- \u5F00\u5934\u3001\u81F3\u5C11 20 \u4F4D\uFF1B\u53EF\u5728 https://opencode.ai/auth \u751F\u6210\uFF09");
         }
         const { id, refName } = slotNamesOf(apiKey);
         if (pool.listAccountsByProvider(OPENCODE.id).some((a) => a.id === id)) {
@@ -66509,7 +66732,7 @@ async function handleOpencodeRpc(ctx, pool, method, payload) {
       case "opencode.setProxy": {
         const req = call2.payload;
         if (typeof req?.accountId !== "string" || req.accountId.length === 0) {
-          return fail("\u7F3A\u5C11 accountId");
+          return fail2("\u7F3A\u5C11 accountId");
         }
         const raw = typeof req.proxy === "string" ? req.proxy : "";
         if (raw.trim().length === 0) {
@@ -66517,14 +66740,14 @@ async function handleOpencodeRpc(ctx, pool, method, payload) {
           return done({ proxy: "", label: "\u76F4\u8FDE\uFF08\u672C\u673A\u51FA\u53E3\uFF09" });
         }
         const normalized = normalizeProxy(raw);
-        if (!normalized.ok) return fail(normalized.reason);
+        if (!normalized.ok) return fail2(normalized.reason);
         await pool.setOpencodeProxy(req.accountId, normalized.proxy.url);
         return done({ proxy: normalized.proxy.url, label: normalized.proxy.label });
       }
       case "opencode.testProxy": {
         const req = call2.payload;
         const normalized = normalizeProxy(typeof req?.proxy === "string" ? req.proxy : "");
-        if (!normalized.ok) return fail(normalized.reason);
+        if (!normalized.ok) return fail2(normalized.reason);
         const startedAt = Date.now();
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), TEST_TIMEOUT_MS);
@@ -66533,10 +66756,10 @@ async function handleOpencodeRpc(ctx, pool, method, payload) {
             signal: controller.signal,
             dispatcher: buildProxyDispatcher(normalized.proxy)
           });
-          if (!response.ok) return fail(`\u6D4B\u8BD5\u5931\u8D25\uFF1A\u4EE3\u7406\u8FD4\u56DE HTTP ${response.status}`);
+          if (!response.ok) return fail2(`\u6D4B\u8BD5\u5931\u8D25\uFF1A\u4EE3\u7406\u8FD4\u56DE HTTP ${response.status}`);
           const body = await response.json();
           if (body.status !== "success" || typeof body.query !== "string") {
-            return fail("\u6D4B\u8BD5\u5931\u8D25\uFF1A\u4EE3\u7406\u672A\u80FD\u8FD4\u56DE\u51FA\u53E3 IP\uFF08\u53EF\u80FD\u88AB\u76EE\u6807\u7AD9\u70B9\u62D2\u7EDD\uFF09");
+            return fail2("\u6D4B\u8BD5\u5931\u8D25\uFF1A\u4EE3\u7406\u672A\u80FD\u8FD4\u56DE\u51FA\u53E3 IP\uFF08\u53EF\u80FD\u88AB\u76EE\u6807\u7AD9\u70B9\u62D2\u7EDD\uFF09");
           }
           return done({
             exitIp: body.query,
@@ -66545,7 +66768,7 @@ async function handleOpencodeRpc(ctx, pool, method, payload) {
           });
         } catch (error) {
           const message2 = error instanceof Error ? error.message : String(error);
-          return fail(`\u6D4B\u8BD5\u5931\u8D25\uFF1A${controller.signal.aborted ? "\u8FDE\u63A5\u8D85\u65F6" : message2}`);
+          return fail2(`\u6D4B\u8BD5\u5931\u8D25\uFF1A${controller.signal.aborted ? "\u8FDE\u63A5\u8D85\u65F6" : message2}`);
         } finally {
           clearTimeout(timer);
         }
@@ -66553,7 +66776,7 @@ async function handleOpencodeRpc(ctx, pool, method, payload) {
       case "opencode.rotateFingerprint": {
         const req = call2.payload;
         if (typeof req?.accountId !== "string" || req.accountId.length === 0) {
-          return fail("\u7F3A\u5C11 accountId");
+          return fail2("\u7F3A\u5C11 accountId");
         }
         const current = pool.opencodeFingerprintGenerationFor(req.accountId);
         const next = nextFingerprintGeneration({ projectId: current === 0 ? "anonymous" : String(current), generation: current });
@@ -66564,7 +66787,7 @@ async function handleOpencodeRpc(ctx, pool, method, payload) {
         return void 0;
     }
   } catch (error) {
-    return fail(error instanceof Error ? error.message : String(error));
+    return fail2(error instanceof Error ? error.message : String(error));
   }
 }
 
@@ -67572,6 +67795,8 @@ var KUKU_POLL_PATH = "/api/channel-pack/login/kuku/poll";
 var KUKU_RELOAD_PATH = "/api/channel-pack/login/kuku/reload";
 var AUTOCLAW_SEND_PATH = "/api/channel-pack/login/autoclaw/send";
 var AUTOCLAW_VERIFY_PATH = "/api/channel-pack/login/autoclaw/verify";
+var MONKEYCODE_POLL_PATH = "/api/channel-pack/login/monkeycode/poll";
+var MONKEYCODE_RELOAD_PATH = "/api/channel-pack/login/monkeycode/reload";
 var CHANNEL_PACK_ENDPOINT = "channel-pack";
 function shortId() {
   const buf = new Uint8Array(4);
@@ -67998,6 +68223,43 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
     }
   });
   connection.fetch.register({
+    path: MONKEYCODE_POLL_PATH,
+    methods: ["GET"],
+    requestBody: "buffered",
+    async fetch(request2) {
+      if (request2.method !== "GET") return embeddedJson({ error: "method not allowed" }, 405);
+      const flowId = new URL(request2.url ?? "/", "http://127.0.0.1").searchParams.get("flow") ?? "";
+      const flow = flowId === "" ? void 0 : embeddedLoginFlows.get(flowId);
+      if (flow === void 0 || !("poll" in flow) || flowId.startsWith("kuku-") || flowId.startsWith("autoclaw-")) {
+        return embeddedJson({ error: "not found" }, 404);
+      }
+      try {
+        return embeddedJson(await flow.poll());
+      } catch (error) {
+        return embeddedJson({ state: "expired", error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+  });
+  connection.fetch.register({
+    path: MONKEYCODE_RELOAD_PATH,
+    methods: ["GET"],
+    requestBody: "buffered",
+    async fetch(request2) {
+      if (request2.method !== "GET") return embeddedJson({ error: "method not allowed" }, 405);
+      const flowId = new URL(request2.url ?? "/", "http://127.0.0.1").searchParams.get("flow") ?? "";
+      const flow = flowId === "" ? void 0 : embeddedLoginFlows.get(flowId);
+      if (flow === void 0 || !("reload" in flow) || flowId.startsWith("kuku-") || flowId.startsWith("autoclaw-")) {
+        return embeddedJson({ error: "not found" }, 404);
+      }
+      try {
+        await flow.reload();
+        return embeddedJson({ qrDataUrl: flow.qrDataUrl });
+      } catch (error) {
+        return embeddedJson({ state: "expired", error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+  });
+  connection.fetch.register({
     path: AUTOCLAW_SEND_PATH,
     methods: ["POST"],
     requestBody: "buffered",
@@ -68178,21 +68440,6 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           return { ok: false, error: { code: "bad-request", message: "credential is empty" } };
         }
         let parsed = channel.parse(text);
-        if (provider === MONKEYCODE.id && /(?:^|;\s*)baizhi_session\s*=/.test(text)) {
-          try {
-            const { loginWithBaizhiSession: loginWithBaizhiSession2 } = await Promise.resolve().then(() => (init_monkeycode_auth(), monkeycode_auth_exports));
-            const credential = await loginWithBaizhiSession2(codeartsFetcher, MONKEYCODE, text);
-            parsed = { ...credential, created_at: Date.now() };
-          } catch (error) {
-            return {
-              ok: false,
-              error: {
-                code: "bad-request",
-                message: `\u767E\u667A\u4E91\u6865\u63A5\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`
-              }
-            };
-          }
-        }
         if (parsed === void 0) {
           return { ok: false, error: { code: "bad-request", message: `\u51ED\u636E\u5F62\u72B6\u4E0D\u5408\u6CD5\uFF0C\u5E94\u4E3A\uFF1A${channel.hint}` } };
         }
@@ -68431,6 +68678,38 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             createdAt: Date.now()
           });
           return { ok: true, value: { accountId: id, loginKind: "kuku-qr", flowId, qrDataUrl: flow.qrDataUrl } };
+        } else if (provider === MONKEYCODE.id) {
+          const flow = await startMonkeyCodeLoginFlow({ fetcher: codeartsFetcher });
+          const flowId = `monkeycode-${id}`;
+          embeddedLoginFlows.set(flowId, flow);
+          const cleanup = () => {
+            embeddedLoginFlows.delete(flowId);
+          };
+          flow.result.then(async (credential) => {
+            cleanup();
+            await ctx.credentials.set(credentialRef13(refName), JSON.stringify(credential));
+            await pool.updateAccount(id, {
+              nickname: credential.nickname ?? id,
+              // Cookie 型渠道没有续期端点，只能重新扫码/粘贴。
+              refreshable: false
+            });
+          }).catch((error) => {
+            cleanup();
+            ctx.logger.warn(`[channel-pack] background ${MONKEYCODE.id} QR login failed for ${id}: ${String(error)}`);
+            recordLoginFailure(id, error);
+            void pool.removeAccount(id).catch(() => {
+            });
+          });
+          await pool.addAccount({
+            id,
+            provider,
+            nickname: id,
+            enabled: true,
+            credentialRef: refName,
+            refreshable: false,
+            createdAt: Date.now()
+          });
+          return { ok: true, value: { accountId: id, loginKind: "monkeycode-qr", flowId, qrDataUrl: flow.qrDataUrl } };
         } else if (provider === "commandcode") {
           const { startCommandCodeLogin: startCommandCodeLogin2 } = await Promise.resolve().then(() => (init_commandcode_auth(), commandcode_auth_exports));
           const { COMMANDCODE: COMMANDCODE2 } = await Promise.resolve().then(() => (init_commandcode_product(), commandcode_product_exports));
@@ -71186,19 +71465,10 @@ function reply(rpcId, result) {
   return Response.json({ type: "server-response", rpcId, result: value });
 }
 var ADOPTABLE_CHANNELS = {
-  monkeycode: {
-    // ⚠️ 两种 cookie 都收，自动识别：
-    // - **百智云**（baizhi.cloud，含 `baizhi_session`）→ 走 OIDC 桥接换出
-    //   `monkeycode_ai_session`（官方桌面端同款链路，纯 HTTP，见
-    //   monkeycode-auth.ts 的 loginWithBaizhiSession）。这是**推荐**方式：
-    //   百智云会话长期有效，过期后重新桥接即可，不必再翻 DevTools。
-    // - **MonkeyCode**（含 `monkeycode_ai_session`）→ 原样收下（老路径兜底）。
-    hint: "\u767E\u667A\u4E91 Cookie\uFF08\u542B baizhi_session=\u2026\uFF0C\u63A8\u8350\uFF09\u6216 MonkeyCode Cookie\uFF08\u542B monkeycode_ai_session=\u2026\uFF09",
-    parse: (text) => {
-      const cookie = normalizeCookie(text);
-      return cookie === void 0 ? void 0 : { access_token: cookie, created_at: Date.now() };
-    }
-  },
+  // monkeycode 已改为「卡片内微信扫码登录」（account.create → loginKind:
+  // 'monkeycode-qr'）。用户 2026-11-05 明确「只留一个卡片内扫码，粘贴 Cookie
+  // 麻烦」，故不再作为粘贴型渠道出现在 ADOPTABLE_CHANNELS 里。
+  // 百智云会话→MonkeyCode 会话的 OIDC 桥接仍由扫码流程内部调用。
   orcaterm: {
     hint: "\u6D4F\u89C8\u5668 Cookie\uFF08\u5FC5\u987B\u542B ot_session=\u2026\uFF09",
     parse: (text) => {
@@ -72622,17 +72892,17 @@ function readJson(request2, signal) {
       signal.removeEventListener("abort", abort);
       return true;
     };
-    const fail = (error) => {
+    const fail2 = (error) => {
       if (finish()) reject(error);
     };
-    const abort = () => fail(new OpenAiGatewayError("request was aborted", 499, "aborted", "aborted"));
+    const abort = () => fail2(new OpenAiGatewayError("request was aborted", 499, "aborted", "aborted"));
     signal.addEventListener("abort", abort, { once: true });
     request2.on("data", (chunk) => {
       if (settled) return;
       const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       size += data.length;
       if (size > BODY_LIMIT) {
-        fail(new OpenAiGatewayError("request body is too large", 413, "invalid_request_error", "request_too_large"));
+        fail2(new OpenAiGatewayError("request body is too large", 413, "invalid_request_error", "request_too_large"));
         request2.destroy();
         return;
       }
