@@ -19,8 +19,8 @@
     },
     {
       "path": "client.js",
-      "size": 476451,
-      "sha256": "55f65cd5d108d06f37d01169bc0faa587923c27774973af989b5ef3c3a1038bd"
+      "size": 470075,
+      "sha256": "7ac2a9c50dc16200f630c087518d132a10b6ab737d6aeed57117c93a49a9ea1f"
     },
     {
       "path": "cordis.patch.yml",
@@ -35,7 +35,7 @@
     {
       "path": "index.js",
       "size": 90720,
-      "sha256": "8043d6a038c8c8a23d17bfe39f4fecd57aef9f48f73e4541e6efe23c2207e4d6"
+      "sha256": "8680aca1c65f23da26b65972ad1dbd7bf7e0c705db8bd74a34afbda2323588a2"
     },
     {
       "path": "locale/en.json",
@@ -50,7 +50,7 @@
     {
       "path": "package.json",
       "size": 2853,
-      "sha256": "6e36d6da4a192a5b242eae1c83121f969749db16906ad9144f22048192bf96f1"
+      "sha256": "5f6a5e400e84c6f1065f4e082139d50785eb2d19e8a534df845e4fc384713892"
     },
     {
       "path": "src/adapter.js",
@@ -74,8 +74,8 @@
     },
     {
       "path": "src/channel-catalog.js",
-      "size": 13025,
-      "sha256": "8071a77a5daf59bf970bb23e64fc5d2bba34d93b9bfd34931ab859f57463c235"
+      "size": 13008,
+      "sha256": "33fb5111a7757d31102ea413be6e053279110d5c15573fd9b2b329746d911e08"
     },
     {
       "path": "src/channel.js",
@@ -89,8 +89,8 @@
     },
     {
       "path": "src/core/channel-usage.js",
-      "size": 14734,
-      "sha256": "167b2100543adecbb95252d6db30a618a546298ba97f24a80b02e474e886c7f7"
+      "size": 14723,
+      "sha256": "6d23da1de8d79a1ee3b3d15d0336f5c6ef5d2f567e4a8ed50a809ca50f9113ae"
     },
     {
       "path": "src/core/completion.js",
@@ -324,13 +324,13 @@
     },
     {
       "path": "vendor/channel-pack/NOTICE.md",
-      "size": 3844,
-      "sha256": "72e1095271dd3c9044fb84e062fa84dc572c69dff7f2a6cf6bf8370f939ac25f"
+      "size": 3785,
+      "sha256": "6f30de5f4c76c01535e384ab2cfed5e97b621876f5eb8de836fa6cc466f57035"
     },
     {
       "path": "vendor/channel-pack/pack.js",
-      "size": 3323392,
-      "sha256": "254109a08b4d4f653b2a4e3d0e9fab0b74f4dbc58882a3434073f0340c670f06"
+      "size": 3125093,
+      "sha256": "0b362ade42be04a88a0204e0c5fc0b36263b0fe735936a53e329bb120f661c56"
     },
     {
       "path": "vendor/channel-pack/qoder-auth-wasm.wasm",
