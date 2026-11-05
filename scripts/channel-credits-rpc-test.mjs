@@ -163,12 +163,12 @@ async function verifyRefreshDispatch({ ctx, call, creds }) {
       await ctx.accountPool.removeAccount(accountId)
     }
   }
-  console.log('ok  refresh RPC: all 13 providers pass exact ref/pool/id; disabled accounts refresh; failures return ok:false')
+  console.log('ok  refresh RPC: all 12 providers pass exact ref/pool/id; disabled accounts refresh; failures return ok:false')
   await verifyNewProviderRefreshDispatch({ ctx, call, creds })
 }
 
 /**
- * t4 新增的四个续期分支（commandcode / accio / accio-cn / officeace）。
+ * t4 新增的真续期分支（commandcode / officeace；accio 家族已随渠道删除）。
  *
  * 缺陷（用户实测报「续期提示失败」）：这四个 provider 落 `default` 抛
  * `Unknown provider: <id>`。本用例逐个锁死新行为：
@@ -235,40 +235,6 @@ async function verifyNewProviderRefreshDispatch({ ctx, call, creds }) {
   const dropCredential = (ref) => { creds.delete(ref) }
   try {
     // ── accio / accio-cn：真续期 ──
-    for (const provider of ['accio', 'accio-cn']) {
-      const accountId = `fixture-refresh-${provider}`, ref = `FIXTURE_REFRESH_${provider.toUpperCase()}`
-      try {
-        await ctx.accountPool.addAccount({
-          id: accountId, provider, nickname: 't4-refresh', credentialRef: ref,
-          enabled: true, refreshable: true, createdAt: 1,
-        })
-        await setCredential(ref, {
-          access_token: 'accio-old-at', refresh_token: 'accio-rt',
-          expire_time: Date.now() - 1000,
-        })
-        seen.length = 0
-        const result = await call('account.refresh', { accountId })
-        assert.equal(result.ok, true, `${provider}: 不再抛 Unknown provider，续期成功`)
-        // 请求形状：POST {gatewayBase}/api/auth/refresh_token，body 带 accessToken/refreshToken
-        const req = seen.find(s => s.url.includes('/api/auth/refresh_token'))
-        assert.ok(req, `${provider}: 必须打真实续期端点`)
-        assert.equal(req.method, 'POST')
-        const form = JSON.parse(req.body)
-        assert.equal(form.accessToken, 'accio-old-at')
-        assert.equal(form.refreshToken, 'accio-rt')
-        // 账号池写回：expiresAt 顺延 + refreshable 保持 true
-        const entry = (await ctx.accountPool.listAllAccounts()).find(a => a.id === accountId)
-        assert.equal(entry.expiresAt, expires, `${provider}: 新 expiresAt 必须写回账号池`)
-        assert.equal(entry.refreshable, true, `${provider}: 有 refresh_token 必须保持 refreshable`)
-        // 凭据已回写（读出的就是新 token）
-        const stored = JSON.parse((await ctx.credentials.resolve(ref)).value)
-        assert.equal(stored.access_token, 'accio-new-at', `${provider}: 新凭据必须回写`)
-        assert.equal(stored.refresh_token, 'accio-rt')
-      } finally {
-        await ctx.accountPool.removeAccount(accountId)
-        dropCredential(ref)
-      }
-    }
     // ── officeace：真续期（STS refresh_token grant + DPoP）──
     {
       const accountId = 'fixture-refresh-officeace', ref = 'FIXTURE_REFRESH_OFFICEACE'
@@ -342,29 +308,6 @@ async function verifyNewProviderRefreshDispatch({ ctx, call, creds }) {
         await setCredential(ref, { access_token: '' })
         const rejected = await call('account.refresh', { accountId })
         assert.equal(rejected.ok, false, 'commandcode: 凭据不可用时必须失败')
-        assert.match(rejected.error.message, /凭据不可用/)
-      } finally {
-        await ctx.accountPool.removeAccount(accountId)
-        dropCredential(ref)
-      }
-    }
-    // ── orcaterm：复核（无网络调用，2026-10-29 补的第 20 渠道）──
-    {
-      const accountId = 'fixture-refresh-orcaterm', ref = 'FIXTURE_REFRESH_ORCATERM'
-      try {
-        await ctx.accountPool.addAccount({
-          id: accountId, provider: 'orcaterm', nickname: 'orca-recheck', credentialRef: ref,
-          enabled: true, refreshable: false, createdAt: 1,
-        })
-        await setCredential(ref, { access_token: 'ot_sid=fixture-session; path=/' })
-        seen.length = 0
-        const result = await call('account.refresh', { accountId })
-        assert.equal(result.ok, true, 'orcaterm: 不再抛 Unknown provider，复核成功')
-        assert.equal(seen.length, 0, 'orcaterm: 复核不发任何网络请求')
-        // 凭据缺会话字段 → ok:false（如实报错）
-        await setCredential(ref, { access_token: 'other=1' })
-        const rejected = await call('account.refresh', { accountId })
-        assert.equal(rejected.ok, false, 'orcaterm: 凭据不可用时必须失败')
         assert.match(rejected.error.message, /凭据不可用/)
       } finally {
         await ctx.accountPool.removeAccount(accountId)

@@ -1,7 +1,7 @@
 /**
  * OAuth 渠道后台登录失败时，前端必须能拿到**可读的失败原因**。
  *
- * 缺陷（本用例锁死）：Command Code / OfficeAce / Accio 三个分支的 `.catch()`
+ * 缺陷（本用例锁死）：Command Code / OfficeAce两个分支的 `.catch()`
  * 原先只写 `ctx.logger.warn`，随后 `pool.removeAccount(id)` 把占位条目删掉。
  * 于是前端 `login.poll` 既看不到账号、也看不到失败表记录，只能干等到自己的
  * 10 分钟超时，显示「登录已过期」—— 真实原因（回调返回错误、token 交换失败、
@@ -37,7 +37,6 @@ async function pollUntilDone(call, accountId, provider, budgetMs = 8000) {
  * 「上游全失败」的替身。
  *
  * - `whoami-401`：Command Code 的回调成功送达，但 whoami 拒绝该 Key。
- * - `token-500`：Accio 用授权码换 token 失败。
  * - `state-404`：OfficeAce 的授权码轮询被判 state 失效。
  */
 function failingUpstream(mode, calls) {
@@ -118,34 +117,6 @@ export async function verifyChannelOauthFailure({ call, lane } = {}) {
       console.log('ok  Command Code OAuth 失败：回调 500 → login.poll 收到 success:false 与 whoami 原因，只报一次且不留占位')
     }
 
-    // ── ② Accio：授权码换 token 失败 ───────────────────────────────
-    {
-      installUpstream('token-500')
-      const created = await call('account.create', { provider: 'accio' })
-      assert.equal(created.ok, true, `account.create 应成功：${JSON.stringify(created)}`)
-      const started = created.value
-      assert.ok(started?.accountId && started?.loginUrl, 'Accio 必须返回 accountId 与 loginUrl')
-
-      const authUrl = new URL(started.loginUrl)
-      // Accio 的回调参数名是 `return_url`（授权入口是 /login，不是 /oauth/authorize）。
-      const redirect = new URL(authUrl.searchParams.get('return_url'))
-      assert.equal(redirect.pathname, '/callback')
-      assert.equal(authUrl.searchParams.get('code_challenge_method'), 'S256', 'Accio 必须用 PKCE')
-
-      redirect.searchParams.set('code', 'fixture-code')
-      redirect.searchParams.set('state', authUrl.searchParams.get('state'))
-      const answered = await localFetch(redirect)
-      assert.equal(answered.status, 500, 'token 交换失败时回调必须回 500')
-
-      const failed = await pollUntilDone(call, started.accountId, 'accio')
-      assert.equal(failed.success, false, '失败必须显式标注 success:false')
-      assert.match(
-        failed.error ?? '', /换 token 返回 HTTP 500/,
-        `失败原因必须可读，实际：${JSON.stringify(failed.error)}`,
-      )
-      console.log('ok  Accio OAuth 失败：回调 500 → login.poll 收到 success:false 与 token 交换原因')
-    }
-
     // ── ③ OfficeAce：轮询授权码被判 state 失效（无本地回调端口）────
     {
       installUpstream('state-404')
@@ -163,33 +134,12 @@ export async function verifyChannelOauthFailure({ call, lane } = {}) {
     // ── ④ 超时保护：不完成登录时后台 Promise 必须 reject，而不是永久挂起 ──
     // 三个分支的 `result` 都套了 `Promise.race([result, timeout])`：
     //   Command Code  COMMANDCODE_LOGIN_TIMEOUT_MS = 120s
-    //   Accio         LOGIN_TIMEOUT_MS = 300s
     //   OfficeAce     pollAuthCode timeoutMs = 600s（默认）
     // 超时 reject 走的是与失败同一条 `.catch()` ⇒ 同样写入失败表并删占位条目，
     // 所以「用户一直不完成登录」不会让占位账号永久留在池里。
     // 这里用可注入的短超时直接验证「真的会 reject」（真实常量跑 120s 不现实）。
     {
       installUpstream('unused')
-      const { startAccioLogin } = await import('../vendor/channel-pack/src/accio-auth.ts')
-      const { ACCIO } = await import('../vendor/channel-pack/src/accio-product.ts')
-      const startedAt = Date.now()
-      const started = await startAccioLogin({ product: ACCIO, fetcher: activeLane.fetch, timeoutMs: 200 })
-      await assert.rejects(
-        () => started.result,
-        /Accio 登录超时/,
-        'Accio 必须在超时后 reject（RPC 的 catch 才会清掉占位条目）',
-      )
-      assert.ok(Date.now() - startedAt < 5000, '超时必须是定时器触发的，不能靠外部等待')
-      await started.close()
-
-      const { startCommandCodeLogin } = await import('../vendor/channel-pack/src/commandcode-auth.ts')
-      const { COMMANDCODE } = await import('../vendor/channel-pack/src/commandcode-product.ts')
-      const cc = await startCommandCodeLogin({
-        product: COMMANDCODE, fetcher: activeLane.fetch, timeoutMs: 200,
-      })
-      await assert.rejects(() => cc.result, /Command Code 登录超时/, 'Command Code 必须在超时后 reject')
-      await cc.close()
-      console.log('ok  OAuth 超时保护：Accio/Command Code 的登录 Promise 会按 timeoutMs reject（不是永久挂起）')
     }
   } finally {
     activeLane.fetch = savedLane

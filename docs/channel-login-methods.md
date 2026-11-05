@@ -1,7 +1,7 @@
 # 渠道登录方式矩阵
 
 > 一句话：22 个账号渠道里，**18 个的登录全自动完成**（浏览器/本地页/短信码/扫码，不需要手抄凭据），
-> **1 个（`loomy`）在微信未绑手机号时会在弹窗内补要短信码**，**1 个只能粘贴凭据**。本文的「一键」指：点「添加账号」后只需在浏览器内完成授权，
+> **1 个（`loomy`）在微信未绑手机号时会在弹窗内补要短信码**；纯粘贴登录形态已全部移除。本文的「一键」指：点「添加账号」后只需在浏览器内完成授权，
 > 插件自己把 token 收回来，**不需要手动复制任何东西**。
 
 ## 1. 总表
@@ -11,46 +11,39 @@
 | 1 | `codearts` | 浏览器授权 → 本地回调收授权码（两步式） | ✅ | 浏览器登录 | 是 | `channel-pack-rpc.ts:1613` |
 | 2 | `buddy` | 浏览器授权 → 轮询 token（`auth/state` 换登录页） | ✅ | 浏览器登录 | 否 | `channel-pack-rpc.ts:1481-1506`、`buddy-oauth.ts:137,178` |
 | 3 | `workbuddy` | 同 `buddy`（同一实现，不同产品配置） | ✅ | 浏览器登录 | 否 | 同上 + `product.ts` 的 `WORKBUDDY` |
-| 5 | `qoder` | 设备码轮询（不起本地端口） | ✅ | 浏览器点授权/选账号 | 否 | `qoder-oauth.ts:119,205` |
-| 6 | `qodercn` | 同 `qoder`（同族不同端点） | ✅ | 浏览器点授权/选账号 | 否 | 同上 |
-| 7 | `trae` | 浏览器授权 → 本地回调 | ✅ | 浏览器登录 | 是 | `trae-oauth.ts:99,263` |
-| 8 | `cline` | WorkOS 设备码轮询 | ✅ | 浏览器点授权 | 否 | `cline-oauth.ts:178,230` |
-| 9 | `antigravity` | Google OAuth → 本地回调 | ✅ | Google 登录 | 是 | `antigravity-auth.ts:4`、`antigravity-oauth.ts:103` |（原名 `gemini`，2026-11-01 改名）|
-| 10 | `minimax` | OAuth 设备码 + PKCE | ✅ | 浏览器点授权 | 否 | `minimax-oauth.ts:72,113` |
-| 11 | `zcode` | 服务端中介的设备授权 + 轮询 | ✅ | 浏览器登录 | 否 | `zcode-login.ts:1-40` |
-| 12 | `commandcode` | 浏览器 OAuth → 本地回调（5959 起，最多 10 个） | ✅ | 浏览器登录 | 是 | `commandcode-auth.ts:12`、`commandcode-product.ts:139` |
-| 13 | `officeace` | 自助 OAuth + 轮询授权码（回调不落本机） | ✅ | 浏览器登录 | 否 | `channel-pack-rpc.ts:1552` 起 |
-| 14 | `accio` | PKCE + 本地回调（5960–5969） | ✅ | 浏览器登录 | 是 | `accio-auth.ts:321,353` |
-| 15 | `accio-cn` | 同 `accio`（国内端点） | ✅ | 浏览器登录 | 是 | 同上 |
-| 16 | `loomy` | 微信扫码，本地页承载 | ⚠️ | 微信扫码（未绑手机号时补短信码） | 是 | `channel-pack-rpc.ts:1793` 起 |
-| 17 | `raccoon` | 微信扫码（服务端下发 code）/ 短信，本地页承载 | ✅ | 微信扫码或短信 | 是 | `raccoon-login-page.ts`、`raccoon-oauth.ts` 的 `/api/iam/v1` 函数 |
-| 18 | `monkeycode` | 微信扫码（百智云 OIDC），**卡片内嵌二维码**（2026-11-05，无本地页） | ✅ | 手机扫码 + 确认 | 否 | `monkeycode-qr-login.ts`、`monkeycode-qr-login-page.ts`，驱动路由 `/api/channel-pack/login/monkeycode/*` |
-| 19 | `orcaterm` | 粘贴 Cookie（`ot_session`） | ❌ | 手动复制 Cookie | 否 | `channel-pack-rpc.ts:4455` |
-| 20 | `kuku` | 百度 App 扫码，**卡片内嵌二维码**（2026-10-30，无本地页） | ✅ | 手机扫码 + 确认 | 否 | `kuku-qr-login.ts`、`kuku-qr-login-page.ts` |
-| 21 | `autoclaw` | 手机号 + 短信验证码，**卡片内嵌表单**（2026-10-30，无本地页） | ✅ | 输手机号 + 验证码 | 否 | `autoclaw-login-page.ts`、`autoclaw-sms.ts` |
+| 4 | `qoder` | 设备码轮询（不起本地端口） | ✅ | 浏览器点授权/选账号 | 否 | `qoder-oauth.ts:119,205` |
+| 5 | `qodercn` | 同 `qoder`（同族不同端点） | ✅ | 浏览器点授权/选账号 | 否 | 同上 |
+| 6 | `trae` | 浏览器授权 → 本地回调 | ✅ | 浏览器登录 | 是 | `trae-oauth.ts:99,263` |
+| 7 | `cline` | WorkOS 设备码轮询 | ✅ | 浏览器点授权 | 否 | `cline-oauth.ts:178,230` |
+| 8 | `antigravity` | Google OAuth → 本地回调 | ✅ | Google 登录 | 是 | `antigravity-auth.ts:4`、`antigravity-oauth.ts:103` |（原名 `gemini`，2026-11-01 改名）|
+| 9 | `minimax` | OAuth 设备码 + PKCE | ✅ | 浏览器点授权 | 否 | `minimax-oauth.ts:72,113` |
+| 10 | `zcode` | 服务端中介的设备授权 + 轮询 | ✅ | 浏览器登录 | 否 | `zcode-login.ts:1-40` |
+| 11 | `commandcode` | 浏览器 OAuth → 本地回调（5959 起，最多 10 个） | ✅ | 浏览器登录 | 是 | `commandcode-auth.ts:12`、`commandcode-product.ts:139` |
+| 12 | `officeace` | 自助 OAuth + 轮询授权码（回调不落本机） | ✅ | 浏览器登录 | 否 | `channel-pack-rpc.ts:1552` 起 |
+| 13 | `loomy` | 微信扫码，本地页承载 | ⚠️ | 微信扫码（未绑手机号时补短信码） | 是 | `channel-pack-rpc.ts:1793` 起 |
+| 14 | `raccoon` | 微信扫码（服务端下发 code）/ 短信，本地页承载 | ✅ | 微信扫码或短信 | 是 | `raccoon-login-page.ts`、`raccoon-oauth.ts` 的 `/api/iam/v1` 函数 |
+| 15 | `autoclaw` | 手机号 + 短信验证码，**卡片内嵌表单**（2026-10-30，无本地页） | ✅ | 输手机号 + 验证码 | 否 | `autoclaw-login-page.ts`、`autoclaw-sms.ts` |
 
-统计：**一键 18 / 半自动 1 / 纯粘贴 1**（共 20 个渠道；2026-10-25 移除 `autoclaw-intl` 与 `lobsterai`；2026-11-05 `monkeycode` 由粘贴改为微信扫码）。
+统计：**一键 14 / 半自动 1 / 纯粘贴 0**（共 15 个渠道；2026-11-05 移除 monkeycode/kuku/accio/accio-cn，深夜追加移除 orcaterm）。
 
 ## 2. 三种流为什么不能统一
 
 - **设备码**（`qoder`/`qodercn`、`cline`、`minimax`、`zcode`）：插件只拿到 `verification_uri`
   与 `user_code`，不监听任何端口，因此不受本机端口冲突影响。
-- **本地回调**（`codearts`、`trae`、`antigravity`、`commandcode`、`accio`）：在
+- **本地回调**（`codearts`、`trae`、`antigravity`、`commandcode`）：在
   `127.0.0.1` 上起一次性 HTTP 服务接授权码。`commandcode` 从 5959 起逐个试 10 个端口
-  （与官方 CLI 一致，`commandcode-product.ts:139`），`accio` 用 5960–5969（两段有重叠），
   其余用候选端口探测（`codearts` 只认 `code`，旧 ticket 轮询兜底已于 2026-10-29 删除），
   `antigravity` 的端口是动态 0（不是固定 8845）。
 - **轮询 token**（`buddy`/`workbuddy`、`officeace`）：浏览器授权在**上游服务端**完成，
   插件只用 `state` 或授权码轮询结果，所以不起本地端口。
-- **Accio 家族只走浏览器授权**：2026-10-24 真机确认可用后，按用户要求移除了「改用粘贴令牌」兜底
-  （`account.adopt` 不再接受 `accio` / `accio-cn`）。
+  （`account.adopt` 的粘贴表与代码口径一致：只剩 OrcaTerm）。
 - **本地页承载扫码/短信**（`loomy`、`raccoon`）：起本地页显示二维码或短信表单，
   用户在页面里完成，插件轮询登录态；对外统一返回 `loginUrl`，前端无需改动。都不需要手抄
   凭据，故计入「一键」；`loomy` 的界面声明是 `browser+sms`，**仅当该微信账号未绑手机号时**
   弹窗内会补要手机号 + 短信码（面板本身不渲染短信表单），因此单独标成「半自动」。
-- **卡片内嵌登录**（`kuku`、`autoclaw`，2026-10-30）：这两家的本地页已删——远程浏览器
+- **卡片内嵌登录**（`autoclaw`，2026-10-30）：本地页已删——远程浏览器
   （DSH 在 NAS、浏览器在 PC）打不开 127.0.0.1 本地页，登录必败。现改为 `account.create`
-  直接回 `flowId`（kuku 另回二维码 data URL），二维码/短信表单直接渲染在渠道卡片里，
+  直接回 `flowId`，短信表单直接渲染在渠道卡片里，
   经 DSH 路由 `/api/channel-pack/login/...` 驱动；成功/失败仍由 `login.poll` 收尾，
   前端类型契约不变。
 - **粘贴**（5 个）：上游没有可脚本化的授权流，只能手工复制。
@@ -108,10 +101,7 @@
 | 事项 | 状态 | 说明 |
 | --- | --- | --- |
 | `autoclaw`（国内）短信登录 | **已实现，真机验证通过** | 手机号 + 验证码；2026-10-30 起为**卡片内嵌表单**（本地弹窗页已删，远程浏览器可用）：`autoclaw-login-page.ts`（流程对象）+ `autoclaw-sms.ts`（协议），驱动路由 `/api/channel-pack/login/autoclaw/*`。2026-10-24 真机换到 24h token。⚠️ 常量逆向所得，失效时该渠道暂不可用（粘贴入口已移除）。 |
-| `kuku` 扫码登录 | **已实现** | 百度 passport 扫码：`kuku-qr-login.ts`（协议）+ `kuku-qr-login-page.ts`（流程对象；2026-10-30 起卡片内嵌二维码，本地页已删），驱动路由 `/api/channel-pack/login/kuku/*`。两个只有真连才暴露的坑已修：`/channel/unicast` 是**长轮询**（未扫码约 30s 才回，需 45s 超时）；`bdusslogin` **成功响应没有 errno**（写 `errno===0` 会判失败每次真登录）。 |
 | ~~`autoclaw-intl` OAuth~~ | 渠道已移除 | 2026-10-25 按用户要求整渠道删除（Z.ai OAuth loopback + 阿里滑块，自动化成本高）。 |
-| `orcaterm` 书签收号 | 半自动，待实测 | `ot_session` 非 HttpOnly，用户在已登录页点一次书签回传；未知项是 https 页 → `http://127.0.0.1` 的 PNA/混合内容限制。 |
-| `monkeycode` | **已实现，卡片内微信扫码** | 2026-11-05 按用户要求「只留一个卡片内扫码，粘贴 Cookie 麻烦」：照官方桌面端 `desktop/src/baizhi/wechat.rs` 移植 qrconnect 长轮询协议（`monkeycode-qr-login.ts`），扫码确认后拿 `baizhi_session` 走 `loginWithBaizhiSession()` OIDC 桥接换出 `monkeycode_ai_session`。粘贴入口已从 `ADOPTABLE_CHANNELS` 与前端移除；驱动路由 `/api/channel-pack/login/monkeycode/{poll,reload}`，NAS 远程浏览器可用。 |
 | 未登录展示模型列表 | **默认隐藏（已恢复原逻辑）** | 见 §4：候选里不进、设置页照常显示；`DSH_HIDE_MODELS_WITHOUT_ACCOUNT=0` 可预览；登录后自动刷新进候选。 |
 | 登录失败无反馈 | **已修** | 12 个渠道原先失败只写日志；现统一 `recordLoginFailure`，`login.poll` 能拿到原因（`scripts/login-failure-reporting-test.mjs` 守卫）。 |
 

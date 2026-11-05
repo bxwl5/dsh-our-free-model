@@ -10,10 +10,6 @@ import { registerTraeLlm } from './trae-adapter.js'
 import { registerClineLlm } from './cline-adapter.js'
 import { registerCommandCodeLlm } from './commandcode-adapter.js'
 import { CommandCodeAuth } from './commandcode-service.js'
-import { registerMonkeyCodeLlm } from './monkeycode-adapter.js'
-import { registerOrcaTermLlm } from './orcaterm-adapter.js'
-import { registerKukuLlm } from './kuku-adapter.js'
-import { registerAccioLlm } from './accio-adapter.js'
 import { registerOfficeAceLlm } from './officeace-adapter.js'
 import { registerAutoClawLlm } from './autoclaw-adapter.js'
 import { registerLoomyLlm, parseLoomyRemoteModels } from './loomy-adapter.js'
@@ -53,10 +49,6 @@ import { QODER, QODER_CN } from './qoder-product.js'
 import { TRAE } from './trae-product.js'
 import { CLINE } from './cline-product.js'
 import { COMMANDCODE } from './commandcode-product.js'
-import { MONKEYCODE } from './monkeycode-product.js'
-import { ORCATERM } from './orcaterm-product.js'
-import { KUKU } from './kuku-product.js'
-import { ACCIO, ACCIO_CN } from './accio-product.js'
 import { OFFICEACE } from './officeace-product.js'
 import { refreshOfficeAceCredential } from './officeace.js'
 import { refreshAutoclawCredential } from './autoclaw-sms.js'
@@ -68,10 +60,6 @@ import type { QoderCredential } from './qoder.js'
 import type { TraeCredential } from './trae.js'
 import type { ClineCredential } from './cline.js'
 import type { CommandCodeCredential } from './commandcode.js'
-import type { MonkeyCodeCredential } from './monkeycode.js'
-import type { OrcaTermCredential } from './orcaterm.js'
-import type { KukuCredential } from './kuku.js'
-import type { AccioCredential } from './accio.js'
 import type { OfficeAceCredential } from './officeace.js'
 import type { AutoClawCredential } from './autoclaw.js'
 import type { LoomyCredential } from './loomy.js'
@@ -308,7 +296,7 @@ export function makeReadImageRequest(ctx: Context) {
  * 数组没有这个歧义，且顺序稳定（注册顺序）。
  */
 export interface ChannelPackMount {
-  /** 本包向 `ctx.llm` 注册的全部 provider id（20 个渠道）。 */
+  /** 本包向 `ctx.llm` 注册的全部 provider id（15 个渠道）。 */
   providers: string[]
 }
 
@@ -673,7 +661,7 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
      * `network.fetch` 是 `createChannelFetch()` 包装过的出口，它在最终请求字节上
      * 跑 `scrubFetchArguments`（`content-fingerprint.ts` 的 `scrubJsonBody`），
      * 与 DSH 版本、消息结构、是否热重载都无关 —— 这才是模块头要求的
-     * 「20 个渠道共同、绕不过去的出口」。
+     * 「16 个渠道共同、绕不过去的出口」。
      *
      * ⚠️ `BuddyAdapter` 默认是 `options.fetchImpl ?? fetch`（全局 fetch），不传
      * 就完全绕过出口层清洗。此前 12 个适配器都注入了，唯独 buddy/workbuddy 漏了。
@@ -1081,105 +1069,7 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
     product: COMMANDCODE,
   })
 
-  // ===== MonkeyCode（长亭百智云）=====
-  // 只读渠道：账号 / 额度 / 模型目录 / 签到。对话走 WebSocket，
-  // 当前版本明确不支持（见 monkeycode-adapter.ts 模块头注释）。
-  // 登录是「粘贴 Cookie」——该上游没有可脚本化的授权流程。
-  let activeMonkeyCodeAccountId = ''
-  const monkeyCodeAdapter = registerMonkeyCodeLlm(ctx, {
-    fetchImpl: network.fetch,
-    resolveCredential: async () => {
-      const available = await pool.getAvailableAccount(MONKEYCODE.id, '')
-      activeMonkeyCodeAccountId = available?.entry.id ?? ''
-      if (activeMonkeyCodeAccountId.length > 0) reportLedgerAccount(MONKEYCODE.id, activeMonkeyCodeAccountId)
-      if (available) return available.credential as MonkeyCodeCredential
-      const resolved = await ctx.credentials.resolve(credentialRef(MONKEYCODE.defaultCredentialRef))
-      if (!resolved) return undefined
-      try {
-        return JSON.parse(resolved.value) as MonkeyCodeCredential
-      } catch {
-        return undefined
-      }
-    },
-    accountPool: pool,
-    product: MONKEYCODE,
-  })
 
-  // ===== OrcaTerm（腾讯云 LightAI）=====
-  // 完整对话能力：建会话 → SSE（协议明确，见 orcaterm-auth.ts）。
-  // 登录与 MonkeyCode 同形态：用户在官方控制台登录后粘贴 ot_session Cookie。
-  let activeOrcaTermAccountId = ''
-  const orcaTermAdapter = registerOrcaTermLlm(ctx, {
-    fetchImpl: network.fetch,
-    resolveCredential: async () => {
-      const available = await pool.getAvailableAccount(ORCATERM.id, '')
-      activeOrcaTermAccountId = available?.entry.id ?? ''
-      if (activeOrcaTermAccountId.length > 0) reportLedgerAccount(ORCATERM.id, activeOrcaTermAccountId)
-      if (available) return available.credential as OrcaTermCredential
-      const resolved = await ctx.credentials.resolve(credentialRef(ORCATERM.defaultCredentialRef))
-      if (!resolved) return undefined
-      try {
-        return JSON.parse(resolved.value) as OrcaTermCredential
-      } catch {
-        return undefined
-      }
-    },
-    accountPool: pool,
-    product: ORCATERM,
-  })
-
-  // ===== KukuAI（百度文库）=====
-  // 建消息 → SSE，完整对话能力。认证是 BDUSS Cookie（百度账号体系）。
-  let activeKukuAccountId = ''
-  const kukuAdapter = registerKukuLlm(ctx, {
-    fetchImpl: network.fetch,
-    resolveCredential: async () => {
-      const available = await pool.getAvailableAccount(KUKU.id, '')
-      activeKukuAccountId = available?.entry.id ?? ''
-      if (activeKukuAccountId.length > 0) reportLedgerAccount(KUKU.id, activeKukuAccountId)
-      if (available) return available.credential as KukuCredential
-      const resolved = await ctx.credentials.resolve(credentialRef(KUKU.defaultCredentialRef))
-      if (!resolved) return undefined
-      try {
-        return JSON.parse(resolved.value) as KukuCredential
-      } catch {
-        return undefined
-      }
-    },
-    accountPool: pool,
-    product: KUKU,
-  })
-
-  // ===== Accio（阿里，国际 / 国内两个地区）=====
-  // 两地共用同一网关，差别只在 x-package-region 与登录站点。
-  // ⚠️ token 不走 Authorization 头（GET 拼 query、POST 放 body），
-  // 这是它独有的，见 accio.ts 模块头注释。
-  let activeAccioAccountId = ''
-  const makeAccioResolver = (product: typeof ACCIO | typeof ACCIO_CN) => async () => {
-    const available = await pool.getAvailableAccount(product.id, '')
-    activeAccioAccountId = available?.entry.id ?? ''
-    if (activeAccioAccountId.length > 0) reportLedgerAccount(product.id, activeAccioAccountId)
-    if (available) return available.credential as AccioCredential
-    const resolved = await ctx.credentials.resolve(credentialRef(product.defaultCredentialRef))
-    if (!resolved) return undefined
-    try {
-      return JSON.parse(resolved.value) as AccioCredential
-    } catch {
-      return undefined
-    }
-  }
-  const accioAdapter = registerAccioLlm(ctx, {
-    fetchImpl: network.fetch,
-    resolveCredential: makeAccioResolver(ACCIO),
-    accountPool: pool,
-    product: ACCIO,
-  })
-  const accioCnAdapter = registerAccioLlm(ctx, {
-    fetchImpl: network.fetch,
-    resolveCredential: makeAccioResolver(ACCIO_CN),
-    accountPool: pool,
-    product: ACCIO_CN,
-  })
 
   // ===== OfficeAce（华为云果办）=====
   // 推理是 OpenAI 兼容 + **Basic** 鉴权（与 CodeArts 的 SDK-HMAC 不同）；
@@ -2566,16 +2456,11 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
     antigravity: pruned(ANTIGRAVITY.id, antigravityAdapter),
     zcode: pruned(ZCODE.id, zcodeAdapter),
     // 后加的两个渠道也要有「显示列表」的完整目录，否则卡片模型数恒为「—」。
-    kuku: pruned(KUKU.id, kukuAdapter),
     autoclaw: pruned(AUTOCLAW.id, autoClawAdapter),
     // 首屏「模型数量」同样走这里；这几个适配器此前缺 listAllModels，
     // 卡片一直显示「—」（与其它渠道不一致）。
     commandcode: pruned(COMMANDCODE.id, commandCodeAdapter),
     officeace: pruned(OFFICEACE.id, officeAceAdapter),
-    accio: pruned(ACCIO.id, accioAdapter),
-    'accio-cn': pruned(ACCIO_CN.id, accioCnAdapter),
-    orcaterm: pruned(ORCATERM.id, orcaTermAdapter),
-    monkeycode: pruned(MONKEYCODE.id, monkeyCodeAdapter),
     ...(opencodeAdapter === undefined ? {} : { opencode: pruned(OPENCODE.id, opencodeAdapter) }),
   }
 
@@ -2588,7 +2473,7 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
     ...config,
     codeartsFetcher: signedNetwork.fetch,
     // 「异常汇总」扫描**全部已注册渠道**：`modelAdapters` 的键恰好就是它们
-    // （20 个 provider），不必再维护第二份清单 —— 两份必然漂移。
+    // （16 个 provider），不必再维护第二份清单 —— 两份必然漂移。
     anomalyProviders: Object.keys(modelAdapters),
   })
   // 网关是旁路功能：这里传 `pool` 只为读设置页里的开关，其内部任何失败都已

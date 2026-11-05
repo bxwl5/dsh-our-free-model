@@ -134,7 +134,7 @@ function sanitizeModels(raw: unknown): unknown[] | undefined {
     if (typeof item !== 'object' || item === null) continue
     const id = (item as Record<string, unknown>).id
     if (typeof id !== 'string' || id.length === 0) continue
-    // 上游偶尔会重复下发同一个 id（accio 实测 79 条 / 77 个唯一 code）：
+    // 上游偶尔会重复下发同一个 id（按 id 去重）：
     // 快照里必须是去重后的，否则恢复出来的列表会出现同名条目两次。
     if (seen.has(id)) continue
     seen.add(id)

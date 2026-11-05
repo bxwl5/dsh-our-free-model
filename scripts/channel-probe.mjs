@@ -466,8 +466,6 @@ const CHANNELS = [
   // ───────────────────────────── 粘贴型渠道 ────────────────────────
   {
     id: 'orcaterm',
-    name: 'OrcaTerm',
-    loginMode: '粘贴 Cookie（ot_session）',
     notes: [
       '上游三条登录链路都无法在插件内自动完成（orcaterm-product.ts 注释），只能粘贴 Cookie。',
       '模型集合由控制台会话下发；插件里只有兜底表，**没有**独立 HTTP 目录端点，也没有额度查询端点。',

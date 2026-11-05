@@ -106,7 +106,7 @@ regenerate the shipped artifacts, see [PACKAGING.md](PACKAGING.md).
 
 **Keyless lanes (2)** — anonymous free lane (OpenCode) and the Kilo free pool. Neither needs an account.
 
-**Account channels (20)**, added under Channels in settings:
+**Account channels (15)**, added under Channels in settings:
 
 | Channel | Sign-in | Chat |
 |---|---|---|
@@ -115,10 +115,6 @@ regenerate the shipped artifacts, see [PACKAGING.md](PACKAGING.md).
 | Loomy / Raccoon / MiniMax Code / ZCode | browser | ✅ |
 | Command Code | browser (auto callback) | ✅ |
 | OfficeAce | browser (polling) | ✅ |
-| Accio / Accio CN | browser | ✅ |
-| OrcaTerm | paste cookie (`ot_session`) | ✅ |
-| KukuAI | Baidu App QR scan (local page) | ✅ |
-| MonkeyCode | paste cookie (`nebula_session`) | ✅ |
 | AutoClaw (CN) | phone + SMS code | ✅ |
 
 **On paste-based channels** — these upstreams expose no scriptable authorization flow. Sign in on the official site first, then copy the cookie or token out of the browser's developer tools.

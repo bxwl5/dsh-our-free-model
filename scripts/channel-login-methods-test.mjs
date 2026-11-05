@@ -50,7 +50,7 @@ const adoptable = parseAdoptableChannels()
 const doc = parseDocTiers()
 
 // ── 1) 界面声明本身：20 张卡片（2026-10-25 移除 autoclaw-intl 与 lobsterai），取值都在已知集合内 ──
-assert.equal(client.size, 20, `CHANNEL_PROVIDERS 应为 20 条，实际 ${client.size}`)
+assert.equal(client.size, 15, `CHANNEL_PROVIDERS 应为 20 条，实际 ${client.size}`)
 for (const [id, login] of client) {
   assert.ok(CLIENT_TO_TIER[login] !== undefined, `${id} 的 login 取值未知：${login}`)
 }
@@ -84,27 +84,4 @@ assert.ok(
   read('docs/channel-login-methods.md').includes(stats),
   `文档缺少与当前一致的统计行：${stats}`,
 )
-
-// 纯粘贴渠道必须给出「去官网登录 + 抄哪一段」的引导，否则用户不知道去哪拿 Cookie。
-// monkeycode 已改为「卡片内微信扫码登录」（用户 2026-11-05 要求只留扫码），
-// 不再是粘贴型：它走 account.create → loginKind:'monkeycode-qr'，不应再有
-// loginPage / cookieName 这类粘贴引导。
-{
-  const lines = read('client.js').split('\n')
-  for (const provider of ['orcaterm']) {
-    const line = lines.find((item) => item.includes(`id: '${provider}'`))
-    assert.ok(line !== undefined, `${provider} 卡片必须存在`)
-    assert.ok(line.includes('loginPage:'), `${provider} 必须带官网登录页链接`)
-    {
-      // 允许带说明（上游改过字段名时会在括号里注明旧名），只要求写了 cookieName。
-      assert.ok(/cookieName: '[^']+'/.test(line), `${provider} 必须写明要复制的 Cookie 名`)
-    }
-  }
-  const mc = lines.find((item) => item.includes("id: 'monkeycode'"))
-  assert.ok(mc !== undefined, 'monkeycode 卡片必须存在')
-  assert.ok(/login: 'browser'/.test(mc), 'monkeycode 必须是扫码（browser）登录')
-  assert.ok(!mc.includes('cookieName:'), 'monkeycode 不应再要求粘贴 Cookie 名')
-  assert.ok(!mc.includes('loginPage:'), 'monkeycode 不应再有粘贴引导页')
-}
-
 console.log(`ok  channel-login-methods: ${client.size} 渠道，${stats}；文档/界面/粘贴表三方一致`)

@@ -89,7 +89,7 @@ export class OfficeAceAdapter extends LlmAdapter {
    *
    * ⚠ **必须带 TTL**：原先的判据是 `if (this.remoteModels !== undefined) return`
    * —— 拉成功一次就永久缓存，上游下架/新增模型后进程不重启永远不跟上
-   *（2026-10-25 实测：与 OrCaTerm 静态表过期是同一类问题）。现按
+   *（2026-10-25 实测的静态表过期问题）。现按
    * {@link REMOTE_MODELS_TTL_MS} 过期重拉；**失败时保留旧列表**，
    * 不能因为一次网络抖动就把已拿到的目录清空。
    */

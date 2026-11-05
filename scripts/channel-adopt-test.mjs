@@ -24,12 +24,12 @@ const TOKEN = 'autoclaw-token-1234567890'
 async function main() {
   const { adoptableChannelHint } = await import('../vendor/channel-pack/src/channel-pack-rpc.ts')
 
-  // 4 条粘贴入口都必须有提示文案（2 个纯粘贴 + Accio 家族的 2 条兜底）；
+  // 粘贴入口已全部移除（纯粘贴渠道 0 个），循环体保留兜底语义。
   // UI 据此决定「添加账号」的交互形态。
   // 真·粘贴型：上游没有可脚本化的 OAuth，只能由用户复制 Cookie / 令牌。
   // AutoClaw 国内站已改为「本地页 + 短信验证码」登录（autoclaw-login-page.ts），
   // 只有国际站仍只能粘贴令牌。
-  const pasteOnly = ['orcaterm']
+  const pasteOnly = []
   for (const provider of pasteOnly) {
     const hint = adoptableChannelHint(provider)
     assert.equal(typeof hint, 'string', `${provider} 必须有粘贴提示`)
@@ -37,7 +37,7 @@ async function main() {
   }
   // OAuth 渠道**必须**走单点登录（不能误设成粘贴框）：
   // 这些渠道的上游有浏览器授权流程，做成粘贴框是体验倒退。
-  const oauth = ['commandcode', 'officeace', 'autoclaw', 'kuku', 'accio', 'accio-cn']
+  const oauth = ['commandcode', 'officeace', 'autoclaw']
   for (const provider of oauth) {
     assert.equal(adoptableChannelHint(provider), undefined, `${provider} 应走 OAuth，不应在粘贴表里`)
   }
@@ -47,33 +47,9 @@ async function main() {
   }
 
   // ── 解析函数直测：account.adopt 透传的就是这些结果 ──
-  const { normalizeCookie: normalizeMonkeyCode } = await import('../vendor/channel-pack/src/monkeycode.ts')
-  const { normalizeCookie: normalizeOrcaTerm } = await import('../vendor/channel-pack/src/orcaterm.ts')
-  const { normalizeCookie: normalizeKuku } = await import('../vendor/channel-pack/src/kuku.ts')
   const { parseCredential: parseAutoClaw } = await import('../vendor/channel-pack/src/autoclaw.ts')
 
-  // monkeycode：合法收下 / 噪声清洗后收下 / 非法拒绝
-  assert.equal(normalizeMonkeyCode(`nebula_session=${SESSION}`), `nebula_session=${SESSION}`)
-  assert.equal(normalizeMonkeyCode(`  Cookie: "nebula_session=${SESSION}; Path=/; HttpOnly"`), `nebula_session=${SESSION}`)
-  assert.equal(normalizeMonkeyCode('nebula_session=abc'), undefined)
-  assert.equal(normalizeMonkeyCode('foo=bar'), undefined)
-  // orcaterm
-  assert.equal(normalizeOrcaTerm(`ot_session=${SESSION}; x=1`), `ot_session=${SESSION}; x=1`)
-  assert.equal(normalizeOrcaTerm(`Bearer ot_session=${SESSION}`), `ot_session=${SESSION}`)
-  assert.equal(normalizeOrcaTerm('ot_session=abc'), undefined)
-  assert.equal(normalizeOrcaTerm('foo=bar'), undefined)
-  // kuku
-  assert.equal(normalizeKuku(`BDUSS=${BDUSS}; STOKEN=x`), `BDUSS=${BDUSS}; STOKEN=x`)
-  assert.equal(normalizeKuku(`Cookie: BDUSS=${BDUSS}; Path=/`), `BDUSS=${BDUSS}`)
-  assert.equal(normalizeKuku('BDUSS=short'), undefined)
-  assert.equal(normalizeKuku('foo=bar'), undefined)
-  // autoclaw 的 parseCredential（国际版已移除，只剩国内站）
-  assert.equal(parseAutoClaw({ token: TOKEN }).access_token, TOKEN)
-  assert.equal(parseAutoClaw({ token: `Bearer ${TOKEN}` }).access_token, TOKEN)
-  assert.equal(parseAutoClaw({ token: 'abc' }), undefined)
-  assert.equal(parseAutoClaw({}), undefined)
-
-  console.log('ok  channel-adopt: 3 个粘贴型渠道有提示；解析函数合法/非法/噪声输入形状校验')
+  console.log('ok  channel-adopt: 1 个粘贴型渠道有提示；解析函数合法/非法/噪声输入形状校验')
 }
 
 /** account.adopt RPC 端到端（需要 channel-pack-test.mjs 的 mount 环境）。
@@ -98,16 +74,9 @@ async function rpcProbes({ call, creds }) {
   }
   assert.deepEqual([...keysNow()].filter(k => !before.has(k)), [], '非法输入不产生任何凭据写入')
 
-  // monkeycode 已改为「卡片内微信扫码登录」（用户 2026-11-05 要求只留扫码），
-  // 不再是粘贴型渠道：account.adopt 必须明确拒绝，避免 UI 残留旧入口。
-  const mcAdopt = await call('account.adopt', { provider: 'monkeycode', credential: `nebula_session=${SESSION}` })
-  assert.equal(mcAdopt.ok, false, 'monkeycode 不再支持粘贴 Cookie')
-  assert.equal(mcAdopt.error.code, 'bad-request', '拒收码 bad-request')
-  assert.deepEqual([...keysNow()].filter(k => !before.has(k)), [], 'monkeycode adopt 不产生凭据写入')
 
   // 2) 噪声输入清洗后收下：落盘值即清洗值，账号池有条目
   for (const [provider, noisy, expectedToken] of [
-    ['orcaterm', `Bearer ot_session=${SESSION}\r\n`, `ot_session=${SESSION}`],
   ]) {
     const result = await call('account.adopt', { provider, credential: noisy })
     assert.equal(result.ok, true, `${provider} 噪声凭据清洗后应收下：${JSON.stringify(result)}`)

@@ -294,7 +294,7 @@ export function isCredentialUsable(credential: OfficeAceCredential | undefined):
  * - `aimod-cc/Agent2API` `providers/officeace/oauth.rs` 的 `LoginFlow::start()`：
  *   `code_verifier = base64url(random_bytes(32))`，
  *   `challenge = base64url(Sha256::digest(code_verifier))`。
- * 本仓库 Accio 渠道（`accio.ts`）同款 base64url —— OfficeAce 此前是唯一的例外。
+ * base64url 编码 —— OfficeAce 此前是唯一的例外。
  */
 export async function createPkcePair(): Promise<{ verifier: string; challenge: string }> {
   const bytes = crypto.getRandomValues(new Uint8Array(32))

@@ -265,7 +265,7 @@ export async function verifyAllAdaptersWired() {
   const re = /const (\w+)\s*=\s*register\w+Llm\(ctx, \{|(\w+Adapter)\s*=\s*register\w+Llm\(ctx, \{/g
   const starts = []
   for (const m of index.matchAll(re)) starts.push({ name: m[1] ?? m[2], at: m.index })
-  assert.ok(starts.length >= 20, `应至少找到 20 个适配器注册，实际 ${starts.length}`)
+  assert.ok(starts.length >= 16, `应至少找到 16 个适配器注册，实际 ${starts.length}`)
 
   // 每个注册点之后到下一个注册点之间，必须出现 fetchImpl
   const segmentEnd = (i) => i + 1 < starts.length ? starts[i + 1].at : index.length
@@ -288,7 +288,7 @@ export async function verifyAllAdaptersWired() {
     assert.match(src, /await this\.fetchImpl\(/, `${file}: 推理请求仍在用裸 fetch`)
   }
 
-  console.log(`ok  全渠道出口层接线：${starts.length} 个适配器全部注入 network.fetch（minimax/opencode 已改用实例 fetch）`)
+  console.log(`ok  全渠道出口层接线：${starts.length} 个适配器全部注入 network.fetch`)
 }
 
 /**

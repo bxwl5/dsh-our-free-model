@@ -7,10 +7,10 @@
  * `index`（非负整数），且以 `block-start` / `block-end` 成对包裹 ——
  * `block-end` 还要带**完整的 block**（它是「这一块的最终内容」，不是结束标记）。
  *
- * 早期接入的几个渠道（orcaterm / kuku / monkeycode / accio）直接发
+ * 早期接入的渠道直接发
  * `{type:'text-delta', text}`，于是内核报
  * `text-delta index must be a non-negative safe integer`
- *（2026-10-25 用户实测 orcaterm）。本 helper 让它们不必各写一遍生命周期。
+ *（2026-10-25 用户实测）。本 helper 让它们不必各写一遍生命周期。
  *
  * ## 语义
  *

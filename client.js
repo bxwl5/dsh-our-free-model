@@ -245,11 +245,6 @@ window.__ModuleLoader__.load({
         'chan.login.step1': '在浏览器中完成登录（若没有自动打开，点下面的按钮）。',
         'chan.login.step2': '登录成功后本页会自动完成，无需复制任何东西。',
         'chan.login.open': '打开登录页',
-        'chan.login.embedded.kuku': '请用百度 App 扫描二维码登录',
-        'chan.login.embedded.kukuHint': '二维码有效期约 3 分钟；过期后点「刷新二维码」。',
-        'chan.login.embedded.monkeycode': '请用微信扫描二维码登录百智云',
-        'chan.login.embedded.monkeycodeHint': '扫码后在手机上确认；过期后点「刷新二维码」。登录成功后会自动换出 MonkeyCode 会话。',
-        'chan.login.embedded.reload': '刷新二维码',
         'chan.login.embedded.phone': '手机号',
         'chan.login.embedded.phonePlaceholder': '11 位手机号',
         'chan.login.embedded.send': '发送验证码',
@@ -763,11 +758,6 @@ window.__ModuleLoader__.load({
         'chan.login.step1': 'Finish the sign-in in your browser (if it did not open, use the button below).',
         'chan.login.step2': 'This page completes by itself once the browser flow does — nothing to copy.',
         'chan.login.open': 'Open sign-in page',
-        'chan.login.embedded.kuku': 'Scan the QR code with the Baidu app to sign in',
-        'chan.login.embedded.kukuHint': 'The QR code expires in ~3 minutes; tap Refresh when it does.',
-        'chan.login.embedded.monkeycode': 'Scan the QR code with WeChat to sign in to Baizhi Cloud',
-        'chan.login.embedded.monkeycodeHint': 'Confirm on your phone after scanning; tap Refresh if it expires. A MonkeyCode session is created automatically on success.',
-        'chan.login.embedded.reload': 'Refresh QR code',
         'chan.login.embedded.phone': 'Phone',
         'chan.login.embedded.phonePlaceholder': '11-digit phone number',
         'chan.login.embedded.send': 'Send code',
@@ -1362,7 +1352,7 @@ window.__ModuleLoader__.load({
 .ofm_tank.xl{width:264px;height:148px;border-radius:20px;box-shadow:inset 0 0 0 1px rgb(255 255 255 / 12%),0 16px 40px rgb(0 0 0 / 14%)}
 .ofm_tank.xl .ofm_tankglass{border-radius:20px}
 /* ══ 渠道接入页 ════════════════════════════════════════════════════════ */
-/* 「异常汇总」表格（放在 20 个渠道卡片下方，仅在有限流时出现） */
+/* 「异常汇总」表格（放在 15 个渠道卡片下方，仅在有限流时出现） */
 /*
  * 渠道卡片 → 异常汇总 → 签到结果：三者间距统一 14px（用户 2026-10-28）。
  *
@@ -1589,11 +1579,8 @@ window.__ModuleLoader__.load({
 .ofm_skel::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent,rgb(255 255 255 / 8%) 42%,transparent 74%);animation:ofmshine 1.5s ease-in-out infinite}
 @keyframes ofmshine{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
 @keyframes ofmpulse{0%,100%{opacity:1}50%{opacity:.55}}
-/* ══ 卡片内嵌登录（kuku 二维码 / autoclaw 短信，2026-10-30）══════════════ */
+/* ══ 卡片内嵌登录（autoclaw 短信，2026-10-30）══════════════ */
 .ofm_embedlogin{display:flex;flex-direction:column;align-items:center;gap:10px;padding:4px 0}
-.ofm_embedqr{width:196px;height:196px;border-radius:12px;background:#fff;padding:8px;box-shadow:0 1px 8px rgba(0,0,0,.12)}
-.ofm_embedtext{font-size:13px;line-height:1.55;text-align:center}
-.ofm_embedtext.ofm_dim{font-size:11.5px;opacity:.68}
 .ofm_field{display:flex;flex-direction:column;gap:5px;align-self:stretch}
 .ofm_fieldlabel{font-size:11.5px;color:var(--dsw-alias-label-secondary)}
 .ofm_fieldrow{display:flex;gap:8px;align-items:flex-end;align-self:stretch}
@@ -3256,12 +3243,6 @@ window.__ModuleLoader__.load({
       // 卡片恢复「刷新模型」按钮；首拉失败时适配器回落静态兜底表。
       { id: 'antigravity', name: 'Antigravity', org: 'Google', accent: '#4285F4', note: 'Google Antigravity 免费线', login: 'browser' },
       { id: 'commandcode', name: 'Command Code', org: 'Command Code', accent: '#111827', note: '浏览器授权，自动回调', login: 'browser' },
-      { id: 'monkeycode', name: 'MonkeyCode', org: '长亭科技', accent: '#F97316', note: '微信扫码登录（百智云），每日签到 100 积分', login: 'browser' },
-      // noRemoteCatalog: OrcaTerm 没有模型目录端点（模型表是静态白名单）。
-      { id: 'orcaterm', name: 'OrcaTerm', org: '腾讯云', accent: '#00A4FF', note: '粘贴 Cookie，支持完整对话', login: 'cookie', loginPage: 'https://orcaterm.cloud.tencent.com', cookieName: 'ot_sid（旧版叫 ot_session，两个都收）', noRemoteCatalog: true },
-      { id: 'kuku', name: 'KukuAI', org: '百度文库', accent: '#2932E1', note: '百度 App 扫码登录', login: 'browser' },
-      { id: 'accio', name: 'Accio', org: '阿里系', accent: '#FF6A00', note: '浏览器授权，国际站', login: 'browser' },
-      { id: 'accio-cn', name: 'Accio 国内版', org: '阿里系', accent: '#FF8C42', note: '浏览器授权，国内站', login: 'browser' },
       { id: 'officeace', name: 'OfficeAce 果办', org: '华为云', accent: '#C7000B', note: '浏览器授权，扫码登录', login: 'browser' },
       { id: 'autoclaw', name: 'AutoClaw', org: '智谱', accent: '#3D5AFE', note: '手机号 + 短信验证码登录，国内站', login: 'browser' },
     ]
@@ -3282,21 +3263,11 @@ window.__ModuleLoader__.load({
       antigravity: { unit: 'quota', quota: true },
       // 2026-10-24 补齐：这三家有真实的额度/签到接口，只是此前没接进面板。
       commandcode: {},
-      // unit:'credits' → 余额按「积分」原样显示整数（不套 formatTokens 的 K/M），
-      // 与官方客户端口径一致（后端已把 wallet.balance 按 1000:1 换算）。
-      monkeycode: { claim: true, status: true, unit: 'credits' },
-      accio: { unit: 'quota', quota: true },
-      'accio-cn': { unit: 'quota', quota: true },
       // OfficeAce 是**积分制**（上游 `GET /v1/subscription` 的 skus[].quotas
       // 含 officeace_points，另有 bonus_skus：新用户 4000 + 每日签到 100）。
       // 2026-10-25：领取端点已接入（`POST /v1/subscription/bonus/claim`，
       // 上游一次调用把当天所有可领奖励一起发下来，幂等由上游保证）。
       officeace: { status: true, claim: true },
-      // KukuAI 是**积分制**：`GET /bizapi/gfpro/getgfvipremain` 取
-      // `data.list[assetName=="token"].totalPoint`；签到走
-      // `freepoint/homenew`（面板）+ `taskComplete`（LOGIN/CHAT），
-      // 上游幂等（重复领返回 SUCCESS + reward 0）。
-      kuku: { status: true, claim: true },
       // AutoClaw 是**积分制**：`GET {userapi}/agent-assetmgr/api/v2/wallets`
       // （v1 降级）；签到是「完成客户端任务」通用入口的一个 task_id
       // （`autoclaw-task-complete` + `task_id=daily_signin`），
@@ -3415,7 +3386,7 @@ window.__ModuleLoader__.load({
      * 一家渠道的余额短标签：把 `usage.badge` 的逐账号读数折成一行看得懂的数。
      *
      * 口径与渠道卡一致：非配额制 = 各账号可用总余额相加；配额制（Antigravity /
-     * accio 按资源包给 remainingFraction）= **最小**的那一档剩余百分比 —— 链路的
+     * antigravity 按资源包给 remainingFraction）= **最小**的那一档剩余百分比 —— 链路的
      * 可用性由最紧的一档决定，报合计会让人以为还能用很久。
      */
     function quotaSummaryOf(t, provider, payload) {
@@ -3472,7 +3443,7 @@ window.__ModuleLoader__.load({
       // `account.adopt` 支持的渠道一一对应。
       const pasteMode = channel.login === 'cookie' || channel.login === 'token'
       // 「续期」这个措辞只对**有续期端点**的渠道成立。Cookie / 长期 Key 型渠道
-      // （monkeycode / orcaterm / kuku / commandcode）点下去只是
+      // （commandcode）点下去只是
       // 重新校验凭据形状，说「续期」会让用户以为能延长登录态（审计发现）。
       const recheckOnly = channel.login === 'cookie' || channel.login === 'token'
       const [pasteOpen, setPasteOpen] = useState(false)
@@ -3682,19 +3653,16 @@ window.__ModuleLoader__.load({
               try { window.open(url, '_blank', 'noopener') } catch { /* the modal offers the link too */ }
             }
           } else { closeLoginPopup(attempt.popup); attempt.popup = null }
-          // 卡片内嵌登录（2026-10-30）：kuku 扫码 / autoclaw 短信不再弹本地页
+          // 卡片内嵌登录（2026-10-30）：autoclaw 短信不再弹本地页
           //（127.0.0.1 远程浏览器打不开），account.create 直接回 flowId 与二维码，
           // 由本卡片渲染并经 DSH 路由驱动。url 存在与否区分两种形态。
-          const loginKind = value?.loginKind === 'kuku-qr' || value?.loginKind === 'autoclaw-sms'
-            || value?.loginKind === 'monkeycode-qr'
-            ? value.loginKind : null
+          const loginKind = value?.loginKind === 'autoclaw-sms' ? value.loginKind : null
           setLogin({
             accountId,
             url: typeof url === 'string' ? url : '',
             loginKind,
             flowId: loginKind === null ? '' : String(value?.flowId ?? ''),
-            qrDataUrl: (loginKind === 'kuku-qr' || loginKind === 'monkeycode-qr')
-              ? String(value?.qrDataUrl ?? '') : '',
+            qrDataUrl: '',
             startedAt: Date.now(),
           })
           setOpen('accounts')
@@ -3711,7 +3679,7 @@ window.__ModuleLoader__.load({
 
       // Poll the placeholder until its credential lands. Ten minutes matches the
       // window the pack keeps a pending login link alive for.
-      // 卡片内嵌形态（kuku）另外驱动服务端长轮询：poll 是上游 ~30s 的长轮询，
+// 卡片内嵌形态（autoclaw）另外驱动服务端轮询：
       // 所以它的间隔独立（1.2s 发一次，服务端自己做单飞合并）。
       useEffect(() => {
         if (login === null) return undefined
@@ -3743,35 +3711,6 @@ window.__ModuleLoader__.load({
         }, 3000)
         return () => { alive = false; clearInterval(timer) }
       }, [login, rpc, channel.id, t, onChanged, loadAccounts, loadCredits, loadBalances])
-
-      // kuku 卡片：驱动服务端轮询上游扫码状态。expired → 换一张二维码重试。
-      useEffect(() => {
-        const qrKind = login?.loginKind === 'kuku-qr' ? 'kuku'
-          : login?.loginKind === 'monkeycode-qr' ? 'monkeycode' : null
-        if (qrKind === null || login.flowId === '') return undefined
-        let alive = true
-        let busy = false
-        const timer = setInterval(async () => {
-          if (busy || !alive) return
-          busy = true
-          try {
-            const response = await fetch(`/api/channel-pack/login/${qrKind}/poll?flow=${encodeURIComponent(login.flowId)}`, { method: 'GET' })
-            const value = await response.json().catch(() => null)
-            if (!alive) return
-            if (value?.state === 'expired') {
-              try {
-                const reload = await fetch(`/api/channel-pack/login/${qrKind}/reload?flow=${encodeURIComponent(login.flowId)}`, { method: 'GET' })
-                const next = await reload.json().catch(() => null)
-                if (typeof next?.qrDataUrl === 'string' && next.qrDataUrl !== '') {
-                  setLogin(prev => (prev === null ? prev : { ...prev, qrDataUrl: next.qrDataUrl }))
-                }
-              } catch { /* 下轮再试 */ }
-            }
-          } catch { /* 网络抖动：下一轮继续 */ }
-          finally { busy = false }
-        }, 1500)
-        return () => { alive = false; clearInterval(timer) }
-      }, [login?.loginKind, login?.flowId])
 
       const accountAction = async (key, accountId, fn) => {
         setBusy(key); setNotice('')
@@ -4119,7 +4058,7 @@ window.__ModuleLoader__.load({
                   }, t('chan.model.disableAll')),
                   // 「刷新模型」只对**有远端目录端点**的渠道显示
                   // （用户 2026-10-27：没有的渠道直接删掉按钮，不要点了才报错）。
-                  // orcaterm 在渠道定义里标了 noRemoteCatalog: true（gemini 已于 2026-11-01 接入远端目录）。
+                  // （gemini 已于 2026-11-01 接入远端目录；orcaterm 渠道已删除。）
                   channel.noRemoteCatalog === true ? null : h('button', {
                     type: 'button', className: 'ofm_btn ghost ofm_actionbtn', disabled: busy !== '' || !rpc,
                     title: t('chan.model.refetchHint'),
@@ -4147,7 +4086,7 @@ window.__ModuleLoader__.load({
                   }),
                 }, model.dead === true ? t('chan.model.restore') : model.disabled === true ? t('chan.model.on') : t('chan.model.off'))))))) : null)
 
-      // ── 卡片内嵌登录（2026-10-30）：kuku 二维码 / autoclaw 短信表单 ──
+      // ── 卡片内嵌登录（2026-10-30）：autoclaw 短信表单 ──
       // 这两个渠道不再有 127.0.0.1 本地页（远程浏览器打不开），状态直接渲染在
       // 渠道卡片里；成功/失败仍由 login.poll 收尾（见上方 effect）。
       const [smsPhone, setSmsPhone] = useState('')
@@ -4156,35 +4095,9 @@ window.__ModuleLoader__.load({
       const [smsBusy, setSmsBusy] = useState(false)
       const [smsMessage, setSmsMessage] = useState('')
 
-      const embeddedLogin = login?.loginKind === 'kuku-qr' || login?.loginKind === 'autoclaw-sms'
-        || login?.loginKind === 'monkeycode-qr'
-        ? login : null
+      const embeddedLogin = login?.loginKind === 'autoclaw-sms' ? login : null
       const embeddedBody = (() => {
         if (embeddedLogin === null) return null
-        if (embeddedLogin.loginKind === 'kuku-qr' || embeddedLogin.loginKind === 'monkeycode-qr') {
-          const isMonkey = embeddedLogin.loginKind === 'monkeycode-qr'
-          const qrKind = isMonkey ? 'monkeycode' : 'kuku'
-          return h('div', { className: 'ofm_embedlogin' },
-            h('img', { className: 'ofm_embedqr', src: embeddedLogin.qrDataUrl, alt: 'QR' }),
-            isMonkey
-              ? h('div', { className: 'ofm_embedtext strong' }, t('chan.login.embedded.monkeycode'))
-              : h('div', { className: 'ofm_embedtext strong' }, t('chan.login.embedded.kuku')),
-            isMonkey
-              ? h('div', { className: 'ofm_embedtext ofm_dim' }, t('chan.login.embedded.monkeycodeHint'))
-              : h('div', { className: 'ofm_embedtext ofm_dim' }, t('chan.login.embedded.kukuHint')),
-            h('button', {
-              type: 'button', className: 'ofm_btn ghost',
-              onClick: async () => {
-                try {
-                  const response = await fetch(`/api/channel-pack/login/${qrKind}/reload?flow=${encodeURIComponent(embeddedLogin.flowId)}`, { method: 'GET' })
-                  const next = await response.json().catch(() => null)
-                  if (typeof next?.qrDataUrl === 'string' && next.qrDataUrl !== '') {
-                    setLogin(prev => (prev === null ? prev : { ...prev, qrDataUrl: next.qrDataUrl }))
-                  }
-                } catch { /* 下轮轮询会再试 */ }
-              },
-            }, t('chan.login.embedded.reload')))
-        }
         // autoclaw 短信表单
         const waitSeconds = smsSentAt === 0 ? 0 : Math.max(0, 60 - Math.round((Date.now() - smsSentAt) / 1000))
         return h('div', { className: 'ofm_embedlogin' },
@@ -4391,7 +4304,7 @@ window.__ModuleLoader__.load({
        *
        * 用户的实际场景是 4 账号 × 2 模型交叉限流（a 缺 hy3、b 缺 ds、
        * c 缺 hy3、d 缺 ds）—— 这种二维状态放进账号界面或模型界面都会丢信息，
-       * 而 20 个渠道要逐个点开才能发现有谁被限。故单独汇总成一个板块，
+       * 而 15 个渠道要逐个点开才能发现有谁被限。故单独汇总成一个板块，
        * 放在渠道列表下方。
        */
       const [anomalies, setAnomalies] = useState([])
@@ -4522,7 +4435,7 @@ window.__ModuleLoader__.load({
           }),
           /*
            * 签到结果表格（用户 2026-10-27）：排在异常汇总之后，两者都是
-           * 「20 个渠道下方」的汇总板块，视觉同源。
+           * 「15 个渠道下方」的汇总板块，视觉同源。
            * ⚠️ 组件内部在没有行时自己返回 null，这里不用再判一次。
            */
           h(CheckinPanel, {
@@ -4534,7 +4447,7 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 「异常汇总」表格（用户 2026-10-27 要求，放在 20 个渠道卡片下方）。
+     * 「异常汇总」表格（用户 2026-10-27 要求，放在 16 个渠道卡片下方）。
      *
      * ## 为什么是表格
      *

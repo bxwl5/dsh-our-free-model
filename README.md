@@ -91,7 +91,7 @@ docker logs ofm | head -5     # 拿一次性的面板登录链接
 
 **免密车道（2 个）**：匿名免费车道（OpenCode）、Kilo 免费池。都不需要账号。
 
-**账号渠道（20 个）**，在「渠道接入」页添加：
+**账号渠道（15 个）**，在「渠道接入」页添加：
 
 | 渠道 | 登录方式 | 对话 |
 |---|---|---|
@@ -100,10 +100,6 @@ docker logs ofm | head -5     # 拿一次性的面板登录链接
 | Loomy / Raccoon / MiniMax Code / ZCode | 浏览器授权 | ✅ |
 | Command Code | 浏览器授权（自动回调） | ✅ |
 | OfficeAce 果办 | 浏览器授权（轮询授权码） | ✅ |
-| Accio / Accio 国内版 | 浏览器授权 | ✅ |
-| OrcaTerm | 粘贴 Cookie（`ot_session`） | ✅ |
-| KukuAI | 百度 App 扫码（本地弹窗页） | ✅ |
-| MonkeyCode | 粘贴 Cookie（`nebula_session`） | ✅ |
 | AutoClaw（国内） | 手机号 + 短信验证码（本地弹窗页） | ✅ |
 
 **关于粘贴型渠道**：这些上游没有可脚本化的授权流程，需要先在官方站点登录，再从开发者工具复制 Cookie 或令牌粘贴进来。

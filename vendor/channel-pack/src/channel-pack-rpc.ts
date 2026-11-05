@@ -37,26 +37,11 @@ import type { TraeAuth } from './trae-auth.js'
 import type { ClineAuth } from './cline-auth.js'
 import { LOOMY } from './loomy-product.js'
 import { buddyExpiringWindowDays } from './buddy-balance-rank.js'
-import { isCredentialUsable as isOrcaTermCredentialUsable, normalizeCookie as normalizeOrcaTermCookie, type OrcaTermCredential } from './orcaterm.js'
-import { KUKU } from './kuku-product.js'
-import type { KukuCredential } from './kuku.js'
-import { startKukuLoginFlow, type KukuLoginFlow } from './kuku-qr-login-page.js'
-import { startMonkeyCodeLoginFlow, type MonkeyCodeLoginFlow } from './monkeycode-qr-login-page.js'
 import { parseCredential as parseAutoClawCredential, type AutoClawCredential } from './autoclaw.js'
-import type { AccioCredential } from './accio.js'
-import { ACCIO, ACCIO_CN } from './accio-product.js'
-import { fetchQuota as fetchAccioQuota, refreshCredential as refreshAccioCredential } from './accio-auth.js'
 import { readCredits } from './commandcode-credits.js'
 import type { CreditPackage } from './credits.js'
 import type { CommandCodeCredential } from './commandcode.js'
 import { COMMANDCODE } from './commandcode-product.js'
-import {
-  fetchCheckinStatus as fetchMonkeyCodeCheckinStatus,
-  fetchWallet as fetchMonkeyCodeWallet,
-  runCheckinWithCaptcha as runMonkeyCodeCheckinWithCaptcha,
-} from './monkeycode-auth.js'
-import type { MonkeyCodeCredential } from './monkeycode.js'
-import { MONKEYCODE, MONKEYCODE_DAILY_CHECKIN_CREDITS } from './monkeycode-product.js'
 import { AUTOCLAW } from './autoclaw-product.js'
 import { refreshAutoclawCredential, resolveAutoclawDeviceId } from './autoclaw-sms.js'
 import { startAutoclawLoginFlow, type AutoclawLoginFlow } from './autoclaw-login-page.js'
@@ -259,22 +244,16 @@ export const CHANNEL_PACK_API_PATH = '/api/channel-pack'
  */
 export const CAPTCHA_CARRIER_PATH = '/api/channel-pack/captcha-carrier'
 /**
- * 卡片内嵌登录流程的驱动路由（**4 条精确路径**，2026-10-30 深夜修）。
+ * 卡片内嵌登录流程的驱动路由（**2 条精确路径**，2026-10-30 深夜修）。
  *
  * ⚠⚠ 初版注册成一条前缀 `/api/channel-pack/login`，靠 handler 内解析子路径
  * 分发——**不可用**：dsh 分发器按 `fetchRoutes.get(pathname)` **精确匹配完整
- * pathname**（本文件 captcha-carrier 注释已记录该机制），`/api/channel-pack/
- * login/kuku/poll` 这样的子路径永远轮不到 handler。症状：kuku 二维码出现了但
- * 扫码无反应（没人驱动服务端长轮询）、autoclaw 发码一直失败（请求 404）。
- * 修复 = 拆成 4 条整路径注册，与 captcha-carrier 同范式。
+ * pathname**（本文件 captcha-carrier 注释已记录该机制），子路径永远轮不到
+ * handler。症状：autoclaw 发码一直失败（请求 404）。
+ * 修复 = 拆成 2 条整路径注册，与 captcha-carrier 同范式。
  */
-export const KUKU_POLL_PATH = '/api/channel-pack/login/kuku/poll'
-export const KUKU_RELOAD_PATH = '/api/channel-pack/login/kuku/reload'
 export const AUTOCLAW_SEND_PATH = '/api/channel-pack/login/autoclaw/send'
 export const AUTOCLAW_VERIFY_PATH = '/api/channel-pack/login/autoclaw/verify'
-/** MonkeyCode（百智云）微信扫码登录：卡片内嵌，照 kuku 两条路由。 */
-export const MONKEYCODE_POLL_PATH = '/api/channel-pack/login/monkeycode/poll'
-export const MONKEYCODE_RELOAD_PATH = '/api/channel-pack/login/monkeycode/reload'
 /** Gateway RPC 端点名（connection.rpc.call 的 endpoint 参数） */
 const CHANNEL_PACK_ENDPOINT = 'channel-pack'
 
@@ -1103,12 +1082,12 @@ function registerChannelPackEndpoints(
   const pendingLoginFailures = new Map<string, string>()
 
   /**
-   * 卡片内嵌登录流程表（2026-10-30）：kuku 扫码 / autoclaw 短信的**进行中状态**
-   * 都放在这里，卡片经 DSH GET/POST 路由（`/api/channel-pack/login/...`）驱动，
+   * 卡片内嵌登录流程表（2026-10-30）：autoclaw 短信的**进行中状态**都放在
+   * 这里，卡片经 DSH GET/POST 路由（`/api/channel-pack/login/...`）驱动，
    * 不再有 127.0.0.1 本地页 —— 远程浏览器（NAS 场景）直接可用。
    * 键 = flowId（account.create 生成并返回给前端），值 = 流程对象。
    */
-  const embeddedLoginFlows = new Map<string, KukuLoginFlow | AutoclawLoginFlow | MonkeyCodeLoginFlow>()
+  const embeddedLoginFlows = new Map<string, AutoclawLoginFlow>()
 
   /**
    * 记录一条后台登录失败原因，供下一次 `login.poll` 读走。
@@ -1116,7 +1095,7 @@ function registerChannelPackEndpoints(
    * ⚠️ 此前有 12 个渠道的分支只 `logger.warn` + 删除占位账号：前端 `login.poll`
    * 既看不到账号、也看不到失败表，只能干等 10 分钟超时并显示「登录已过期」，
    * 真实原因（回调端口被占 / 授权被拒 / 网络失败 / state 失效）永远到不了用户眼前。
-   * `commandcode` / `officeace` / `accio` / `antigravity` 四个分支早已这么写，这里统一。
+   * `commandcode` / `officeace` / `antigravity` 三个分支早已这么写，这里统一。
    */
   const recordLoginFailure = (accountId: string, error: unknown): void => {
     pendingLoginFailures.set(
@@ -1258,14 +1237,12 @@ function registerChannelPackEndpoints(
    * 卡片内嵌登录流程的驱动路由（2026-10-30）。
    *
    * ## 背景
-   * kuku 扫码 / autoclaw 短信的旧形态各起一个 `127.0.0.1:<随机端口>` 本地页，
-   * 远程浏览器（DSH 在 NAS、浏览器在 PC）打不开，登录必败。现在流程状态在
+   * autoclaw 短信的旧形态起一个 `127.0.0.1:<随机端口>` 本地页，远程浏览器
+   *（DSH 在 NAS、浏览器在 PC）打不开，登录必败。现在流程状态在
    * `embeddedLoginFlows`（内存表），卡片经**这里**驱动——地址就是浏览器已经在
    * 用的 DSH origin（`http://192.168.2.6:28000/...`），天然可达。
    *
    * ## 路由
-   * - `GET  <base>/kuku/poll?flow=<id>`    → `{ state }`（服务端长轮询上游 ~30s）
-   * - `GET  <base>/kuku/reload?flow=<id>`  → `{ qrDataUrl }`（重新取码）
    * - `POST <base>/autoclaw/send?flow=<id>` body `{ phone }` → `{ ok, message? }`
    * - `POST <base>/autoclaw/verify?flow=<id>` body `{ code }` → `{ ok, message? }`
    *
@@ -1279,81 +1256,11 @@ function registerChannelPackEndpoints(
       headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
     })
 
-  // 按流程类型取对象：两条 kuku 路由只要 KukuLoginFlow，两条 autoclaw 只要 AutoclawLoginFlow，
+  // 按流程类型取对象：两条 autoclaw 路由只要 AutoclawLoginFlow，
   // 类型不匹配（同 flowId 不可能，防御）一律按未知处理 → 404。
-  connection.fetch.register({
-    path: KUKU_POLL_PATH,
-    methods: ['GET'],
-    requestBody: 'buffered' as const,
-    async fetch(request: Request): Promise<Response> {
-      if (request.method !== 'GET') return embeddedJson({ error: 'method not allowed' }, 405)
-      const flowId = new URL(request.url ?? '/', 'http://127.0.0.1').searchParams.get('flow') ?? ''
-      const flow = flowId === '' ? undefined : embeddedLoginFlows.get(flowId)
-      if (flow === undefined || !('poll' in flow)) return embeddedJson({ error: 'not found' }, 404)
-      try {
-        return embeddedJson(await (flow as KukuLoginFlow).poll())
-      } catch (error) {
-        return embeddedJson({ state: 'expired', error: error instanceof Error ? error.message : String(error) })
-      }
-    },
-  })
 
-  connection.fetch.register({
-    path: KUKU_RELOAD_PATH,
-    methods: ['GET'],
-    requestBody: 'buffered' as const,
-    async fetch(request: Request): Promise<Response> {
-      if (request.method !== 'GET') return embeddedJson({ error: 'method not allowed' }, 405)
-      const flowId = new URL(request.url ?? '/', 'http://127.0.0.1').searchParams.get('flow') ?? ''
-      const flow = flowId === '' ? undefined : embeddedLoginFlows.get(flowId)
-      if (flow === undefined || !('reload' in flow)) return embeddedJson({ error: 'not found' }, 404)
-      try {
-        await (flow as KukuLoginFlow).reload()
-        return embeddedJson({ qrDataUrl: (flow as KukuLoginFlow).qrDataUrl })
-      } catch (error) {
-        return embeddedJson({ state: 'expired', error: error instanceof Error ? error.message : String(error) })
-      }
-    },
-  })
 
-  connection.fetch.register({
-    path: MONKEYCODE_POLL_PATH,
-    methods: ['GET'],
-    requestBody: 'buffered' as const,
-    async fetch(request: Request): Promise<Response> {
-      if (request.method !== 'GET') return embeddedJson({ error: 'method not allowed' }, 405)
-      const flowId = new URL(request.url ?? '/', 'http://127.0.0.1').searchParams.get('flow') ?? ''
-      const flow = flowId === '' ? undefined : embeddedLoginFlows.get(flowId)
-      if (flow === undefined || !('poll' in flow) || flowId.startsWith('kuku-') || flowId.startsWith('autoclaw-')) {
-        return embeddedJson({ error: 'not found' }, 404)
-      }
-      try {
-        return embeddedJson(await (flow as MonkeyCodeLoginFlow).poll())
-      } catch (error) {
-        return embeddedJson({ state: 'expired', error: error instanceof Error ? error.message : String(error) })
-      }
-    },
-  })
 
-  connection.fetch.register({
-    path: MONKEYCODE_RELOAD_PATH,
-    methods: ['GET'],
-    requestBody: 'buffered' as const,
-    async fetch(request: Request): Promise<Response> {
-      if (request.method !== 'GET') return embeddedJson({ error: 'method not allowed' }, 405)
-      const flowId = new URL(request.url ?? '/', 'http://127.0.0.1').searchParams.get('flow') ?? ''
-      const flow = flowId === '' ? undefined : embeddedLoginFlows.get(flowId)
-      if (flow === undefined || !('reload' in flow) || flowId.startsWith('kuku-') || flowId.startsWith('autoclaw-')) {
-        return embeddedJson({ error: 'not found' }, 404)
-      }
-      try {
-        await (flow as MonkeyCodeLoginFlow).reload()
-        return embeddedJson({ qrDataUrl: (flow as MonkeyCodeLoginFlow).qrDataUrl })
-      } catch (error) {
-        return embeddedJson({ state: 'expired', error: error instanceof Error ? error.message : String(error) })
-      }
-    },
-  })
 
   connection.fetch.register({
     path: AUTOCLAW_SEND_PATH,
@@ -1655,9 +1562,9 @@ function registerChannelPackEndpoints(
       /**
        * 用手动粘贴的凭据添加账号。
        *
-       * 当前**纯粘贴**渠道只有 3 个：MonkeyCode（Cookie）、OrcaTerm（Cookie）、
-       * AutoClaw 国际版（令牌）。其余渠道都能在插件内完成授权，不再保留粘贴入口：
-       * KukuAI 是百度扫码、AutoClaw 国内站是短信、Accio 家族是浏览器授权。
+       * 纯粘贴登录形态已全部移除（OrcaTerm 已删），剩余渠道都能在插件内完成授权：
+       * 吊销且没有可脚本化的刷新端点，所以这里只做**形状校验**：
+       * AutoClaw 国内站是短信、其余渠道都能在插件内完成授权。
        * 改渠道登录方式时务必同步本注释与 `ADOPTABLE_CHANNELS`，否则会误导后来的人。
        *
        * ⚠️ 形状校验**复用各渠道自己的解析函数**（见 `ADOPTABLE_CHANNELS`）：
@@ -1691,7 +1598,7 @@ function registerChannelPackEndpoints(
           return { ok: false, error: { code: 'internal', message: `凭据写入失败：${error instanceof Error ? error.message : String(error)}` } }
         }
         // 昵称优先用凭据里已解析出的身份，退化为 provider 名。
-        // 只写 `provider` 会让账号列表显示成 "monkeycode" 这种 id，
+        // 只写 `provider` 会让账号列表显示成裸 provider id，
         // 用户分不清是哪个号（多账号时尤其明显）。
         const nickname = typeof parsed.nickname === 'string' && parsed.nickname !== ''
           ? parsed.nickname
@@ -1705,8 +1612,8 @@ function registerChannelPackEndpoints(
           enabled: true,
           credentialRef: refName,
           createdAt: Date.now(),
-          // 有 refresh_token 的渠道（Accio）才可静默续期；
-          // Cookie 型渠道（MonkeyCode/OrcaTerm/KukuAI）只能重新粘贴。
+          // 真续期渠道（OfficeAce / AutoClaw）才可静默续期；
+          // Cookie 型渠道只能重新粘贴。
           refreshable: typeof parsed.refresh_token === 'string' && parsed.refresh_token !== '',
         })
         return { ok: true, value: { accountId: id } }
@@ -1868,9 +1775,6 @@ function registerChannelPackEndpoints(
         const id = `${provider}-${shortId()}`
         const suffix = shortId().toUpperCase()
         // ⚠️ `credentialRef()` 的校验是 `/^[A-Za-z_][A-Za-z0-9_]*$/` —— **不允许连字符**。
-        // `accio-cn` 这类带 `-` 的 provider 直接把原样大写拼进去会被拒绝：
-        //   credential ref "ACCIO-CN_ACCOUNT_5F60164F" must match /^[A-Za-z_][A-Za-z0-9_]*$/
-        // 用户看到的「Accio 国内版登录未完成」就是这个。与 `account.adopt` 处的写法保持一致。
         const refName = `${provider.toUpperCase().replace(/-/g, '_')}_ACCOUNT_${suffix}`
 
         // CodeBuddy 系（buddy / workbuddy）共用两步登录流程：
@@ -1964,74 +1868,6 @@ function registerChannelPackEndpoints(
             createdAt: Date.now(),
           })
           return { ok: true, value: { accountId: id, loginKind: 'autoclaw-sms', flowId } }
-        } else if (provider === KUKU.id) {
-          // KukuAI：百度 passport 扫码登录（**卡片内嵌**，2026-10-30）。
-          // 旧形态是 127.0.0.1 本地弹窗页 —— 远程浏览器（DSH 在 NAS）打不开，
-          // 登录必败。现在 account.create 直接返回二维码 data URL，卡片内渲染；
-          // 轮询/刷新走 DSH 路由 `/api/channel-pack/login/kuku/{poll,reload}`。
-          const flow = await startKukuLoginFlow({ fetcher: codeartsFetcher })
-          const flowId = `kuku-${id}`
-          embeddedLoginFlows.set(flowId, flow)
-          const cleanup = (): void => { embeddedLoginFlows.delete(flowId) }
-          flow.result.then(async (credential) => {
-            cleanup()
-            await ctx.credentials.set(credentialRef(refName), JSON.stringify(credential))
-            await pool.updateAccount(id, {
-              nickname: credential.nickname ?? id,
-              // Cookie 型渠道没有续期端点，只能重新扫码/粘贴。
-              refreshable: false,
-            })
-          }).catch((error: unknown) => {
-            cleanup()
-            ctx.logger.warn(`[channel-pack] background ${KUKU.id} login failed for ${id}: ${String(error)}`)
-            recordLoginFailure(id, error)
-            void pool.removeAccount(id).catch(() => {})
-          })
-          await pool.addAccount({
-            id,
-            provider,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now(),
-          })
-          return { ok: true, value: { accountId: id, loginKind: 'kuku-qr', flowId, qrDataUrl: flow.qrDataUrl } }
-        } else if (provider === MONKEYCODE.id) {
-          // MonkeyCode（百智云）微信扫码登录 —— 卡片内嵌，照 kuku 形态。
-          // 官方桌面端 desktop/src/baizhi/wechat.rs 同款协议：微信 qrconnect 长轮询
-          // → 百智云回调拿 baizhi_session → loginWithBaizhiSession() OIDC 桥接换出
-          // monkeycode_ai_session。二维码 data URL 直接渲染进卡片，NAS 远程可用。
-          //
-          // ⚠️ 旧的「粘贴 Cookie」入口（account.adopt）保留不动：仍是有效退路。
-          const flow = await startMonkeyCodeLoginFlow({ fetcher: codeartsFetcher })
-          const flowId = `monkeycode-${id}`
-          embeddedLoginFlows.set(flowId, flow)
-          const cleanup = (): void => { embeddedLoginFlows.delete(flowId) }
-          flow.result.then(async (credential) => {
-            cleanup()
-            await ctx.credentials.set(credentialRef(refName), JSON.stringify(credential))
-            await pool.updateAccount(id, {
-              nickname: credential.nickname ?? id,
-              // Cookie 型渠道没有续期端点，只能重新扫码/粘贴。
-              refreshable: false,
-            })
-          }).catch((error: unknown) => {
-            cleanup()
-            ctx.logger.warn(`[channel-pack] background ${MONKEYCODE.id} QR login failed for ${id}: ${String(error)}`)
-            recordLoginFailure(id, error)
-            void pool.removeAccount(id).catch(() => {})
-          })
-          await pool.addAccount({
-            id,
-            provider,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now(),
-          })
-          return { ok: true, value: { accountId: id, loginKind: 'monkeycode-qr', flowId, qrDataUrl: flow.qrDataUrl } }
         } else if (provider === 'commandcode') {
           // Command Code：浏览器 OAuth + 本地回调（端口 5959 起）。
           // 与 codearts 同款两步式：先返回 loginUrl 让前端立刻 window.open，
@@ -2132,32 +1968,6 @@ function registerChannelPackEndpoints(
             if (!stsPersisted) void pool.removeAccount(id).catch(() => {})
           })
           return { ok: true, value: { accountId: id, loginUrl } }
-        } else if (provider === 'accio' || provider === 'accio-cn') {
-          // Accio：本地回调 OAuth + PKCE（两地共用实现，只有登录站点不同）。
-          const accioLogin = await import('./accio-auth.js')
-          const { ACCIO, ACCIO_CN } = await import('./accio-product.js')
-          const product = provider === 'accio-cn' ? ACCIO_CN : ACCIO
-          const started = await accioLogin.startAccioLogin({ product, fetcher: codeartsFetcher })
-          await pool.addAccount({
-            id, provider, nickname: id, enabled: true,
-            credentialRef: refName, refreshable: false, createdAt: Date.now(),
-          })
-          started.result.then(async (credential) => {
-            await ctx.credentials.set(credentialRef(refName), JSON.stringify(credential))
-            await pool.updateAccount(id, {
-              nickname: credential.nickname ?? credential.account_id ?? id,
-              ...(credential.expire_time === undefined ? {} : { expiresAt: credential.expire_time }),
-              refreshable: credential.refresh_token !== undefined,
-            })
-          }).catch((err) => {
-            ctx.logger.warn(`[channel-pack] background ${provider} login failed for ${id}: ${err}`)
-            // ⚠️ 只写日志不够：占位条目随即被删除，前端 `login.poll` 就再也拿不到
-            // 任何线索，只能干等到 10 分钟超时才显示「登录已过期」（本缺陷）。
-            // 与 codearts / antigravity 同款：原因放进失败表，由下一次 poll 读走。
-            pendingLoginFailures.set(id, (err instanceof Error ? err.message : String(err)).slice(0, 500))
-            void pool.removeAccount(id).catch(() => {})
-          })
-          return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } }
         } else if (provider === 'codearts') {
           // CodeArts 也是**回调式**登录（本地回调服务器收授权码），但同样必须
           // 走两步式：先返回 loginUrl 让前端立刻 window.open，后台再等回调。
@@ -2852,49 +2662,6 @@ function registerChannelPackEndpoints(
               })
               break
             }
-            case KUKU.id: {
-              // KukuAI 是 Cookie 型渠道（百度 BDUSS），**没有续期端点**：
-              // 这里只重读凭据、确认形状可用（与 zcode 同类的「刷新即复核」），
-              // 不可用时如实抛错，引导用户重新扫码。
-              const resolved = await ctx.credentials.resolve(credentialRef(entry.credentialRef))
-              if (resolved === undefined) throw new Error('凭据未配置')
-              let token = ''
-              try {
-                const parsed = JSON.parse(resolved.value) as { access_token?: unknown }
-                token = typeof parsed.access_token === 'string' ? parsed.access_token : ''
-              } catch { token = '' }
-              if (token === '') throw new Error('凭据不可用，请重新扫码登录')
-              break
-            }
-            case MONKEYCODE.id: {
-              // MonkeyCode 是 Cookie 型渠道（`monkeycode_ai_session`），**没有续期端点**：
-              // 与 kuku 同为「刷新即复核」—— 重读凭据并确认形状可用，不可用就如实报错
-              // 引导重新登录。缺了本分支时点刷新会抛 `Unknown provider: monkeycode`
-              //（用户报障：按钮点了报未知 provider）。
-              const resolved = await ctx.credentials.resolve(credentialRef(entry.credentialRef))
-              if (resolved === undefined) throw new Error('凭据未配置')
-              let cookie = ''
-              try {
-                const parsed = JSON.parse(resolved.value) as { access_token?: unknown }
-                cookie = typeof parsed.access_token === 'string' ? parsed.access_token : ''
-              } catch { cookie = '' }
-              if (cookie === '') throw new Error('凭据不可用，请重新登录')
-              break
-            }
-            case 'orcaterm': {
-              // OrcaTerm 是 Cookie 型渠道（ot_sid/ot_session），**没有续期端点**：
-              // 与 kuku / monkeycode 同为「刷新即复核」—— 重读凭据并确认 Cookie
-              // 形状可用，不可用就如实报错引导重新粘贴。此前缺本分支，点续期
-              // 直接抛 `Unknown provider: orcaterm`（20 渠道里唯一的缺口）。
-              const resolved = await ctx.credentials.resolve(credentialRef(entry.credentialRef))
-              if (resolved === undefined) throw new Error('凭据未配置')
-              let credential: OrcaTermCredential | undefined
-              try {
-                credential = JSON.parse(resolved.value) as OrcaTermCredential
-              } catch { credential = undefined }
-              if (!isOrcaTermCredentialUsable(credential)) throw new Error('凭据不可用，请重新粘贴浏览器 Cookie')
-              break
-            }
             case COMMANDCODE.id: {
               // Command Code 是长期 API Key 型渠道（**没有 refresh_token**，key 不轮换），
               // 「刷新」即**真探活复核**：重读凭据后调 `/alpha/whoami`（validateApiKey），
@@ -2926,31 +2693,6 @@ function registerChannelPackEndpoints(
                 )
               }
               await pool.updateAccount(entry.id, { refreshable: false })
-              break
-            }
-            case ACCIO.id:
-            case ACCIO_CN.id: {
-              // Accio 家族**有真续期端点**（`POST {gatewayBase}/api/auth/refresh_token`，
-              // 审计实测 200 且幂等：token 不轮换、expiresAt 顺延 30 天）。
-              // 上游**明确拒绝**（HTTP 200 + success:false，登录态被整体吊销）
-              // 时 refreshCredential 抛 AccioRefreshRejectedError —— 终态，如实
-              // 上抛给前端（「请重新登录」），不让用户反复点续期。
-              // 其余 undefined 形态（无 refresh_token / 网络 / 响应形状不认识）
-              // 仍按笼统失败报错。成功则回写凭据与账号池。
-              const product = entry.provider === ACCIO_CN.id ? ACCIO_CN : ACCIO
-              const resolved = await ctx.credentials.resolve(credentialRef(entry.credentialRef))
-              if (resolved === undefined) throw new Error('凭据未配置')
-              const current = JSON.parse(resolved.value) as AccioCredential
-              if (current.refresh_token === undefined || current.refresh_token === '') {
-                throw new Error('该账号没有 refresh_token，无法续期（重新登录可重建）')
-              }
-              const refreshed = await refreshAccioCredential(codeartsFetcher, product, current)
-              if (refreshed === undefined) throw new Error('Accio：续期请求失败（上游拒绝或响应缺少 accessToken）')
-              await ctx.credentials.set(credentialRef(entry.credentialRef), JSON.stringify(refreshed))
-              await pool.updateAccount(entry.id, {
-                expiresAt: refreshed.expire_time,
-                refreshable: typeof refreshed.refresh_token === 'string' && refreshed.refresh_token !== '',
-              })
               break
             }
             case 'officeace': {
@@ -3456,43 +3198,6 @@ function registerChannelPackEndpoints(
       // 只对**未知** provider 生效。
       case 'credits.status': {
         const req = payload as RpcCreditsStatusRequest
-        if (req.provider === MONKEYCODE.id) {
-          // MonkeyCode 有独立的签到状态端点（`fetchCheckinStatus`）。上游只给
-          // `{checkedIn, streak?, reward?}`，其余 CheckinStatus 字段没有对应数据 ——
-          // 一律留空/0 而不是编数字（面板只读 `todayCheckedIn` 与 `todayCredit`）。
-          const accounts = await pool.listAccounts(req.provider)
-          const rows: RpcCreditsStatusResponse['accounts'] = []
-          for (const entry of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef(entry.credentialRef))
-            let status: RpcCreditsStatusResponse['accounts'][number]['status'] = null
-            if (resolved !== undefined) {
-              try {
-                const credential = JSON.parse(resolved.value) as MonkeyCodeCredential
-                const raw = await fetchMonkeyCodeCheckinStatus(codeartsFetcher, MONKEYCODE, credential)
-                status = {
-                  active: true,
-                  todayCheckedIn: raw.checkedIn,
-                  streakDays: raw.streak ?? 0,
-                  // GET 状态不带奖励字段（只回 {checked_in:true}），已签到时
-                  // 用官方契约常量 100 兜底，别再显示「今天领了 0 积分」。
-                  dailyCredit: raw.reward ?? MONKEYCODE_DAILY_CHECKIN_CREDITS,
-                  todayCredit: raw.checkedIn ? (raw.reward ?? MONKEYCODE_DAILY_CHECKIN_CREDITS) : 0,
-                  // 以下四项上游没有对应字段，如实留空。
-                  isStreakDay: false,
-                  totalCredits: 0,
-                  checkinDates: [],
-                  activityName: '',
-                  themeName: '',
-                  endTime: '',
-                }
-              } catch {
-                status = null
-              }
-            }
-            rows.push({ accountId: entry.id, nickname: entry.nickname, status })
-          }
-          return { ok: true, value: { accounts: rows } satisfies RpcCreditsStatusResponse }
-        }
         if (req.provider === 'codearts') {
           // CodeArts 没有独立的「签到状态」端点：可领状态要经
           // `statistics/plugin`（账户类型）+ `/v1/ops/delivery`（活动列表）
@@ -3639,36 +3344,6 @@ function registerChannelPackEndpoints(
                   : /已领|没有可领/.test(outcome.message)
                     ? { kind: 'already-claimed', message: outcome.message }
                     : { kind: 'failed', code: -1, message: outcome.message }
-            },
-            precheckStatus: false,
-            warn: (msg) => ctx.logger?.warn?.(msg),
-          })
-          return { ok: true, value: value satisfies RpcCreditsClaimAllResponse }
-        }
-        if (req.provider === KUKU.id) {
-          // KukuAI 的签到是「免费领积分」活动的任务领取（`freepoint/homenew`
-          // 面板 + `taskComplete` 的 LOGIN/CHAT）。上游**幂等**：重复领返回
-          // `SUCCESS` + `reward_point=0`，故「已领过」不算失败。
-          // 领取流程自带面板查询，故 precheckStatus: false 跳过外部状态检查
-          // （与 Qoder / LobsterAI 同因：避免重复发一次 GET）。
-          const { claimKukuDailyCheckin } = await import('./kuku-auth.js')
-          const { KUKU: KUKU_PRODUCT } = await import('./kuku-product.js')
-          const value = await collectClaimResults<KukuCredential, typeof KUKU_PRODUCT>(accounts, KUKU_PRODUCT, {
-            fetcher: codeartsFetcher,
-            resolve: (ref) => ctx.credentials.resolve(ref),
-            claim: async (credential) => {
-              const outcome = await claimKukuDailyCheckin(codeartsFetcher, KUKU_PRODUCT, credential)
-              // 同上：返回 ClaimOutcome。kuku 的幂等口径（taskComplete 重复领
-              // 返回 SUCCESS + reward 0）对应 already-claimed。
-              return outcome.claimed > 0
-                ? { kind: 'claimed', credit: outcome.claimed, streakDays: 1, isStreakDay: true, message: outcome.message }
-                // ⚠️ 「上游未返回可领取结果（可能今日无可领任务）」是**今天没得领**，
-                // 不是失败：kuku 的任务每日刷新，当天任务都领完/未刷新时上游就
-                // 不回可领结果。判成 failed 会让自动签到当天反复重跑（2026-10-26
-                // 实测形态）。
-                : /今日无可领|未返回可领取结果|已领取过|已领/.test(outcome.message)
-                  ? { kind: 'already-claimed', message: outcome.message }
-                  : { kind: 'failed', code: -1, message: outcome.message }
             },
             precheckStatus: false,
             warn: (msg) => ctx.logger?.warn?.(msg),
@@ -3894,60 +3569,6 @@ function registerChannelPackEndpoints(
             value: { results, summary: computeClaimSummary(outcomes) } satisfies RpcCreditsClaimAllResponse,
           }
         }
-        if (req.provider === MONKEYCODE.id) {
-          // MonkeyCode 的签到是 `POST {checkin}`；重复签到返回正常状态（幂等），
-          // 故直接以 `runCheckin` 的结果判定，不需要额外状态预检。
-          const value = await collectClaimResults<MonkeyCodeCredential, undefined>(accounts, undefined, {
-            fetcher: codeartsFetcher,
-            resolve: (ref) => ctx.credentials.resolve(ref),
-            claim: async (credential) => {
-              // ⚠️ 必须先查状态再决定要不要 POST：
-              // 上游对「今天已签到」的重复 POST 回 HTTP 200 + `code:10701`
-              // （`{"code":10701,"message":"兑换验证码失败"}`）。直接 POST 再按业务码判定
-              // 会把「已经领过了」误报成「领取失败」，用户会以为出错。
-              const before = await fetchMonkeyCodeCheckinStatus(codeartsFetcher, MONKEYCODE, credential)
-              if (before.checkedIn) {
-                return {
-                  kind: 'already-claimed',
-                  // GET 不回奖励字段时用官方常量 100，让「已签到」也有明确回报。
-                  message: `今天已经签到过了（+${before.reward ?? MONKEYCODE_DAILY_CHECKIN_CREDITS} 积分）`,
-                }
-              }
-              // 2026-10-26：改用带 cap.js POW 的完整流程 —— 上游签到需要
-              // `captcha_token`（官方 frontend 的 DomainCheckInReq），不带则回
-              // `code:10701 兑换验证码失败`，这就是「签到实际失效」的根因。
-              // POW 可编程求解（challenge→solve→redeem），无需浏览器。
-              // ⚠️ 签名是**单个 options 对象**，不是位置参数（2026-10-26 审计发现：
-              // 写成 (fetcher, product, credential) 会抛 TypeError，只有状态预检
-              // 短路成 already-claimed 时才看不出来）。
-              const result = await runMonkeyCodeCheckinWithCaptcha({
-                fetcher: codeartsFetcher,
-                product: MONKEYCODE,
-                credential,
-              })
-              if (!result.ok) return { kind: 'failed', code: 0, message: result.reason ?? '签到失败' }
-              // ★ 官方签到契约（desktop/src/baizhi/tests.rs 的 mc_checkin_contract）：
-              // 成功回 `data.credits: 100` —— 把真实积分写回结果，别再硬编码 0
-              // （用户 2026-11-05：「每日签到给 100 积分，每次都没有返回」）。
-              // 上游按天幂等：本次调用能成功就说明今天已处理（coversToday）。
-              // streakDays/isStreakDay 上游不返回，保持 0/false，不编造。
-              // 上游正常回 credits:100；若某次响应缺字段，用官方常量兜底
-              // （本次 POST 成功即代表今天已领，不该显示 0）。
-              const credits = typeof result.credits === 'number' && Number.isFinite(result.credits)
-                ? result.credits : MONKEYCODE_DAILY_CHECKIN_CREDITS
-              return {
-                kind: 'claimed',
-                credit: credits,
-                streakDays: 0,
-                isStreakDay: false,
-                ...(credits > 0 ? { message: `签到成功（+${credits} 积分）` } : {}),
-              }
-            },
-            precheckStatus: false,
-            warn: (msg) => ctx.logger?.warn?.(msg),
-          })
-          return { ok: true, value: value satisfies RpcCreditsClaimAllResponse }
-        }
         const product = productById(req.provider)
         if (product === undefined) {
           return { ok: false, error: { code: 'bad-request', message: `unsupported provider: ${req.provider}` } }
@@ -4143,85 +3764,6 @@ function registerChannelPackEndpoints(
               const snapshot = await readCredits(codeartsFetcher, COMMANDCODE, credential)
               if (snapshot === undefined || snapshot.balance === undefined) return null
               return { total: snapshot.balance, packages: [], expiredTotal: 0 }
-            },
-            warn: (msg) => ctx.logger?.warn?.(msg),
-          })
-          return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
-        }
-        if (req.provider === MONKEYCODE.id) {
-          // MonkeyCode：钱包余额（积分）。每日签到奖励也进这个钱包。
-          const values = await collectCreditBalances<MonkeyCodeCredential, typeof MONKEYCODE>(accounts, MONKEYCODE, {
-            fetcher: codeartsFetcher,
-            resolve: (ref) => ctx.credentials.resolve(ref),
-            fetchBalance: async (credential) => {
-              const wallet = await fetchMonkeyCodeWallet(codeartsFetcher, MONKEYCODE, credential)
-              if (wallet?.balance === undefined) return null
-              // ★ 官方客户端/网页把 `balance` 按 **1000:1** 显示成积分：
-              // 实测 API `balance: 1037550`，而客户端与网页显示「1037 积分」
-              //（1037550 / 1000 = 1037.55）。早期直接把原始值当积分，前端
-              // formatTokens(1037550) 显示成「1.0M」——用户 2026-11-05 报不对。
-              // 这里换算成官方展示口径（取整，不编造小数）。
-              return { total: Math.trunc(wallet.balance / 1000), packages: [], expiredTotal: 0 }
-            },
-            warn: (msg) => ctx.logger?.warn?.(msg),
-          })
-          return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
-        }
-        if (req.provider === ACCIO.id || req.provider === ACCIO_CN.id) {
-          // Accio 家族：只有**配额百分比**（`fetchQuota` → usedPercent/resetAtMs），
-          // 与 antigravity 同型 —— 换成「剩余百分比」，单位 percent。
-          const product = req.provider === ACCIO_CN.id ? ACCIO_CN : ACCIO
-          const values = await collectCreditBalances<AccioCredential, typeof product>(accounts, product, {
-            fetcher: codeartsFetcher,
-            resolve: (ref) => ctx.credentials.resolve(ref),
-            fetchBalance: async (credential) => {
-              const quota = await fetchAccioQuota(codeartsFetcher, product, credential)
-              if (quota?.usedPercent === undefined) return null
-              const used = Math.max(0, Math.min(100, quota.usedPercent))
-              const remaining = 100 - used
-              return {
-                total: remaining,
-                packages: [{
-                  name: '配额',
-                  unit: 'percent',
-                  remaining,
-                  total: 100,
-                  used,
-                  active: true,
-                  cycleStartTime: '',
-                  cycleEndTime: quota.resetAtMs === undefined ? '' : new Date(quota.resetAtMs).toISOString(),
-                  expiredTime: '',
-                }],
-                expiredTotal: 0,
-              }
-            },
-            warn: (msg) => ctx.logger?.warn?.(msg),
-          })
-          return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
-        }
-        if (req.provider === KUKU.id) {
-          // KukuAI 是**积分制**：`GET /bizapi/gfpro/getgfivpremain` 的
-          // `data.list[assetName=="token"].totalPoint`（详见 kuku-auth.ts 的
-          // `fetchKukuPoints`）。上游另有每日签到（`freepoint/homenew` +
-          // `taskComplete` 的 LOGIN/CHAT），见下方 `credits.claimAll` 分支。
-          const { fetchKukuPoints } = await import('./kuku-auth.js')
-          const { KUKU: KUKU_PRODUCT } = await import('./kuku-product.js')
-          const values = await collectCreditBalances<KukuCredential, typeof KUKU_PRODUCT>(accounts, KUKU_PRODUCT, {
-            fetcher: codeartsFetcher,
-            resolve: (ref) => ctx.credentials.resolve(ref),
-            fetchBalanceDetailed: async (credential, _product) => {
-              const points = await fetchKukuPoints(codeartsFetcher, KUKU_PRODUCT, credential)
-              // 拿不到就说清楚，不显示成 0（0 会被误读为「积分用光」）。
-              // ⚠️ `packages` 必须带显式 `CreditPackage[]` 类型注解：裸 `[]` 会被
-              // 推成 `never[]`，与 `CreditBalance.packages` 不兼容（2026-10-31
-              // tsc 门禁发现——运行时无影响，类型层谎报）。
-              return points === undefined
-                ? { balance: null, error: '未返回积分数据（上游业务码非 0 或结构不认识）' }
-                // ⚠️ `CreditBalance` 必填 `{total, packages, expiredTotal}`：
-                // kuku 是单值积分制（无资源包、无失效包），按其它单值渠道同款
-                // 口径补 `packages: []` + `expiredTotal: 0`（裸 `{total}` 少
-                // `expiredTotal` —— 2026-10-31 tsc 门禁）。
-                : { balance: { total: points, packages: [] as CreditPackage[], expiredTotal: 0 } }
             },
             warn: (msg) => ctx.logger?.warn?.(msg),
           })
@@ -5762,20 +5304,15 @@ interface AdoptableChannel {
   parse: (text: string) => Record<string, unknown> | undefined
 }
 
-/** 粘贴型渠道表。键是 provider id。 */
-const ADOPTABLE_CHANNELS: Readonly<Record<string, AdoptableChannel>> = {
-  // monkeycode 已改为「卡片内微信扫码登录」（account.create → loginKind:
-  // 'monkeycode-qr'）。用户 2026-11-05 明确「只留一个卡片内扫码，粘贴 Cookie
-  // 麻烦」，故不再作为粘贴型渠道出现在 ADOPTABLE_CHANNELS 里。
-  // 百智云会话→MonkeyCode 会话的 OIDC 桥接仍由扫码流程内部调用。
-  orcaterm: {
-    hint: '浏览器 Cookie（必须含 ot_session=…）',
-    parse: (text) => {
-      const cookie = normalizeOrcaTermCookie(text)
-      return cookie === undefined ? undefined : { access_token: cookie, created_at: Date.now() }
-    },
-  },
-}
+/** 粘贴型渠道表。键是 provider id。
+ *
+ * 2026-11-05 起为空表：纯粘贴登录形态已全部移除（MonkeyCode 改扫码后删除、
+ * OrcaTerm 随渠道整体删除），所有剩余渠道都在插件内完成授权。
+ * `account.adopt` 对任何 provider 都会走「provider does not accept pasted
+ * credentials」拒绝；`adoptableChannelHint()` 恒返回 undefined，前端不再渲染
+ * 粘贴入口。保留表本身是为了 `account.adopt` 的通用拒绝路径不改动。
+ */
+const ADOPTABLE_CHANNELS: Readonly<Record<string, AdoptableChannel>> = {}
 
 /** 列出可粘贴凭据的渠道（UI 据此决定「添加账号」的交互形态）。 */
 export function adoptableChannelHint(provider: string): string | undefined {

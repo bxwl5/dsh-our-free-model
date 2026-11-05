@@ -67,9 +67,26 @@ attachTokenLedgerStore({ append() {}, flush() {} })
 /** 造一个记录调用参数的假池。 */
 function fakePool() {
   const calls = []
+  const settled = []
   return {
     calls,
-    async clearAnomalyOnSuccess(accountId, modelId) { calls.push([accountId, modelId]); return 1 },
+    // ★ test-all 全量跑（vfat IO 繁忙）时 fire-and-forget 的清标记可能晚于
+    //   setImmediate 落地 → 断言间歇性拿到空 calls（2026-11-05 实测 1/3 失败）。
+    //   记下每个 promise，测试侧 await settle() 等真实落地，不再赌时序。
+    settled,
+    async clearAnomalyOnSuccess(accountId, modelId) {
+      const done = (async () => { calls.push([accountId, modelId]); return 1 })()
+      settled.push(done)
+      return done
+    },
+  }
+}
+
+/** 等当前 pool 所有清标记 promise 落地（含下一个微任务里刚发起的）。 */
+async function settlePool(pool, rounds = 4) {
+  for (let i = 0; i < rounds; i += 1) {
+    await Promise.allSettled(pool.settled.splice(0))
+    await new Promise(r => setImmediate(r))
   }
 }
 
@@ -81,6 +98,10 @@ async function drain(chunks, { error, pool, accountId = 'acct-1', provider = 'bu
   const stream = recordThroughStream(
     async function* () {
       if (accountId) reportLedgerAccount(provider, accountId)
+      // ★ 让首块到达时 Date.now() 严格大于 startedAt（同毫秒竞态：
+      //   ttftMs=0 会让「实测成功」判据不成立，2026-11-05 间歇失败实测）。
+      //   setImmediate 不跨毫秒，必须用 ≥1ms 的真实定时器。
+      await new Promise(r => setTimeout(r, 2))
       for (const c of chunks) {
         if (error && c === '__throw__') throw new Error(error)
         yield c
@@ -94,9 +115,9 @@ async function drain(chunks, { error, pool, accountId = 'acct-1', provider = 'bu
   try {
     for await (const c of stream) got.push(c)
   } catch (e) { thrown = e }
-  // 让 fire-and-forget 的 clear 微任务落地
-  await new Promise(r => setImmediate(r))
   detach()
+  // 让 fire-and-forget 的 clear 落地：等真实 promise（不再赌 setImmediate 时序）
+  await settlePool(p)
   return { got, thrown, calls: p.calls }
 }
 
@@ -132,7 +153,9 @@ console.log('ok  空流不清异常标记')
 // ── 4. 没有 accountId → 不清（避免误清到别的账号）──
 {
   const pool = fakePool()
-  const r = await drain([{ type: 'text-delta', text: 'hi' }], { pool, accountId: '' })
+  // provider 用全新值：peekLedgerAccount 在无域时退回「全局最后值」，
+  // 会读到上一项留下的 acct-1（fallback 语义本身是对的，测试要隔离它）。
+  const r = await drain([{ type: 'text-delta', text: 'hi' }], { pool, accountId: '', provider: 'guard-provider' })
   assert.deepEqual(r.calls, [], '取不到账号时宁可不清')
 }
 console.log('ok  无账号归属时不清')

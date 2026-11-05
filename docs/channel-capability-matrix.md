@@ -15,20 +15,19 @@
 | 类别 | 数量 | 渠道 |
 | --- | --- | --- |
 | 免密车道（无需账号） | 2 | 匿名免费车道（OpenCode Zen）、Kilo 免费池 |
-| 账号渠道（provider） | 20 | 见 §2 主表；免密车道逐条说明见 §3.19 |
+| 账号渠道（provider） | 15 | 见 §2 主表；免密车道逐条说明见 §3.16 |
 
-「账号渠道 20」这一数字在本仓库有四处独立佐证（2026-10-28 重新核对；此前写 22 是
+「账号渠道 15」这一数字在本仓库有四处独立佐证（2026-11-05 重新核对；此前写 22 是
 `autoclaw-intl` / `lobsterai` 移除前的旧值）：
 
-- `README.md` 渠道章节「**账号渠道（20 个）**」；`README_EN.md` "**Account channels (20)**"；
-- `client.js` 的 `CHANNEL_PROVIDERS` 表：20 条卡片（每条的 `login` 字段决定交互形态）；
-- `scripts/channel-pack-test.mjs`：`assert.equal(adapters.size, 20)` 与 `assert.equal(cards.length, 20)`；
-- `vendor/channel-pack/src/index.ts` 的注册段：20 个账号 provider（OFM 挂载时关闭上游 OpenCode 账号接入，故不计入）。
+- `README.md` 渠道章节「**账号渠道（15 个）**」；`README_EN.md` "**Account channels (15)**"；
+- `client.js` 的 `CHANNEL_PROVIDERS` 表：15 条卡片（每条的 `login` 字段决定交互形态）；
+- `scripts/channel-pack-test.mjs`：`assert.equal(adapters.size, 15)` 与 `assert.equal(cards.length, 15)`；
+- `vendor/channel-pack/src/index.ts` 的注册段：15 个账号 provider（OFM 挂载时关闭上游 OpenCode 账号接入，故不计入）。
 
-**纯粘贴渠道 2 个**（上游没有可脚本化的授权流程，只能用 `account.adopt` 粘贴 Cookie）：
-`monkeycode`、`orcaterm`。`ADOPTABLE_CHANNELS` 因此只有 2 条（源码见
-`channel-pack-rpc.ts` 的同名常量）。**Accio 家族的粘贴兜底已移除**（2026-10-24，真机确认
-浏览器授权可用后按用户要求撤掉）——它们现在只有浏览器授权一条路径。
+**纯粘贴渠道 0 个**（2026-11-05：`monkeycode` / `kuku` / `accio` / `accio-cn` / `orcaterm`
+五个渠道整体移除，最后的粘贴渠道 OrcaTerm 也在其中）。`ADOPTABLE_CHANNELS` 现为空表——
+`account.adopt` 对任何 provider 都直接拒绝，前端不再渲染粘贴入口。
 
 > 口径变更（2026-10-24）：`kuku` 已改为百度 App 扫码、`autoclaw` 国内站已改为手机号 +
 > 短信验证码，都不再是粘贴渠道；旧的「粘贴型渠道共 5 个」描述已过期。
@@ -37,16 +36,15 @@
 > （`loginPage` + `cookieName`，由 `scripts/channel-login-methods-test.mjs` 守卫），
 > 不再让用户对着空粘贴框猜。
 
-### 1.2 计数口径（20 / 13 / 2）
+### 1.2 计数口径（15 / 12 / 0）
 
 | 计数 | 它到底在数什么 | 权威来源 |
 | --- | --- | --- |
-| **20** | 账号渠道（provider）条数 | `README.md` / `README_EN.md` 的渠道表、`client.js` 的 `CHANNEL_PROVIDERS`、`scripts/channel-pack-test.mjs` 的 `adapters.size === 20` 与 `cards.length === 20`、`vendor/channel-pack/src/index.ts` 注册段 |
-| **13** | 「带额度 / 签到能力」的契约集合 | `client.js` 的 `CHANNEL_CREDITS`（13 条）、`scripts/channel-credits-rpc-test.mjs` 的 13 providers 列表 |
-| **2** | 纯粘贴型登录 | `ADOPTABLE_CHANNELS`（`monkeycode` `orcaterm`） |
+| **15** | 账号渠道（provider）条数 | `README.md` / `README_EN.md` 的渠道表、`client.js` 的 `CHANNEL_PROVIDERS`、`scripts/channel-pack-test.mjs` 的 `adapters.size === 15` 与 `cards.length === 15`、`vendor/channel-pack/src/index.ts` 注册段 |
+| **12** | 「带额度 / 签到能力」的契约集合 | `client.js` 的 `CHANNEL_CREDITS`（12 条非空） |
+| **0** | 纯粘贴型登录 | `ADOPTABLE_CHANNELS`（空表） |
 
-`autoclaw-intl` 与 `lobsterai` 已于 2026-10-25 整链移除（源码 / 卡片 / 凭据解析 / 测试
-一并删除），故 20 而不是早先文档里的 22。任何计数文案都必须与同一文件里的断言同值，
+`autoclaw-intl` 与 `lobsterai` 已于 2026-10-25、`monkeycode` / `kuku` / `accio` / `accio-cn` / `orcaterm` 已于 2026-11-05 整链移除（源码 / 卡片 / 凭据解析 / 测试一并删除），故 15 而不是早先文档里的 22。任何计数文案都必须与同一文件里的断言同值，
 维护要求见 §5。
 
 > 本文不收录已从仓库整链移除的渠道：其源码、卡片、凭据解析与测试均已删除，
@@ -54,7 +52,7 @@
 
 ---
 
-## 2. 能力矩阵（20 个账号渠道）
+## 2. 能力矩阵（15 个账号渠道）
 
 图例：**✅** 插件已接入；**⚠️** 上游或模块内有该能力、但插件未接入（括号内写原因）；
 **❌** 无此能力或上游没有该端点。
@@ -81,29 +79,24 @@
 | 12 | `antigravity` · Antigravity（原 `gemini`，2026-11-01 改名） | 浏览器授权（Google OAuth，本地回调；只做 OAuth） | ✅ | ✅ 远端（`fetchAvailableModels`；claude/gpt-oss 家族放行，3.8 系分段合并，同名条目消歧） | ✅（分组配额桶：Gemini 组 + Claude·GPT 组） | ❌（无每日签到） | ✅ 双桥 |
 | 13 | `commandcode` · Command Code | 浏览器授权（自动回调；授权页 `/studio/auth/cli`） | ✅ | ✅ 远端 | ✅（`/alpha/billing/credits`，`readCredits`） | ❌ | ❌ |
 | 14 | `officeace` · OfficeAce 果办 | 浏览器授权（自助 OAuth + 轮询授权码，回调不落本机） | ✅ | ✅ 远端 | ❌ | ❌ | ❌ |
-| 15 | `accio` · Accio | 浏览器授权（国际站） | ✅ | ✅ 远端 | ✅（配额百分比，`fetchQuota`） | ❌ | ❌ |
-| 16 | `accio-cn` · Accio 国内版 | 浏览器授权（国内站） | ✅ | ✅ 远端 | ✅（配额百分比，`fetchQuota`） | ❌ | ❌ |
-| 17 | `orcaterm` · OrcaTerm | 粘贴 Cookie（`ot_session`） | ✅ | ❌ 静态（上游无公开目录端点） | ❌ | ❌ | ❌ |
-| 18 | `kuku` · KukuAI | 百度 App 扫码（卡片内嵌二维码，无本地页） | ✅ | ✅ 远端（`model/list`，TTL 10 分钟） | ✅ 积分（`getgfvipremain`） | ✅ 签到（`freepoint` LOGIN/CHAT） | ❌ |
-| 19 | `monkeycode` · MonkeyCode | 粘贴 Cookie（`nebula_session`） | ✅（建任务 + WebSocket 两步） | ✅ 远端 | ✅（`/api/v1/users/wallet`） | ✅（`wallet/checkin`，每次奖励 100 积分） | ❌ |
-| 20 | `autoclaw` · AutoClaw（国内） | 手机号 + 短信验证码（卡片内嵌表单，无本地页） | ✅ | ✅ 远端（`autoclaw-model-config`） | ❌ | ❌ | ❌ |
+| 15 | `autoclaw` · AutoClaw（国内） | 手机号 + 短信验证码（卡片内嵌表单，无本地页） | ✅ | ✅ 远端（`autoclaw-model-config`） | ❌ | ❌ | ❌ |
 
 **按维度汇总**：
 
 | 维度 | 已接入 | 未接入 / 不支持 |
 | --- | --- | --- |
 | 对话 | 20（全部） | — |
-| 模型目录 | 非静态目录 20 条（其中 `qoder`/`qodercn` 来自官方客户端本机解密文件 `catalog-v6`） | 仅静态兜底表 1 条：`orcaterm`（`antigravity` 于 2026-11-01 接入远端目录，静态表降为兜底） |
-| 额度查询 | **17 条** | 3 条：`orcaterm` `autoclaw` `officeace` |
-| 签到 | **10 条**（原 9 条 + `monkeycode`） | 服务端显式守卫「无签到端点」3 条（`workbuddy` `cline` `raccoon`）+ `antigravity`/`commandcode`/`accio`/`accio-cn`（无 claim 能力）+ 上游无签到 5 条 |
+| 模型目录 | 远端目录 15 条 | 无静态兜底渠道（`orcaterm` 已删除；`antigravity` 等均接远端目录） |
+| 额度查询 | 点名集合：`codearts` `trae` `minimax` `commandcode` `autoclaw` `officeace` `antigravity` `cline` `loomy` `raccoon` `zcode` 有专用分支；`buddy` 系走 `productById()` 通用回落；`qoder` `qodercn` 无分支 |
+| 签到（claim） | **10 条**：codearts / buddy / qoder / qodercn / trae / loomy / minimax / zcode / officeace / autoclaw | 无 claim：workbuddy / cline / raccoon / antigravity / commandcode |
 | 图片（双桥） | 8 条：`buddy` `workbuddy` `qoder` `qodercn` `cline` `raccoon` `antigravity` `zcode` | 单桥 3 条：`trae` `loomy` `minimax`；未接 9 条 |
-| 粘贴型登录 | 纯粘贴 2 条（`monkeycode` `orcaterm`）；扫码/短信 3 条中 `kuku` `autoclaw` 已改卡片内嵌（无本地页），`loomy` `raccoon` 仍为本地页 | — |
+| 粘贴型登录 | 纯粘贴 0 条；卡片内嵌 1 条（`autoclaw` 短信）；`loomy` `raccoon` 仍为本地页 | — |
 
 ---
 
 ### 2.1 模型目录的唯一事实来源与落盘快照（2026-10-27）
 
-用户当天拍板的两条规则，**全部 20 个渠道**统一执行：
+用户当天拍板的两条规则，**全部 15 个渠道**统一执行：
 
 1. **远端目录全量覆盖兜底表**：「不是增量，是直接写入」—— 远端拉成功就把整份目录
    当作事实来源，**不再与编译期兜底表合并**。兜底表只剩一个用途：远端**从未成功过**
@@ -131,8 +124,6 @@
 | `cline` | 远端为权威、兜底表只给已认识的 id 补元数据 | 未动（本就符合规则） |
 | `officeace` | 上游 `GET {base}/models` 只回 `{id,object,created,owned_by}` | 未动：**上游没有任何倍率字段**，无倍率可显示 |
 
-已知残留（用户 2026-10-27 明确「不动」）：`accio` / `accio-cn` 的
-`rlab-1.0-storyboard`（多分镜视频，非对话模型）仍在目录里，且它是 accio 唯一无倍率的条目。
 
 ---
 
@@ -270,57 +261,7 @@
 - 额度 / 签到：未接入。
 - 图片：协议层支持，但未接字节桥。
 
-### 3.14 Accio / Accio 国内版（`accio` / `accio-cn`）
-
-- 登录：浏览器授权，国际站 `www.accio.com` / 国内站 `www.accio-ai.com`，`client_id` 两地逐字相同
-  （`accio-work`）；两地共用同一网关，差别只在 `x-package-region` 与登录站点。
-- 三个独特点：token **不走** `Authorization` 头（GET 拼 query、POST 放 body）；请求体是
-  Gemini 风格信封；响应是 ADK 自有帧（`content.parts` / `turn_complete`）。
-- 模型目录：远端（适配器内 `fetchModels`）。
-- 额度：`fetchQuota`（`GET {gateway}/v1/quota?accessToken=…`）**已接入**共享 credits RPC ——
-  上游只给 `usedPercent`/`resetAtMs`，面板按「剩余百分比」展示（与 gemini 同型）。
-- 签到：无（上游只能读配额，没有签到端点）。图片：未接字节桥。
-
-### 3.15 OrcaTerm（`orcaterm`）
-
-- 登录：**粘贴 Cookie** `ot_session`。上游三条登录链路都无法在插件里自动完成
-  （桌面端回调走 `orcaterm://`；微信扫码 state 绑服务端会话；Web 控制台扫码后写 Cookie —— 扫码动作仍须用户自己完成）。
-- 对话：**建会话 → SSE** 两步（每轮新建会话，历史拍平进输入）。
-- 模型目录：**静态兜底表**（上游没有公开目录端点，模型由控制台下发）。
-- 额度 / 签到 / 图片：未接入（上游无对应端点）。
-
-### 3.16 KukuAI（`kuku`）
-
-- 登录：**百度 App 扫码**（本地弹窗页 `kuku-qr-login-page.ts`，协议 `kuku-qr-login.ts`）。
-- 对话：`POST /wenchain/genflowpro/sendmsg` → SSE `/wenchain/genflowpro/sse/getchatcontent`；
-  `clienttype` / `version` / `channel` / `v` 照官方 PC 客户端原样下发。
-- 模型目录：**远端** `GET /wenchain/genflowpro/model/list?{WEB_QUERY}`（TTL 10 分钟，
-  实测 13 个真实模型，含 `display_name`）；拉不到时回落静态表 13 条。
-- 额度：**积分制** —— `GET /bizapi/gfpro/getgfvipremain`，取
-  `data.list[assetName=="token"].totalPoint`。⚠ 判据在**顶层** `status.code`
-  （不是 `data.status.code`）；拿不到时返回 `undefined` 而不是 0。
-- 签到：**已接入** —— `GET /api/genflowpro/freepoint/homenew`（面板）+
-  `POST /api/genflowpro/freepoint/taskComplete`（`task_type=LOGIN|CHAT`）。
-  上游幂等：重复领返回 `SUCCESS` + `reward_point=0`，故「已领过」不算失败。
-  邀请类任务（`INVITE_*`）要真实受邀人，不进领取清单。
-- 图片：未接入。
-- 凭据失效时两个域表现不同：`bizapi`（余额）仍可能 200，而 `api`（对话/签到）
-  返回 `errno:-6 未登录` / `invalid session_id` —— 排查时别只看余额能通就以为凭据有效。
-
-### 3.17 MonkeyCode（`monkeycode`）
-
-- 登录：**粘贴 Cookie** `nebula_session`（走 OAuth 授权 + Cookie 会话，**没有设备码或本地回调**）。
-- 对话：**两步 WebSocket** —— `POST /api/v1/users/tasks` 建任务 → 连
-  `/api/v1/users/tasks/stream?id=<taskId>&mode=develop` 逐帧读正文；RFC6455 客户端手写
-  （`monkeycode-ws.ts`），事件解析容错（认不出的帧忽略而不报错）。
-- 模型目录：远端 `GET /api/v1/users/models/available`（+ 兜底表）。
-- 额度 / 签到：**已接入**共享 credits RPC —— `GET /api/v1/users/wallet` 读积分余额，
-  `GET|POST /api/v1/users/wallet/checkin` 做状态查询与每日签到（每次 100 积分）；
-  面板上因此有「剩余额度 / 刷新余额 / 签到」。上游只给 `checkedIn`/`streak`/`reward`，
-  其余 CheckinStatus 字段如实留空（不编数字）。
-- 图片：未接字节桥。
-
-### 3.18 AutoClaw（国内）（`autoclaw`）
+### 3.14 AutoClaw（国内）（`autoclaw`）
 
 - 登录：**国内站 = 手机号 + 短信验证码**（本地弹窗页 `autoclaw-login-page.ts`，协议 `autoclaw-sms.ts`，
   真机已验证 24h token）；**国际站仍粘贴令牌** —— 其 OAuth 回调端口有白名单
@@ -331,9 +272,9 @@
   无真实令牌时回 404，不能据此判死链）。
 - 续期：国内站**有** refresh 端点（`/userapi/v1/refresh`，失败退 `/userapi/v1/agent-refresh`），
   短信登录的 refresh_token 会自动续期；国际站没有 refresh_token，刷新只做凭据复核。
-- 额度 / 签到 / 图片：未接入 —— 卡片因此不显示余额/签到区（同 kuku 的理由）。
+- 额度 / 签到 / 图片：未接入 —— 卡片因此不显示余额/签到区（无积分端点）。
 
-### 3.19 免密车道（2 条，无需账号）
+### 3.15 免密车道（2 条，无需账号）
 
 | 车道 | 对话 | 模型目录 | 额度 | 签到 | 图片 |
 | --- | --- | --- | --- | --- | --- |
@@ -401,5 +342,5 @@ esbuild 取自仓库自身（`packages/standalone/package-lock.json` 钉 0.25.9�
 2. **能力状态变化**（例如「模块内有实现但未接入」被接线）：改本文件 §2 与 §3 的对应行，
    并在 §4 补一条可复现命令。
 3. **口径**：任何「渠道数」文案改动都必须同时覆盖 §1 列出的来源，且日志数字必须与**同一文件里的
-   断言**同值（账号渠道一律 20；额度 / 签到契约一律 13），并同步本文 §1.2 —— 避免再次出现
+   断言**同值（账号渠道一律 15；额度 / 签到契约一律 13），并同步本文 §1.2 —— 避免再次出现
    「文档说 22、断言说 20」。改动 `src/**` 后必须按 §4.1 重建产物。

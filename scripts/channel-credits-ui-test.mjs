@@ -114,8 +114,8 @@ export async function verifyChannelCreditsUi() {
     subscribe()
     return { calls, errors, cells, button, text, tree, cleanup, events }
   }
-  const claimable = new Set(['codearts', 'buddy', 'qoder', 'qodercn', 'trae', 'loomy', 'minimax', 'zcode', 'monkeycode'])
-  for (const provider of [...claimable, 'workbuddy', 'cline', 'raccoon', 'antigravity', 'commandcode', 'accio', 'accio-cn']) {
+  const claimable = new Set(['codearts', 'buddy', 'qoder', 'qodercn', 'trae', 'loomy', 'minimax', 'zcode'])
+  for (const provider of [...claimable, 'workbuddy', 'cline', 'raccoon', 'antigravity', 'commandcode']) {
     const app = mount(provider, async () => ({ accounts: [] }))
     await settle()
     assert.equal(app.calls[0].method, 'credits.balances', `${provider} 必须查询已有后端余额能力`)
@@ -233,80 +233,7 @@ export async function verifyChannelCreditsUi() {
   assert.ok(quota.text().includes('已查询 1 个账号'))
   quota.cleanup()
 
-  // ── 回归锁（captain UI 三修）：「续期」措辞只给真续期渠道 ──
-  // Cookie / 长期 Key 型渠道（login: 'cookie' / 'token'）点刷新只是重新校验凭据，
-  // 按钮文案必须是「校验凭据」；OAuth 型渠道（如 buddy）保持「续期」。
-  // 卡片按钮只在有账号时渲染（accountsCount > 0），所以走 account.list 回 1 行。
-  // ⚠️ 渠道选择：loader effect 的第一道门是 `CHANNEL_CREDITS[channel.id]`，
-  // 没有余额能力的渠道（orcaterm）不会挂 loader effect，
-  // mount 的 isLoader 探测就会失败。cookie 型里**有**余额能力的只有 monkeycode；
-  // token / 其余 cookie 型渠道的文案分支与它共用同一个 `recheckOnly` 判定，
-  // 由 monkeycode 一条锁死即可。
-  {
-    const rows = [{ id: 'one', nickname: '账号一', enabled: true }]
-    const withAccounts = async method => {
-      if (method === 'account.list') return { accounts: rows }
-      if (method === 'credits.balances') return { accounts: [{ accountId: 'one', balance: { total: 1 } }] }
-      if (method === 'account.refresh') return { success: true }
-      return { accounts: [] }
-    }
-    const app = mount('monkeycode', withAccounts, { login: 'cookie' })
-    await settle()
-    app.button('账号').props.onClick()
-    await settle()
-    assert.ok(app.button('校验凭据'), 'monkeycode（cookie 型）刷新按钮应显示「校验凭据」')
-    assert.equal(app.button('续期'), undefined, 'monkeycode（cookie 型）不该再显示「续期」')
-    app.cleanup()
-    const oauth = mount('buddy', withAccounts, { login: 'browser' })
-    await settle()
-    oauth.button('账号').props.onClick()
-    await settle()
-    assert.ok(oauth.button('续期'), 'buddy（真续期渠道）保持「续期」文案')
-    assert.equal(oauth.button('校验凭据'), undefined, 'buddy 不该显示「校验凭据」')
-    oauth.cleanup()
-  }
 
-  // ── 回归锁（captain UI 三修）：登录成功提示是「账号已添加」且 4 秒自动消失 ──
-  // 走粘贴型渠道的完整链路：展开粘贴区 → 填入文本 → 点「保存凭据」（account.adopt）
-  // → flashNotice('账号已添加：…')。假定时器捕获 flashNotice 注册的清除回调，
-  // 手动触发后 notice 必须被清空（证明提示不会永久挂在卡片底部）。
-  {
-    const app = mount('monkeycode', async method => {
-      if (method === 'account.adopt') return { accountId: 'fixture-adopt-1' }
-      if (method === 'account.list') return { accounts: [{ id: 'fixture-adopt-1', nickname: '粘贴号', enabled: true }] }
-      if (method === 'credits.balances') return { accounts: [{ accountId: 'fixture-adopt-1', balance: { total: 5 } }] }
-      return { accounts: [] }
-    }, { login: 'cookie' })
-    await settle()
-    // 「添加账号」按钮展开粘贴区（pasteMode 时 onClick 是 setPasteOpen 取反）。
-    const add = app.button('添加账号')
-    assert.ok(add, '粘贴型渠道有「添加账号」按钮')
-    add.props.onClick()
-    await settle()
-    // textarea 填入凭据文本（onChange 事件只被读 target.value，最小子集即可）。
-    const area = app.tree().find(node => node.type === 'textarea')
-    assert.ok(area, '粘贴区展开后出现 textarea')
-    area.props.onChange({ target: { value: 'monkeycode_ai_session=2dda31ef-abdc-40e8-b31c-0a4f081646c5' } })
-    const submit = app.button('保存凭据')
-    assert.ok(submit, '填入文本后「保存凭据」可点')
-    await submit.props.onClick()
-    await settle()
-    assert.ok(app.calls.some(row => row.method === 'account.adopt'), '提交走 account.adopt')
-    // 文案：成功提示是「账号已添加：…」而不是旧的「已接入：…」。
-    // （只比对本用例写入的提示串本身；`chan.state.on='已接入'` 是卡片头部
-    // 状态行的既有文案，与本回归锁无关，不能整树否定。）
-    assert.ok(app.text().includes('账号已添加'), '成功提示文案应为「账号已添加」')
-    assert.ok(!app.text().includes('已接入：'), '不应再出现旧的「已接入：…」提示')
-    // 自动消失由 client.js 的 flashNotice 用裸 setTimeout 实现（4 秒）。
-    // 这里**不实测定时器**：遮蔽全局/伪造定时器都会让进程残留句柄，导致
-    // test-all 的 60s 看门狗把 channel-pack/channel-source 杀掉。
-    // 改为静态契约断言 —— 源码里必须存在「setTimeout(...4000)」的清除逻辑。
-    assert.ok(
-      /setTimeout\(\(\) => setNotice\(''\), 4000\)/.test(source),
-      'flashNotice 必须注册 4 秒自动清除',
-    )
-    app.cleanup()
-  }
   // 收尾：清掉所有残留 interval 句柄，让进程能正常退出。
   clearAllIntervals()
   globalThis.setInterval = realSetInterval

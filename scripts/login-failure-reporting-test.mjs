@@ -32,7 +32,7 @@ for (let index = 0; index < lines.length; index += 1) {
   }
 }
 
-assert.ok(checked >= 14, `只找到 ${checked} 处后台登录 catch，明显少于预期（14 处）`)
+assert.ok(checked >= 13, `只找到 ${checked} 处后台登录 catch，明显少于预期（13 处）`)
 assert.deepEqual(failures, [], `以下分支只写日志、没有上报失败原因：\n${failures.join('\n')}`)
 
 console.log(`ok  login-failure-reporting: ${checked} 处后台登录失败均会上报给 login.poll`)

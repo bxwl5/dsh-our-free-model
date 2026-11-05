@@ -223,8 +223,7 @@ export function requiresAnthropicMessages(model: string): boolean {
  * （与 `trae-oauth.ts` 的 `listenWithFallback` 同思路）。保留官方段优先是因为
  * Studio 授权页可能对回调地址做形态匹配。
  *
- * ⚠️ 这段与 accio 的 5960–5969（`accio-product.ts:122` 的
- * `ACCIO_LOGIN_START_PORT`，试 10 个）重叠 9 个端口；两个渠道同时登录时谁先
+ * ⚠️ 这 10 个端口此前与 accio（已删）重叠 9 个；accio 移除后整段归本渠道专用。
  * 拿到算谁的，靠上述回退保证不互相拖死。
  */
 export const COMMANDCODE_LOGIN_START_PORT = 5959

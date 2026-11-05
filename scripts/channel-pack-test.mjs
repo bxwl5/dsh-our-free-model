@@ -123,28 +123,23 @@ try {
   apply(ctx, { disableOpencode: true, disableGlobalFetchScrub: true })
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(adapters.has('opencode'), false, 'disabled account provider is not registered')
-  // 20 个账号渠道（OpenCode 由 disableOpencode 关闭不计入；LobsterAI 与 AutoClaw 国际版已于 2026-10-25 移除）。
-  assert.equal(adapters.size, 20, 'all other account providers remain registered')
+  // 15 个账号渠道（OpenCode 由 disableOpencode 关闭不计入；LobsterAI、AutoClaw 国际版于 2026-10-25，monkeycode/kuku/accio/accio-cn/orcaterm 于 2026-11-05 移除）。
+  assert.equal(adapters.size, 15, 'all other account providers remain registered')
   assert.equal(adapters.has('commandcode'), true, 'Command Code is registered')
-  assert.equal(adapters.has('monkeycode'), true, 'MonkeyCode is registered')
-  assert.equal(adapters.has('orcaterm'), true, 'OrcaTerm is registered')
-  assert.equal(adapters.has('kuku'), true, 'KukuAI is registered')
-  assert.equal(adapters.has('accio'), true, 'Accio is registered')
-  assert.equal(adapters.has('accio-cn'), true, 'Accio CN is registered')
   assert.equal(adapters.has('officeace'), true, 'OfficeAce is registered')
   assert.equal(adapters.has('autoclaw'), true, 'AutoClaw is registered')
   verifyChannelImagePricing(adapters)
-  console.log('ok  22 个账号渠道同步图片计价：缺失及默认方法兜底，厂商计价优先，重复图片与已卸载图片正确计数')
+  console.log('ok  15 个账号渠道同步图片计价：缺失及默认方法兜底，厂商计价优先，重复图片与已卸载图片正确计数')
   // 原始行为（两层区分）：未登录的渠道**不进系统模型候选**（listModels 返回 []），
   // 但**设置页照常显示**它的模型（model.list / provider.status 走 listAllModels，不套门控）。
   // 想预览候选时显式 DSH_HIDE_MODELS_WITHOUT_ACCOUNT=0。
-  const kukuAdapter = adapters.get('kuku')
-  assert.ok(kukuAdapter !== undefined, 'kuku 适配器已注册')
-  assert.deepEqual(await kukuAdapter.listModels('kuku'), [], '未登录渠道默认不得进入模型候选')
-  assert.ok(kukuAdapter.listAllModels().length > 0, '设置页仍要能看到该渠道的模型（listAllModels 不门控）')
+  const zcodeAdapter = adapters.get('zcode')
+  assert.ok(zcodeAdapter !== undefined, 'zcode 适配器已注册')
+  assert.deepEqual(await zcodeAdapter.listModels('zcode'), [], '未登录渠道默认不得进入模型候选')
+  assert.ok(zcodeAdapter.listAllModels().length > 0, '设置页仍要能看到该渠道的模型（listAllModels 不门控）')
   process.env.DSH_HIDE_MODELS_WITHOUT_ACCOUNT = '0'
   try {
-    assert.ok((await kukuAdapter.listModels('kuku')).length > 0, '显式 =0 时允许在候选里预览')
+    assert.ok((await zcodeAdapter.listModels('zcode')).length > 0, '显式 =0 时允许在候选里预览')
   } finally {
     delete process.env.DSH_HIDE_MODELS_WITHOUT_ACCOUNT
   }
@@ -187,14 +182,14 @@ try {
   }
   assert.equal((await call('account.list', { provider: 'opencode' })).value.accounts.length, 1)
 
-  // 卡片上的「模型数量」读 provider.status 的 models.total；kuku / autoclaw 必须能给出
+  // 卡片上的「模型数量」读 provider.status 的 models.total；autoclaw 必须能给出
   // 目录，否则卡片显示「—」——与其它渠道不一致（本次回归）。
   {
     // 全部 20 个账号渠道都必须能报出模型目录 —— 缺 listAllModels 的渠道卡片会显示「—」。
     const allProviders = [
       'codearts', 'buddy', 'workbuddy', 'qoder', 'qodercn', 'trae', 'cline',
       'antigravity', 'loomy', 'raccoon', 'minimax', 'zcode', 'commandcode', 'officeace',
-      'accio', 'accio-cn', 'orcaterm', 'kuku', 'monkeycode', 'autoclaw',
+      'autoclaw',
     ]
     const status = await call('provider.status', { providers: allProviders })
     for (const provider of allProviders) {
@@ -203,7 +198,7 @@ try {
     }
   }
   assert.equal(writes.length, 0, 'rejected RPCs leave credentials untouched')
-  console.log(`ok  ${sourceMode ? 'source modules' : 'generated pack'}: 22 providers, no OpenCode registration/warmup, historical data retained, account RPCs refused`)
+  console.log(`ok  ${sourceMode ? 'source modules' : 'generated pack'}: 15 providers, no OpenCode registration/warmup, historical data retained, account RPCs refused`)
   // account.adopt 端到端必须在**两种模式**都跑：pack.js / business.mjs 才是发布形态，
   // 改了 src 忘记重打包时只有这条断言能发现（历史缺口：形状校验加固与
   // credentials.set 只进了 src、没进 pack.js，而 adopt 用例原先被 sourceMode
@@ -262,59 +257,6 @@ try {
     releaseToken()
     globalThis.fetch = fetchBeforeGemini
   }
-
-  let bundle
-  const window = { __ModuleLoader__: { load: record => { bundle = record } } }
-  const react = {
-    createElement: (type, props, ...children) => ({ type, props, children }),
-    Fragment: 'fragment',
-    useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}],
-    useEffect() {},
-    useMemo: callback => callback(),
-    useRef: () => ({ current: null }),
-    useCallback: callback => callback,
-  }
-  new Function('window', fs.readFileSync(new URL('../client.js', import.meta.url), 'utf8'))(window)
-  const { ChannelsPage } = bundle.factory(name => {
-    if (name === 'react') return react
-    if (name === 'react-dom') {
-      return { createPortal: (children, container) => ({ type: 'portal', children, container }) }
-    }
-    throw new Error(`the browser half may only require react or react-dom; it asked for "${name}"`)
-  }).__test
-  const tree = ChannelsPage({ t: key => key, ctx: {}, summary: { channels: { state: 'ready' } } })
-  const cards = []
-  function visit(node) {
-    if (Array.isArray(node)) { node.forEach(visit); return }
-    if (node === null || typeof node !== 'object') return
-    if (node.props?.channel) cards.push(node.props.channel.id)
-    visit(node.children)
-  }
-  visit(tree)
-  assert.equal(cards.length, 20)
-  assert.equal(cards.includes('opencode'), false)
-  /**
-   * 「刷新模型」按钮只对**有远端目录端点**的渠道显示（用户 2026-10-27 要求：
-   * 没有的渠道直接删掉按钮，不要点了才报「暂不支持」）。
-   *
-  * 目前无远端的只有 orcaterm（静态白名单）；antigravity 已于 2026-11-01 接入
-  * 远端目录（fetchAvailableModels）。此外还需与后端**实有**的 refreshCatalog
-  * 保持一致 —— 只在 UI 藏按钮而适配器其实支持（或反之）会让两端口径漂移。
-  */
-  // 从 client.js 源码里抽真实标记（不硬编码，避免测试与实现脱节）。
-  const clientSource = fs.readFileSync(new URL('../client.js', import.meta.url), 'utf8')
-  const marked = [...clientSource.matchAll(/\{ id: '([a-z-]+)'[^}]*noRemoteCatalog: true/g)].map(m => m[1])
-  assert.deepEqual(marked.sort(), ['orcaterm'],
-    '⚠️ noRemoteCatalog 只应是 orcaterm（antigravity 已接远端目录）')
-  assert.ok(clientSource.includes("channel.noRemoteCatalog === true ? null : h('button'"),
-    '⚠️ 刷新按钮必须受 noRemoteCatalog 判断约束')
-  assert.deepEqual([...cards].sort(), [...adapters.keys()].sort(), 'UI and mounted account providers agree')
-  console.log('ok  actual channel page: 20 account cards, OpenCode removed')
-  await verifyChannelModelActions()
-  await verifyChannelCreditsUi()
-  console.log('ok  共享渠道余额（13 条额度契约）：能力、失败原因、重试、签到反馈和请求交错')
-  console.log('ok  共享渠道卡片：批量开关、单次请求、重复点击保护和失败恢复')
-
   // The retained OFM anonymous lane still enumerates and streams without any
   // account, independently of the disabled vendored OpenCode provider.
   if (!process.argv.includes('--channels-only')) {
@@ -398,24 +340,12 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   await verifyCommandCodeAdapter()
   const { verifyCommandCodeCredits } = await import('./commandcode-credits-test.mjs')
   await verifyCommandCodeCredits()
-  const { verifyMonkeyCode } = await import('./monkeycode-test.mjs')
-  await verifyMonkeyCode()
-  const { verifyOrcaTerm } = await import('./orcaterm-test.mjs')
-  await verifyOrcaTerm()
-  const { verifyKuku } = await import('./kuku-test.mjs')
-  await verifyKuku()
-  const { verifyAccio } = await import('./accio-test.mjs')
-  await verifyAccio()
-  const { verifyRemoteModelsTtl, verifyKukuCredits, verifyChannelCheckinJudgements, verifyAutoClawOutbound, verifyDeltaBlocks, verifyClaimOutcomeShape, verifyMonkeyCodeOfficialProtocol, verifyBaizhiBridge, verifyKukuSseProtocol, verifyAutoClawCatalogReplace, verifyCheckinP0Fixes, verifyClaimClassification, verifyQoderCatalog, verifyRemoteCatalogFields } = await import('./remote-models-ttl-test.mjs')
+  const { verifyRemoteModelsTtl, verifyChannelCheckinJudgements, verifyAutoClawOutbound, verifyDeltaBlocks, verifyClaimOutcomeShape, verifyAutoClawCatalogReplace, verifyCheckinP0Fixes, verifyClaimClassification, verifyQoderCatalog, verifyRemoteCatalogFields } = await import('./remote-models-ttl-test.mjs')
   await verifyRemoteModelsTtl()
-  await verifyKukuCredits()
   await verifyChannelCheckinJudgements()
   await verifyAutoClawOutbound()
   await verifyDeltaBlocks()
   await verifyClaimOutcomeShape()
-  await verifyMonkeyCodeOfficialProtocol()
-  await verifyBaizhiBridge()
-  await verifyKukuSseProtocol()
   await verifyAutoClawCatalogReplace()
   await verifyCheckinP0Fixes()
   await verifyClaimClassification()
@@ -431,17 +361,10 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   await verifyOfficeAce()
   const { verifyAutoClaw } = await import('./autoclaw-test.mjs')
   await verifyAutoClaw()
-  // MonkeyCode：零依赖 RFC6455 客户端的握手/帧编解码/事件容错解析，
-  // 以及「建任务 → 连 WS → 逐帧产出」的适配器端到端（本地假上游，不出网）。
-  const { verifyMonkeyCodeWs } = await import('./monkeycode-ws-test.mjs')
-  await verifyMonkeyCodeWs()
   const { verifyChannelAdoptParsers } = await import('./channel-adopt-test.mjs')
   await verifyChannelAdoptParsers()
   const { verifyAutoclawSms } = await import('./autoclaw-sms-test.mjs')
   await verifyAutoclawSms()
-  const { verifyKukuQrPage, verifyKukuEmbeddedRoute } = await import('./kuku-qr-page-test.mjs')
-  await verifyKukuQrPage()
-  await verifyKukuEmbeddedRoute({ routes })
   // CodeArts 登录启动路径（2026-10-30 真实缺陷：清理旧 ticket 流程时误删
   // randomBytes / CORS_HEADERS，点「添加账号」立刻 ReferenceError；
   // tsc 只覆盖 adapter/**，vendor/ 靠这条用例兜）。
@@ -452,19 +375,7 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   await verifyCredentialFreshness()
   const { verifyRaccoonLogin } = await import('./raccoon-login-test.mjs')
   await verifyRaccoonLogin()
-  // 用户实测的真实 Cookie 形状（字段名随上游改名）：OrcaTerm 用 ot_sid、MonkeyCode 用 monkeycode_ai_session。
-  {
-    const ot = await import('../vendor/channel-pack/src/orcaterm.ts')
-    const mc = await import('../vendor/channel-pack/src/monkeycode.ts')
-    const OT = 'userId=401077947340;ot_sid=eyJiIjoicHNOLVpNeFMyY09wemtvZmFGam93a3BGaktDVnpkTkdwRktXUTVsSkh5NCIsImlhdCI6MTc5MjgzNjAwNn0.Ds3OETCJIAX_iZjBHg5bfVJs0ANNv4l5gy2EZi7U_8U;uin=o2602575766'
-    assert.ok(ot.normalizeCookie(OT) !== undefined, 'OrcaTerm 必须接受 ot_sid（上游现名）')
-    assert.equal(ot.normalizeCookie('ot_session=abc'), undefined, '短值仍拒绝')
-    const MC = 'monkeycode_ai_session=2dda31ef-abdc-40e8-b31c-0a4f081646c5;_ga=GA1.1.1727532325.1792835631'
-    assert.ok(mc.normalizeCookie(MC) !== undefined, 'MonkeyCode 必须接受 monkeycode_ai_session（上游现名）')
-    assert.equal(mc.normalizeCookie('nebula_session=abc'), undefined, '短值仍拒绝')
-    console.log('ok  粘贴 Cookie 的字段名兼容：ot_sid / monkeycode_ai_session 均被接受')
-  }
-  // OAuth 渠道后台登录失败必须让 login.poll 拿到可读原因（本用例只用
+ // OAuth 渠道后台登录失败必须让 login.poll 拿到可读原因（本用例只用
   // directLane 注入的本地替身上游，不出网）。
   const { verifyChannelOauthFailure } = await import('./channel-oauth-failure-test.mjs')
   await verifyChannelOauthFailure({ call })

@@ -62,6 +62,17 @@ try {
   await check('仅选择完整运行资源，临时包在源码仓库之外，不带工具索引及用户数据', () => {
     stageDesktopService(serviceRoot)
     fs.copyFileSync(process.execPath, path.join(scratch, process.platform === 'win32' ? 'node.exe' : 'node'))
+    // ★ Electron runtime node（ELECTRON_RUN_AS_NODE）不是独立二进制：它启动时要
+    // 在 ELF 同目录找到 icudtl.dat / v8 快照 / libffmpeg.so。测试把 execPath
+    // 复制进 scratch 后这些伴生文件失联 ⇒「握手前退出」。从 execPath 所在目录
+    // 把它们一并复制（真实 node 二进制则没有这个目录布局，循环是 no-op）。
+    {
+      const runtimeDir = path.dirname(process.execPath)
+      for (const companion of ['icudtl.dat', 'v8_context_snapshot.bin', 'snapshot_blob.bin', 'libffmpeg.so']) {
+        const from = path.join(runtimeDir, companion)
+        if (fs.existsSync(from)) fs.copyFileSync(from, path.join(scratch, companion))
+      }
+    }
     for (const file of ['src/core/runtime.js', 'packages/standalone/web/assets.json',
       'packages/standalone/management.mjs', 'packages/standalone/channels/worker.mjs', 'vendor/channel-pack/qoder-auth-wasm.wasm']) {
       assert.ok(fs.existsSync(path.join(serviceRoot, file)), file)

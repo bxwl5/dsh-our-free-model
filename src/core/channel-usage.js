@@ -4,18 +4,18 @@
  * ## 为什么需要它
  *
  * 插件看板的 `/stats` 只读 `$DSH_HOME/our-free-model/stats.json`，而那份文档
- * **只由自有车道的 `recordUsage` 写入**（`src/adapter.js`）。20 个渠道
- * （raccoon / workbuddy / codearts / orcaterm / qoder …）走的是
+ * **只由自有车道的 `recordUsage` 写入**（`src/adapter.js`）。15 个渠道
+ * （raccoon / workbuddy / codearts / qoder …）走的是
  * `vendor/channel-pack` 的适配器，它们**只写** `$DSH_HOME/channel-pack/
  * token-ledger.json`，一处都不写 stats。
  *
  * 后果（2026-10-25 实测）：看板累计 Token 只有 763,994，渠道台账同期
  * 57,651,344 —— 差 5,690 万，且最近三天渠道有量而看板整天为 0。
  *
- * ## 为什么在读取侧合并，而不是给 20 个适配器加钩子
+ * ## 为什么在读取侧合并，而不是给 15 个适配器加钩子
  *
  * 渠道台账本来就是按「天 / 渠道 / 账号 / 模型」聚合的权威记录（且重启保留
- * 90 天）。读时合并只有一处代码，不动 `vendor/channel-pack` 的 20 个适配器，
+ * 90 天）。读时合并只有一处代码，不动 `vendor/channel-pack` 的 15 个适配器，
  * 回归面最小；两份数据的 provider 集天然不相交（台账是渠道名，stats 是
  * 免费车道模型名），不会重复计数。
  *

@@ -339,10 +339,9 @@ async function probeWithAdapter(
     // 历史写法是 `else { new CodeArtsAdapter(...) }`：任何没登记的 provider 都会被
     // 拿华为云 HMAC 签名去发请求，必然失败。用户看到的报错是
     // `codearts: no usable credential; log in first` —— 明明登录的是 autoclaw /
-    // kuku / monkeycode，却被指向 codearts 去重新登录，方向完全错（本次用户报障）。
+    // 却被指向 codearts 去重新登录，方向完全错（2026-10-24 用户报障）。
     //
-    // 这些渠道（autoclaw / kuku / monkeycode / orcaterm /
-    // raccoon / officeace / accio 家族）**不写 `modelRateLimits`**，本来就没有
+    // 这些渠道（autoclaw / raccoon / officeace）**不写 `modelRateLimits`**，本来就没有
     // 「重测」语义，如实说明比伪造一次失败更有用。
     return {
       modelId,

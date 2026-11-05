@@ -3,7 +3,7 @@
  *
  * The plugin registers one route (`our-free-model`) and serves two families of
  * models: its own free lane, and the channel providers the vendored pack
- * registers (`zcode`, `kuku`, `trae`, `qoder`, `cline`, `accio`, ...). The
+ * registers (`zcode`, `trae`, `qoder`, `cline`, ...). The
  * routing page's member picker has to offer **both**, because a chain that can
  * only reach the free-lane models cannot cover the case it exists for -- a
  * lane whose credential lapsed while other channels sat idle.
@@ -188,7 +188,7 @@ export async function readChannelRosters(llm, packProviders, onError, options = 
      * ⚠️ **超时就收工，绝不无限期扫下去**（2026-11-04 事故）。
      *
      * 这个函数在**启动路径上被 `await`**（`runtime.js` 的 `refreshCatalog`）：
-     * 它每慢一秒，宿主就晚一秒开始监听 HTTP。实测「20 个渠道 × 每家几十个模型
+     * 它每慢一秒，宿主就晚一秒开始监听 HTTP。实测「15 个渠道 × 每家几十个模型
      * 各调一次 `resolveModelInfo`」会拖到分钟级 —— 而每次 `resolveModelInfo`
      * 都打到适配器的 `ensureRemoteModels()`（含 `statSync` 读盘、cordis 响应式
      * 代理开销），冷启动时尤其重。表现就是「CPU 飙升、HTTP 端口无响应、

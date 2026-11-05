@@ -1403,7 +1403,7 @@ export function createApiRoutes(deps) {
       }
       if (method === 'GET' && routePath === '/stats') {
         // 看板口径：合计 = 输入 + 输出 + 缓存读；并合入渠道台账
-        // （`vendor/channel-pack` 的 20 个渠道只写 token-ledger.json，
+        // （`vendor/channel-pack` 的 15 个渠道只写 token-ledger.json，
         //  从不写 stats.json —— 不合并就会整块缺失）。
         const payload = buildStats(deps.stats.get(), deps.catalog(), { includeCacheRead: true })
         const ledgerPath = typeof deps.dataDir === 'string'

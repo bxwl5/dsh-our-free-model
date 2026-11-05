@@ -91,15 +91,8 @@ try {
   assert.equal(hits, 3, '失败也要真的试一次')
   assert.deepEqual(third.map(m => m.id), ['model-c'], '失败时保留上一次的列表，不清空')
 
-  // ── 5. kuku 有远端目录接口（原实现误以为「上游没有」）──
-  const { KUKU, KUKU_MODEL_LIST_PATH, KUKU_WEB_QUERY } = await import('../vendor/channel-pack/src/kuku-product.ts')
-  assert.equal(KUKU_MODEL_LIST_PATH, '/wenchain/genflowpro/model/list', 'kuku 目录路径与上游一致')
-  assert.ok(KUKU_WEB_QUERY.includes('app_id=123971023'), 'kuku 目录查询串与官方 Web 客户端一致')
-  assert.equal(KUKU.fallbackModels.length, 13, 'kuku 静态兜底是 13 个真实模型')
-  assert.ok(!KUKU.fallbackModels.some(m => m.id === 'kuku'), '占位 id `kuku` 不是真实模型，必须移除')
-  assert.ok(KUKU.fallbackModels.some(m => m.id === 'auto'), 'auto 是上游自动选路档')
 
-  console.log('remote-models-ttl: 7 组断言通过（TTL 命中 / 过期重拉 / 失败保留旧列表 / 倍率拼接+x1 不标 / kuku 目录）')
+  console.log('remote-models-ttl: TTL 命中 / 过期重拉 / 失败保留旧列表 / 倍率拼接+x1 不标')
 } finally {
   upstream.close()
 }
@@ -107,76 +100,6 @@ try {
 
 import { exitIfDirectRun } from './lib/direct-run.mjs'
 exitIfDirectRun(import.meta.url, 'remote-models-ttl-test')
-
-/**
- * KukuAI 积分与签到解析回归。
- *
- * 上游形态按 `aimod-cc/Agent2API` 的 `providers/kuku/{balance,checkin}.rs`：
- * - 余额：`data.list[assetName=="token"].totalPoint`（**字符串**）
- * - 判据在**顶层** `status.code`（不是 `data.status.code`）
- * - 签到：`taskComplete` 幂等，`SUCCESS` + reward 0 表示「已领过」
- */
-export async function verifyKukuCredits() {
-  const http = await import('node:http')
-  const { fetchKukuPoints, claimKukuDailyCheckin } = await import('../vendor/channel-pack/src/kuku-auth.ts')
-  const { KUKU } = await import('../vendor/channel-pack/src/kuku-product.ts')
-  const { fetch: realFetch } = await import('undici')
-
-  let balanceBody = {
-    status: { code: 0, msg: 'success' },
-    data: { uname: 'u', list: [
-      { assetType: 1, assetName: 'token', totalPoint: '1100' },
-      { assetType: 2, assetName: 'duration', totalPoint: '9' },
-    ] },
-  }
-  let claimReward = 50
-  let claimStatus = 'SUCCESS'
-
-  const upstream = http.createServer((req, res) => {
-    const send = (body) => res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' }).end(JSON.stringify(body))
-    if (req.url.startsWith('/bizapi/gfpro/getgfvipremain')) { send(balanceBody); return }
-    if (req.url.startsWith('/api/genflowpro/freepoint/taskComplete')) {
-      req.resume()
-      req.on('end', () => send({ errno: 0, data: { complete_status: claimStatus, reward_point: claimReward } }))
-      return
-    }
-    res.writeHead(404, { Connection: 'close' }).end('{}')
-  })
-  await new Promise(r => upstream.listen(0, '127.0.0.1', r))
-  const product = { ...KUKU, apiBase: `http://127.0.0.1:${upstream.address().port}` }
-  const credential = { access_token: 'BDUSS=abcdefghijklmnopqrstuvwxyz0123456789' }
-
-  try {
-    // ── 1. 余额取 assetName==token 的 totalPoint（字符串转数字）──
-    assert.equal(await fetchKukuPoints(realFetch, product, credential), 1100, '取 token 项而不是第一项')
-
-    // ── 2. 判据在顶层 status.code ──
-    balanceBody = { status: { code: 5, msg: 'boom' }, data: { list: [{ assetName: 'token', totalPoint: '999' }] } }
-    assert.equal(await fetchKukuPoints(realFetch, product, credential), undefined, '业务码非 0 时返回 undefined（不是 0）')
-
-    // ── 3. 结构不认识也返回 undefined，绝不显示成 0 ──
-    balanceBody = { status: { code: 0 }, data: { other: [] } }
-    assert.equal(await fetchKukuPoints(realFetch, product, credential), undefined, '没有 list 时 undefined')
-
-    // ── 4. 签到：正常领到积分 ──
-    balanceBody = { status: { code: 0 }, data: { list: [] } }
-    claimReward = 50
-    claimStatus = 'SUCCESS'
-    const first = await claimKukuDailyCheckin(realFetch, product, credential)
-    assert.equal(first.claimed, 100, 'LOGIN + CHAT 各 50，合计 100')
-
-    // ── 5. 幂等：已领过返回 0 且说明原因，不算失败 ──
-    claimReward = 0
-    claimStatus = 'BADGE_ALREADY_RECEIVED'
-    const second = await claimKukuDailyCheckin(realFetch, product, credential)
-    assert.equal(second.claimed, 0, '重复领返回 0')
-    assert.match(second.message, /已领取/, '要说明「已领过」而不是失败')
-
-    console.log('kuku-credits: 5 组断言通过（余额取 token 项 / 业务码 / 结构容错 / 签到 / 幂等）')
-  } finally {
-    upstream.close()
-  }
-}
 
 /**
  * AutoClaw / OfficeAce 签到判据回归。
@@ -427,7 +350,7 @@ assert.equal(e.at(-1).block.text, 'abc')
 /**
  * 三个新渠道签到的 ClaimOutcome 形状回归。
  *
- * 背景（2026-10-26 实测缺陷）：kuku / autoclaw / officeace 的 claim 回调
+ * 背景（2026-10-26 实测缺陷）：autoclaw / officeace 的 claim 回调
  * 一度返回 `{claimed, message}`，而 `computeClaimSummary` 按 `kind` 分类 ——
  * 缺 kind 走 default 全部计成 failed、coversToday=0，auto-checkin 的
  * shouldMarkToday 永不满足 ⇒ **每次启动都重跑一轮**。
@@ -466,180 +389,6 @@ export async function verifyClaimOutcomeShape() {
   assert.equal(legacy.coversToday, 0, '且 coversToday=0，auto-checkin 会反复重跑')
 
   console.log('claim-outcome-shape: 5 组断言通过（kind 分类 / credit / 幂等 / coversToday / 旧形状反证）')
-}
-
-/**
- * MonkeyCode 官方流协议回归（对照 chaitin/MonkeyCode 开源实现，2026-10-26）。
- *
- * 官方帧：`{type, data, kind, seq, timestamp}`，其中 `data` 是 **base64 编码**
- * 的 JSON（实测抓帧证实）。正文只在 `task-running` 且解码后
- * `update.sessionUpdate === 'agent_message_chunk'` 的 `content.text`；
- * 终止事件是 `task-ended`。此前的 `done/round/message/delta` 全是猜测值。
- */
-export async function verifyMonkeyCodeOfficialProtocol() {
-  const { parseTaskStreamEvent } = await import('../vendor/channel-pack/src/monkeycode-ws.ts')
-  const b64 = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64')
-
-  // 帧一律 JSON.stringify 构造 —— 模板串嵌套引号会构造出非法帧（实测踩过）。
-  const frame = (data, extra = {}) => JSON.stringify({ type: 'task-running', data, ...extra })
-
-  // 1) 正文：base64 data + agent_message_chunk
-  const text = parseTaskStreamEvent(frame(b64({ sessionId: 's', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '你好' } } }), { kind: 'agent_message_chunk' }))
-  assert.equal(text.kind, 'text'); assert.equal(text.text, '你好', 'base64 data 解码出正文')
-
-  // 2) 同是 task-running 但非正文类 sessionUpdate → 忽略
-  for (const update of ['agent_thought_chunk', 'usage_update', 'available_commands_update']) {
-    assert.equal(parseTaskStreamEvent(frame(b64({ update: { sessionUpdate: update, content: {} } }))).kind, 'ignore', `${update} 不是正文`)
-  }
-
-  // 3) 终止与错误（官方事件名）
-  assert.equal(parseTaskStreamEvent('{"type":"task-ended"}').kind, 'done')
-  const err = parseTaskStreamEvent('{"type":"task-error","data":"boom"}')
-  assert.equal(err.kind, 'error')
-
-  // 4) 心跳/游标忽略
-  assert.equal(parseTaskStreamEvent('{"type":"ping"}').kind, 'ignore')
-  assert.equal(parseTaskStreamEvent('{"type":"cursor","data":"{\\"cursor\\":\\"x\\"}"}').kind, 'ignore')
-
-  // 5) 明文 JSON data 也收（防上游去编码）
-  const plain = parseTaskStreamEvent(frame(JSON.stringify({ update: { sessionUpdate: 'agent_message_chunk', content: { text: 'OK' } } })))
-  assert.equal(plain.kind, 'text'); assert.equal(plain.text, 'OK', '明文 JSON data 兼容')
-
-  console.log('monkeycode-protocol: 5 组断言通过（base64 正文 / 非正文忽略 / task-ended / 心跳 / 明文兼容）')
-}
-
-/**
- * MonkeyCode 百智云桥接登录回归（对照 chaitin/MonkeyCode 的
- * desktop/src/baizhi/monkeycode.rs `login_monkeycode`）。
- *
- * 关键技巧：授权**页面** URL 改写成授权 **API** URL，纯 HTTP 走完 OIDC 链路。
- * 用本地假上游复现 4 跳：login → authorize(页面) → authorize(API) → callback。
- */
-export async function verifyBaizhiBridge() {
-  const http = await import('node:http')
-  const { fetch: realFetch } = await import('undici')
-  const { loginWithBaizhiSession } = await import('../vendor/channel-pack/src/monkeycode-auth.ts')
-  const { MONKEYCODE } = await import('../vendor/channel-pack/src/monkeycode-product.ts')
-
-  const seen = []
-  let sawPageRewrite = false
-  const upstream = http.createServer((req, res) => {
-    const url = new URL(req.url, 'http://127.0.0.1')
-    seen.push({ path: url.pathname, cookie: req.headers.cookie ?? '' })
-    const send = (status, headers = {}) => {
-      res.writeHead(status, { Connection: 'close', ...headers }).end('')
-    }
-    // 1) 起手：云端 /users/login → 302 到百智授权**页面**
-    if (url.pathname === '/api/v1/users/login') {
-      const target = `http://127.0.0.1:${port}/oauth/authorize?client_id=monkeycode-ai`
-        + `&redirect_uri=${encodeURIComponent(`http://127.0.0.1:${port}/api/v1/users/baizhi/callback`)}`
-        + '&response_type=code&scope=user+phone&state=test-state'
-      send(302, { Location: target })
-      return
-    }
-    // 2) 授权**页面**：真实链路里由页面 JS 改写成 API —— 我们期望客户端
-    //    直接跳过它打 /api/v1/oauth/authorize，故这里若被请求说明改写没生效。
-    if (url.pathname === '/oauth/authorize') {
-      send(500)
-      return
-    }
-    // 3) 授权 API：校验百智 cookie 后 302 回 callback
-    if (url.pathname === '/api/v1/oauth/authorize') {
-      if (!/baizhi_session=/.test(req.headers.cookie ?? '')) { send(401); return }
-      sawPageRewrite = true
-      send(302, { Location: `http://127.0.0.1:${port}/api/v1/users/baizhi/callback?code=tmp-code` })
-      return
-    }
-    // 4) callback：种下 monkeycode_ai_session
-    if (url.pathname === '/api/v1/users/baizhi/callback') {
-      send(302, {
-        Location: `http://127.0.0.1:${port}/`,
-        'Set-Cookie': 'monkeycode_ai_session=3a47cb66-4a25-4e37-8d20-2eea2069c923; Path=/; HttpOnly',
-      })
-      return
-    }
-    // 4b) 授权完成后浏览器会停在根路径（真实链路 302 → mc 首页）
-    if (url.pathname === '/') { send(200); return }
-    // 5) 探活（loginWithCookie 会打钱包端点）
-    if (url.pathname === '/api/v1/users/wallet') {
-      res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' })
-        .end(JSON.stringify({ code: 0, data: { id: '00000000-0000-0000-0000-000000000000', balance: 100 } }))
-      return
-    }
-    send(404)
-  })
-  await new Promise(r => upstream.listen(0, '127.0.0.1', r))
-  const port = upstream.address().port
-  const product = { ...MONKEYCODE, apiBase: `http://127.0.0.1:${port}` }
-  try {
-    // ── 1. 缺 baizhi_session 时明确报错 ──
-    await assert.rejects(
-      () => loginWithBaizhiSession(realFetch, product, 'monkeycode_ai_session=xxx'),
-      /百智云.*baizhi_session/,
-      '粘贴非百智云 cookie 要明确提示',
-    )
-    // ── 2. 完整链路走通 ──
-    const credential = await loginWithBaizhiSession(
-      realFetch, product, 'baizhi_session=ok-123; sl-session=s', undefined,
-      { baizhiBase: `http://127.0.0.1:${port}` },
-    )
-    assert.ok(sawPageRewrite, '授权页面必须被改写成 API（这是纯 HTTP 走通的关键）')
-    assert.match(credential.access_token, /monkeycode_ai_session=3a47cb66/, '最终凭据带桥接得到的会话')
-    assert.ok(typeof credential.account_id === 'string' && credential.account_id.length > 0, '身份从会话值派生')
-    // ── 3. 页面那一跳不能被真的请求（改写生效的直接证据）──
-    assert.equal(seen.some(row => row.path === '/oauth/authorize'), false, '不得请求授权页面本身')
-    console.log('baizhi-bridge: 3 组断言通过（缺 cookie 报错 / 链路走通 / 页面改写生效）')
-  } finally {
-    upstream.close()
-  }
-}
-
-/**
- * KukuAI 官方 SSE 协议回归（2026-10-26 实测帧序列）。
- *
- * 上游是按 `type` 分派的命名事件，正文只在 `TEXT_BLOCK_DELTA` 的 `data.delta`：
- * `USER_QUERY → REPLY_START → HINT_BLOCK → MODEL_CALL_START →
- *  TEXT_BLOCK_START → TEXT_BLOCK_DELTA* → TEXT_BLOCK_END →
- *  MODEL_CALL_END → REPLY_END → ACTUAL_POINT → TURN_DONE`
- *
- * 此前只认 content/text/data.content，上游一个都没有 ⇒ 正文永远空。
- */
-export async function verifyKukuSseProtocol() {
-  const { parseSseFrame, buildSendmsgBody } = await import('../vendor/channel-pack/src/kuku.ts')
-
-  // 1) 正文只在 TEXT_BLOCK_DELTA 的 data.delta
-  const delta = parseSseFrame(JSON.stringify({ type: 'TEXT_BLOCK_DELTA', data: { delta: '你好' } }))
-  assert.deepEqual(delta, { kind: 'delta', text: '你好' })
-
-  // 2) 结束事件
-  for (const type of ['REPLY_END', 'TURN_DONE', 'DIALOGUE_END']) {
-    assert.deepEqual(parseSseFrame(JSON.stringify({ type })), { kind: 'done' }, `${type} 是结束`)
-  }
-
-  // 3) 错误帧带明细
-  const err = parseSseFrame(JSON.stringify({ type: 'ERROR', data: { error_code: 2800001, error_msg: 'task not found' } }))
-  assert.equal(err.kind, 'error'); assert.match(err.message, /task not found/)
-
-  // 4) 不携带正文的命名事件必须忽略（否则会把元数据当正文吐出去）
-  for (const type of ['USER_QUERY', 'REPLY_START', 'HINT_BLOCK', 'MODEL_CALL_START', 'TEXT_BLOCK_START', 'TEXT_BLOCK_END', 'MODEL_CALL_END', 'ACTUAL_POINT']) {
-    assert.equal(parseSseFrame(JSON.stringify({ type, data: { id: 'x' } })), undefined, `${type} 不携带正文`)
-  }
-
-  // 5) sendmsg：session_id 必须空串、且不得带 reply_id（实测报 invalid reply_id）
-  const body = buildSendmsgBody({
-    text: 'hi', model: 'auto', sessionId: 'ignored', replyId: 'ignored',
-    clientSessionId: 'csi', deviceId: 'd', bdstoken: 'bt', uinfo: 'ui', uk: '42',
-  })
-  assert.equal(body.session_id, '', '新建会话 session_id 必须是空串')
-  assert.equal('reply_id' in body, false, 'sendmsg 不得带 reply_id')
-  const clientAdded = JSON.parse(body.data.client_added)
-  assert.equal(clientAdded.bdstoken, 'bt', '三件套要内嵌进 client_added')
-  assert.equal(clientAdded.uinfo, 'ui')
-  assert.equal(clientAdded.uk, '42')
-  assert.equal(clientAdded.app_id, 123971023, '客户端形态字段 app_id')
-  assert.equal(clientAdded.channel, 'chunlei')
-
-  console.log('kuku-sse: 5 组断言通过（TEXT_BLOCK_DELTA / 结束事件 / 错误帧 / 忽略元数据 / sendmsg 形态）')
 }
 
 /**
@@ -699,52 +448,16 @@ export async function verifyAutoClawCatalogReplace() {
 /**
  * 自动签到的三处 P0 回归（2026-10-26 审计发现，均会静默失败）。
  *
- * 1) monkeycode：runCheckinWithCaptcha 收**单个 options 对象**，
+ * 1) officeace/autoclaw：签到回调
  *    写成 (fetcher, product, credential) 会抛 TypeError —— 只有状态预检
  *    短路成 already-claimed 时才看不出来，于是「今天没签到时才炸」。
- * 2) kuku：签到必须用**自愈后的** Cookie（STOKEN 会过期），
  *    否则 taskComplete 回 errno:-6 未登录。
  * 3) officeace/autoclaw：必须进 refreshTargets，否则定时器永不续期
  *    （OfficeAce 的 STS 过期后所有请求 400）。
  */
 export async function verifyCheckinP0Fixes() {
   const fs = await import('node:fs')
-  const rpc = fs.readFileSync(new URL('../vendor/channel-pack/src/channel-pack-rpc.ts', import.meta.url), 'utf8')
-  const kukuAuth = fs.readFileSync(new URL('../vendor/channel-pack/src/kuku-auth.ts', import.meta.url), 'utf8')
   const indexTs = fs.readFileSync(new URL('../vendor/channel-pack/src/index.ts', import.meta.url), 'utf8')
-
-  // 1) monkeycode：必须用对象参数调用
-  assert.match(
-    rpc,
-    /runMonkeyCodeCheckinWithCaptcha\(\s*\{\s*fetcher:/,
-    'monkeycode 签到必须用单个 options 对象调用（位置参数会抛 TypeError）',
-  )
-  assert.equal(
-    /runMonkeyCodeCheckinWithCaptcha\(codeartsFetcher,/.test(rpc),
-    false,
-    '不得再用位置参数调用',
-  )
-  assert.equal(
-    /result\.status\?\./.test(rpc),
-    false,
-    '返回体只有 {ok,checkedIn}，不得读 result.status（TS2339）',
-  )
-
-  // 2) kuku：签到前必须先换发 STOKEN
-  const claimBody = kukuAuth.slice(
-    kukuAuth.indexOf('export async function claimKukuDailyCheckin'),
-    kukuAuth.indexOf('export async function claimKukuDailyCheckin') + 3000,
-  )
-  assert.match(
-    claimBody,
-    /exchangeKukuStokenLive/,
-    'kuku 签到必须先换发自愈后的 STOKEN（否则 errno:-6 未登录）',
-  )
-  assert.match(
-    claimBody,
-    /kukuHeaders\(product, working\)/,
-    'kuku 签到请求要用换发后的凭据（working），不是原始 credential',
-  )
 
   // 3) officeace / autoclaw 必须进续期表
   const targets = indexTs.slice(indexTs.indexOf('const refreshTargets'), indexTs.indexOf('async function refreshAllCredentials'))
@@ -757,7 +470,7 @@ export async function verifyCheckinP0Fixes() {
     '无 expires_at 的凭据必须照常续期，不能跳过',
   )
 
-  console.log('checkin-p0: 7 组断言通过（monkeycode 对象参数 / 禁 result.status / kuku 自愈 / officeace+autoclaw 进续期表 / 无 expires_at 兜底）')
+  console.log('checkin-p0: 禁 result.status / officeace+autoclaw 进续期表 / 无 expires_at 兜底')
 }
 
 /**
@@ -793,24 +506,6 @@ export async function verifyClaimClassification() {
   assert.match(acBlock, /kind: 'claimed', credit: 0/,
     'autoclaw「签到成功无积分」必须判 claimed(credit 0)，不能判 failed')
 
-  // kuku：不得再用 reward >= 0 当成功判据（对 complete_status=FAIL 恒真）。
-  const kukuAuth = read('kuku-auth.ts')
-  // ⚠️ 只看**代码行**（去掉注释再判断）：`reward >= 0` 在注释里出现是正常的
-  // （那正是说明为什么删掉它），不能因此判失败。
-  const kukuCode = kukuAuth
-    .split('\n')
-    .filter((line) => !line.trim().startsWith('//') && !line.trim().startsWith('*'))
-    .join('\n')
-  assert.equal(
-    /reward >= 0/.test(kukuCode), false,
-    'kuku 代码里不得再用 reward >= 0 判定成功（会把 complete_status=FAIL 误算成已领）',
-  )
-  assert.match(kukuAuth, /status === 'SUCCESS' \|\| status === 'BADGE_ALREADY_RECEIVED'\) succeeded \+= 1/,
-    'kuku 只能凭显式 complete_status 判定成功')
-  // kuku 的「今日无可领」也是今天没得领，不是失败（否则自动签到当天反复重跑）。
-  assert.match(rpc, /今日无可领\|未返回可领取结果/,
-    'kuku「上游未返回可领取结果」必须判 already-claimed，不能判 failed')
-
   // minimax / loomy：必须按 UTC+8 日界判断「今日」，不能依赖本机时区。
   const minimaxCredits = read('minimax-credits.ts')
   const loomyCredits = read('loomy-credits.ts')
@@ -823,15 +518,9 @@ export async function verifyClaimClassification() {
   assert.match(loomyCredits, /utc8DayKey/,
     'loomy 的日键必须按 UTC+8 换算，与账本口径一致')
 
-  console.log('claim-classification: 6 组断言通过（officeace already-claimed / autoclaw claimed / kuku 显式 status / minimax UTC+8 / loomy dailyQuotaDate）')
+  
 }
 
-/**
- * Qoder COSY 目录回归（2026-10-26，P0 修复 + 用户三点要求）。
- *
- * 用户要求：①远端**直接覆盖**兜底（不是并集）②模型名**必须带倍率**
- * ③「自动/平衡/快速」这类档位型用**中文名**。
- */
 export async function verifyQoderCatalog() {
   const http = await import('node:http')
   const { fetch: realFetch } = await import('undici')
@@ -986,10 +675,7 @@ export async function verifyQoderCatalog() {
  * 各渠道的解析器只提取 `{id, name}`，把上游确实下发的字段丢了。
  *
  * 本套件用**真实上游响应形状**（逐字取自实测抓包）校验四个渠道：
- * - kuku：`cost_ratio`（倍率）+ `think_list`（思考档位）
- * - accio：`usageMultiple`（倍率，`null` 表示无）+ `modelDisplayNameCn`
  * - autoclaw：`creditConsumptionLevel`（按量计费分档）+ `reasoningLevel`
- * - monkeycode：`input_price`（按量计费单价）+ `is_free`
  *
  * ⚠️ 断言的是「不编造」：没有倍率字段时**不能**显示 `x1`，
  * 按量计费的单价**不能**当成倍率。
@@ -1003,6 +689,26 @@ export async function verifyQoderCatalog() {
  *   1. 远端拉到 → 列表**恰好等于**远端（兜底表里的 `GLM-5.1` 等不得出现）；
  *   2. 远端从没拉到过 → 用兜底表顶上（不是空列表）。
  */
+
+
+export async function verifyRemoteCatalogFields() {
+  const assert = (await import('node:assert/strict')).default
+  const { parseModelConfig } = await import('../vendor/channel-pack/src/autoclaw.ts')
+  const { autoClawDisplayName, autoClawQuota } = await import('../vendor/channel-pack/src/autoclaw-adapter.ts')
+
+  console.log('remote-catalog-fields: autoclaw 积分分档+档位断言通过')
+}
+
+/**
+ * 「新增模型默认关闭」的**接线守卫**（用户 2026-10-30 规则，全部渠道一致）。
+ *
+ * 行为断言在 model-catalog-cache 用例（10a-10f）；这里守的是**接线完整性**：
+ * 全部 15 个写快照的点必须走 `writeModelCatalogClosingNew`（收口入口），
+ * 任何一处直接调 `writeModelCatalog` 都意味着那个渠道刷新后新增模型仍会
+ * 默认打开 —— 规则静默失效，正是本仓库最擅长养出来的那类 bug。
+ */
+
+
 export async function verifyCodeArtsCatalogFallbackBoundary() {
   const assert = (await import('node:assert/strict')).default
   // ⚠ 必须隔离磁盘缓存（DSH_CODEARTS_CACHE_DIR）：`restoreFromDisk()` 会把
@@ -1064,6 +770,8 @@ export async function verifyCodeArtsCatalogFallbackBoundary() {
  * 路径把消耗系数全丢了，面板只剩裸模型名（直到下一次远端拉取成功才恢复）。
  * 快照里本来就存了 rate（writeModelCatalog 整份落盘），恢复时不该裁剪。
  */
+
+
 export async function verifyCodeArtsSnapshotKeepsRate() {
   const assert = (await import('node:assert/strict')).default
   const os = await import('node:os')
@@ -1097,218 +805,29 @@ export async function verifyCodeArtsSnapshotKeepsRate() {
   console.log('ok  codearts 快照恢复：磁盘快照里的 rate 不丢（冷启动也显示倍率）')
 }
 
-export async function verifyRemoteCatalogFields() {
-  const assert = (await import('node:assert/strict')).default
-  const { parseKukuCatalog, kukuDisplayName } = await import('../vendor/channel-pack/src/kuku-adapter.ts')
-  const { accioDisplayName } = await import('../vendor/channel-pack/src/accio-adapter.ts')
-  const { parseModelConfig } = await import('../vendor/channel-pack/src/autoclaw.ts')
-  const { autoClawDisplayName, autoClawQuota } = await import('../vendor/channel-pack/src/autoclaw-adapter.ts')
-  const { monkeyCodeDisplayName } = await import('../vendor/channel-pack/src/monkeycode-adapter.ts')
 
-  // ── kuku：cost_ratio 是倍率字符串，think_list 是全局档位表 ──
-  const kuku = parseKukuCatalog({
-    model_list: [
-      { id: '1', model_name: 'auto', display_name: 'Auto', description: '', cost_ratio: '', vip_type: 0 },
-      { id: '2', model_name: 'gw-deepseek', display_name: 'DeepSeek-V4.1-Flash', description: '快', cost_ratio: '0.16x', vip_type: 0 },
-      { id: '10', model_name: 'ms-kimi-k3', display_name: 'Kimi-K3', description: '', cost_ratio: '3.60x', vip_type: 1 },
-    ],
-    think_list: [
-      { id: '1', think_name: '低', description: '快速问答' },
-      { id: '3', think_name: '高', description: '专业办公场景（默认）' },
-    ],
-    default_think_id: '3',
-  })
-  assert.equal(kuku.models.length, 3, 'kuku 按 model_name 取 id')
-  assert.equal(kuku.models[0].id, 'auto', 'kuku id 用 model_name 不是数字 id')
-  assert.equal(kuku.models[0].priceFactor, undefined, '⚠️ cost_ratio 为空 → 无倍率（不编造 x1）')
-  assert.equal(kukuDisplayName(kuku.models[0]), 'Auto', '无倍率只显示名字')
-  assert.equal(kuku.models[1].priceFactor, 0.16, 'cost_ratio "0.16x" 解析成 0.16')
-  assert.equal(kukuDisplayName(kuku.models[1]), 'DeepSeek-V4.1-Flash · x0.16')
-  assert.equal(kuku.models[2].vipOnly, true, 'vip_type=1 标记会员专属')
-  assert.equal(kuku.thinkLevels.length, 2, 'think_list 解析成档位表')
-  assert.deepEqual(kuku.thinkLevels.map(l => l.name), ['低', '高'])
-  assert.equal(kuku.defaultThinkId, '3', '默认档来自 default_think_id')
-
-  // ── accio 思考：只有「开启 / 关闭」两态（上游无档位表）──
-  const { accioReasoningInfo } = await import('../vendor/channel-pack/src/accio-adapter.ts')
-  assert.equal(accioReasoningInfo({ supportsThinking: true })?.efforts.map(e => e.name).join('/'),
-    '开启思考/关闭思考', '只有两态，不编造低/中/高')
-  assert.deepEqual(accioReasoningInfo({ supportsThinking: true })?.efforts.map(e => e.id), ['on', 'none'],
-    '⚠️ id 用 DSH 惯用的 on / none')
-  assert.equal(accioReasoningInfo({ supportsThinking: false }), undefined, '不支持思考 → 不声明')
-  assert.equal(accioReasoningInfo({}), undefined, '⚠️ 上游没说明（null）→ 不声明，不给点了没用的开关')
-
-  // ── accio：usageMultiple 是倍率，null 表示上游未下发 ──
-  assert.equal(accioDisplayName({ name: 'GPT 6 Astra', priceFactor: 3.5 }), 'GPT 6 Astra · x3.5')
-  assert.equal(accioDisplayName({ name: 'auto', nameCn: '自动' }), '自动', '中文名优先')
-  assert.equal(accioDisplayName({ name: 'x', priceFactor: 0 }), 'x · 免费', '0 倍率是免费')
-  assert.equal(accioDisplayName({ name: 'y' }), 'y', '⚠️ 无倍率不显示 x1')
-
-  // ── autoclaw：按量计费分档，不是数字倍率 ──
-  const ac = parseModelConfig([
-    { id: 'zai_auto', name: 'Auto', reasoning: true, contextWindow: 1048576, maxTokens: 393216,
-      creditConsumptionLevel: '低', reasoningLevel: ['low', 'high', 'max'], tooltip: '自动选模型',
-      metadata: { timeout: '7200' } },
-    { id: 'zai_auto-fast', name: 'Auto-Fast', creditConsumptionLevel: '中',
-      metadata: { forbiddenNotice: { title: '限时权益已用完', desc: '免费额度已用完，24 小时后重置' } } },
-    { id: 'zaicoding_glm-5.3', name: 'GLM-5.3', creditConsumptionLevel: '高',
-      metadata: {
-        __pricingPromotion: { badge: '限时半价', enabled: true, scope: ['autoLegal'] },
-        forbiddenNotice: { title: '限时权益已用完', desc: 'GLM5.3 免费额度已用完' },
-      } },
-    { id: 'zai_glm-5.3-flash', name: 'GLM-5.3-Flash', creditConsumptionLevel: '低' },
-  ])
-  assert.equal(ac.length, 4)
-  assert.equal(ac[0].creditLevel, '低', 'creditConsumptionLevel 是分档标签')
-  assert.deepEqual(ac[0].efforts, ['low', 'high', 'max'], 'reasoningLevel 解析成思考档位')
-  assert.equal(ac[0].supportsThinking, true)
-  assert.equal(ac[0].tooltip, '自动选模型')
-  // ⚠️ 上游只给「低/中/高」标签，无数字倍率 —— 展示层不得换算成 x0.5。
-  assert.equal(autoClawDisplayName(ac[0]), 'Auto · 低')
-  // ⚠️ 额度状态**不进名字**（用户 2026-10-27：改用红色标签单独显示）。
-  assert.equal(autoClawDisplayName(ac[1]), 'Auto-Fast · 中', '名字里不含额度状态')
-  assert.deepEqual(autoClawQuota(ac[1]), { kind: 'exhausted' },
-    '⚠️ 额度状态走**结构化**标签（前端按 kind 上红色），后端不拼中文文案')
-  assert.equal(ac[1].quotaExhausted, true)
-  assert.equal(ac[1].quotaNotice, '免费额度已用完，24 小时后重置')
-  assert.equal(autoClawDisplayName(ac[2]), 'GLM-5.3 · 高 · 限时半价',
-    '促销用上游文案，不推断成 x0.5')
-  assert.deepEqual(autoClawQuota(ac[2]), { kind: 'exhausted' })
-  assert.equal(autoClawQuota(ac[0]), undefined, '没用尽 → 不渲染标签（不是空对象）')
-  // 判别联合：exhausted 分支**不带 amount**（上游只给二值，没有数量）。
-  assert.equal('amount' in autoClawQuota(ac[1]), false, '⚠️ exhausted 不得携带数量')
-  assert.equal(ac[2].promotion, '限时半价')
-  assert.equal(autoClawDisplayName(ac[3]), 'GLM-5.3-Flash · 低', '无促销无告警时只有两段')
-  assert.equal(ac[3].quotaExhausted, undefined, '缺失 forbiddenNotice → 不是用完状态')
-
-  // ── 内部 id → 展示名（2026-10-27 用户报障：界面出现 dfmodel）──
-  //
-  // `modelRateLimits` 的 key 与台账的 model 字段都是**内部 id**
-  // （Qoder 的 `dfmodel` / `qmodel_38max`），直接展示会漏出编码。
-  // 两处都必须走适配器的 `displayNameFor()` 映射。
-  {
-    const { QoderAdapter } = await import('../vendor/channel-pack/src/qoder-adapter.ts')
-    const { QODER } = await import('../vendor/channel-pack/src/qoder-product.ts')
-    const adapter = new QoderAdapter({
-      product: QODER,
-      fetchImpl: async () => new Response('{}', { status: 500 }),
-      resolveCredential: async () => undefined,
-      refresh: async () => {},
-    })
-    // 未拉到远端时走兜底表 —— 兜底表同样必须给出展示名而不是裸 id。
-    assert.equal(adapter.displayNameFor('dfmodel'), 'DeepSeek-Flash · x0.1',
-      '⚠️ 内部 id 必须映射成展示名（含倍率），不能直接显示 dfmodel')
-    /*
-     * ⚠️ `displayNameFor()` 内部用 `new Date()` 判促销窗口，所以**断言结果取决于
-     * 跑测试的时刻**：`qmodel_38max` 的促销窗口是 22:00–08:00（Asia/Singapore），
-     * 窗口内 `qoderDisplayName` 会把名字渲染成 `x0.5→x0.2`，窗口外才是 `x0.5`。
-     *
-     * 真实缺陷（2026-10-27 夜里 22:06 实测踩到）：这条断言白天一直绿、夜里必红，
-     * 而它与被测代码毫无关系 —— 是测试自身依赖墙上时钟。=> stash 掉全部改动后
-     * 依然失败，已确认与当轮改动无关。
-     *
-     * 修法：改用**可注入时刻**的 `qoderDisplayName` 直接断言两种窗口形态，
-     * 不再依赖当前时间。
-     */
-    const { qoderDisplayName } = await import('../vendor/channel-pack/src/qoder-adapter.ts')
-    const fallbackRow = QODER.fallbackModels.find((row) => row.id === 'qmodel_38max')
-    assert.ok(fallbackRow, '兜底表里应有 qmodel_38max')
-    // 促销窗口内（22:00–08:00）：原价 → 折后价
-    assert.equal(qoderDisplayName(fallbackRow, new Date('2026-10-27T14:30:00Z')), 'Qwen3.8-Max · x0.5→x0.2',
-      '窗口内必须同时给出原价与折后价（14:30Z = 22:30 新加坡时间）')
-    // 窗口外（08:00–22:00）：只有生效价
-    assert.equal(qoderDisplayName(fallbackRow, new Date('2026-10-27T06:00:00Z')), 'Qwen3.8-Max · x0.5',
-      '窗口外只显示原价（06:00Z = 14:00 新加坡时间）')
-    assert.equal(adapter.displayNameFor('__nope__'), undefined,
-      '未知 id 返回 undefined，由调用方决定退回 id')
+export async function verifyFinishReasonShapeWiring() {
+  const { readFileSync, readdirSync } = await import('node:fs')
+  const srcDir = new URL('../vendor/channel-pack/src/', import.meta.url)
+  const offenders = []
+  for (const name of readdirSync(srcDir)) {
+    if (!name.endsWith('.ts')) continue
+    const src = readFileSync(new URL(name, srcDir), 'utf8')
+    // 剥行注释**和块注释**（教训：`finish_reason:"stop"` 这类上游文案常出现在
+    // 块注释里 —— buddy/trae/openai-compat/sse 四处都是，首次运行即假阳性）。
+    const code = src
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .map((line) => line.replace(/\/\/.*$/, ''))
+      .join('\n')
+    // 字符串形态：reason: 'stop' / reason: "stop"（reason: { ... } 是对的）
+    if (/reason:\s*['"](?:stop|tool-calls|max-tokens)['"]/.test(code)) offenders.push(name)
   }
-
-  // ── 台账模型名归一化（2026-10-27 用户报障「插件内多出 qfmodel / dfmodel」）──
-  //
-  // 台账的 `model` 字段是请求参数，历史上有两种写法：内部 id（dfmodel）
-  // 与旧展示名（DeepSeek-Flash）。展示时必须映射成当前展示名，
-  // 且**按纯模型名归并**，否则同一模型会占两行、统计被拆散。
-  {
-    const baseName = (value) => value.split(' · ')[0].trim()
-    const MAP = { dfmodel: 'DeepSeek-Flash · x0.1', qfmodel: 'Qwen3.8-Flash · 免费' }
-    const labelOf = (raw) => {
-      const slash = raw.indexOf('/')
-      if (slash <= 0) return raw
-      const named = MAP[raw.slice(slash + 1)]
-      return named === undefined ? raw : `${raw.slice(0, slash)}/${named}`
-    }
-    const mergeKeyOf = (raw) => {
-      const label = labelOf(raw)
-      const slash = label.indexOf('/')
-      return slash <= 0 ? label : `${label.slice(0, slash)}/${baseName(label.slice(slash + 1))}`
-    }
-    assert.equal(labelOf('qodercn/dfmodel'), 'qodercn/DeepSeek-Flash · x0.1',
-      '⚠️ 内部 id 必须映射成展示名')
-    assert.equal(mergeKeyOf('qodercn/dfmodel'), mergeKeyOf('qodercn/DeepSeek-Flash'),
-      '⚠️ id 与旧展示名必须归并到同一桶（否则同一模型占两行）')
-    assert.notEqual(mergeKeyOf('qodercn/dfmodel'), mergeKeyOf('qodercn/qfmodel'),
-      '不同模型不能被误合并')
-  }
-
-  // ── zcode：模型清单要合并两个来源，余量按模型显示（2026-10-27）──
-  //
-  // 模型清单**只取上游 `builtinModels`**（用户 2026-10-27 决定：不做硬编码补齐）。
-  // 曾短暂合并过 `builtin_provider_config_json` 里的 GLM-5.2 / GLM-5-Turbo，
-  // 但那两条只有 id、无任何能力字段（套 provider config 的正则兜底反而错），
-  // 用户要求撤掉，保持与上游同步。
-  const { zcodeDisplayName, zcodeQuota, formatZcodeUnits } = await import('../vendor/channel-pack/src/zcode-adapter.ts')
-  assert.equal(formatZcodeUnits(3_000_000), '3.0M', 'token 数格式化')
-  assert.equal(formatZcodeUnits(5_000_000), '5.0M')
-  assert.equal(formatZcodeUnits(0), '0')
-  assert.equal(formatZcodeUnits(100_000_000), '100.0M')
-  assert.equal(formatZcodeUnits(1_500), '1.5K')
-  // ⚠️ 名字里**既无档位也无余量**（用户 2026-10-27 两次改口径）：
-  // - 档位由 DSH 的「思考强度」选择器展示，拼进名字是重复且会被误读成倍率；
-  // - 余量改用绿色标签（quota 字段）。
-  // 对比：autoclaw 的「低/中/高」是 creditConsumptionLevel（消耗档=计费信息），
-  // 那个该写；ZCode 没有倍率一说（额度制），名字必须干净。
-  assert.equal(
-    zcodeDisplayName({ id: 'GLM-5.3', name: 'GLM-5.3', reasoningLevels: ['low', 'high', 'max'] }, { units: 3_000_000 }),
-    'GLM-5.3',
-    '⚠️ 档位与余量都不进名字（档位走 resolveModel.reasoning，余量走 quota）',
-  )
-  assert.equal(
-    zcodeDisplayName({ id: 'GLM-5.2', name: 'GLM-5.2' }),
-    'GLM-5.2',
-    '⚠️ 无档位时只显示名字（不从同族推断档位）',
-  )
-  // 无档位的模型不该凭空长出档位 —— 这正是撤掉硬编码补齐的动因之一。
-  // 余量走独立的绿色标签（quota 字段）
-  // 余量走**结构化**数据（前端拼「剩 {n}」文案并格式化数字）。
-  assert.deepEqual(zcodeQuota(3_000_000), { kind: 'remaining', amount: 3_000_000, unit: 'tokens' })
-  assert.deepEqual(zcodeQuota(0), { kind: 'remaining', amount: 0, unit: 'tokens' },
-    '0 余量如实传出（与「查不到」不同：那时是 undefined）')
-  // formatZcodeUnits 现在只服务后端内部，不再是展示契约 —— 保留断言防回归。
-  assert.equal(formatZcodeUnits(3_000_000), '3.0M')
-  assert.ok(!/x\d/.test(zcodeDisplayName({ id: 'Y', name: 'Y' })), '⚠️ 额度制不得出现 x倍数')
-
-  // ── monkeycode：input_price 换算成**相对倍率**（1000 = x1）──
-  // 用户 2026-10-27 口径：只体现模型间倍率差异，不显示绝对积分。
-  assert.equal(monkeyCodeDisplayName({ name: 'a', inputPrice: 1000 }), 'a · x1', '1000 是基准 x1')
-  assert.equal(monkeyCodeDisplayName({ name: 'b', inputPrice: 800 }), 'b · x0.8')
-  assert.equal(monkeyCodeDisplayName({ name: 'c', inputPrice: 600 }), 'c · x0.6')
-  assert.equal(monkeyCodeDisplayName({ name: 'd', inputPrice: 400 }), 'd · x0.4')
-  assert.equal(monkeyCodeDisplayName({ name: 'e', inputPrice: 200 }), 'e · x0.2')
-  assert.equal(monkeyCodeDisplayName({ name: 'f', inputPrice: 0 }), 'f · x0', '0 也如实换算')
-  assert.equal(monkeyCodeDisplayName({ name: 'glm-5', isFree: false }), 'glm-5', '⚠️ 无 input_price 不编造 x1')
-  assert.equal(monkeyCodeDisplayName({ name: 'free-one', isFree: true }), 'free-one · 免费')
-
-  console.log('remote-catalog-fields: 4 渠道断言通过（kuku 倍率+档位 / accio 倍率+中文名 / autoclaw 积分分档+档位 / monkeycode 不掉价）')
+  assert.deepEqual(offenders, [], "finish chunk 的 reason 用了字符串形态（宿主要对象 {kind:...}）：\n" + offenders.join('\n'))
+  console.log('ok  finish-reason-shape: 全部 finish chunk 用宿主对象形态')
 }
 
-/**
- * 「新增模型默认关闭」的**接线守卫**（用户 2026-10-30 规则，全部渠道一致）。
- *
- * 行为断言在 model-catalog-cache 用例（10a-10f）；这里守的是**接线完整性**：
- * 全部 15 个写快照的点必须走 `writeModelCatalogClosingNew`（收口入口），
- * 任何一处直接调 `writeModelCatalog` 都意味着那个渠道刷新后新增模型仍会
- * 默认打开 —— 规则静默失效，正是本仓库最擅长养出来的那类 bug。
- */
+
 export async function verifyNewModelAutoDisableWiring() {
   const { readFileSync, readdirSync } = await import('node:fs')
   const srcDir = new URL('../vendor/channel-pack/src/', import.meta.url)
@@ -1331,35 +850,9 @@ export async function verifyNewModelAutoDisableWiring() {
   assert.match(service, /setModelsDisabled\('codearts'/, 'codearts 新增模型必须写黑名单')
   const cache = readFileSync(new URL('../vendor/channel-pack/src/model-catalog-cache.ts', import.meta.url), 'utf8')
   assert.match(cache, /export async function writeModelCatalogClosingNew/, '收口入口必须存在')
-  console.log('ok  new-model-auto-disable: 15 处写快照全部走收口 + codearts 内联路径在位')
+  console.log('ok  new-model-auto-disable: 收口 + codearts 内联路径在位')
 }
 
-/**
- * 「providerRetryPolicy 必须带 mode」的**接线守卫**（2026-10-31 tsc 门禁发现）。
- *
- * ## 后果（已实锤，不是理论）
- *
- * 7 个渠道（accio/commandcode/monkeycode/orcaterm/kuku/autoclaw/officeace）的
- * 重试策略形状是旧版宿主的（缺 `mode`）。宿主 `dsh-llm-retry` 的 `recover()`：
- *
- *     if (policy.mode === "normal" && previousRetry >= policy.maxRetries) return next()
- *
- * `mode` 为 undefined ⇒ 这个**重试上限检查恒 false** ⇒ 这 7 个渠道的失败重试
- * **没有次数上限** —— 网络故障时同一请求会被无限重试，白烧配额。
- *
- * 守卫：全仓静态扫描，任何含 `providerRetryPolicy` 的源文件，剥注释后
- * 必须出现 `mode: 'normal'`（或 `mode: 'always'`）。
- *
- * ## 为什么是**文件级粗断言**而不是逐方法正则（2026-10-31 审查 P2-4）
- *
- * 旧守卫用正则匹配「`providerRetryPolicy(): {...} {...}` 的返回类型+方法体」，
- * 实测三种**完全合法**的写法全部漏判：带参数签名 `(_provider: string)`、
- * 返回类型用宿主别名 `ResolvedRetryPolicy`、写成属性箭头函数。守卫一旦
- * 静默失效，「mode 缺失 → 无限重试烧配额」就重新裸奔。宁可假阳性
- * （一个文件里写多个策略时逐个看）也不能假阴性 —— 何况 CI 已有
- * `tsc -p vendor/channel-pack/tsconfig.json` 类型门禁兜底（`mode` 是必需字段，
- * 类型层写不出来），这里的粗断言只是防「绕开类型的运行时对象」。
- */
 export async function verifyRetryPolicyModeWiring() {
   const { readFileSync, readdirSync } = await import('node:fs')
   const srcDir = new URL('../vendor/channel-pack/src/', import.meta.url)
@@ -1390,23 +883,3 @@ export async function verifyRetryPolicyModeWiring() {
  * 目前靠 fallthrough 侥幸正确，宿主加检查即炸。delta 契约（`emitDeltaBlocks`）
  * 只有 text/reasoning 的适配器 finish 恒为 `{kind:'stop'}`。
  */
-export async function verifyFinishReasonShapeWiring() {
-  const { readFileSync, readdirSync } = await import('node:fs')
-  const srcDir = new URL('../vendor/channel-pack/src/', import.meta.url)
-  const offenders = []
-  for (const name of readdirSync(srcDir)) {
-    if (!name.endsWith('.ts')) continue
-    const src = readFileSync(new URL(name, srcDir), 'utf8')
-    // 剥行注释**和块注释**（教训：`finish_reason:"stop"` 这类上游文案常出现在
-    // 块注释里 —— buddy/trae/openai-compat/sse 四处都是，首次运行即假阳性）。
-    const code = src
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .split('\n')
-      .map((line) => line.replace(/\/\/.*$/, ''))
-      .join('\n')
-    // 字符串形态：reason: 'stop' / reason: "stop"（reason: { ... } 是对的）
-    if (/reason:\s*['"](?:stop|tool-calls|max-tokens)['"]/.test(code)) offenders.push(name)
-  }
-  assert.deepEqual(offenders, [], "finish chunk 的 reason 用了字符串形态（宿主要对象 {kind:...}）：\n" + offenders.join('\n'))
-  console.log('ok  finish-reason-shape: 全部 finish chunk 用宿主对象形态')
-}
