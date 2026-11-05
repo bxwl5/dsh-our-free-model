@@ -642,6 +642,25 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
 
   const buddy = new BuddyAuth(ctx)
   const buddyAdapter = registerBuddyLlm(ctx, {
+    /**
+     * ★ **出口层指纹清洗必须注入**（用户 2026-11-05：NAS 上 buddy 直连被
+     * `400 / 11128 / Illegal API invocation from an unapproved channel` 拦截，
+     * 本机却正常）。
+     *
+     * 两套 DSH 的派发链不同（本机 0.2.2-alpha.2 / NAS 0.2.1-rc.2），消息层
+     * `wrapAdapterWithTokenLedger` → `scrubGenerateOptions` 能否命中取决于宿主
+     * 把 system 提示词装进 `options` 的哪种形态；热重载后若保留了旧路由，
+     * 包装层甚至可能整个被绕过。**不能把「全渠道兜底」押在这条不确定的链上**。
+     *
+     * `network.fetch` 是 `createChannelFetch()` 包装过的出口，它在最终请求字节上
+     * 跑 `scrubFetchArguments`（`content-fingerprint.ts` 的 `scrubJsonBody`），
+     * 与 DSH 版本、消息结构、是否热重载都无关 —— 这才是模块头要求的
+     * 「20 个渠道共同、绕不过去的出口」。
+     *
+     * ⚠️ `BuddyAdapter` 默认是 `options.fetchImpl ?? fetch`（全局 fetch），不传
+     * 就完全绕过出口层清洗。此前 12 个适配器都注入了，唯独 buddy/workbuddy 漏了。
+     */
+    fetchImpl: network.fetch,
     credentialRef: credentialRef(BUDDY_CREDENTIAL_REF),
     resolveCredential: async (modelId?: string) => {
       // 优先按「快到期积分」分档选号（锁定永久积分时也走这条，见上）。
@@ -697,6 +716,8 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
   // 同样不注册斜杠命令：入口在 Channel Pack 的 WorkBuddy 面板。
   const workbuddy = new BuddyAuth(ctx, { product: WORKBUDDY })
   const workbuddyAdapter = registerBuddyLlm(ctx, {
+    // 与 buddy 同因：出口层指纹清洗必须注入，不能只靠消息层（见上方 buddy 处说明）。
+    fetchImpl: network.fetch,
     credentialRef: credentialRef(WORKBUDDY.defaultCredentialRef),
     resolveCredential: async (modelId?: string) => {
       // 只从 workbuddy 的账号池取账号，回退到 WorkBuddy 自己的单凭据 ref，
@@ -765,6 +786,27 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
    */
   const activeQoderAccountId = new Map<string, string | undefined>()
   const qoderAdapter = registerQoderLlm(ctx, {
+    /**
+     * ★ ★ 全渠道出口层指纹清洗（用户 2026-11-05：「不管什么客户端、什么方式
+     * (Windows/NAS/Mac/Web UI) 都要把指纹清洗、提示词注入成功」）。
+     *
+     * `network.fetch` = `createChannelFetch()` 的出口，它在**最终请求字节**上跑
+     * `scrubFetchArguments`（content-fingerprint.ts），与以下全部因素无关：
+     * 哪个渠道、哪套 wire、谁拼的请求体、DSH 版本、Windows/NAS/Mac、Web GUI
+     * 直连 / OpenAI 网关 / 外部客户端、插件是否刚热重载。
+     *
+     * ⚠️ 历史缺陷（02680fb「指纹清洗推广到全部渠道 + 落到出口层」其实只改了
+     *   channel-fetch.ts，**没把 network.fetch 注入各适配器**）：这些适配器默认
+     *   `options.fetchImpl ?? fetch`（全局 fetch），出口层清洗被整个绕过。
+     *   本机 DSH 0.2.2 靠消息层 wrapAdapterWithTokenLedger→scrubGenerateOptions
+     *   兜住；NAS DSH 0.2.1-rc.2 的派发链绕过了消息层 ⇒ buddy 直连稳定回
+     *   `400/11128 Illegal API invocation from an unapproved channel`。
+     *   ⇒ 不能把「全渠道清洗」押在消息层，必须由出口层兜底。
+     *
+     * ⚠️ 签名车道 CodeArts 用的是 signedNetwork.fetch（skipScrub，签名前清洗），
+     *   不要改它 —— 出口层改它的 body 会让 HMAC 签名失配回 403。
+     */
+    fetchImpl: network.fetch,
     credentialRef: credentialRef(QODER.defaultCredentialRef),
     resolveCredential: async (modelId?: string) => {
       // 只从 Qoder 自己的账号池取账号，回退到自己的单凭据 ref，
@@ -828,6 +870,8 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
   // 不注册斜杠命令：入口在 Channel Pack 的「Qoder (中国版)」面板。
   const qoderCn = new QoderAuth(ctx, { product: QODER_CN })
   const qoderCnAdapter = registerQoderLlm(ctx, {
+    // 与上方同因：出口层全渠道指纹清洗兜底（见 qoder 处完整说明）。
+    fetchImpl: network.fetch,
     credentialRef: credentialRef(QODER_CN.defaultCredentialRef),
     resolveCredential: async (modelId?: string) => {
       // 只取中国版自己账号池的账号，回退到 QODERCN_ACCESS_TOKEN。
@@ -880,6 +924,8 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
   // 不注册斜杠命令：入口在 Channel Pack 的 TRAE 面板。
   const trae = new TraeAuth(ctx)
   const traeAdapter = registerTraeLlm(ctx, {
+    // 与上方同因：出口层全渠道指纹清洗兜底（见 qoder 处完整说明）。
+    fetchImpl: network.fetch,
     credentialRef: credentialRef(TRAE.defaultCredentialRef),
     resolveCredential: async (modelId?: string) => {
       // ⚠️ `modelId` 必须透传：限流是**按模型**记的（`modelRateLimits[model]`），
@@ -1327,6 +1373,8 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
   })
 
   const loomyAdapter = registerLoomyLlm(ctx, {
+    // 与上方同因：出口层全渠道指纹清洗兜底（见 qoder 处完整说明）。
+    fetchImpl: network.fetch,
     credentialRef: credentialRef(LOOMY.defaultCredentialRef),
     /**
      * 解析本轮该用哪个账号的凭据。
@@ -1487,6 +1535,8 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
   // 不注册斜杠命令：入口在 Channel Pack 的 Raccoon 面板。
   const raccoon = new RaccoonAuth(ctx)
   const raccoonAdapter = registerRaccoonLlm(ctx, {
+    // 与上方同因：出口层全渠道指纹清洗兜底（见 qoder 处完整说明）。
+    fetchImpl: network.fetch,
     credentialRef: credentialRef(RACCOON.defaultCredentialRef),
     resolveCredential: async (modelId?: string) => {
       // 只从 raccoon 自己的账号池取账号，回退到自己的单凭据 ref，
@@ -1556,6 +1606,8 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
   // 不注册斜杠命令：入口在 Channel Pack 的 MiniMax 面板。
   const minimax = new MinimaxAuth(ctx)
   const minimaxAdapter = registerMinimaxLlm(ctx, {
+    // 与上方同因：出口层全渠道指纹清洗兜底（见 qoder 处完整说明）。
+    fetchImpl: network.fetch,
     credentialRef: credentialRef(MINIMAX.defaultCredentialRef),
     resolveCredential: async (modelId?: string) => {
       // provider 实参用 MINIMAX.id 而非字面量：写死字面量在改名/多产品场景下
@@ -1816,6 +1868,8 @@ const resolveZcodeCaptchaConfig = async (): Promise<{ region: string; prefix: st
  */
 const activeZcodeAccountId = new Map<string, string | undefined>()
 const zcodeAdapter = registerZcodeLlm(ctx, {
+    // 与上方同因：出口层全渠道指纹清洗兜底（见 qoder 处完整说明）。
+    fetchImpl: network.fetch,
   credentialRef: credentialRef(ZCODE.defaultCredentialRef),
   resolveCredential: async (modelId?: string) => {
     // 只从 zcode 自己的账号池取账号，回退到自己的单凭据 ref，
@@ -2337,6 +2391,8 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
   if (config.disableOpencode !== true) {
     const opencodeUA = lazyOpencodeUserAgent()
     opencodeAdapter = registerOpencodeLlm(ctx, {
+    // 与上方同因：出口层全渠道指纹清洗兜底（见 qoder 处完整说明）。
+    fetchImpl: network.fetch,
       identitySlots: async () => listIdentitySlots(
         await Promise.all(pool.listAccountsByProvider(OPENCODE.id).map(async (entry) => {
           const resolved = await ctx.credentials

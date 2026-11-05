@@ -11,6 +11,8 @@
  * 模型」「直接在底层(出口层/请求层)进行指纹清洗」。
  */
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 const IDENTITY = 'You are an AI agent powered by DeepSeek Harness'
 const WEBGUI = 'You are interacting with the user through the DeepSeek Harness Web GUI'
@@ -140,7 +142,36 @@ async function verifyTransport() {
   assert.ok(patched !== null && patched.init.method === 'POST', '脏请求：保留其它 init 字段')
   assert.equal(stillDirty(patched.init.body), false, '脏请求：body 已清洗')
   assert.equal(pack.scrubFetchArguments('https://x/y', { method: 'POST', body: new Uint8Array([1, 2, 3]) }), null, '非字符串体不猜')
-  console.log('ok  出口层：chat/responses/Claude/Gemini 四种 wire 都被清洗，结构不变，user 原样，干净请求零重建，非 JSON 体不猜')
+
+  // ★ ZCode 官方身份块（3012 准入）与指纹清洗共存（用户 2026-11-05：
+  //   「不管什么客户端、什么方式都要把指纹清洗、提示词注入成功」）。
+  //   zcode-adapter 把 body.system 构造成块数组：前 3 块是官方身份段（必须逐字保留，
+  //   否则 3012），第 4 块是调用方 DSH 的 system（含指纹，必须被洗掉），
+  //   最后一块带 cache_control 断点（prefix caching，不能丢）。
+  const officialPrefix = 'You are ZCode, an interactive agent'
+  const stableSection = 'You are an agent working with the user toward their goals'
+  const zcodeSystem = [
+    { type: 'text', text: officialPrefix },
+    { type: 'text', text: stableSection },
+    { type: 'text', text: '# Environment\\nPlatform: linux' },
+    { type: 'text', text: `${IDENTITY}.\\n\\nYou are a coding agent.`, cache_control: { type: 'ephemeral' } },
+  ]
+  const zBody = JSON.stringify({ model: 'glm-5.3-flash', system: zcodeSystem, messages: [] })
+  const zScrubbed = pack.scrubJsonText(zBody)
+  assert.ok(zScrubbed !== undefined, 'ZCode 请求体：调用方 system 含指纹 → 必须被清洗')
+  const zAfter = JSON.parse(zScrubbed)
+  assert.equal(zAfter.system.length, 4, 'ZCode system 块数不变')
+  assert.equal(zAfter.system[0].text, officialPrefix, '官方 cliPrefix 逐字保留（3012 准入）')
+  assert.equal(zAfter.system[1].text, stableSection, '官方 stable 段逐字保留（3012 准入）')
+  assert.equal(zAfter.system[2].text, '# Environment\\nPlatform: linux', '环境段不动')
+  assert.ok(!zAfter.system[3].text.includes(IDENTITY), '调用方 system 里的 DSH 指纹已被清洗')
+  assert.deepEqual(zAfter.system[3].cache_control, { type: 'ephemeral' }, '最后一块的 cache_control 断点不丢')
+  assert.equal(zAfter.system[0].cache_control, undefined, '未命中的官方块保持原对象、不被凭空加断点')
+  // 官方身份块本身不含任何规则表指纹 → 单独发时出口层零重建（保住前缀缓存）
+  const officialOnly = JSON.stringify({ system: zcodeSystem.slice(0, 3), messages: [] })
+  assert.equal(pack.scrubJsonText(officialOnly), undefined, '纯官方身份块不含指纹 → 零重建')
+
+  console.log('ok  出口层：chat/responses/Claude/Gemini 四种 wire 都被清洗，结构不变，user 原样，干净请求零重建，非 JSON 体不猜；ZCode 官方身份块逐字保留 + cache_control 不丢')
 }
 
 async function verifyChannelOutlet() {
@@ -189,10 +220,66 @@ async function verifyChannelOutlet() {
   console.log('ok  渠道出口层：createChannelFetch 清洗脏请求、干净请求原字节转发、签名车道 skipScrub 零改动')
 }
 
+/**
+ * ★ ★ **所有适配器都必须接上出口层 fetch**（用户 2026-11-05：
+ * 「不管什么客户端、什么方式(Windows/NAS/Mac/Web UI) 都要把指纹清洗成功」）。
+ *
+ * ## 为什么需要这条静态守卫
+ *
+ * `02680fb`「指纹清洗推广到全部渠道 + 落到出口层」只实现了 `createChannelFetch`
+ * 里的清洗函数，**没把 `network.fetch` 注入各适配器**。各适配器默认
+ * `options.fetchImpl ?? fetch`（全局 fetch）⇒ 出口层清洗被整个绕过。
+ *
+ * 本机 DSH 0.2.2 靠消息层 wrapAdapterWithTokenLedger→scrubGenerateOptions 兜住；
+ * NAS DSH 0.2.1-rc.2 的派发链绕过消息层 ⇒ buddy 直连稳定 400/11128。
+ * 这个差异直到用户报障才暴露，且靠"看代码"极难发现（21 个注册散落 2000 行）。
+ *
+ * ⇒ 用静态断言锁死：每个 `registerXxxLlm(ctx, {...})` 注册块里都必须出现
+ *   `fetchImpl: network.fetch`（签名车道 CodeArts 例外，用 signedNetwork.fetch）。
+ * 将来新增适配器若忘了接，本用例立刻红。
+ *
+ * ⚠️ 同时锁死 minimax / opencode 不再用硬编码裸 `fetch(`（它们原先没有
+ *   fetchImpl 字段，注入了也用不上）。
+ */
+export async function verifyAllAdaptersWired() {
+  const root = new URL('../vendor/channel-pack/src/', import.meta.url)
+  const index = readFileSync(fileURLToPath(new URL('index.ts', root)), 'utf8')
+
+  // 找所有注册调用的起点（含换行后的 `{`）
+  const re = /const (\w+)\s*=\s*register\w+Llm\(ctx, \{|(\w+Adapter)\s*=\s*register\w+Llm\(ctx, \{/g
+  const starts = []
+  for (const m of index.matchAll(re)) starts.push({ name: m[1] ?? m[2], at: m.index })
+  assert.ok(starts.length >= 20, `应至少找到 20 个适配器注册，实际 ${starts.length}`)
+
+  // 每个注册点之后到下一个注册点之间，必须出现 fetchImpl
+  const segmentEnd = (i) => i + 1 < starts.length ? starts[i + 1].at : index.length
+  const missing = []
+  for (let i = 0; i < starts.length; i += 1) {
+    const seg = index.slice(starts[i].at, segmentEnd(i))
+    if (!/fetchImpl:\s*(network|signedNetwork)\.fetch/.test(seg)) {
+      missing.push(starts[i].name)
+    }
+  }
+  assert.deepEqual(missing, [],
+    `以下适配器未接出口层 fetch（会绕过全渠道指纹清洗）：${missing.join(', ')}`)
+
+  // 锁死两个原先硬编码全局 fetch 的适配器：options 有 fetchImpl、发请求用 this.fetchImpl
+  for (const file of ['minimax-adapter.ts', 'opencode-adapter.ts']) {
+    const src = readFileSync(fileURLToPath(new URL(file, root)), 'utf8')
+    assert.match(src, /fetchImpl\?:\s*typeof fetch/, `${file}: options 缺 fetchImpl 字段`)
+    assert.match(src, /this\.fetchImpl\s*=\s*options\.fetchImpl\s*\?\?\s*fetch/,
+      `${file}: 构造函数未把 fetchImpl 落到实例`)
+    assert.match(src, /await this\.fetchImpl\(/, `${file}: 推理请求仍在用裸 fetch`)
+  }
+
+  console.log(`ok  全渠道出口层接线：${starts.length} 个适配器全部注入 network.fetch（minimax/opencode 已改用实例 fetch）`)
+}
+
 export async function verifyContentFingerprint() {
   await verifyMessageSemantics()
   await verifyTransport()
   await verifyChannelOutlet()
+  await verifyAllAdaptersWired()
 }
 
 import { exitIfDirectRun } from './lib/direct-run.mjs'

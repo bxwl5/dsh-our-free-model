@@ -132,6 +132,11 @@ export async function loadOpencodeCatalog(
 }
 
 export interface OpencodeAdapterOptions {
+  /**
+   * 注入的 fetch。**生产必须传 `network.fetch`**（出口层指纹清洗兜底），
+   * 理由同 MinimaxAdapterOptions（NAS 上 11128 实测）。
+   */
+  fetchImpl?: typeof fetch
   /** 取当前槽序列（账号池顺序 + 匿名槽末位）。 */
   identitySlots: () => Promise<readonly IdentitySlot[]>
   /** 拉远端目录；缺省时直接用兜底表。 */
@@ -242,8 +247,11 @@ export function resolveOpencodeEffort(
 }
 
 export class OpencodeAdapter extends LlmAdapter {
+  private readonly fetchImpl: typeof fetch
+
   constructor(private readonly options: OpencodeAdapterOptions) {
     super()
+    this.fetchImpl = options.fetchImpl ?? fetch
   }
 
   providerInfo(provider: string): LlmProviderInfo {
@@ -610,7 +618,7 @@ export class OpencodeAdapter extends LlmAdapter {
     // 网络异常 —— 一次抖动就击穿整条链路。归一成 `TRANSPORT` 才让它们生效。
     let response: Response
     try {
-      response = await fetch(`${OPENCODE.baseUrl}${OPENCODE.chatPath}`, init)
+      response = await this.fetchImpl(`${OPENCODE.baseUrl}${OPENCODE.chatPath}`, init)
     } catch (error) {
       if (options.signal?.aborted === true) throw error
       if (isTransportError(error)) {

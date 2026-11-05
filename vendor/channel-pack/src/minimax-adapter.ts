@@ -155,6 +155,12 @@ export function minimaxReasoningInfo(
 
 /** {@link MinimaxAdapter} 的构造选项。 */
 export interface MinimaxAdapterOptions {
+  /**
+   * 注入的 fetch。**生产必须传 `network.fetch`**（出口层指纹清洗兜底）：
+   * 缺省退回全局 fetch 会绕过 content-fingerprint 的出口层清洗，在部分
+   * DSH 版本/客户端上稳定触发 11128（用户 2026-11-05 NAS 实测）。
+   */
+  fetchImpl?: typeof fetch
   /** 单凭据回退 ref（无账号池时）。 */
   credentialRef: CredentialRef
   /** 解析当前可用凭据。 */
@@ -183,9 +189,12 @@ export class MinimaxAdapter extends LlmAdapter {
   /** 目录加载闸门：并发去重 + 失败/空结果冷却（见 `remote-catalog-gate.ts`）。 */
   private readonly catalogGate = new RemoteCatalogGate()
 
+  private readonly fetchImpl: typeof fetch
+
   constructor(private readonly options: MinimaxAdapterOptions) {
     super()
     this.product = options.product ?? MINIMAX
+    this.fetchImpl = options.fetchImpl ?? fetch
   }
 
   providerInfo(provider: string): LlmProviderInfo {
@@ -452,7 +461,7 @@ export class MinimaxAdapter extends LlmAdapter {
     // 收敛成 `TRANSPORT` 后，换号与重试策略才看得见它。
     let response: Response
     try {
-      response = await fetch(`${this.product.apiHost}${MINIMAX_INFER_PATH}`, {
+      response = await this.fetchImpl(`${this.product.apiHost}${MINIMAX_INFER_PATH}`, {
         method: 'POST',
         headers: minimaxInferHeaders(credential),
         body: JSON.stringify(payload),
