@@ -32974,7 +32974,7 @@ var AccountPool = class _AccountPool {
     const index = Math.min(Math.max(cursor.index, 0), candidates.length - 1);
     const headId = _AccountPool.accountIdOf(candidates[index]);
     const carried = cursor.accountId !== void 0 && cursor.accountId !== headId ? 0 : cursor.used;
-    if (options.advance !== false) {
+    if ((options.advance ?? true) !== false) {
       const used = carried + 1;
       this.accountRotation.set(
         provider,
@@ -63631,45 +63631,29 @@ function normalizeZcodeLoginProvider(raw) {
   }
   return ZCODE_LOGIN_PROVIDER;
 }
-function parseBuddyCredential(raw) {
+function parseJsonCredential(raw, guard) {
   try {
     const parsed = JSON.parse(raw);
-    return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
+    if (typeof parsed !== "object" || parsed === null) return void 0;
+    return guard(parsed) ? parsed : void 0;
   } catch {
     return void 0;
   }
+}
+function parseBuddyCredential(raw) {
+  return parseJsonCredential(raw, (parsed) => typeof parsed["access_token"] === "string");
 }
 function parseCodeArtsCredential(raw) {
-  try {
-    const parsed = JSON.parse(raw);
-    return typeof parsed === "object" && parsed !== null && typeof parsed.access_key_id === "string" ? parsed : void 0;
-  } catch {
-    return void 0;
-  }
+  return parseJsonCredential(raw, (parsed) => typeof parsed["access_key_id"] === "string");
 }
 function parseQoderCredential(raw) {
-  try {
-    const parsed = JSON.parse(raw);
-    return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
-  } catch {
-    return void 0;
-  }
+  return parseJsonCredential(raw, (parsed) => typeof parsed["access_token"] === "string");
 }
 function parseTraeCredential(raw) {
-  try {
-    const parsed = JSON.parse(raw);
-    return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
-  } catch {
-    return void 0;
-  }
+  return parseJsonCredential(raw, (parsed) => typeof parsed["access_token"] === "string");
 }
 function parseClineCredential(raw) {
-  try {
-    const parsed = JSON.parse(raw);
-    return typeof parsed === "object" && parsed !== null && typeof parsed.access_token === "string" ? parsed : void 0;
-  } catch {
-    return void 0;
-  }
+  return parseJsonCredential(raw, (parsed) => typeof parsed["access_token"] === "string");
 }
 function buildRaccoonNickname(credential, fallbackId) {
   const nickname = typeof credential.nickname === "string" ? credential.nickname.trim() : "";
@@ -66272,9 +66256,8 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             return void 0;
           }
         })() : void 0;
-        const adapters = Object.keys(modelAdapters ?? {}).map((id) => ({ id }));
-        const providers = listed ?? (adapters.length > 0 ? adapters : void 0);
-        const modelsSource = listed !== void 0 ? "catalog" : adapters.length > 0 ? "adapters" : "none";
+        const providers = providerIdsOf(llm, modelAdapters);
+        const modelsSource = llm?.listProviders !== void 0 ? "catalog" : providers !== void 0 ? "adapters" : "none";
         const value = {
           enabled: await degrade("\u5F00\u5173\u72B6\u6001", () => pool.gatewayEnabled(), true),
           running: await degrade("\u8FD0\u884C\u6001", () => isGatewayRunning(), false),
@@ -66476,12 +66459,23 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           typeof req?.limit === "number" && Number.isFinite(req.limit) && req.limit > 0 ? { limit: Math.trunc(req.limit) } : {}
         );
         const baseName = (value2) => value2.split(" \xB7 ")[0].trim();
+        const catalogByProvider = /* @__PURE__ */ new Map();
+        const catalogFor = (provider) => {
+          let list = catalogByProvider.get(provider);
+          if (list === void 0) {
+            list = modelAdapters?.[provider]?.listAllModels() ?? [];
+            catalogByProvider.set(provider, list);
+          }
+          return list;
+        };
         const labelOf = (raw) => {
           const slash = raw.indexOf("/");
           if (slash <= 0) return raw;
           const provider = raw.slice(0, slash);
           const modelId = raw.slice(slash + 1);
-          const named = modelAdapters?.[provider]?.displayNameFor?.(modelId) ?? modelAdapters?.[provider]?.listAllModels().find((m) => m.id === modelId)?.name ?? modelAdapters?.[provider]?.listAllModels().find((m) => baseName(m.name) === modelId)?.name;
+          const catalog = catalogFor(provider);
+          if (catalog.some((m) => m.name === modelId)) return raw;
+          const named = modelAdapters?.[provider]?.displayNameFor?.(modelId) ?? catalog.find((m) => m.id === modelId)?.name ?? catalog.find((m) => baseName(m.name) === modelId)?.name;
           return named === void 0 || named === "" ? raw : `${provider}/${named}`;
         };
         const mergeKeyOf = (raw) => {

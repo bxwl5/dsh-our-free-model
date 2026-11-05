@@ -6,7 +6,7 @@
  * 这些文件只 `export async function verifyXxx()`，由 `channel-pack-test.mjs --source`
  * （或其它汇总套件）import 后调用。它们的依赖是**动态 import 的 .ts 源码**，所以直接
  * `node scripts/xxx-test.mjs` 时一个断言都不会跑 —— 却会**静默 exit 0**，看起来像通过。
- * 本仓库已经踩过两次（`commandcode-auth-test`、`accio-test`）。
+ * 本仓库已经踩过两次（`commandcode-auth-test`、`accio-test`（已删））。
  *
  * ## 用法
  *

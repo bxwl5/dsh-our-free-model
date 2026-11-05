@@ -1276,7 +1276,7 @@ export class AccountPool {
      */
     const headId = AccountPool.accountIdOf(candidates[index])
     const carried = cursor.accountId !== undefined && cursor.accountId !== headId ? 0 : cursor.used
-    if (options.advance !== false) {
+    if ((options.advance ?? true) !== false) {
       const used = carried + 1
       this.accountRotation.set(
         provider,
@@ -1794,7 +1794,7 @@ export class AccountPool {
  * - `accountPool` 缺失（headless / CLI / 单测）或替身未实现
  *   `hasLoggedInAccount` 时**视为可见** —— 门控是**展示优化而非安全边界**，
  *   判定不可用时宁多勿少（否则会让整个 provider 的模型凭空消失）。
- * - **六个 provider 判据完全一致**：都只看账号池。早期 CodeArts 有一个「单凭据
+ * - **各 provider 判据完全一致**：都只看账号池。早期 CodeArts 有一个「单凭据
  *   例外」（额外认固定 ref `CODEARTS_ACCESS_TOKEN`），该模式已移除，故
  *   `extraCredentialRefs` 参数也一并删除，避免留下无人使用的分支。
  *

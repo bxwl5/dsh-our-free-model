@@ -172,7 +172,6 @@ async function verifyRefreshDispatch({ ctx, call, creds }) {
  *
  * 缺陷（用户实测报「续期提示失败」）：这四个 provider 落 `default` 抛
  * `Unknown provider: <id>`。本用例逐个锁死新行为：
- * - accio / accio-cn：**真续期** —— 替身上游 `POST /api/auth/refresh_token`
  *   回 200 + 新 expiresAt（audit 实测幂等、顺延 30 天），断言请求形状
  *   （body 带 accessToken/refreshToken）与新 expiresAt/refreshable 写回账号池；
  * - officeace：**真续期** —— 替身 STS `POST /v1/oauth2/tokens` 回 200 +
@@ -195,7 +194,6 @@ async function verifyNewProviderRefreshDispatch({ ctx, call, creds }) {
     publicJwk: { kty: 'EC', crv: 'P-256', x: String(jwk.x), y: String(jwk.y) },
   }
   // 形态对齐真实上游（audit / t4 实测）：
-  // - accio 刷新回 accessToken/refreshToken/expiresAt（token 不轮换、顺延 30 天）
   // - STS 续期回 credentials.{access_key_id,secret_access_key,security_token,
   //   expiration} + 轮换后的 refresh_token（无 project_id、无 id_token —— 实测缺席）
   const standIn = async (input, init = {}) => {
@@ -205,9 +203,6 @@ async function verifyNewProviderRefreshDispatch({ ctx, call, creds }) {
       // commandcode 探活替身：默认 2xx；测试可置 standIn.ccWhoamiStatus 模拟吊销。
       const status = standIn.ccWhoamiStatus ?? 200
       return Response.json(status === 200 ? { success: true, user: { id: 'u-1' } } : { error: 'denied' }, { status })
-    }
-    if (url.pathname === '/api/auth/refresh_token') {
-      return Response.json({ accessToken: 'accio-new-at', refreshToken: 'accio-rt', expiresAt: expires })
     }
     if (url.pathname === '/v1/oauth2/tokens') {
       return Response.json({
@@ -234,7 +229,6 @@ async function verifyNewProviderRefreshDispatch({ ctx, call, creds }) {
   const setCredential = async (ref, value) => { creds.set(ref, { value: JSON.stringify(value) }) }
   const dropCredential = (ref) => { creds.delete(ref) }
   try {
-    // ── accio / accio-cn：真续期 ──
     // ── officeace：真续期（STS refresh_token grant + DPoP）──
     {
       const accountId = 'fixture-refresh-officeace', ref = 'FIXTURE_REFRESH_OFFICEACE'
@@ -365,7 +359,7 @@ async function verifyNewProviderRefreshDispatch({ ctx, call, creds }) {
     globalThis.fetch = originalFetch
     if (directLane) directLane.fetch = savedLane
   }
-  console.log('ok  refresh RPC (t4): commandcode/accio/accio-cn/officeace 四分支 — accio 家族与 officeace 走真续期并回写池，commandcode 走真探活；幽灵模型不补回')
+  console.log('ok  refresh RPC (t4): commandcode / officeace 真续期分支 — 走真续期/真探活并回写池；幽灵模型不补回')
 }
 
 // 单独运行没有任何断言会执行（由汇总套件 import 调用）⇒ 明确失败，别伪装成通过。

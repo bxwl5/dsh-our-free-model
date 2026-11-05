@@ -2091,6 +2091,15 @@ window.__ModuleLoader__.load({
     })()
     const SEASON = ['#4C8DFF', '#3ECFA0', '#F2A65A', '#E36AA6', '#8B7BF0', '#39B8C4', '#D9743E', '#7BB24A']
 
+    /* ── RPC 超时口径表（2026-11-06 审计：收敛散落各处的 magic number）──
+     * api() 兜底 8s；慢路由按语义放宽，取值依据：
+     * - quick   8s   默认兜底（路由未注册/挂起的探测窗口）
+     * - probe   30s  轻量状态读（autoCheckin / anomalies / gateway.getEnabled）
+     * - write   60s  写配置/目录刷新/台账批量（可能触发后端串行队列）
+     * - heavy   90s  逐账号网络操作（balances / account.refresh / account.test / badge）
+     * - bench  180s  一键领取（逐账号顺序签到，单账号可能带 captcha）
+     * - long   600s  特例：/bench 真实生成、/update/apply 整包下载（见 api 注释） */
+    const RPC_TIMEOUT = { quick: 8_000, probe: 30_000, write: 60_000, heavy: 90_000, bench: 180_000, long: 600_000 }
     async function api(path, options) {
       // 8 秒超时兜底：后端路由未注册/挂起时 fetch 不再永久挂起——此前全部 api 调用
       // （onboarding /announcement、设置页 /announcements /update/status、面板 /summary /stats
@@ -3470,7 +3479,7 @@ window.__ModuleLoader__.load({
         setBalanceLoading(true); setBalanceError('')
         request.promise = (async () => {
           try {
-            const value = await rpc('credits.balances', { provider: channel.id, ...afterWrite ? { force: true } : {} }, 90_000)
+            const value = await rpc('credits.balances', { provider: channel.id, ...afterWrite ? { force: true } : {} }, RPC_TIMEOUT.heavy)
             if (generation === balanceGeneration.current) setBalances(value?.accounts ?? [])
           } catch (error) {
             if (generation === balanceGeneration.current) {
@@ -3714,7 +3723,7 @@ window.__ModuleLoader__.load({
         modelBatchPending.current = true
         try {
           await accountAction('models:refetch', '', async () => {
-            const value = await rpc('model.refresh', { provider: channel.id }, 60_000)
+            const value = await rpc('model.refresh', { provider: channel.id }, RPC_TIMEOUT.write)
             await loadModels()
             notifyChanged()
             setNotice(value?.refreshed === false
@@ -3739,7 +3748,7 @@ window.__ModuleLoader__.load({
         claimPending.current = true
         setBusy('claim'); setNotice('')
         try {
-          const value = await rpc('credits.claimAll', { provider: channel.id }, 180_000)
+          const value = await rpc('credits.claimAll', { provider: channel.id }, RPC_TIMEOUT.bench)
           const summary = value?.summary ?? value
           const claimed = Number(summary?.claimed ?? 0)
           const credit = Number(summary?.totalCredit ?? 0)
@@ -3843,7 +3852,7 @@ window.__ModuleLoader__.load({
             type: 'button', className: 'ofm_actbtn', disabled: busy !== '' || !rpc, 'aria-busy': busy === 'refreshAll' ? 'true' : undefined,
             onClick: () => accountAction('refreshAll', '', async () => {
               for (const row of accounts ?? await rpc('account.list', { provider: channel.id }).then(v => v?.accounts ?? [])) {
-                try { await rpc('account.refresh', { accountId: row.id }, 90_000) } catch (error) { onError(channel, error) }
+                try { await rpc('account.refresh', { accountId: row.id }, RPC_TIMEOUT.heavy) } catch (error) { onError(channel, error) }
               }
               notifyChanged(); await loadAccounts(); void loadBalances(true)
             }),
@@ -3923,7 +3932,7 @@ window.__ModuleLoader__.load({
                     h('button', {
                       type: 'button', className: 'ofm_minibtn', disabled: busy !== '' || !rpc,
                       onClick: () => accountAction('test:' + row.id, row.id, async () => {
-                        const value = await rpc('account.test', { accountId: row.id }, 90_000)
+                        const value = await rpc('account.test', { accountId: row.id }, RPC_TIMEOUT.heavy)
                         setNotice(value?.ok === false
                           ? t('chan.test.failed').replace('{reason}', value?.error ?? '')
                           : t('chan.test.ok').replace('{ms}', String(value?.ms ?? value?.latencyMs ?? '—')))
@@ -3932,7 +3941,7 @@ window.__ModuleLoader__.load({
                     h('button', {
                       type: 'button', className: 'ofm_minibtn', disabled: busy !== '' || !rpc,
                       onClick: () => accountAction('refresh:' + row.id, row.id, async () => {
-                        await rpc('account.refresh', { accountId: row.id }, 90_000)
+                        await rpc('account.refresh', { accountId: row.id }, RPC_TIMEOUT.heavy)
                         notifyChanged(); await loadAccounts(); void loadBalances(true)
                       }),
                     }, t('chan.act.refresh')),
@@ -4099,7 +4108,7 @@ window.__ModuleLoader__.load({
       const [auto, setAuto] = useState(undefined)
       const loadAuto = useCallback(async () => {
         if (!available) return
-        try { const value = await rpc('usage.autoCheckin', {}, 30_000); setAuto(value?.autoCheckin ?? null) } catch { setAuto(null) }
+        try { const value = await rpc('usage.autoCheckin', {}, RPC_TIMEOUT.probe); setAuto(value?.autoCheckin ?? null) } catch { setAuto(null) }
       }, [available, rpc])
       useEffect(() => { void loadAuto() }, [loadAuto])
       /**
@@ -4142,7 +4151,7 @@ window.__ModuleLoader__.load({
         }
       }, [rpc, loadStrategy])
       const toggleAuto = async () => {
-        try { const value = await rpc('usage.autoCheckin', { enabled: auto?.enabled !== true }, 60_000); setAuto(value?.autoCheckin ?? null) } catch { /* the status refresh tells */ }
+        try { const value = await rpc('usage.autoCheckin', { enabled: auto?.enabled !== true }, RPC_TIMEOUT.write); setAuto(value?.autoCheckin ?? null) } catch { /* the status refresh tells */ }
       }
       const [statuses, setStatuses] = useState(undefined)
       const [error, setError] = useState('')
@@ -4231,7 +4240,7 @@ window.__ModuleLoader__.load({
       const loadAnomalies = useCallback(async () => {
         if (!available) return
         try {
-          const value = await rpc('account.anomalies', {}, 30_000)
+          const value = await rpc('account.anomalies', {}, RPC_TIMEOUT.probe)
           setAnomalies(Array.isArray(value?.anomalies) ? value.anomalies : [])
         } catch { setAnomalies([]) }
       }, [available, rpc])
@@ -4740,8 +4749,8 @@ window.__ModuleLoader__.load({
         if (!available) { setState(current => ({ ...current, status: 'unavailable', error: 'no-connection' })); return }
         try {
           const [ledger, history] = await Promise.all([
-            rpc('usage.tokenLedger', { limit: 400 }, 60_000),
-            rpc('usage.tokenLedgerHistory', { sinceDays: 90 }, 60_000),
+            rpc('usage.tokenLedger', { limit: 400 }, RPC_TIMEOUT.write),
+            rpc('usage.tokenLedgerHistory', { sinceDays: 90 }, RPC_TIMEOUT.write),
           ])
           setState({ status: 'ready', snapshot: ledger?.snapshot ?? null, history: history?.history ?? [], totals: history?.totals ?? null, error: '' })
         } catch (error) { setState(current => ({ ...current, status: 'error', error: String(error?.message ?? error) })) }
@@ -4978,7 +4987,7 @@ window.__ModuleLoader__.load({
 
       const loadGateway = useCallback(async () => {
         if (!available) return
-        try { setStatus(await rpc('gateway.getEnabled', {}, 30_000)) } catch (error) { setNotice(String(error?.message ?? error)) }
+        try { setStatus(await rpc('gateway.getEnabled', {}, RPC_TIMEOUT.probe)) } catch (error) { setNotice(String(error?.message ?? error)) }
       }, [available, rpc])
       const loadRelay = useCallback(async () => {
         try { setRelay(await api('/chan-gateway')) } catch { setRelay(null) }
@@ -4987,7 +4996,7 @@ window.__ModuleLoader__.load({
 
       const toggleGateway = async enabled => {
         setBusy(true); setNotice('')
-        try { setStatus(await rpc('gateway.setEnabled', { enabled }, 60_000)) } catch (error) { setNotice(String(error?.message ?? error)) } finally { setBusy(false) }
+        try { setStatus(await rpc('gateway.setEnabled', { enabled }, RPC_TIMEOUT.write)) } catch (error) { setNotice(String(error?.message ?? error)) } finally { setBusy(false) }
       }
       const applyRelay = async patch => {
         setRelayBusy(true); setNotice('')
@@ -5432,7 +5441,7 @@ window.__ModuleLoader__.load({
         if (CHANNEL_CREDITS[provider] === undefined) return
         pending.current.add(provider)
         setQuotas(current => ({ ...current, [provider]: { loading: true } }))
-        channelRpc.rpc('usage.badge', { provider }, 90_000)
+        channelRpc.rpc('usage.badge', { provider }, RPC_TIMEOUT.heavy)
           .then(payload => setQuotas(current => ({ ...current, [provider]: { loading: false, value: quotaSummaryOf(t, provider, payload) } })))
           // 失败也要留一个**已答**的条目：把键删掉会让「待查列表」重新包含这家，
           // effect 立刻再跑一次 —— 于是不停重试。这里标成失败并什么都不画

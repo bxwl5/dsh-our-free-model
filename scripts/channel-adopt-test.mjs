@@ -20,7 +20,6 @@ import assert from 'node:assert/strict'
 const SESSION = '0123456789abcdef0123456789abcdef'
 const BDUSS = 'abcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh'
 const TOKEN = 'autoclaw-token-1234567890'
-
 async function main() {
   const { adoptableChannelHint } = await import('../vendor/channel-pack/src/channel-pack-rpc.ts')
 
@@ -49,24 +48,15 @@ async function main() {
   // ── 解析函数直测：account.adopt 透传的就是这些结果 ──
   const { parseCredential: parseAutoClaw } = await import('../vendor/channel-pack/src/autoclaw.ts')
 
-  console.log('ok  channel-adopt: 1 个粘贴型渠道有提示；解析函数合法/非法/噪声输入形状校验')
+  console.log('ok  channel-adopt: 粘贴型渠道 0 个（hint 表空）；解析函数合法/非法/噪声输入形状校验')
 }
-
-/** account.adopt RPC 端到端（需要 channel-pack-test.mjs 的 mount 环境）。
- *
- * 只依赖 { call, creds }，与模块加载方式无关，故**源码与打包产物两种模式都要跑**。
- * 产物（vendor/channel-pack/pack.js、packages/standalone/channels/business.mjs）
- * 才是发布形态：这条用例就是「改了 src 却忘记重打包」的探测器 —— 历史缺口里
- * 形状校验加固与 credentials.set 只进了 src，而本用例原先被 sourceMode 门控，
- * 打包模式因此一路全绿。
- */
 async function rpcProbes({ call, creds }) {
   const before = new Set(creds.keys())
   const keysNow = () => new Set(creds.keys())
 
   // 1) 非法输入全部拒收：bad-request，不落盘、不进账号池
   for (const [provider, bad] of [
-    ['orcaterm', 'foo=bar'],
+    ['gone-provider', 'foo=bar'],
   ]) {
     const result = await call('account.adopt', { provider, credential: bad })
     assert.equal(result.ok, false, `${provider} 非法凭据必须拒收`)
@@ -94,13 +84,12 @@ async function rpcProbes({ call, creds }) {
   }
 
   // 3) 空凭据：RPC 层最小判据（空文本）直接拒绝
-  const empty = await call('account.adopt', { provider: 'orcaterm', credential: '   ' })
+  const empty = await call('account.adopt', { provider: 'gone-provider', credential: '   ' })
   assert.equal(empty.ok, false)
   assert.equal(empty.error.code, 'bad-request')
 
   console.log('ok  channel-adopt RPC: 非法凭据 bad-request 拒收不落盘；噪声清洗后收下且落盘为清洗值；账号池有条目')
 }
-
 /** 源码侧形状用例：直连 `src/*.ts`，只有 source 模式能加载。 */
 export async function verifyChannelAdoptParsers() {
   await main()

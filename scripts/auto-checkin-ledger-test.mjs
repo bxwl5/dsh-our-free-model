@@ -149,26 +149,26 @@ try {
   // ── 1. 失败渠道不记日期、成功渠道不重跑（缺陷 A） ──
   await check('失败渠道留在待补跑，成功的渠道不重跑（缺陷 A）', async () => {
     const h = harness({
-      providers: ['buddy', 'kuku'],
-      responses: { buddy: [claimed(2, 200)], kuku: [upstreamError('凭据已失效')] },
+      providers: ['buddy', 'gone'],
+      responses: { buddy: [claimed(2, 200)], gone: [upstreamError('凭据已失效')] },
       now: at0900,
     })
     await h.engine.runIfDue()
-    assert.deepEqual(h.calls, ['buddy', 'kuku'], '第一轮两个渠道各跑一次')
+    assert.deepEqual(h.calls, ['buddy', 'gone'], '第一轮两个渠道各跑一次')
     assert.equal(h.ledger('buddy').status, 'done', '成功的渠道记 done')
-    assert.equal(h.ledger('kuku').status, 'pending', '失败的渠道**不**记完成')
-    assert.equal(h.ledger('kuku').attempts, 1, '失败的尝试计数 1')
-    assert.equal(h.ledger('kuku').lastText, '出错', '失败原因落盘（面板展示用）')
+    assert.equal(h.ledger('gone').status, 'pending', '失败的渠道**不**记完成')
+    assert.equal(h.ledger('gone').attempts, 1, '失败的尝试计数 1')
+    assert.equal(h.ledger('gone').lastText, '出错', '失败原因落盘（面板展示用）')
     assert.equal(h.store.peek().lastDate, ac.utc8DateString(at0900), '整轮有渠道被处理过 ⇒ lastDate 记今天')
 
     h.clock.ms = at0900 + 5 * MIN
     await h.engine.runIfDue()
-    assert.deepEqual(h.calls, ['buddy', 'kuku'], '未到重试间隔时一个渠道都不重跑')
+    assert.deepEqual(h.calls, ['buddy', 'gone'], '未到重试间隔时一个渠道都不重跑')
 
     h.clock.ms = at0900 + 31 * MIN
     await h.engine.runIfDue()
-    assert.deepEqual(h.calls, ['buddy', 'kuku', 'kuku'], '只有失败的渠道补跑，成功的渠道幂等不重打')
-    assert.equal(h.ledger('kuku').attempts, 2, '补跑计入 attempts')
+    assert.deepEqual(h.calls, ['buddy', 'gone', 'gone'], '只有失败的渠道补跑，成功的渠道幂等不重打')
+    assert.equal(h.ledger('gone').attempts, 2, '补跑计入 attempts')
   })
 
   // ── 2. coversToday=false 不记日期、10:00 后补上（缺陷 B） ──
@@ -204,18 +204,18 @@ try {
   // ── 3. 重跑上限 ──
   await check('同一渠道当天最多 3 次，超限记「今日已放弃」并保留原因', async () => {
     const h = harness({
-      providers: ['kuku'],
-      responses: { kuku: [upstreamError('HTTP 502'), upstreamError('HTTP 502'), upstreamError('errno:-6 未登录')] },
+      providers: ['gone'],
+      responses: { gone: [upstreamError('HTTP 502'), upstreamError('HTTP 502'), upstreamError('errno:-6 未登录')] },
       now: at0900,
     })
     await h.engine.runIfDue()
-    assert.equal(h.ledger('kuku').attempts, 1)
+    assert.equal(h.ledger('gone').attempts, 1)
     h.clock.ms = at0900 + 31 * MIN
     await h.engine.runIfDue()
-    assert.equal(h.ledger('kuku').attempts, 2)
+    assert.equal(h.ledger('gone').attempts, 2)
     h.clock.ms = at0900 + 62 * MIN
     await h.engine.runIfDue()
-    const given = h.ledger('kuku')
+    const given = h.ledger('gone')
     assert.equal(given.attempts, 3, '第 3 次尝试')
     assert.equal(given.status, 'given-up', '达到上限 ⇒ 今日已放弃')
     assert.match(given.lastText, /今日已放弃/, '面板文字带出「今日已放弃」')
@@ -236,25 +236,25 @@ try {
       lastDate: '2026-10-26',
       lastResult: '11 个渠道：4 个失败',
       lastAt: at0900 - 60 * MIN,
-      channels: [{ provider: 'kuku', text: '1 个失败' }],
+      channels: [{ provider: 'gone', text: '1 个失败' }],
       dismissedRunAt: 0,
     }
     const sanitized = ac.sanitizeAutoCheckin(legacy)
     assert.deepEqual(sanitized.providers, {}, '旧文档没有 per-provider 账本 ⇒ 空账本（不猜「今天已完成」）')
     assert.equal(sanitized.lastDate, '2026-10-26', '旧字段照常读出')
     assert.equal(sanitized.enabled, true, '开关照常读出')
-    assert.deepEqual(sanitized.channels, [{ provider: 'kuku', text: '1 个失败' }], '逐渠道文字照常读出')
+    assert.deepEqual(sanitized.channels, [{ provider: 'gone', text: '1 个失败' }], '逐渠道文字照常读出')
 
     const h = harness({
-      providers: ['kuku', 'buddy'],
-      responses: { kuku: [claimed(1, 100)], buddy: [claimed(1, 100)] },
+      providers: ['gone', 'buddy'],
+      responses: { gone: [claimed(1, 100)], buddy: [claimed(1, 100)] },
       now: at0930,
       initial: legacy,
     })
     assert.equal(h.engine.state().ranToday, true, '旧语义保留：面板仍说「今日已自动签到」')
     await h.engine.runIfDue()
-    assert.deepEqual(h.calls, ['buddy', 'kuku'], '旧文档不阻止补跑：两个渠道都会再跑一次')
-    assert.equal(h.ledger('kuku').status, 'done', '补跑后记 done（并升级成 v2 账本）')
+    assert.deepEqual(h.calls, ['buddy', 'gone'], '旧文档不阻止补跑：两个渠道都会再跑一次')
+    assert.equal(h.ledger('gone').status, 'done', '补跑后记 done（并升级成 v2 账本）')
     assert.equal(h.ledger('buddy').day, '2026-10-26', '新账本带日期')
   })
 
@@ -295,8 +295,8 @@ try {
   // ── 5. 全失败不写 lastDate ──
   await check('整轮全失败时不把 lastDate 写成今天', async () => {
     const h = harness({
-      providers: ['kuku'],
-      responses: { kuku: [upstreamError('凭据已失效')] },
+      providers: ['gone'],
+      responses: { gone: [upstreamError('凭据已失效')] },
       now: at0900,
     })
     await h.engine.runIfDue()
@@ -323,8 +323,8 @@ try {
   // ── 7. 补跑排定 ──
   await check('有待补跑渠道时排一次当日补跑（复用 schedule，不跨日界）', async () => {
     const h = harness({
-      providers: ['kuku'],
-      responses: { kuku: [upstreamError('HTTP 502')] },
+      providers: ['gone'],
+      responses: { gone: [upstreamError('HTTP 502')] },
       now: at0900,
     })
     await h.engine.runIfDue()
@@ -334,8 +334,8 @@ try {
     assert.equal(h.scheduled[0].cancelled, true, 'stop() 取消补跑定时器')
 
     const late = harness({
-      providers: ['kuku'],
-      responses: { kuku: [upstreamError('HTTP 502')] },
+      providers: ['gone'],
+      responses: { gone: [upstreamError('HTTP 502')] },
       now: at2345,
     })
     await late.engine.runIfDue()
@@ -343,16 +343,16 @@ try {
 
     // 启动时「还没到重试时刻」也要把补跑排到那一刻（不必等下次启动）。
     const waiting = harness({
-      providers: ['kuku'],
-      responses: { kuku: [upstreamError('HTTP 502')] },
+      providers: ['gone'],
+      responses: { gone: [upstreamError('HTTP 502')] },
       now: at0900,
     })
     await waiting.engine.runIfDue()
     assert.equal(waiting.scheduled.length, 1)
     // 模拟「宿主重启」：同一份账本、20 分钟后启动（还没到 30 分钟的重试间隔）。
     const restarted = harness({
-      providers: ['kuku'],
-      responses: { kuku: [upstreamError('HTTP 502')] },
+      providers: ['gone'],
+      responses: { gone: [upstreamError('HTTP 502')] },
       now: at0900 + 20 * MIN,
       initial: waiting.store.peek(),
     })
@@ -363,8 +363,8 @@ try {
 
     // 关掉开关必须撤掉已排定的补跑（用户关掉后不该再被后台打一轮上游）。
     const off = harness({
-      providers: ['kuku'],
-      responses: { kuku: [upstreamError('HTTP 502')] },
+      providers: ['gone'],
+      responses: { gone: [upstreamError('HTTP 502')] },
       now: at0900,
     })
     await off.engine.runIfDue()
@@ -380,24 +380,24 @@ try {
     assert.equal(ac.nextAttemptAt(yesterday, at0900), at0900, '跨日条目 ⇒ 立刻可跑')
     const dirty = ac.sanitizeAutoCheckin({
       providers: {
-        kuku: { day: '2026-10-26', status: 'wat', attempts: 'x', lastAt: -1, lastOutcome: 'boom', lastText: 123 },
+        gone: { day: '2026-10-26', status: 'wat', attempts: 'x', lastAt: -1, lastOutcome: 'boom', lastText: 123 },
         '': { day: '2026-10-26' },
         ok: { day: '2026-10-26', status: 'done', attempts: 999, lastAt: at0900, lastOutcome: 'claimed', lastText: 'x' },
       },
     })
-    assert.deepEqual(Object.keys(dirty.providers).sort(), ['kuku', 'ok'], '空 provider 名被丢弃')
-    assert.equal(dirty.providers.kuku.status, 'pending', '未知 status 回落 pending（宁多重试，不整天漏签）')
-    assert.equal(dirty.providers.kuku.attempts, 0, '非法 attempts 回落 0')
-    assert.equal(dirty.providers.kuku.lastOutcome, 'none', '未知 outcome 回落 none')
-    assert.equal(dirty.providers.kuku.lastText, '', '非字符串 lastText 回落空串')
+    assert.deepEqual(Object.keys(dirty.providers).sort(), ['gone', 'ok'], '空 provider 名被丢弃')
+    assert.equal(dirty.providers.gone.status, 'pending', '未知 status 回落 pending（宁多重试，不整天漏签）')
+    assert.equal(dirty.providers.gone.attempts, 0, '非法 attempts 回落 0')
+    assert.equal(dirty.providers.gone.lastOutcome, 'none', '未知 outcome 回落 none')
+    assert.equal(dirty.providers.gone.lastText, '', '非字符串 lastText 回落空串')
     assert.equal(dirty.providers.ok.attempts, 99, 'attempts 被钳到上限 99（脏数据不撑大文档）')
   })
 
   // ── 8b. 状态反馈：有待跑渠道时 running 立刻为真（面板「进行中」） ──
   await check('有待跑渠道时 setEnabled 返回的 state 立刻显示 running', async () => {
     const h = harness({
-      providers: ['kuku'],
-      responses: { kuku: [upstreamError('HTTP 502')] },
+      providers: ['gone'],
+      responses: { gone: [upstreamError('HTTP 502')] },
       now: at0900,
     })
     const state = await h.engine.setEnabled(true)
@@ -426,11 +426,11 @@ try {
   // ── 10. 待补跑计数只数当前账号池里的渠道 ──
   await check('待补跑计数只数当前账号池里的渠道（防补跑死循环）', async () => {
     const providers = {
-      kuku: { day: '2026-10-26', status: 'pending', attempts: 1, lastAt: at0900, lastOutcome: 'error', lastText: '出错' },
       gone: { day: '2026-10-26', status: 'pending', attempts: 1, lastAt: at0900, lastOutcome: 'error', lastText: '出错' },
+      gone2: { day: '2026-10-26', status: 'pending', attempts: 1, lastAt: at0900, lastOutcome: 'error', lastText: '出错' },
     }
     assert.equal(ac.pendingProviderCount(providers, at0900), 2, '不传 only 时数全部（纯函数默认）')
-    assert.equal(ac.pendingProviderCount(providers, at0900, ['kuku']), 1, '传 only 时只数当前账号池里的渠道')
+    assert.equal(ac.pendingProviderCount(providers, at0900, ['gone']), 1, '传 only 时只数当前账号池里的渠道')
     assert.equal(ac.pendingProviderCount(providers, at0900, []), 0, '账号池为空 ⇒ 没有待补跑')
   })
 
@@ -449,7 +449,7 @@ try {
     assert.equal(zcode[0].accountName, '主号')
 
     // ② 优先级：claimed > already-claimed > failed > skipped
-    const mixed = ac.aggregateAccountRows('kuku', [
+    const mixed = ac.aggregateAccountRows('gone', [
       row('a', { kind: 'inactive', message: '今天没有可领的' }),
       row('a', { kind: 'claimed', credit: 100, streakDays: 1, isStreakDay: true }),
     ])
@@ -466,7 +466,7 @@ try {
     assert.equal(bad[0].message, 'HTTP 502', '失败原因必须透传（表格的「说明」列）')
 
     // ⑤ 「领取成功但 +0 分」是合法形态，不能因为 0 就改判失败
-    const zero = ac.aggregateAccountRows('monkeycode', [row('d', { kind: 'claimed', credit: 0, streakDays: 0, isStreakDay: false })])
+    const zero = ac.aggregateAccountRows('gone2', [row('d', { kind: 'claimed', credit: 0, streakDays: 0, isStreakDay: false })])
     assert.equal(zero[0].outcome, 'claimed')
     assert.equal(zero[0].amount, 0, '+0 分是合法的「领取成功」')
   })
@@ -475,10 +475,10 @@ try {
     // ① 未知 outcome 丢整行（不能回落成 failed 凭空制造告警）
     const dirty = ac.sanitizeAutoCheckin({
       results: [
-        { provider: 'kuku', accountId: 'a', outcome: 'claimed', amount: 100 },
-        { provider: 'kuku', accountId: 'b', outcome: '没这个状态' },
+        { provider: 'gone', accountId: 'a', outcome: 'claimed', amount: 100 },
+        { provider: 'gone', accountId: 'b', outcome: '没这个状态' },
         { provider: '', accountId: 'c', outcome: 'claimed' },
-        { provider: 'kuku', accountId: '', outcome: 'claimed' },
+        { provider: 'gone', accountId: '', outcome: 'claimed' },
       ],
     })
     assert.equal(dirty.results.length, 1, '只有第一行合法，其余丢弃')
@@ -490,7 +490,7 @@ try {
 
     // ③ accountName 缺失时回落 accountId（前端不再二次回落）
     const noName = ac.sanitizeAutoCheckin({
-      results: [{ provider: 'kuku', accountId: 'acc-9', outcome: 'claimed', amount: 5 }],
+      results: [{ provider: 'gone', accountId: 'acc-9', outcome: 'claimed', amount: 5 }],
     })
     assert.equal(noName.results[0].accountName, 'acc-9', '没有昵称时用 accountId 填，避免表格出现空白格')
   })
@@ -839,7 +839,7 @@ try {
   })
 
   await check('mergeAccountResult 合并规则：claimed 不被降级、同级 claimed 相加', async () => {
-    const base = { provider: 'kuku', accountId: 'a', accountName: 'a', unit: 'credit' }
+    const base = { provider: 'gone', accountId: 'a', accountName: 'a', unit: 'credit' }
     const claimedRow = { ...base, outcome: 'claimed', amount: 200 }
     const alreadyRow = { ...base, outcome: 'already-claimed', amount: 0 }
     const failedRow = { ...base, outcome: 'failed', amount: 0, message: 'x' }

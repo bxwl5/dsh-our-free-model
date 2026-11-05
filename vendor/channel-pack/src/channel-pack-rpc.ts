@@ -300,64 +300,40 @@ export function normalizeZcodeLoginProvider(raw: string | undefined): ZcodeLogin
   return ZCODE_LOGIN_PROVIDER
 }
 
-/** 解析 Buddy 凭据 JSON；解析失败返回 undefined。 */
+/** 通用凭据 JSON 解析：parse 失败或形状守卫不过 → undefined（audit 2026-11-06：5 个同构函数抽取）。 */
+function parseJsonCredential<T extends object>(raw: string, guard: (parsed: object) => boolean): T | undefined {
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null) return undefined
+    return guard(parsed) ? (parsed as T) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** 解析凭据 JSON（守卫：access_token 为 string）。 */
 function parseBuddyCredential(raw: string): BuddyCredential | undefined {
-  try {
-    const parsed = JSON.parse(raw) as BuddyCredential
-    return typeof parsed === 'object' && parsed !== null && typeof parsed.access_token === 'string'
-      ? parsed
-      : undefined
-  } catch {
-    return undefined
-  }
+  return parseJsonCredential<BuddyCredential>(raw, (parsed) => typeof (parsed as Record<string, unknown>)['access_token'] === 'string')
 }
 
-/** 解析 CodeArts 凭据 JSON；解析失败返回 undefined。 */
+/** 解析凭据 JSON（守卫：access_key_id 为 string）。 */
 function parseCodeArtsCredential(raw: string): CodeArtsCredential | undefined {
-  try {
-    const parsed = JSON.parse(raw) as CodeArtsCredential
-    return typeof parsed === 'object' && parsed !== null && typeof parsed.access_key_id === 'string'
-      ? parsed
-      : undefined
-  } catch {
-    return undefined
-  }
+  return parseJsonCredential<CodeArtsCredential>(raw, (parsed) => typeof (parsed as Record<string, unknown>)['access_key_id'] === 'string')
 }
 
-/** 解析 Qoder 凭据 JSON；解析失败返回 undefined。 */
+/** 解析凭据 JSON（守卫：access_token 为 string）。 */
 function parseQoderCredential(raw: string): QoderCredential | undefined {
-  try {
-    const parsed = JSON.parse(raw) as QoderCredential
-    return typeof parsed === 'object' && parsed !== null && typeof parsed.access_token === 'string'
-      ? parsed
-      : undefined
-  } catch {
-    return undefined
-  }
+  return parseJsonCredential<QoderCredential>(raw, (parsed) => typeof (parsed as Record<string, unknown>)['access_token'] === 'string')
 }
 
-/** 解析 TRAE 凭据 JSON；解析失败返回 undefined。 */
+/** 解析凭据 JSON（守卫：access_token 为 string）。 */
 function parseTraeCredential(raw: string): TraeCredential | undefined {
-  try {
-    const parsed = JSON.parse(raw) as TraeCredential
-    return typeof parsed === 'object' && parsed !== null && typeof parsed.access_token === 'string'
-      ? parsed
-      : undefined
-  } catch {
-    return undefined
-  }
+  return parseJsonCredential<TraeCredential>(raw, (parsed) => typeof (parsed as Record<string, unknown>)['access_token'] === 'string')
 }
 
-/** 解析 Cline 凭据 JSON；解析失败返回 undefined。 */
+/** 解析凭据 JSON（守卫：access_token 为 string）。 */
 function parseClineCredential(raw: string): ClineCredential | undefined {
-  try {
-    const parsed = JSON.parse(raw) as ClineCredential
-    return typeof parsed === 'object' && parsed !== null && typeof parsed.access_token === 'string'
-      ? parsed
-      : undefined
-  } catch {
-    return undefined
-  }
+  return parseJsonCredential<ClineCredential>(raw, (parsed) => typeof (parsed as Record<string, unknown>)['access_token'] === 'string')
 }
 
 /**
@@ -4418,12 +4394,13 @@ function registerChannelPackEndpoints(
             } catch { return undefined }
           })()
           : undefined
-        const adapters = Object.keys(modelAdapters ?? {}).map((id) => ({ id }))
-        const providers = listed ?? (adapters.length > 0 ? adapters : undefined)
+        // provider 清单复用 providerIdsOf（同一文件 831 行）：此前这里内联重写了
+        // 同一套 llm→adapters 兜底逻辑，两处会漂移（2026-11-06 审计）。
+        const providers = providerIdsOf(llm, modelAdapters)
         // 目录来源要让**空状态能自解释**：用户看到空清单时必须能分辨「我没登录」
         // 与「宿主没给出任何可枚举的 provider」。
         const modelsSource: RpcGatewayStatusResponse['modelsSource'] =
-          listed !== undefined ? 'catalog' : (adapters.length > 0 ? 'adapters' : 'none')
+          llm?.listProviders !== undefined ? 'catalog' : (providers !== undefined ? 'adapters' : 'none')
         const value: RpcGatewayStatusResponse = {
           enabled: await degrade('开关状态', () => pool.gatewayEnabled(), true),
           running: await degrade('运行态', () => isGatewayRunning(), false),
@@ -4704,14 +4681,29 @@ function registerChannelPackEndpoints(
          * 展示时用**当前**展示名（含倍率），信息不丢。
          */
         const baseName = (value: string): string => value.split(' · ')[0].trim()
+        // 2026-11-06 审计：目录按 provider 缓存一次（原实现每次 find 都重调
+        // listAllModels()，账本 500 行 × 每行最多 3 次 = O(n²)）；并补上与
+        // usage.tokenLedgerHistory 相同的「已是展示名则短路」判断（两套映射
+        // 曾漂移：旧展示名行在这里会被二次映射，靠 baseName 兜住）。
+        const catalogByProvider = new Map<string, readonly { id: string; name: string }[]>()
+        const catalogFor = (provider: string) => {
+          let list = catalogByProvider.get(provider)
+          if (list === undefined) {
+            list = modelAdapters?.[provider]?.listAllModels() ?? []
+            catalogByProvider.set(provider, list)
+          }
+          return list
+        }
         const labelOf = (raw: string): string => {
           const slash = raw.indexOf('/')
           if (slash <= 0) return raw
           const provider = raw.slice(0, slash)
           const modelId = raw.slice(slash + 1)
+          const catalog = catalogFor(provider)
+          if (catalog.some((m) => m.name === modelId)) return raw
           const named = modelAdapters?.[provider]?.displayNameFor?.(modelId)
-            ?? modelAdapters?.[provider]?.listAllModels().find((m) => m.id === modelId)?.name
-            ?? modelAdapters?.[provider]?.listAllModels().find((m) => baseName(m.name) === modelId)?.name
+            ?? catalog.find((m) => m.id === modelId)?.name
+            ?? catalog.find((m) => baseName(m.name) === modelId)?.name
           return named === undefined || named === '' ? raw : `${provider}/${named}`
         }
         /** 归并键：`provider/纯模型名`（不含倍率），用于判定「是否同一模型」。 */

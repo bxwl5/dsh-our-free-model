@@ -10,5 +10,5 @@ assert.ok(!html.includes('page-connection'), '连接页不得由静态 HTML 承�
 assert.ok(app.includes('function LoginScreen'), '登录页必须由 React 渲染')
 assert.ok(app.includes('function LoadingScreen'), '加载页必须由 React 渲染')
 assert.ok(app.includes('function ChannelMount'), '渠道页必须由 React 生命周期管理')
-export function verifySettingsHost() { return true }
+/** 本文件断言仅在 test-all 直跑时执行；export 已删（曾为恒真 return true，frontend-test 的调用无意义——2026-11-06 审计 #38）。 */
 console.log('standalone-settings-host: React 根入口、登录页、连接页和宿主生命周期检查通过')

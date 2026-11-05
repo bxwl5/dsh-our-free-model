@@ -3,7 +3,7 @@
  *
  * 背景：这类文件由 `channel-pack-test.mjs --source` 等汇总套件 import 后调用，
  * 依赖是动态 import 的 `.ts`。直接 `node scripts/xxx-test.mjs` 会零断言却 exit 0 ——
- * 看起来像通过（本仓库踩过两次：`commandcode-auth-test`、`accio-test`）。
+ * 看起来像通过（本仓库踩过两次：`commandcode-auth-test`、`accio-test`（已删））。
  *
  * 规则：凡导出 `verify*` 的脚本，必须满足其一：
  *   - 引用 `exitIfDirectRun`（scripts/lib/direct-run.mjs 的守卫）；

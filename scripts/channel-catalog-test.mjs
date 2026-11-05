@@ -37,18 +37,18 @@ assert.equal(dedup.length, 1)
 
 // roster 读取：只吸包内 provider；单家失败不拖垮其它
 const llm = {
-  listProviders: () => [{ id: 'our-free-model' }, { id: 'zcode' }, { id: 'deepseek-official' }, { id: 'kuku' }],
+  listProviders: () => [{ id: 'our-free-model' }, { id: 'zcode' }, { id: 'deepseek-official' }, { id: 'gone' }],
   listModels: async p => {
-    if (p === 'kuku') throw new Error('credential lapsed')
+    if (p === 'gone') throw new Error('credential lapsed')
     if (p === 'zcode') return [{ id: 'GLM-5.3' }]
     return [{ id: 'should-not-appear' }]
   },
 }
 const errors = []
-const got = await readChannelRosters(llm, new Set(['zcode', 'kuku']), (p, e) => errors.push(`${p}:${e.message}`))
+const got = await readChannelRosters(llm, new Set(['zcode', 'gone']), (p, e) => errors.push(`${p}:${e.message}`))
 assert.deepEqual(got.providers, ['zcode'], 'only the provider that answered')
 assert.equal(got.rows.length, 1)
-assert.deepEqual(errors, ['kuku:credential lapsed'], 'a lapsed channel reports but does not break the read')
+assert.deepEqual(errors, ['gone:credential lapsed'], 'a lapsed channel reports but does not break the read')
 assert.ok(!got.rows.some(r => r.id.includes('deepseek-official')), 'non-pack vendors are not absorbed')
 
 // resolveModelInfo 提供真实容量时覆盖兜底值（修复「所有渠道模型都显示 131K/33K」）
@@ -102,8 +102,8 @@ assert.equal(combo.maxOutput, 16000)
 assert.equal(combo.vision, true, 'both members accept images, so the chain does too')
 assert.deepEqual(combo.lanes, ['free', 'channel:zcode'], 'lanes name the real providers')
 
-const textOnly = buildCC([{ provider: 'kuku', models: [{ id: 'text-only', inputModalities: ['text'] }] }])
-const [mixed] = buildComboCatalog(normalizeCombos([{ name: 'v', models: ['deepseek-v4.1-flash-free', 'channel:kuku/text-only'] }]), [...catalog, ...textOnly])
+const textOnly = buildCC([{ provider: 'gone', models: [{ id: 'text-only', inputModalities: ['text'] }] }])
+const [mixed] = buildComboCatalog(normalizeCombos([{ name: 'v', models: ['deepseek-v4.1-flash-free', 'channel:gone/text-only'] }]), [...catalog, ...textOnly])
 assert.equal(mixed.vision, false, 'one text-only member must clear vision for the whole chain')
 
 console.log('channel-catalog: combo interop passed')
