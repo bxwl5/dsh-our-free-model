@@ -3713,6 +3713,8 @@ function registerChannelPackEndpoints(
             // ⚠ fetchBalanceFor 内部的 fetchWithTimeout 会真抛网络异常
             // （2026-11-06 审计 M2）：单个账号网络抖动不得炸掉整个 balances
             // 调用 —— 与 collectCreditBalances 的 per-account 兜底同语义。
+            // （qoder/cline/loomy/raccoon 四家的 fetch 底层各自 try/catch 自吞、
+            // 返回 null，实测不真抛，无需同款兜底——勿盲目照搬。）
             let result: Awaited<ReturnType<typeof zcode.fetchBalanceFor>>
             try {
               result = await zcode.fetchBalanceFor(credential)

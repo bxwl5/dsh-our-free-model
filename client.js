@@ -2097,17 +2097,13 @@ window.__ModuleLoader__.load({
       ...timeout === undefined ? {} : { timeout },
     })
 
+    /* useAsync：usePanel 的薄包装（2026-11-06 审计 #27 合一）。差异仅两点：
+     * ① reload 软刷新（保旧数据不闪骨架）——5 个调用点全是「操作后刷新/重试」场景，
+     *    首态仍是 loading（首载骨架不变）；② 不暴露 patch（调用方未用）。
+     * error 语义：失败且无数据 → error（调用方的 retry 按钮/降级路径不变）。 */
     function useAsync(loader, deps) {
-      const [state, setState] = useState({ status: 'loading', data: undefined, error: '' })
-      const run = useCallback(() => {
-        let alive = true
-        setState(current => ({ ...current, status: 'loading' }))
-        loader().then(data => { if (alive) setState({ status: 'ready', data, error: '' }) })
-          .catch(error => { if (alive) setState({ status: 'error', data: undefined, error: String(error?.message ?? error) }) })
-        return () => { alive = false }
-      }, deps)
-      useEffect(() => run(), [run])
-      return { ...state, reload: run }
+      const panel = usePanel(loader, deps)
+      return { status: panel.status, data: panel.data, error: panel.error, reload: panel.reload }
     }
 
     function kilo(value) {
@@ -3573,6 +3569,8 @@ window.__ModuleLoader__.load({
             if (!opened) {
               try { opened = (await post('/open-external', { url }, 15_000))?.opened === true } catch { /* manual link remains available */ }
             }
+            // ⚠ 先判取消再兜底打开（2026-11-06 审计 #32）：await 期间 transport 被
+            // 替换时若继续 window.open，用户会看到一个已打开的登录页而卡片无任何提示。
             if (!current()) { attempt.cancelled = true; return }
             if (!opened) {
               try { window.open(url, '_blank', 'noopener') } catch { /* the modal offers the link too */ }
