@@ -3,7 +3,7 @@
 
 # dsh-our-free-model
 
-<sub>私有快照 2.5.7-priv.1 · 已移除 EAC 协付、公告/升级/赞助/聚合功能</sub>
+<sub>私有快照 2.5.7-priv.2 · 已移除 EAC 协付、公告/升级/赞助/聚合功能</sub>
 
 **简体中文** | [English](README_EN.md)
 
@@ -38,7 +38,7 @@ https://github.com/bxwl5/dsh-our-free-model
 手工安装时，在 profile 的 `vendor/` 下放入本仓库 tarball，然后在 `package.json` 的 dependencies 中加入：
 
 ```
-"dsh-our-free-model": "file:./vendor/dsh-our-free-model-2.5.7-priv.1.tgz"
+"dsh-our-free-model": "file:./vendor/dsh-our-free-model-2.5.7-priv.2.tgz"
 ```
 
 并在 `dsh.profile.bundles` 末尾追加 `"dsh-our-free-model"`。
@@ -72,7 +72,7 @@ docker run -d --name ofm \
 docker logs ofm | head -5     # 拿一次性的面板登录链接
 ```
 
-- **镜像**：`ghcr.io/bxwl5/dsh-our-free-model`，标签 `latest` / `2.5.7-priv.1` / `2.5`
+- **镜像**：`ghcr.io/bxwl5/dsh-our-free-model`，标签 `latest` / `2.5.7-priv.2` / `2.5`
   （打 `v*` tag 时自动生成）。基础镜像 `node:22-alpine`，约 5 MB 应用文件、零 npm 运行时依赖。
 - **面板端口**：`18900`（面板 / 管理 API / `/v1` 推理 / `/health` 同一个端口）；
   `18901` 是可选的局域网推理中继，**不转发管理面**。
@@ -102,7 +102,6 @@ docker logs ofm | head -5     # 拿一次性的面板登录链接
 | OfficeAce 果办 | 浏览器授权（轮询授权码） | ✅ |
 | AutoClaw（国内） | 手机号 + 短信验证码（本地弹窗页） | ✅ |
 
-**关于粘贴型渠道**：这些上游没有可脚本化的授权流程，需要先在官方站点登录，再从开发者工具复制 Cookie 或令牌粘贴进来。
 
 **关于 AutoClaw**：用**手机号 + 短信验证码**登录（无需浏览器，本地弹窗页承载）。国际版（`autoclaw-intl`）与其 OAuth 已按用户要求整渠道移除。
 

@@ -41,7 +41,7 @@ What the AI does (or you can do by hand):
 3. Add to the profile's `package.json` dependencies:
 
 ```
-"dsh-our-free-model": "file:./vendor/dsh-our-free-model-2.5.7-priv.1.tgz"
+"dsh-our-free-model": "file:./vendor/dsh-our-free-model-2.5.7-priv.2.tgz"
 ```
 
 4. Append `"dsh-our-free-model"` to `dsh.profile.bundles`.
@@ -82,7 +82,7 @@ docker run -d --name ofm \
 docker logs ofm | head -5     # one-time dashboard login link
 ```
 
-- **Image**: `ghcr.io/bxwl5/dsh-our-free-model`, tags `latest` / `2.5.7-priv.1` / `2.5`
+- **Image**: `ghcr.io/bxwl5/dsh-our-free-model`, tags `latest` / `2.5.7-priv.2` / `2.5`
   (version tags are produced when you push a `v*` tag). Base image `node:22-alpine`,
   ~5 MB of app files, zero npm runtime dependencies.
 - **Dashboard port**: `18900` (dashboard, admin API, `/v1` inference and `/health` share

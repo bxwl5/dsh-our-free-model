@@ -220,6 +220,17 @@ export function runWithLedgerScope<T>(run: () => T): T {
 }
 
 /**
+ * 在**指定的**既有请求域里执行 `run`（{@link runWithLedgerScope} 的变体）。
+ *
+ * 用途：`recordThroughStream` 把每一次 `next()/return()/throw()` 包进同一个
+ * store —— async generator 惰性，包「创建」没用，必须包「每次迭代」
+ * （2026-11-06 审计 P1：见 llm-register-compat.ts 的实现教训注释）。
+ */
+export function runInLedgerStore<T>(store: Map<string, string>, run: () => T): T {
+  return ledgerScope.run(store, run)
+}
+
+/**
  * 回报「该 provider 本次请求解析出的账号」（凭据解析点调用）。
  *
  * ⚠️ 绝不抛错：它与 {@link recordTokenUsage} 同在推理关键路径上。

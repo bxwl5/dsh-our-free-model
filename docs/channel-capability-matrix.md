@@ -22,7 +22,7 @@
 
 - `README.md` 渠道章节「**账号渠道（15 个）**」；`README_EN.md` "**Account channels (15)**"；
 - `client.js` 的 `CHANNEL_PROVIDERS` 表：15 条卡片（每条的 `login` 字段决定交互形态）；
-- `scripts/channel-pack-test.mjs`：`assert.equal(adapters.size, 15)` 与 `assert.equal(cards.length, 15)`；
+- `scripts/channel-pack-test.mjs`：`assert.equal(adapters.size, 15)`（UI 卡片数由 CHANNEL_PROVIDERS 自动跟随）；
 - `vendor/channel-pack/src/index.ts` 的注册段：15 个账号 provider（OFM 挂载时关闭上游 OpenCode 账号接入，故不计入）。
 
 **纯粘贴渠道 0 个**（2026-11-05：`monkeycode` / `kuku` / `accio` / `accio-cn` / `orcaterm`
@@ -33,7 +33,7 @@
 > 短信验证码，都不再是粘贴渠道；旧的「粘贴型渠道共 5 个」描述已过期。
 >
 > 粘贴这两个渠道时，面板会给出「先打开官网登录 → F12 到哪抄哪一段」的引导
-> （`loginPage` + `cookieName`，由 `scripts/channel-login-methods-test.mjs` 守卫），
+> （粘贴入口已移除，登录方式表由 `scripts/channel-login-methods-test.mjs` 守卫），
 > 不再让用户对着空粘贴框猜。
 
 ### 1.2 计数口径（15 / 12 / 0）
@@ -41,7 +41,7 @@
 | 计数 | 它到底在数什么 | 权威来源 |
 | --- | --- | --- |
 | **15** | 账号渠道（provider）条数 | `README.md` / `README_EN.md` 的渠道表、`client.js` 的 `CHANNEL_PROVIDERS`、`scripts/channel-pack-test.mjs` 的 `adapters.size === 15` 与 `cards.length === 15`、`vendor/channel-pack/src/index.ts` 注册段 |
-| **12** | 「带额度 / 签到能力」的契约集合 | `client.js` 的 `CHANNEL_CREDITS`（12 条非空） |
+| **11** | 「带额度 / 签到能力」的非空契约 | `client.js` 的 `CHANNEL_CREDITS`（11 条非空；workbuddy/loomy/raccoon/commandcode 为空 {} 占位） |
 | **0** | 纯粘贴型登录 | `ADOPTABLE_CHANNELS`（空表） |
 
 `autoclaw-intl` 与 `lobsterai` 已于 2026-10-25、`monkeycode` / `kuku` / `accio` / `accio-cn` / `orcaterm` 已于 2026-11-05 整链移除（源码 / 卡片 / 凭据解析 / 测试一并删除），故 15 而不是早先文档里的 22。任何计数文案都必须与同一文件里的断言同值，
@@ -79,13 +79,13 @@
 | 12 | `antigravity` · Antigravity（原 `gemini`，2026-11-01 改名） | 浏览器授权（Google OAuth，本地回调；只做 OAuth） | ✅ | ✅ 远端（`fetchAvailableModels`；claude/gpt-oss 家族放行，3.8 系分段合并，同名条目消歧） | ✅（分组配额桶：Gemini 组 + Claude·GPT 组） | ❌（无每日签到） | ✅ 双桥 |
 | 13 | `commandcode` · Command Code | 浏览器授权（自动回调；授权页 `/studio/auth/cli`） | ✅ | ✅ 远端 | ✅（`/alpha/billing/credits`，`readCredits`） | ❌ | ❌ |
 | 14 | `officeace` · OfficeAce 果办 | 浏览器授权（自助 OAuth + 轮询授权码，回调不落本机） | ✅ | ✅ 远端 | ❌ | ❌ | ❌ |
-| 15 | `autoclaw` · AutoClaw（国内） | 手机号 + 短信验证码（卡片内嵌表单，无本地页） | ✅ | ✅ 远端（`autoclaw-model-config`） | ❌ | ❌ | ❌ |
+| 15 | `autoclaw` · AutoClaw（国内） | 手机号 + 短信验证码（卡片内嵌表单，无本地页） | ✅ | ✅ 远端（`autoclaw-model-config`） | ✅ 钱包（`agent-assetmgr/wallets`） | ✅ 签到（`task_complete`） | ❌ |
 
 **按维度汇总**：
 
 | 维度 | 已接入 | 未接入 / 不支持 |
 | --- | --- | --- |
-| 对话 | 20（全部） | — |
+| 对话 | 15（全部） | — |
 | 模型目录 | 远端目录 15 条 | 无静态兜底渠道（`orcaterm` 已删除；`antigravity` 等均接远端目录） |
 | 额度查询 | 点名集合：`codearts` `trae` `minimax` `commandcode` `autoclaw` `officeace` `antigravity` `cline` `loomy` `raccoon` `zcode` 有专用分支；`buddy` 系走 `productById()` 通用回落；`qoder` `qodercn` 无分支 |
 | 签到（claim） | **9 条**：codearts / buddy / qoder / qodercn / trae / minimax / zcode / officeace / autoclaw（loomy 签到已于 2026-11-06 移除） | 无 claim：workbuddy / cline / raccoon / antigravity / commandcode / loomy |
@@ -292,9 +292,9 @@
 
 | 结论 | 取证命令 / 文件 |
 | --- | --- |
-| 账号渠道 20、免密车道 2、纯粘贴 2 | `grep -n "账号渠道（20" README.md; grep -n "Account channels (20)" README_EN.md`；`node scripts/channel-pack-test.mjs --source`（粘贴型提示与形状解析用例） |
-| 卡片与已挂载 provider 一致（各 20） | `node scripts/channel-pack-test.mjs`（断言 `adapters.size === 20`、`cards.length === 20`） |
-| 额度 / 签到的渠道集合（13 条契约） | `node scripts/channel-credits-rpc-test.mjs`；`vendor/channel-pack/src/channel-pack-rpc.ts` 的 `credits.balances` / `credits.claimAll` / `credits.status` 分派 |
+| 账号渠道 15、免密车道 2、纯粘贴 0 | `grep -n "账号渠道（20" README.md; grep -n "Account channels (20)" README_EN.md`；`node scripts/channel-pack-test.mjs --source`（粘贴型提示与形状解析用例） |
+| 卡片与已挂载 provider 一致（各 15） | `node scripts/channel-pack-test.mjs`（断言 `adapters.size === 20`、`cards.length === 20`） |
+| 额度 / 签到的渠道集合（11 条非空契约） | `node scripts/channel-credits-rpc-test.mjs`；`vendor/channel-pack/src/channel-pack-rpc.ts` 的 `credits.balances` / `credits.claimAll` / `credits.status` 分派 |
 | 图片双桥 / 单桥 | `vendor/channel-pack/src/index.ts` 各注册块的 `readImage` / `readImageRequest` |
 | 发布产物与源码同步（防「改了 src 忘了重打包」） | `node scripts/channel-pack-test.mjs` —— 打包模式**也跑** `account.adopt` 端到端；产物重建见 §4.1 |
 | 上游端点是否还活着（手动探活，默认不入 CI） | `node scripts/channel-probe.mjs`（见其文件头用法与已固化实测坑） |

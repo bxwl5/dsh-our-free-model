@@ -1599,30 +1599,33 @@ export class AccountPool {
   }
 
   /**
-   * 记录 TRAE 签到设备轮换代次（命中 9074 后由积分领取流程调用）。
-   *
-   * 与 {@link updateModelRateLimit} 同款：在**最新快照**上做局部合并后整体
-   * 写回，避免与并发的账号操作互相覆盖。
-   *
-   * 只接受比现值**更大**的代次，防止乱序/重复回调把代次写回小值而让同一个
-   * 被限流的设备号复活。
+   * 单调递增代次字段的公共实现（TRAE 签到设备 / OpenCode 指纹共用）。
+   * 只接受比现值**更大**的代次，防止乱序/重复回调把代次写回小值。
    */
-  async updateTraeCheckinDeviceGeneration(accountId: string, generation: number): Promise<void> {
+  private async bumpMonotonicGeneration(
+    accountId: string,
+    field: 'traeCheckinDeviceGeneration' | 'opencodeFingerprintGeneration',
+    generation: number,
+    logLabel: string,
+  ): Promise<void> {
     if (!Number.isFinite(generation) || generation <= 0) return
     const accounts = this.readAccounts()
     const idx = accounts.findIndex(a => a.id === accountId)
     if (idx === -1) {
-      this.ctx.logger?.warn?.(
-        `[channel-pack] updateTraeCheckinDeviceGeneration: 账号 ${accountId} 不在账号列表中`,
-      )
+      this.ctx.logger?.warn?.(`[channel-pack] ${logLabel}: 账号 ${accountId} 不在账号列表中`)
       return
     }
-    const current = accounts[idx]!.traeCheckinDeviceGeneration ?? 0
+    const current = accounts[idx]![field] ?? 0
     if (generation <= current) return
     const next = [...accounts]
-    next[idx] = { ...next[idx]!, traeCheckinDeviceGeneration: generation }
+    next[idx] = { ...next[idx]!, [field]: generation }
     await this.writeAccounts(next)
-    this.ctx.logger?.info?.(`[channel-pack] 账号 ${accountId} 签到设备代次 → ${generation}`)
+    this.ctx.logger?.info?.(`[channel-pack] 账号 ${accountId} ${logLabel} → ${generation}`)
+  }
+
+  /** 记录 TRAE 签到设备代次（单调递增，判据见 {@link bumpMonotonicGeneration}）。 */
+  async updateTraeCheckinDeviceGeneration(accountId: string, generation: number): Promise<void> {
+    await this.bumpMonotonicGeneration(accountId, 'traeCheckinDeviceGeneration', generation, '签到设备代次')
   }
 
   /** 读取 TRAE 签到设备轮换代次（未设置时为 0）。 */
@@ -1669,28 +1672,9 @@ export class AccountPool {
     return entry?.opencodeProxy ?? ''
   }
 
-  /**
-   * 记录 opencode 指纹轮换代次。
-   *
-   * ⚠️ 只接受**比现值更大**的代次：乱序/重复回调把代次写回小值会让用户
-   * 以为已轮换、实际指纹没换（TRAE 同款判据，见 `updateTraeCheckinDeviceGeneration`）。
-   */
+  /** 记录 opencode 指纹轮换代次（单调递增，判据同上）。 */
   async updateOpencodeFingerprintGeneration(accountId: string, generation: number): Promise<void> {
-    if (!Number.isFinite(generation) || generation <= 0) return
-    const accounts = this.readAccounts()
-    const idx = accounts.findIndex(a => a.id === accountId)
-    if (idx === -1) {
-      this.ctx.logger?.warn?.(
-        `[channel-pack] updateOpencodeFingerprintGeneration: 账号 ${accountId} 不在账号列表中`,
-      )
-      return
-    }
-    const current = accounts[idx]!.opencodeFingerprintGeneration ?? 0
-    if (generation <= current) return
-    const next = [...accounts]
-    next[idx] = { ...next[idx]!, opencodeFingerprintGeneration: generation }
-    await this.writeAccounts(next)
-    this.ctx.logger?.info?.(`[channel-pack] 账号 ${accountId} 指纹代次 → ${generation}`)
+    await this.bumpMonotonicGeneration(accountId, 'opencodeFingerprintGeneration', generation, '指纹代次')
   }
 
   /** 读取 opencode 指纹代次（未设置时为 0）。 */

@@ -209,7 +209,7 @@ try {
   }
   if (sourceMode) await verifySourceRegressions({ ctx, adapters, call, creds })
   await verifyChannelCreditsRpc({ ctx, call, creds })
-  console.log('ok  实际渠道 RPC：七渠道仅账号池凭据即可查余额，ZCode 账号池回退及缺凭据反馈')
+  console.log('ok  实际渠道 RPC：六渠道仅账号池凭据即可查余额，ZCode 账号池回退及缺凭据反馈')
 
   // A failed browser callback must become a terminal, readable poll result.
   // Before this regression check, the Gemini placeholder was removed and
@@ -362,6 +362,8 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   const { verifyAutoClaw } = await import('./autoclaw-test.mjs')
   await verifyAutoClaw()
   const { verifyChannelAdoptParsers } = await import('./channel-adopt-test.mjs')
+  await verifyChannelModelActions()
+  await verifyChannelCreditsUi()
   await verifyChannelAdoptParsers()
   const { verifyAutoclawSms } = await import('./autoclaw-sms-test.mjs')
   await verifyAutoclawSms()

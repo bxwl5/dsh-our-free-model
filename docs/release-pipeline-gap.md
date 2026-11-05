@@ -3,7 +3,7 @@
 > 状态：**现状说明 + 待决方案**。本文只描述仓库里**真实存在**的东西，并引用可核对的
 > 行号；凡是当前不存在的工具、目录、密钥，都明确标为「缺」，不描述其行为。
 >
-> 编写时的基线：`main` @ `93dafa4`（`package.json` 版本 `2.5.7-priv.1`）。
+> 编写时的基线：`main` @ `93dafa4`（`package.json` 版本 `2.5.7-priv.2`）。
 > 相关的既有文档：[`RELEASING.md`](RELEASING.md)（约 410 行，含中英双语）、
 > [`contributor-ci-signing.md`](contributor-ci-signing.md)（123 行）。
 
@@ -63,7 +63,7 @@ driftCount = 11（另 2 个文件已不存在）
 ```
 
 即：`catalog/integrity.json` 记的是 `2.5.7`（该文件的 `version` 字段）时的字节，
-而 `package.json` 现在是 `2.5.7-priv.1`，文件也换过一轮。**这份记录今天已经和实物不符，
+而 `package.json` 现在是 `2.5.7-priv.2`，文件也换过一轮。**这份记录今天已经和实物不符，
 但没有任何测试会红** —— 因为校验它的工具（`build-manifest.mjs --check`）被删了，
 而 `catalog-test.mjs` 从来没真正比过摘要。
 
@@ -307,7 +307,7 @@ node scripts/test-all.mjs --mode release    # 只跑 catalog + release-bytes
 | --- | --- | --- | --- |
 | **摘要漂移继续累积** | 现在就是这样 | `catalog/integrity.json` 已错 11 个文件。若将来有生态目录（Mojobox）按它审计，会判定发布物被篡改 | A 档：把 `--check` 接进门禁，让漂移在提交前红 |
 | **按 `RELEASING.md` 操作而卡死** | 维护者照文档执行第 2 步 | `node scripts/build-manifest.mjs` → `MODULE_NOT_FOUND`，发布流程当场中断，可能被误判为「环境坏了」 | 先修文档（本文 §1、§2 即材料），或在 `RELEASING.md` 顶部加一条「本文引用的工具已随 95657a7 删除，见 release-pipeline-gap.md」 |
-| **误把 `2.5.7` 的 `integrity.json` 当成当前版本的记录** | 有人用 `integrity.json` 的 `version` 字段判断发布状态 | 版本号与 `package.json` 的 `2.5.7-priv.1` 不符，结论错误 | A 档第 3 步：让 `catalog-test` 检查 `integrity.version === pkg.version` |
+| **误把 `2.5.7` 的 `integrity.json` 当成当前版本的记录** | 有人用 `integrity.json` 的 `version` 字段判断发布状态 | 版本号与 `package.json` 的 `2.5.7-priv.2` 不符，结论错误 | A 档第 3 步：让 `catalog-test` 检查 `integrity.version === pkg.version` |
 | **恢复升级器但私钥丢失** | B 档拿到代码、拿不到既有私钥 | 若擅自换钥，**所有旧客户端的升级路径同时失效**（旧客户端只认 pin 在代码里的公钥） | 无私钥时 `build-manifest` 只写 `integrity.json`、拒绝写清单；换钥必须单独评估并保留旧公钥验证分支 |
 | **`MAX_FILES = 80` 上限** | 发布文件数从 65 继续增长 | 超过 80 后清单被 `parseManifest` 拒绝，升级器整体不可用 | 继续把大块源码 bundle 成单文件（`index.js:715-720` 的既有做法）；把文件数纳入 `--check` 的输出 |
 | **`typecheck` 覆盖面被误读** | 有人以为 CI 绿 = 类型安全 | `tsconfig.json` 的 `include` 只有 `adapter/**/*`；`vendor/channel-pack/src/*.ts` 的 `tsc` 需要 `@types/node`（仓库 `devDependencies` 未装，本机实测借用外部 `@types/node` 才能跑） | 文档写明覆盖面；不要把 `typecheck` 当发布门禁 |

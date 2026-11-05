@@ -84,8 +84,7 @@ for (const language of ['zh', 'en']) {
 /** Keys reached through a template or a table rather than a `t('literal')`. */
 const INDIRECT = new Set([
   'state.available', 'state.region-blocked', 'state.throttled', 'state.unavailable', 'state.unknown',
-  'ann.preamble', 'ann.models', 'ann.steps', 'ann.features', 'ann.updates',
-  'level.info', 'level.update', 'level.warn', 'level.urgent',
+  'ann.preamble', 'ann.models', 'ann.steps', 'ann.features',   'level.info', 'level.update', 'level.warn', 'level.urgent',
 ])
 
 for (const language of ['zh', 'en']) {

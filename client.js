@@ -214,22 +214,13 @@ window.__ModuleLoader__.load({
         'chan.meta.accounts': '账号',
         'chan.meta.models': '模型',
         'chan.act.add': '添加账号',
-        'chan.paste.label': '粘贴凭据',
-        'chan.paste.cookie': '在浏览器登录官方站点后，从开发者工具复制 Cookie 粘贴到这里',
-        'chan.paste.token': '粘贴访问令牌（API Key / Token）',
-        'chan.paste.submit': '保存凭据',
-        'chan.paste.cancel': '取消',
-        'chan.paste.hint.open': '先打开官网登录：',
-        'chan.paste.hint.cookie': '；登录后按 F12 → Application → Cookies，复制 {name} 的值粘贴到下面。',
-        'chan.paste.hint.token': '；登录后按 F12 → Network，从任一请求头里复制令牌（Bearer/JWT）粘贴到下面。',
         'chan.zcode.provider': '登录渠道',
         'chan.zcode.bigmodel': 'bigmodel.cn',
         'chan.zcode.zai': 'z.ai 国际版',
         'chan.act.refresh': '续期',
-        'chan.act.recheck': '校验凭据',
         'chan.act.test': '测试',
         'chan.act.delete': '移除',
-        // 2026-10-30（用户要求）：按钮文案从「签到」改为「签到」，更短、更贴切
+        // 2026-10-30（用户要求）：按钮文案由「一键领取」改为「签到」（19536b6）
         'chan.act.claim': '签到',
         'chan.fold.accounts': '账号',
         'chan.fold.models': '模型',
@@ -728,19 +719,10 @@ window.__ModuleLoader__.load({
         'chan.meta.accounts': 'Accounts',
         'chan.meta.models': 'Models',
         'chan.act.add': 'Add account',
-        'chan.paste.label': 'Paste credential',
-        'chan.paste.cookie': 'Sign in on the official site, then copy the Cookie from devtools and paste it here',
-        'chan.paste.token': 'Paste an access token (API key / token)',
-        'chan.paste.submit': 'Save credential',
-        'chan.paste.cancel': 'Cancel',
-        'chan.paste.hint.open': 'Sign in at ',
-        'chan.paste.hint.cookie': ' first, then open DevTools → Application → Cookies and paste the value of {name} below.',
-        'chan.paste.hint.token': ' first, then open DevTools → Network and copy the token (Bearer/JWT) from any request header below.',
         'chan.zcode.provider': 'Sign-in route',
         'chan.zcode.bigmodel': 'bigmodel.cn',
         'chan.zcode.zai': 'z.ai international',
         'chan.act.refresh': 'Refresh',
-        'chan.act.recheck': 'Recheck credential',
         'chan.act.test': 'Test',
         'chan.act.delete': 'Remove',
         'chan.act.claim': 'Check in',
@@ -1255,8 +1237,6 @@ window.__ModuleLoader__.load({
 @keyframes ofm-popin{from{opacity:0;transform:translateY(16px) scale(.965)}to{opacity:1;transform:none}}
 /* ══ 公告中心 ══════════════════════════════════════════════════════════ */
 /* ══ 进度条 ════════════════════════════════════════════════════════════ */
-@keyframes ofm-prog-shine{0%{transform:translateX(-100%)}60%,100%{transform:translateX(100%)}}
-@keyframes ofm-prog-slide{0%{transform:translateX(-100%)}100%{transform:translateX(260%)}}
 /* ══ Toast（fixed 到视口，浮在所有层之上） ════════════════════════════ */
 .ofm_toasts{position:fixed;right:18px;bottom:18px;z-index:1200;display:flex;flex-direction:column;gap:10px;max-width:min(380px,calc(100vw - 36px));font-family:inherit}
 .ofm_toast{position:relative;display:flex;flex-direction:column;gap:6px;padding:12px 14px 12px 16px;border-radius:13px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 94%,transparent);backdrop-filter:blur(14px) saturate(150%);-webkit-backdrop-filter:blur(14px) saturate(150%);box-shadow:inset 0 1px 0 rgb(255 255 255 / 7%),0 14px 40px rgb(0 0 0 / 26%);font-size:12.5px;line-height:1.5;color:var(--dsw-alias-label-primary);animation:ofm-toast-rise .32s cubic-bezier(.16,1,.3,1);overflow:hidden}
@@ -1277,8 +1257,6 @@ window.__ModuleLoader__.load({
 @keyframes ofm-toast-rise{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
 /* ══ 模态 ══════════════════════════════════════════════════════════════ */
 @media (max-width:720px){.ofm_sec_hint{margin-left:0;width:100%}.ofm_pills{margin-left:0;width:100%}}
-/* ══ 北辰 API 赞助横幅：免费模型页首屏入口，与桌面端保持独立 ═══════ */
-/* ══ GitHub star 按钮 ══════════════════════════════════════════════════ */
 /* ══ 鱼缸（品牌装饰：玻璃缸 + 水位 + 波光 + 鱼群） ════════════════════ */
 .ofm_tank{position:relative;width:206px;height:128px;border-radius:16px;overflow:hidden;flex:none;background:linear-gradient(180deg,rgba(127,166,255,.10),rgba(127,166,255,.03));box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l1)}
 .ofm_tankwater{position:absolute;left:0;right:0;bottom:0;height:var(--lvl,0%);transition:height 1.4s cubic-bezier(.22,.61,.36,1)}
@@ -1331,8 +1309,8 @@ window.__ModuleLoader__.load({
 .ofm_tab{position:relative;z-index:1;font:inherit;font-size:12px;font-weight:600;padding:6px 13px;border-radius:10px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;white-space:nowrap;transition:color .2s ease}
 .ofm_tab[data-on="true"]{color:var(--dsw-alias-label-primary)}
 .ofm_tab:hover{color:var(--dsw-alias-label-primary)}
-.ofm_tab .ofm_tabnum{font-variant-numeric:tabular-nums;font-weight:600;color:var(--dsw-alias-label-tertiary);margin-left:6px;font-size:11px}
-.ofm_navspacer{display:none}
+.ofm_tab .ofm_navspacer{display:none}
+.ofm_tabnum{font-variant-numeric:tabular-nums;font-weight:600;color:var(--dsw-alias-label-tertiary);margin-left:6px;font-size:11px}
 /* The star belongs beside the brand: grid auto-placement would push it below
    the tabs row (they come first in the DOM) and stretch it across the row. */
 .ofm_page{display:flex;flex-direction:column;gap:20px;animation:ofmpagein .4s cubic-bezier(.16,1,.3,1)}
@@ -1540,13 +1518,9 @@ window.__ModuleLoader__.load({
    2026-10-30 用户要求从「独立成行 + 分隔线」改为同行内联。 */
 .ofm_chanfolds{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-left:auto}
 /* 粘贴型渠道的输入区：独立成块、占满卡片宽度（不再挤在按钮行里）。 */
-.ofm_chanacts + .chan-paste{margin-top:-2px}
-.chan-paste{display:flex;flex-direction:column;gap:8px;width:100%;
   padding:10px 11px;border-radius:10px;
   border:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 70%,transparent);
   background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 60%,transparent)}
-.chan-paste-input{width:100%;resize:vertical;min-height:62px;font-size:11.5px;line-height:1.5}
-.chan-paste-actions{display:flex;gap:6px;justify-content:flex-end}
 .ofm_acctlist{display:flex;flex-direction:column;gap:6px}
 .ofm_acct{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:7px 10px;border-radius:11px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l1) 82%,transparent);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 62%,transparent);font-size:12px;transition:border-color .16s ease,background .16s ease}
 .ofm_acct:hover{border-color:var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 88%,transparent)}
@@ -2108,9 +2082,6 @@ window.__ModuleLoader__.load({
    入场逐张错峰（--i 由调用方给），悬停抬升；主 CTA 是渐变星按钮，带一圈呼吸
    光环与悬停扫光；数字用 count-up 落地。全部只动 transform/opacity/颜色。
    动效降级：文件末尾的 reduced-motion 块统一关掉位移与动画。 */
-@keyframes ofm-reco-in{from{opacity:0;transform:translateY(16px) scale(.985)}to{opacity:1;transform:none}}
-@keyframes ofm-reco-ring{0%{opacity:.6;transform:scale(1)}70%,100%{opacity:0;transform:scale(1.22)}}
-@keyframes ofm-reco-aurora{from{transform:translate3d(-3%,1%,0) scale(1)}to{transform:translate3d(3%,-2%,0) scale(1.08)}}
 `
 
     // ── helpers ───────────────────────────────────────────────────────────────
@@ -2900,7 +2871,9 @@ window.__ModuleLoader__.load({
     function Forward(props) {
       const { settings, t, onApply, busy } = props
       const [draft, setDraft] = useState(settings.forward)
-      useEffect(() => setDraft(settings.forward), [settings.forward?.enabled, settings.forward?.host, settings.forward?.port, settings.forward?.lan?.enabled, settings.forward?.lan?.port, settings.forward?.lan?.running])
+      // ⚠ actualPort 必须在依赖里：端口被占用时后端回写 actualPort ≠ port，
+      // 缺了它 Base URL 会一直显示用户填的旧端口（2026-11-06 审计 #28）。
+      useEffect(() => setDraft(settings.forward), [settings.forward?.enabled, settings.forward?.host, settings.forward?.port, settings.forward?.actualPort, settings.forward?.lan?.enabled, settings.forward?.lan?.port, settings.forward?.lan?.running])
       const [key, setKey] = useState('')
       const [shown, setShown] = useState(false)
       const [copied, setCopied] = useState('')
@@ -2961,7 +2934,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'ofm_row' },
           field(t('forward.host'), h('input', { className: 'ofm_input', style: { maxWidth: 150 }, value: draft?.host ?? '127.0.0.1', onChange: e => setDraft(c => ({ ...c, host: e.target.value })) })),
           field(t('forward.port'), h('input', { className: 'ofm_input', style: { maxWidth: 110 }, inputMode: 'numeric', value: draft?.port ?? '', onChange: e => setDraft(c => ({ ...c, port: Number(e.target.value.replace(/\D/g, '')) || 0 })) })),
-          h(Button, { kind: 'primary', disabled: busy || draft?.enabled === undefined, onClick: () => onApply({ forward: { enabled: draft.enabled === true, host: draft.host, port: draft.port } }) }, t('forward.apply'))),
+          h(Button, { kind: 'primary', disabled: busy || draft?.enabled === undefined, onClick: () => onApply({ forward: { enabled: draft.enabled === true, host: draft.host, port: draft.actualPort ?? draft.port } }) }, t('forward.apply'))),
         draft?.error ? h('div', { className: 'ofm_callout ofm_error' }, t('forward.error').replace('{message}', draft.error)) : null,
         draft?.notice ? h('div', { className: 'ofm_callout' }, t('forward.notice').replace('{message}', draft.notice)) : null,
         draft?.running === true ? h(Fragment, null,
@@ -3235,7 +3208,7 @@ window.__ModuleLoader__.load({
       { id: 'qodercn', name: 'Qoder 中国版', org: '阿里系', accent: '#7A6CF0', note: '中国版端点与模型池', login: 'browser' },
       { id: 'trae', name: 'TRAE', org: '字节', accent: '#00BFA6', note: '手机号登录', login: 'browser' },
       { id: 'cline', name: 'Cline', org: 'Cline', accent: '#5B5BD6', note: 'Cline 账号免费额度', login: 'browser' },
-      { id: 'loomy', name: 'Loomy', org: '讯飞', accent: '#2F6BFF', note: '微信扫码，或短信验证码备用', login: 'browser+sms' },
+      { id: 'loomy', name: 'Loomy', org: '讯飞', accent: '#2F6BFF', note: '微信扫码，或短信验证码备用（余额查询）', login: 'browser+sms' },
       { id: 'raccoon', name: 'Raccoon', org: '商汤', accent: '#00A6A6', note: '手机号登录', login: 'browser' },
       { id: 'minimax', name: 'MiniMax Code', org: 'MiniMax', accent: '#E4007F', note: '设备码 + PKCE，每日签到', login: 'browser' },
       { id: 'zcode', name: 'ZCode', org: '智谱', accent: '#3B6EF6', note: '浏览器登录（需本机可开浏览器）', login: 'browser' },
@@ -3268,12 +3241,12 @@ window.__ModuleLoader__.load({
       // 含 officeace_points，另有 bonus_skus：新用户 4000 + 每日签到 100）。
       // 2026-10-25：领取端点已接入（`POST /v1/subscription/bonus/claim`，
       // 上游一次调用把当天所有可领奖励一起发下来，幂等由上游保证）。
-      officeace: { status: true, claim: true },
+      officeace: { claim: true },
       // AutoClaw 是**积分制**：`GET {userapi}/agent-assetmgr/api/v2/wallets`
       // （v1 降级）；签到是「完成客户端任务」通用入口的一个 task_id
       // （`autoclaw-task-complete` + `task_id=daily_signin`），
       // 成功判据是 body 里的 reward_points/success，不能只看 HTTP 200。
-      autoclaw: { status: true, claim: true },
+      autoclaw: { claim: true },
     }
 
     /**
@@ -3410,9 +3383,9 @@ window.__ModuleLoader__.load({
     }
 
     function ChannelCard(props) {
-      const { channel, status, rpc, t, onError, onChanged, auto, onAutoRefresh } = props
+      const { channel, status, rpc, t, onError, onChanged, auto, onAutoRefresh, cardIndex = 0 } = props
       // ⚠️ 卡片侧「通知其它组件」的统一出口（2026-11-01 复审）：事件带
-      // provider —— 广播原本在页面层且不带载荷，20 张卡全部响应，一次动作
+      // provider —— 广播原本在页面层且不带载荷，15 张卡全部响应，一次动作
       // 最多 20 个并发 credits.balances（各 90s 超时）。守卫在卡片的
       // ofm:channels 监听器里；无 detail 的旧事件（测试桩）保持全量刷新。
       const notifyChanged = () => {
@@ -3439,16 +3412,6 @@ window.__ModuleLoader__.load({
         noticeTimer.current = setTimeout(() => setNotice(''), 4000)
       }, [])
       const [login, setLogin] = useState(null)
-      // 粘贴型渠道（无自动化 OAuth）：展开一个输入框接收 Cookie / 令牌。
-      // 判据用渠道列表上的 `login` 字段（'cookie' / 'token'），与后端
-      // `account.adopt` 支持的渠道一一对应。
-      const pasteMode = channel.login === 'cookie' || channel.login === 'token'
-      // 「续期」这个措辞只对**有续期端点**的渠道成立。Cookie / 长期 Key 型渠道
-      // （commandcode）点下去只是
-      // 重新校验凭据形状，说「续期」会让用户以为能延长登录态（审计发现）。
-      const recheckOnly = channel.login === 'cookie' || channel.login === 'token'
-      const [pasteOpen, setPasteOpen] = useState(false)
-      const [pasteText, setPasteText] = useState('')
       const modelBatchPending = useRef(false)
       const [balanceError, setBalanceError] = useState('')
       const [balanceLoading, setBalanceLoading] = useState(false)
@@ -3535,8 +3498,14 @@ window.__ModuleLoader__.load({
       // count reads as "I have more quota than I do".
       useEffect(() => {
         if (!CHANNEL_CREDITS[channel.id]) return undefined
+        // 2026-11-06 审计：15 张卡的无抖动 90s 定时器会同刻惊群（同一秒内 15 个
+        // credits.balances 并发打向宿主）。按卡片序号错峰：挂载即查不变（那是
+        // useEffect 前一段的事），之后的周期触发错开 (index%12)*7.5s 相位、
+        // 周期仍 90s。两个句柄都在 cleanup 里清。
+        const phase = (cardIndex % 12) * 7_500
+        const first = setTimeout(() => { void loadBalances() }, phase + 90_000)
         const timer = setInterval(() => { void loadBalances() }, 90_000)
-        return () => clearInterval(timer)
+        return () => { clearTimeout(first); clearInterval(timer) }
       }, [channel.id, loadBalances])
       const balanceOf = accountId => {
         const row = (balances ?? []).find(entry => entry.accountId === accountId)
@@ -3598,22 +3567,6 @@ window.__ModuleLoader__.load({
        * 走后端 `account.adopt` —— 它用各渠道自己的解析函数做形状校验，
        * 避免「UI 收下了、适配器用不了」的半残凭据。
        */
-      const submitPaste = async () => {
-        const text = pasteText.trim()
-        if (text === '' || busy !== '' || !rpc) return
-        setBusy('add'); setNotice('')
-        try {
-          const value = await rpc('account.adopt', { provider: channel.id, credential: text }, 90_000)
-          const accountId = value?.accountId
-          if (typeof accountId !== 'string' || accountId === '') throw new Error('bad-answer')
-          setPasteText(''); setPasteOpen(false)
-          flashNotice(t('chan.login.done').replace('{login}', channel.name))
-          notifyChanged(); void loadAccounts(); void loadCredits(); void loadBalances(true)
-        } catch (error) {
-          onError(channel, error)
-        } finally { setBusy('') }
-      }
-
       const startLogin = async () => {
         if (loginAttempt.current && !loginAttempt.current.cancelled) return
         const attempt = { popup: null, cancelled: false, transport: channelTransport(rpc) }
@@ -3663,7 +3616,6 @@ window.__ModuleLoader__.load({
             url: typeof url === 'string' ? url : '',
             loginKind,
             flowId: loginKind === null ? '' : String(value?.flowId ?? ''),
-            qrDataUrl: '',
             startedAt: Date.now(),
           })
           setOpen('accounts')
@@ -3811,10 +3763,8 @@ window.__ModuleLoader__.load({
       /**
        * 某账号**今日已领**的额度（格式化成可直接拼进余额徽标的文本）。
        *
-       * 用户 2026-10-28 两次调整后的最终形态：
-       * 1. 先是「像 WorkBuddy 国内版一样，显示今日已领 xxx」；
-       * 2. 随后「太挤了，删掉今日已领 xx，直接放在剩余积分 xx (+200)」——
-       *    即**不再单独占一个徽标**，而是作为余额徽标里的增量后缀。
+       * 最终形态（2026-10-28 定）：不单独占徽标，作为余额徽标的增量后缀
+       * ——「剩余积分 12,345 (+200)」。
        *
        * ⚠️ 数据源是**自动签到的逐账号台账**（`usage.autoCheckin().results`），
        * 不是各渠道自己的 credits API —— 后者只有 `buddy` / `minimax` 会回
@@ -3891,8 +3841,7 @@ window.__ModuleLoader__.load({
             type: 'button', className: enabledCount === 0 && accountsCount === 0 ? 'ofm_actbtn accent' : 'ofm_actbtn',
             disabled: busy !== '' || !rpc,
             'aria-busy': busy === 'add' ? 'true' : undefined,
-            'aria-expanded': pasteMode ? pasteOpen : undefined,
-            onClick: pasteMode ? () => setPasteOpen(value => !value) : startLogin,
+            onClick: startLogin,
           }, busy === 'add' ? '…' : t('chan.act.add')),
           accountsCount > 0 ? h('button', {
             type: 'button', className: 'ofm_actbtn', disabled: busy !== '' || !rpc, 'aria-busy': busy === 'refreshAll' ? 'true' : undefined,
@@ -3902,7 +3851,7 @@ window.__ModuleLoader__.load({
               }
               notifyChanged(); await loadAccounts(); void loadBalances(true)
             }),
-          }, busy === 'refreshAll' ? '…' : recheckOnly ? t('chan.act.recheck') : t('chan.act.refresh')) : null,
+          }, busy === 'refreshAll' ? '…' : t('chan.act.refresh')) : null,
           creditCapability ? h('button', {
             type: 'button', className: 'ofm_actbtn', disabled: balanceLoading || busy !== '' || !rpc,
             'aria-busy': balanceLoading ? 'true' : undefined, onClick: () => void loadBalances(true),
@@ -3927,40 +3876,6 @@ window.__ModuleLoader__.load({
          * 它是个多行 textarea，混在按钮 flex 行里会：①被 flex 拉伸/压缩得宽窄不一，
          * ②把整行高度撑乱，导致同一行的按钮错位。独立成块后占满整行宽度。
          */
-          pasteMode && pasteOpen ? h('div', { className: 'chan-paste' },
-            channel.loginPage ? h('div', {
-              className: 'chan-paste-hint',
-              style: { fontSize: '12px', lineHeight: '1.6', color: '#8a9099', margin: '0 0 6px' },
-            },
-              t('chan.paste.hint.open'),
-              h('a', {
-                href: channel.loginPage, target: '_blank', rel: 'noreferrer noopener',
-                style: { color: '#3d5afe', textDecoration: 'underline' },
-              }, new URL(channel.loginPage).host),
-              channel.login === 'cookie'
-                ? t('chan.paste.hint.cookie').replace('{name}', channel.cookieName ?? '?')
-                : t('chan.paste.hint.token'),
-            ) : null,
-            h('textarea', {
-              className: 'ofm_input chan-paste-input',
-              rows: 3,
-              'aria-label': t('chan.paste.label'),
-              placeholder: channel.login === 'cookie'
-                ? t('chan.paste.cookie')
-                : t('chan.paste.token'),
-              value: pasteText,
-              onChange: event => setPasteText(event.target.value),
-            }),
-            h('div', { className: 'chan-paste-actions' },
-              h('button', {
-                type: 'button', className: 'ofm_actbtn accent', disabled: busy !== '' || pasteText.trim() === '' || !rpc,
-                'aria-busy': busy === 'add' ? 'true' : undefined,
-                onClick: () => void submitPaste(),
-              }, busy === 'add' ? '…' : t('chan.paste.submit')),
-              h('button', {
-                type: 'button', className: 'ofm_actbtn',
-                onClick: () => { setPasteText(''); setPasteOpen(false) },
-              }, t('chan.paste.cancel')))) : null,
         notice !== '' ? h('p', { className: 'ofm_note' }, notice) : null,
         balanceError !== '' ? h('p', { className: 'ofm_balanceerror', role: 'alert' },
           t('chan.credits.failed').replace('{reason}', balanceError))
@@ -4024,7 +3939,7 @@ window.__ModuleLoader__.load({
                         await rpc('account.refresh', { accountId: row.id }, 90_000)
                         notifyChanged(); await loadAccounts(); void loadBalances(true)
                       }),
-                    }, recheckOnly ? t('chan.act.recheck') : t('chan.act.refresh')),
+                    }, t('chan.act.refresh')),
                     h('button', {
                       type: 'button', className: 'ofm_minibtn', disabled: busy !== '' || !rpc,
                       onClick: () => accountAction('toggle:' + row.id, row.id, async () => {
@@ -4059,7 +3974,6 @@ window.__ModuleLoader__.load({
                   }, t('chan.model.disableAll')),
                   // 「刷新模型」只对**有远端目录端点**的渠道显示
                   // （用户 2026-10-27：没有的渠道直接删掉按钮，不要点了才报错）。
-                  // （gemini 已于 2026-11-01 接入远端目录；orcaterm 渠道已删除。）
                   channel.noRemoteCatalog === true ? null : h('button', {
                     type: 'button', className: 'ofm_btn ghost ofm_actionbtn', disabled: busy !== '' || !rpc,
                     title: t('chan.model.refetchHint'),
@@ -4095,6 +4009,15 @@ window.__ModuleLoader__.load({
       const [smsSentAt, setSmsSentAt] = useState(0)
       const [smsBusy, setSmsBusy] = useState(false)
       const [smsMessage, setSmsMessage] = useState('')
+      // 短信重发倒计时走针：smsSentAt 是时间戳，组件不会因时间流逝而重渲染
+      // （2026-11-06 审计 #29——kuku/monkeycode 二维码轮询 effect 删除时把
+      // 唯一的重渲染源也带走了，按钮文案曾一直停在「已发送（60 s 后可重发）」）。
+      const [smsTick, setSmsTick] = useState(0)
+      useEffect(() => {
+        if (smsSentAt === 0) return undefined
+        const timer = setInterval(() => setSmsTick(v => v + 1), 1000)
+        return () => clearInterval(timer)
+      }, [smsSentAt])
 
       const embeddedLogin = login?.loginKind === 'autoclaw-sms' ? login : null
       const embeddedBody = (() => {
@@ -4285,7 +4208,7 @@ window.__ModuleLoader__.load({
         return () => clearInterval(timer)
       }, [available, loadStatus, loadAuto])
 
-      // onChanged 下传给 20 张 ChannelCard；真正的广播在卡片里发（那里才有
+      // onChanged 下传给 15 张 ChannelCard；真正的广播在卡片里发（那里才有
       // channel 闭包），且事件带 provider —— 一次登录/领赏只有本渠道卡片响应，
       // 其余 19 张不再各自发起 credits.balances（2026-11-01 复审）。
       const onChanged = useCallback(() => {
@@ -4416,8 +4339,9 @@ window.__ModuleLoader__.load({
         h('div', { className: 'ofm_chanstack' },
           !ready ? h('div', { className: 'ofm_chanwrap' },
             [0, 1, 2].map(index => h('div', { className: 'ofm_skel', key: index, style: { minHeight: 168 } }))) : null,
-          ready ? h('div', { className: 'ofm_chanwrap' }, CHANNEL_PROVIDERS.map(channel => h(ChannelCard, {
+          ready ? h('div', { className: 'ofm_chanwrap' }, CHANNEL_PROVIDERS.map((channel, cardIndex) => h(ChannelCard, {
             key: channel.id,
+            cardIndex,
             channel,
             status: statuses?.[channel.id],
             rpc: available ? rpc : null,

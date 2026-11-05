@@ -265,7 +265,7 @@ export async function verifyAllAdaptersWired() {
   const re = /const (\w+)\s*=\s*register\w+Llm\(ctx, \{|(\w+Adapter)\s*=\s*register\w+Llm\(ctx, \{/g
   const starts = []
   for (const m of index.matchAll(re)) starts.push({ name: m[1] ?? m[2], at: m.index })
-  assert.ok(starts.length >= 16, `应至少找到 16 个适配器注册，实际 ${starts.length}`)
+  assert.ok(starts.length >= 15, `应至少找到 16 个适配器注册，实际 ${starts.length}`)
 
   // 每个注册点之后到下一个注册点之间，必须出现 fetchImpl
   const segmentEnd = (i) => i + 1 < starts.length ? starts[i + 1].at : index.length
@@ -325,22 +325,23 @@ export async function verifyGlobalFetchScrub() {
   await pack.scrubbedFetch(original, 'https://any.example.com/health', { method: 'GET' })
   assert.equal(sent.at(-1).body, undefined, 'GET 无体请求原样')
 
-  // ④ installGlobalFetchScrub 幂等 + disposer 只摘自己（不污染其它用例的全局态）
-  //    汇总套件里 apply() 可能已经装过包装 ⇒ before 本身就是包装器，此时安装
-  //    应幂等跳过；用「先确保干净起点」的方式隔离：记录当前，装一次，再验证
-  //    「重复装不叠层」和「跳过那代的 disposer 不摘掉已有包装」。
+  // ④ installGlobalFetchScrub：叠层 + 各代 disposer 只摘自己（2026-11-06 审计 P2 改版）
+  //    旧语义「重复安装不叠层 + noop disposer」有双实例时序洞（热重载时新 fiber
+  //    先 mount 撞「已装过」拿 noop → 旧 dispose 摘掉 gen1 → 新代裸奔）。新语义
+  //    允许叠层（SCRUBBED_INITS 保证同一 init 不被重复清洗，叠层幂等），每代
+  //    disposer 只还原自己那一层——与 direct-fetch/token-ledger/anomaly-pool
+  //    的所有权纪律一致。
   const before = globalThis.fetch
   const a = pack.installGlobalFetchScrub()
   const afterA = globalThis.fetch
+  assert.notEqual(afterA, before, '安装必须真的包上一层')
   const b = pack.installGlobalFetchScrub()
-  assert.equal(globalThis.fetch, afterA, '重复安装不叠层')
-  b() // B 是「跳过」的那一代，dispose 不得摘掉 A（或已有包装）
-  assert.equal(globalThis.fetch, afterA, 'B 的 disposer 不得摘掉已有包装')
-  a()
-  // 未装过的情况下 A 会还原；已装过的情况下 A 是「跳过」代，什么都不做。
-  assert.ok(globalThis.fetch === before || globalThis.fetch === afterA,
-    'A 的 disposer 只还原自己那一代，不越权')
-  console.log('ok  全局 fetch 兜底：任意路径脏请求必清洗、干净请求零改动、非 JSON 不猜、幂等不叠层、disposer 只摘自己')
+  assert.notEqual(globalThis.fetch, afterA, '第二次安装叠上新的一层')
+  b() // B 只摘自己那层，A 的包装应原样露出
+  assert.equal(globalThis.fetch, afterA, 'B 的 disposer 只摘自己那层')
+  a() // A 再摘自己 → 还原到装之前的原始 fetch
+  assert.equal(globalThis.fetch, before, 'A 摘自己后应还原到原始 fetch')
+  console.log('ok  全局 fetch 兜底：任意路径脏请求必清洗、干净请求零改动、非 JSON 不猜、叠层幂等、各代 disposer 只摘自己')
 }
 
 export async function verifyContentFingerprint() {

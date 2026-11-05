@@ -30,7 +30,7 @@ export function Overview({ summary, stats, host }: Snapshot & { host: Host }) {
   const failures = [...stats.samples].reverse().filter(row => row.ok === false).slice(0, 4)
   const sources = [
     { name: '匿名与 Kilo', sub: '无需账号的免费模型', icon: Zap, count: summary.catalog.filter(row => row.channel === 'anonymous' || row.channel === 'kilo').length, page: 'models' as const },
-    { name: '免费账号渠道', sub: '13 个供应商，独立账号池', icon: Network, count: summary.catalog.filter(row => !['anonymous', 'kilo'].includes(row.channel)).length, page: 'channels' as const },
+    { name: '免费账号渠道', sub: '多供应商，独立账号池', icon: Network, count: summary.catalog.filter(row => !['anonymous', 'kilo'].includes(row.channel)).length, page: 'channels' as const },
   ]
 
   const copyEndpoint = () => {

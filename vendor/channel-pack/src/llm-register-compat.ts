@@ -115,7 +115,7 @@ export interface AdapterRegisterTarget {
   registerAdapter(providers: readonly string[], adapter: unknown): unknown
 }
 
-import { recordTokenUsage, peekLedgerAccount, runWithLedgerScope } from './token-ledger.js'
+import { recordTokenUsage, peekLedgerAccount, runWithLedgerScope, runInLedgerStore } from './token-ledger.js'
 import { channelOfOptions } from './openai-gateway/channel.js'
 
 /**
@@ -354,13 +354,29 @@ export function recordThroughStream(
    * 账号归属的写（适配器解析凭据时）与读（usage 帧到达时）隔着整条 SSE 流。
    * 没有请求域时，同一 provider 的并发流会互相覆盖槽位 ⇒ usage 记到**错的账号**。
    *
-   * 用 `runWithLedgerScope` 把整个记账骨架跑在自己的 `AsyncLocalStorage` 上下文里：
-   * 适配器内部那些同步的 `reportLedgerAccount(...)` 会沿着 `await` / 异步迭代
-   * **自动**落进本请求的槽位 —— 13 个适配器一个字都不用改。
+   * 把记账骨架跑在自己的 `AsyncLocalStorage` 请求域里：适配器内部的
+   * `reportLedgerAccount(...)` 与 finally 的记账读都沿迭代落进本请求槽位。
    *
-   * ⚠️ 作用域必须包住**整条流的生命周期**（含 finally 里的记账读），
-   * 故不是包「创建生成器」那一瞬，而是包住整个内层 async 函数。 */
-  return runWithLedgerScope(() => recordStreamInScope(openStream, meta))
+   * ⚠️ 作用域必须包住**整条流的生命周期**（含 finally 里的记账读）。
+   *
+   * ⚠️⚠️ 实现教训（2026-11-06 审计，P1 复现）：async generator 是**惰性**的——
+   * `runWithLedgerScope(() => recordStreamInScope(...))` 只包住「创建生成器对象」
+   * 那一瞬，函数体一行都没跑；消费端在作用域外第一次 `next()` 时，整个函数体
+   * （含适配器的 reportLedgerAccount 与 finally 的记账读）都在**无上下文**环境
+   * 执行 ⇒ `ledgerScope.getStore()` 恒 undefined ⇒ 并发流仍互相覆盖（P1-7 白修）。
+   *
+   * 正确形态：包住**每一次迭代**。`next/return/throw` 各自进同一个 store，
+   * 让适配器在任何 await 点恢复时都带着本请求的上下文（2026-11-06 实测：
+   * 该形态下 wrapper 体、适配器 await 前后、每次 next 均 present）。 */
+  const store = new Map<string, string>()
+  const gen = recordStreamInScope(openStream, meta) as AsyncGenerator<unknown, void, unknown>
+  const scoped = {
+    next: (...args: [] | [unknown]) => runInLedgerStore(store, () => gen.next(...args as [])),
+    return: (value?: unknown) => runInLedgerStore(store, () => gen.return(value as undefined)),
+    throw: (error: unknown) => runInLedgerStore(store, () => gen.throw(error)),
+    [Symbol.asyncIterator]() { return this },
+  }
+  return scoped as AsyncIterable<unknown>
 }
 
 /** {@link recordThroughStream} 的实体（在请求域内执行）。 */

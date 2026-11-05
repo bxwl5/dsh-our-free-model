@@ -20,8 +20,10 @@ function isAbnormalNetworkError(error: unknown): boolean {
  */
 function isRefreshTokenExpired(error: unknown): boolean {
   if (!(error instanceof Error)) return false
-  if (error.name === 'RefreshTokenExpiredError') return true
-  return /refresh[_ ]?token/i.test(error.message)
+  // 只认结构化信号（各 provider 统一设 `name='RefreshTokenExpiredError'`）。
+  // 2026-11-06 审计移除了旧的 `/refresh[_ ]?token/i` message 兜底：任何恰好
+  // 提到 "refresh token" 的普通网络错误都会被误判成终态、停掉续期调度。
+  return error.name === 'RefreshTokenExpiredError'
 }
 
 /**

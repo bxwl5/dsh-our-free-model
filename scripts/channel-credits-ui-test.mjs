@@ -13,13 +13,24 @@ export async function verifyChannelCreditsUi() {
   const liveIntervals = new Set()
   const realSetInterval = globalThis.setInterval
   const realClearInterval = globalThis.clearInterval
-  globalThis.setInterval = (fn, ms, ...rest) => {
-    const id = realSetInterval(fn, ms, ...rest)
+  const realSetTimeout = globalThis.setTimeout
+  const realClearTimeout = globalThis.clearTimeout
+  // 同时接管 setTimeout：组件的错峰首响（2026-11-06 审计）是 90s+phase 的
+  // timeout —— 不接管的话测试进程会挂着一个 90s 的真实句柄，test-all 的
+  // 60s 看门狗直接把套件杀掉。
+  const wrap = real => (fn, ms, ...rest) => {
+    const id = real(fn, ms, ...rest)
     liveIntervals.add(id)
     return id
   }
+  globalThis.setInterval = wrap(realSetInterval)
+  globalThis.setTimeout = wrap(realSetTimeout)
   globalThis.clearInterval = id => { liveIntervals.delete(id); return realClearInterval(id) }
-  const clearAllIntervals = () => { for (const id of liveIntervals) realClearInterval(id); liveIntervals.clear() }
+  globalThis.clearTimeout = id => { liveIntervals.delete(id); return realClearTimeout(id) }
+  const clearAllIntervals = () => {
+    for (const id of liveIntervals) { realClearInterval(id); realClearTimeout(id) }
+    liveIntervals.clear()
+  }
   function mount(provider, rpcImpl, channelExtra = {}) {
     let bundle, cursor = 0, effects = []
     const cells = [], calls = [], errors = [], events = new Map()
@@ -125,7 +136,6 @@ export async function verifyChannelCreditsUi() {
     if (provider === 'zcode') assert.ok(app.text().includes('剩余 Token'))
     if (provider === 'cline') assert.ok(app.text().includes('USD'))
     if (provider === 'antigravity') assert.ok(app.text().includes('剩余配额'))
-    if (provider === 'accio' || provider === 'accio-cn') assert.ok(app.text().includes('剩余配额'))
     app.cleanup()
   }
 

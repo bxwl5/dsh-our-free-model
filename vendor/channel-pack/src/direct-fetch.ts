@@ -14,7 +14,6 @@ export interface SignedChannelOutlet extends ChannelOutlet {
 export type DirectFetchOptions = Omit<ChannelFetchOptions, 'outlet'> & { outlet?: SignedChannelOutlet }
 
 /** 沿用 PR #483 的离线测试入口；生产代码不写入它，显式 fetchImpl 始终优先。 */
-export const directLane: { fetch: typeof fetch | null } = { fetch: null }
 
 export function createDirectFetch(options: DirectFetchOptions = {}): { fetch: typeof fetch; close: () => Promise<void> } {
   // 独立 Agent 同时避免其它插件修改 undici 的全局 dispatcher；仅销毁自己拥有的资源。
@@ -89,6 +88,7 @@ export function createDirectFetch(options: DirectFetchOptions = {}): { fetch: ty
 
 // credits RPC 的既有调用没有 fetch 参数；绑定默认传输使其与聊天共享所选出口。
 // 每次挂载有独立所有权，旧挂载延迟卸载不能摘掉新挂载的传输。
+export const directLane: { fetch: typeof fetch | null } = { fetch: null }
 const mounted = new Set<{ fetch: typeof fetch }>()
 export function attachDirectFetch(fetcher: typeof fetch): () => void {
   const binding = { fetch: fetcher }

@@ -37,16 +37,16 @@ import type { TraeAuth } from './trae-auth.js'
 import type { ClineAuth } from './cline-auth.js'
 import { LOOMY } from './loomy-product.js'
 import { buddyExpiringWindowDays } from './buddy-balance-rank.js'
-import { parseCredential as parseAutoClawCredential, type AutoClawCredential } from './autoclaw.js'
 import { readCredits } from './commandcode-credits.js'
 import type { CreditPackage } from './credits.js'
 import type { CommandCodeCredential } from './commandcode.js'
 import { COMMANDCODE } from './commandcode-product.js'
 import { AUTOCLAW } from './autoclaw-product.js'
+import type { AutoClawCredential } from './autoclaw.js'
+import type { OfficeAceCredential } from './officeace.js'
 import { refreshAutoclawCredential, resolveAutoclawDeviceId } from './autoclaw-sms.js'
 import { startAutoclawLoginFlow, type AutoclawLoginFlow } from './autoclaw-login-page.js'
 import { resolveChannelPackHome } from './channel-pack-store.js'
-import { parseCredential as parseOfficeAceCredential, type OfficeAceCredential } from './officeace.js'
 import type { LoomyAuth } from './loomy-auth.js'
 import type { LoomyCredential } from './loomy.js'
 import { RACCOON } from './raccoon-product.js'
@@ -226,7 +226,6 @@ import type {
   ProviderAccountStatus,
 } from './types.js'
 import {
-  BADGE_PREFERENCES,
   createBadgePreferenceStore,
 } from './badge-preferences.js'
 import { createUsageBadge, type BadgeRpcResult } from './usage-badge.js'
@@ -1072,7 +1071,6 @@ function registerChannelPackEndpoints(
    * 登录完成后即无意义；写进 `ctx.credentials` 会污染凭据命名空间，
    * 且它不含任何秘密（不能用于认证）。
    */
-  const pendingSmsMsgid = new Map<string, { phone: string; msgid: string }>()
 
   /**
    * 登录后台失败的终态（账号占位条目会被清掉，所以不能再靠 account.list
@@ -1926,9 +1924,12 @@ function registerChannelPackEndpoints(
             // 换码那刻起授权码已作废、新 refresh_token 只在内存里。旧实现先去
             // validatePermission 再落盘，中途崩掉（网络断/进程重启）它就跟着丢了，
             // 用户只能重开浏览器。先落盘 = 续期链钥匙先保住。
-            stsPersisted = true
             const dpopJwk = await dpop.exportDpopJwkPair(dpopKey)
+            // ⚠ stsPersisted 必须在 set **成功之后**才置位（2026-11-06 审计）：
+            // set 本身抛错（存储异常）时凭据没落盘，此刻置位会让 catch 误判
+            // 「落盘后失败」而保留幽灵账号。
             await ctx.credentials.set(credentialRef(refName), JSON.stringify({ ...sts, dpop: dpopJwk }))
+            stsPersisted = true
             await pool.updateAccount(id, {
               refreshable: typeof sts.refresh_token === 'string' && sts.refresh_token !== '',
             })
@@ -2835,126 +2836,17 @@ function registerChannelPackEndpoints(
        *
        * 手机号由**本端点自己接收**，故可脱离 `account.create` 单独使用。
        */
-      case 'login.sendSms': {
-        const req = payload as RpcSendSmsRequest
-        if (req.provider !== LOOMY.id) {
-          return { ok: false, error: { code: 'bad-request', message: `unsupported provider: ${req.provider}` } }
-        }
-        const phone = typeof req.phone === 'string' ? req.phone.trim() : ''
-        if (!/^1[3-9]\d{9}$/.test(phone)) {
-          return { ok: false, error: { code: 'bad-request', message: '需要 11 位有效手机号（phone）' } }
-        }
-        const msgid = await loomy.sendSmsCode(phone)
-        // 暂存在内存，供 submitSms 取用（一次性中间态，不写凭据存储）。
-        pendingSmsMsgid.set(req.accountId, { phone, msgid })
-        return { ok: true, value: { msgid } satisfies RpcSendSmsResponse }
-      }
-
       /**
        * 提交短信验证码完成登录（**仅 Loomy，备用登录路径**）。
        *
        * 成功后：写凭据 → 回填账号昵称/有效期 → 清理中间态。
        */
-      case 'login.submitSms': {
-        const req = payload as RpcSubmitSmsRequest
-        if (req.provider !== LOOMY.id) {
-          return { ok: false, error: { code: 'bad-request', message: `unsupported provider: ${req.provider}` } }
-        }
-        const pending = pendingSmsMsgid.get(req.accountId)
-        if (pending === undefined || pending.msgid.length === 0) {
-          return {
-            ok: true,
-            value: { done: false, error: '请先发送验证码' } satisfies RpcSubmitSmsResponse,
-          }
-        }
-        const account = pool.findAccount(req.accountId)
-        if (account === undefined) {
-          return {
-            ok: true,
-            value: { done: false, error: '账号不存在（可能已被删除）' } satisfies RpcSubmitSmsResponse,
-          }
-        }
-        try {
-          const result = await loomy.loginWithSmsCode(pending.phone, req.code, pending.msgid, {
-            refName: account.credentialRef,
-          })
-          const credential = JSON.parse(result.access) as LoomyCredential
-          await pool.updateAccount(req.accountId, {
-            // Loomy 无昵称接口，用手机号尾号让多账号可区分（比 `loomy-xxxx` 有用）。
-            nickname: credential.phone.length >= 4
-              ? `Loomy ${credential.phone.slice(-4)}`
-              : req.accountId,
-            expiresAt: result.expires > 0 ? result.expires : undefined,
-            // ⚠️ 恒 false：Loomy 无续期端点。
-            refreshable: false,
-          })
-          pendingSmsMsgid.delete(req.accountId)
-          return { ok: true, value: { done: true } satisfies RpcSubmitSmsResponse }
-        } catch (error) {
-          // ⚠️ 登录失败**不删除占位条目**：用户可能只是验证码输错，
-          // 保留条目让他能重试（`login.sendSms` 会重新发码）。
-          return {
-            ok: true,
-            value: {
-              done: false,
-              error: error instanceof Error ? error.message : String(error),
-            } satisfies RpcSubmitSmsResponse,
-          }
-        }
-      }
-
       /**
        * 查询新手任务 / 一次性奖励状态（**Loomy** 的新手任务、**raccoon** 的登录奖励，只读）。
        *
        * ⚠️ 只读：**不得**在此触发任何 `complete`/`claim`（面板挂载时会调用它）。
        * ⚠️ 两个 provider 共用本端点，故判据是「属于其中之一」而非只认 Loomy。
        */
-      case 'onboarding.status': {
-        const req = payload as RpcOnboardingStatusRequest
-        if (req.provider !== LOOMY.id && req.provider !== RACCOON.id) {
-          return { ok: false, error: { code: 'bad-request', message: `unsupported provider: ${req.provider}` } }
-        }
-        const account = pool.findAccount(req.accountId)
-        if (account === undefined) {
-          return { ok: false, error: { code: 'bad-request', message: '账号不存在' } }
-        }
-        const resolved = await ctx.credentials.resolve(credentialRef(account.credentialRef))
-        if (!resolved) {
-          return { ok: false, error: { code: 'bad-request', message: '凭据未配置' } }
-        }
-
-        if (req.provider === RACCOON.id) {
-          // raccoon 只有**一项**一次性奖励（桌面端登录奖励 3000 分），
-          // 把它映射成 Loomy 那套「任务」形状的一项，复用同一个 RPC 与 UI。
-          // ⚠️ 已领状态靠**账单反查**（服务端没有单独的状态端点）。
-          const credential = JSON.parse(resolved.value) as RaccoonCredential
-          const status = await raccoon.fetchOnboardingStatus(credential)
-          return {
-            ok: true,
-            value: {
-              // ⚠️ `tasks` 是 `Record<key, boolean>`（完成状态），不是数组。
-              tasks: { desktop_login_reward: status.claimed },
-              earned: status.claimed ? status.points : 0,
-              total: status.points,
-              titles: { desktop_login_reward: '桌面端登录奖励（每号一次）' },
-              points: { desktop_login_reward: status.points },
-            } satisfies RpcOnboardingStatusResponse,
-          }
-        }
-        const credential = JSON.parse(resolved.value) as LoomyCredential
-        const state = await loomy.fetchOnboardingTasks(credential)
-        return {
-          ok: true,
-          value: {
-            tasks: state.tasks,
-            earned: state.earned,
-            total: state.total,
-            titles: { ...LOOMY_TASK_TITLES },
-            points: { ...LOOMY_TASK_POINTS },
-          } satisfies RpcOnboardingStatusResponse,
-        }
-      }
-
       /**
        * 「锁定永久积分」开关（读 / 写，**provider 维度**）。
        *
@@ -3031,92 +2923,11 @@ function registerChannelPackEndpoints(
        * ⚠️ 这是**写**操作，且**每号只能领一次** —— 与 `credits.claimAll`
        *（每日签到）语义完全不同，故独立端点。
        */
-      case 'onboarding.claim': {
-        const req = payload as RpcOnboardingClaimRequest
-        // ⚠️ 两个 provider 共用本端点（Loomy 的新手任务 / raccoon 的登录奖励）。
-        if (req.provider !== LOOMY.id && req.provider !== RACCOON.id) {
-          return { ok: false, error: { code: 'bad-request', message: `unsupported provider: ${req.provider}` } }
-        }
-        const account = pool.findAccount(req.accountId)
-        if (account === undefined) {
-          return { ok: false, error: { code: 'bad-request', message: '账号不存在' } }
-        }
-        const resolved = await ctx.credentials.resolve(credentialRef(account.credentialRef))
-        if (!resolved) {
-          return { ok: false, error: { code: 'bad-request', message: '凭据未配置' } }
-        }
-        if (req.provider === RACCOON.id) {
-          // raccoon 的领取端点是**幂等**的：已领过返回 `granted:false`，
-          // 此时 claimed 为空数组、skipped 含该项。
-          //
-          // ⚠️ **已领时 `earned` 必须报满分，不是 0**（真实缺陷，用户报障）。
-          // `earned` 回答的是「该项目**累计**领到多少」，与「本次请求是否新增」
-          // 无关。早期在 `already-claimed` 分支写 `earned: 0`，于是 UI 显示
-          // 「✅ 1 个此前已完成 / 累计已领 0 / 3000」—— **自相矛盾**：
-          // 既然「此前已完成」，那 3000 分显然已经拿到手了。
-          const credential = JSON.parse(resolved.value) as RaccoonCredential
-          const outcome = await raccoon.claimLoginReward(credential)
-          if (outcome.kind === 'failed') {
-            return { ok: false, error: { code: 'bad-request', message: outcome.message } }
-          }
-          const claimed = outcome.kind === 'claimed'
-            ? [{ key: 'desktop_login_reward', title: '桌面端登录奖励', points: outcome.credit }]
-            : []
-          // 已领时的金额从**账单反查**取得（领取响应体里没有它），
-          // 与 `onboarding.status` 同一数据源 —— 否则两处会显示不同的数字
-          //（例如活动金额变化后，一处 3000、一处 3500）。
-          // 只读 GET，且仅在「点按钮时已领」这一低频路径上发生。
-          const points = outcome.kind === 'claimed'
-            ? outcome.credit
-            : (await raccoon.fetchOnboardingStatus(credential)).points
-          return {
-            ok: true,
-            value: {
-              claimed,
-              skipped: outcome.kind === 'already-claimed' ? ['desktop_login_reward'] : [],
-              // 该项目累计已领 = 满分（无论本次是否新增）。
-              earned: points,
-              total: points,
-            } satisfies RpcOnboardingClaimResponse,
-          }
-        }
-        const credential = JSON.parse(resolved.value) as LoomyCredential
-        const result = await loomy.claimOnboardingTasks(credential)
-        return {
-          ok: true,
-          value: {
-            claimed: result.claimed.map((item) => ({
-              key: item.key,
-              title: LOOMY_TASK_TITLES[item.key] ?? item.key,
-              points: item.points,
-            })),
-            skipped: result.skipped,
-            earned: result.earned,
-            total: result.total,
-          } satisfies RpcOnboardingClaimResponse,
-        }
-      }
-
       // ── 限流标记：重测（发真实请求验证）──
       // 标记只反映"上一次 429 时的快照"，服务端常在重置时间前提前放行。
       // 重测发一次最小对话请求：正常返回才清除标记，仍受限则保留并回报原因。
-      case 'account.retest': {
-        const req = payload as RpcRetestAccountRequest
-        const account = await retestAccount(pool, req.accountId)
-        return {
-          ok: true,
-          value: { accounts: [account], clearedCount: account.cleared.length },
-        }
-      }
-
       // 重测该 provider 下的全部账号。**包含已停用账号**——用户明确要求
       // 停用账号也能重测（停用只影响自动选择，不影响手动排查）。
-      case 'account.retestAll': {
-        const req = payload as RpcRetestAllRequest
-        const value = await retestAllAccounts(pool, req.provider)
-        return { ok: true, value }
-      }
-
       // ── 限流标记：测试（**无条件**发一次真实请求）──
       //
       // ⚠️ 与 `account.retest` 的区别是**触发条件**，不是措辞：
@@ -3173,12 +2984,6 @@ function registerChannelPackEndpoints(
       case 'account.reset': {
         const req = payload as RpcResetAccountRequest
         const value = await resetAccount(pool, req.accountId)
-        return { ok: true, value }
-      }
-
-      case 'account.resetAll': {
-        const req = payload as RpcResetAllRequest
-        const value = await resetAllAccounts(pool, req.provider)
         return { ok: true, value }
       }
 
@@ -3478,7 +3283,14 @@ function registerChannelPackEndpoints(
           const results: RpcCreditsClaimAllResponse['results'] = []
           const outcomes: ClaimOutcome[] = []
           for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef(account.credentialRef))
+            // ⚠ resolve 必须在 try 内（2026-11-06 审计 H1）：credentialRef 的
+            // 正则校验/存储异常会抛错，裸抛会把整轮一键领取炸成 handler-failed。
+            let resolved: { value: string } | undefined
+            try {
+              resolved = await ctx.credentials.resolve(credentialRef(account.credentialRef))
+            } catch {
+              resolved = undefined
+            }
             let accountOutcomes: ClaimOutcome[]
             if (!resolved) {
               accountOutcomes = [{ kind: 'failed', code: -1, message: '凭据未配置' }]
@@ -3977,7 +3789,20 @@ function registerChannelPackEndpoints(
               })
               continue
             }
-            const result = await zcode.fetchBalanceFor(credential)
+            // ⚠ fetchBalanceFor 内部的 fetchWithTimeout 会真抛网络异常
+            // （2026-11-06 审计 M2）：单个账号网络抖动不得炸掉整个 balances
+            // 调用 —— 与 collectCreditBalances 的 per-account 兜底同语义。
+            let result: Awaited<ReturnType<typeof zcode.fetchBalanceFor>>
+            try {
+              result = await zcode.fetchBalanceFor(credential)
+            } catch (error) {
+              values.push({
+                accountId: account.id, nickname: account.nickname,
+                balance: null,
+                error: `额度查询失败：${error instanceof Error ? error.message : String(error)}`,
+              })
+              continue
+            }
             if (result === undefined) {
               values.push({
                 accountId: account.id, nickname: account.nickname,
@@ -4090,55 +3915,6 @@ function registerChannelPackEndpoints(
           })
         }
         return { ok: true, value: { accounts: values } satisfies RpcClineQuotaResponse }
-      }
-
-      case 'cline.requestLog': {
-        const req = payload as RpcClineRequestLogRequest
-        if (typeof req.provider !== 'string' || req.provider !== CLINE.id) {
-          return { ok: false, error: { code: 'bad-request', message: `unsupported provider: ${String(req.provider)}` } }
-        }
-        if (typeof req.accountId !== 'string' || req.accountId.trim().length === 0) {
-          return { ok: false, error: { code: 'bad-request', message: 'accountId 不能为空' } }
-        }
-        // 记录是**本插件自己发出的请求流水**(进程内存,重启即丢,见
-        // src/cline-request-log.ts),不是网关的 /usages —— 后者记的是该账号
-        // 在官方所有渠道的消费:没有延迟/首块时间,表格字段也对不齐参考实现。
-        //
-        // ⚠️ `accountId` 必传(按账号过滤)——「订阅额度」面板用**同一个**
-        // 翻页索引同时切额度窗口与请求记录,两个区域必须看同一个账号。
-        // ⚠️ 记录可能是**失败**行(error 有值):失败的请求是排查
-        // 「为什么没回复」的第一线索,与成功行同表展示、错误消息随行给出。
-        return {
-          ok: true,
-          value: {
-            rows: readClineRequestHistory({ accountId: req.accountId, limit: req.limit }).map((row) => ({
-              ts: row.ts,
-              model: row.model,
-              // ⚠️ **优先用网关报的真实上游渠道**（`alibaba` 等，见
-              // `src/cline-routing.ts`）；它没报时才回落到模型命名空间
-              // （`cline-pass` / `cline-free`）—— 后者是**订阅通道**
-              // （甚至可能是厂商名），不是 serving channel，用户报障点正在于此。
-              upstream: row.upstream.length > 0 ? row.upstream : clineUpstreamOf(row.model),
-              // ⚠️ 必须透传「是否收到 usage」：表格据此把未知显示成 `—`,
-              // 而不是 0（0 会被读成「瞬间完成、没花 token」）。
-              usageReported: row.usageReported,
-              inputTokens: row.inputTokens,
-              outputTokens: row.outputTokens,
-              ...row.cacheReadTokens !== undefined ? { cacheReadTokens: row.cacheReadTokens } : {},
-              ...row.reasoningTokens !== undefined ? { reasoningTokens: row.reasoningTokens } : {},
-              // 推理强度：空串也照传（展示层据「空串 ⇒ 不渲染那一行」判断，
-              // 若在这里省略字段，前端就得同时处理 undefined 与 '' 两种缺省）。
-              effort: row.effort,
-              ttftMs: row.ttftMs,
-              // ⚠️ 首个**正文**块耗时必须透传：展示层的「输出速率」拿它当分母
-              // 起点（分子是正文 token 数）。缺了它速率会虚高到物理不可能的值
-              // —— 用户报障的 `11814.8 t/s` 就是分子分母跨阶段的产物。
-              ttfcMs: row.ttfcMs,
-              totalMs: row.totalMs,
-              ...row.error !== undefined ? { error: row.error } : {},
-            })),
-          } satisfies RpcClineRequestLogResponse,
-        }
       }
 
       // ── 模型列表可见性（黑名单开关）──
@@ -4614,28 +4390,6 @@ function registerChannelPackEndpoints(
       }
 
       // ── 供应商自定义显示顺序（「供应商开关」弹窗的拖拽排序）──
-      case 'provider.getOrder': {
-        // 与 provider.status 同级的轻量读取：池内进程内存副本，无任何 IO。
-        const value: RpcGetProviderOrderResponse = { order: pool.providerOrder() }
-        return { ok: true, value }
-      }
-      case 'provider.setOrder': {
-        const req = payload as RpcSetProviderOrderRequest
-        if (!Array.isArray(req?.order) || req.order.some(id => typeof id !== 'string')) {
-          return {
-            ok: false,
-            error: { code: 'bad-request', message: 'order 必须是字符串数组' },
-          }
-        }
-        // ⚠️ 与 account.reorder 不同：这里**不校验**「必须恰好等于当前供应商
-        // 清单」——展示侧（provider-toggle.js 的 sortOpenProvidersByOrder）对
-        // 数组中不认识 / 缺失的 id 都有稳定兜底，并发下列表过期也不需要让用户
-        // 重试，接受最后一次拖拽的结果即可。
-        await pool.setProviderOrder(req.order)
-        ctx.logger.info(`[channel-pack] 已更新供应商自定义显示顺序（${req.order.length} 项）`)
-        return { ok: true, value: undefined }
-      }
-
       // ── 本机 OpenAI 网关（`src/openai-gateway/`）──
       case 'gateway.getEnabled': {
         // ⚠️ **每个字段独立降级**：这里是设置页唯一的网关状态来源，任何一个附属
@@ -5122,26 +4876,6 @@ function registerChannelPackEndpoints(
        * 「保存成功」（用户改完刷新，界面仍按旧口径显示，且没有任何提示）。
        * 磁盘脏数据的容错在 `sanitizeBadgePreference`（那条路径面对的不是用户输入）。
        */
-      case 'usage.badgePreference': {
-        const req = payload as RpcUsageBadgePreferenceRequest
-        if (req.preference === undefined) {
-          const value: RpcUsageBadgePreferenceResponse = { preference: badgePreferences.load() }
-          return { ok: true, value }
-        }
-        if (!(BADGE_PREFERENCES as readonly unknown[]).includes(req.preference)) {
-          return {
-            ok: false,
-            error: {
-              code: 'bad-request',
-              message: `preference 必须是 ${BADGE_PREFERENCES.join(' / ')} 之一（收到：${JSON.stringify(req.preference)}）`,
-            },
-          }
-        }
-        await badgePreferences.save(req.preference)
-        const value: RpcUsageBadgePreferenceResponse = { preference: badgePreferences.load() }
-        return { ok: true, value }
-      }
-
       /**
        * 「每日首次启动自动签到」开关（读 / 写，**全局一个**，不分渠道）。
        *

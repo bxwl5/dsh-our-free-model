@@ -142,30 +142,6 @@ const CHANNELS = [
     ],
   },
 
-  // ───────────────────────────── 网易 LobsterAI ─────────────────────
-  {
-    id: 'lobsterai',
-    name: 'LobsterAI',
-    loginMode: '浏览器授权（门户回调）',
-    notes: [
-      '登录门户是 {portalBase}/portal（lobsterai-product.ts LOBSTERAI_PORTAL_BASE）。',
-      '签到槽位 /api/client-activities/slot 需要完整 query（clientVersion/platform/placement），单探会 5xx，标注为「需完整参数」。',
-    ],
-    endpoints: [
-      ep('登录入口', 'login', 'https://lobsterai.youdao.com/portal', { source: 'lobsterai-product.ts LOBSTERAI_PORTAL_BASE' }),
-      ep('模型目录', 'models', 'https://lobsterai-server.youdao.com/api/models/available', {
-        auth: 'Bearer', source: 'lobsterai.ts LOBSTERAI_MODELS_PATH',
-      }),
-      ep('积分余额', 'balance', 'https://lobsterai-server.youdao.com/api/user/profile-summary', {
-        auth: 'Bearer', source: 'lobsterai-credits.ts LOBSTERAI_PROFILE_SUMMARY_PATH',
-      }),
-      ep('签到槽位', 'checkin', 'https://lobsterai-server.youdao.com/api/client-activities/slot?placement=desktop_sidebar', {
-        method: 'GET', auth: 'Bearer', source: 'lobsterai-credits.ts LOBSTERAI_ACTIVITY_SLOT_PATH',
-        statusLabels: { 500: '存活（需完整 query）' },
-      }),
-    ],
-  },
-
   // ───────────────────────────── Qoder 系 ──────────────────────────
   {
     id: 'qoder',
@@ -259,23 +235,23 @@ const CHANNELS = [
   // ───────────────────────────── Gemini ────────────────────────────
   {
     id: 'antigravity',
-    name: 'Gemini',
+    name: 'Antigravity',
     loginMode: '浏览器授权（Google OAuth · PKCE）',
     notes: [
-      '模型目录 2026-11-01 起走远端 `POST /v1internal:fetchAvailableModels`（三环境轮流）；拉不到回落 antigravity.ts GEMINI_FALLBACK_MODELS。',
+      '模型目录 2026-11-01 起走远端 `POST /v1internal:fetchAvailableModels`（三环境轮流）；拉不到回落 antigravity.ts ANTIGRAVITY_FALLBACK_MODELS。',
       '⚠️ 额度/项目端点必须 POST：GET 返回 404（2026-10-23 实测）。',
       '授权 URL 的 client_id / scope 见 antigravity-oauth.ts buildGeminiAuthUrl；这里用默认客户端拼一个只验存活的 URL。',
     ],
     endpoints: [
       ep('登录入口', 'login', 'https://accounts.google.com/o/oauth2/v2/auth?client_id=1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com&response_type=code&redirect_uri=http%3A%2F%2Flocalhost%3A8845%2Foauth-callback&scope=openid%20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform&state=probe&access_type=offline&prompt=consent', {
-        source: 'antigravity-oauth.ts GEMINI_AUTH_ENDPOINT + GEMINI_DEFAULT_CLIENT_ID',
+        source: 'antigravity-oauth.ts ANTIGRAVITY_AUTH_ENDPOINT + ANTIGRAVITY_DEFAULT_CLIENT_ID',
       }),
       ep('模型目录', 'models', null, { note: '静态 fallback 表，无 HTTP 目录端点' }),
       ep('额度', 'balance', 'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:retrieveUserQuotaSummary', {
-        method: 'POST', body: '{}', auth: 'Bearer', source: 'antigravity.ts GEMINI_QUOTA_PATH（sandbox）',
+        method: 'POST', body: '{}', auth: 'Bearer', source: 'antigravity.ts ANTIGRAVITY_QUOTA_PATH（sandbox）',
       }),
       ep('项目探测', 'identity', 'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:loadCodeAssist', {
-        method: 'POST', body: '{"metadata":{"ideType":"ANTIGRAVITY"}}', auth: 'Bearer', source: 'antigravity.ts GEMINI_LOAD_CODE_ASSIST_PATH',
+        method: 'POST', body: '{"metadata":{"ideType":"ANTIGRAVITY"}}', auth: 'Bearer', source: 'antigravity.ts ANTIGRAVITY_LOAD_CODE_ASSIST_PATH',
       }),
     ],
   },
@@ -294,10 +270,6 @@ const CHANNELS = [
       ep('模型目录', 'models', 'https://loomyad.xunfei.cn/api/v1/models', { source: 'loomy-product.ts 注释 GET /api/v1/models' }),
       ep('积分余额', 'balance', 'https://loomyad.xunfei.cn/api/v1/points/records?pageNo=1&pageSize=1&recordType=all', {
         auth: 'token', source: 'loomy-credits.ts 查余额路径',
-      }),
-      ep('签到（首登）', 'checkin', 'https://loomyad.xunfei.cn/api/v1/points/first-login', {
-        method: 'POST', body: '{}', auth: 'token', source: 'loomy-credits.ts 一键签到（写端点，探活只验存在）',
-        note: '写端点：带真实 token 探测会产生签到副作用', statusLabels: { 400: '存活（需真实 token）' },
       }),
     ],
   },
@@ -419,94 +391,6 @@ const CHANNELS = [
       }),
       ep('订阅/模型信息', 'models', 'https://agentarts.cn-southwest-2.myhuaweicloud.com/v1/claw/client-subscription', {
         method: 'POST', body: '{}', auth: 'Bearer', source: 'officeace-product.ts OFFICEACE_SUBSCRIPTION_PATH',
-      }),
-    ],
-  },
-
-  // ───────────────────────────── Accio 系 ─────────────────────────
-  {
-    id: 'accio',
-    name: 'Accio',
-    loginMode: '浏览器授权（OAuth + PKCE）',
-    notes: [
-      '登录 URL 带 response_type/client_id/redirect_uri/state/PKCE（accio.ts buildAccioAuthUrl）。',
-      '模型目录是 POST /api/llm/config；无 token 时 HTTP 200 但 body 报 auth failed。',
-    ],
-    endpoints: [
-      ep('登录入口', 'login', 'https://www.accio.com/oauth/authorize', { source: 'accio.ts buildAccioAuthUrl（loginBase/oauth/authorize）' }),
-      ep('模型目录', 'models', 'https://phoenix-gw.alibaba.com/api/llm/config', {
-        method: 'POST', body: '{}', source: 'accio-product.ts ACCIO_LLM_CONFIG_PATH',
-        bodyDetail: (text) => (/"code"\s*:\s*"?403"?|auth failed/i.test(text) ? '（无 token：body 报 auth failed，端点存活）' : ''),
-      }),
-      ep('额度', 'balance', 'https://phoenix-gw.alibaba.com/api/entitlement/quota', {
-        auth: 'accessToken query', source: 'accio-product.ts ACCIO_QUOTA_PATH',
-      }),
-      ep('用户资料', 'identity', 'https://phoenix-gw.alibaba.com/api/auth/userinfo', {
-        auth: 'accessToken query', source: 'accio-product.ts ACCIO_USERINFO_PATH',
-      }),
-    ],
-  },
-  {
-    id: 'accio-cn',
-    name: 'Accio 国内版',
-    loginMode: '浏览器授权（OAuth + PKCE）',
-    notes: ['与 Accio 同形，loginBase 换成 www.accio-ai.com（accio-product.ts ACCIO_CN）。'],
-    endpoints: [
-      ep('登录入口', 'login', 'https://www.accio-ai.com/oauth/authorize', { source: 'accio.ts buildAccioAuthUrl（loginBase/oauth/authorize）' }),
-      ep('模型目录', 'models', 'https://phoenix-gw.alibaba.com/api/llm/config', {
-        method: 'POST', body: '{}', source: 'accio-product.ts ACCIO_LLM_CONFIG_PATH',
-        bodyDetail: (text) => (/"code"\s*:\s*"?403"?|auth failed/i.test(text) ? '（无 token：body 报 auth failed，端点存活）' : ''),
-      }),
-      ep('额度', 'balance', 'https://phoenix-gw.alibaba.com/api/entitlement/quota', {
-        auth: 'accessToken query', source: 'accio-product.ts ACCIO_QUOTA_PATH',
-      }),
-    ],
-  },
-
-  // ───────────────────────────── 粘贴型渠道 ────────────────────────
-  {
-    id: 'orcaterm',
-    notes: [
-      '上游三条登录链路都无法在插件内自动完成（orcaterm-product.ts 注释），只能粘贴 Cookie。',
-      '模型集合由控制台会话下发；插件里只有兜底表，**没有**独立 HTTP 目录端点，也没有额度查询端点。',
-    ],
-    endpoints: [
-      ep('登录入口', 'login', 'https://orcaterm.cloud.tencent.com/terminal', { source: 'orcaterm-product.ts consoleBase' }),
-      ep('模型目录', 'models', null, { note: '控制台会话下发 + fallback 表（deepseek-v3.2 / hunyuan-t1）' }),
-      ep('余额', 'balance', null, { note: '插件无额度查询端点' }),
-    ],
-  },
-  {
-    id: 'kuku',
-    name: 'KukuAI',
-    loginMode: '粘贴 Cookie（BDUSS）',
-    notes: ['模型目录用兜底表（kuku-product.ts KUKU_FALLBACK_MODELS），没有 HTTP 目录端点。'],
-    endpoints: [
-      ep('登录入口', 'login', 'https://kuku.baidu.com/', { source: 'kuku-product.ts apiBase' }),
-      ep('模型目录', 'models', null, { note: '静态兜底目录，无 HTTP 目录端点' }),
-      ep('会员余额', 'balance', 'https://kuku.baidu.com/bizapi/gfpro/getgfvipremain', {
-        auth: 'Cookie BDUSS', source: 'kuku-product.ts KUKU_VIP_REMAIN_PATH',
-      }),
-      ep('免费积分', 'checkin', 'https://kuku.baidu.com/api/genflowpro/freepoint/homenew', {
-        auth: 'Cookie BDUSS', source: 'kuku-product.ts KUKU_FREEPOINT_PATH',
-      }),
-    ],
-  },
-  {
-    id: 'monkeycode',
-    name: 'MonkeyCode',
-    loginMode: '粘贴 Cookie（nebula_session）',
-    notes: ['WebSocket 对话走 /api/v1/users/tasks/stream（WS，非 HTTP 探活范围）。'],
-    endpoints: [
-      ep('登录入口', 'login', 'https://monkeycode-ai.com/', { source: 'monkeycode-product.ts apiBase' }),
-      ep('模型目录', 'models', 'https://monkeycode-ai.com/api/v1/users/models/available', {
-        auth: 'Cookie nebula_session', source: 'monkeycode-product.ts MONKEYCODE_MODELS_PATH',
-      }),
-      ep('钱包/额度', 'balance', 'https://monkeycode-ai.com/api/v1/users/wallet', {
-        auth: 'Cookie nebula_session', source: 'monkeycode-product.ts MONKEYCODE_WALLET_PATH',
-      }),
-      ep('签到', 'checkin', 'https://monkeycode-ai.com/api/v1/users/wallet/checkin', {
-        auth: 'Cookie nebula_session', source: 'monkeycode-product.ts MONKEYCODE_CHECKIN_PATH',
       }),
     ],
   },

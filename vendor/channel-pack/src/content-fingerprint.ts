@@ -745,10 +745,13 @@ export function scrubbedFetch(
  */
 export function installGlobalFetchScrub(): () => void {
   const original = globalThis.fetch as TaggedFetch
-  // 已装过就不再叠一层（叠层会让同一个 body 被反复 JSON 序列化）
-  if (typeof original === 'function' && original[GLOBAL_FETCH_SCRUB_TAG] !== undefined) {
-    return () => { /* 已由上一代持有，dispose 时什么都不做 */ }
-  }
+  // 2026-11-06 审计（P2）：此前「已装过就不再叠层 + 返回 noop disposer」有一个
+  // 双实例时序洞——插件热重载时**新 fiber 先 mount、旧 fiber 后 dispose**：
+  // 新 apply 撞「已装过」拿到 noop disposer → 旧 dispose 按自己的 generation
+  // 把 gen1 包装摘掉 → 新 fiber 此后全程裸 fetch，且永远没人再装回来。
+  // 修法：允许叠层（SCRUBBED_INITS 已保证同一 init 不被重复清洗，叠层幂等），
+  // 每代 disposer 只摘自己那一层——「只摘自己」纪律与 direct-fetch/token-ledger/
+  // anomaly-pool 一致。
   const generation = ++globalFetchGeneration
   const wrapped: typeof fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     // 同一个 init 已在本代处理过 ⇒ 宿主/测试桩的回环，直接透传不递归。

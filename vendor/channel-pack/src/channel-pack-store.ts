@@ -614,8 +614,6 @@ class FileStore implements ChannelPackStore {
   }
 
   /** 最近一次**由本进程**写盘后的 mtime（写盘后同步，避免「刚写完就被判外部改动」）。 */
-  private lastWriteMtimeMs: number | undefined
-
   private write(state: ChannelPackState): void {
     mkdirSync(join(this.home, 'channel-pack'), { recursive: true })
     const tmp = `${this.path}.tmp`
@@ -623,7 +621,6 @@ class FileStore implements ChannelPackStore {
     renameSync(tmp, this.path)
     // 记录写后 mtime：调用方据此跳过「刚写就被判为外部改动」的误判。
     // 注意 rename 之后 stat 才准确（tmp 文件的时间戳不是目标文件的）。
-    this.lastWriteMtimeMs = this.mtimeMs()
   }
 
   /**

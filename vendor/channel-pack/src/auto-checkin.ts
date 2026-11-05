@@ -535,9 +535,8 @@ export const AUTO_CHECKIN_REFRESH_HOUR_UTC8 = 10
  */
 export const ZCODE_CHECKIN_OPEN_HOUR_UTC8 = 19
 
-/** ZCode 的 token 生效时刻（UTC+8）：领到的额度这时候才能真正用于推理。 */
-
-/** ZCode 的 token 清零 / 签到记录刷新时刻（UTC+8）：也就是它的**日界**。 */
+/** ZCode 的 token 清零 / 签到记录刷新时刻（UTC+8）：也就是它的**日界**；
+ * 领到的额度到这一刻才真正可用于推理。 */
 export const ZCODE_TOKEN_RESET_HOUR_UTC8 = 9
 
 /**

@@ -37,17 +37,15 @@
  * 这样「打开面板」不会悄悄触发签到。
  */
 
-import type { ClaimOutcome, CreditBalance, CreditPackage } from './credits.js'
+import type { CreditBalance, CreditPackage } from './credits.js'
 import {
   LOOMY_AUTH_ERROR_CODE,
   LOOMY_REQUEST_TIMEOUT_MS,
   parseLoomyEnvelope,
   type LoomyCredential,
 } from './loomy.js'
-import { utc8DayKey } from './token-ledger.js'
 import type { LoomyProduct } from './loomy-product.js'
 
-/** 「一键签到」的语义说明（供 UI 提示用，避免写成「+5000 积分」）。 */
 /** 两个积分池的明细。 */
 export interface LoomyCreditDetail {
   /** 永久积分（`balance`）。 */

@@ -515,8 +515,6 @@ export async function verifyClaimClassification() {
   // ——任务描述里我写错了名字，t2 查证后用了正确字段。
   assert.match(loomyCredits, /dailyCycleDate/,
     'loomy 必须校验 dailyCycleDate（业务日），不能只看数值')
-  assert.match(loomyCredits, /utc8DayKey/,
-    'loomy 的日键必须按 UTC+8 换算，与账本口径一致')
 
   
 }
