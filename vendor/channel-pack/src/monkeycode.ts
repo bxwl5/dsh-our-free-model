@@ -258,7 +258,9 @@ export function parseCheckin(value: unknown): MonkeyCodeCheckinStatus {
   if (!isRecord(body)) return { checkedIn: false }
   const checkedIn = body.checked_in === true || body.checkedIn === true
   const streak = numberValue(body.streak_days) ?? numberValue(body.streak)
-  const reward = numberValue(body.reward)
+  // 官方签到契约里的 100 积分字段是 `credits`（见 desktop/src/baizhi/tests.rs），
+  // 老响应里也可能叫 reward / credit。统一收进 reward，供「今天已签到」文案用。
+  const reward = numberValue(body.credits) ?? numberValue(body.reward) ?? numberValue(body.credit)
   return {
     checkedIn,
     ...(streak === undefined ? {} : { streak }),

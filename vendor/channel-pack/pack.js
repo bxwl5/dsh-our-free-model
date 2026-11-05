@@ -28675,7 +28675,7 @@ var init_commandcode_auth = __esm({
 });
 
 // vendor/channel-pack/src/monkeycode-product.ts
-var MONKEYCODE_FALLBACK_MODELS, MONKEYCODE, MONKEYCODE_PROBE_PATH, MONKEYCODE_WALLET_PATH, MONKEYCODE_CHECKIN_PATH, MONKEYCODE_MODELS_PATH, MONKEYCODE_TASKS_PATH, MONKEYCODE_STREAM_PATH, MONKEYCODE_PUBLIC_IMAGE_ID, MONKEYCODE_PUBLIC_HOST, MONKEYCODE_SESSION_COOKIES;
+var MONKEYCODE_FALLBACK_MODELS, MONKEYCODE, MONKEYCODE_PROBE_PATH, MONKEYCODE_WALLET_PATH, MONKEYCODE_CHECKIN_PATH, MONKEYCODE_DAILY_CHECKIN_CREDITS, MONKEYCODE_MODELS_PATH, MONKEYCODE_TASKS_PATH, MONKEYCODE_STREAM_PATH, MONKEYCODE_PUBLIC_IMAGE_ID, MONKEYCODE_PUBLIC_HOST, MONKEYCODE_SESSION_COOKIES;
 var init_monkeycode_product = __esm({
   "vendor/channel-pack/src/monkeycode-product.ts"() {
     "use strict";
@@ -28709,6 +28709,7 @@ var init_monkeycode_product = __esm({
     MONKEYCODE_PROBE_PATH = "/api/v1/users/wallet";
     MONKEYCODE_WALLET_PATH = "/api/v1/users/wallet";
     MONKEYCODE_CHECKIN_PATH = "/api/v1/users/wallet/checkin";
+    MONKEYCODE_DAILY_CHECKIN_CREDITS = 100;
     MONKEYCODE_MODELS_PATH = "/api/v1/users/models/available";
     MONKEYCODE_TASKS_PATH = "/api/v1/users/tasks";
     MONKEYCODE_STREAM_PATH = "/api/v1/users/tasks/stream";
@@ -28810,7 +28811,7 @@ function parseCheckin(value) {
   if (!isRecord2(body)) return { checkedIn: false };
   const checkedIn = body.checked_in === true || body.checkedIn === true;
   const streak = numberValue2(body.streak_days) ?? numberValue2(body.streak);
-  const reward = numberValue2(body.reward);
+  const reward = numberValue2(body.credits) ?? numberValue2(body.reward) ?? numberValue2(body.credit);
   return {
     checkedIn,
     ...streak === void 0 ? {} : { streak },
@@ -29411,7 +29412,8 @@ async function runCheckin(fetcher, product, credential, signal) {
     const message2 = typeof envelopeRecord?.message === "string" ? envelopeRecord.message : `\u4E0A\u6E38\u8FD4\u56DE\u4E1A\u52A1\u9519\u8BEF\uFF08code=${businessCode}\uFF09`;
     return { ok: false, reason: message2 };
   }
-  return { ok: true, status: parseCheckin(result.body) };
+  const status = parseCheckin(result.body);
+  return { ok: true, status };
 }
 async function fetchModels(fetcher, product, credential, signal) {
   const result = await call(fetcher, product, credential, MONKEYCODE_MODELS_PATH, { signal });
@@ -29642,7 +29644,9 @@ async function runCheckinWithCaptchaImpl(options) {
   if (body?.code !== void 0 && body.code !== 0) {
     return { ok: false, reason: body.message ?? `\u4E1A\u52A1\u9519\u8BEF code=${body.code}` };
   }
-  return { ok: true, checkedIn: body?.data?.checked_in === true };
+  const data = body?.data;
+  const credits = typeof data?.credits === "number" && Number.isFinite(data.credits) ? data.credits : typeof data?.reward === "number" && Number.isFinite(data.reward) ? data.reward : typeof data?.credit === "number" && Number.isFinite(data.credit) ? data.credit : void 0;
+  return { ok: true, checkedIn: data?.checked_in === true, ...credits === void 0 ? {} : { credits } };
 }
 async function runCheckinWithCaptcha(options) {
   return runCheckinWithCaptchaImpl(options);
@@ -69763,8 +69767,10 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
                   active: true,
                   todayCheckedIn: raw.checkedIn,
                   streakDays: raw.streak ?? 0,
-                  dailyCredit: raw.reward ?? 0,
-                  todayCredit: raw.checkedIn ? raw.reward ?? 0 : 0,
+                  // GET 状态不带奖励字段（只回 {checked_in:true}），已签到时
+                  // 用官方契约常量 100 兜底，别再显示「今天领了 0 积分」。
+                  dailyCredit: raw.reward ?? MONKEYCODE_DAILY_CHECKIN_CREDITS,
+                  todayCredit: raw.checkedIn ? raw.reward ?? MONKEYCODE_DAILY_CHECKIN_CREDITS : 0,
                   // 以下四项上游没有对应字段，如实留空。
                   isStreakDay: false,
                   totalCredits: 0,
@@ -70048,7 +70054,8 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
               if (before.checkedIn) {
                 return {
                   kind: "already-claimed",
-                  message: before.reward === void 0 ? "\u4ECA\u5929\u5DF2\u7ECF\u7B7E\u5230\u8FC7\u4E86" : `\u4ECA\u5929\u5DF2\u7ECF\u7B7E\u5230\u8FC7\u4E86\uFF08+${before.reward} \u79EF\u5206\uFF09`
+                  // GET 不回奖励字段时用官方常量 100，让「已签到」也有明确回报。
+                  message: `\u4ECA\u5929\u5DF2\u7ECF\u7B7E\u5230\u8FC7\u4E86\uFF08+${before.reward ?? MONKEYCODE_DAILY_CHECKIN_CREDITS} \u79EF\u5206\uFF09`
                 };
               }
               const result = await runCheckinWithCaptcha({
@@ -70057,7 +70064,14 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
                 credential
               });
               if (!result.ok) return { kind: "failed", code: 0, message: result.reason ?? "\u7B7E\u5230\u5931\u8D25" };
-              return { kind: "claimed", credit: 0, streakDays: 0, isStreakDay: false };
+              const credits = typeof result.credits === "number" && Number.isFinite(result.credits) ? result.credits : MONKEYCODE_DAILY_CHECKIN_CREDITS;
+              return {
+                kind: "claimed",
+                credit: credits,
+                streakDays: 0,
+                isStreakDay: false,
+                ...credits > 0 ? { message: `\u7B7E\u5230\u6210\u529F\uFF08+${credits} \u79EF\u5206\uFF09` } : {}
+              };
             },
             precheckStatus: false,
             warn: (msg) => ctx.logger?.warn?.(msg)

@@ -193,6 +193,11 @@ window.__ModuleLoader__.load({
         'bench.result': '文本响应通过 · 首帧 {ttft}ms · 输出 {tps} tok/s · 推理 {reasoning} tok',
         'reload.done': '插件已热重载（第 {n} 次）。',
         'reload.refresh': '刷新页面',
+        'reload.now': '热重载插件',
+        'reload.reloading': '重载中…',
+        'reload.auto': '文件变化自动热重载',
+        'reload.hint': '改完插件代码无需重启 DSH；NAS 上没开自动时点这个按钮即可让新代码生效。',
+        'reload.failed': '热重载失败：{reason}',
         'nav.tab.free': '免费模型',
         'nav.tab.channels': '渠道接入',
         'free.title': '免费模型',
@@ -708,6 +713,11 @@ window.__ModuleLoader__.load({
         'bench.result': 'Text response passed · first frame {ttft}ms · {tps} tok/s · {reasoning} reasoning tokens',
         'reload.done': 'Plugin hot-reloaded (#{n}).',
         'reload.refresh': 'Reload page',
+        'reload.now': 'Hot-reload plugin',
+        'reload.reloading': 'Reloading…',
+        'reload.auto': 'Hot-reload on file change',
+        'reload.hint': 'New plugin code takes effect without restarting DSH; on NAS press this button when auto-reload is off.',
+        'reload.failed': 'Hot reload failed: {reason}',
         'nav.tab.free': 'Free models',
         'nav.tab.channels': 'Channels',
         'free.title': 'Free models',
@@ -3148,7 +3158,25 @@ window.__ModuleLoader__.load({
       const { summary, t, onApply, busy } = props
       const settings = summary.settings
       const [draft, setDraft] = useState(settings)
+      const [reloading, setReloading] = useState(false)
+      const [reloadError, setReloadError] = useState('')
       useEffect(() => setDraft(settings), [summary])
+      // ★ 热重载按钮（用户 2026-11-05 要求放回首页插件设置）：本机以前开过
+      // 自动重载，NAS 没按钮也不重载，改 pack.js 后只能重启。这里手动触发
+      // POST /reload（后端先回 202 再异步换 fiber，不会卡住响应）。
+      const hotReload = async () => {
+        if (reloading) return
+        setReloading(true); setReloadError('')
+        try {
+          await post('/reload', undefined, 15_000)
+          // 重载会 dispose 当前 fiber，本页随后由 SSE 通知提示刷新；
+          // 这里只把按钮复位，不做 location.reload（会打断用户操作）。
+          setReloading(false)
+        } catch (error) {
+          setReloading(false)
+          setReloadError(t('reload.failed').replace('{reason}', String(error?.message ?? error)))
+        }
+      }
       return h(Panel, null,
         h('div', { className: 'ofm_row', style: { gap: 20 } },
           h(Switch, { checked: settings.enabled !== false, label: t('pref.enabled'), onChange: () => onApply({ enabled: !(settings.enabled !== false) }) }),
@@ -3162,7 +3190,19 @@ window.__ModuleLoader__.load({
           h(Button, { kind: 'primary', disabled: busy, onClick: () => onApply({ probeIntervalMinutes: draft.probeIntervalMinutes, defaultMaxTokens: draft.defaultMaxTokens }) }, t('forward.apply'))),
         h('div', { className: 'ofm_row', style: { gap: 8 } },
           h('span', { className: 'ofm_pill' }, `${t('pref.egress')}: ${summary.egress?.ip ?? '—'}${summary.egress?.country ? ` (${summary.egress.country})` : ''}`),
-          h('span', { className: 'ofm_pill' }, `${t('pref.probedAt')}: ${ago(summary.probedAt, t.locale)}`)))
+          h('span', { className: 'ofm_pill' }, `${t('pref.probedAt')}: ${ago(summary.probedAt, t.locale)}`)),
+        // 热重载：手动按钮 + 自动开关（默认关）。开关经 onApply 走
+        // POST /settings，后端会同步文件监听（watchPackage）。
+        h('div', { className: 'ofm_row', style: { gap: 12, flexWrap: 'wrap' } },
+          h(Button, { kind: 'ghost', disabled: reloading || busy, onClick: () => void hotReload() },
+            reloading ? t('reload.reloading') : t('reload.now')),
+          h(Switch, {
+            checked: settings.autoReloadWatch === true,
+            label: t('reload.auto'),
+            onChange: () => onApply({ autoReloadWatch: !(settings.autoReloadWatch === true) }),
+          })),
+        reloadError === '' ? null : h('div', { className: 'ofm_note' }, reloadError),
+        h('p', { className: 'ofm_note' }, t('reload.hint')))
     }
 
 

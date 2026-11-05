@@ -56,7 +56,7 @@ import {
   runCheckinWithCaptcha as runMonkeyCodeCheckinWithCaptcha,
 } from './monkeycode-auth.js'
 import type { MonkeyCodeCredential } from './monkeycode.js'
-import { MONKEYCODE } from './monkeycode-product.js'
+import { MONKEYCODE, MONKEYCODE_DAILY_CHECKIN_CREDITS } from './monkeycode-product.js'
 import { AUTOCLAW } from './autoclaw-product.js'
 import { refreshAutoclawCredential, resolveAutoclawDeviceId } from './autoclaw-sms.js'
 import { startAutoclawLoginFlow, type AutoclawLoginFlow } from './autoclaw-login-page.js'
@@ -3473,8 +3473,10 @@ function registerChannelPackEndpoints(
                   active: true,
                   todayCheckedIn: raw.checkedIn,
                   streakDays: raw.streak ?? 0,
-                  dailyCredit: raw.reward ?? 0,
-                  todayCredit: raw.checkedIn ? (raw.reward ?? 0) : 0,
+                  // GET 状态不带奖励字段（只回 {checked_in:true}），已签到时
+                  // 用官方契约常量 100 兜底，别再显示「今天领了 0 积分」。
+                  dailyCredit: raw.reward ?? MONKEYCODE_DAILY_CHECKIN_CREDITS,
+                  todayCredit: raw.checkedIn ? (raw.reward ?? MONKEYCODE_DAILY_CHECKIN_CREDITS) : 0,
                   // 以下四项上游没有对应字段，如实留空。
                   isStreakDay: false,
                   totalCredits: 0,
@@ -3907,9 +3909,8 @@ function registerChannelPackEndpoints(
               if (before.checkedIn) {
                 return {
                   kind: 'already-claimed',
-                  message: before.reward === undefined
-                    ? '今天已经签到过了'
-                    : `今天已经签到过了（+${before.reward} 积分）`,
+                  // GET 不回奖励字段时用官方常量 100，让「已签到」也有明确回报。
+                  message: `今天已经签到过了（+${before.reward ?? MONKEYCODE_DAILY_CHECKIN_CREDITS} 积分）`,
                 }
               }
               // 2026-10-26：改用带 cap.js POW 的完整流程 —— 上游签到需要
@@ -3925,9 +3926,22 @@ function registerChannelPackEndpoints(
                 credential,
               })
               if (!result.ok) return { kind: 'failed', code: 0, message: result.reason ?? '签到失败' }
-              // 返回体只有 { ok, checkedIn }（没有 reward/streak，别编造）。
+              // ★ 官方签到契约（desktop/src/baizhi/tests.rs 的 mc_checkin_contract）：
+              // 成功回 `data.credits: 100` —— 把真实积分写回结果，别再硬编码 0
+              // （用户 2026-11-05：「每日签到给 100 积分，每次都没有返回」）。
               // 上游按天幂等：本次调用能成功就说明今天已处理（coversToday）。
-              return { kind: 'claimed', credit: 0, streakDays: 0, isStreakDay: false }
+              // streakDays/isStreakDay 上游不返回，保持 0/false，不编造。
+              // 上游正常回 credits:100；若某次响应缺字段，用官方常量兜底
+              // （本次 POST 成功即代表今天已领，不该显示 0）。
+              const credits = typeof result.credits === 'number' && Number.isFinite(result.credits)
+                ? result.credits : MONKEYCODE_DAILY_CHECKIN_CREDITS
+              return {
+                kind: 'claimed',
+                credit: credits,
+                streakDays: 0,
+                isStreakDay: false,
+                ...(credits > 0 ? { message: `签到成功（+${credits} 积分）` } : {}),
+              }
             },
             precheckStatus: false,
             warn: (msg) => ctx.logger?.warn?.(msg),

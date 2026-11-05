@@ -51,6 +51,7 @@ import { createModelRuntime, createRuntimeStores } from './src/core/runtime.js'
 
 export { fromOpenAiMessages } from './src/core/completion.js'
 import { buildStats } from './src/core/stats.js'
+import { selfReload, watchPackage, isReloading } from './src/reload.js'
 import { mergeChannelStats, readChannelUsage, resolveChannelLedgerPath } from './src/core/channel-usage.js'
 export { buildStats }
 
@@ -59,6 +60,8 @@ export const name = 'our-free-model'
 /** The installed package directory — the self-updater and hot reload operate here. */
 const PKG_URL = new URL('./', import.meta.url)
 const PKG_DIR = fileURLToPath(PKG_URL)
+/** Entry module URL for selfReload(): the new `apply` is imported from here. */
+const ENTRY_URL = new URL('./index.js', import.meta.url).href
 
 /** Published version of the installed package, read once at load. */
 function readPackageVersion() {
@@ -781,6 +784,46 @@ let channelRosterReadAt = 0
     })
   })
 
+  /**
+   * ★ 热重载：把运行中的插件换成磁盘上的代码，不重启 DSH。
+   *
+   * 用户 2026-11-05 要求把「热重载插件」按钮放回首页设置：本机以前开过
+   * 自动重载（文件变化即重载），NAS 没按钮、也从不重载，所以每次改 pack.js
+   * 都得重启。实现来自本仓库历史（99c0153 引入、95657a7/c7e6ca6 随公告中心
+   * 一起删掉），精简恢复，去掉已删除的升级器依赖。
+   *
+   * ⚠️ 关键：重载要**异步**触发（POST /reload 先回 202 再 setImmediate）。
+   * 同步调用会 dispose 正在处理该请求的 fiber，响应发不出去。
+   */
+  async function reloadFromDisk() {
+    if (isReloading()) throw new Error('a reload is already in progress')
+    const result = await selfReload(ctx, {
+      logger, packageUrl: PKG_URL.href, entryUrl: ENTRY_URL,
+    })
+    if (result.ok) return result
+    throw new Error(result.error)
+  }
+
+  /** 文件变化自动热重载（默认关，设置页开关控制）。 */
+  let watcher = undefined
+  function syncWatcher() {
+    const wanted = settings.get().autoReloadWatch === true
+    if (wanted && watcher === undefined) {
+      watcher = watchPackage(PKG_DIR, {
+        logger,
+        onChange: () => {
+          if (isReloading()) return
+          logger.info?.('our-free-model: watched files changed; hot-reloading')
+          void reloadFromDisk().catch(error => logger.warn?.(`our-free-model: hot reload failed (${error?.message ?? error})`))
+        },
+      })
+    } else if (!wanted && watcher !== undefined) {
+      watcher()
+      watcher = undefined
+    }
+  }
+  syncWatcher()
+  ctx.effect(() => () => { if (watcher !== undefined) { watcher(); watcher = undefined } }, 'our-free-model: hot reload watcher')
   const logAdmissionRejection = surface => ({ status, source, reason }) => {
     // Fixed fields only: headers, request URLs and admission errors may contain
     // credentials. JSON API and SSE must report the same admission boundary.
@@ -788,6 +831,8 @@ let channelRosterReadAt = 0
   }
   const api = createApiRoutes({
     settings, stats, availability, catalog: () => modelRuntime.catalog, state, dataDir,
+    hotReload: reloadFromDisk,
+    onSettingsChanged: () => syncWatcher(),
     refreshCatalog, refreshAvailability, syncForward, syncRelay, syncEgress,
     onVisibilityChanged: emitTopology,
     // ── fallback chains ─────────────────────────────────────────────────────
@@ -1265,6 +1310,10 @@ function sanitizeSettings(patch, current) {
     const hours = Number(next.updateCheckHours)
     next.updateCheckHours = Number.isFinite(hours) && hours >= 0 ? Math.trunc(hours) : (Number(current.updateCheckHours) || 6)
   }
+  // 文件变化自动热重载：只认严格布尔，其它值丢弃（保持当前值）。
+  if (next.autoReloadWatch !== undefined && typeof next.autoReloadWatch !== 'boolean') {
+    next.autoReloadWatch = current.autoReloadWatch === true
+  }
   return next
 }
 
@@ -1399,6 +1448,16 @@ export function createApiRoutes(deps) {
       if (method === 'GET' && routePath === '/meta') {
         return send(200, deps.meta())
       }
+      // ★ 热重载按钮：先回 202 再异步换 fiber（同步会 dispose 本请求的 fiber）。
+      if (method === 'POST' && routePath === '/reload') {
+        if (typeof deps.hotReload !== 'function') return send(501, { error: 'hot reload unavailable' })
+        send(202, { ok: true, note: 'hot reload started' })
+        setImmediate(() => {
+          void Promise.resolve(deps.hotReload()).catch(error =>
+            deps.logger?.warn?.(`our-free-model: hot reload failed (${error?.message ?? error})`))
+        })
+        return
+      }
       if (method === 'POST' && routePath === '/open-external') {
         const target = externalUrl((await readJson(req))?.url)
         if (target === null) return send(400, { error: 'bad-url' })
@@ -1410,7 +1469,7 @@ export function createApiRoutes(deps) {
         const patch = await readJson(req)
         const visibility = validateModelVisibility(patch)
         const current = deps.settings.get()
-        const next = sanitizeSettings({ ...current, ...pick(patch, ['enabled', 'exposeRegionModels', 'probeIntervalMinutes', 'defaultMaxTokens']), ...visibility }, current)
+        const next = sanitizeSettings({ ...current, ...pick(patch, ['enabled', 'exposeRegionModels', 'probeIntervalMinutes', 'defaultMaxTokens', 'autoReloadWatch']), ...visibility }, current)
         if (patch.forward !== undefined) {
           const forward = { ...(current.forward ?? {}), ...pick(patch.forward, ['enabled', 'host', 'port']) }
           // The listener spends this machine's lane, and a routable bind address
@@ -1459,6 +1518,7 @@ export function createApiRoutes(deps) {
         }
         deps.settings.update(next)
         deps.settings.flush()
+        deps.onSettingsChanged?.()
         if (deps.settings.writeFailed) {
           deps.settings.value = current
           return send(500, { error: 'could not persist settings' })
@@ -1734,6 +1794,8 @@ function publicSettings(settings, forwardInfo, egressInfo) {
     defaultMaxTokens: settings.defaultMaxTokens ?? 32768,
     reloadedAt: settings.reloadedAt ?? 0,
     reloadCount: settings.reloadCount ?? 0,
+    autoReloadWatch: settings.autoReloadWatch === true,
+    lastReload: globalThis[Symbol.for('our-free-model.last-reload')] ?? undefined,
     tokenSaver: publicTokenSaver(settings.tokenSaver),
     combos: normalizeCombos(settings.combos).map(combo => ({
       id: combo.id,

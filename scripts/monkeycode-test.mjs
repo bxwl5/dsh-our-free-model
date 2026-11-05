@@ -10,7 +10,7 @@ async function main() {
     credentialFromUser, credentialFromSession, unwrapData, monkeyCodeHeaders,
   } = await import('../vendor/channel-pack/src/monkeycode.ts')
   const { MONKEYCODE, MONKEYCODE_SESSION_COOKIE } = await import('../vendor/channel-pack/src/monkeycode-product.ts')
-  const { loginWithCookie, fetchWallet, fetchModels, runCheckin, probeCredential } = await import('../vendor/channel-pack/src/monkeycode-auth.ts')
+  const { loginWithCookie, fetchWallet, fetchModels, runCheckin, runCheckinWithCaptcha, probeCredential } = await import('../vendor/channel-pack/src/monkeycode-auth.ts')
   const { MonkeyCodeAdapter } = await import('../vendor/channel-pack/src/monkeycode-adapter.ts')
   const { fetch: realFetch } = await import('undici')
 
@@ -138,6 +138,35 @@ async function main() {
     const checkin = await runCheckin(realFetch, product, cred)
     assert.equal(checkin.ok, true)
     assert.equal(checkin.status.reward, 100)
+
+    // ★ 官方 cap.js POW 签到契约（desktop/src/baizhi/tests.rs 的
+    // mc_checkin_contract）：成功回 data.credits:100。用户 2026-11-05 报
+    // 「每日签到给 100 积分，每次都没有返回」—— 根因是这个字段被丢、
+    // RPC 侧还硬编码 credit:0。这里锁死「真实积分必须回到结果」。
+    const powFetcher = async (url, init) => {
+      const u = String(url)
+      if (u.endsWith('/api/v1/public/captcha/challenge')) {
+        return new Response(JSON.stringify({ challenge: { c: 1, s: 32, d: 1 }, expires: Date.now() + 60_000, token: 'POW_TOKEN' }), { status: 201, headers: { 'content-type': 'application/json' } })
+      }
+      if (u.endsWith('/api/v1/public/captcha/redeem')) {
+        return new Response(JSON.stringify({ success: true, token: 'CAPTCHA_TOKEN' }), { status: 201, headers: { 'content-type': 'application/json' } })
+      }
+      if (u.endsWith('/api/v1/users/wallet/checkin')) {
+        return new Response(JSON.stringify({ code: 0, data: { checked_in: true, credits: 100 } }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      return new Response('{}', { status: 404 })
+    }
+    const powResult = await runCheckinWithCaptcha({ fetcher: powFetcher, product, credential: cred })
+    assert.equal(powResult.ok, true, 'POW 签到成功')
+    assert.equal(powResult.credits, 100, '★ 签到结果必须带回真实的 100 积分（不能丢/硬编码 0）')
+
+    // 官方契约常量：GET 状态只回 {checked_in:true} 时，RPC 层用它兜底 100。
+    const { MONKEYCODE_DAILY_CHECKIN_CREDITS } = await import('../vendor/channel-pack/src/monkeycode-product.ts')
+    assert.equal(MONKEYCODE_DAILY_CHECKIN_CREDITS, 100, '每日签到奖励常量 = 官方契约 100')
+    // 静态守卫：RPC 三处都用了这个常量（避免将来又退回 0）
+    const rpc = (await import('node:fs')).readFileSync(new URL('../vendor/channel-pack/src/channel-pack-rpc.ts', import.meta.url), 'utf8')
+    assert.ok((rpc.match(/MONKEYCODE_DAILY_CHECKIN_CREDITS/g) ?? []).length >= 4,
+      'RPC 的 credits.status / already-claimed / 成功分支都必须用常量兜底')
 
     // ── 探活三态 ──
     assert.equal(await probeCredential(realFetch, product, cred), 'valid')

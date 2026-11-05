@@ -97,6 +97,17 @@ export const MONKEYCODE_PROBE_PATH = '/api/v1/users/wallet'
 export const MONKEYCODE_WALLET_PATH = '/api/v1/users/wallet'
 /** 签到状态（GET）/ 执行签到（POST）。 */
 export const MONKEYCODE_CHECKIN_PATH = '/api/v1/users/wallet/checkin'
+
+/**
+ * 每日签到奖励积分（官方客户端契约常量）。
+ *
+ * 依据 `chaitin/MonkeyCode` → `desktop/src/baizhi/tests.rs` 的
+ * `mc_checkin_contract`：签到成功回 `{"code":0,"data":{"credits":100}}`。
+ * 上游 **GET 签到状态**只给 `{"checked_in":true}`，不带奖励字段，于是
+ * 「今天已签到」的展示拿不到这 100 —— 用户 2026-11-05 报「每日签到给 100
+ * 积分，每次都没有返回」。已签到时用这个官方常量兜底（不是编造的动态值）。
+ */
+export const MONKEYCODE_DAILY_CHECKIN_CREDITS = 100
 /** 平台可选模型。 */
 export const MONKEYCODE_MODELS_PATH = '/api/v1/users/models/available'
 

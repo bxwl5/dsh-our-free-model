@@ -224,7 +224,8 @@ export async function runCheckin(
       : `上游返回业务错误（code=${businessCode}）`
     return { ok: false, reason: message }
   }
-  return { ok: true, status: parseCheckin(result.body) }
+  const status = parseCheckin(result.body)
+  return { ok: true, status }
 }
 
 /**
@@ -591,7 +592,7 @@ export async function runCheckinWithCaptchaImpl(options: {
   product: MonkeyCodeProduct
   credential: MonkeyCodeCredential
   signal?: AbortSignal
-}): Promise<{ ok: boolean; reason?: string; checkedIn?: boolean }> {
+}): Promise<{ ok: boolean; reason?: string; checkedIn?: boolean; credits?: number }> {
   const { fetcher, product, credential } = options
   const base = product.apiBase
   const headers = { Accept: 'application/json', 'Content-Type': 'application/json', ...monkeyCodeHeaders(product, credential) }
@@ -634,11 +635,21 @@ export async function runCheckinWithCaptchaImpl(options: {
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   })
   const body = await checkinRes.json().catch(() => undefined) as
-    { code?: number; message?: string; data?: { checked_in?: boolean } } | undefined
+    { code?: number; message?: string; data?: { checked_in?: boolean; credits?: number; reward?: number; credit?: number } } | undefined
   if (body?.code !== undefined && body.code !== 0) {
     return { ok: false, reason: body.message ?? `业务错误 code=${body.code}` }
   }
-  return { ok: true, checkedIn: body?.data?.checked_in === true }
+  // ★ 官方客户端契约（desktop/src/baizhi/tests.rs 的 mc_checkin_contract）：
+  // 签到成功回 `{"code":0,"data":{"credits":100}}` —— 100 积分就在这个字段。
+  // 早期实现把它丢了、RPC 侧又硬编码 credit:0，于是面板永远显示「已领取 0 积分」，
+  // 用户看到「每日签到给 100 积分，每次都没有返回」。
+  const data = body?.data
+  const credits = typeof data?.credits === 'number' && Number.isFinite(data.credits)
+    ? data.credits
+    : typeof data?.reward === 'number' && Number.isFinite(data.reward)
+      ? data.reward
+      : typeof data?.credit === 'number' && Number.isFinite(data.credit) ? data.credit : undefined
+  return { ok: true, checkedIn: data?.checked_in === true, ...(credits === undefined ? {} : { credits }) }
 }
 
 /** 兼容旧名（RPC 侧用这个名）。 */
