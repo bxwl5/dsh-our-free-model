@@ -1517,10 +1517,6 @@ window.__ModuleLoader__.load({
 /* 折叠开关（账号 / 模型）：与操作按钮同行、排在行尾。
    2026-10-30 用户要求从「独立成行 + 分隔线」改为同行内联。 */
 .ofm_chanfolds{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-left:auto}
-/* 粘贴型渠道的输入区：独立成块、占满卡片宽度（不再挤在按钮行里）。 */
-  padding:10px 11px;border-radius:10px;
-  border:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 70%,transparent);
-  background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 60%,transparent)}
 .ofm_acctlist{display:flex;flex-direction:column;gap:6px}
 .ofm_acct{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:7px 10px;border-radius:11px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l1) 82%,transparent);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 62%,transparent);font-size:12px;transition:border-color .16s ease,background .16s ease}
 .ofm_acct:hover{border-color:var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 88%,transparent)}
