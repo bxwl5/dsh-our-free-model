@@ -3349,191 +3349,34 @@ window.__ModuleLoader__.load({
       return { text, title: t(capability.unit === 'dollars' ? 'chan.credits.dollars' : capability.unit === 'tokens' ? 'chan.credits.tokens' : 'chan.credits.left'), tone: sum <= 0 ? 'low' : '' }
     }
 
-    function ChannelCard(props) {
-      const { channel, status, rpc, t, onError, onChanged, auto, onAutoRefresh, cardIndex = 0 } = props
-      // ⚠️ 卡片侧「通知其它组件」的统一出口（2026-11-01 复审）：事件带
-      // provider —— 广播原本在页面层且不带载荷，15 张卡全部响应，一次动作
-      // 最多 20 个并发 credits.balances（各 90s 超时）。守卫在卡片的
-      // ofm:channels 监听器里；无 detail 的旧事件（测试桩）保持全量刷新。
-      const notifyChanged = () => {
-        onChanged()
-        try { window.dispatchEvent(new CustomEvent('ofm:channels', { detail: { provider: channel.id } })) } catch { /* no window */ }
-      }
-      const [open, setOpen] = useState(null)
-      const [accounts, setAccounts] = useState(undefined)
-      const [models, setModels] = useState(undefined)
-      const [credits, setCredits] = useState(undefined)
-      // 实时积分：每个账号的剩余余额（credits.balances），卡片汇总 + 账号行
-      // 逐条展示；随账号列表与领积分动作刷新，另有一个慢轮询兜底。
-      const [balances, setBalances] = useState(undefined)
-      const [busy, setBusy] = useState('')
-      const [notice, setNotice] = useState('')
-      // 成功类提示必须**自动消失**：旧实现只 setNotice 不清除，于是登录成功后
-      // 卡片底部永远挂着一行「已接入：xxx」，与头部状态行重复；用户点「续期」
-      // 走 accountAction（内部 setNotice('')）才顺带清掉 —— 表现为「点续期后消失」。
-      const noticeTimer = useRef(null)
-      useEffect(() => () => { if (noticeTimer.current) clearTimeout(noticeTimer.current) }, [])
-      const flashNotice = useCallback((text) => {
-        setNotice(text)
-        if (noticeTimer.current) clearTimeout(noticeTimer.current)
-        noticeTimer.current = setTimeout(() => setNotice(''), 4000)
-      }, [])
+    /**
+     * 渠道卡片「登录两阶段」hook（2026-11-06 审计 #22 拆分第一步，行为零变更）：
+     * 阶段一 startLogin —— 点击瞬间保留 transient activation，account.create 拿
+     *   accountId/loginUrl，popup 导航或 open-external 打开；autoclaw 短信形态
+     *   回 flowId 走卡片内嵌表单。
+     * 阶段二 poll —— 3s 轮询占位条目，10 分钟超时；成功后刷新账号/积分/余额。
+     * busy/notice 由调用方传入（与卡片其余 action 共用同一状态）。
+     */
+    function useChannelLogin(deps) {
+      const { channel, rpc, post, t, onError, channelTransport, notifyChanged, onChanged,
+              loadAccounts, loadCredits, loadBalances, flashNotice, setOpen,
+              zcodeProvider, busy, setBusy, notice, setNotice } = deps
       const [login, setLogin] = useState(null)
-      const modelBatchPending = useRef(false)
-      const [balanceError, setBalanceError] = useState('')
-      const [balanceLoading, setBalanceLoading] = useState(false)
-      const balancePending = useRef(null)
-      const balanceGeneration = useRef(0)
-      const claimPending = useRef(false)
-      const creditCapability = CHANNEL_CREDITS[channel.id]
-      const [zcodeProvider, setZcodeProvider] = useState(() => {
-        try { return window.localStorage?.getItem(ZCODE_PROVIDER_KEY) === 'zai' ? 'zai' : 'bigmodel' } catch { return 'bigmodel' }
-      })
       const loginAttempt = useRef(null)
-      const chooseZcodeProvider = value => {
-        if (value !== 'bigmodel' && value !== 'zai') return
-        setZcodeProvider(value)
-        try { window.localStorage?.setItem(ZCODE_PROVIDER_KEY, value) } catch { /* preference still applies this session */ }
-      }
-      const balanceLabel = creditCapability?.unit === 'tokens' ? t('chan.credits.tokens')
-        : creditCapability?.unit === 'dollars' ? t('chan.credits.dollars')
-          : creditCapability?.quota ? t('chan.credits.quota') : t('chan.credits.left')
-
-      const accountsCount = status?.accounts?.total ?? 0
-      const enabledCount = status?.accounts?.enabled ?? 0
-      const modelsTotal = status?.models?.total ?? 0
-      const modelsOff = status?.models?.disabled ?? 0
-      const connected = enabledCount > 0
-      const chanState = status?.closed === true ? 'off' : connected ? 'on' : 'idle'
-      const stateText = status?.closed === true ? t('chan.state.closed') : connected ? t('chan.state.on') : t('chan.state.off')
-
-      const loadAccounts = useCallback(async () => {
-        try {
-          const value = await rpc('account.list', { provider: channel.id })
-          setAccounts(value?.accounts ?? [])
-        } catch (error) { setAccounts([]); onError(channel, error) }
-      }, [rpc, channel.id, onError])
-      const loadModels = useCallback(async () => {
-        try {
-          const value = await rpc('model.list', { provider: channel.id })
-          setModels(value?.models ?? [])
-        } catch (error) { setModels([]); onError(channel, error) }
-      }, [rpc, channel.id, onError])
-      const loadCredits = useCallback(async () => {
-        if (!CHANNEL_CREDITS[channel.id]?.status) return
-        try {
-          const value = await rpc('credits.status', { provider: channel.id })
-          setCredits(value?.accounts ?? [])
-        } catch { setCredits([]) }
-      }, [rpc, channel.id])
-      const loadBalances = useCallback((afterWrite = false) => {
-        // （2026-11-01 复审曾在此加「空对象不发请求」守卫，回退：后端
-        // credits.balances 对 workbuddy/raccoon/commandcode 都有真实分支
-        // （productById buddy 系 / 4214 / 3934），channel-credits-ui-test
-        // 也把它们列为「必须查询余额」的契约面。空对象 `{}` 只表示
-        // 无 claim/status 能力，balances 能力在后端分派表里。）
-        if (!CHANNEL_CREDITS[channel.id] || !rpc) return Promise.resolve()
-        const pending = balancePending.current
-        if (!afterWrite && pending?.provider === channel.id && pending.rpc === rpc) return pending.promise
-        const generation = ++balanceGeneration.current
-        const request = { provider: channel.id, rpc }
-        balancePending.current = request
-        setBalanceLoading(true); setBalanceError('')
-        request.promise = (async () => {
-          try {
-            const value = await rpc('credits.balances', { provider: channel.id, ...afterWrite ? { force: true } : {} }, RPC_TIMEOUT.heavy)
-            if (generation === balanceGeneration.current) setBalances(value?.accounts ?? [])
-          } catch (error) {
-            if (generation === balanceGeneration.current) {
-              setBalances([])
-              setBalanceError(String(error?.message ?? error))
-            }
-          } finally {
-            if (generation === balanceGeneration.current) setBalanceLoading(false)
-            if (balancePending.current === request) balancePending.current = null
-          }
-        })()
-        return request.promise
-      }, [rpc, channel.id])
+      const [smsPhone, setSmsPhone] = useState('')
+      const [smsCode, setSmsCode] = useState('')
+      const [smsSentAt, setSmsSentAt] = useState(0)
+      const [smsBusy, setSmsBusy] = useState(false)
+      const [smsMessage, setSmsMessage] = useState('')
+      // 短信重发倒计时走针（2026-11-06 审计 #29）：smsSentAt 是时间戳，组件不会
+      // 因时间流逝而重渲染，需要独立的 1s tick 驱动倒计时文案。
+      const [smsTick, setSmsTick] = useState(0)
       useEffect(() => {
-        setBalances(undefined); setBalanceError('')
-        void loadBalances()
-        return () => { balanceGeneration.current++; balancePending.current = null }
-      }, [loadBalances])
-      // A slow heartbeat keeps the numbers honest while the page sits open:
-      // balances move whenever a model is used elsewhere, and a stale credit
-      // count reads as "I have more quota than I do".
-      useEffect(() => {
-        if (!CHANNEL_CREDITS[channel.id]) return undefined
-        // 2026-11-06 审计：15 张卡的无抖动 90s 定时器会同刻惊群（同一秒内 15 个
-        // credits.balances 并发打向宿主）。按卡片序号错峰：挂载即查不变（那是
-        // useEffect 前一段的事），之后的周期触发错开 (index%12)*7.5s 相位、
-        // 周期仍 90s。两个句柄都在 cleanup 里清。
-        const phase = (cardIndex % 12) * 7_500
-        const first = setTimeout(() => { void loadBalances() }, phase + 90_000)
-        const timer = setInterval(() => { void loadBalances() }, 90_000)
-        return () => { clearTimeout(first); clearInterval(timer) }
-      }, [channel.id, loadBalances])
-      const balanceOf = accountId => {
-        const row = (balances ?? []).find(entry => entry.accountId === accountId)
-        return row?.balance === null || row?.balance === undefined ? null : row.balance
-      }
-      const balancesTotal = (balances ?? []).reduce((sum, row) => sum + (Number.isFinite(row.balance?.total) ? row.balance.total : 0), 0)
-      const balancesKnown = (balances ?? []).some(row => Number.isFinite(row.balance?.total))
-      const balanceFailures = (balances ?? []).filter(row => row.error || !Number.isFinite(row.balance?.total)).length
+        if (smsSentAt === 0) return undefined
+        const timer = setInterval(() => setSmsTick(v => v + 1), 1000)
+        return () => clearInterval(timer)
+      }, [smsSentAt])
 
-      // Refetch what is on screen whenever the pack reports a change for this
-      // channel: an account added in another tab, a completed background login,
-      // a claim that moved the numbers.
-      useEffect(() => {
-        const onEvent = event => {
-          // 事件带 provider 时只刷对应卡片；无 provider（兼容旧调用）才全刷。
-          const provider = event?.detail?.provider
-          if (typeof provider === 'string' && provider !== '' && provider !== channel.id) return
-          if (open === 'accounts') { void loadAccounts(); void loadCredits() }
-          if (open === 'models') void loadModels()
-          void loadBalances()
-        }
-        window.addEventListener('ofm:channels', onEvent)
-        return () => window.removeEventListener('ofm:channels', onEvent)
-      }, [open, loadAccounts, loadModels, loadCredits, loadBalances, channel.id])
-
-      const toggle = async fold => {
-        if (open === fold) { setOpen(null); return }
-        setOpen(fold)
-        if (fold === 'accounts') { setAccounts(undefined); await loadAccounts(); void loadCredits(); void loadBalances() }
-        if (fold === 'models') { setModels(undefined); await loadModels() }
-      }
-
-      // The pack's login is two-phase: `account.create` returns the URL to open
-      // *immediately* (a popup opened after a 30-second await is blocked), then
-      // the browser flow finishes in the background and `login.poll` sees the
-      // credential appear. The placeholder account is real from the first
-      // moment, so the card can poll against it.
-      useEffect(() => {
-        if (loginAttempt.current?.cancelled) {
-          loginAttempt.current = null
-          setBusy(value => value === 'add' ? '' : value)
-        }
-        return () => {
-          const attempt = loginAttempt.current
-          if (attempt) { attempt.cancelled = true; closeLoginPopup(attempt.popup) }
-        }
-      }, [channel.id])
-      useEffect(() => {
-        const attempt = loginAttempt.current
-        if (!attempt || sameChannelTransport(attempt.transport, channelTransport(rpc))) return
-        attempt.cancelled = true
-        closeLoginPopup(attempt.popup)
-        loginAttempt.current = null
-        setBusy(value => value === 'add' ? '' : value)
-      }, [rpc])
-      /**
-       * 提交粘贴的凭据。
-       *
-       * 走后端 `account.adopt` —— 它用各渠道自己的解析函数做形状校验，
-       * 避免「UI 收下了、适配器用不了」的半残凭据。
-       */
       const startLogin = async () => {
         if (loginAttempt.current && !loginAttempt.current.cancelled) return
         const attempt = { popup: null, cancelled: false, transport: channelTransport(rpc) }
@@ -3603,6 +3446,7 @@ window.__ModuleLoader__.load({
       // window the pack keeps a pending login link alive for.
 // 卡片内嵌形态（autoclaw）另外驱动服务端轮询：
       // 所以它的间隔独立（1.2s 发一次，服务端自己做单飞合并）。
+
       useEffect(() => {
         if (login === null) return undefined
         let alive = true
@@ -3634,6 +3478,202 @@ window.__ModuleLoader__.load({
         return () => { alive = false; clearInterval(timer) }
       }, [login, rpc, channel.id, t, onChanged, loadAccounts, loadCredits, loadBalances])
 
+
+      // The pack's login is two-phase: `account.create` returns the URL to open
+      // *immediately* (a popup opened after a 30-second await is blocked), then
+      // the browser flow finishes in the background and `login.poll` sees the
+      // credential appear. The placeholder account is real from the first
+      // moment, so the card can poll against it.
+      useEffect(() => {
+        if (loginAttempt.current?.cancelled) {
+          loginAttempt.current = null
+          setBusy(value => value === 'add' ? '' : value)
+        }
+        return () => {
+          const attempt = loginAttempt.current
+          if (attempt) { attempt.cancelled = true; closeLoginPopup(attempt.popup) }
+        }
+      }, [channel.id])
+      useEffect(() => {
+        const attempt = loginAttempt.current
+        if (!attempt || sameChannelTransport(attempt.transport, channelTransport(rpc))) return
+        attempt.cancelled = true
+        closeLoginPopup(attempt.popup)
+        loginAttempt.current = null
+        setBusy(value => value === 'add' ? '' : value)
+      }, [rpc])
+      return { login, setLogin, startLogin,
+               smsPhone, setSmsPhone, smsCode, setSmsCode, smsSentAt, setSmsSentAt,
+               smsBusy, setSmsBusy, smsMessage, setSmsMessage, smsTick }
+    }
+
+    function ChannelCard(props) {
+      const { channel, status, rpc, t, onError, onChanged, auto, onAutoRefresh, cardIndex = 0 } = props
+      // ⚠️ 卡片侧「通知其它组件」的统一出口（2026-11-01 复审）：事件带
+      // provider —— 广播原本在页面层且不带载荷，15 张卡全部响应，一次动作
+      // 最多 20 个并发 credits.balances（各 90s 超时）。守卫在卡片的
+      // ofm:channels 监听器里；无 detail 的旧事件（测试桩）保持全量刷新。
+      const notifyChanged = () => {
+        onChanged()
+        try { window.dispatchEvent(new CustomEvent('ofm:channels', { detail: { provider: channel.id } })) } catch { /* no window */ }
+      }
+      const [open, setOpen] = useState(null)
+      const [accounts, setAccounts] = useState(undefined)
+      const [models, setModels] = useState(undefined)
+      const [credits, setCredits] = useState(undefined)
+      // 实时积分：每个账号的剩余余额（credits.balances），卡片汇总 + 账号行
+      // 逐条展示；随账号列表与领积分动作刷新，另有一个慢轮询兜底。
+      const [balances, setBalances] = useState(undefined)
+      const [busy, setBusy] = useState('')
+      const [notice, setNotice] = useState('')
+      // 成功类提示必须**自动消失**：旧实现只 setNotice 不清除，于是登录成功后
+      // 卡片底部永远挂着一行「已接入：xxx」，与头部状态行重复；用户点「续期」
+      // 走 accountAction（内部 setNotice('')）才顺带清掉 —— 表现为「点续期后消失」。
+      const noticeTimer = useRef(null)
+      useEffect(() => () => { if (noticeTimer.current) clearTimeout(noticeTimer.current) }, [])
+      const flashNotice = useCallback((text) => {
+        setNotice(text)
+        if (noticeTimer.current) clearTimeout(noticeTimer.current)
+        noticeTimer.current = setTimeout(() => setNotice(''), 4000)
+      }, [])
+      const modelBatchPending = useRef(false)
+      const [balanceError, setBalanceError] = useState('')
+      const [balanceLoading, setBalanceLoading] = useState(false)
+      const balancePending = useRef(null)
+      const balanceGeneration = useRef(0)
+      const claimPending = useRef(false)
+      const creditCapability = CHANNEL_CREDITS[channel.id]
+      const [zcodeProvider, setZcodeProvider] = useState(() => {
+        try { return window.localStorage?.getItem(ZCODE_PROVIDER_KEY) === 'zai' ? 'zai' : 'bigmodel' } catch { return 'bigmodel' }
+      })
+      const chooseZcodeProvider = value => {
+        if (value !== 'bigmodel' && value !== 'zai') return
+        setZcodeProvider(value)
+        try { window.localStorage?.setItem(ZCODE_PROVIDER_KEY, value) } catch { /* preference still applies this session */ }
+      }
+      const balanceLabel = creditCapability?.unit === 'tokens' ? t('chan.credits.tokens')
+        : creditCapability?.unit === 'dollars' ? t('chan.credits.dollars')
+          : creditCapability?.quota ? t('chan.credits.quota') : t('chan.credits.left')
+
+      const accountsCount = status?.accounts?.total ?? 0
+      const enabledCount = status?.accounts?.enabled ?? 0
+      const modelsTotal = status?.models?.total ?? 0
+      const modelsOff = status?.models?.disabled ?? 0
+      const connected = enabledCount > 0
+      const chanState = status?.closed === true ? 'off' : connected ? 'on' : 'idle'
+      const stateText = status?.closed === true ? t('chan.state.closed') : connected ? t('chan.state.on') : t('chan.state.off')
+
+      const loadAccounts = useCallback(async () => {
+        try {
+          const value = await rpc('account.list', { provider: channel.id })
+          setAccounts(value?.accounts ?? [])
+        } catch (error) { setAccounts([]); onError(channel, error) }
+      }, [rpc, channel.id, onError])
+      const loadModels = useCallback(async () => {
+        try {
+          const value = await rpc('model.list', { provider: channel.id })
+          setModels(value?.models ?? [])
+        } catch (error) { setModels([]); onError(channel, error) }
+      }, [rpc, channel.id, onError])
+      const loadCredits = useCallback(async () => {
+        if (!CHANNEL_CREDITS[channel.id]?.status) return
+        try {
+          const value = await rpc('credits.status', { provider: channel.id })
+          setCredits(value?.accounts ?? [])
+        } catch { setCredits([]) }
+      }, [rpc, channel.id])
+      const loadBalances = useCallback((afterWrite = false) => {
+        // （2026-11-01 复审曾在此加「空对象不发请求」守卫，回退：后端
+        // credits.balances 对 workbuddy/raccoon/commandcode 都有真实分支
+        // （productById buddy 系 / 4214 / 3934），channel-credits-ui-test
+        // 也把它们列为「必须查询余额」的契约面。空对象 `{}` 只表示
+        // 无 claim/status 能力，balances 能力在后端分派表里。）
+        if (!CHANNEL_CREDITS[channel.id] || !rpc) return Promise.resolve()
+        const pending = balancePending.current
+        if (!afterWrite && pending?.provider === channel.id && pending.rpc === rpc) return pending.promise
+        const generation = ++balanceGeneration.current
+        const request = { provider: channel.id, rpc }
+        balancePending.current = request
+        setBalanceLoading(true); setBalanceError('')
+        request.promise = (async () => {
+          try {
+            const value = await rpc('credits.balances', { provider: channel.id, ...afterWrite ? { force: true } : {} }, RPC_TIMEOUT.heavy)
+            if (generation === balanceGeneration.current) setBalances(value?.accounts ?? [])
+          } catch (error) {
+            if (generation === balanceGeneration.current) {
+              setBalances([])
+              setBalanceError(String(error?.message ?? error))
+            }
+          } finally {
+            if (generation === balanceGeneration.current) setBalanceLoading(false)
+            if (balancePending.current === request) balancePending.current = null
+          }
+        })()
+        return request.promise
+      }, [rpc, channel.id])
+      // ── 登录两阶段（2026-11-06 审计 #22 拆分第一步）：state/effect 全在 hook 内，行为等价 ──
+      const { login, setLogin, startLogin,
+              smsPhone, setSmsPhone, smsCode, setSmsCode, smsSentAt, setSmsSentAt,
+              smsBusy, setSmsBusy, smsMessage, setSmsMessage, smsTick } =
+        useChannelLogin({ channel, rpc, post, t, onError, channelTransport, notifyChanged, onChanged,
+                          loadAccounts, loadCredits, loadBalances, flashNotice, setOpen,
+                          zcodeProvider, busy, setBusy, notice, setNotice })
+      useEffect(() => {
+        setBalances(undefined); setBalanceError('')
+        void loadBalances()
+        return () => { balanceGeneration.current++; balancePending.current = null }
+      }, [loadBalances])
+      // A slow heartbeat keeps the numbers honest while the page sits open:
+      // balances move whenever a model is used elsewhere, and a stale credit
+      // count reads as "I have more quota than I do".
+      useEffect(() => {
+        if (!CHANNEL_CREDITS[channel.id]) return undefined
+        // 2026-11-06 审计：15 张卡的无抖动 90s 定时器会同刻惊群（同一秒内 15 个
+        // credits.balances 并发打向宿主）。按卡片序号错峰：挂载即查不变（那是
+        // useEffect 前一段的事），之后的周期触发错开 (index%12)*7.5s 相位、
+        // 周期仍 90s。两个句柄都在 cleanup 里清。
+        const phase = (cardIndex % 12) * 7_500
+        const first = setTimeout(() => { void loadBalances() }, phase + 90_000)
+        const timer = setInterval(() => { void loadBalances() }, 90_000)
+        return () => { clearTimeout(first); clearInterval(timer) }
+      }, [channel.id, loadBalances])
+      const balanceOf = accountId => {
+        const row = (balances ?? []).find(entry => entry.accountId === accountId)
+        return row?.balance === null || row?.balance === undefined ? null : row.balance
+      }
+      const balancesTotal = (balances ?? []).reduce((sum, row) => sum + (Number.isFinite(row.balance?.total) ? row.balance.total : 0), 0)
+      const balancesKnown = (balances ?? []).some(row => Number.isFinite(row.balance?.total))
+      const balanceFailures = (balances ?? []).filter(row => row.error || !Number.isFinite(row.balance?.total)).length
+
+      // Refetch what is on screen whenever the pack reports a change for this
+      // channel: an account added in another tab, a completed background login,
+      // a claim that moved the numbers.
+      useEffect(() => {
+        const onEvent = event => {
+          // 事件带 provider 时只刷对应卡片；无 provider（兼容旧调用）才全刷。
+          const provider = event?.detail?.provider
+          if (typeof provider === 'string' && provider !== '' && provider !== channel.id) return
+          if (open === 'accounts') { void loadAccounts(); void loadCredits() }
+          if (open === 'models') void loadModels()
+          void loadBalances()
+        }
+        window.addEventListener('ofm:channels', onEvent)
+        return () => window.removeEventListener('ofm:channels', onEvent)
+      }, [open, loadAccounts, loadModels, loadCredits, loadBalances, channel.id])
+
+      const toggle = async fold => {
+        if (open === fold) { setOpen(null); return }
+        setOpen(fold)
+        if (fold === 'accounts') { setAccounts(undefined); await loadAccounts(); void loadCredits(); void loadBalances() }
+        if (fold === 'models') { setModels(undefined); await loadModels() }
+      }
+
+      /**
+       * 提交粘贴的凭据。
+       *
+       * 走后端 `account.adopt` —— 它用各渠道自己的解析函数做形状校验，
+       * 避免「UI 收下了、适配器用不了」的半残凭据。
+       */
       const accountAction = async (key, accountId, fn) => {
         setBusy(key); setNotice('')
         try { await fn() } catch (error) { onError(channel, error) } finally { setBusy('') }
@@ -3973,15 +4013,6 @@ window.__ModuleLoader__.load({
       // ── 卡片内嵌登录（2026-10-30）：autoclaw 短信表单 ──
       // 这两个渠道不再有 127.0.0.1 本地页（远程浏览器打不开），状态直接渲染在
       // 渠道卡片里；成功/失败仍由 login.poll 收尾（见上方 effect）。
-      const [smsPhone, setSmsPhone] = useState('')
-      const [smsCode, setSmsCode] = useState('')
-      const [smsSentAt, setSmsSentAt] = useState(0)
-      const [smsBusy, setSmsBusy] = useState(false)
-      const [smsMessage, setSmsMessage] = useState('')
-      // 短信重发倒计时走针：smsSentAt 是时间戳，组件不会因时间流逝而重渲染
-      // （2026-11-06 审计 #29——kuku/monkeycode 二维码轮询 effect 删除时把
-      // 唯一的重渲染源也带走了，按钮文案曾一直停在「已发送（60 s 后可重发）」）。
-      const [smsTick, setSmsTick] = useState(0)
       useEffect(() => {
         if (smsSentAt === 0) return undefined
         const timer = setInterval(() => setSmsTick(v => v + 1), 1000)
