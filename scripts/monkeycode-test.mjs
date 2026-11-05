@@ -160,6 +160,19 @@ async function main() {
     assert.equal(powResult.ok, true, 'POW 签到成功')
     assert.equal(powResult.credits, 100, '★ 签到结果必须带回真实的 100 积分（不能丢/硬编码 0）')
 
+    // ★ 积分显示口径（用户 2026-11-05）：官方客户端/网页把 wallet.balance
+    // 按 1000:1 显示成「积分」，只保留整数、舍弃小数。
+    // 实测 API balance=1037550 → 网页显示 1037 积分。早期把原始值当积分，
+    // 前端 formatTokens(1037550) 显示成「1.0M」，用户报不对。
+    const fs = await import('node:fs')
+    const rpcSrc = fs.readFileSync(new URL('../vendor/channel-pack/src/channel-pack-rpc.ts', import.meta.url), 'utf8')
+    assert.match(rpcSrc, /Math\.trunc\(wallet\.balance \/ 1000\)/, '余额必须按 1000:1 换算并取整')
+    const clientSrc = fs.readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+    assert.match(clientSrc, /monkeycode: \{ claim: true, status: true, unit: 'credits' \}/, '前端 unit 必须是 credits')
+    assert.match(clientSrc, /capability\.unit === 'credits' \? String\(Math\.trunc\(sum\)\)/, 'unit=credits 必须显示整数、不套 K/M')
+    // 用户实测值：1037550 → 1037（舍弃 .55）
+    assert.equal(Math.trunc(1037550 / 1000), 1037, '官方实测 1037550 应显示为 1037 积分')
+
     // 官方契约常量：GET 状态只回 {checked_in:true} 时，RPC 层用它兜底 100。
     const { MONKEYCODE_DAILY_CHECKIN_CREDITS } = await import('../vendor/channel-pack/src/monkeycode-product.ts')
     assert.equal(MONKEYCODE_DAILY_CHECKIN_CREDITS, 100, '每日签到奖励常量 = 官方契约 100')

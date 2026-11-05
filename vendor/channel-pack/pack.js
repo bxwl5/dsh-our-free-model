@@ -70226,7 +70226,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             fetchBalance: async (credential) => {
               const wallet = await fetchWallet(codeartsFetcher, MONKEYCODE, credential);
               if (wallet?.balance === void 0) return null;
-              return { total: wallet.balance, packages: [], expiredTotal: 0 };
+              return { total: Math.trunc(wallet.balance / 1e3), packages: [], expiredTotal: 0 };
             },
             warn: (msg) => ctx.logger?.warn?.(msg)
           });

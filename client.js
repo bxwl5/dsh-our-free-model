@@ -196,7 +196,6 @@ window.__ModuleLoader__.load({
         'reload.now': '热重载插件',
         'reload.reloading': '重载中…',
         'reload.auto': '文件变化自动热重载',
-        'reload.hint': '改完插件代码无需重启 DSH；NAS 上没开自动时点这个按钮即可让新代码生效。',
         'reload.failed': '热重载失败：{reason}',
         'nav.tab.free': '免费模型',
         'nav.tab.channels': '渠道接入',
@@ -716,7 +715,6 @@ window.__ModuleLoader__.load({
         'reload.now': 'Hot-reload plugin',
         'reload.reloading': 'Reloading…',
         'reload.auto': 'Hot-reload on file change',
-        'reload.hint': 'New plugin code takes effect without restarting DSH; on NAS press this button when auto-reload is off.',
         'reload.failed': 'Hot reload failed: {reason}',
         'nav.tab.free': 'Free models',
         'nav.tab.channels': 'Channels',
@@ -3188,9 +3186,6 @@ window.__ModuleLoader__.load({
           field(t('pref.interval'), h('input', { className: 'ofm_input', style: { maxWidth: 100 }, value: draft?.probeIntervalMinutes ?? 15, onChange: e => setDraft(c => ({ ...c, probeIntervalMinutes: Number(e.target.value.replace(/\D/g, '')) || 0 })) })),
           field(t('pref.maxTokens'), h('input', { className: 'ofm_input', style: { maxWidth: 120 }, value: draft?.defaultMaxTokens ?? 32768, onChange: e => setDraft(c => ({ ...c, defaultMaxTokens: Number(e.target.value.replace(/\D/g, '')) || 0 })) })),
           h(Button, { kind: 'primary', disabled: busy, onClick: () => onApply({ probeIntervalMinutes: draft.probeIntervalMinutes, defaultMaxTokens: draft.defaultMaxTokens }) }, t('forward.apply'))),
-        h('div', { className: 'ofm_row', style: { gap: 8 } },
-          h('span', { className: 'ofm_pill' }, `${t('pref.egress')}: ${summary.egress?.ip ?? '—'}${summary.egress?.country ? ` (${summary.egress.country})` : ''}`),
-          h('span', { className: 'ofm_pill' }, `${t('pref.probedAt')}: ${ago(summary.probedAt, t.locale)}`)),
         // 热重载：手动按钮 + 自动开关（默认关）。开关经 onApply 走
         // POST /settings，后端会同步文件监听（watchPackage）。
         h('div', { className: 'ofm_row', style: { gap: 12, flexWrap: 'wrap' } },
@@ -3201,8 +3196,7 @@ window.__ModuleLoader__.load({
             label: t('reload.auto'),
             onChange: () => onApply({ autoReloadWatch: !(settings.autoReloadWatch === true) }),
           })),
-        reloadError === '' ? null : h('div', { className: 'ofm_note' }, reloadError),
-        h('p', { className: 'ofm_note' }, t('reload.hint')))
+        reloadError === '' ? null : h('div', { className: 'ofm_note' }, reloadError))
     }
 
 
@@ -3288,7 +3282,9 @@ window.__ModuleLoader__.load({
       antigravity: { unit: 'quota', quota: true },
       // 2026-10-24 补齐：这三家有真实的额度/签到接口，只是此前没接进面板。
       commandcode: {},
-      monkeycode: { claim: true, status: true },
+      // unit:'credits' → 余额按「积分」原样显示整数（不套 formatTokens 的 K/M），
+      // 与官方客户端口径一致（后端已把 wallet.balance 按 1000:1 换算）。
+      monkeycode: { claim: true, status: true, unit: 'credits' },
       accio: { unit: 'quota', quota: true },
       'accio-cn': { unit: 'quota', quota: true },
       // OfficeAce 是**积分制**（上游 `GET /v1/subscription` 的 skus[].quotas
@@ -3435,7 +3431,9 @@ window.__ModuleLoader__.load({
       const totals = accounts.map(row => Number(row.balance?.total)).filter(value => Number.isFinite(value))
       if (totals.length === 0) return null
       const sum = totals.reduce((acc, value) => acc + value, 0)
-      const text = capability.unit === 'dollars' ? `$${sum.toFixed(sum >= 100 ? 0 : 2)}` : formatTokens(sum)
+      const text = capability.unit === 'dollars' ? `$${sum.toFixed(sum >= 100 ? 0 : 2)}`
+        : capability.unit === 'credits' ? String(Math.trunc(sum))
+          : formatTokens(sum)
       return { text, title: t(capability.unit === 'dollars' ? 'chan.credits.dollars' : capability.unit === 'tokens' ? 'chan.credits.tokens' : 'chan.credits.left'), tone: sum <= 0 ? 'low' : '' }
     }
 

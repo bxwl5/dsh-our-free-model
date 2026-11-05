@@ -4156,7 +4156,12 @@ function registerChannelPackEndpoints(
             fetchBalance: async (credential) => {
               const wallet = await fetchMonkeyCodeWallet(codeartsFetcher, MONKEYCODE, credential)
               if (wallet?.balance === undefined) return null
-              return { total: wallet.balance, packages: [], expiredTotal: 0 }
+              // ★ 官方客户端/网页把 `balance` 按 **1000:1** 显示成积分：
+              // 实测 API `balance: 1037550`，而客户端与网页显示「1037 积分」
+              //（1037550 / 1000 = 1037.55）。早期直接把原始值当积分，前端
+              // formatTokens(1037550) 显示成「1.0M」——用户 2026-11-05 报不对。
+              // 这里换算成官方展示口径（取整，不编造小数）。
+              return { total: Math.trunc(wallet.balance / 1000), packages: [], expiredTotal: 0 }
             },
             warn: (msg) => ctx.logger?.warn?.(msg),
           })
