@@ -56,6 +56,9 @@ const suites = [
   // 自动签到的逐渠道记账（2026-10-26）：失败渠道当天可补跑 / coversToday=false
   // 不记日（Qoder 10:00 窗口）/ 重跑上限 / 旧格式兼容。假上游 + 内存 store。
   ['auto-checkin-ledger', 'auto-checkin-ledger-test.mjs', []],
+  // 实测成功即清异常标记（2026-11-05）：成功才清、失败/空流/无账号/未注入不清、
+  // 用内部 modelId、只清命中项、清风控、幂等。一处覆盖全部 20 渠道。
+  ['anomaly-clearing', 'anomaly-clearing-test.mjs', []],
   // 远端模型目录落盘快照（2026-10-27）：用户要求「远端拉取全量覆盖兜底表，
   // 全部渠道都这样」—— 锁死整份覆盖（不是并集）、按渠道分文件、版本/归属校验、
   // 损坏降级、id 去重与 restore 不覆盖。

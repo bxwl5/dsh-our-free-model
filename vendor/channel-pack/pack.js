@@ -34853,12 +34853,8 @@ var FileStore = class {
       return void 0;
     }
   }
-  /** 最近一次**由本进程**写盘后的 mtime，供账号池区分「自己写的」与「外部改的」。 */
+  /** 最近一次**由本进程**写盘后的 mtime（写盘后同步，避免「刚写完就被判外部改动」）。 */
   lastWriteMtimeMs;
-  /** 最近一次写盘后的 mtime（账号池用来避免「自己写完立刻重读」）。 */
-  get writtenMtimeMs() {
-    return this.lastWriteMtimeMs;
-  }
   write(state) {
     mkdirSync(join(this.home, "channel-pack"), { recursive: true });
     const tmp = `${this.path}.tmp`;
@@ -35399,6 +35395,7 @@ var AccountPool = class _AccountPool {
    * 可接受的小体积换语义正确。
    */
   async setModelDisabled(provider, modelId, disabled) {
+    this.ensureLoaded();
     const next = { ...this.modelCache };
     const perProvider = { ...next[provider] ?? {} };
     if (disabled) perProvider[modelId] = true;
@@ -35910,6 +35907,60 @@ var AccountPool = class _AccountPool {
     return removed;
   }
   /**
+   * ★ **实测成功即清异常标记**（用户 2026-11-05：「在轮询过程中发现这个渠道
+   * 被封禁限流的模型可用，就在异常里删除这条」）。
+   *
+   * 这是**所有渠道共用**的落点，由 `llm-register-compat` 的请求成功路径调用：
+   * 一次推理在这个「账号 + 模型」上真的成功产出内容了，就说明上游已经放通，
+   * 预测的 `resetAtMs`（限流解禁时刻 / 风控冷却时刻）不该再让它挂在异常汇总里。
+   *
+   * 与 {@link clearModelRateLimits} 的区别：
+   * - 那个是**手动重置 / 重测**：无条件清，且可按模型列表清；
+   * - 这个是**事实驱动**：只在真实请求成功时清，且只清「该账号 + 该模型」，
+   *   同时把账号级风控（`riskBlockedUntilMs`）一并解除 —— 账号能正常回内容，
+   *   风控自然也不成立了。
+   *
+   * ⚠ 只清命中的那一个模型 key，别把同账号其它模型的标记一起清掉
+   *   （额度是「账号 + 模型」维度的，别的模型可能仍然限流）。
+   * ⚠ 原子写：一次 `writeAccounts` 同时落两处变更，避免中途读到半清状态。
+   * ⚠ 幂等：没有标记时直接返回 0，不写盘（每次成功请求都会调，必须便宜）。
+   *
+   * @param accountId 请求实际使用的账号
+   * @param modelId 请求的实际内部模型 id（**不是**展示名）
+   * @returns 实际清除的标记条数（限流 1 + 风控 1，最多 2）
+   */
+  async clearAnomalyOnSuccess(accountId, modelId) {
+    if (accountId === "" || modelId === "") return 0;
+    const accounts = this.readAccounts();
+    const idx = accounts.findIndex((a) => a.id === accountId);
+    if (idx === -1) return 0;
+    const entry = accounts[idx];
+    const limits = entry.modelRateLimits;
+    const hadModelLimit = limits !== void 0 && Object.prototype.hasOwnProperty.call(limits, modelId);
+    const hadRisk = typeof entry.riskBlockedUntilMs === "number" && Number.isFinite(entry.riskBlockedUntilMs) && entry.riskBlockedUntilMs > 0;
+    if (!hadModelLimit && !hadRisk) return 0;
+    const updated = { ...entry };
+    let removed = 0;
+    if (hadModelLimit) {
+      const nextLimits = { ...limits };
+      delete nextLimits[modelId];
+      if (Object.keys(nextLimits).length === 0) delete updated.modelRateLimits;
+      else updated.modelRateLimits = nextLimits;
+      removed++;
+    }
+    if (hadRisk) {
+      delete updated.riskBlockedUntilMs;
+      removed++;
+    }
+    const next = [...accounts];
+    next[idx] = updated;
+    await this.writeAccounts(next);
+    this.ctx.logger?.info?.(
+      `[channel-pack] \u5B9E\u6D4B\u6210\u529F\uFF0C\u6E05\u9664\u5F02\u5E38\u6807\u8BB0: \u8D26\u53F7 ${accountId} \u6A21\u578B ${modelId}${hadModelLimit ? "\uFF08\u9650\u6D41\uFF09" : ""}${hadRisk ? "\uFF08\u98CE\u63A7\uFF09" : ""}`
+    );
+    return removed;
+  }
+  /**
    * 获取指定 provider + 模型的下一个可用账号。
    *
    * `modelId` 为空串时**不做限流过滤**——调用方（provider 的
@@ -36298,7 +36349,13 @@ var AccountPool = class _AccountPool {
     return {
       accounts: [...this.cache],
       disabledModels,
-      ...this.lockFields()
+      ...this.lockFields(),
+      // ★ 备份要带走全部开关（审查 2026-11-05）：缺这四个会让换机恢复后
+      //   轮询开关/网关开关/供应商顺序静默回落默认——「重启丢开关」的备份版。
+      accountStrategy: { ...this.accountStrategyCache },
+      accountStickyLimit: { ...this.accountStickyCache },
+      gatewayEnabled: this.gatewayEnabledCache,
+      providerOrder: [...this.providerOrderCache]
     };
   }
   /**
@@ -36313,12 +36370,24 @@ var AccountPool = class _AccountPool {
    * 账号条目与显式 `true` 的黑名单项，坏条目直接丢弃而不是写进池里
    * 反复触发选号失败。
    */
-  async replaceAll(accounts, disabledModels, permanentLocks) {
+  async replaceAll(accounts, disabledModels, permanentLocks, switches) {
     const next = sanitizeAccounts(accounts);
     this.cache = next;
     this.modelCache = sanitizeDisabledModels(disabledModels);
     if (permanentLocks !== void 0) {
       this.permanentLockCache = sanitizePermanentLocks(permanentLocks);
+    }
+    if (switches?.accountStrategy !== void 0) {
+      this.accountStrategyCache = sanitizeAccountStrategy(switches.accountStrategy);
+    }
+    if (switches?.accountStickyLimit !== void 0) {
+      this.accountStickyCache = sanitizeAccountSticky(switches.accountStickyLimit);
+    }
+    if (switches?.gatewayEnabled !== void 0) {
+      this.gatewayEnabledCache = switches.gatewayEnabled !== false;
+    }
+    if (switches?.providerOrder !== void 0) {
+      this.providerOrderCache = sanitizeProviderOrder(switches.providerOrder);
     }
     this.loaded = true;
     await this.persistLocks();
@@ -38637,6 +38706,13 @@ function isDuplicateRegistrationError(error) {
   if (typeof message2 !== "string") return false;
   return /already declared|already registered|is already (?:a|an) adapter/.test(message2);
 }
+var anomalyPool;
+function attachAnomalyPool(pool) {
+  anomalyPool = pool;
+  return () => {
+    if (anomalyPool === pool) anomalyPool = void 0;
+  };
+}
 function wrapAdapterWithTokenLedger(providers, adapter) {
   const provider = providers[0] ?? "";
   const accountingStream = (rawOptions, open) => {
@@ -38653,7 +38729,14 @@ function wrapAdapterWithTokenLedger(providers, adapter) {
       }
       return modelId;
     })();
-    return recordThroughStream(() => open(options), { channel, provider, model, startedAt: Date.now() });
+    return recordThroughStream(() => open(options), {
+      channel,
+      provider,
+      model,
+      // ★ 内部 id：清异常标记必须用 wire 口径的 key，展示名对不上。
+      modelId,
+      startedAt: Date.now()
+    });
   };
   return new Proxy(adapter, {
     get(target, prop) {
@@ -38743,6 +38826,10 @@ async function* recordStreamInScope(openStream, meta) {
       durationMs: Date.now() - meta.startedAt,
       ...failure !== void 0 ? { error: failure } : {}
     });
+    if (failure === void 0 && ttftMs > 0 && accountId.length > 0 && meta.modelId.length > 0 && anomalyPool !== void 0) {
+      void anomalyPool.clearAnomalyOnSuccess(accountId, meta.modelId).catch(() => {
+      });
+    }
   }
 }
 function registerAdapterIdempotent(llm, providers, adapter, warn) {
@@ -56572,6 +56659,7 @@ function isUsableZcodeCredential(value) {
 }
 
 // vendor/channel-pack/src/zcode-product.ts
+var ZCODE_TOKEN_USABLE_HOUR_UTC8 = 23;
 var ZCODE_FALLBACK_MODELS = [
   {
     id: "GLM-5.3-Flash",
@@ -56660,6 +56748,15 @@ var ZCODE = {
   quotaSwitchMax: 2,
   toolCacheBreakpoint: true
 };
+function nextZcodeQuotaRecoveryMs(nowMs = Date.now()) {
+  const OFFSET_MS = 8 * 36e5;
+  const DAY_MS2 = 864e5;
+  const shifted = nowMs + OFFSET_MS;
+  const dayStart = Math.floor(shifted / DAY_MS2) * DAY_MS2;
+  const usableShifted = dayStart + ZCODE_TOKEN_USABLE_HOUR_UTC8 * 36e5;
+  const usableMs = usableShifted - OFFSET_MS;
+  return usableMs > nowMs ? usableMs : usableMs + DAY_MS2;
+}
 var ALL_ZCODE_PRODUCTS = [ZCODE];
 function zcodeProductById(id) {
   return ALL_ZCODE_PRODUCTS.find((product) => product.id === id);
@@ -61814,11 +61911,16 @@ var ZcodeAdapter = class extends LlmAdapter15 {
    *
    * ## 标记到什么时候
    *
-   * ZCode 的免费额度是**按自然日**结算的（`billing/balance` 的桶带
-   * `expires_at`，活动说明为「每日刷新」）。故与 qoder 一致取
-   * **UTC+8 当日 24:00** —— 复用 `nextUtc8DayStartMs()`，**不**用
-   * `parseRateLimitError` 的「1 小时后」兜底（那会让标记过早失效，
-   * 用户 1 小时后再撞一次同样的墙）。
+   * ★ **不是次日 00:00**（用户 2026-11-05 实测纠正）：ZCode 的额度循环与自然日
+   * 不对齐 —— 09:00 清零、**19:00 上游重新投放签到额度、23:00 才真正可用于推理**。
+   * 标到 00:00 会让用户在 19:00–23:00 之间确信「插件记错了」：
+   * 解封时间显示 00:00，可 00:00 过后实测仍不能用。
+   *
+   * 故取 {@link nextZcodeQuotaRecoveryMs}（今天或次日的 23:00，见其说明）。
+   *
+   * ⚠ **不要**退回 `nextUtc8DayStartMs()`，也不要用 `parseRateLimitError` 的
+   * 「1 小时后」兜底：前者是错的时间点，后者会让标记过早失效、用户 1 小时后又
+   * 撞一次同样的墙（ZCode 的 3012 有风控计数惩罚，反复撞是要付代价的）。
    *
    * ⚠ 只标记**该账号 + 该模型**（`updateModelRateLimit` 的既有语义）：
    * 额度是「账号 + 模型」维度的，同一账号在别的模型上仍可能可用。
@@ -61827,7 +61929,7 @@ var ZcodeAdapter = class extends LlmAdapter15 {
     const pool = this.options.accountPool;
     if (pool === void 0) return void 0;
     if (activeAccountId !== void 0 && activeAccountId.length > 0) {
-      await pool.updateModelRateLimit(activeAccountId, options.model, nextUtc8DayStartMs());
+      await pool.updateModelRateLimit(activeAccountId, options.model, nextZcodeQuotaRecoveryMs());
       tried.add(activeAccountId);
     }
     const next = await pool.getAvailableAccount(this.product.id, options.model, tried);
@@ -66089,6 +66191,12 @@ async function exportBackup(pool, credentials) {
       credentials: exported,
       accounts: state.accounts,
       disabledModels: state.disabledModels,
+      // ★ 开关随备份走（审查 2026-11-05）：缺了会让换机恢复后轮询/网关开关
+      //   静默回落默认。老版本读到多余字段会忽略——向后兼容。
+      accountStrategy: state.accountStrategy,
+      accountStickyLimit: state.accountStickyLimit,
+      gatewayEnabled: state.gatewayEnabled,
+      providerOrder: state.providerOrder,
       // 权威表 + Loomy 兼容字段**同源**（老版本只读后者，缺了会看到
       // 「锁定悄悄失效」，而失效的后果是真把永久积分烧掉了）。
       permanentLocks: locks,
@@ -66152,7 +66260,13 @@ async function importBackup(credentials, pool, raw) {
       skipped.push(refName);
     }
   }
-  await pool.replaceAll(payload.accounts, payload.disabledModels, locksFromPayload(payload));
+  await pool.replaceAll(payload.accounts, payload.disabledModels, locksFromPayload(payload), {
+    // 老备份没有这些字段（undefined）⇒ replaceAll 保持现值，不重置。
+    accountStrategy: payload.accountStrategy,
+    accountStickyLimit: payload.accountStickyLimit,
+    gatewayEnabled: payload.gatewayEnabled,
+    providerOrder: payload.providerOrder
+  });
   const now = Date.now();
   const expiredAccounts = payload.accounts.filter(
     (entry) => typeof entry.expiresAt === "number" && Number.isFinite(entry.expiresAt) && entry.expiresAt <= now
@@ -67046,7 +67160,7 @@ function createAutoCheckin(deps) {
         continue;
       }
       const settle = (outcome, text2) => {
-        const entry = giveUpOrRetry(base, outcome, text2);
+        const entry = giveUpOrRetry(provider, base, outcome, text2);
         if (entry.status === "given-up") {
           totals.givenUp += 1;
           entry.lastText = `${text2}\xB7\u4ECA\u65E5\u5DF2\u653E\u5F03`;
@@ -67118,6 +67232,15 @@ function createAutoCheckin(deps) {
       const entry = ledgers[provider];
       if (entry !== void 0) pruned[provider] = entry;
     }
+    const latest = doc.providers;
+    const mergedProviders = {};
+    for (const [provider, entry] of Object.entries(latest)) {
+      if (providers.includes(provider)) continue;
+      mergedProviders[provider] = entry;
+    }
+    Object.assign(mergedProviders, pruned);
+    const latestChannels = doc.channels.filter((entry) => !providers.includes(entry.provider));
+    const runChannels = providers.filter((provider) => texts.has(provider)).map((provider) => ({ provider, text: texts.get(provider) ?? "" }));
     doc = {
       ...doc,
       // ⚠️ `lastDate` 保留**旧语义**：只有「今天确实有渠道被处理过」才写成今天。
@@ -67129,9 +67252,9 @@ function createAutoCheckin(deps) {
       lastDate: totals.coversToday > 0 ? utc8DateString(runAt) : doc.lastDate,
       lastResult: result,
       lastAt: runAt,
-      providers: pruned,
-      // 逐渠道文字按 provider 顺序（与遍历顺序一致，面板按它渲染）
-      channels: providers.filter((provider) => texts.has(provider)).map((provider) => ({ provider, text: texts.get(provider) ?? "" })),
+      providers: mergedProviders,
+      // 逐渠道文字：本轮渠道按遍历顺序 + 本轮未触碰渠道的既有文案（并发保护）
+      channels: [...runChannels, ...latestChannels],
       /**
        * 逐账号明细：**沿用 `doc.results`**，本函数不再重建它。
        *
@@ -67158,8 +67281,8 @@ function createAutoCheckin(deps) {
       left === 0 ? `[channel-pack] \u81EA\u52A8\u7B7E\u5230\u5B8C\u6210\uFF08${utc8DateString(runAt)}\uFF09\uFF1A${result}` : `[channel-pack] \u81EA\u52A8\u7B7E\u5230\u672C\u8F6E\u7ED3\u675F\uFF08${utc8DateString(runAt)}\uFF09\uFF0C${left} \u4E2A\u6E20\u9053\u5F85\u8865\u8DD1\uFF1A${result}`
     );
   }
-  function giveUpOrRetry(base, outcome, text) {
-    const exhausted = base.attempts >= AUTO_CHECKIN_MAX_ATTEMPTS_PER_DAY;
+  function giveUpOrRetry(provider, base, outcome, text) {
+    const exhausted = base.attempts >= maxAttemptsPerDay(provider);
     return {
       ...base,
       status: exhausted ? "given-up" : "pending",
@@ -76233,6 +76356,8 @@ function apply(ctx, config = {}) {
       detachTokenLedger();
     }
   }, "token-ledger-persistence");
+  const detachAnomalyPool = attachAnomalyPool(pool);
+  ctx.effect(() => detachAnomalyPool, "anomaly-pool-attachment");
   void pool.pruneAccountsWithForeignDomain(WORKBUDDY).then((removed) => {
     if (removed.length > 0) {
       ctx.logger.info(

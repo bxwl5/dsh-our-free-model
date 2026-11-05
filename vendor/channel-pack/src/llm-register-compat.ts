@@ -119,6 +119,55 @@ import { recordTokenUsage, peekLedgerAccount, runWithLedgerScope } from './token
 import { channelOfOptions } from './openai-gateway/channel.js'
 
 /**
+ * ★ **实测成功即清异常标记** —— 跨全部渠道的注入点（用户 2026-11-05）。
+ *
+ * 用户报障：「这个账号/模型实测已经可以使用了，还在异常列表里」「buddy 两个
+ * 账号都能用了，还挂着封禁」「在轮询过程中发现被封禁限流的模型可用，就在异常
+ * 里删除这条」。
+ *
+ * 根因：异常汇总只按**预测的解禁时刻**（`resetAtMs > now`）列条目，从不看
+ * 「这个账号+模型刚才是不是真的请求成功了」。上游一提前放通（或预测时间算错），
+ * 就出现「显示还封着、实际已能用」。而且这不是 zcode 特有：buddy、workbuddy、
+ * 风控（3012）都一样。
+ *
+ * 修复：在**所有渠道唯一共用的流式包装**（本文件）里，请求真的成功产出内容后
+ * 就清除该「账号 + 模型」的异常标记。一处覆盖 20 个渠道，不逐个适配器改。
+ *
+ * ⚠️ 用**注入**而不是 import `AccountPool`：本模块被纯逻辑单测直接调用，不能
+ * 拖进账号池的 `node:fs` 依赖；且账号池是运行时实例，import 拿不到。
+ * `index.ts` 创建池后调 {@link attachAnomalyPool} 注入；未注入时整段逻辑静默跳过。
+ */
+export interface AnomalyClearingPool {
+  clearAnomalyOnSuccess(accountId: string, modelId: string): Promise<number>
+}
+let anomalyPool: AnomalyClearingPool | undefined
+/**
+ * 注入账号池，返回**只摘自己**的 disposer。
+ *
+ * ⚠️ 与 `attachTokenLedgerStore` 同款所有权纪律（`index.ts` 那段注释详述了
+ * 事故）：插件 fiber 重启时「新 apply 挂载」与「旧 fiber 异步 dispose」会交错，
+ * 无条件 `attachAnomalyPool(undefined)` 会把**新实例刚挂上的池**摘空 ⇒ 实测
+ * 成功再也不清异常。故 disposer 只在「当前挂着的仍是我」时才摘。
+ */
+export function attachAnomalyPool(pool: AnomalyClearingPool): () => void {
+  anomalyPool = pool
+  return () => {
+    if (anomalyPool === pool) anomalyPool = undefined
+  }
+}
+
+/** 一次流式调用的记账元数据（展示名 + 内部模型 id 都要，见下方说明）。 */
+export interface StreamMeta {
+  channel: 'direct' | 'gateway'
+  provider: string
+  /** 展示名，用于台账（数据看板直接渲染）。 */
+  model: string
+  /** ★ 内部模型 id（wire 口径），用于清 `modelRateLimits` 的 key。 */
+  modelId: string
+  startedAt: number
+}
+
+/**
  * dsh-llm 对 adapter 的最小形状契约；流式记账和缺失视觉计价在注册边界补齐。
  */
 export interface StreamCapableAdapter {
@@ -216,7 +265,12 @@ export function wrapAdapterWithTokenLedger<T extends object>(providers: readonly
     // ⚠️ 把**清洗后**的 options 交给适配器（不是原始 rawOptions）：`open` 是
     // 各调用点传进来的闭包，它捕获的是调用点自己的 options —— 那些调用点
     // 拿到的已经是本函数返回的对象，所以这里显式传参，避免闭包把原始引用带回去。
-    return recordThroughStream(() => open(options), { channel, provider, model, startedAt: Date.now() })
+    return recordThroughStream(() => open(options), {
+      channel, provider, model,
+      // ★ 内部 id：清异常标记必须用 wire 口径的 key，展示名对不上。
+      modelId,
+      startedAt: Date.now(),
+    })
   }
 
   return new Proxy(adapter, {
@@ -292,7 +346,7 @@ export function wrapAdapterWithTokenLedger<T extends object>(providers: readonly
  */
 export function recordThroughStream(
   openStream: () => AsyncIterable<unknown>,
-  meta: { channel: 'direct' | 'gateway'; provider: string; model: string; startedAt: number },
+  meta: StreamMeta,
 ): AsyncIterable<unknown> {
   /**
    * ⚠️ **必须在这里建立请求域**（2026-11-04 审查 P1-7）。
@@ -312,7 +366,7 @@ export function recordThroughStream(
 /** {@link recordThroughStream} 的实体（在请求域内执行）。 */
 async function* recordStreamInScope(
   openStream: () => AsyncIterable<unknown>,
-  meta: { channel: 'direct' | 'gateway'; provider: string; model: string; startedAt: number },
+  meta: StreamMeta,
 ): AsyncIterable<unknown> {
   let usageReported = false
   let inputTokens = 0
@@ -384,6 +438,28 @@ async function* recordStreamInScope(
       durationMs: Date.now() - meta.startedAt,
       ...(failure !== undefined ? { error: failure } : {}),
     })
+    /**
+     * ★ **实测成功即清异常标记**（用户 2026-11-05，跨全部 20 个渠道）。
+     *
+     * 判据 `failure === undefined && ttftMs > 0`：流没抛错、且真的收到过内容块
+     * ⇒ 上游在这个「账号 + 模型」上确实放通了。异常汇总原本只按预测解禁时刻
+     * 列条目，上游提前放通时就会「显示还封着、实际已能用」。这里用事实纠正
+     * 预测：成功后把该条从异常里删掉。
+     *
+     * ⚠ `ttftMs > 0` 不能省：空流（0 chunk）可能是 HTTP 200 但流内报错，
+     *   那种不该算「可用」。
+     * ⚠ 必须用 `meta.modelId`（内部 id）而非 `meta.model`（展示名）——
+     *   `modelRateLimits` 的 key 是 wire 口径的 id。
+     * ⚠ fire-and-forget + 吞错：清标记是「顺带纠正展示」，绝不能反噬这条
+     *   已经成功的请求；账号池未注入（单测/未启用）时整段静默跳过。
+     * ⚠ 只清该账号 + 该模型，不碰同账号其它模型、也不碰别的账号。
+     */
+    if (failure === undefined && ttftMs > 0 && accountId.length > 0
+      && meta.modelId.length > 0 && anomalyPool !== undefined) {
+      void anomalyPool.clearAnomalyOnSuccess(accountId, meta.modelId).catch(() => {
+        /* 清异常标记失败不影响已成功的请求 */
+      })
+    }
   }
 }
 

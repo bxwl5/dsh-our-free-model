@@ -708,6 +708,42 @@ try {
     assert.equal(h5.calls.length, 0, '⚠️ 已达 zcode 上限（2 次）当天不再打上游')
   })
 
+  // ── 15. zcode 额度恢复点必须是 23:00，不是次日 00:00（用户 2026-11-05 实测纠正）──
+  await check('zcode 额度恢复点：标到 23:00 而非次日 00:00（假限制的解封时间）', async () => {
+    /*
+     * 上游额度循环（UTC+8）：09:00 清零 → 19:00 重新投放 → 23:00 才能用于推理。
+     * 旧实现标到「次日 00:00」，两个后果都被用户实测到：
+     *  - 解封时间显示 00:00，可 00:00 过后仍不能用（要等 23:00）；
+     *  - 00:00–19:00 之间若清标记，请求必再撞一次额度墙。
+     */
+    const { nextZcodeQuotaRecoveryMs, ZCODE_TOKEN_USABLE_HOUR_UTC8 } =
+      await import('../vendor/channel-pack/src/zcode-product.ts')
+    assert.equal(ZCODE_TOKEN_USABLE_HOUR_UTC8, 23, '可用时刻常量必须是 23')
+
+    const at = (hhmm, day = 5) => Date.parse(`2026-11-${String(day).padStart(2, '0')}T${hhmm}:00+08:00`)
+    const expect = (hhmm, day = 5) => at(hhmm, day)
+    const fmt = (ms) => {
+      const d = new Date(ms + 8 * 3_600_000)
+      return `${String(d.getUTCDate()).padStart(2, '0')} ${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`
+    }
+
+    // ① 上午撞墙（比如 10:00）→ 今天 19:00 投放、今天 23:00 可用
+    assert.equal(nextZcodeQuotaRecoveryMs(at('10:00')), expect('23:00'), `10:00 撞墙应恢复于今天 23:00，实际 ${fmt(nextZcodeQuotaRecoveryMs(at('10:00')))}`)
+    // ② 19:00~23:00 之间撞墙（额度刚投放但尚不可用）→ 仍是今天 23:00
+    assert.equal(nextZcodeQuotaRecoveryMs(at('20:30')), expect('23:00'), '20:30 撞墙应恢复于今天 23:00')
+    // ③ 23:00 之后撞墙（当天额度已用完）→ 次日 23:00
+    assert.equal(nextZcodeQuotaRecoveryMs(at('23:30')), expect('23:00', 6), '23:30 撞墙应恢复于次日 23:00')
+    assert.equal(nextZcodeQuotaRecoveryMs(at('03:00', 6)), expect('23:00', 6), '凌晨 03:00 撞墙应恢复于当天 23:00')
+    // ④ 恰好 23:00 整 → 视为已过，取次日（避免「标记即刻过期」的抖动）
+    assert.equal(nextZcodeQuotaRecoveryMs(at('23:00')), expect('23:00', 6), '23:00 整应取下一天')
+
+    // ⑤ 永远是「未来」：任何时刻恢复点都必须 > now（否则标记写入即过期）
+    for (const hhmm of ['00:00', '09:00', '18:59', '19:00', '22:59', '23:00', '23:59']) {
+      const now = at(hhmm)
+      assert.ok(nextZcodeQuotaRecoveryMs(now) > now, `${hhmm} 的恢复点必须晚于当前时刻`)
+    }
+  })
+
   await check('zcode 的 09:00 日界不污染其他渠道的签到记录与账本', async () => {
     /*
      * 用户 2026-11-04：「这些规则只针对 zcode，不影响其他渠道的签到」。
@@ -817,7 +853,7 @@ try {
     assert.equal(ac.mergeAccountResult(failedRow, { ...failedRow, message: '新原因' }).message, '新原因', '失败原因取最近一次')
   })
 
-  console.log(`auto-checkin-ledger: ${checks} 组断言通过（失败渠道补跑 / 非今日轮次 / 刷新前 inactive 不烧额度 / 重跑上限 / 旧格式兼容 / 全失败不记日 / 跳过不重试 / 补跑排定 / 纯函数边界 / running 反馈 / 常量漂移 / 计数过滤 / 逐账号明细聚合 / 明细容错 / 全天累计 / 合并规则 / 手动签到回填渠道状态 / zcode 签到窗口 / 渠道间日界隔离 / 结果行不重复）`)
+  console.log(`auto-checkin-ledger: ${checks} 组断言通过（失败渠道补跑 / 非今日轮次 / 刷新前 inactive 不烧额度 / 重跑上限 / 旧格式兼容 / 全失败不记日 / 跳过不重试 / 补跑排定 / 纯函数边界 / running 反馈 / 常量漂移 / 计数过滤 / 逐账号明细聚合 / 明细容错 / 全天累计 / 合并规则 / 手动签到回填渠道状态 / zcode 签到窗口 / 渠道间日界隔离 / 结果行不重复 / zcode 额度恢复点 23:00）`)
 } finally {
   hooks.deregister()
   fs.rmSync(scratch, { recursive: true, force: true })

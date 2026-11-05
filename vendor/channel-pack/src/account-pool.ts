@@ -1163,6 +1163,65 @@ export class AccountPool {
   }
 
   /**
+   * ★ **实测成功即清异常标记**（用户 2026-11-05：「在轮询过程中发现这个渠道
+   * 被封禁限流的模型可用，就在异常里删除这条」）。
+   *
+   * 这是**所有渠道共用**的落点，由 `llm-register-compat` 的请求成功路径调用：
+   * 一次推理在这个「账号 + 模型」上真的成功产出内容了，就说明上游已经放通，
+   * 预测的 `resetAtMs`（限流解禁时刻 / 风控冷却时刻）不该再让它挂在异常汇总里。
+   *
+   * 与 {@link clearModelRateLimits} 的区别：
+   * - 那个是**手动重置 / 重测**：无条件清，且可按模型列表清；
+   * - 这个是**事实驱动**：只在真实请求成功时清，且只清「该账号 + 该模型」，
+   *   同时把账号级风控（`riskBlockedUntilMs`）一并解除 —— 账号能正常回内容，
+   *   风控自然也不成立了。
+   *
+   * ⚠ 只清命中的那一个模型 key，别把同账号其它模型的标记一起清掉
+   *   （额度是「账号 + 模型」维度的，别的模型可能仍然限流）。
+   * ⚠ 原子写：一次 `writeAccounts` 同时落两处变更，避免中途读到半清状态。
+   * ⚠ 幂等：没有标记时直接返回 0，不写盘（每次成功请求都会调，必须便宜）。
+   *
+   * @param accountId 请求实际使用的账号
+   * @param modelId 请求的实际内部模型 id（**不是**展示名）
+   * @returns 实际清除的标记条数（限流 1 + 风控 1，最多 2）
+   */
+  async clearAnomalyOnSuccess(accountId: string, modelId: string): Promise<number> {
+    if (accountId === '' || modelId === '') return 0
+    const accounts = this.readAccounts()
+    const idx = accounts.findIndex(a => a.id === accountId)
+    if (idx === -1) return 0
+    const entry = accounts[idx]!
+    const limits = entry.modelRateLimits
+    const hadModelLimit = limits !== undefined
+      && Object.prototype.hasOwnProperty.call(limits, modelId)
+    const hadRisk = typeof entry.riskBlockedUntilMs === 'number'
+      && Number.isFinite(entry.riskBlockedUntilMs) && entry.riskBlockedUntilMs > 0
+    if (!hadModelLimit && !hadRisk) return 0
+
+    const updated = { ...entry }
+    let removed = 0
+    if (hadModelLimit) {
+      const nextLimits = { ...limits }
+      delete nextLimits[modelId]
+      if (Object.keys(nextLimits).length === 0) delete updated.modelRateLimits
+      else updated.modelRateLimits = nextLimits
+      removed++
+    }
+    if (hadRisk) {
+      delete updated.riskBlockedUntilMs
+      removed++
+    }
+    const next = [...accounts]
+    next[idx] = updated
+    await this.writeAccounts(next)
+    this.ctx.logger?.info?.(
+      `[channel-pack] 实测成功，清除异常标记: 账号 ${accountId} 模型 ${modelId}`
+        + `${hadModelLimit ? '（限流）' : ''}${hadRisk ? '（风控）' : ''}`,
+    )
+    return removed
+  }
+
+  /**
    * 获取指定 provider + 模型的下一个可用账号。
    *
    * `modelId` 为空串时**不做限流过滤**——调用方（provider 的

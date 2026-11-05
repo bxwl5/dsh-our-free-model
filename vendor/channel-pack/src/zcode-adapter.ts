@@ -94,7 +94,7 @@ import {
   type ZcodeCaptchaConfig,
 } from './zcode-captcha.js'
 import { GateAbortedError, ModelGate } from './model-gate.js'
-import { nextUtc8DayStartMs } from './model-queue.js'
+import { nextZcodeQuotaRecoveryMs } from './zcode-product.js'
 import {
   registerAdapterIdempotent,
 } from './llm-register-compat.js'
@@ -1711,11 +1711,16 @@ export class ZcodeAdapter extends LlmAdapter {
    *
    * ## 标记到什么时候
    *
-   * ZCode 的免费额度是**按自然日**结算的（`billing/balance` 的桶带
-   * `expires_at`，活动说明为「每日刷新」）。故与 qoder 一致取
-   * **UTC+8 当日 24:00** —— 复用 `nextUtc8DayStartMs()`，**不**用
-   * `parseRateLimitError` 的「1 小时后」兜底（那会让标记过早失效，
-   * 用户 1 小时后再撞一次同样的墙）。
+   * ★ **不是次日 00:00**（用户 2026-11-05 实测纠正）：ZCode 的额度循环与自然日
+   * 不对齐 —— 09:00 清零、**19:00 上游重新投放签到额度、23:00 才真正可用于推理**。
+   * 标到 00:00 会让用户在 19:00–23:00 之间确信「插件记错了」：
+   * 解封时间显示 00:00，可 00:00 过后实测仍不能用。
+   *
+   * 故取 {@link nextZcodeQuotaRecoveryMs}（今天或次日的 23:00，见其说明）。
+   *
+   * ⚠ **不要**退回 `nextUtc8DayStartMs()`，也不要用 `parseRateLimitError` 的
+   * 「1 小时后」兜底：前者是错的时间点，后者会让标记过早失效、用户 1 小时后又
+   * 撞一次同样的墙（ZCode 的 3012 有风控计数惩罚，反复撞是要付代价的）。
    *
    * ⚠ 只标记**该账号 + 该模型**（`updateModelRateLimit` 的既有语义）：
    * 额度是「账号 + 模型」维度的，同一账号在别的模型上仍可能可用。
@@ -1729,7 +1734,8 @@ export class ZcodeAdapter extends LlmAdapter {
     if (pool === undefined) return undefined
 
     if (activeAccountId !== undefined && activeAccountId.length > 0) {
-      await pool.updateModelRateLimit(activeAccountId, options.model, nextUtc8DayStartMs())
+      // ★ 恢复点 = 今天/次日的 23:00（不是 00:00）—— 见本方法头部的说明。
+      await pool.updateModelRateLimit(activeAccountId, options.model, nextZcodeQuotaRecoveryMs())
       tried.add(activeAccountId)
     }
 

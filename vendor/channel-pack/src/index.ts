@@ -46,6 +46,7 @@ import {
   reportLedgerAccount,
 } from './token-ledger.js'
 import { createTokenLedgerStore } from './token-ledger-store.js'
+import { attachAnomalyPool } from './llm-register-compat.js'
 import { buddyExpiringWindowDays } from './buddy-balance-rank.js'
 import { BuddyBalanceSelector, pickBuddyAccount } from './buddy-balance-selector.js'
 import { QODER, QODER_CN } from './qoder-product.js'
@@ -376,6 +377,13 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
       detachTokenLedger()
     }
   }, 'token-ledger-persistence')
+
+  // ★ 实测成功即清异常标记：把账号池注入**所有渠道共用**的流式包装
+  //（`llm-register-compat.ts`）。用户 2026-11-05：「在轮询过程中发现被封禁限流
+  // 的模型可用，就在异常里删除这条」。必须挂在适配器注册/首次请求之前。
+  // disposer 只摘自己 —— 与上面 ledger 同款 fiber 重启竞态纪律。
+  const detachAnomalyPool = attachAnomalyPool(pool)
+  ctx.effect(() => detachAnomalyPool, 'anomaly-pool-attachment')
 
   // WorkBuddy provider 已从中国版（copilot.tencent.com）改造为国际版
   // （www.workbuddy.ai）。旧账号存的是中国版凭据，其 token.domain 指向旧端点，

@@ -53,6 +53,14 @@ export interface ZcodeFallbackModel {
 }
 
 /** ZCode 产品配置。 */
+/**
+ * ZCode 领到的 token **开始可用于推理**的时刻（UTC+8）。
+ *
+ * ⚠️ 与 `auto-checkin.ts` 的签到窗口同源（那边 19:00 开窗、23:00 可用、
+ * 09:00 清零）。这边只关心「推理能用」的时刻，故用 23。
+ */
+export const ZCODE_TOKEN_USABLE_HOUR_UTC8 = 23
+
 export interface ZcodeProduct {
   /** provider 标识：注册到 `ctx.llm` 的路由名，也是账号列表的 provider 字段值。 */
   id: 'zcode'
@@ -303,6 +311,53 @@ export const ZCODE: ZcodeProduct = {
   concurrencyRetryBaseMs: 1_500,
   quotaSwitchMax: 2,
   toolCacheBreakpoint: true,
+}
+
+/**
+ * ZCode 推理侧额度**真正恢复**的时刻（UTC+8，用户 2026-11-05 确认的业务口径）。
+ *
+ * ## 为什么不能用「次日 00:00」
+ *
+ * ZCode 的免费额度循环与自然日**不对齐**：
+ *
+ * ```
+ * 09:00  token 清零（当日额度作废）
+ * 19:00  上游重新投放签到额度（20:00 前领不到东西）
+ * 23:00  领到的 token 才真正可用于推理
+ * 次日 09:00 再次清零
+ * ```
+ *
+ * 因此「额度用尽」被标记到 **00:00** 是错的：00:00 那一刻额度**没有**恢复，
+ * 真正能用的时刻在 19:00 投放、23:00 生效之后。旧行为造成两个可观测症状：
+ *
+ * 1. 异常汇总里挂一条「解封 次日 00:00」—— 而 00:00 过后用户实测**仍然不能用**
+ *    （要等到 23:00），于是把「标记过期」误读成「插件记错了」；
+ * 2. 反过来，若在 00:00–19:00 之间清掉标记，选号会把账号重新排进候选，
+ *    请求必然再撞一次额度墙（白跑 + 每次都可能触发风控计数）。
+ *
+ * ## 取值规则
+ *
+ * - 当前时刻**早于**今天 23:00 → 恢复点就是**今天 23:00**
+ *   （19:00 投放的那批 token 在 23:00 生效）；
+ * - 已过今天 23:00 → 那是**次日** 23:00（当天的额度已用完，下一轮要等明天投放）。
+ *
+ * ⚠️ 与签到窗口（`auto-checkin.ts` 的 `ZCODE_CHECKIN_OPEN_HOUR_UTC8 = 19`）
+ * 是**同一套时间线**的两个用途：那边管「什么时候能签到」，这边管「额度什么时候
+ * 能用于推理」。改动任一时刻必须同步改另一边 —— 两处都有守护用例。
+ *
+ * @param nowMs 当前时刻（毫秒）
+ * @returns 额度恢复的绝对毫秒（总是 `> nowMs`）
+ */
+export function nextZcodeQuotaRecoveryMs(nowMs: number = Date.now()): number {
+  // UTC+8 平移（与 model-queue 的 nextUtc8DayStartMs 同一口径：算术平移，不看本机时区）
+  const OFFSET_MS = 8 * 3_600_000
+  const DAY_MS = 86_400_000
+  const shifted = nowMs + OFFSET_MS
+  const dayStart = Math.floor(shifted / DAY_MS) * DAY_MS
+  const usableShifted = dayStart + ZCODE_TOKEN_USABLE_HOUR_UTC8 * 3_600_000
+  const usableMs = usableShifted - OFFSET_MS
+  // 已过今天 23:00 ⇒ 下一轮投放的 23:00（明天）
+  return usableMs > nowMs ? usableMs : usableMs + DAY_MS
 }
 
 /** 全部 ZCode 产品配置（当前只有一个，保留数组以便将来扩展）。 */
