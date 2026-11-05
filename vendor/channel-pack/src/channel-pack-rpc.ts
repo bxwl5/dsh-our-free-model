@@ -1740,6 +1740,23 @@ function registerChannelPackEndpoints(
         return { ok: true, value: { accounts: await enrichAccountIdentity(accounts, req.provider) } }
       }
 
+  /**
+   * account.create 的占位条目样板（2026-11-06 审计：12 处逐字重复收敛）。
+   * 无凭据的启用条目，让客户端 login.poll 能立刻看到「登录中」状态；
+   * 各分支先/后启动登录流程的顺序差异不在本 helper 管辖内。
+   */
+  async function addPlaceholderAccount(id: string, provider: string, refName: string): Promise<void> {
+    await pool.addAccount({
+      id,
+      provider,
+      nickname: id,
+      enabled: true,
+      credentialRef: refName,
+      refreshable: false,
+      createdAt: Date.now(),
+    })
+  }
+
       case 'account.create': {
         const req = payload as RpcCreateAccountRequest
         const { provider } = req
@@ -1770,15 +1787,7 @@ function registerChannelPackEndpoints(
           }
           const ref = credentialRef(refName)
           // 先在 pool 中添加启用的占位条目（无凭据），方便客户端 login.poll 检测到
-          await pool.addAccount({
-            id,
-            provider: product.id,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now(),
-          })
+          await addPlaceholderAccount(id, product.id, refName)
           // 后台异步执行完整登录流程，使用同一个 state
           runBuddyLoginFlow({ openBrowser: () => {}, state, product }).then(async (flow) => {
             await ctx.credentials.set(ref, flow.access)
@@ -1957,15 +1966,7 @@ function registerChannelPackEndpoints(
           const started = await codearts.startLogin({ refName })
           // 先登记启用的占位条目（无凭据），使前端 login.poll 能立即看到该账号；
           // 登录成功后再回填昵称/有效期等真实字段。
-          await pool.addAccount({
-            id,
-            provider: 'codearts',
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now(),
-          })
+          await addPlaceholderAccount(id, 'codearts', refName)
           started.result.then(async (loginResult) => {
             const credential = parseCodeArtsCredential(loginResult.access)
             await pool.updateAccount(id, {
@@ -1995,15 +1996,7 @@ function registerChannelPackEndpoints(
           const started = await auth.startLogin({ refName })
           // 先登记启用的占位条目（无凭据），使前端 login.poll 能立即看到该账号；
           // 登录成功后再回填昵称/有效期等真实字段。
-          await pool.addAccount({
-            id,
-            provider: product.id,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now(),
-          })
+          await addPlaceholderAccount(id, product.id, refName)
           started.result.then(async (loginResult) => {
             const credential = parseQoderCredential(loginResult.access)
             // ⚠️ 设备码轮询响应**不带 `user_name`**，故 `credential.nickname` 恒为空
@@ -2039,15 +2032,7 @@ function registerChannelPackEndpoints(
           const started = await trae.startLogin({ refName })
           // 先登记启用的占位条目（无凭据），使前端 login.poll 能立即看到该账号；
           // 登录成功后再回填昵称/有效期等真实字段。
-          await pool.addAccount({
-            id,
-            provider: TRAE.id,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now(),
-          })
+          await addPlaceholderAccount(id, TRAE.id, refName)
           started.result.then(async (loginResult) => {
             const credential = parseTraeCredential(loginResult.access)
             await pool.updateAccount(id, {
@@ -2077,15 +2062,7 @@ function registerChannelPackEndpoints(
           const started = await cline.startLogin({ refName })
           // 先登记启用的占位条目（无凭据），使前端 login.poll 能立即看到该账号；
           // 登录成功后再回填昵称/有效期等真实字段。
-          await pool.addAccount({
-            id,
-            provider: CLINE.id,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now(),
-          })
+          await addPlaceholderAccount(id, CLINE.id, refName)
           started.result.then(async (loginResult) => {
             const credential = parseClineCredential(loginResult.access)
             await pool.updateAccount(id, {
@@ -2115,15 +2092,7 @@ function registerChannelPackEndpoints(
           //
           // ⚠️ 先登记**占位条目**（无凭据），使前端 `login.poll` 能立即看到该账号；
           // 登录成功后再回填昵称/有效期。
-          await pool.addAccount({
-            id,
-            provider: LOOMY.id,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now(),
-          })
+          await addPlaceholderAccount(id, LOOMY.id, refName)
 
           let started
           try {
@@ -2167,15 +2136,7 @@ function registerChannelPackEndpoints(
           //
           // ⚠️ 先登记**占位条目**（无凭据），使前端 `login.poll` 能立即看到该账号；
           //    登录成功后再回填昵称与 refreshable。失败则删除占位条目。
-          await pool.addAccount({
-            id,
-            provider: RACCOON.id,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now(),
-          })
+          await addPlaceholderAccount(id, RACCOON.id, refName)
 
           let raccoonStarted: StartedRaccoonLoginFlow
           try {
@@ -2225,15 +2186,7 @@ function registerChannelPackEndpoints(
           // ⚠️ 先登记**占位条目**（无凭据），使前端 `login.poll` 能立即看到该账号；
           //    登录成功后再回填昵称与 `expiresAt`。失败则删除占位条目。
           //    写法照 `RACCOON.id` 分支（那是已验证的形态）。
-          await pool.addAccount({
-            id,
-            provider: MINIMAX.id,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now(),
-          })
+          await addPlaceholderAccount(id, MINIMAX.id, refName)
 
           let minimaxStarted: StartedMinimaxLoginFlow
           try {
@@ -2391,15 +2344,7 @@ function registerChannelPackEndpoints(
            * 该账号；登录成功后再回填昵称与 `expiresAt`。失败则删除占位条目，
            * 不留幽灵账号（照 MINIMAX.id 分支的已验证形态）。
            */
-          await pool.addAccount({
-            id,
-            provider: ANTIGRAVITY.id,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now(),
-          })
+          await addPlaceholderAccount(id, ANTIGRAVITY.id, refName)
           pendingLoginFailures.delete(id)
 
           let antigravityStarted: StartedAntigravityLoginFlow

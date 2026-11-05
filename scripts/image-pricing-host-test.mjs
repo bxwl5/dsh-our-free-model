@@ -1,4 +1,10 @@
 /**
+ * ⚠️ 手动套件（不入 test-all）：需要外部宿主的 node_modules 环境（--host 参数），
+ * 由维护者按需运行。2026-11-06 审计标注为「孤儿套件」是误判——它本就是手动工具。
+ * 另：`adapters.size === 13` 是图片计价渠道数（与账号渠道数 15 无关），勿混淆。
+ */
+
+/**
  * 使用指定宿主依赖执行真实 spill-policy；不安装依赖、不读取真实账号或调用上游。
  * node scripts/image-pricing-host-test.mjs <包含宿主 node_modules 的目录>
  */

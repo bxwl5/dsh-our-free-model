@@ -1738,36 +1738,8 @@ window.__ModuleLoader__.load({
   80%,100%{ transform: translateY(0); }
 }
 
-/* ── 昼(not-dark)收敛：高光更哑、拉丝更隐、回弹更小 ─────────────── */
-@media not (prefers-color-scheme: dark){
-  .ofm_root .ofm_panel,
-  .ofm_root .ofm_card{
-    background:
-      repeating-linear-gradient(115deg, rgb(255 255 255 / 4%) 0 1px, transparent 1px 2.5px) padding-box,
-      color-mix(in srgb, var(--dsw-alias-bg-layer-2) 90%, transparent) !important;
-  }
-  .ofm_root .ofm_card{
-    background:
-      repeating-linear-gradient(115deg, rgb(255 255 255 / 4%) 0 1px, transparent 1px 2.5px) padding-box,
-      color-mix(in srgb, var(--dsw-alias-bg-layer-3) 88%, transparent) !important;
-  }
-  .ofm_root .ofm_panel{
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 45%), inset 0 -14px 28px -18px rgb(0 0 0 / 7%) !important;
-  }
-  .ofm_root .ofm_card{
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 50%), inset 0 -12px 24px -16px rgb(0 0 0 / 6%) !important;
-  }
-  .ofm_root .ofm_card:hover{
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 60%), inset 0 -12px 24px -16px rgb(0 0 0 / 5%) !important;
-  }
-  .ofm_root .ofm_btn{
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 50%) !important;
-  }
-  .ofm_root .ofm_btn:hover:not(:disabled){
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 62%) !important;
-  }
-}
-
+/* ── 昼(not-dark)收敛：整块为 ① 块与批改② 的逐字重复（2026-11-06 审计程序化
+   级联验证 background/shadow 有效值均由后份决定），删除语义等价。 ── */
 /* ── reduced-motion 降级：去位移/回弹/扫光/顿挫，保留颜色与不透明度反馈 ── */
 @media (prefers-reduced-motion: reduce){
   /* 统一过渡降级：所有交互件只留颜色/不透明度反馈，去位移 */
@@ -1904,21 +1876,15 @@ window.__ModuleLoader__.load({
   transition: box-shadow .18s var(--ease-instrument), outline-color .18s var(--ease-instrument) !important;
 }
 
-/* ── ⑧【师傅批改①】拉丝纹理增强：金属感要真的能摸到 ─────────────── */
-/* 夜模式 3% → 4.5%，昼模式 1.5% → 2.8%，纹理间隔收紧让拉丝更密 */
-.ofm_root .ofm_panel{
-  background:
-    repeating-linear-gradient(115deg, rgb(255 255 255 / 4.5%) 0 1px, transparent 1px 2.5px) padding-box,
-    color-mix(in srgb, var(--dsw-alias-bg-layer-2) 86%, transparent) !important;
-}
-.ofm_root .ofm_card{
-  background:
-    repeating-linear-gradient(115deg, rgb(255 255 255 / 4.5%) 0 1px, transparent 1px 2.5px) padding-box,
-    color-mix(in srgb, var(--dsw-alias-bg-layer-3) 84%, transparent) !important;
-}
+/* ── ⑧【师傅批改①】拉丝纹理增强：已与 ① 块基底逐字一致（2026-11-06 审计
+   程序化验证 panel/card 两份 background 逐字相同、级联下后份本就赢得空——
+   整块删除，语义等价）。────────────────────────────────────────────── */
+
+/* ── ①-not-dark 昼模式基底（panel layer-2 90% / card layer-3 88%）──
+   2026-11-06 审计压平时误判重复删除，程序化级联对比发现 card 88% 的有效
+   来源在此处，恢复一份（与原值逐字一致）。 */
 @media not (prefers-color-scheme: dark){
-  .ofm_root .ofm_panel,
-  .ofm_root .ofm_card{
+  .ofm_root .ofm_panel{
     background:
       repeating-linear-gradient(115deg, rgb(255 255 255 / 4%) 0 1px, transparent 1px 2.5px) padding-box,
       color-mix(in srgb, var(--dsw-alias-bg-layer-2) 90%, transparent) !important;
@@ -5877,7 +5843,10 @@ window.__ModuleLoader__.load({
         setBusy(true)
         try {
           await post('/settings', patch)
-          summary.reload(); stats.reload()
+          // stats（含 days 大数组）不需要跟随设置写入重拉：apply 的键集合只有
+          // forward/egress/hiddenModelIds/网关类，都不影响用量数据；数据看板
+          // 自带刷新入口（2026-11-06 审计 #31）。
+          summary.reload()
         } catch (error) {
           // The route can refuse a patch — a routable forward bind, for one — and a
           // rejection nobody shows is a button that appears to do nothing.
@@ -5957,7 +5926,7 @@ window.__ModuleLoader__.load({
         setCatalogBusy(true)
         try {
           await post(path, undefined, 600_000)
-          summary.reload(); stats.reload()
+          summary.reload(); stats.reload()  // reprobe/refresh 改渠道目录 → 独立端 stats 渠道维度跟随（回归锁定）
         } catch (error) {
           showToast({ title: t('settings.failed'), body: String(error?.message ?? error), tone: 'warn' })
         } finally {

@@ -64281,11 +64281,23 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         anomalies.sort((a, b) => a.resetAtMs - b.resetAtMs);
         return { ok: true, value: { anomalies } };
       }
-      case "account.list": {
-        const req = payload;
-        const accounts = await pool.listAccounts(req.provider);
-        return { ok: true, value: { accounts: await enrichAccountIdentity(accounts, req.provider) } };
-      }
+      case "account.list":
+        {
+          const req = payload;
+          const accounts = await pool.listAccounts(req.provider);
+          return { ok: true, value: { accounts: await enrichAccountIdentity(accounts, req.provider) } };
+        }
+        async function addPlaceholderAccount(id, provider, refName) {
+          await pool.addAccount({
+            id,
+            provider,
+            nickname: id,
+            enabled: true,
+            credentialRef: refName,
+            refreshable: false,
+            createdAt: Date.now()
+          });
+        }
       case "account.create": {
         const req = payload;
         const { provider } = req;
@@ -64308,15 +64320,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             throw new Error(`\u65E0\u6CD5\u83B7\u53D6 ${product.displayName} \u767B\u5F55\u5730\u5740\uFF08Host \u7F51\u7EDC\u8BF7\u6C42\u5931\u8D25\uFF09\uFF1A${reason}`);
           }
           const ref = credentialRef13(refName);
-          await pool.addAccount({
-            id,
-            provider: product.id,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now()
-          });
+          await addPlaceholderAccount(id, product.id, refName);
           runBuddyLoginFlow({ openBrowser: () => {
           }, state, product }).then(async (flow) => {
             await ctx.credentials.set(ref, flow.access);
@@ -64461,15 +64465,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           return { ok: true, value: { accountId: id, loginUrl } };
         } else if (provider === "codearts") {
           const started = await codearts.startLogin({ refName });
-          await pool.addAccount({
-            id,
-            provider: "codearts",
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now()
-          });
+          await addPlaceholderAccount(id, "codearts", refName);
           started.result.then(async (loginResult) => {
             const credential = parseCodeArtsCredential(loginResult.access);
             await pool.updateAccount(id, {
@@ -64487,15 +64483,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         } else if (isQoderFamily(provider)) {
           const { product: product2, auth } = requireQoderFamily(provider);
           const started = await auth.startLogin({ refName });
-          await pool.addAccount({
-            id,
-            provider: product2.id,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now()
-          });
+          await addPlaceholderAccount(id, product2.id, refName);
           started.result.then(async (loginResult) => {
             const credential = parseQoderCredential(loginResult.access);
             let nickname = credential?.nickname;
@@ -64520,15 +64508,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } };
         } else if (provider === TRAE.id) {
           const started = await trae.startLogin({ refName });
-          await pool.addAccount({
-            id,
-            provider: TRAE.id,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now()
-          });
+          await addPlaceholderAccount(id, TRAE.id, refName);
           started.result.then(async (loginResult) => {
             const credential = parseTraeCredential(loginResult.access);
             await pool.updateAccount(id, {
@@ -64548,15 +64528,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } };
         } else if (provider === CLINE.id) {
           const started = await cline.startLogin({ refName });
-          await pool.addAccount({
-            id,
-            provider: CLINE.id,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now()
-          });
+          await addPlaceholderAccount(id, CLINE.id, refName);
           started.result.then(async (loginResult) => {
             const credential = parseClineCredential(loginResult.access);
             await pool.updateAccount(id, {
@@ -64572,15 +64544,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           });
           return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } };
         } else if (provider === LOOMY.id) {
-          await pool.addAccount({
-            id,
-            provider: LOOMY.id,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now()
-          });
+          await addPlaceholderAccount(id, LOOMY.id, refName);
           let started;
           try {
             started = await loomy.startWechatLogin();
@@ -64609,15 +64573,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           });
           return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } };
         } else if (provider === RACCOON.id) {
-          await pool.addAccount({
-            id,
-            provider: RACCOON.id,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now()
-          });
+          await addPlaceholderAccount(id, RACCOON.id, refName);
           let raccoonStarted;
           try {
             raccoonStarted = await raccoon.startLogin();
@@ -64654,15 +64610,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           });
           return { ok: true, value: { accountId: id, loginUrl: raccoonStarted.loginUrl } };
         } else if (provider === MINIMAX.id) {
-          await pool.addAccount({
-            id,
-            provider: MINIMAX.id,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now()
-          });
+          await addPlaceholderAccount(id, MINIMAX.id, refName);
           let minimaxStarted;
           try {
             minimaxStarted = await minimax.startLogin();
@@ -64745,15 +64693,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           });
           return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } };
         } else if (provider === ANTIGRAVITY.id) {
-          await pool.addAccount({
-            id,
-            provider: ANTIGRAVITY.id,
-            nickname: id,
-            enabled: true,
-            credentialRef: refName,
-            refreshable: false,
-            createdAt: Date.now()
-          });
+          await addPlaceholderAccount(id, ANTIGRAVITY.id, refName);
           pendingLoginFailures.delete(id);
           let antigravityStarted;
           try {
