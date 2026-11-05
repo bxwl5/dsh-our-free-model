@@ -3256,7 +3256,8 @@ window.__ModuleLoader__.load({
       qodercn: { claim: true },
       trae: { claim: true },
       cline: { unit: 'dollars' },
-      loomy: { claim: true },
+      // loomy 签到已移除（2026-11-06）：只剩余额查询（credits.balances）。
+      loomy: {},
       raccoon: {},
       minimax: { claim: true, status: true },
       zcode: { claim: true, unit: 'tokens' },

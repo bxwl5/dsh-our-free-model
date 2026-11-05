@@ -36,7 +36,7 @@ import {
   startLoomyWechatLoginFlow,
   type StartedLoomyWechatLoginFlow,
 } from './loomy-wechat-login.js'
-import { claimLoomyDailyQuota, fetchLoomyCreditBalance, fetchLoomyCreditDetail } from './loomy-credits.js'
+import { fetchLoomyCreditBalance, fetchLoomyCreditDetail } from './loomy-credits.js'
 import {
   claimAllLoomyOnboardingTasks,
   fetchLoomyOnboardingTasks,
@@ -215,15 +215,6 @@ export class LoomyAuth extends Service {
     await this.ctx.credentials.set(ref, JSON.stringify(credential))
     this.lastRefreshError = undefined
 
-    // 尽力初始化每日额度（与官方登录后行为一致；失败不影响登录）。
-    try {
-      await claimLoomyDailyQuota(credential, this.product, this.fetchImpl)
-    } catch (error) {
-      this.ctx.logger?.warn?.(
-        `[loomy] 微信登录后初始化每日额度失败（不影响登录）：${error instanceof Error ? error.message : String(error)}`,
-      )
-    }
-
     return {
       access: JSON.stringify(credential),
       expires: credentialExpiresAtMs(credential) ?? 0,
@@ -251,16 +242,6 @@ export class LoomyAuth extends Service {
     await this.ctx.credentials.set(ref, JSON.stringify(credential))
 
     this.lastRefreshError = undefined
-
-    // 尽力调用 first-login 初始化每日额度（与官方登录后行为一致）。
-    // ⚠️ 失败**不影响登录**：这只是额度初始化，登录本身已经成功。
-    try {
-      await claimLoomyDailyQuota(credential, this.product, this.fetchImpl)
-    } catch (error) {
-      this.ctx.logger?.warn?.(
-        `[loomy] 登录后初始化每日额度失败（不影响登录）：${error instanceof Error ? error.message : String(error)}`,
-      )
-    }
 
     return {
       access: JSON.stringify(credential),
@@ -505,11 +486,6 @@ export class LoomyAuth extends Service {
   /** 查询积分两池明细（只读）。 */
   async fetchCreditDetail(credential: LoomyCredential) {
     return fetchLoomyCreditDetail(credential, this.product, this.fetchImpl)
-  }
-
-  /** 一键签到：触发每日额度。 */
-  async claimDailyQuota(credential: LoomyCredential) {
-    return claimLoomyDailyQuota(credential, this.product, this.fetchImpl)
   }
 
   /** 查询新手任务状态。 */

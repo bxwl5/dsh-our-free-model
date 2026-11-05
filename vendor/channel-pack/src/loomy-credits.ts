@@ -1,5 +1,5 @@
 /**
- * Loomy 积分：余额查询（只读）与每日额度签到。
+ * Loomy 积分：余额查询（只读）。
  *
  * ## 两个积分池（用户补充确认的机制）
  *
@@ -14,7 +14,7 @@
  * availableBalance: 19992  ← 两者之和
  * ```
  *
- * ## 每日额度由 `first-login` 发放
+ * ## 每日额度由官方 `first-login` 发放（插件签到功能已移除，2026-11-06）
  *
  * 官方在**登录成功后立即调用** `POST /api/v1/points/first-login`
  * （渲染 bundle 的短信登录与微信登录两条路径都调，失败仅 warn）。
@@ -25,14 +25,14 @@
  * ```
  *
  * ⚠️ **`dailyQuota` 只在 `first-login` 的响应里**，`points/records` 不返回它。
- * 故未签到时该字段缺省 —— **不要硬编码 5000**（额度可能随活动变化）。
+ * 每日赠送池仅在官方端触发（插件的签到功能已于 2026-11-06 按用户要求移除）。
  *
  * ## 读与写严格分离
  *
  * | 动作 | 端点 | 性质 |
  * |---|---|---|
  * | 查余额 | `GET /points/records` | **只读**，无副作用 |
- * | 一键签到 | `POST /points/first-login` | 写，幂等 |
+ * | ~~一键签到~~ | `POST /points/first-login` | 已移除（2026-11-06） |
  *
  * 这样「打开面板」不会悄悄触发签到。
  */
@@ -48,8 +48,6 @@ import { utc8DayKey } from './token-ledger.js'
 import type { LoomyProduct } from './loomy-product.js'
 
 /** 「一键签到」的语义说明（供 UI 提示用，避免写成「+5000 积分」）。 */
-export const LOOMY_DAILY_QUOTA_DESCRIPTION = '每日赠送额度（消耗后不回补）'
-
 /** 两个积分池的明细。 */
 export interface LoomyCreditDetail {
   /** 永久积分（`balance`）。 */
@@ -58,11 +56,11 @@ export interface LoomyCreditDetail {
   daily: number
   /** 永久 + 每日（`availableBalance`）。 */
   total: number
-  /** 每日额度上限 —— **仅签到后可得**（`first-login` 专有字段）。 */
+  /** 每日额度上限 —— 仅官方端发放（`first-login` 专有字段）。 */
   dailyQuota?: number
-  /** 今日已消耗 —— 仅签到后可得。 */
+  /** 今日已消耗 —— 仅官方端发放后可得。 */
   dailyConsumed?: number
-  /** 每日额度所属业务日（`YYYY-MM-DD`）—— 仅签到后可得。 */
+  /** 每日额度所属业务日（`YYYY-MM-DD`）—— 仅官方端发放后可得。 */
   dailyCycleDate?: string
 }
 
@@ -191,64 +189,4 @@ export async function fetchLoomyCreditBalance(
     // 两池都视为有效额度，没有「已失效」概念。
     expiredTotal: 0,
   }
-}
-
-/**
- * 一键签到：触发每日赠送额度。
- *
- * ⚠️ **语义是「触发每日额度重置」，不是「+5000 积分」**：
- * `dailyBalance = dailyQuota - dailyConsumed`，消耗后不回补。
- * UI 文案必须准确（见 {@link LOOMY_DAILY_QUOTA_DESCRIPTION}）。
- *
- * ⚠️ 幂等判据是响应体的 `alreadyProcessed`（重复调用同样返回 HTTP 200），
- * 故已处理的情况映射成 `already-claimed` 而**不是** `claimed` ——
- * 后者会让用户以为每天都真的加了额度。
- *
- * 本函数**不抛错**（失败也返回 `failed`），保证批量领取不会因单个账号中断。
- */
-export async function claimLoomyDailyQuota(
-  credential: LoomyCredential,
-  product: LoomyProduct,
-  fetcher: typeof fetch = fetch,
-): Promise<ClaimOutcome> {
-  const result = await tryRequestLoomy<Record<string, unknown>>(
-    credential, product, '/points/first-login', { method: 'POST', body: {} }, fetcher,
-  )
-
-  if (!result.ok) {
-    // 认证失效与其它失败都归为 failed：批量领取的调用方据 kind 计数，
-    // 具体原因由 message 携带（100002 的文案已含「请重新登录」）。
-    return { kind: 'failed', code: -1, message: result.message }
-  }
-
-  const dailyQuota = readNumber(result.data?.dailyQuota)
-  const dailyBalance = readNumber(result.data?.dailyBalance)
-  const alreadyProcessed = result.data?.alreadyProcessed === true
-  // `dailyCycleDate` 是服务端给出的本次额度所属业务日（YYYY-MM-DD），
-  // 与账本日键（UTC+8）对齐。缺少时退化为「不跨天」假设（保持旧行为），
-  // 但只要有就**必须**校验它等于今天，否则会把「昨天已签」误判成「今日已签」。
-  const dailyCycleDate = typeof result.data?.dailyCycleDate === 'string'
-    ? result.data.dailyCycleDate
-    : undefined
-  const isToday = dailyCycleDate === utc8DayKey(Date.now())
-
-  if (alreadyProcessed && isToday) {
-    return {
-      kind: 'already-claimed',
-      message: dailyQuota === undefined
-        ? '今日额度已初始化'
-        : `今日额度已初始化（每日 ${dailyBalance ?? 0}/${dailyQuota}）`,
-    }
-  }
-
-  // 非今日周期或首次处理：`credit` 表示**本次新发放的额度**。服务端不直接给
-  // 这个差值，故用 dailyQuota - dailyConsumed 推算；两者都缺时回 0（不编造）。
-  // ⚠️ 注意：若 alreadyProcessed 为真但周期日不是今天（跨天残留），此处按
-  // claimed 处理，避免在账本新的一天把它错记成 already-claimed（漏掉当日额度）。
-  const dailyConsumed = readNumber(result.data?.dailyConsumed)
-  const granted = dailyQuota !== undefined && dailyConsumed !== undefined
-    ? Math.max(0, dailyQuota - dailyConsumed)
-    : (dailyQuota ?? 0)
-
-  return { kind: 'claimed', credit: granted, streakDays: 0, isStreakDay: false }
 }

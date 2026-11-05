@@ -2922,6 +2922,7 @@ function registerChannelPackEndpoints(
         if (!resolved) {
           return { ok: false, error: { code: 'bad-request', message: '凭据未配置' } }
         }
+
         if (req.provider === RACCOON.id) {
           // raccoon 只有**一项**一次性奖励（桌面端登录奖励 3000 分），
           // 把它映射成 Loomy 那套「任务」形状的一项，复用同一个 RPC 与 UI。
@@ -3236,18 +3237,6 @@ function registerChannelPackEndpoints(
             } satisfies RpcCreditsStatusResponse,
           }
         }
-        if (req.provider === LOOMY.id) {
-          // Loomy 没有独立的「签到状态」端点：每日额度由 `POST /points/first-login`
-          // 触发，其响应自带 `alreadyProcessed`。故与 LobsterAI/CodeArts 同样
-          // 如实返回 null，由 claimAll 内部处理幂等。
-          const accounts = await pool.listAccounts(req.provider)
-          return {
-            ok: true,
-            value: {
-              accounts: accounts.map((entry) => ({ accountId: entry.id, nickname: entry.nickname, status: null })),
-            } satisfies RpcCreditsStatusResponse,
-          }
-        }
         if (req.provider === MINIMAX.id) {
           // ⚠️ MiniMax **有**独立的签到状态端点（`/minimax-cloud/api/v1/signin/status`），
           // 与 LobsterAI/TRAE/Cline 那几个「如实返回 null」的 provider 不同 ——
@@ -3403,42 +3392,6 @@ function registerChannelPackEndpoints(
             warn: (msg) => ctx.logger?.warn?.(msg),
           })
           return { ok: true, value: value satisfies RpcCreditsClaimAllResponse }
-        }
-        if (req.provider === LOOMY.id) {
-          // Loomy 的「签到」= `POST /points/first-login`（触发每日赠送额度）。
-          // ⚠️ 语义**不是**「+5000 积分」：`dailyBalance = dailyQuota - dailyConsumed`，
-          // 消耗后不回补。文案由 claimLoomyDailyQuota 的 already-claimed 表达。
-          // 领取流程自带幂等判据（`alreadyProcessed`），故不做额外预检。
-          const values: RpcCreditsClaimAccountResult[] = []
-          for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef(account.credentialRef))
-            if (!resolved) {
-              values.push({
-                accountId: account.id, nickname: account.nickname,
-                outcome: { kind: 'failed', code: -1, message: '凭据未配置' },
-              })
-              continue
-            }
-            let credential: LoomyCredential
-            try {
-              credential = JSON.parse(resolved.value) as LoomyCredential
-            } catch {
-              values.push({
-                accountId: account.id, nickname: account.nickname,
-                outcome: { kind: 'failed', code: -1, message: '凭据解析失败' },
-              })
-              continue
-            }
-            const outcome = await loomy.claimDailyQuota(credential)
-            values.push({ accountId: account.id, nickname: account.nickname, outcome })
-          }
-          return {
-            ok: true,
-            value: {
-              summary: computeClaimSummary(values.map((v) => v.outcome)),
-              results: values,
-            } satisfies RpcCreditsClaimAllResponse,
-          }
         }
         if (req.provider === CLINE.id) {
           // Cline **没有签到端点**（见 src/cline-credits.ts 的模块注释：
@@ -3925,6 +3878,7 @@ function registerChannelPackEndpoints(
           }
           return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
         }
+
         if (req.provider === LOOMY.id) {
           // 余额来自 `GET /points/records`（**只读**，无副作用）。
           // ⚠️ 刻意不用 `first-login`：那是**写**端点，在「打开面板」这种

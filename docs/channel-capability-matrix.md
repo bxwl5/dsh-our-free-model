@@ -88,7 +88,7 @@
 | 对话 | 20（全部） | — |
 | 模型目录 | 远端目录 15 条 | 无静态兜底渠道（`orcaterm` 已删除；`antigravity` 等均接远端目录） |
 | 额度查询 | 点名集合：`codearts` `trae` `minimax` `commandcode` `autoclaw` `officeace` `antigravity` `cline` `loomy` `raccoon` `zcode` 有专用分支；`buddy` 系走 `productById()` 通用回落；`qoder` `qodercn` 无分支 |
-| 签到（claim） | **10 条**：codearts / buddy / qoder / qodercn / trae / loomy / minimax / zcode / officeace / autoclaw | 无 claim：workbuddy / cline / raccoon / antigravity / commandcode |
+| 签到（claim） | **9 条**：codearts / buddy / qoder / qodercn / trae / minimax / zcode / officeace / autoclaw（loomy 签到已于 2026-11-06 移除） | 无 claim：workbuddy / cline / raccoon / antigravity / commandcode / loomy |
 | 图片（双桥） | 8 条：`buddy` `workbuddy` `qoder` `qodercn` `cline` `raccoon` `antigravity` `zcode` | 单桥 3 条：`trae` `loomy` `minimax`；未接 9 条 |
 | 粘贴型登录 | 纯粘贴 0 条；卡片内嵌 1 条（`autoclaw` 短信）；`loomy` `raccoon` 仍为本地页 | — |
 
