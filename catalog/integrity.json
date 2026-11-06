@@ -19,8 +19,8 @@
     },
     {
       "path": "client.js",
-      "size": 467602,
-      "sha256": "16b67c3334b836f87ea8eb0aa6d228380ca7dceff64558bf799ce689d0fb98f5"
+      "size": 467430,
+      "sha256": "a7a4fe793eba3322e814057ea1565ddd3f4a0811d310b14d0a0f36d5d24c5c90"
     },
     {
       "path": "cordis.patch.yml",
