@@ -1522,7 +1522,14 @@ function registerChannelPackEndpoints(
    */
   // 渠道账户资产注册表（2026-11-06 纵切阶段 0：空表，OPT-IN 全关）。
   // 装配期构建一次；后续阶段逐项往工厂里加实现，未迁移组合落原 switch 分支。
-  const accountsRegistry: ChannelAccountRegistry = buildChannelAccountRegistry({ pool })
+  const accountsRegistry: ChannelAccountRegistry = buildChannelAccountRegistry({
+    pool,
+    loomy,
+    raccoon,
+    zcode,
+    qoderFamily,
+    buildZcodeBalance,
+  })
 
   // 每次 RPC 现建 env：fetcher 必须是本函数内 codeartsFetcher（绑 signal 级联）。
   function makeCreditsEnv(
@@ -2940,18 +2947,17 @@ function registerChannelPackEndpoints(
       // ── 每日签到（积分领取）──
       // 查询某 provider 下全部启用账号的签到状态。
       //
-      // 四个 provider 分属**三套互不相同的协议**，各自在自己的分支里处理：
-      //   - CodeBuddy 系（buddy / workbuddy）：`productById()` 取 BuddyProduct，
-      //     走 `collectCreditsStatus` 的默认实现；
-      //   - （LobsterAI 已移除）
-      //   - `codearts`：华为云 SDK-HMAC-SHA256 签名，无独立状态端点。
+      // 2026-11-06 纵切后：codearts / trae / cline 的「无独立状态端点」与
+      // cline / workbuddy / raccoon 的「不支持签到」已在 ChannelAccount 注册表里
+      // 按 (provider, method) 分派；未迁移组合仍走下面的原分支。
+      //   - MINIMAX：独立签到状态端点，走 collectCreditsStatus 真查；
+      //   - CodeBuddy 系（buddy / workbuddy）：productById() 取 BuddyProduct，
+      //     走 collectCreditsStatus 的默认实现；
+      //   - codearts / trae / cline：无独立状态端点，如实返回 null（不是错误）。
       //
-      // ⚠️ 只有 CodeBuddy 系能经 `productById()` 解析出产品配置；后两者
-      // **必须各自提前分支**，否则会落到下面的 bad-request。历史上 CodeArts
-      // 就是因此恒回 `unsupported provider: codearts`（客户端在面板挂载时
-      // 无条件调用 credits.balances，于是每打开一次设置页都在控制台报错并把
-      // 账号卡片标成查询失败）。现在 CodeArts 已有真实实现，该 bad-request
-      // 只对**未知** provider 生效。
+      // ⚠️ bad-request 对「已知但未迁移、也不在 productById 白名单」的 provider
+      // 同样生效（历史注释称「只对未知 provider」不实）；前端能力表只让 buddy /
+      // minimax 发本 RPC，其余渠道被 client.js 的守卫拦下，但后端分支必须保留。
       case 'credits.status': {
         const req = payload as RpcCreditsStatusRequest
         // 纵切阶段 0 骨架：已迁移组合走注册表，未迁移组合落下面原 if 链（一字不改）。
@@ -2989,8 +2995,8 @@ function registerChannelPackEndpoints(
         if (req.provider === CLINE.id) {
           // Cline **没有签到端点**（对整个 sidecar 二进制做字符串扫描，
           // checkin / check-in / daily / campaign 均无任何 Cline 业务端点命中；
-          // 见 src/cline-credits.ts 的模块注释）。故与 WorkBuddy 国际版一致，
-          // 如实返回 null，而不是臆造一份状态对象。
+          // 见 src/cline-credits.ts 的模块注释）。故如实返回 null，而不是臆造
+          // 一份状态对象（workbuddy 的 claim 另走 bad-request 守卫）。
           const accounts = await pool.listAccounts(req.provider)
           return {
             ok: true,

@@ -19,11 +19,13 @@ import type {
 } from '../channel-account.js'
 import { nullStatusAccounts } from '../channel-account.js'
 import type { RpcCreditsClaimAllResponse } from '../types.js'
+import { makeSimpleBalanceAccounts, type SimpleBalanceIo } from './balances-simple.js'
+import { makeComplexBalanceAccounts, type ComplexBalanceIo } from './balances-complex.js'
+import { makeStatusClaimAccounts, type StatusClaimIo } from './status-claim.js'
 
 /** 装配期注入的渠道上下文；按阶段逐项补字段（阶段 0/1 仅 pool）。 */
-export interface RegistryIo {
-  readonly pool: AccountPool
-}
+/** 三个工厂 io 的并集：qoderFamily 用工厂自己的完整 QoderProduct 形状。 */
+export interface RegistryIo extends SimpleBalanceIo, ComplexBalanceIo, StatusClaimIo {}
 
 /** 阶段 1-R0：渠道无独立签到状态端点 → ok:true + 逐账号 status:null。 */
 function nullStatusCapabilityAccount(id: string): ChannelAccount {
@@ -71,7 +73,13 @@ export function buildChannelAccountRegistry(
   add(badRequestClaimAccount('cline', 'Cline 不支持每日签到（其后端没有签到接口）'))
   add(badRequestClaimAccount('workbuddy', 'WorkBuddy 国际版不支持每日签到（其后端没有签到接口）'))
   add(badRequestClaimAccount('raccoon', 'Raccoon Work 不支持每日签到（积分由服务端自动发放，奖励见「新手任务」）'))
-  // 阶段 2 起逐项 add；每家只捕获自己需要的 io 字段。
+  // ── 阶段 2：balances 简单组（opencode/loomy/raccoon/minimax/qoder族/cline）──
+  for (const account of makeSimpleBalanceAccounts(_io)) add(account)
+  // ── 阶段 2：balances 复杂组（codearts/trae/commandcode/autoclaw/officeace/
+  //    antigravity/zcode/buddy/workbuddy；zcode 底层函数 + buildZcodeBalance 回调）──
+  for (const account of makeComplexBalanceAccounts(_io)) add(account)
+  // ── 阶段 3：status 真查 + claim 各渠道（TRAE 最复杂；ZCODE claim 阶段 4 不迁）──
+  for (const account of makeStatusClaimAccounts(_io)) add(account)
 
   return new Map([...byId].map(([id, account]) => [id, Object.freeze(account)]))
 }

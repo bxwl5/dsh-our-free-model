@@ -19,7 +19,7 @@ import ts from 'typescript'
 const root = new URL('../', import.meta.url)
 const sourceRoot = pathToFileURL(path.join(fileURLToPath(root), 'vendor/channel-pack/src/')).href
 const kernel = new URL('./lib/channel-pack-kernel.mjs', import.meta.url).href
-const llmKernel = new URL('./lib/llm-kernel.mjs', import.meta.url).href
+const llmKernel = kernel  // @deepseek-ai/dsh-llm 在注册表模块里不被 import，此处与 kernel 同源兜底
 
 const hooks = registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -50,12 +50,31 @@ const hooks = registerHooks({
 const { buildChannelAccountRegistry } = await import(
   pathToFileURL(path.join(fileURLToPath(root), 'vendor/channel-pack/src/channel-accounts/index.ts')).href
 )
-const { toStatusEnvelope } = await import(
+const { toStatusEnvelope, nullStatusAccounts } = await import(
   pathToFileURL(path.join(fileURLToPath(root), 'vendor/channel-pack/src/channel-account.ts')).href
 )
+const { verifyExtraSlice } = await import(
+  new URL('./lib/channel-account-slice-extra.mjs', import.meta.url).href
+)
 
-// 装配期只注入 pool（阶段 1 的 6 项都是零网络常量，不读任何 io 字段）。
-const registry = buildChannelAccountRegistry({ pool: {} })
+// 装配期 io 离线桩：三个工厂构造期只读 qoderFamily / loomy / raccoon / zcode /
+// buildZcodeBalance / pool，运行期真正发请求的路径由下面 env.fetcher 抛错哨兵拦住。
+const noopFetch = async () => { throw new Error('守卫：不应发网络请求') }
+const offlineIo = {
+  pool: {
+    traeCheckinDeviceGenerationFor: () => 0,
+    updateTraeCheckinDeviceGeneration: async () => {},
+  },
+  loomy: { fetchCreditBalance: noopFetch },
+  raccoon: { fetchCreditBalance: noopFetch },
+  zcode: { fetchBalanceFor: noopFetch },
+  qoderFamily: [
+    { product: { id: 'qoder' }, auth: {} },
+    { product: { id: 'qodercn' }, auth: {} },
+  ],
+  buildZcodeBalance: (r) => ({ total: 0, packages: [] }),
+}
+const registry = buildChannelAccountRegistry(offlineIo)
 
 const fakeAccounts = [
   { id: 'acct-a', nickname: '账号一', credentialRef: 'REF_A' },
@@ -108,11 +127,8 @@ for (const [provider, message] of Object.entries(claimMessages)) {
   })
 }
 
-// ── 未迁移组合：三方法都缺席，分派层落原 if 链 ──
-for (const provider of ['buddy', 'minimax', 'zcode', 'antigravity', 'qoder']) {
-  const account = registry.get(provider)
-  assert.equal(account, undefined, `${provider} 阶段 1 不应出现在注册表`)
-}
+// ── 阶段 2/3/4 全组合差分守卫（55 项，含 workbuddy/zcode 合并真值表）──
+const extra = await verifyExtraSlice({ registry, env, nullStatusAccounts, toStatusEnvelope })
 
 hooks.deregister()
-console.log(`ok  channel-account-slice: ${checks.length} 组差分守卫通过（${checks.join(' / ')}）；未迁移组合仍缺席`)
+console.log(`ok  channel-account-slice: R0 ${checks.length} 组 + 扩展 ${extra.count} 组差分守卫通过；zcode.claim 仍缺席（阶段 4 不迁）`)

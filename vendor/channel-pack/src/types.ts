@@ -594,8 +594,8 @@ export interface RpcCreditsBalanceExtra {
 export interface RpcCreditsBalancesResponse {
   accounts: RpcCreditsBalanceAccount[]
   /**
-   * 当前生效的「临时积分」窗口（天）—— **CodeBuddy / WorkBuddy / TRAE /
-   * LobsterAI 返回**。
+   * 当前生效的「临时积分」窗口（天）—— **TRAE 与 CodeBuddy 系（buddy /
+   * workbuddy）返回**（LobsterAI 已移除）。
    *
    * 面板据此把每个资源包分成临时 / 长期两桶显示（`credit-expiry.js`），
    * 且必须在**渲染时**用当前时刻现算 —— 分类是时间的函数，把结果存下来就会
