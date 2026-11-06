@@ -3309,37 +3309,13 @@ function registerChannelPackEndpoints(
           const { product } = requireQoderFamily(req.provider)
           // 余额来自 `GET {product.openApiBase}/sash/api/v2/me/usage`（实测只需
           // Bearer + Cosy-ClientType，**不需要**模型列表那样的 WASM 签名）。
-          // `fetchQoderCreditBalance` 只吃 QoderCredential，故这里不用
-          // collectCreditBalances 的泛型（它会把产品配置转发给 fetchBalance）。
-          const values: RpcCreditsBalancesResponse['accounts'] = []
-          for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef(account.credentialRef))
-            if (!resolved) {
-              values.push({
-                accountId: account.id, nickname: account.nickname,
-                balance: null, error: '凭据未配置',
-              })
-              continue
-            }
-            let credential: QoderCredential
-            try {
-              credential = JSON.parse(resolved.value) as QoderCredential
-            } catch {
-              values.push({
-                accountId: account.id, nickname: account.nickname,
-                balance: null, error: '凭据解析失败',
-              })
-              continue
-            }
-            const balance = await fetchQoderCreditBalance(credential, product)
-            values.push({
-              accountId: account.id,
-              nickname: account.nickname,
-              balance,
-              // 查不到时带上原因，卡片显示原因而非 0（与其它 provider 同约定）。
-              ...balance === null ? { error: '积分查询失败（凭据失效或响应异常）' } : {},
-            })
-          }
+          // 2026-11-06「学 magpie 架构」：逐账号编排交给 collectCreditBalances，
+          // 渠道只提供 fetchBalance 实现（product 由本分支闭包传入）。
+          const values = await collectCreditBalances<QoderCredential, typeof product>(accounts, product, {
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalance: (credential, p) => fetchQoderCreditBalance(credential, p),
+            warn: (msg) => ctx.logger?.warn?.(msg),
+          })
           return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
         }
         if (req.provider === OPENCODE.id) {
@@ -3570,202 +3546,77 @@ function registerChannelPackEndpoints(
         }
         if (req.provider === CLINE.id) {
           // 余额来自 `GET /api/v1/users/{accountId}/balance`（实测
-          // `{data:{userId, balance}, success:true}`）。与 Qoder 分支同因：
-          // `fetchClineCreditBalance` 只吃 ClineCredential，故不用
-          // collectCreditBalances 的泛型（它会把产品配置转发给 fetchBalance）。
-          //
+          // `{data:{userId, balance}, success:true}`）。
           // ⚠️ 账号 id 必须用凭据里的 `account_id`（`usr-…`），**不是** JWT 的
           // `sub`（`user_…`）—— 传后者实测返回 `400 Invalid request format`。
-          const values: RpcCreditsBalancesResponse['accounts'] = []
-          for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef(account.credentialRef))
-            if (!resolved) {
-              values.push({
-                accountId: account.id, nickname: account.nickname,
-                balance: null, error: '凭据未配置',
-              })
-              continue
-            }
-            let credential: ClineCredential
-            try {
-              credential = JSON.parse(resolved.value) as ClineCredential
-            } catch {
-              values.push({
-                accountId: account.id, nickname: account.nickname,
-                balance: null, error: '凭据解析失败',
-              })
-              continue
-            }
-            const result = await fetchClineCreditBalance(credential, CLINE)
-            values.push({
-              accountId: account.id,
-              nickname: account.nickname,
-              balance: result.balance,
-              // 查不到时带上**具体原因**（含 HTTP 状态码与错误体摘要），
-              // 而不是笼统一句「查询失败」—— 卡片显示原因而非 0
-              //（0 是「已用光」的语义，会误导用户）。
-              ...result.balance === null
-                ? { error: result.error ?? '积分查询失败（凭据失效或响应异常）' }
-                : {},
-            })
-          }
+          // 2026-11-06「学 magpie 架构」：用 fetchBalanceDetailed 保留渠道自带的
+          // 具体原因（含 HTTP 状态码与错误体摘要），编排交给通用 helper。
+          const values = await collectCreditBalances<ClineCredential, typeof CLINE>(accounts, CLINE, {
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalanceDetailed: async (credential, product) => {
+              const result = await fetchClineCreditBalance(credential, product)
+              return result.balance === null
+                ? { balance: null, error: result.error ?? '积分查询失败（凭据失效或响应异常）' }
+                : { balance: result.balance }
+            },
+            warn: (msg) => ctx.logger?.warn?.(msg),
+          })
           return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
         }
 
         if (req.provider === LOOMY.id) {
-          // 余额来自 `GET /points/records`（**只读**，无副作用）。
-          // ⚠️ 刻意不用 `first-login`：那是**写**端点，在「打开面板」这种
-          // 高频路径上调用会意外触发签到。
-          const values: RpcCreditsBalancesResponse['accounts'] = []
-          for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef(account.credentialRef))
-            if (!resolved) {
-              values.push({
-                accountId: account.id, nickname: account.nickname,
-                balance: null, error: '凭据未配置',
-              })
-              continue
-            }
-            let credential: LoomyCredential
-            try {
-              credential = JSON.parse(resolved.value) as LoomyCredential
-            } catch {
-              values.push({
-                accountId: account.id, nickname: account.nickname,
-                balance: null, error: '凭据解析失败',
-              })
-              continue
-            }
-            const balance = await loomy.fetchCreditBalance(credential)
-            values.push({
-              accountId: account.id,
-              nickname: account.nickname,
-              balance,
-              // 查不到时带原因（不显示成 0，0 是「已用光」的语义）。
-              ...balance === null ? { error: '积分查询失败（凭据失效或响应异常）' } : {},
-            })
-          }
+          // 2026-11-06「学 magpie 架构」试点：渠道只提供 fetchBalance 实现，
+          // 逐账号编排（顺序执行 / 单账号失败不中断 / 凭据解析在 try 内）
+          // 统一交给 collectCreditBalances —— 与其余 8 家同构，手写循环删除。
+          // 余额来自 `GET /points/records`（**只读**，无副作用）；刻意不用
+          // `first-login`：那是**写**端点，高频面板路径会意外触发签到。
+          const values = await collectCreditBalances<LoomyCredential, typeof LOOMY>(accounts, LOOMY, {
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalance: (credential) => loomy.fetchCreditBalance(credential),
+            warn: (msg) => ctx.logger?.warn?.(msg),
+          })
           return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
         }
         if (req.provider === RACCOON.id) {
           // 余额来自 `GET /points/v1/balance`（**只读**，无副作用）。
-          const values: RpcCreditsBalancesResponse['accounts'] = []
-          for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef(account.credentialRef))
-            if (!resolved) {
-              values.push({
-                accountId: account.id, nickname: account.nickname,
-                balance: null, error: '凭据未配置',
-              })
-              continue
-            }
-            let credential: RaccoonCredential
-            try {
-              credential = JSON.parse(resolved.value) as RaccoonCredential
-            } catch {
-              values.push({
-                accountId: account.id, nickname: account.nickname,
-                balance: null, error: '凭据解析失败',
-              })
-              continue
-            }
-            const balance = await raccoon.fetchCreditBalance(credential)
-            values.push({
-              accountId: account.id,
-              nickname: account.nickname,
-              balance,
-              // ⚠️ 查不到时带原因（**不显示成 0** —— 0 是「已用光」的语义，
-              // 把「查询失败」显示成 0 会让用户以为自己积分没了）。
-              ...balance === null ? { error: '积分查询失败（凭据失效或响应异常）' } : {},
-            })
-          }
+          // 2026-11-06「学 magpie 架构」：编排交给 collectCreditBalances。
+          const values = await collectCreditBalances<RaccoonCredential, undefined>(accounts, undefined, {
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalance: (credential) => raccoon.fetchCreditBalance(credential),
+            warn: (msg) => ctx.logger?.warn?.(msg),
+          })
           return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
         }
         if (req.provider === ZCODE.id) {
           /**
-           * 余额来自 `GET /zcode-plan/billing/balance`（**只读**，无副作用）。
-           *
-           * ⚠ ZCode 的额度单位是 **token**，而 Channel Pack 这个字段的语义是
-           * 「积分」。两者量纲不同 —— 但都要展示，故这里如实返回数值
-           * 并在错误文案里说明来源。`balance: null` 表示**查不到**
-           * （不显示成 0，0 是「已用光」的语义）。
+           * 2026-11-06「学 magpie 架构」：逐账号编排交给 collectCreditBalances，
+           * 渠道独有的业务判定全部收进 fetchBalanceDetailed 一个钩子里：
+           * - 网络异常真抛（fetchWithTimeout）→ 转成带原因的 error 行，单账号
+           *   抖动不炸整轮（原手写循环里的 try/catch 语义完整保留）；
+           * - enterprise=true → 「企业版不下发额度数字」；
+           * - 正常 → buildZcodeBalance 逐桶映射（多桶不丢）。
+           * 余额来自 `GET /zcode-plan/billing/balance`（**只读**，无副作用），
+           * 单位是 token 而面板语义是积分：如实回数值，`balance: null` 表示查不到。
            */
-          const values: RpcCreditsBalancesResponse['accounts'] = []
-          for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef(account.credentialRef))
-            if (!resolved) {
-              values.push({
-                accountId: account.id, nickname: account.nickname,
-                balance: null, error: '凭据未配置',
-              })
-              continue
-            }
-            let credential: ZcodeCredential
-            try {
-              credential = JSON.parse(resolved.value) as ZcodeCredential
-            } catch {
-              values.push({
-                accountId: account.id, nickname: account.nickname,
-                balance: null, error: '凭据解析失败',
-              })
-              continue
-            }
-            // ⚠ fetchBalanceFor 内部的 fetchWithTimeout 会真抛网络异常
-            // （2026-11-06 审计 M2）：单个账号网络抖动不得炸掉整个 balances
-            // 调用 —— 与 collectCreditBalances 的 per-account 兜底同语义。
-            // （qoder/cline/loomy/raccoon 四家的 fetch 底层各自 try/catch 自吞、
-            // 返回 null，实测不真抛，无需同款兜底——勿盲目照搬。）
-            let result: Awaited<ReturnType<typeof zcode.fetchBalanceFor>>
-            try {
-              result = await zcode.fetchBalanceFor(credential)
-            } catch (error) {
-              values.push({
-                accountId: account.id, nickname: account.nickname,
-                balance: null,
-                error: `额度查询失败：${error instanceof Error ? error.message : String(error)}`,
-              })
-              continue
-            }
-            if (result === undefined) {
-              values.push({
-                accountId: account.id, nickname: account.nickname,
-                balance: null, error: '额度查询失败（凭据失效或网络异常）',
-              })
-              continue
-            }
-            if (result.enterprise === true) {
-              // 企业版不下发额度数字、只给外部链接 —— 如实说明，不显示 0。
-              values.push({
-                accountId: account.id, nickname: account.nickname,
-                balance: null, error: '企业版账号不下发额度数字，请在 ZCode 内查看',
-              })
-              continue
-            }
-            values.push({
-              accountId: account.id,
-              nickname: account.nickname,
-              /**
-               * ⚠ `CreditBalance` 的形状是 `{total, packages[], expiredTotal?}`
-               * 这类**积分包**结构，而 ZCode 是「按日的 token 额度池」。
-               * 两者结构不同，故**逐桶**如实映射 —— 上游一个 resource bucket
-               * 就是一个包，包名用 `show_name`（实测是模型名，如
-               * `GLM-5.3-Flash`）。
-               *
-               * ## ⚠⚠ 这里曾经只映射 `buckets[0]`（真实缺陷）
-               *
-               * 旧实现只取 `result.planName`（= `buckets[0]?.showName`）拼**一个**
-               * 包 —— 多桶账号的其余额度被**静默丢掉**，UI 上看起来只有
-               * 一个模型的额度。而 `result.remaining` / `total` 却是**全桶汇总**，
-               * 于是那一个包的数字比它自己的 `totalUnits` 还大，自相矛盾。
-               *
-               * 实测（本机账号）上游只回一个桶（`GLM-5.3-Flash`），
-               * 但**不能按「只有一个桶」来写** —— 那正是把缺陷固化成契约；
-               * 且用户要看的恰恰是「GLM-5.3 与 GLM-5.3-Flash 各自剩多少」，
-               * 前端需要按模型逐行渲染、缺桶的模型显示占位。
-               */
-              balance: buildZcodeBalance(result),
-            })
-          }
+          const values = await collectCreditBalances<ZcodeCredential, undefined>(accounts, undefined, {
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalanceDetailed: async (credential) => {
+              let result: Awaited<ReturnType<typeof zcode.fetchBalanceFor>>
+              try {
+                result = await zcode.fetchBalanceFor(credential)
+              } catch (error) {
+                return { balance: null, error: `额度查询失败：${error instanceof Error ? error.message : String(error)}` }
+              }
+              if (result === undefined) {
+                return { balance: null, error: '额度查询失败（凭据失效或网络异常）' }
+              }
+              if (result.enterprise === true) {
+                return { balance: null, error: '企业版账号不下发额度数字，请在 ZCode 内查看' }
+              }
+              return { balance: buildZcodeBalance(result) }
+            },
+            warn: (msg) => ctx.logger?.warn?.(msg),
+          })
           return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
         }
         const product = productById(req.provider)
