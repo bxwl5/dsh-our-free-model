@@ -502,6 +502,19 @@ export async function verifyExtraSlice({ registry, env, nullStatusAccounts, toSt
         `${provider} fetchBalance 钩子未被驱动成功：${JSON.stringify(rows).slice(0, 200)}`)
     })
   }
+  // ②-e-4 损坏凭据驱动（t1-B6）：JSON.parse 失败 → 固定文案「凭据解析失败」，
+  // 不把 `Unexpected token …` 原文甩到卡片上。
+  await check('balances/broken-json/文案分类', 'balances', async () => {
+    const result = await methodOf('loomy', 'balances')(offlineEnv(env, 'loomy', FAKE_ACCOUNTS, {
+      resolve: async () => ({ value: '{not-json' }),
+      fetcher: standinFetcher,
+    }))
+    assert.equal(result.ok, true)
+    const row = result.value?.accounts?.[0]
+    assert.equal(row?.balance ?? null, null)
+    assert.equal(row?.error, '凭据解析失败', `损坏凭据应得固定文案，实际：${row?.error}`)
+  })
+
   for (const provider of BALANCES_WITH_WINDOW) {
     await check(`balances/driven-window/${provider}`, 'balances', async () => {
       const result = await methodOf(provider, 'balances')(

@@ -70,6 +70,7 @@ const suites = [
   // `node scripts/channel-credits-ui-test.mjs` 直跑零断言、exit 0。
   // 现已在那个文件里加 exitIfDirectRun 守卫，这里不能再把它当套件跑（否则守卫会判失败）。
   ['channel-account-slice', 'channel-account-slice-test.mjs', []],
+  ['artifact-freshness', 'artifact-freshness-test.mjs', []],
   ['channel-login', 'channel-login-test.mjs', []],
   // 登录方式矩阵的漂移守卫：文档 / client.js 的 login 字段 / ADOPTABLE_CHANNELS 三方一致。
   ['channel-login-methods', 'channel-login-methods-test.mjs', []],

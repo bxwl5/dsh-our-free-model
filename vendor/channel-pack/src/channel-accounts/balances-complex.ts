@@ -34,15 +34,11 @@
  * 3. `productById` 白名单**只认 buddy / workbuddy**：其余 provider 若被路由
  *    到这里，必须回 `bad-request`（原 :3666-3669 的兜底），不能猜产品配置。
  *
- * ⚠ **循环依赖说明**：本文件从 `../channel-pack-rpc.js` import
- * `collectCreditBalances`，而 rpc 又从本目录的 `index.ts` import 注册表工厂 ⇒
- * 存在 ESM 循环。该 helper 是**函数声明**（提升 + 活绑定），且本文件只在运行期
- * （RPC 分派内）调用它、模块求值阶段不触碰，故循环安全 —— 与 balances-simple.ts
- * 的处理完全一致（见 channel-account.ts 文件头「复用三个通用编排 helper」）。
+ 2026-11-07 t4-C1 断环：编排 helper 改从 `../credits-helpers.js` import（见文件头）。
  */
 
 import type { ChannelAccount, ChannelAccountEnv, CreditsResult } from '../channel-account.js'
-import { collectCreditBalances } from '../channel-pack-rpc.js'
+import { collectCreditBalances } from '../credits-helpers.js'
 import type { CodeArtsCredential, RpcCreditsBalanceExtra, RpcCreditsBalancesResponse } from '../types.js'
 import { fetchCodeArtsAccountInfoDetailed } from '../codearts-credits.js'
 import { readCredits } from '../commandcode-credits.js'

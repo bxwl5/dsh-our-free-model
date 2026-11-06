@@ -22,11 +22,7 @@
  *   `fetcher: env.fetcher`（本 RPC 现建的 codeartsFetcher，绑 signal 取消级联），
  *   绝不退回全局默认出口（定稿 §1-2 / §4-2）。
  *
- * ⚠️ **循环依赖是刻意的**：本模块从 `../channel-pack-rpc.js` import
- *   `collectCreditBalances`，而 `channel-pack-rpc.ts` 又 import
- *   `./channel-accounts/index.js`（装配期调用 `buildChannelAccountRegistry`）。
- *   ESM 的 live binding 让这条环成立 —— `collectCreditBalances` 只在**运行时**
- *   被调用（模块求值期不触碰），故不存在 TDZ 访问。
+ * 2026-11-07 t4-C1 断环：编排 helper 改从 `../credits-helpers.js` import（见文件头）。
  */
 
 import type {
@@ -36,7 +32,7 @@ import type {
 } from '../channel-account.js'
 import type { RpcCreditsBalancesResponse } from '../types.js'
 import type { CreditBalance } from '../credits.js'
-import { collectCreditBalances } from '../channel-pack-rpc.js'
+import { collectCreditBalances } from '../credits-helpers.js'
 import { fetchLoomyCreditBalance } from '../loomy-credits.js'
 import { fetchRaccoonCreditBalance } from '../raccoon-credits.js'
 import type { LoomyCredential } from '../loomy.js'

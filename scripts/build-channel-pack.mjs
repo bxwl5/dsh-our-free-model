@@ -21,7 +21,7 @@
  * Run after editing/re-vendoring `src/`; requires esbuild (devDependency, or any
  * checkout that has it on the resolution path).
  */
-import { readFileSync, writeFileSync, statSync } from 'node:fs'
+import { readFileSync, writeFileSync, statSync, rmSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -48,9 +48,15 @@ try {
   process.exit(1)
 }
 
+// 2026-11-07 全码审查（t3-#11）：--check = 构建到临时文件并与现有 pack.js 逐字节比对，
+// 不一致即非零退出。test-all 的产物新鲜度套件用它拦截「改了 src 忘重打包」。
+const checkOnly = process.argv.includes('--check')
+const outfileForBuild = checkOnly
+  ? path.join(path.dirname(outfile), `.pack.check-${process.pid}.js`)
+  : outfile
 const result = await esbuild.build({
   entryPoints: [entry],
-  outfile,
+  outfile: outfileForBuild,
   bundle: true,
   format: 'esm',
   platform: 'node',
@@ -79,6 +85,18 @@ const result = await esbuild.build({
     ].join('\n'),
   },
 })
+
+if (checkOnly) {
+  const fresh = readFileSync(outfileForBuild)
+  const stale = existsSync(outfile) ? readFileSync(outfile) : Buffer.alloc(0)
+  rmSync(outfileForBuild, { force: true })
+  if (!stale.equals(fresh)) {
+    console.error('build-channel-pack --check: pack.js 与 src 不一致（改了 src 忘重打包）')
+    process.exit(1)
+  }
+  console.log('ok  build-channel-pack --check: pack.js 与 src 一致')
+  process.exit(0)
+}
 
 // A bundle that silently lost its entry would still be a valid file, so the
 // build states its size instead of trusting the exit code alone.

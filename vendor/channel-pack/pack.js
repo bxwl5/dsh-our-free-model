@@ -31293,7 +31293,7 @@ var init_login = __esm({
 });
 
 // vendor/channel-pack/src/index.ts
-import { credentialRef as credentialRef16 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef17 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/refresh.ts
 var REFRESH_LEAD_MS = 36e5;
@@ -58349,7 +58349,7 @@ function registerZcodeLlm(ctx, options) {
 }
 
 // vendor/channel-pack/src/channel-pack-rpc.ts
-import { credentialRef as credentialRef13 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef14 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/openai-gateway/config.ts
 var DEFAULT_GATEWAY_HOST = "127.0.0.1";
@@ -58563,173 +58563,8 @@ function toStatusEnvelope(outcome) {
   return outcome.kind === "bad-request" ? { ok: false, error: { code: "bad-request", message: outcome.message } } : { ok: true, value: { accounts: [...outcome.accounts] } };
 }
 
-// vendor/channel-pack/src/minimax-product.ts
-var MINIMAX_FALLBACK_MODELS = [
-  {
-    id: "MiniMax-M3.1-Flash",
-    name: "M3.1-Flash",
-    contextWindow: 1e6,
-    maxTokens: 128e3,
-    supportsImage: true,
-    effortOptions: ["default", "low", "medium", "high", "xhigh", "max"],
-    defaultEffort: "default",
-    // ⚠️ forced_on：传 disabled 会被服务端**硬拒**（400 `requires adaptive
-    // thinking ... (2013)`，实测）。
-    thinkingMode: "forced_on"
-  },
-  {
-    id: "MiniMax-M3",
-    name: "M3",
-    contextWindow: 1e6,
-    maxTokens: 128e3,
-    supportsImage: true,
-    // ⚠️ 实测可开关思考（`switchable`）：不传/disabled → 0 思考块，
-    // adaptive → 有思考块。远端 `thinking_config.mode = 'switchable'`。
-    // ⚠️ 但它**没有 `effort_options`** ⇒ 没有「档位」可选，
-    // 只有「开/关」两态 —— 与 Qoder `qmodel` 的「只有关闭思考」同型。
-    thinkingMode: "switchable"
-  }
-];
-var MINIMAX = {
-  id: "minimax",
-  displayName: "MiniMax Code",
-  accountHost: "https://account.minimax.cn",
-  apiHost: "https://agent.minimax.cn",
-  region: "cn",
-  buildEnv: "prod",
-  clientId: "mcode-public",
-  audience: "agent-backend",
-  scope: "agent.default",
-  defaultCredentialRef: "MINIMAX_ACCESS_TOKEN",
-  fallbackModels: MINIMAX_FALLBACK_MODELS,
-  maxImageBytesInline: 10 * 1024 * 1024,
-  maxRequestBodyBytes: 64 * 1024 * 1024
-};
-var MINIMAX_DEVICE_CODE_PATH = "/oauth2/device/code";
-var MINIMAX_TOKEN_PATH = "/oauth2/token";
-var MINIMAX_MODELS_PATH = "/mavis/api/v1/models";
-var MINIMAX_INFER_PATH = "/mavis/api/v1/llm/v1/messages";
-var MINIMAX_SIGNIN_STATUS_PATH = "/minimax-cloud/api/v1/signin/status";
-var MINIMAX_SIGNIN_CLAIM_PATH = "/minimax-cloud/api/v1/signin/claim";
-var MINIMAX_CREDIT_DETAILS_PATH = "/minimax-cloud/api/v1/credit/details";
-var MINIMAX_REQUEST_TIMEOUT_MS = 3e4;
-var MINIMAX_OAUTH_TIMEOUT_MS = 2e4;
-
-// vendor/channel-pack/src/minimax.ts
-function decodeJwtExpMs2(token) {
-  const segments = token.split(".");
-  if (segments.length !== 3 || segments[1] === void 0) return void 0;
-  try {
-    const payload = JSON.parse(Buffer.from(segments[1], "base64url").toString("utf8"));
-    return typeof payload.exp === "number" && Number.isFinite(payload.exp) ? Number.isFinite(payload.exp * 1e3) ? payload.exp * 1e3 : void 0 : void 0;
-  } catch {
-    return void 0;
-  }
-}
-function decodeJwtSub(token) {
-  const segments = token.split(".");
-  if (segments.length !== 3 || segments[1] === void 0) return void 0;
-  try {
-    const payload = JSON.parse(Buffer.from(segments[1], "base64url").toString("utf8"));
-    return typeof payload.sub === "string" && payload.sub.length > 0 ? payload.sub : void 0;
-  } catch {
-    return void 0;
-  }
-}
-function minimaxCredentialExpiresAtMs(credential) {
-  const raw = credential.expires_at;
-  if (raw !== void 0) {
-    if (/^\d+$/.test(raw)) {
-      const value = Number(raw);
-      const parsed = value > 1e12 ? value : value * 1e3;
-      if (Number.isFinite(parsed) && parsed > 0) return parsed;
-    }
-  }
-  return decodeJwtExpMs2(credential.access_token);
-}
-function isMinimaxExpired(credential, nowMs = Date.now()) {
-  const expiresAt = minimaxCredentialExpiresAtMs(credential);
-  return expiresAt !== void 0 && nowMs >= expiresAt;
-}
-function isMinimaxRefreshable(credential) {
-  return typeof credential.refresh_token === "string" && credential.refresh_token.length > 0;
-}
-function minimaxHeaders(credential) {
-  const headers = new Headers();
-  headers.set("Authorization", `Bearer ${credential.access_token}`);
-  headers.set("Accept", "application/json");
-  return headers;
-}
-function minimaxInferHeaders(credential) {
-  const headers = new Headers();
-  headers.set("Authorization", `Bearer ${credential.access_token}`);
-  headers.set("Content-Type", "application/json");
-  headers.set("Accept", "text/event-stream");
-  return headers;
-}
-function positiveInt(value) {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : void 0;
-}
-function nonEmptyString(value) {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : void 0;
-}
-function stringArray(value) {
-  if (!Array.isArray(value)) return void 0;
-  const out = [];
-  const seen = /* @__PURE__ */ new Set();
-  for (const item of value) {
-    const text = nonEmptyString(item);
-    if (text === void 0 || seen.has(text)) continue;
-    seen.add(text);
-    out.push(text);
-  }
-  return out.length > 0 ? out : void 0;
-}
-function normalizeMinimaxModel(raw) {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return void 0;
-  const record = raw;
-  const id = nonEmptyString(record.id) ?? nonEmptyString(record.name);
-  if (id === void 0) return void 0;
-  const name2 = nonEmptyString(record.name) ?? id;
-  const limit = typeof record.limit === "object" && record.limit !== null ? record.limit : {};
-  const options = Array.isArray(record.context_window_options) ? record.context_window_options.filter((v) => positiveInt(v) !== void 0) : [];
-  const limitContext = positiveInt(limit.context);
-  const contextWindow = options.length > 0 ? Math.max(...options) : limitContext;
-  const modalities = typeof record.modalities === "object" && record.modalities !== null ? record.modalities : {};
-  const inputs = Array.isArray(modalities.input) ? modalities.input.filter((v) => typeof v === "string") : [];
-  const effortOptions = stringArray(record.effort_options);
-  const rawDefault = nonEmptyString(record.default_effort);
-  const defaultEffort = rawDefault !== void 0 && effortOptions?.includes(rawDefault) === true ? rawDefault : void 0;
-  const thinkingConfig = typeof record.thinking_config === "object" && record.thinking_config !== null ? record.thinking_config : void 0;
-  const thinkingMode = thinkingConfig === void 0 ? void 0 : nonEmptyString(thinkingConfig.mode);
-  const maxTokens = positiveInt(limit.output);
-  return {
-    id,
-    name: name2,
-    // 窗口未知时**不编造**：用 0 表示「不知道」，由 resolveModel 判 `> 0`
-    contextWindow: contextWindow ?? 0,
-    ...maxTokens === void 0 ? {} : { maxTokens },
-    supportsImage: inputs.includes("image"),
-    ...effortOptions === void 0 ? {} : { effortOptions },
-    ...defaultEffort === void 0 ? {} : { defaultEffort },
-    ...thinkingMode === void 0 ? {} : { thinkingMode }
-  };
-}
-function fallbackToEntry(model) {
-  return {
-    id: model.id,
-    name: model.name,
-    contextWindow: model.contextWindow,
-    maxTokens: model.maxTokens,
-    supportsImage: model.supportsImage,
-    ...model.effortOptions === void 0 ? {} : { effortOptions: model.effortOptions },
-    ...model.defaultEffort === void 0 ? {} : { defaultEffort: model.defaultEffort },
-    ...model.thinkingMode === void 0 ? {} : { thinkingMode: model.thinkingMode }
-  };
-}
-function minimaxFallbackEntries(product = MINIMAX) {
-  return product.fallbackModels.map(fallbackToEntry);
-}
+// vendor/channel-pack/src/credits-helpers.ts
+import { credentialRef as credentialRef10 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/credits.ts
 var CHECKIN_ACTIVITY_STATUS_PATH = "/v2/billing/meter/checkin-activity-status";
@@ -58950,6 +58785,337 @@ function formatClaimGains(totals) {
     parts.push(`+${formatUnitAmount(value, unit)}`);
   }
   return parts.length === 0 ? null : parts.join(", ");
+}
+
+// vendor/channel-pack/src/credits-helpers.ts
+function describeCreditsError(caught) {
+  const message2 = caught instanceof Error ? caught.message : String(caught);
+  if (caught instanceof SyntaxError || /^Unexpected token/.test(message2)) return "\u51ED\u636E\u89E3\u6790\u5931\u8D25";
+  return message2;
+}
+async function collectCreditsStatus(accounts, product, deps) {
+  const fetcher = deps.fetcher ?? fetch;
+  const fetchStatus = deps.fetchStatus ?? (async (credential, product2) => fetchCheckinStatus(
+    credential,
+    product2,
+    fetcher
+  ));
+  const results = [];
+  for (const entry of accounts) {
+    let status = null;
+    try {
+      const resolved = await deps.resolve(credentialRef10(entry.credentialRef));
+      if (resolved !== void 0) {
+        const credential = JSON.parse(resolved.value);
+        status = await fetchStatus(credential, product);
+      }
+    } catch (error) {
+      deps.warn?.(`[channel-pack] credits.status \u8D26\u53F7 ${entry.id} \u5931\u8D25: ${describeCreditsError(error)}`);
+      status = null;
+    }
+    results.push({ accountId: entry.id, nickname: entry.nickname, status });
+  }
+  return results;
+}
+async function collectClaimResults(accounts, product, deps) {
+  const fetcher = deps.fetcher ?? fetch;
+  const fetchStatus = deps.fetchStatus ?? (async (credential, product2) => fetchCheckinStatus(
+    credential,
+    product2,
+    fetcher
+  ));
+  const claim = deps.claim ?? (async (credential, product2) => claimDailyCheckin(
+    credential,
+    product2,
+    fetcher
+  ));
+  const precheck = deps.precheckStatus !== false;
+  const results = [];
+  const outcomes = [];
+  for (const entry of accounts) {
+    let outcome;
+    try {
+      const resolved = await deps.resolve(credentialRef10(entry.credentialRef));
+      if (resolved === void 0) {
+        outcome = { kind: "failed", code: -1, message: "\u51ED\u636E\u672A\u914D\u7F6E" };
+      } else {
+        const credential = JSON.parse(resolved.value);
+        if (!precheck) {
+          outcome = await claim(credential, product, entry);
+        } else {
+          const status = await fetchStatus(credential, product);
+          if (status !== null && !status.active) {
+            outcome = { kind: "inactive", message: "\u7B7E\u5230\u6D3B\u52A8\u672A\u5F00\u542F" };
+          } else if (status !== null && status.todayCheckedIn) {
+            outcome = { kind: "already-claimed", message: "\u4ECA\u5929\u5DF2\u7B7E\u5230" };
+          } else {
+            outcome = await claim(credential, product, entry);
+          }
+        }
+      }
+    } catch (error) {
+      deps.warn?.(`[channel-pack] credits.claimAll \u8D26\u53F7 ${entry.id} \u5931\u8D25: ${String(error)}`);
+      outcome = {
+        kind: "failed",
+        code: -1,
+        message: describeCreditsError(error)
+      };
+    }
+    outcomes.push(outcome);
+    results.push({ accountId: entry.id, nickname: entry.nickname, outcome });
+  }
+  return { results, summary: computeClaimSummary(outcomes) };
+}
+async function collectCreditBalances(accounts, product, deps) {
+  const fetcher = deps.fetcher ?? fetch;
+  const fetchBalance = deps.fetchBalance ?? (async (credential, product2) => fetchCreditBalance(
+    credential,
+    product2,
+    fetcher
+  ));
+  const fetchDetailed = deps.fetchBalanceDetailed;
+  const results = [];
+  for (const entry of accounts) {
+    let balance = null;
+    let error;
+    let extra;
+    try {
+      const resolved = await deps.resolve(credentialRef10(entry.credentialRef));
+      if (resolved === void 0) {
+        error = "\u51ED\u636E\u672A\u914D\u7F6E";
+      } else {
+        const credential = JSON.parse(resolved.value);
+        if (fetchDetailed !== void 0) {
+          const detailed = await fetchDetailed(credential, product);
+          balance = detailed.balance;
+          error = detailed.error;
+          extra = detailed.extra;
+          if (balance === null && error === void 0) error = "\u4F59\u989D\u67E5\u8BE2\u5931\u8D25";
+        } else {
+          balance = await fetchBalance(credential, product);
+          if (balance === null) error = "\u4F59\u989D\u67E5\u8BE2\u5931\u8D25";
+        }
+      }
+    } catch (caught) {
+      deps.warn?.(`[channel-pack] credits.balances \u8D26\u53F7 ${entry.id} \u5931\u8D25: ${String(caught)}`);
+      error = describeCreditsError(caught);
+      balance = null;
+    }
+    results.push({
+      accountId: entry.id,
+      nickname: entry.nickname,
+      balance,
+      ...error === void 0 ? {} : { error },
+      ...extra === void 0 ? {} : { extra }
+    });
+  }
+  return results;
+}
+function computeClaimSummary(outcomes) {
+  const summary = {
+    claimed: 0,
+    totalCredit: 0,
+    alreadyClaimed: 0,
+    inactive: 0,
+    failed: 0,
+    coversToday: 0,
+    totalByUnit: { token: 0, credit: 0 }
+  };
+  for (const outcome of outcomes) {
+    switch (outcome.kind) {
+      case "claimed":
+        summary.claimed += 1;
+        summary.totalCredit += outcome.credit;
+        summary.totalByUnit[claimUnitOf(outcome.unit)] += outcome.credit;
+        if (outcome.coversToday !== false) summary.coversToday += 1;
+        break;
+      case "already-claimed":
+        summary.alreadyClaimed += 1;
+        if (outcome.coversToday !== false) summary.coversToday += 1;
+        break;
+      case "inactive":
+        summary.inactive += 1;
+        break;
+      case "failed":
+        summary.failed += 1;
+        break;
+      default: {
+        const exhaustive = outcome;
+        void exhaustive;
+        summary.failed += 1;
+        break;
+      }
+    }
+  }
+  return summary;
+}
+
+// vendor/channel-pack/src/minimax-product.ts
+var MINIMAX_FALLBACK_MODELS = [
+  {
+    id: "MiniMax-M3.1-Flash",
+    name: "M3.1-Flash",
+    contextWindow: 1e6,
+    maxTokens: 128e3,
+    supportsImage: true,
+    effortOptions: ["default", "low", "medium", "high", "xhigh", "max"],
+    defaultEffort: "default",
+    // ⚠️ forced_on：传 disabled 会被服务端**硬拒**（400 `requires adaptive
+    // thinking ... (2013)`，实测）。
+    thinkingMode: "forced_on"
+  },
+  {
+    id: "MiniMax-M3",
+    name: "M3",
+    contextWindow: 1e6,
+    maxTokens: 128e3,
+    supportsImage: true,
+    // ⚠️ 实测可开关思考（`switchable`）：不传/disabled → 0 思考块，
+    // adaptive → 有思考块。远端 `thinking_config.mode = 'switchable'`。
+    // ⚠️ 但它**没有 `effort_options`** ⇒ 没有「档位」可选，
+    // 只有「开/关」两态 —— 与 Qoder `qmodel` 的「只有关闭思考」同型。
+    thinkingMode: "switchable"
+  }
+];
+var MINIMAX = {
+  id: "minimax",
+  displayName: "MiniMax Code",
+  accountHost: "https://account.minimax.cn",
+  apiHost: "https://agent.minimax.cn",
+  region: "cn",
+  buildEnv: "prod",
+  clientId: "mcode-public",
+  audience: "agent-backend",
+  scope: "agent.default",
+  defaultCredentialRef: "MINIMAX_ACCESS_TOKEN",
+  fallbackModels: MINIMAX_FALLBACK_MODELS,
+  maxImageBytesInline: 10 * 1024 * 1024,
+  maxRequestBodyBytes: 64 * 1024 * 1024
+};
+var MINIMAX_DEVICE_CODE_PATH = "/oauth2/device/code";
+var MINIMAX_TOKEN_PATH = "/oauth2/token";
+var MINIMAX_MODELS_PATH = "/mavis/api/v1/models";
+var MINIMAX_INFER_PATH = "/mavis/api/v1/llm/v1/messages";
+var MINIMAX_SIGNIN_STATUS_PATH = "/minimax-cloud/api/v1/signin/status";
+var MINIMAX_SIGNIN_CLAIM_PATH = "/minimax-cloud/api/v1/signin/claim";
+var MINIMAX_CREDIT_DETAILS_PATH = "/minimax-cloud/api/v1/credit/details";
+var MINIMAX_REQUEST_TIMEOUT_MS = 3e4;
+var MINIMAX_OAUTH_TIMEOUT_MS = 2e4;
+
+// vendor/channel-pack/src/minimax.ts
+function decodeJwtExpMs2(token) {
+  const segments = token.split(".");
+  if (segments.length !== 3 || segments[1] === void 0) return void 0;
+  try {
+    const payload = JSON.parse(Buffer.from(segments[1], "base64url").toString("utf8"));
+    return typeof payload.exp === "number" && Number.isFinite(payload.exp) ? Number.isFinite(payload.exp * 1e3) ? payload.exp * 1e3 : void 0 : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function decodeJwtSub(token) {
+  const segments = token.split(".");
+  if (segments.length !== 3 || segments[1] === void 0) return void 0;
+  try {
+    const payload = JSON.parse(Buffer.from(segments[1], "base64url").toString("utf8"));
+    return typeof payload.sub === "string" && payload.sub.length > 0 ? payload.sub : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function minimaxCredentialExpiresAtMs(credential) {
+  const raw = credential.expires_at;
+  if (raw !== void 0) {
+    if (/^\d+$/.test(raw)) {
+      const value = Number(raw);
+      const parsed = value > 1e12 ? value : value * 1e3;
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+  }
+  return decodeJwtExpMs2(credential.access_token);
+}
+function isMinimaxExpired(credential, nowMs = Date.now()) {
+  const expiresAt = minimaxCredentialExpiresAtMs(credential);
+  return expiresAt !== void 0 && nowMs >= expiresAt;
+}
+function isMinimaxRefreshable(credential) {
+  return typeof credential.refresh_token === "string" && credential.refresh_token.length > 0;
+}
+function minimaxHeaders(credential) {
+  const headers = new Headers();
+  headers.set("Authorization", `Bearer ${credential.access_token}`);
+  headers.set("Accept", "application/json");
+  return headers;
+}
+function minimaxInferHeaders(credential) {
+  const headers = new Headers();
+  headers.set("Authorization", `Bearer ${credential.access_token}`);
+  headers.set("Content-Type", "application/json");
+  headers.set("Accept", "text/event-stream");
+  return headers;
+}
+function positiveInt(value) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : void 0;
+}
+function nonEmptyString(value) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : void 0;
+}
+function stringArray(value) {
+  if (!Array.isArray(value)) return void 0;
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const item of value) {
+    const text = nonEmptyString(item);
+    if (text === void 0 || seen.has(text)) continue;
+    seen.add(text);
+    out.push(text);
+  }
+  return out.length > 0 ? out : void 0;
+}
+function normalizeMinimaxModel(raw) {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return void 0;
+  const record = raw;
+  const id = nonEmptyString(record.id) ?? nonEmptyString(record.name);
+  if (id === void 0) return void 0;
+  const name2 = nonEmptyString(record.name) ?? id;
+  const limit = typeof record.limit === "object" && record.limit !== null ? record.limit : {};
+  const options = Array.isArray(record.context_window_options) ? record.context_window_options.filter((v) => positiveInt(v) !== void 0) : [];
+  const limitContext = positiveInt(limit.context);
+  const contextWindow = options.length > 0 ? Math.max(...options) : limitContext;
+  const modalities = typeof record.modalities === "object" && record.modalities !== null ? record.modalities : {};
+  const inputs = Array.isArray(modalities.input) ? modalities.input.filter((v) => typeof v === "string") : [];
+  const effortOptions = stringArray(record.effort_options);
+  const rawDefault = nonEmptyString(record.default_effort);
+  const defaultEffort = rawDefault !== void 0 && effortOptions?.includes(rawDefault) === true ? rawDefault : void 0;
+  const thinkingConfig = typeof record.thinking_config === "object" && record.thinking_config !== null ? record.thinking_config : void 0;
+  const thinkingMode = thinkingConfig === void 0 ? void 0 : nonEmptyString(thinkingConfig.mode);
+  const maxTokens = positiveInt(limit.output);
+  return {
+    id,
+    name: name2,
+    // 窗口未知时**不编造**：用 0 表示「不知道」，由 resolveModel 判 `> 0`
+    contextWindow: contextWindow ?? 0,
+    ...maxTokens === void 0 ? {} : { maxTokens },
+    supportsImage: inputs.includes("image"),
+    ...effortOptions === void 0 ? {} : { effortOptions },
+    ...defaultEffort === void 0 ? {} : { defaultEffort },
+    ...thinkingMode === void 0 ? {} : { thinkingMode }
+  };
+}
+function fallbackToEntry(model) {
+  return {
+    id: model.id,
+    name: model.name,
+    contextWindow: model.contextWindow,
+    maxTokens: model.maxTokens,
+    supportsImage: model.supportsImage,
+    ...model.effortOptions === void 0 ? {} : { effortOptions: model.effortOptions },
+    ...model.defaultEffort === void 0 ? {} : { defaultEffort: model.defaultEffort },
+    ...model.thinkingMode === void 0 ? {} : { thinkingMode: model.thinkingMode }
+  };
+}
+function minimaxFallbackEntries(product = MINIMAX) {
+  return product.fallbackModels.map(fallbackToEntry);
 }
 
 // vendor/channel-pack/src/minimax-credits.ts
@@ -61363,6 +61529,7 @@ async function traeClaim(io, env) {
   return { ok: true, value };
 }
 function makeStatusClaimAccounts(io) {
+  const qoderFamilyReady = io.qoderFamily.length > 0;
   return [
     Object.freeze({
       id: MINIMAX.id,
@@ -61387,14 +61554,16 @@ function makeStatusClaimAccounts(io) {
       id: "officeace",
       claim: officeaceClaim
     }),
-    Object.freeze({
-      id: "qoder",
-      claim: (env) => qoderFamilyClaim(io, env)
-    }),
-    Object.freeze({
-      id: "qodercn",
-      claim: (env) => qoderFamilyClaim(io, env)
-    }),
+    ...qoderFamilyReady ? [
+      Object.freeze({
+        id: "qoder",
+        claim: (env) => qoderFamilyClaim(io, env)
+      }),
+      Object.freeze({
+        id: "qodercn",
+        claim: (env) => qoderFamilyClaim(io, env)
+      })
+    ] : [],
     Object.freeze({
       id: "codearts",
       claim: codeartsClaim
@@ -61641,7 +61810,7 @@ async function fetchClineUsageLimits(credential, product, fetcher = fetch, optio
 }
 
 // vendor/channel-pack/src/account-probe.ts
-import { credentialRef as credentialRef10 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef11 } from "@deepseek-ai/dsh-credentials";
 import { createUserMessage, LlmError as LlmError18 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/antigravity-adapter.ts
@@ -62715,7 +62884,7 @@ function isRateLimitFailure(error) {
 }
 async function probeWithAdapter(entry, credential, modelId, timeoutMs) {
   const signal = AbortSignal.timeout(timeoutMs);
-  const ref = credentialRef10(entry.credentialRef);
+  const ref = credentialRef11(entry.credentialRef);
   const buddyProduct = productById(entry.provider);
   const qoderProduct = qoderProductById(entry.provider);
   const clineProduct = clineProductById(entry.provider);
@@ -62857,7 +63026,7 @@ async function resetAccount(pool, accountId) {
 }
 
 // vendor/channel-pack/src/backup.ts
-import { credentialRef as credentialRef11 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef12 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/types.ts
 var BACKUP_FORMAT = "dsh-codearts-auth/backup";
@@ -62872,7 +63041,7 @@ async function exportBackup(pool, credentials) {
   const warnings = [];
   for (const entry of state.accounts) {
     try {
-      const resolved = await credentials.resolve(credentialRef11(entry.credentialRef));
+      const resolved = await credentials.resolve(credentialRef12(entry.credentialRef));
       if (resolved === void 0) {
         warnings.push(`${entry.id}: \u51ED\u636E\u672A\u914D\u7F6E`);
       } else {
@@ -62954,7 +63123,7 @@ async function importBackup(credentials, pool, raw) {
       continue;
     }
     try {
-      await credentials.set(credentialRef11(refName), value);
+      await credentials.set(credentialRef12(refName), value);
       credentialsImported++;
     } catch (error) {
       skipped.push(refName);
@@ -62985,7 +63154,7 @@ async function importBackup(credentials, pool, raw) {
 }
 
 // vendor/channel-pack/src/opencode-rpc.ts
-import { credentialRef as credentialRef12 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef13 } from "@deepseek-ai/dsh-credentials";
 import { randomBytes as randomBytes9 } from "node:crypto";
 
 // vendor/channel-pack/src/opencode-auth.ts
@@ -63068,7 +63237,7 @@ async function handleOpencodeRpc(ctx, pool, method, payload) {
           return done({ accountId: id, existed: true });
         }
         const nickname = typeof req.nickname === "string" && req.nickname.trim().length > 0 ? req.nickname.trim() : `OpenCode ${apiKey.slice(-6)}`;
-        await ctx.credentials.set(credentialRef12(refName), JSON.stringify({
+        await ctx.credentials.set(credentialRef13(refName), JSON.stringify({
           api_key: apiKey,
           nickname,
           // 指纹在此**首次固化**，之后由池里的代次权威重算（见 index.ts 接线注释）。
@@ -63093,7 +63262,7 @@ async function handleOpencodeRpc(ctx, pool, method, payload) {
         const refName = `OPENCODE_ANON_${randomBytes9(4).toString("hex").toUpperCase()}`;
         const count2 = pool.listAccountsByProvider(OPENCODE.id).filter((a) => a.id.startsWith(`${OPENCODE.id}-anon-`)).length;
         const nickname = typeof req?.nickname === "string" && req.nickname.trim().length > 0 ? req.nickname.trim() : `\u533F\u540D\u901A\u9053 ${count2 + 1}`;
-        await ctx.credentials.set(credentialRef12(refName), JSON.stringify({
+        await ctx.credentials.set(credentialRef13(refName), JSON.stringify({
           api_key: OPENCODE.anonymousKey,
           nickname
         }));
@@ -64229,162 +64398,6 @@ var PERMANENT_LOCK_PROVIDERS = /* @__PURE__ */ new Set([
   CODEBUDDY.id,
   WORKBUDDY.id
 ]);
-function computeClaimSummary(outcomes) {
-  const summary = {
-    claimed: 0,
-    totalCredit: 0,
-    alreadyClaimed: 0,
-    inactive: 0,
-    failed: 0,
-    coversToday: 0,
-    totalByUnit: { token: 0, credit: 0 }
-  };
-  for (const outcome of outcomes) {
-    switch (outcome.kind) {
-      case "claimed":
-        summary.claimed += 1;
-        summary.totalCredit += outcome.credit;
-        summary.totalByUnit[claimUnitOf(outcome.unit)] += outcome.credit;
-        if (outcome.coversToday !== false) summary.coversToday += 1;
-        break;
-      case "already-claimed":
-        summary.alreadyClaimed += 1;
-        if (outcome.coversToday !== false) summary.coversToday += 1;
-        break;
-      case "inactive":
-        summary.inactive += 1;
-        break;
-      case "failed":
-        summary.failed += 1;
-        break;
-      default: {
-        const exhaustive = outcome;
-        void exhaustive;
-        summary.failed += 1;
-        break;
-      }
-    }
-  }
-  return summary;
-}
-async function collectCreditsStatus(accounts, product, deps) {
-  const fetcher = deps.fetcher ?? fetch;
-  const fetchStatus = deps.fetchStatus ?? (async (credential, product2) => fetchCheckinStatus(
-    credential,
-    product2,
-    fetcher
-  ));
-  const results = [];
-  for (const entry of accounts) {
-    let status = null;
-    try {
-      const resolved = await deps.resolve(credentialRef13(entry.credentialRef));
-      if (resolved !== void 0) {
-        const credential = JSON.parse(resolved.value);
-        status = await fetchStatus(credential, product);
-      }
-    } catch (error) {
-      deps.warn?.(`[channel-pack] credits.status \u8D26\u53F7 ${entry.id} \u5931\u8D25: ${String(error)}`);
-      status = null;
-    }
-    results.push({ accountId: entry.id, nickname: entry.nickname, status });
-  }
-  return results;
-}
-async function collectClaimResults(accounts, product, deps) {
-  const fetcher = deps.fetcher ?? fetch;
-  const fetchStatus = deps.fetchStatus ?? (async (credential, product2) => fetchCheckinStatus(
-    credential,
-    product2,
-    fetcher
-  ));
-  const claim = deps.claim ?? (async (credential, product2) => claimDailyCheckin(
-    credential,
-    product2,
-    fetcher
-  ));
-  const precheck = deps.precheckStatus !== false;
-  const results = [];
-  const outcomes = [];
-  for (const entry of accounts) {
-    let outcome;
-    try {
-      const resolved = await deps.resolve(credentialRef13(entry.credentialRef));
-      if (resolved === void 0) {
-        outcome = { kind: "failed", code: -1, message: "\u51ED\u636E\u672A\u914D\u7F6E" };
-      } else {
-        const credential = JSON.parse(resolved.value);
-        if (!precheck) {
-          outcome = await claim(credential, product, entry);
-        } else {
-          const status = await fetchStatus(credential, product);
-          if (status !== null && !status.active) {
-            outcome = { kind: "inactive", message: "\u7B7E\u5230\u6D3B\u52A8\u672A\u5F00\u542F" };
-          } else if (status !== null && status.todayCheckedIn) {
-            outcome = { kind: "already-claimed", message: "\u4ECA\u5929\u5DF2\u7B7E\u5230" };
-          } else {
-            outcome = await claim(credential, product, entry);
-          }
-        }
-      }
-    } catch (error) {
-      deps.warn?.(`[channel-pack] credits.claimAll \u8D26\u53F7 ${entry.id} \u5931\u8D25: ${String(error)}`);
-      outcome = {
-        kind: "failed",
-        code: -1,
-        message: error instanceof Error ? error.message : String(error)
-      };
-    }
-    outcomes.push(outcome);
-    results.push({ accountId: entry.id, nickname: entry.nickname, outcome });
-  }
-  return { results, summary: computeClaimSummary(outcomes) };
-}
-async function collectCreditBalances(accounts, product, deps) {
-  const fetcher = deps.fetcher ?? fetch;
-  const fetchBalance = deps.fetchBalance ?? (async (credential, product2) => fetchCreditBalance(
-    credential,
-    product2,
-    fetcher
-  ));
-  const fetchDetailed = deps.fetchBalanceDetailed;
-  const results = [];
-  for (const entry of accounts) {
-    let balance = null;
-    let error;
-    let extra;
-    try {
-      const resolved = await deps.resolve(credentialRef13(entry.credentialRef));
-      if (resolved === void 0) {
-        error = "\u51ED\u636E\u672A\u914D\u7F6E";
-      } else {
-        const credential = JSON.parse(resolved.value);
-        if (fetchDetailed !== void 0) {
-          const detailed = await fetchDetailed(credential, product);
-          balance = detailed.balance;
-          error = detailed.error;
-          extra = detailed.extra;
-          if (balance === null && error === void 0) error = "\u4F59\u989D\u67E5\u8BE2\u5931\u8D25";
-        } else {
-          balance = await fetchBalance(credential, product);
-          if (balance === null) error = "\u4F59\u989D\u67E5\u8BE2\u5931\u8D25";
-        }
-      }
-    } catch (caught) {
-      deps.warn?.(`[channel-pack] credits.balances \u8D26\u53F7 ${entry.id} \u5931\u8D25: ${String(caught)}`);
-      error = caught instanceof Error ? caught.message : String(caught);
-      balance = null;
-    }
-    results.push({
-      accountId: entry.id,
-      nickname: entry.nickname,
-      balance,
-      ...error === void 0 ? {} : { error },
-      ...extra === void 0 ? {} : { extra }
-    });
-  }
-  return results;
-}
 function llmServiceOf(ctx) {
   const direct = ctx.llm;
   if (direct !== void 0 && direct !== null) return direct;
@@ -64605,7 +64618,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
     const out = [];
     for (const account of accounts) {
       try {
-        const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
+        const resolved = await ctx.credentials.resolve(credentialRef14(account.credentialRef));
         if (!resolved) {
           out.push(account);
           continue;
@@ -64750,7 +64763,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         const id = `${provider}-${shortId()}`;
         const refName = `${provider.toUpperCase().replace(/-/g, "_")}_ACCOUNT_${shortId().toUpperCase()}`;
         try {
-          await ctx.credentials.set(credentialRef13(refName), JSON.stringify(parsed));
+          await ctx.credentials.set(credentialRef14(refName), JSON.stringify(parsed));
         } catch (error) {
           return { ok: false, error: { code: "internal", message: `\u51ED\u636E\u5199\u5165\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}` } };
         }
@@ -64893,7 +64906,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             const reason = error instanceof Error ? error.message : String(error);
             throw new Error(`\u65E0\u6CD5\u83B7\u53D6 ${product.displayName} \u767B\u5F55\u5730\u5740\uFF08Host \u7F51\u7EDC\u8BF7\u6C42\u5931\u8D25\uFF09\uFF1A${reason}`);
           }
-          const ref = credentialRef13(refName);
+          const ref = credentialRef14(refName);
           await addPlaceholderAccount(id, product.id, refName);
           runBuddyLoginFlow({ openBrowser: () => {
           }, state, product }).then(async (flow) => {
@@ -64931,7 +64944,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           };
           flow.result.then(async (credential) => {
             cleanup();
-            await ctx.credentials.set(credentialRef13(refName), JSON.stringify(credential));
+            await ctx.credentials.set(credentialRef14(refName), JSON.stringify(credential));
             await pool.updateAccount(id, {
               nickname: credential.nickname ?? id,
               expiresAt: credential.expire_time,
@@ -64968,7 +64981,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             createdAt: Date.now()
           });
           started.result.then(async ({ credential }) => {
-            await ctx.credentials.set(credentialRef13(refName), JSON.stringify(credential));
+            await ctx.credentials.set(credentialRef14(refName), JSON.stringify(credential));
             await pool.updateAccount(id, {
               nickname: credential.nickname ?? credential.key_name ?? id
             });
@@ -65001,7 +65014,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             const dpopKey = await dpop.createDpopKeyPair();
             const sts = await oa.exchangeCodeForSts(codeartsFetcher, OFFICEACE2, code, pkce.verifier, dpopKey);
             const dpopJwk = await dpop.exportDpopJwkPair(dpopKey);
-            await ctx.credentials.set(credentialRef13(refName), JSON.stringify({ ...sts, dpop: dpopJwk }));
+            await ctx.credentials.set(credentialRef14(refName), JSON.stringify({ ...sts, dpop: dpopJwk }));
             stsPersisted = true;
             await pool.updateAccount(id, {
               refreshable: typeof sts.refresh_token === "string" && sts.refresh_token !== ""
@@ -65024,7 +65037,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
               // 续期签 proof 必须用同一把私钥 —— 参考实现同款约束）。
               dpop: dpopJwk
             };
-            await ctx.credentials.set(credentialRef13(refName), JSON.stringify(credential));
+            await ctx.credentials.set(credentialRef14(refName), JSON.stringify(credential));
             await pool.updateAccount(id, {
               nickname: credential.nickname ?? id,
               expiresAt: credential.expire_time,
@@ -65065,7 +65078,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
               nickname = await fetchQoderUserNickname(credential, product2);
               if (nickname !== void 0 && loginResult.access.length > 0) {
                 const updated = withQoderNickname(credential, nickname);
-                await ctx.credentials.set(credentialRef13(refName), JSON.stringify(updated));
+                await ctx.credentials.set(credentialRef14(refName), JSON.stringify(updated));
               }
             }
             await pool.updateAccount(id, {
@@ -65422,7 +65435,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
               await antigravity.refreshAccountCredential(entry.credentialRef, pool, entry.id);
               break;
             case AUTOCLAW.id: {
-              const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
+              const resolved = await ctx.credentials.resolve(credentialRef14(entry.credentialRef));
               if (resolved === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
               const current = JSON.parse(resolved.value);
               const refreshed = await refreshAutoclawCredential({
@@ -65431,7 +65444,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
                 credential: current
               });
               if (!refreshed.ok) throw new Error(refreshed.error);
-              await ctx.credentials.set(credentialRef13(entry.credentialRef), JSON.stringify(refreshed.credential));
+              await ctx.credentials.set(credentialRef14(entry.credentialRef), JSON.stringify(refreshed.credential));
               await pool.updateAccount(entry.id, {
                 expiresAt: refreshed.credential.expire_time,
                 refreshable: typeof refreshed.credential.refresh_token === "string" && refreshed.credential.refresh_token !== ""
@@ -65439,7 +65452,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
               break;
             }
             case COMMANDCODE.id: {
-              const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
+              const resolved = await ctx.credentials.resolve(credentialRef14(entry.credentialRef));
               if (resolved === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
               let key = "";
               try {
@@ -65464,7 +65477,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
             case "officeace": {
               const { refreshOfficeAceCredential: refreshOfficeAceCredential2, validatePermission: validatePermission2 } = await Promise.resolve().then(() => (init_officeace(), officeace_exports));
               const { OFFICEACE: OFFICEACE2 } = await Promise.resolve().then(() => (init_officeace_product(), officeace_product_exports));
-              const resolved = await ctx.credentials.resolve(credentialRef13(entry.credentialRef));
+              const resolved = await ctx.credentials.resolve(credentialRef14(entry.credentialRef));
               if (resolved === void 0) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
               const current = JSON.parse(resolved.value);
               const refreshed = await refreshOfficeAceCredential2(codeartsFetcher, OFFICEACE2, current);
@@ -65487,7 +65500,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
                   `[channel-pack] officeace \u7EED\u671F\u540E\u7684\u6743\u9650\u6821\u9A8C\u5931\u8D25\uFF08\u4FDD\u7559\u539F\u7F51\u5173\u4FE1\u606F\uFF09\uFF1A${error instanceof Error ? error.message : String(error)}`
                 );
               }
-              await ctx.credentials.set(credentialRef13(entry.credentialRef), JSON.stringify(refreshed));
+              await ctx.credentials.set(credentialRef14(entry.credentialRef), JSON.stringify(refreshed));
               await pool.updateAccount(entry.id, {
                 expiresAt: refreshed.expire_time,
                 refreshable: typeof refreshed.refresh_token === "string" && refreshed.refresh_token !== ""
@@ -65518,7 +65531,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         const accounts = await pool.listAllAccounts();
         const entry = accounts.find((a) => a.id === req.accountId);
         if (!entry) return { ok: true, value: { done: false } };
-        const ref = credentialRef13(entry.credentialRef);
+        const ref = credentialRef14(entry.credentialRef);
         const resolved = await ctx.credentials.resolve(ref);
         if (!resolved) return { ok: true, value: { done: false } };
         if (entry.provider === ZCODE.id) {
@@ -65865,7 +65878,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           for (const account of accounts) {
             let resolved;
             try {
-              resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
+              resolved = await ctx.credentials.resolve(credentialRef14(account.credentialRef));
             } catch {
               resolved = void 0;
             }
@@ -66179,7 +66192,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         const accounts = await pool.listAccounts(req.provider);
         const values = [];
         for (const account of accounts) {
-          const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
+          const resolved = await ctx.credentials.resolve(credentialRef14(account.credentialRef));
           if (!resolved) {
             values.push({
               accountId: account.id,
@@ -69387,7 +69400,7 @@ init_autoclaw_product();
 
 // vendor/channel-pack/src/minimax-auth.ts
 import { Service as Service10 } from "@deepseek-ai/cordis";
-import { credentialRef as credentialRef14 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef15 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/minimax-oauth.ts
 import { createHash as createHash9, randomBytes as randomBytes11 } from "node:crypto";
@@ -69658,13 +69671,13 @@ var MinimaxAuth = class extends Service10 {
       ...credential,
       ...options.nickname === void 0 ? {} : { nickname: options.nickname }
     };
-    await this.ctx.credentials.set(credentialRef14(options.refName), JSON.stringify(payload));
+    await this.ctx.credentials.set(credentialRef15(options.refName), JSON.stringify(payload));
     this.lastRefreshError = void 0;
     return { ...credential.account_id === void 0 ? {} : { accountId: credential.account_id } };
   }
   /** 解析默认单凭据。 */
   async resolveDefaultCredential() {
-    const resolved = await this.ctx.credentials.resolve(credentialRef14(this.credentialRefName));
+    const resolved = await this.ctx.credentials.resolve(credentialRef15(this.credentialRefName));
     if (!resolved) return void 0;
     return parseMinimaxCredential(resolved.value);
   }
@@ -69683,7 +69696,7 @@ var MinimaxAuth = class extends Service10 {
         this.fetchImpl,
         this.product
       );
-      await this.ctx.credentials.set(credentialRef14(this.credentialRefName), JSON.stringify(next));
+      await this.ctx.credentials.set(credentialRef15(this.credentialRefName), JSON.stringify(next));
       this.lastRefreshError = void 0;
     } catch (error) {
       const message2 = error instanceof Error ? error.message : String(error);
@@ -69699,7 +69712,7 @@ var MinimaxAuth = class extends Service10 {
    * 也把池值对账（见 `refreshAll` 的注释）。
    */
   async refreshAccountCredential(refName, pool, accountId) {
-    const ref = credentialRef14(refName);
+    const ref = credentialRef15(refName);
     const resolved = await this.ctx.credentials.resolve(ref);
     if (!resolved) throw new Error("\u51ED\u636E\u672A\u914D\u7F6E");
     const credential = parseMinimaxCredential(resolved.value);
@@ -69741,7 +69754,7 @@ var MinimaxAuth = class extends Service10 {
     for (const entry of accounts) {
       if (!entry.refreshable) continue;
       try {
-        const ref = credentialRef14(entry.credentialRef);
+        const ref = credentialRef15(entry.credentialRef);
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) {
           await pool.updateAccount(entry.id, { refreshable: false });
@@ -70533,7 +70546,7 @@ function registerMinimaxLlm(ctx, options) {
 
 // vendor/channel-pack/src/antigravity-auth.ts
 import { Service as Service11 } from "@deepseek-ai/cordis";
-import { credentialRef as credentialRef15 } from "@deepseek-ai/dsh-credentials";
+import { credentialRef as credentialRef16 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/antigravity-oauth.ts
 import { createServer as createServer8 } from "node:http";
@@ -70901,7 +70914,7 @@ var AntigravityAuth = class extends Service11 {
     return queue;
   }
   async readCredential(refName) {
-    const resolved = await this.ctx.credentials.resolve(credentialRef15(refName));
+    const resolved = await this.ctx.credentials.resolve(credentialRef16(refName));
     if (!resolved) return void 0;
     return parseGeminiCredential(resolved.value);
   }
@@ -70941,7 +70954,7 @@ var AntigravityAuth = class extends Service11 {
    * 展示名走 `antigravityAccountLabel`（邮箱优先，回退 `sub`）。
    */
   async persistLogin(credential, options) {
-    await this.ctx.credentials.set(credentialRef15(options.refName), JSON.stringify(credential));
+    await this.ctx.credentials.set(credentialRef16(options.refName), JSON.stringify(credential));
     return credential.sub === void 0 ? {} : { accountId: credential.sub };
   }
   /** 解析默认单凭据。 */
@@ -70958,7 +70971,7 @@ var AntigravityAuth = class extends Service11 {
       throw new AntigravityRefreshTokenExpiredError("\u51ED\u636E\u7F3A\u5C11 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
     }
     const next = await this.refreshCredential(credential);
-    await this.ctx.credentials.set(credentialRef15(this.credentialRefName), JSON.stringify(next));
+    await this.ctx.credentials.set(credentialRef16(this.credentialRefName), JSON.stringify(next));
   }
   /**
    * 续期**指定 ref**（RPC `account.refresh` / 定时器）。
@@ -70974,7 +70987,7 @@ var AntigravityAuth = class extends Service11 {
       if (!isGeminiRefreshable(credential)) {
         throw new AntigravityRefreshTokenExpiredError("\u51ED\u636E\u7F3A\u5C11 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
       }
-      const ref = credentialRef15(refName);
+      const ref = credentialRef16(refName);
       if (pool === void 0) {
         const next = await this.refreshCredential(credential);
         await this.ctx.credentials.set(ref, JSON.stringify(next));
@@ -71008,7 +71021,7 @@ var AntigravityAuth = class extends Service11 {
   async refreshAll(pool) {
     const accounts = await pool.listAccounts(this.product.id);
     for (const entry of accounts) {
-      const ref = credentialRef15(entry.credentialRef);
+      const ref = credentialRef16(entry.credentialRef);
       let credential;
       try {
         const resolved = await this.ctx.credentials.resolve(ref);
@@ -71118,7 +71131,7 @@ var AntigravityAuth = class extends Service11 {
     }
     for (const entry of entries) {
       try {
-        const ref = credentialRef15(entry.credentialRef);
+        const ref = credentialRef16(entry.credentialRef);
         const resolved = await this.ctx.credentials.resolve(ref);
         if (!resolved) continue;
         let credential = parseGeminiCredential(resolved.value);
@@ -71207,7 +71220,7 @@ var AntigravityAuth = class extends Service11 {
       if (available2) credential = available2.credential;
     }
     if (credential === void 0) {
-      const resolved = await this.ctx.credentials.resolve(credentialRef15(this.product.defaultCredentialRef));
+      const resolved = await this.ctx.credentials.resolve(credentialRef16(this.product.defaultCredentialRef));
       if (resolved) credential = parseGeminiCredential(resolved.value);
     }
     if (credential === void 0 || isGeminiExpired(credential)) return [];
@@ -72280,7 +72293,7 @@ function apply(ctx, config = {}) {
   });
   const codearts = registerCodeArtsLlm(ctx, {
     fetchImpl: signedNetwork.fetch,
-    credentialRef: credentialRef16(CODEARTS_CREDENTIAL_REF),
+    credentialRef: credentialRef17(CODEARTS_CREDENTIAL_REF),
     resolveCredential: async () => {
       const available2 = await pool.getAvailableAccount("codearts", "");
       return available2?.credential;
@@ -72296,7 +72309,7 @@ function apply(ctx, config = {}) {
     accountPool: pool
   });
   const resolveBuddyCredentialByRef = async (refName) => {
-    const resolved = await ctx.credentials.resolve(credentialRef16(refName));
+    const resolved = await ctx.credentials.resolve(credentialRef17(refName));
     if (!resolved) return void 0;
     try {
       return JSON.parse(resolved.value);
@@ -72395,7 +72408,7 @@ function apply(ctx, config = {}) {
      * 就完全绕过出口层清洗。此前 12 个适配器都注入了，唯独 buddy/workbuddy 漏了。
      */
     fetchImpl: network.fetch,
-    credentialRef: credentialRef16(BUDDY_CREDENTIAL_REF),
+    credentialRef: credentialRef17(BUDDY_CREDENTIAL_REF),
     resolveCredential: async (modelId) => {
       const picked = await pickBuddyCredential({
         product: CODEBUDDY,
@@ -72413,7 +72426,7 @@ function apply(ctx, config = {}) {
         return available2.credential;
       }
       throwIfAllAccountsRateLimited(CODEBUDDY, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef16(BUDDY_CREDENTIAL_REF));
+      const resolved = await ctx.credentials.resolve(credentialRef17(BUDDY_CREDENTIAL_REF));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -72436,7 +72449,7 @@ function apply(ctx, config = {}) {
   const workbuddyAdapter = registerBuddyLlm(ctx, {
     // 与 buddy 同因：出口层指纹清洗必须注入，不能只靠消息层（见上方 buddy 处说明）。
     fetchImpl: network.fetch,
-    credentialRef: credentialRef16(WORKBUDDY.defaultCredentialRef),
+    credentialRef: credentialRef17(WORKBUDDY.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const picked = await pickBuddyCredential({
         product: WORKBUDDY,
@@ -72455,7 +72468,7 @@ function apply(ctx, config = {}) {
         return available2.credential;
       }
       throwIfAllAccountsRateLimited(WORKBUDDY, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef16(WORKBUDDY.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef17(WORKBUDDY.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -72496,7 +72509,7 @@ function apply(ctx, config = {}) {
      *   不要改它 —— 出口层改它的 body 会让 HMAC 签名失配回 403。
      */
     fetchImpl: network.fetch,
-    credentialRef: credentialRef16(QODER.defaultCredentialRef),
+    credentialRef: credentialRef17(QODER.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(QODER.id, modelId ?? "");
       if (available2) {
@@ -72506,7 +72519,7 @@ function apply(ctx, config = {}) {
       }
       activeQoderAccountId.set(QODER.id, void 0);
       throwIfAllAccountsRateLimited(QODER, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef16(QODER.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef17(QODER.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -72534,7 +72547,7 @@ function apply(ctx, config = {}) {
   const qoderCnAdapter = registerQoderLlm(ctx, {
     // 与上方同因：出口层全渠道指纹清洗兜底（见 qoder 处完整说明）。
     fetchImpl: network.fetch,
-    credentialRef: credentialRef16(QODER_CN.defaultCredentialRef),
+    credentialRef: credentialRef17(QODER_CN.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(QODER_CN.id, modelId ?? "");
       if (available2) {
@@ -72544,7 +72557,7 @@ function apply(ctx, config = {}) {
       }
       activeQoderAccountId.set(QODER_CN.id, void 0);
       throwIfAllAccountsRateLimited(QODER_CN, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef16(QODER_CN.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef17(QODER_CN.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -72572,14 +72585,14 @@ function apply(ctx, config = {}) {
   const traeAdapter = registerTraeLlm(ctx, {
     // 与上方同因：出口层全渠道指纹清洗兜底（见 qoder 处完整说明）。
     fetchImpl: network.fetch,
-    credentialRef: credentialRef16(TRAE.defaultCredentialRef),
+    credentialRef: credentialRef17(TRAE.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(TRAE.id, modelId ?? "");
       if (available2) {
         reportLedgerAccount(TRAE.id, available2.entry.id);
         return available2.credential;
       }
-      const resolved = await ctx.credentials.resolve(credentialRef16(TRAE.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef17(TRAE.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -72603,14 +72616,14 @@ function apply(ctx, config = {}) {
   let activeClineAccountId = "";
   const clineAdapter = registerClineLlm(ctx, {
     fetchImpl: network.fetch,
-    credentialRef: credentialRef16(CLINE.defaultCredentialRef),
+    credentialRef: credentialRef17(CLINE.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(CLINE.id, modelId ?? "");
       activeClineAccountId = available2?.entry.id ?? "";
       if (activeClineAccountId.length > 0) reportLedgerAccount(CLINE.id, activeClineAccountId);
       if (available2) return available2.credential;
       throwIfAllAccountsRateLimited(CLINE, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef16(CLINE.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef17(CLINE.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -72643,7 +72656,7 @@ function apply(ctx, config = {}) {
       activeCommandCodeAccountId = available2?.entry.id ?? "";
       if (activeCommandCodeAccountId.length > 0) reportLedgerAccount(COMMANDCODE.id, activeCommandCodeAccountId);
       if (available2) return available2.credential;
-      const resolved = await ctx.credentials.resolve(credentialRef16(COMMANDCODE.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef17(COMMANDCODE.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -72670,7 +72683,7 @@ function apply(ctx, config = {}) {
     credential,
     accountId,
     save: async (ref, next) => {
-      await ctx.credentials.set(credentialRef16(ref), JSON.stringify(next));
+      await ctx.credentials.set(credentialRef17(ref), JSON.stringify(next));
     },
     pool,
     log: ctx.logger
@@ -72693,7 +72706,7 @@ function apply(ctx, config = {}) {
           activeOfficeAceAccountId
         );
       }
-      const resolved = await ctx.credentials.resolve(credentialRef16(OFFICEACE.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef17(OFFICEACE.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return await ensureOfficeAceCredentialFresh(JSON.parse(resolved.value), "");
@@ -72737,7 +72750,7 @@ function apply(ctx, config = {}) {
       }
     );
     if (available2) return fresh(available2.credential);
-    const resolved = await ctx.credentials.resolve(credentialRef16(product.defaultCredentialRef));
+    const resolved = await ctx.credentials.resolve(credentialRef17(product.defaultCredentialRef));
     if (!resolved) return void 0;
     try {
       return await fresh(JSON.parse(resolved.value));
@@ -72753,7 +72766,7 @@ function apply(ctx, config = {}) {
   });
   const loomy = new LoomyAuth(ctx);
   const resolveLoomyCredentialByRef = async (refName) => {
-    const resolved = await ctx.credentials.resolve(credentialRef16(refName));
+    const resolved = await ctx.credentials.resolve(credentialRef17(refName));
     if (!resolved) return void 0;
     try {
       return JSON.parse(resolved.value);
@@ -72768,7 +72781,7 @@ function apply(ctx, config = {}) {
   const loomyAdapter = registerLoomyLlm(ctx, {
     // 与上方同因：出口层全渠道指纹清洗兜底（见 qoder 处完整说明）。
     fetchImpl: network.fetch,
-    credentialRef: credentialRef16(LOOMY.defaultCredentialRef),
+    credentialRef: credentialRef17(LOOMY.defaultCredentialRef),
     /**
      * 解析本轮该用哪个账号的凭据。
      *
@@ -72818,7 +72831,7 @@ function apply(ctx, config = {}) {
         }
       }
       throwIfAllAccountsRateLimited(LOOMY, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef16(LOOMY.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef17(LOOMY.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -72831,7 +72844,7 @@ function apply(ctx, config = {}) {
       if (accountId !== void 0 && entry === void 0) throw new Error("loomy: account no longer exists");
       if (entry) await loomy.refreshAccountCredential(entry.credentialRef, pool, entry.id);
       else await loomy.refresh();
-      const resolved = await ctx.credentials.resolve(credentialRef16(entry?.credentialRef ?? LOOMY.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef17(entry?.credentialRef ?? LOOMY.defaultCredentialRef));
       if (!resolved) throw new Error("loomy: credential no longer exists");
       return JSON.parse(resolved.value);
     },
@@ -72853,7 +72866,7 @@ function apply(ctx, config = {}) {
     // 失败时返回空数组，由适配器回退兜底表。
     fetchRemoteModels: async () => {
       const available2 = await pool.getAvailableAccount(LOOMY.id, "");
-      const resolved = available2 !== null && available2 !== void 0 ? { value: JSON.stringify(available2.credential) } : await ctx.credentials.resolve(credentialRef16(LOOMY.defaultCredentialRef));
+      const resolved = available2 !== null && available2 !== void 0 ? { value: JSON.stringify(available2.credential) } : await ctx.credentials.resolve(credentialRef17(LOOMY.defaultCredentialRef));
       if (resolved === void 0) return [];
       let credential;
       try {
@@ -72877,7 +72890,7 @@ function apply(ctx, config = {}) {
   const raccoonAdapter = registerRaccoonLlm(ctx, {
     // 与上方同因：出口层全渠道指纹清洗兜底（见 qoder 处完整说明）。
     fetchImpl: network.fetch,
-    credentialRef: credentialRef16(RACCOON.defaultCredentialRef),
+    credentialRef: credentialRef17(RACCOON.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(RACCOON.id, modelId ?? "");
       if (available2) {
@@ -72885,7 +72898,7 @@ function apply(ctx, config = {}) {
         return available2.credential;
       }
       throwIfAllAccountsRateLimited(RACCOON, modelId);
-      const resolved = await ctx.credentials.resolve(credentialRef16(RACCOON.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef17(RACCOON.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -72898,7 +72911,7 @@ function apply(ctx, config = {}) {
       if (accountId !== void 0 && entry === void 0) throw new Error("raccoon: account no longer exists");
       if (entry) await raccoon.refreshAccountCredential(entry.credentialRef, pool, entry.id);
       else await raccoon.refresh();
-      const resolved = await ctx.credentials.resolve(credentialRef16(entry?.credentialRef ?? RACCOON.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef17(entry?.credentialRef ?? RACCOON.defaultCredentialRef));
       if (!resolved) throw new Error("raccoon: credential no longer exists");
       return JSON.parse(resolved.value);
     },
@@ -72924,14 +72937,14 @@ function apply(ctx, config = {}) {
   const minimaxAdapter = registerMinimaxLlm(ctx, {
     // 与上方同因：出口层全渠道指纹清洗兜底（见 qoder 处完整说明）。
     fetchImpl: network.fetch,
-    credentialRef: credentialRef16(MINIMAX.defaultCredentialRef),
+    credentialRef: credentialRef17(MINIMAX.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(MINIMAX.id, modelId ?? "");
       if (available2) {
         reportLedgerAccount(MINIMAX.id, available2.entry.id);
         return available2.credential;
       }
-      const resolved = await ctx.credentials.resolve(credentialRef16(MINIMAX.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef17(MINIMAX.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -72974,14 +72987,14 @@ function apply(ctx, config = {}) {
   const antigravityAdapter = registerAntigravityLlm(ctx, {
     fetchImpl: network.fetch,
     projectFetcher: network.fetch,
-    credentialRef: credentialRef16(ANTIGRAVITY.defaultCredentialRef),
+    credentialRef: credentialRef17(ANTIGRAVITY.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(ANTIGRAVITY.id, modelId ?? "");
       if (available2) {
         reportLedgerAccount(ANTIGRAVITY.id, available2.entry.id);
         return available2.credential;
       }
-      const resolved = await ctx.credentials.resolve(credentialRef16(ANTIGRAVITY.defaultCredentialRef));
+      const resolved = await ctx.credentials.resolve(credentialRef17(ANTIGRAVITY.defaultCredentialRef));
       if (!resolved) return void 0;
       try {
         return JSON.parse(resolved.value);
@@ -73016,8 +73029,8 @@ function apply(ctx, config = {}) {
     projectCache: antigravityProjectCache,
     persistProject: async (value) => {
       const available2 = await pool.getAvailableAccount(ANTIGRAVITY.id, "");
-      const ref = available2 ? available2.entry.credentialRef : credentialRef16(ANTIGRAVITY.defaultCredentialRef);
-      await ctx.credentials.set(credentialRef16(ref), value);
+      const ref = available2 ? available2.entry.credentialRef : credentialRef17(ANTIGRAVITY.defaultCredentialRef);
+      await ctx.credentials.set(credentialRef17(ref), value);
     },
     ...ctx.logger === void 0 ? {} : { logger: ctx.logger }
   });
@@ -73057,7 +73070,7 @@ function apply(ctx, config = {}) {
   const zcodeAdapter = registerZcodeLlm(ctx, {
     // 与上方同因：出口层全渠道指纹清洗兜底（见 qoder 处完整说明）。
     fetchImpl: network.fetch,
-    credentialRef: credentialRef16(ZCODE.defaultCredentialRef),
+    credentialRef: credentialRef17(ZCODE.defaultCredentialRef),
     resolveCredential: async (modelId) => {
       const available2 = await pool.getAvailableAccount(ZCODE.id, modelId ?? "");
       if (available2) {
@@ -73090,7 +73103,7 @@ function apply(ctx, config = {}) {
       for (const entry of entries) {
         if (entry.enabled === false) continue;
         try {
-          const resolved = await ctx.credentials.resolve(credentialRef16(entry.credentialRef));
+          const resolved = await ctx.credentials.resolve(credentialRef17(entry.credentialRef));
           if (resolved === void 0) continue;
           const parsed = JSON.parse(resolved.value);
           if (typeof parsed?.zcode_jwt === "string" && parsed.zcode_jwt !== "") credentials.push(parsed);
@@ -73261,7 +73274,7 @@ function apply(ctx, config = {}) {
       if (entry.refreshable === false) continue;
       let credential;
       try {
-        const resolved = await ctx.credentials.resolve(credentialRef16(entry.credentialRef));
+        const resolved = await ctx.credentials.resolve(credentialRef17(entry.credentialRef));
         if (resolved === void 0) continue;
         credential = JSON.parse(resolved.value);
       } catch {
@@ -73278,7 +73291,7 @@ function apply(ctx, config = {}) {
         continue;
       }
       try {
-        await ctx.credentials.set(credentialRef16(entry.credentialRef), JSON.stringify(next));
+        await ctx.credentials.set(credentialRef17(entry.credentialRef), JSON.stringify(next));
       } catch (error) {
         ctx.logger?.error?.(
           `[channel-pack] ${providerId} \u8D26\u53F7 ${entry.id} \u7EED\u671F\u5DF2\u6210\u529F\u4F46**\u843D\u76D8\u5931\u8D25**\uFF08\u65E7 refresh_token \u5DF2\u88AB\u4E0A\u6E38\u6D88\u8D39\uFF0C\u9700\u91CD\u65B0\u767B\u5F55\uFF09: ${String(error)}`
@@ -73392,7 +73405,7 @@ function apply(ctx, config = {}) {
       fetchImpl: network.fetch,
       identitySlots: async () => listIdentitySlots(
         await Promise.all(pool.listAccountsByProvider(OPENCODE.id).map(async (entry) => {
-          const resolved = await ctx.credentials.resolve(credentialRef16(entry.credentialRef)).catch(() => void 0);
+          const resolved = await ctx.credentials.resolve(credentialRef17(entry.credentialRef)).catch(() => void 0);
           let parsed = {};
           if (resolved !== void 0) {
             try {
@@ -73445,7 +73458,7 @@ function apply(ctx, config = {}) {
     });
     void ensureDefaultAnonymousSlot(
       (entry) => pool.addAccount(entry),
-      (refName, value) => ctx.credentials.set(credentialRef16(refName), value),
+      (refName, value) => ctx.credentials.set(credentialRef17(refName), value),
       () => pool.listAccountsByProvider(OPENCODE.id),
       // ⚠️ 判据是「池里有没有匿名条目」而不是「有没有账号」：用户若主动
       // 删光了匿名通道，那是明确选择，不该每次启动又塞回来（删除会像失灵）。

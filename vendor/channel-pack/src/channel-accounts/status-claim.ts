@@ -57,7 +57,7 @@ import type { AutoClawCredential } from '../autoclaw.js'
 import type { OfficeAceCredential } from '../officeace.js'
 import type { QoderCredential } from '../qoder.js'
 import type { TraeCredential } from '../trae.js'
-import { collectCreditsStatus, collectClaimResults } from '../channel-pack-rpc.js'
+import { collectCreditsStatus, collectClaimResults } from '../credits-helpers.js'
 import { productById } from '../product.js'
 import { MINIMAX } from '../minimax-product.js'
 import { TRAE } from '../trae-product.js'
@@ -410,6 +410,10 @@ async function traeClaim(
  *   autoclaw / officeace / qoder / qodercn / codearts —— false
  */
 export function makeStatusClaimAccounts(io: StatusClaimIo): ChannelAccount[] {
+  // 2026-11-07 全码审查（t1-Q1）：qoder 族 claim 与 balances-simple 的空表口径对齐 ——
+  // qoderFamily 为空（接线异常）时不登记 claim，分派层落原 if 链 → bad-request，
+  // 而不是登记后由 find() 抛错把整轮 claimAll 炸成 handler-failed。
+  const qoderFamilyReady = io.qoderFamily.length > 0
   return [
     Object.freeze({
       id: MINIMAX.id,
@@ -434,14 +438,16 @@ export function makeStatusClaimAccounts(io: StatusClaimIo): ChannelAccount[] {
       id: 'officeace',
       claim: officeaceClaim,
     }),
-    Object.freeze({
-      id: 'qoder',
-      claim: (env: ChannelAccountEnv) => qoderFamilyClaim(io, env),
-    }),
-    Object.freeze({
-      id: 'qodercn',
-      claim: (env: ChannelAccountEnv) => qoderFamilyClaim(io, env),
-    }),
+    ...(qoderFamilyReady ? [
+      Object.freeze({
+        id: 'qoder',
+        claim: (env: ChannelAccountEnv) => qoderFamilyClaim(io, env),
+      }),
+      Object.freeze({
+        id: 'qodercn',
+        claim: (env: ChannelAccountEnv) => qoderFamilyClaim(io, env),
+      }),
+    ] : []),
     Object.freeze({
       id: 'codearts',
       claim: codeartsClaim,

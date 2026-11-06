@@ -137,7 +137,8 @@ export function verifyAccountRotation() {
   // 开关必须在**自动签到那一行**内部，而不是页面顶层的独立块。
   // ⚠️ 不能用第一个 ofm_row：client.js 里有几十个同名容器，必须锚定
   //   「auto == null ? null : h('div', { className: 'ofm_row' }」这处。
-  const autoRowStart = client.indexOf("auto == null ? null : h('div', { className: 'ofm_row' }")
+  // 2026-11-07：该行加了专用 class（两端分布），锚定字符串随之更新。
+  const autoRowStart = client.indexOf("auto == null ? null : h('div', { className: 'ofm_row ofm_autorow' }")
   assert.ok(autoRowStart >= 0, '找不到自动签到那一行')
   const autoRow = client.slice(autoRowStart, autoRowStart + 4000)
   assert.ok(autoRow.includes('ofm_autostrategy'), '轮询开关必须落在自动签到那一行里')
