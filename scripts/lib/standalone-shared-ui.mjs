@@ -18,8 +18,8 @@ replaceOnce("...body === undefined ? {} : { body: JSON.stringify(body) },", "bod
 // 这里不再需要 replaceOnce 补丁。
 // 独立端把「页面永远拿不到明文」换成「导出备份包含凭据」的如实说明：
 // 独立端没有宿主凭据库，凭据随它的数据文件一起导出，措辞必须与事实一致。
-replaceOnce("'chan.sub': '接入各家渠道：登录一次，模型即出现在模型选择器。凭据只存本机凭据库，页面拿不到明文。',",
-  "'chan.sub': '登录各家渠道后，通过同一个 API 地址接入模型。凭据只存本机凭据库；页面不显明文，导出备份含凭据。',")
+replaceOnce("'chan.sub': '接入各家渠道：登录一次，模型即出现在模型选择器。凭据只存本机凭据库。',",
+  "'chan.sub': '登录各家渠道后，通过同一个 API 地址接入模型。凭据只存本机凭据库，导出备份含凭据。',")
 let record
 vm.runInNewContext(source, { window: { __ModuleLoader__: { load: value => { record = value } } } })
 const shared = record.factory(() => ({})).standalone

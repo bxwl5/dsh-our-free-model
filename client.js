@@ -205,7 +205,7 @@ window.__ModuleLoader__.load({
         'free.tankNote': '水位 = 当前可用模型占比（{ok}/{total}）',
         'free.tankEmpty': '尚未探测，水位按已声明模型占位。',
         'chan.title': '渠道接入',
-        'chan.sub': '接入各家渠道：登录一次，模型即出现在模型选择器。凭据只存本机凭据库，页面拿不到明文。',
+        'chan.sub': '接入各家渠道：登录一次，模型即出现在模型选择器。凭据只存本机凭据库。',
         'chan.pack.failed': '渠道包未挂载：{reason}（免费车道不受影响）',
         'chan.pack.hint': '渠道包由本插件内置（vendor/channel-pack），随插件一起升级。',
         'chan.state.on': '已接入',
@@ -710,7 +710,7 @@ window.__ModuleLoader__.load({
         'free.tankNote': 'Water level = share of reachable models ({ok}/{total})',
         'free.tankEmpty': 'Not probed yet; the level stands at the declared roster.',
         'chan.title': 'Channel access',
-        'chan.sub': 'Bring each vendor\'s channels in: sign in once and its models appear in the composer\'s model picker. Credentials stay in this machine\'s credential store — this page never sees them.',
+        'chan.sub': 'Bring each vendor\'s channels in: sign in once and its models appear in the composer\'s model picker. Credentials stay in this machine\'s credential store.',
         'chan.pack.failed': 'Channel pack not mounted: {reason} (the free lane is unaffected)',
         'chan.pack.hint': 'The pack ships inside this plugin (vendor/channel-pack) and upgrades with it.',
         'chan.state.on': 'Connected',
@@ -1067,6 +1067,10 @@ window.__ModuleLoader__.load({
 .ofm_pagetitle{display:flex;flex-direction:column;gap:6px;min-width:0}
 .ofm_pagetitle h2{margin:0;font-size:23px;font-weight:760;letter-spacing:-.6px;line-height:1.2;background:linear-gradient(120deg,var(--dsw-alias-label-primary) 20%,color-mix(in srgb,var(--dsw-alias-label-primary) 55%,var(--dsw-alias-state-business-primary)));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
 .ofm_pagesub{margin:0;font-size:12.5px;color:var(--dsw-alias-label-secondary);max-width:70ch}
+/* 渠道页（2026-11-07 用户）：副标题与右侧两个统计胶囊同一行齐平；窄屏时胶囊换到副标题下方，不再挤压文案。 */
+.ofm_subrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0}
+.ofm_subrow .ofm_pagesub{max-width:none}
+.ofm_subpills{display:flex;gap:6px;margin-left:auto;flex-shrink:0}
 /* ── 账号轮询（渠道内，全局）────────────────────────────────────────────
    2026-11-04 起**并入顶部卡片的自动签到那一行**（用户要求），不再单独成块。
    与「路由轮询」（combo 成员之间，通常就是不同渠道）是两套独立机制。
@@ -4251,11 +4255,13 @@ window.__ModuleLoader__.load({
           h('div', { className: 'ofm_pagehead' },
             h('div', { className: 'ofm_pagetitle' },
               h('h2', null, t('chan.title')),
-              h('p', { className: 'ofm_pagesub' }, t('chan.sub'))),
-            h('div', { className: 'ofm_pills' },
-              h(Pill, { strong: true, tone: ready ? 'ok' : failed ? 'err' : 'warn' },
-                ready ? `${connected}/${CHANNEL_PROVIDERS.length} ${t('chan.state.on')}` : t('chan.state.off')),
-              h(Pill, null, `${t('chan.meta.accounts')} ${statuses === undefined ? '—' : CHANNEL_PROVIDERS.reduce((sum, row) => sum + (statuses[row.id]?.accounts?.enabled ?? 0), 0)}`))),
+              // 2026-11-07（用户）：副标题与「已接入 N/M」「账号 M」同一行齐平。
+              h('div', { className: 'ofm_subrow' },
+                h('p', { className: 'ofm_pagesub' }, t('chan.sub')),
+                h('div', { className: 'ofm_subpills' },
+                  h(Pill, { strong: true, tone: ready ? 'ok' : failed ? 'err' : 'warn' },
+                    ready ? `${connected}/${CHANNEL_PROVIDERS.length} ${t('chan.state.on')}` : t('chan.state.off')),
+                  h(Pill, null, `${t('chan.meta.accounts')} ${statuses === undefined ? '—' : CHANNEL_PROVIDERS.reduce((sum, row) => sum + (statuses[row.id]?.accounts?.enabled ?? 0), 0)}`))))),
           auto == null ? null : h('div', { className: 'ofm_row' },
             h(Switch, { checked: auto.enabled === true, label: t('chan.auto.title'), onChange: () => void toggleAuto() }),
             h(Pill, { tone: auto.running === true ? 'warn' : auto.ranToday === true ? 'ok' : '' },
