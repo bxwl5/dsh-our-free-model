@@ -27,8 +27,8 @@
     "provenanceNotes": "vendor/channel-pack/NOTICE.md records what was taken, what was left out (upstream's own browser half) and how to rebuild the bundle."
   },
   "distribution": {
-    "selfUpdate": "default; in-app updater verifies feed/manifest.json SHA-256 digests before installing",
-    "announcementFeed": "default; owner-published feed/announcements.json",
+    "selfUpdate": "none; the feed/manifest self-updater was removed in 95657a7 — updates are manual (rebuild + republish)",
+    "announcementFeed": "none; owner announcements feed was removed in 95657a7",
     "managedInstallation": "distribution=managed stands both channels down; the distributing pack owns update timing and bytes"
   },
   "integrity": {

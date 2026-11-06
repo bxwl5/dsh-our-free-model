@@ -36,7 +36,7 @@
 > （粘贴入口已移除，登录方式表由 `scripts/channel-login-methods-test.mjs` 守卫），
 > 不再让用户对着空粘贴框猜。
 
-### 1.2 计数口径（15 / 12 / 0）
+### 1.2 计数口径（15 / 11 / 0）
 
 | 计数 | 它到底在数什么 | 权威来源 |
 | --- | --- | --- |
@@ -72,11 +72,11 @@
 | 5 | `qodercn` · Qoder 中国版 | 浏览器授权（同上，读 `~/.qoder-cn`） | ✅ | ✅ 本机客户端解密目录 | ✅ | ✅ | ✅ 双桥 |
 | 6 | `trae` · TRAE | 浏览器授权（官方登录页，手机号） | ✅ | ✅ 远端 | ✅ | ✅ | ✅ 单桥 |
 | 7 | `cline` · Cline | 浏览器授权（Cline OAuth） | ✅ | ✅ 内嵌目录 + models.dev 远端补充 | ✅（单位 dollars） | ❌（无签到端点） | ✅ 双桥 |
-| 8 | `loomy` · Loomy | 本地页微信扫码；短信验证码为备用路径 | ✅ | ✅ 远端 | ✅ | ✅ | ✅ 单桥 |
+| 8 | `loomy` · Loomy | 本地页微信扫码；短信验证码为备用路径 | ✅ | ✅ 远端 | ✅ | ❌（一键签到已于 2026-11-06 移除） | ✅ 单桥 |
 | 9 | `raccoon` · Raccoon Work | 本地页微信扫码 + 短信双路径（不依赖官方客户端回调） | ✅ | ✅ 远端 | ✅ | ❌（每日积分由服务端自动发放；另有新手任务领取） | ✅ 双桥 |
 | 10 | `minimax` · MiniMax Code | OAuth 设备码 + PKCE | ✅（Anthropic Messages 协议族） | ✅ 远端 | ✅ | ✅ | ✅ 单桥 |
 | 11 | `zcode` · ZCode | 浏览器授权（官方 CLI 设备授权流 `/oauth/cli/init` → 轮询） | ✅（Anthropic Messages 协议族） | ✅ 静态白名单（远端接口保留） | ✅（单位 tokens） | ✅ | ✅ 双桥 |
-| 12 | `antigravity` · Antigravity（原 `gemini`，2026-11-01 改名） | 浏览器授权（Google OAuth，本地回调；只做 OAuth） | ✅ | ✅ 远端（`fetchAvailableModels`；claude/gpt-oss 家族放行，3.8 系分段合并，同名条目消歧） | ✅（分组配额桶：Gemini 组 + Claude·GPT 组） | ❌（无每日签到） | ✅ 双桥 |
+| 12 | `antigravity` · Antigravity（原 `gemini`，2026-11-01 改名） | 浏览器授权（Google OAuth，本地回调；只做 OAuth） | ✅ | ✅ 远端（`fetchAvailableModels`；claude/gpt-oss 家族放行，3.8 系分段合并，同名条目消歧） | ✅（分组配额桶：Gemini 组 + Claude·GPT 组——「Gemini」是上游 Cloud Code Assist 的实名桶前缀，非旧渠道名） | ❌（无每日签到） | ✅ 双桥 |
 | 13 | `commandcode` · Command Code | 浏览器授权（自动回调；授权页 `/studio/auth/cli`） | ✅ | ✅ 远端 | ✅（`/alpha/billing/credits`，`readCredits`） | ❌ | ❌ |
 | 14 | `officeace` · OfficeAce 果办 | 浏览器授权（自助 OAuth + 轮询授权码，回调不落本机） | ✅ | ✅ 远端 | ❌ | ❌ | ❌ |
 | 15 | `autoclaw` · AutoClaw（国内） | 手机号 + 短信验证码（卡片内嵌表单，无本地页） | ✅ | ✅ 远端（`autoclaw-model-config`） | ✅ 钱包（`agent-assetmgr/wallets`） | ✅ 签到（`task_complete`） | ❌ |
@@ -183,8 +183,9 @@
   **仅对 Loomy 开放**）。
 - 额度：今日赠送额度 + 永久积分；按余额优先选号（今日额度耗尽后服务端会**静默**扣永久积分，
   故有 `LoomyBalanceSelector` 与「锁定永久积分」开关）。
-- 签到：`POST /points/first-login`（响应自带 `alreadyProcessed` 判幂等）；
-  无独立状态端点，`credits.status` 如实返回 `null`。
+- 签到：**已于 2026-11-06 整体移除**（原 `POST /points/first-login` 链路删除；
+  一键签到按钮与轮询入口一并下线）。`CHANNEL_CREDITS.loomy` 为空对象 ⇒ 前端
+  守卫不发 `credits.status` / `credits.claimAll`；后端对 loomy 亦无专门分支。
 - 图片：单桥。
 
 ### 3.8 Raccoon Work（`raccoon`）
@@ -292,11 +293,11 @@
 
 | 结论 | 取证命令 / 文件 |
 | --- | --- |
-| 账号渠道 15、免密车道 2、纯粘贴 0 | `grep -n "账号渠道（20" README.md; grep -n "Account channels (20)" README_EN.md`；`node scripts/channel-pack-test.mjs --source`（粘贴型提示与形状解析用例） |
-| 卡片与已挂载 provider 一致（各 15） | `node scripts/channel-pack-test.mjs`（断言 `adapters.size === 20`、`cards.length === 20`） |
+| 账号渠道 15、免密车道 2、纯粘贴 0 | `grep -n "账号渠道（15" README.md; grep -n "Account channels (15)" README_EN.md`；`node scripts/channel-pack-test.mjs --source`（粘贴型提示与形状解析用例） |
+| 卡片与已挂载 provider 一致（各 15） | `node scripts/channel-pack-test.mjs`（断言 `adapters.size === 15`、`cards.length === 15`） |
 | 额度 / 签到的渠道集合（11 条非空契约） | `node scripts/channel-credits-rpc-test.mjs`；`vendor/channel-pack/src/channel-pack-rpc.ts` 的 `credits.balances` / `credits.claimAll` / `credits.status` 分派 |
 | 图片双桥 / 单桥 | `vendor/channel-pack/src/index.ts` 各注册块的 `readImage` / `readImageRequest` |
-| 发布产物与源码同步（防「改了 src 忘了重打包」） | `node scripts/channel-pack-test.mjs` —— 打包模式**也跑** `account.adopt` 端到端；产物重建见 §4.1 |
+| 发布产物与源码同步（防「改了 src 忘了重打包」） | `node scripts/artifact-freshness-test.mjs`（2026-11-07 新增：pack/business/integrity 三道 --check；`channel-pack-test.mjs` 打包模式的 adopt 端到端仍有效）；产物重建见 §4.1 |
 | 上游端点是否还活着（手动探活，默认不入 CI） | `node scripts/channel-probe.mjs`（见其文件头用法与已固化实测坑） |
 
 

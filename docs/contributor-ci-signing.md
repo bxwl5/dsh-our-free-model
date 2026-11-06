@@ -44,9 +44,10 @@ git diff --check
 最近内容 revision 的对齐交给维护者。清单与目录完整性记录之间的一致性仍检查。
 不要用占位签名或新公钥让检查变绿，不要将已有签名复制到修改过的清单。
 
-GitHub 的 `offline` 与 `typecheck` 是代码检查。`release-readiness` 运行
-`npm run test:release`，失败表示发布准备尚未完成；由持钥维护者处理。
-默认 `npm test` 跑所有套件；`npm run test:release` 专门检查真实清单、升级链和目录。
+GitHub 的 `offline` 与 `typecheck` 是代码检查。（2026-11-07 校正：曾在此提到的
+`release-readiness` job 与 `npm run test:release` 已随发布工具链在 `95657a7` 删除，
+当前 workflows 只有 `build-macos` / `docker` / `test`；产物一致性改由 test-all 的
+`artifact-freshness` 套件与 `scripts/catalog-test.mjs` 把关。）
 
 ## 维护者配置（一次性）
 
@@ -56,8 +57,8 @@ GitHub 的 `offline` 与 `typecheck` 是代码检查。`release-readiness` 运�
    Deployment branches 仅允许 `main`，关闭管理员绕过（平台支持时）。
 2. 保护规则确认生效后，把**既有**发布私钥的 PEM 内容存入该 Environment 的
    `RELEASE_MANIFEST_PRIVATE_KEY`。不要使用普通仓库 Secret，不要生成替代信任根。
-3. main 的合并门禁要求 `offline`、`typecheck` 和 `release-readiness` 全部成功，
-   并要求分支与 main 保持最新。仅添加 workflow 文件不会配置这些保护。
+3. main 的合并门禁要求 `offline` 与 `typecheck` 成功，并要求分支与 main 保持最新
+   （`release-readiness` 已随 95657a7 删除）。仅添加 workflow 文件不会配置这些保护。
 4. 使用保留候选提交历史的普通 merge。Squash 或 rebase 会改变内容 commit SHA，
    破坏目录 revision 的约定；不得在签名完成后改变合并方式。
 

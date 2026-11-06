@@ -17,9 +17,16 @@ catalog
 docs
 locale
 scripts
+!scripts/standalone-third-party.txt
 worker
 *.md
 !packages/standalone/README.md
+
+# 2026-11-07（t4-C17）：许可与第三方声明随镜像分发（MIT 合规）
+!LICENSE
+!vendor/channel-pack/LICENSE
+!THIRD_PARTY_NOTICES.txt
+
 
 *.log
 .DS_Store

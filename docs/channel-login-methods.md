@@ -36,7 +36,7 @@
   `antigravity` 的端口是动态 0（不是固定 8845）。
 - **轮询 token**（`buddy`/`workbuddy`、`officeace`）：浏览器授权在**上游服务端**完成，
   插件只用 `state` 或授权码轮询结果，所以不起本地端口。
-  （`account.adopt` 的粘贴表与代码口径一致：只剩 OrcaTerm）。
+  （`account.adopt` 的粘贴表 `ADOPTABLE_CHANNELS` 与代码口径一致：**空表**——2026-11-05 删五渠道后纯粘贴形态已不存在。）
 - **本地页承载扫码/短信**（`loomy`、`raccoon`）：起本地页显示二维码或短信表单，
   用户在页面里完成，插件轮询登录态；对外统一返回 `loginUrl`，前端无需改动。都不需要手抄
   凭据，故计入「一键」；`loomy` 的界面声明是 `browser+sms`，**仅当该微信账号未绑手机号时**

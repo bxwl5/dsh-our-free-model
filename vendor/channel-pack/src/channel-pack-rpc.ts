@@ -2665,7 +2665,11 @@ function registerChannelPackEndpoints(
       // minimax 发本 RPC，其余渠道被 client.js 的守卫拦下，但后端分支必须保留。
       case 'credits.status': {
         const req = payload as RpcCreditsStatusRequest
-        // 纵切阶段 0 骨架：已迁移组合走注册表，未迁移组合落下面原 if 链（一字不改）。
+        // 纵切分派：已迁移组合走注册表，未迁移组合落下面的原 if 链。
+        // ⚠️ 历史注：balances 里 loomy/qoder/cline/raccoon/zcode 五家原分支已在
+        // e3f481c 收口为 collectCreditBalances 版（错误文案与手写循环时代略有
+        // 差异，见 t1-B6 的 describeCreditsError 分类）；该组分支对已登记
+        // provider 不可达，仅作注册表未命中时的兜底。
         const migratedStatus = accountsRegistry.get(req.provider)?.status
         if (migratedStatus !== undefined) {
           const statusAccounts = await pool.listAccounts(req.provider)
@@ -3947,7 +3951,7 @@ function registerChannelPackEndpoints(
             } catch { return undefined }
           })()
           : undefined
-        // provider 清单复用 providerIdsOf（同一文件 :813）：此前这里内联重写了
+        // provider 清单复用 providerIdsOf（:813）：此前这里内联重写了
         // 同一套 llm→adapters 兜底逻辑，两处会漂移（2026-11-06 审计）。
         const providers = providerIdsOf(llm, modelAdapters)
         // 目录来源要让**空状态能自解释**：用户看到空清单时必须能分辨「我没登录」

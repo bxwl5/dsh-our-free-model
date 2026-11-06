@@ -52,6 +52,11 @@ COPY --chown=node:node packages/standalone/*.mjs ./packages/standalone/
 COPY --chown=node:node packages/standalone/channels ./packages/standalone/channels
 COPY --chown=node:node packages/standalone/web ./packages/standalone/web
 COPY --chown=node:node vendor/channel-pack/qoder-auth-wasm.wasm ./vendor/channel-pack/
+# 许可与第三方声明随镜像分发（2026-11-07，t4-C17）
+COPY --chown=node:node LICENSE ./LICENSE
+COPY --chown=node:node vendor/channel-pack/LICENSE ./vendor/channel-pack/LICENSE
+COPY --chown=node:node vendor/channel-pack/NOTICE.md ./vendor/channel-pack/NOTICE.md
+COPY --chown=node:node scripts/standalone-third-party.txt ./THIRD_PARTY_NOTICES.txt
 COPY docker-entrypoint.sh /usr/local/bin/ofm-entrypoint.sh
 RUN chmod 0755 /usr/local/bin/ofm-entrypoint.sh
 

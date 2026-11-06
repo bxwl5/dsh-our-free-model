@@ -91,6 +91,29 @@ export async function verifyChannelCreditsRpc({ ctx, call, creds }) {
       assert.equal(claimWb.ok, false, 'credits.claimAll/workbuddy（R0 守卫）应 bad-request')
       assert.equal(claimWb.error?.message, 'WorkBuddy 国际版不支持每日签到（其后端没有签到接口）')
     }
+    // t3-#6/#7：分派层补两条可失败断言 ——
+    // ① 未知 provider 三 case 一律 bad-request（productById 兜底）；
+    // ② zcode.claim 走原 case 分支（阶段 4 不迁）：借「损坏凭据」驱动原分支的
+    //    凭据解析失败路径，证明该分支仍活着且行为不变（不 warn、N:1 results）。
+    {
+      for (const method of ['credits.status', 'credits.claimAll', 'credits.balances']) {
+        const r = await call(method, { provider: 'no-such-channel' })
+        assert.equal(r.ok, false, `${method} 未知 provider 应 bad-request`)
+        assert.equal(r.error?.code, 'bad-request')
+        assert.match(r.error?.message ?? '', /unsupported provider/, `${method} 兜底文案`)
+      }
+      const ref = 'FIXTURE_ZCODE_CLAIM_ORIG'
+      creds.set(ref, { value: JSON.stringify({ access_token: 't', zcode_jwt: 'j', device_mid: 'd' }) })
+      await ctx.accountPool.addAccount({
+        id: 'fixture-zcode-claim-orig', provider: 'zcode', nickname: '原分支探针',
+        credentialRef: ref, enabled: true, refreshable: false, createdAt: 1,
+      })
+      const zc = await call('credits.claimAll', { provider: 'zcode' })
+      assert.equal(zc.ok, true, 'zcode.claim 原分支应正常应答（多 plan captcha 流程）')
+      assert.ok(Array.isArray(zc.value?.results) && zc.value.results.length >= 1,
+        'zcode.claim 原分支应逐账号产出 results（1 账号 N 条）')
+      assert.ok(zc.value.summary, 'zcode.claim 原分支返回 computeClaimSummary')
+    }
     for (const provider of providers.filter(id => id !== 'zcode' && id !== 'antigravity')) {
       resolvedRefs.length = 0
       const result = await call('credits.balances', { provider })
@@ -231,10 +254,9 @@ async function verifyNewProviderRefreshDispatch({ ctx, call, creds }) {
     throw new Error(`未预期的续期替身端点：${url.href}`)
   }
   // RPC 走 `codeartsFetcher` → directFetch（包内 undici，**不读 globalThis.fetch**）。
-  // source 模式下测试与 RPC 共享同一份 direct-fetch 模块实例，注入 directLane 即生效；
-  // 打包态下 pack.js 自带另一份 —— 这里从 pack.js 再取一次（ESM 缓存返回同一实例，
-  // channel-pack-test 已 import 过它），其 directLane 由测试挂载时绑到 offlineFetch，
-  // 换成我们的替身即可。与 channel-oauth-failure-test 的注入思路同源。
+  // 2026-11-07（t3-#12）接管时序说明：channel-pack-test 先把 lane 绑到「转发当前
+  // globalThis.fetch」的函数；本套件临时换成 standIn 并在 finally 恢复 savedLane
+  // （= 外层的转发函数），保存/恢复配对，外层契约不受影响。非双头，仅嵌套接管。
   const directLane =
     await import('../vendor/channel-pack/src/direct-fetch.ts').then(m => m.directLane).catch(() => null)
     ?? await import('../vendor/channel-pack/pack.js').then(m => m.directLane ?? null).catch(() => null)

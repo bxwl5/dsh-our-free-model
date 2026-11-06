@@ -48,7 +48,7 @@ async function main() {
   // ── 解析函数直测：account.adopt 透传的就是这些结果 ──
   const { parseCredential: parseAutoClaw } = await import('../vendor/channel-pack/src/autoclaw.ts')
 
-  console.log('ok  channel-adopt: 粘贴型渠道 0 个（hint 表空）；解析函数合法/非法/噪声输入形状校验')
+  console.log('ok  channel-adopt: 粘贴型渠道 0 个（hint 表空）；解析函数形状校验')
 }
 async function rpcProbes({ call, creds }) {
   const before = new Set(creds.keys())
@@ -65,30 +65,12 @@ async function rpcProbes({ call, creds }) {
   assert.deepEqual([...keysNow()].filter(k => !before.has(k)), [], '非法输入不产生任何凭据写入')
 
 
-  // 2) 噪声输入清洗后收下：落盘值即清洗值，账号池有条目
-  for (const [provider, noisy, expectedToken] of [
-  ]) {
-    const result = await call('account.adopt', { provider, credential: noisy })
-    assert.equal(result.ok, true, `${provider} 噪声凭据清洗后应收下：${JSON.stringify(result)}`)
-    assert.ok(result.value.accountId, `${provider} adopt 返回 accountId`)
-    const prefix = `${provider.toUpperCase().replace(/-/g, '_')}_ACCOUNT_`
-    const ref = [...keysNow()].find(k => !before.has(k) && k.startsWith(prefix))
-    assert.ok(ref, `${provider} adopt 后应写入 ${prefix}* 凭据 ref`)
-    const stored = JSON.parse(creds.get(ref).value)
-    assert.equal(stored.access_token, expectedToken, `${provider} 落盘凭据应为清洗后的值`)
-    const accounts = (await call('account.list', { provider })).value.accounts
-    const adopted = accounts.find(a => a.credentialRef === ref)
-    assert.ok(adopted, `${provider} adopt 后账号池有条目`)
-    assert.equal(adopted.enabled, true, 'adopt 的账号默认启用')
-    before.add(ref) // 后续渠道的 diff 基线纳入已验证的 ref
-  }
+  // 2) 噪声清洗组：2026-11-05 删五渠道后 ADOPTABLE_CHANNELS 为空表，
+  //    不存在「清洗后收下」的渠道 —— 该组原本的空循环体已删（t3-#9）。
+  //    空表下「channel===undefined」先于空文本判断，故 3) 的空凭据与 1) 的
+  //    非法凭据走同一分支，不再重复断言。
 
-  // 3) 空凭据：RPC 层最小判据（空文本）直接拒绝
-  const empty = await call('account.adopt', { provider: 'gone-provider', credential: '   ' })
-  assert.equal(empty.ok, false)
-  assert.equal(empty.error.code, 'bad-request')
-
-  console.log('ok  channel-adopt RPC: 非法凭据 bad-request 拒收不落盘；噪声清洗后收下且落盘为清洗值；账号池有条目')
+  console.log('ok  channel-adopt RPC: ADOPTABLE_CHANNELS 为空表 —— adopt 对任何 provider 一律 bad-request 拒收不落盘')
 }
 /** 源码侧形状用例：直连 `src/*.ts`，只有 source 模式能加载。 */
 export async function verifyChannelAdoptParsers() {
