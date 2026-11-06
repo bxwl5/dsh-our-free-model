@@ -1068,8 +1068,9 @@ window.__ModuleLoader__.load({
 .ofm_pagetitle h2{margin:0;font-size:23px;font-weight:760;letter-spacing:-.6px;line-height:1.2;background:linear-gradient(120deg,var(--dsw-alias-label-primary) 20%,color-mix(in srgb,var(--dsw-alias-label-primary) 55%,var(--dsw-alias-state-business-primary)));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
 .ofm_pagesub{margin:0;font-size:12.5px;color:var(--dsw-alias-label-secondary);max-width:70ch}
 /* 渠道页（2026-11-07 用户定稿）：副标题文案左对齐，统计胶囊**贴右**；
-   ⚠ pagetitle 必须撑满 pagehead 宽度，否则 subrow 内 margin-left:auto 无空间可推。 */
-.ofm_hero .ofm_pagetitle{flex:1;min-width:0}
+   ⚠ 只作用渠道页的专用 class —— 全局 .ofm_hero .ofm_pagetitle 会破坏
+   数据看板/运行日志等页（它们 pagetitle 有兄弟 pills 靠 auto margin 贴右）。 */
+.ofm_pagetitle.ofm_pagetitle_chan{flex:1;min-width:0}
 .ofm_subrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0;width:100%}
 .ofm_subrow .ofm_pagesub{max-width:none}
 .ofm_subpills{display:flex;gap:6px;margin-left:auto;flex-shrink:0;justify-content:flex-end}
@@ -4258,7 +4259,7 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'ofm_page' },
         h('header', { className: 'ofm_hero ofm_glass' },
           h('div', { className: 'ofm_pagehead' },
-            h('div', { className: 'ofm_pagetitle' },
+            h('div', { className: 'ofm_pagetitle ofm_pagetitle_chan' },
               h('h2', null, t('chan.title')),
               // 2026-11-07（用户）：副标题与「已接入 N/M」「账号 M」同一行齐平。
               h('div', { className: 'ofm_subrow' },
