@@ -61,7 +61,6 @@ import { buddyExpiringWindowDays } from '../buddy-balance-rank.js'
 import { fetchZcodeBalance } from '../zcode-upstream.js'
 import type { ZcodeBalanceResult } from '../zcode-upstream.js'
 import type { ZcodeCredential } from '../zcode.js'
-import type { ZcodeAuth } from '../zcode-auth.js'
 import type { CreditBalance } from '../credits.js'
 
 /** 单个 provider 的 balances 实现签名（信封与 dispatchMethod 的 reply 完全一致）。 */
@@ -70,7 +69,7 @@ type BalanceMethod = (env: ChannelAccountEnv) => Promise<CreditsResult<RpcCredit
 /**
  * 装配期注入的上下文（**只放 env 装不下的东西**）。
  *
- * - `zcode`：`ZcodeAuth` 实例（接线期原样传入）。⚠ 见 `makeZcodeBalances`
+ * - `zcode`：底层 `fetchZcodeBalance` 直接送 env.fetcher（不再注入实例）。
  *   的传输注释：该实例在 `index.ts:1726` 构造时没有注入出口，走
  *   `fetchBalanceFor` 会退回全局默认出口，违反约束 1。故它只作**运行期兜底
  *   通道**（env.fetcher 被漏传时才会用上），正常接线不经过它。
@@ -86,7 +85,7 @@ type BalanceMethod = (env: ChannelAccountEnv) => Promise<CreditsResult<RpcCredit
  *   但读数会缺失 —— 接线时务必给上。
  */
 export interface ComplexBalanceIo {
-  readonly zcode: ZcodeAuth
+  /** channel-pack-rpc.ts:1410 的内层函数，原样传入，避免搬动。 */
   readonly buildZcodeBalance: (result: ZcodeBalanceResult) => CreditBalance
 }
 
@@ -329,24 +328,20 @@ const antigravityBalances: BalanceMethod = async (env) => {
  * 正是 channel-account.ts 约束 1 明令禁止的。故取数改用**同一个底层函数**
  * `fetchZcodeBalance(credential, env.fetcher)`（`fetchBalanceFor` 内部就是它），
  * 请求与解析逻辑一字不差，只有传输换成绑 signal 的 env.fetcher。
- * `io.zcode` 保留为运行期兜底通道：env.fetcher 被漏传时退回实例方法，
- * 避免静默落到全局默认出口（正常接线永不触发）。
+ * ⚠️ 不再保留实例方法兜底（2026-11-06 审查修复）：那条兜底会退回全局出口。
  */
 function makeZcodeBalances(io: ComplexBalanceIo): BalanceMethod {
-  const zcode = io.zcode
   return async (env) => {
-    // env.fetcher 在类型上是必传的；这里放宽成可选只为兜住「运行期被漏传」的接线错误
-    // （漏传时退回 io.zcode 的实例方法，而不是静默落到全局默认出口）。
-    const fetcher: typeof fetch | undefined = env.fetcher
+    // 2026-11-06 全码审查修复（t1-B5）：env.fetcher 类型上必传、装配上保证，
+    // 删掉「运行期漏传退回 zcode 实例方法」的兜底 —— 那条兜底恰恰会退回
+    // 全局出口（实例未注入 fetchImpl）。直接走底层函数送 env.fetcher。
     const values = await collectCreditBalances<ZcodeCredential, undefined>(env.accounts, undefined, {
       fetcher: env.fetcher,
       resolve: (ref) => env.resolve(ref),
       fetchBalanceDetailed: async (credential) => {
         let result: ZcodeBalanceResult | undefined
         try {
-          result = fetcher === undefined
-            ? await zcode.fetchBalanceFor(credential)
-            : await fetchZcodeBalance(credential, fetcher)
+          result = await fetchZcodeBalance(credential, env.fetcher)
         } catch (error) {
           return { balance: null, error: `额度查询失败：${error instanceof Error ? error.message : String(error)}` }
         }
@@ -384,10 +379,10 @@ const buddyFallbackBalances: BalanceMethod = async (env) => {
     return { ok: false, error: { code: 'bad-request', message: `unsupported provider: ${env.provider}` } }
   }
   const values = await collectCreditBalances(env.accounts, product, {
-    // 与原 :3670 逐字一致：默认 fetchBalance = fetchCreditBalance(credential,
-    // product, fetcher)，其传输由 helper 内部按默认规则取。
-    // ⚠ 不显式传 env.fetcher：默认实现的取数口径与离线测试桩绑定，改了会让
-    //   「账号池凭据应能查询余额」回归红；这是定稿 §4-8「钩子原样搬」的边界。
+    // 2026-11-06 全码审查修复（t1-B1）：显式送 env.fetcher，保住出口绑定与
+    // signal 取消级联。测试桩已由 signedLane.fetch 转发到当前替换的替身，
+    // 补此参后 V3 双模式回归仍绿（不再有「改了会红」的问题）。
+    fetcher: env.fetcher,
     resolve: (ref) => env.resolve(ref),
     warn: (msg) => env.warn?.(msg),
   })

@@ -59714,23 +59714,23 @@ function opencodeBalanceAccount() {
     return { ok: true, value: { accounts: values } };
   });
 }
-function loomyBalanceAccount(io) {
+function loomyBalanceAccount(_io) {
   return balancesOnlyAccount("loomy", async (env) => {
     const values = await collectCreditBalances(env.accounts, LOOMY, {
       resolve: env.resolve,
       fetcher: env.fetcher,
-      fetchBalance: (credential) => io.loomy.fetchCreditBalance(credential),
+      fetchBalance: (credential) => fetchLoomyCreditBalance(credential, LOOMY, env.fetcher),
       warn: env.warn
     });
     return { ok: true, value: { accounts: values } };
   });
 }
-function raccoonBalanceAccount(io) {
+function raccoonBalanceAccount(_io) {
   return balancesOnlyAccount("raccoon", async (env) => {
     const values = await collectCreditBalances(env.accounts, void 0, {
       resolve: env.resolve,
       fetcher: env.fetcher,
-      fetchBalance: (credential) => io.raccoon.fetchCreditBalance(credential),
+      fetchBalance: (credential) => fetchRaccoonCreditBalance(RACCOON, credential, env.fetcher),
       warn: env.warn
     });
     return { ok: true, value: { accounts: values } };
@@ -59752,7 +59752,7 @@ function qoderFamilyBalanceAccount(product) {
     const values = await collectCreditBalances(env.accounts, product, {
       resolve: env.resolve,
       fetcher: env.fetcher,
-      fetchBalance: (credential, p) => fetchQoderCreditBalance(credential, p),
+      fetchBalance: (credential, p) => fetchQoderCreditBalance(credential, p, env.fetcher),
       warn: env.warn
     });
     return { ok: true, value: { accounts: values } };
@@ -59764,7 +59764,7 @@ function clineBalanceAccount() {
       resolve: env.resolve,
       fetcher: env.fetcher,
       fetchBalanceDetailed: async (credential, product) => {
-        const result = await fetchClineCreditBalance(credential, product);
+        const result = await fetchClineCreditBalance(credential, product, env.fetcher, { signal: env.signal });
         return result.balance === null ? { balance: null, error: result.error ?? "\u79EF\u5206\u67E5\u8BE2\u5931\u8D25\uFF08\u51ED\u636E\u5931\u6548\u6216\u54CD\u5E94\u5F02\u5E38\uFF09" } : { balance: result.balance };
       },
       warn: env.warn
@@ -61150,16 +61150,14 @@ var antigravityBalances = async (env) => {
   return { ok: true, value: { accounts: values } };
 };
 function makeZcodeBalances(io) {
-  const zcode = io.zcode;
   return async (env) => {
-    const fetcher = env.fetcher;
     const values = await collectCreditBalances(env.accounts, void 0, {
       fetcher: env.fetcher,
       resolve: (ref) => env.resolve(ref),
       fetchBalanceDetailed: async (credential) => {
         let result;
         try {
-          result = fetcher === void 0 ? await zcode.fetchBalanceFor(credential) : await fetchZcodeBalance(credential, fetcher);
+          result = await fetchZcodeBalance(credential, env.fetcher);
         } catch (error) {
           return { balance: null, error: `\u989D\u5EA6\u67E5\u8BE2\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}` };
         }
@@ -61182,10 +61180,10 @@ var buddyFallbackBalances = async (env) => {
     return { ok: false, error: { code: "bad-request", message: `unsupported provider: ${env.provider}` } };
   }
   const values = await collectCreditBalances(env.accounts, product, {
-    // 与原 :3670 逐字一致：默认 fetchBalance = fetchCreditBalance(credential,
-    // product, fetcher)，其 fetcher 来自 helper 内部（deps.fetcher ?? fetch）。
-    // ⚠ 不显式传 env.fetcher：默认实现的取数口径与离线测试桩绑定，改了会让
-    //   「账号池凭据应能查询余额」回归红；这是定稿 §4-8「钩子原样搬」的边界。
+    // 2026-11-06 全码审查修复（t1-B1）：显式送 env.fetcher，保住出口绑定与
+    // signal 取消级联。测试桩已由 signedLane.fetch 转发到当前替换的替身，
+    // 补此参后 V3 双模式回归仍绿（不再有「改了会红」的问题）。
+    fetcher: env.fetcher,
     resolve: (ref) => env.resolve(ref),
     warn: (msg) => env.warn?.(msg)
   });
@@ -64691,9 +64689,6 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
   }
   const accountsRegistry = buildChannelAccountRegistry({
     pool,
-    loomy,
-    raccoon,
-    zcode,
     qoderFamily,
     buildZcodeBalance
   });
@@ -65673,18 +65668,17 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
       // ── 每日签到（积分领取）──
       // 查询某 provider 下全部启用账号的签到状态。
       //
-      // 四个 provider 分属**三套互不相同的协议**，各自在自己的分支里处理：
-      //   - CodeBuddy 系（buddy / workbuddy）：`productById()` 取 BuddyProduct，
-      //     走 `collectCreditsStatus` 的默认实现；
-      //   - （LobsterAI 已移除）
-      //   - `codearts`：华为云 SDK-HMAC-SHA256 签名，无独立状态端点。
+      // 2026-11-06 纵切后：codearts / trae / cline 的「无独立状态端点」与
+      // cline / workbuddy / raccoon 的「不支持签到」已在 ChannelAccount 注册表里
+      // 按 (provider, method) 分派；未迁移组合仍走下面的原分支。
+      //   - MINIMAX：独立签到状态端点，走 collectCreditsStatus 真查；
+      //   - CodeBuddy 系（buddy / workbuddy）：productById() 取 BuddyProduct，
+      //     走 collectCreditsStatus 的默认实现；
+      //   - codearts / trae / cline：无独立状态端点，如实返回 null（不是错误）。
       //
-      // ⚠️ 只有 CodeBuddy 系能经 `productById()` 解析出产品配置；后两者
-      // **必须各自提前分支**，否则会落到下面的 bad-request。历史上 CodeArts
-      // 就是因此恒回 `unsupported provider: codearts`（客户端在面板挂载时
-      // 无条件调用 credits.balances，于是每打开一次设置页都在控制台报错并把
-      // 账号卡片标成查询失败）。现在 CodeArts 已有真实实现，该 bad-request
-      // 只对**未知** provider 生效。
+      // ⚠️ bad-request 对「已知但未迁移、也不在 productById 白名单」的 provider
+      // 同样生效（历史注释称「只对未知 provider」不实）；前端能力表只让 buddy /
+      // minimax 发本 RPC，其余渠道被 client.js 的守卫拦下，但后端分支必须保留。
       case "credits.status": {
         const req = payload;
         const migratedStatus = accountsRegistry.get(req.provider)?.status;
@@ -66619,7 +66613,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           }
         })() : void 0;
         const providers = providerIdsOf(llm, modelAdapters);
-        const modelsSource = llm?.listProviders !== void 0 ? "catalog" : providers !== void 0 ? "adapters" : "none";
+        const modelsSource = listed !== void 0 ? "catalog" : providers !== void 0 ? "adapters" : "none";
         const value = {
           enabled: await degrade("\u5F00\u5173\u72B6\u6001", () => pool.gatewayEnabled(), true),
           running: await degrade("\u8FD0\u884C\u6001", () => isGatewayRunning(), false),

@@ -39,7 +39,6 @@ import { LOOMY } from './loomy-product.js'
 import {
   type ChannelAccountEnv,
   type ChannelAccountRegistry,
-  EMPTY_CHANNEL_ACCOUNT_REGISTRY,
   toStatusEnvelope,
 } from './channel-account.js'
 import { buildChannelAccountRegistry } from './channel-accounts/index.js'
@@ -1520,13 +1519,10 @@ function registerChannelPackEndpoints(
    * ⚠️ 不要直接调它 —— 外部一律走下面的 `handleMethod` 包装，那里负责
    * 「签到明细记录」这件跨切面的事（见 `handleMethod` 的说明）。
    */
-  // 渠道账户资产注册表（2026-11-06 纵切阶段 0：空表，OPT-IN 全关）。
-  // 装配期构建一次；后续阶段逐项往工厂里加实现，未迁移组合落原 switch 分支。
+  // 渠道账户资产注册表（2026-11-06 纵切：16 渠道按 (provider, method) 登记）。
+  // 装配期构建一次；未登记的组合落原 switch 分支（双路径安全网，见工作区档案 §1）。
   const accountsRegistry: ChannelAccountRegistry = buildChannelAccountRegistry({
     pool,
-    loomy,
-    raccoon,
-    zcode,
     qoderFamily,
     buildZcodeBalance,
   })
@@ -4242,13 +4238,16 @@ function registerChannelPackEndpoints(
             } catch { return undefined }
           })()
           : undefined
-        // provider 清单复用 providerIdsOf（同一文件 831 行）：此前这里内联重写了
+        // provider 清单复用 providerIdsOf（同一文件 :813）：此前这里内联重写了
         // 同一套 llm→adapters 兜底逻辑，两处会漂移（2026-11-06 审计）。
         const providers = providerIdsOf(llm, modelAdapters)
         // 目录来源要让**空状态能自解释**：用户看到空清单时必须能分辨「我没登录」
         // 与「宿主没给出任何可枚举的 provider」。
+        // 2026-11-06 全码审查修复（t2-C2）：判据必须是「listProviders 真的
+        // 给出了非空清单」，不是「宿主有 listProviders 这个方法」。否则宿主
+        // 返回空数组/抛错、实际走 adapters 兜底时，会错标成 'catalog'。
         const modelsSource: RpcGatewayStatusResponse['modelsSource'] =
-          llm?.listProviders !== undefined ? 'catalog' : (providers !== undefined ? 'adapters' : 'none')
+          listed !== undefined ? 'catalog' : (providers !== undefined ? 'adapters' : 'none')
         const value: RpcGatewayStatusResponse = {
           enabled: await degrade('开关状态', () => pool.gatewayEnabled(), true),
           running: await degrade('运行态', () => isGatewayRunning(), false),

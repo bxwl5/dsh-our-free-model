@@ -445,6 +445,91 @@ export async function verifyExtraSlice({ registry, env, nullStatusAccounts, toSt
     })
   })
 
+  // ── ②-e 有凭据 + 协议替身驱动（2026-11-06 全码审查 t3-#1 修复）───────
+  // 旧 offlineEnv.resolve 恒 undefined ⇒ plain/window 组只走「凭据未配置」短路，
+  // fetchBalance 钩子从未被驱动（假绿：钩子整段写错也全绿）。本组给每个渠道
+  // 一份「该渠道已知成功形状」的协议替身，断言 balance 真被解析出来；
+  // 另加「替身抛错 → 单账号带原因 error 行、不炸整轮」的失败驱动。
+  const STANDIN_RESPONSES = {
+    '/points/records': { code: '000000', data: { balance: 123, dailyBalance: 0, availableBalance: 123 } },
+    // raccoon 核心字段是 available_points（fetchRaccoonCreditBalance 只认它）
+    '/points/v1/balance': { code: '000000', data: { available_points: 123, reward_points: 20, daily_points: 3 } },
+    '/credit/details': { base_resp: { status_code: 0 }, total_count: 1, details: [{ remaining_amount: '123.00' }] },
+    '/me/usage': { qoderUsage: { userQuota: { total: 123, remaining: 123, used: 0, unit: 'credits' } } },
+    '/balance': { data: { userId: 'usr-fixture', balance: 123 }, success: true },
+    // codearts：package.is_credit_package + metrics 的 usageTotalPackageCredit（fetchCodeArtsAccountInfoDetailed 只认这些）
+    '/statistics/plugin': { code: 0, data: { package: { is_credit_package: true, package_name_cn: '积分包', status: 'active' }, metrics: [{ name: 'usageTotalPackageCredit', package_credit_amount: 200, package_credit_used: 77, package_credit_remain: 123 }] } },
+    // buddy/workbuddy：fetchCreditBalance（helper 默认实现）→ data.Response.Data.Accounts[]
+    '/get-user-resource': { code: 0, data: { Response: { Data: { Accounts: [{ PackageName: 'fixture', CycleCapacityRemain: 123, Status: 1 }] } } } },
+    // commandcode：{balance,limit,used}（fetchCredits → /alpha/billing/credits）
+    '/billing/credits': { balance: 123, limit: 1000, used: 77 },
+    // autoclaw：data.wallets[]，元素含 public_wallet_type + balance（v2 链路）
+    '/wallets': { code: 0, data: { wallets: [{ public_wallet_type: 'main', balance: 123 }] } },
+    // officeace：skus[].quotas[].sku_attr_code === 'officeace_points'（sku_value/current_value）
+    '/subscription': { skus: [{ sku_name: '果办套餐', expired_time: 4102444800000, quotas: [{ sku_attr_code: 'officeace_points', sku_value: 200, current_value: 77 }] }] },
+    // trae：postJson 不解包，user_entitlement_pack_list 在顶层；quota.credits_limit 必 >0
+    '/ide_user_ent_usage': { code: 0, user_entitlement_pack_list: [{ entitlement_base_info: { quota: { credits_limit: 200 }, display_desc: '每月登录赠送' }, usage: { credits_amount: 77 }, expire_time: 4102444800 }] },
+  }
+  const standinFetcher = async (input) => {
+    const target = String(input instanceof Request ? input.url : input)
+    for (const [needle, body] of Object.entries(STANDIN_RESPONSES)) {
+      if (target.includes(needle)) return Response.json(body)
+    }
+    throw new Error(`协议替身未覆盖端点：${target}`)
+  }
+  const FIXTURE_CREDENTIAL = JSON.stringify({
+    access_token: 'fixture-token', zcode_jwt: 'fixture-jwt', device_mid: 'fixture-device',
+    account_id: 'usr-fixture', user_id: 'usr-fixture', uid: 'fixture-uid',
+    access_key_id: 'fixture-ak', secret_access_key: 'fixture-sk',
+    // officeace：业务签名用 access_key/secret_key，网关地址取 model_info.model_api_url_base
+    access_key: 'fixture-ak', secret_key: 'fixture-sk',
+    model_info: { model_api_url_base: 'https://officeace-fixture.example' },
+  })
+  const credEnv = (base, provider, accounts, fetcher) => offlineEnv(base, provider, accounts, {
+    resolve: async () => ({ value: FIXTURE_CREDENTIAL }),
+    fetcher,
+  })
+  for (const provider of BALANCES_PLAIN) {
+    if (provider === 'antigravity' || provider === 'zcode') continue // zcode 走 RPC 级，antigravity 有 ②-d
+    await check(`balances/driven/${provider}`, 'balances', async () => {
+      const result = await methodOf(provider, 'balances')(
+        credEnv(env, provider, FAKE_ACCOUNTS, standinFetcher))
+      assert.equal(result.ok, true, `${provider} balances 有凭据驱动应 ok`)
+      const rows = result.value?.accounts ?? []
+      assert.equal(rows.length, FAKE_ACCOUNTS.length, `${provider} 应逐账号返回`)
+      const parsed = rows.filter((row) => row.balance !== null && row.balance !== undefined)
+      assert.ok(parsed.length > 0,
+        `${provider} fetchBalance 钩子未被驱动成功：${JSON.stringify(rows).slice(0, 200)}`)
+    })
+  }
+  for (const provider of BALANCES_WITH_WINDOW) {
+    await check(`balances/driven-window/${provider}`, 'balances', async () => {
+      const result = await methodOf(provider, 'balances')(
+        credEnv(env, provider, FAKE_ACCOUNTS, standinFetcher))
+      assert.equal(result.ok, true, `${provider} balances 有凭据驱动应 ok`)
+      const rows = result.value?.accounts ?? []
+      const parsed = rows.filter((row) => row.balance !== null && row.balance !== undefined)
+      assert.ok(parsed.length > 0, `${provider} fetchBalance 钩子未被驱动成功`)
+      assert.equal(result.value.windowDays, expectedWindowDays(), `${provider} 顶层 windowDays 必须保留`)
+    })
+  }
+  for (const provider of [...BALANCES_PLAIN, ...BALANCES_WITH_WINDOW]) {
+    if (provider === 'antigravity' || provider === 'opencode') continue
+    await check(`balances/driven-error/${provider}`, 'balances', async () => {
+      const boom = async () => { throw new Error('fixture 传输失败') }
+      const result = await methodOf(provider, 'balances')(
+        credEnv(env, provider, FAKE_ACCOUNTS, boom))
+      assert.equal(result.ok, true, `${provider} 单账号传输失败不得炸整轮`)
+      const rows = result.value?.accounts ?? []
+      assert.equal(rows.length, FAKE_ACCOUNTS.length, `${provider} 失败驱动仍应逐账号返回`)
+      for (const row of rows) {
+        assert.equal(row.balance ?? null, null, `${provider} 传输失败不得编造余额`)
+        assert.ok(typeof row.error === 'string' && row.error.length > 0,
+          `${provider} 传输失败必须带原因 error 行`)
+      }
+    })
+  }
+
   // ── ③ status 真查组 + claim 组（信封形状 / bad-request 文案 / kind）──
 
   // ③-a status queried：kind + 信封 {ok:true,value:{accounts}}
@@ -522,6 +607,16 @@ export async function verifyExtraSlice({ registry, env, nullStatusAccounts, toSt
     })
   }
 
+  // 2026-11-06 全码审查修复（t3-#8）：钉死各组最低数量 —— 删组/漏登记会直接红，
+  // 防止「守卫悄悄变少」。新加组合请同步上调对应下限。
+  const FLOORS = { presence: 1, r0: 6, matrix: 1, balances: 21, statusClaim: 14, absent: 16, driven: 0 }
+  for (const [group, floor] of Object.entries(FLOORS)) {
+    const n = group === 'driven'
+      ? checks.filter((c) => c.startsWith('balances/driven')).length
+      : groups[group] ?? 0
+    assert.ok(n >= floor, `差分守卫分组 ${group} 只有 ${n} 项（下限 ${floor}）—— 组被删/漏登记`)
+  }
+  assert.ok(checks.length >= 82, `差分守卫总数 ${checks.length} 低于基线 82 —— 有检查被静默删除`)
   return { ok: true, count: checks.length, checks, groups }
 }
 

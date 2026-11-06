@@ -98,6 +98,3 @@ export interface ChannelAccount {
 /** 只读注册表：装配期构建一次，运行期禁止增删（防并发 RPC 互相改表）。 */
 export type ChannelAccountRegistry = ReadonlyMap<string, ChannelAccount>
 
-/** 空注册表（阶段 0 骨架用；此时三 case 的 early-return 永远不命中）。 */
-export const EMPTY_CHANNEL_ACCOUNT_REGISTRY: ChannelAccountRegistry =
-  new Map<string, ChannelAccount>()

@@ -76,6 +76,21 @@ export async function verifyChannelCreditsRpc({ ctx, call, creds }) {
       } else throw new Error(`未预期的替身端点：${pathname}`)
       return Response.json(body)
     }
+    // 2026-11-06 全码审查修复（t3-#2/#3）：status 与 claimAll 此前零端到端覆盖。
+    // minimax/buddy 的 status 走注册表真查；cline/workbuddy/raccoon 的 claimAll
+    // 走注册表 R0 bad-request —— 断言失败即分派层回归。
+    {
+      const statusResult = await call('credits.status', { provider: 'minimax' })
+      assert.equal(statusResult.ok, true, 'credits.status/minimax（注册表真查）应 ok')
+      assert.ok(Array.isArray(statusResult.value?.accounts), 'credits.status/minimax 应逐账号返回')
+      const claimCline = await call('credits.claimAll', { provider: 'cline' })
+      assert.equal(claimCline.ok, false, 'credits.claimAll/cline（R0 守卫）应 bad-request')
+      assert.equal(claimCline.error?.code, 'bad-request')
+      assert.equal(claimCline.error?.message, 'Cline 不支持每日签到（其后端没有签到接口）')
+      const claimWb = await call('credits.claimAll', { provider: 'workbuddy' })
+      assert.equal(claimWb.ok, false, 'credits.claimAll/workbuddy（R0 守卫）应 bad-request')
+      assert.equal(claimWb.error?.message, 'WorkBuddy 国际版不支持每日签到（其后端没有签到接口）')
+    }
     for (const provider of providers.filter(id => id !== 'zcode' && id !== 'antigravity')) {
       resolvedRefs.length = 0
       const result = await call('credits.balances', { provider })

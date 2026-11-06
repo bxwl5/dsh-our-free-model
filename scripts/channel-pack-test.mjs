@@ -120,22 +120,22 @@ try {
   if (signedLane) {
     savedSignedFetch = signedLane.fetch
     // 纵切后已迁移渠道走 env.fetcher = codeartsFetcher = signedNetwork.fetch，
-    // 它内部读 directLane.fetch（= signedLane）。若仍指向哨兵 offlineFetch，
-    // verifyChannelCreditsRpc 运行期替换的 globalThis.fetch 替身端点就拦不到。
-    // 转发到当前 globalThis.fetch：保留哨兵语义（默认 offlineFetch 会拒绝外部
-    // 请求），又让运行期替身生效；两条路径取到同一套替身数据。
-    signedLane.fetch = (input, init) => globalThis.fetch(input, init)
+    // 它内部读 directLane.fetch（= signedLane）。2026-11-06 全码审查修复（t3-#5）：
+    // 转发规则 = 「替身在位（globalThis.fetch ≠ 真实 savedFetch）→ 转发给替身；
+    // 恢复真实出口 → 回落 offlineFetch 哨兵」。既让 verifyChannelCreditsRpc
+    // 运行期装的替身端点生效（pack 模式 offlineFetch 无 sourceMode 转发分支，
+    // 不能像旧写法那样盲目转给 offlineFetch），又在 :278 恢复真实 fetch 后
+    // 不直连外网（旧写法的缺口），且不绕过 fetched 记录。
+    signedLane.fetch = (input, init) => {
+      const current = globalThis.fetch
+      return (current !== savedFetch ? current : offlineFetch)(input, init)
+    }
   }
   // 离线测试桩的 fetch 会自引用转发，装全局包装会无限回环 ⇒ 测试关掉这一层。
   // 全局兜底本身由 content-fingerprint-test 的 verifyGlobalFetchScrub 单独验证。
-  // 纵切后注册表路径统一走 env.fetcher = codeartsFetcher；打包态的 directFetch
-  // 是独立模块实例，signedLane 桩注不进去。显式给一个「转发到当前 globalThis.fetch」
-  // 的传输：既让 verifyChannelCreditsRpc 临时替换的替身端点生效，又保留哨兵语义。
-  apply(ctx, {
-    disableOpencode: true,
-    disableGlobalFetchScrub: true,
-    codeartsFetcher: (input, init) => globalThis.fetch(input, init),
-  })
+  // 注：index.ts:2474 无条件用 signedNetwork.fetch 覆盖 config.codeartsFetcher，
+  // 故 apply 不传该字段（t3-#4 死配置，已删）；生效路径是上面的 signedLane 转发。
+  apply(ctx, { disableOpencode: true, disableGlobalFetchScrub: true })
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(adapters.has('opencode'), false, 'disabled account provider is not registered')
   // 15 个账号渠道（OpenCode 由 disableOpencode 关闭不计入；LobsterAI、AutoClaw 国际版于 2026-10-25，monkeycode/kuku/accio/accio-cn/orcaterm 于 2026-11-05 移除）。

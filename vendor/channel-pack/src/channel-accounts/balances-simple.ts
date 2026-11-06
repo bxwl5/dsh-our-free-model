@@ -37,14 +37,15 @@ import type {
 import type { RpcCreditsBalancesResponse } from '../types.js'
 import type { CreditBalance } from '../credits.js'
 import { collectCreditBalances } from '../channel-pack-rpc.js'
-import type { LoomyAuth } from '../loomy-auth.js'
-import type { RaccoonAuth } from '../raccoon-auth.js'
+import { fetchLoomyCreditBalance } from '../loomy-credits.js'
+import { fetchRaccoonCreditBalance } from '../raccoon-credits.js'
 import type { LoomyCredential } from '../loomy.js'
 import type { RaccoonCredential } from '../raccoon.js'
 import type { MinimaxCredential } from '../minimax.js'
 import type { QoderCredential } from '../qoder.js'
 import type { ClineCredential } from '../cline.js'
 import { LOOMY } from '../loomy-product.js'
+import { RACCOON } from '../raccoon-product.js'
 import { CLINE } from '../cline-product.js'
 import type { QoderProduct } from '../qoder-product.js'
 import { fetchMinimaxCreditBalance } from '../minimax-credits.js'
@@ -64,14 +65,12 @@ export interface SimpleBalanceQoderMember {
 /**
  * 装配期注入的上下文（**工厂全、env 瘦**：见 `channel-account.ts` 文件头）。
  *
- * 只捕获这三样 —— 其余上下文（`resolve` / `warn` / `fetcher` / `accounts`）
- * 全部走 `ChannelAccountEnv`。
+ * 只捕获 Qoder 同族成员表 —— 其余上下文（`resolve` / `warn` / `fetcher` /
+ * `accounts` / `signal`）全部走 `ChannelAccountEnv`。
+ * 2026-11-06 全码审查修复后，loomy / raccoon 改走底层余额函数送 env.fetcher，
+ * 不再需要注入认证实例。
  */
 export interface SimpleBalanceIo {
-  /** Loomy 认证实例：余额查询是**实例方法**（内部带 product 与 fetchImpl）。 */
-  readonly loomy: LoomyAuth
-  /** Raccoon 认证实例：余额查询是**实例方法**（同上）。 */
-  readonly raccoon: RaccoonAuth
   /**
    * Qoder 同族成员表（国际版 + 中国版）。
    *
@@ -179,15 +178,16 @@ function opencodeBalanceAccount(): ChannelAccount {
  * 余额来自 `GET /points/records`（**只读**，无副作用）；刻意不用
  * `first-login`：那是**写**端点，高频面板路径会意外触发签到。
  *
- * ⚠️ `io.loomy.fetchCreditBalance` 是**实例方法**（内部自带 product 与 fetchImpl），
- *   故钩子只接 credential。
+ * ⚠️ 2026-11-06 全码审查修复：原走 `io.loomy.fetchCreditBalance` 实例方法，
+ *   其 `fetchImpl = options.fetcher ?? fetch`（实例构造未注入）⇒ 退回全局出口、
+ *   丢 signal 级联。改用底层 `fetchLoomyCreditBalance(credential, LOOMY, env.fetcher)`。
  */
-function loomyBalanceAccount(io: SimpleBalanceIo): ChannelAccount {
+function loomyBalanceAccount(_io: SimpleBalanceIo): ChannelAccount {
   return balancesOnlyAccount('loomy', async (env) => {
     const values = await collectCreditBalances<LoomyCredential, typeof LOOMY>(env.accounts, LOOMY, {
       resolve: env.resolve,
       fetcher: env.fetcher,
-      fetchBalance: (credential) => io.loomy.fetchCreditBalance(credential),
+      fetchBalance: (credential) => fetchLoomyCreditBalance(credential, LOOMY, env.fetcher),
       warn: env.warn,
     })
     return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
@@ -200,14 +200,15 @@ function loomyBalanceAccount(io: SimpleBalanceIo): ChannelAccount {
  * 余额来自 `GET /points/v1/balance`（**只读**，无副作用）。
  * 2026-11-06「学 magpie 架构」：编排交给 collectCreditBalances。
  *
- * ⚠️ `io.raccoon.fetchCreditBalance` 是**实例方法**（同上）。
+ * ⚠️ 2026-11-06 全码审查修复：同 loomy，实例方法内部退回全局出口，
+ *   改用底层 `fetchRaccoonCreditBalance(RACCOON, credential, env.fetcher)`。
  */
-function raccoonBalanceAccount(io: SimpleBalanceIo): ChannelAccount {
+function raccoonBalanceAccount(_io: SimpleBalanceIo): ChannelAccount {
   return balancesOnlyAccount('raccoon', async (env) => {
     const values = await collectCreditBalances<RaccoonCredential, undefined>(env.accounts, undefined, {
       resolve: env.resolve,
       fetcher: env.fetcher,
-      fetchBalance: (credential) => io.raccoon.fetchCreditBalance(credential),
+      fetchBalance: (credential) => fetchRaccoonCreditBalance(RACCOON, credential, env.fetcher),
       warn: env.warn,
     })
     return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
@@ -258,7 +259,7 @@ function qoderFamilyBalanceAccount(product: QoderProduct): ChannelAccount {
     const values = await collectCreditBalances<QoderCredential, QoderProduct>(env.accounts, product, {
       resolve: env.resolve,
       fetcher: env.fetcher,
-      fetchBalance: (credential, p) => fetchQoderCreditBalance(credential, p),
+      fetchBalance: (credential, p) => fetchQoderCreditBalance(credential, p, env.fetcher),
       warn: env.warn,
     })
     return { ok: true, value: { accounts: values } satisfies RpcCreditsBalancesResponse }
@@ -281,7 +282,7 @@ function clineBalanceAccount(): ChannelAccount {
       resolve: env.resolve,
       fetcher: env.fetcher,
       fetchBalanceDetailed: async (credential, product) => {
-        const result = await fetchClineCreditBalance(credential, product)
+        const result = await fetchClineCreditBalance(credential, product, env.fetcher, { signal: env.signal })
         return result.balance === null
           ? { balance: null, error: result.error ?? '积分查询失败（凭据失效或响应异常）' }
           : { balance: result.balance }
