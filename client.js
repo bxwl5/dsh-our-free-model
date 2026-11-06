@@ -1067,14 +1067,14 @@ window.__ModuleLoader__.load({
 .ofm_pagetitle{display:flex;flex-direction:column;gap:6px;min-width:0}
 .ofm_pagetitle h2{margin:0;font-size:23px;font-weight:760;letter-spacing:-.6px;line-height:1.2;background:linear-gradient(120deg,var(--dsw-alias-label-primary) 20%,color-mix(in srgb,var(--dsw-alias-label-primary) 55%,var(--dsw-alias-state-business-primary)));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
 .ofm_pagesub{margin:0;font-size:12.5px;color:var(--dsw-alias-label-secondary);max-width:70ch}
-/* 渠道页（2026-11-07 用户反馈「左对齐不好看」）：副标题+统计胶囊整行居中；
-   下方自动签到行同步居中，形成对称的头部版式。窄屏自动换行仍保持居中。 */
-.ofm_subrow{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;min-width:0}
+/* 渠道页（2026-11-07 用户定稿）：副标题文案左对齐，统计胶囊**贴右且内容右对齐**；
+   窄屏换行时胶囊组仍靠右（margin-left:auto 在新行继续生效）。 */
+.ofm_subrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0}
 .ofm_subrow .ofm_pagesub{max-width:none}
-.ofm_subpills{display:flex;gap:6px;flex-shrink:0}
-/* 渠道页 hero 整体内容居中：标题、副标题行、自动签到行；窄屏不挤压。 */
-.ofm_hero .ofm_pagetitle{align-items:center;text-align:center}
-.ofm_hero .ofm_row{justify-content:center}
+.ofm_subpills{display:flex;gap:6px;margin-left:auto;flex-shrink:0;justify-content:flex-end}
+/* 自动签到行两端分布：开关贴左；从第二个直接子元素（状态 pill）起整组贴右。
+   结构不动，纯 CSS 排布。 */
+.ofm_autorow > :nth-child(n + 2){margin-left:auto}
 /* ── 账号轮询（渠道内，全局）────────────────────────────────────────────
    2026-11-04 起**并入顶部卡片的自动签到那一行**（用户要求），不再单独成块。
    与「路由轮询」（combo 成员之间，通常就是不同渠道）是两套独立机制。
@@ -4266,7 +4266,7 @@ window.__ModuleLoader__.load({
                   h(Pill, { strong: true, tone: ready ? 'ok' : failed ? 'err' : 'warn' },
                     ready ? `${connected}/${CHANNEL_PROVIDERS.length} ${t('chan.state.on')}` : t('chan.state.off')),
                   h(Pill, null, `${t('chan.meta.accounts')} ${statuses === undefined ? '—' : CHANNEL_PROVIDERS.reduce((sum, row) => sum + (statuses[row.id]?.accounts?.enabled ?? 0), 0)}`))))),
-          auto == null ? null : h('div', { className: 'ofm_row' },
+          auto == null ? null : h('div', { className: 'ofm_row ofm_autorow' },
             h(Switch, { checked: auto.enabled === true, label: t('chan.auto.title'), onChange: () => void toggleAuto() }),
             h(Pill, { tone: auto.running === true ? 'warn' : auto.ranToday === true ? 'ok' : '' },
               auto.running === true ? t('chan.auto.running') : auto.ranToday === true ? t('chan.auto.ran') : t('chan.auto.off')),
