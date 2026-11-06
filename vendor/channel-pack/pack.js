@@ -58551,6 +58551,19 @@ async function disposeGatewayRuntime() {
   lastApiKey = null;
 }
 
+// vendor/channel-pack/src/channel-account.ts
+function toStatusEnvelope(outcome) {
+  return outcome.kind === "bad-request" ? { ok: false, error: { code: "bad-request", message: outcome.message } } : { ok: true, value: { accounts: [...outcome.accounts] } };
+}
+
+// vendor/channel-pack/src/channel-accounts/index.ts
+function buildChannelAccountRegistry(_io) {
+  const entries = [
+    // 阶段 1 起逐项追加；每家只捕获自己需要的 io 字段。
+  ];
+  return new Map(entries.map((account) => [account.id, Object.freeze(account)]));
+}
+
 // vendor/channel-pack/src/buddy-balance-rank.ts
 var BUDDY_EXPIRING_WINDOW_DAYS = 15;
 var BUDDY_EXPIRING_WINDOW_MS = BUDDY_EXPIRING_WINDOW_DAYS * 24 * 60 * 60 * 1e3;
@@ -64129,6 +64142,18 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
       packages
     };
   }
+  const accountsRegistry = buildChannelAccountRegistry({ pool });
+  function makeCreditsEnv(req, accounts, codeartsFetcher, signal) {
+    return {
+      provider: req.provider,
+      accounts,
+      resolve: (ref) => ctx.credentials.resolve(ref),
+      warn: (msg) => ctx.logger?.warn?.(msg),
+      fetcher: codeartsFetcher,
+      signal,
+      ...req.force === void 0 ? {} : { force: req.force }
+    };
+  }
   async function dispatchMethod(method, payload, signal) {
     const codeartsFetcher = (input, init) => {
       const fetcher = config.codeartsFetcher ?? directFetch;
@@ -65108,6 +65133,13 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
       // 只对**未知** provider 生效。
       case "credits.status": {
         const req = payload;
+        const migratedStatus = accountsRegistry.get(req.provider)?.status;
+        if (migratedStatus !== void 0) {
+          const statusAccounts = await pool.listAccounts(req.provider);
+          return toStatusEnvelope(await migratedStatus(
+            makeCreditsEnv(req, statusAccounts, codeartsFetcher, signal)
+          ));
+        }
         if (req.provider === "codearts") {
           const accounts2 = await pool.listAccounts(req.provider);
           return {
@@ -65163,6 +65195,10 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
       case "credits.claimAll": {
         const req = payload;
         const accounts = await pool.listAccounts(req.provider);
+        const migratedClaim = accountsRegistry.get(req.provider)?.claim;
+        if (migratedClaim !== void 0) {
+          return await migratedClaim(makeCreditsEnv(req, accounts, codeartsFetcher, signal));
+        }
         if (req.provider === AUTOCLAW.id) {
           const { claimAutoclawDailyCheckin: claimAutoclawDailyCheckin2 } = await Promise.resolve().then(() => (init_autoclaw_sms(), autoclaw_sms_exports));
           const { AUTOCLAW: AUTOCLAW_PRODUCT } = await Promise.resolve().then(() => (init_autoclaw_product(), autoclaw_product_exports));
@@ -65331,6 +65367,10 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
       case "credits.balances": {
         const req = payload;
         const accounts = await pool.listAccounts(req.provider);
+        const migratedBalances = accountsRegistry.get(req.provider)?.balances;
+        if (migratedBalances !== void 0) {
+          return await migratedBalances(makeCreditsEnv(req, accounts, codeartsFetcher, signal));
+        }
         if (req.provider === "codearts") {
           const values2 = await collectCreditBalances(accounts, void 0, {
             resolve: (ref) => ctx.credentials.resolve(ref),
@@ -65353,39 +65393,11 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         }
         if (isQoderFamily(req.provider)) {
           const { product: product2 } = requireQoderFamily(req.provider);
-          const values2 = [];
-          for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
-            if (!resolved) {
-              values2.push({
-                accountId: account.id,
-                nickname: account.nickname,
-                balance: null,
-                error: "\u51ED\u636E\u672A\u914D\u7F6E"
-              });
-              continue;
-            }
-            let credential;
-            try {
-              credential = JSON.parse(resolved.value);
-            } catch {
-              values2.push({
-                accountId: account.id,
-                nickname: account.nickname,
-                balance: null,
-                error: "\u51ED\u636E\u89E3\u6790\u5931\u8D25"
-              });
-              continue;
-            }
-            const balance = await fetchQoderCreditBalance(credential, product2);
-            values2.push({
-              accountId: account.id,
-              nickname: account.nickname,
-              balance,
-              // 查不到时带上原因，卡片显示原因而非 0（与其它 provider 同约定）。
-              ...balance === null ? { error: "\u79EF\u5206\u67E5\u8BE2\u5931\u8D25\uFF08\u51ED\u636E\u5931\u6548\u6216\u54CD\u5E94\u5F02\u5E38\uFF09" } : {}
-            });
-          }
+          const values2 = await collectCreditBalances(accounts, product2, {
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalance: (credential, p) => fetchQoderCreditBalance(credential, p),
+            warn: (msg) => ctx.logger?.warn?.(msg)
+          });
           return { ok: true, value: { accounts: values2 } };
         }
         if (req.provider === OPENCODE.id) {
@@ -65536,196 +65548,52 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           return { ok: true, value: { accounts: values2 } };
         }
         if (req.provider === CLINE.id) {
-          const values2 = [];
-          for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
-            if (!resolved) {
-              values2.push({
-                accountId: account.id,
-                nickname: account.nickname,
-                balance: null,
-                error: "\u51ED\u636E\u672A\u914D\u7F6E"
-              });
-              continue;
-            }
-            let credential;
-            try {
-              credential = JSON.parse(resolved.value);
-            } catch {
-              values2.push({
-                accountId: account.id,
-                nickname: account.nickname,
-                balance: null,
-                error: "\u51ED\u636E\u89E3\u6790\u5931\u8D25"
-              });
-              continue;
-            }
-            const result = await fetchClineCreditBalance(credential, CLINE);
-            values2.push({
-              accountId: account.id,
-              nickname: account.nickname,
-              balance: result.balance,
-              // 查不到时带上**具体原因**（含 HTTP 状态码与错误体摘要），
-              // 而不是笼统一句「查询失败」—— 卡片显示原因而非 0
-              //（0 是「已用光」的语义，会误导用户）。
-              ...result.balance === null ? { error: result.error ?? "\u79EF\u5206\u67E5\u8BE2\u5931\u8D25\uFF08\u51ED\u636E\u5931\u6548\u6216\u54CD\u5E94\u5F02\u5E38\uFF09" } : {}
-            });
-          }
+          const values2 = await collectCreditBalances(accounts, CLINE, {
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalanceDetailed: async (credential, product2) => {
+              const result = await fetchClineCreditBalance(credential, product2);
+              return result.balance === null ? { balance: null, error: result.error ?? "\u79EF\u5206\u67E5\u8BE2\u5931\u8D25\uFF08\u51ED\u636E\u5931\u6548\u6216\u54CD\u5E94\u5F02\u5E38\uFF09" } : { balance: result.balance };
+            },
+            warn: (msg) => ctx.logger?.warn?.(msg)
+          });
           return { ok: true, value: { accounts: values2 } };
         }
         if (req.provider === LOOMY.id) {
-          const values2 = [];
-          for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
-            if (!resolved) {
-              values2.push({
-                accountId: account.id,
-                nickname: account.nickname,
-                balance: null,
-                error: "\u51ED\u636E\u672A\u914D\u7F6E"
-              });
-              continue;
-            }
-            let credential;
-            try {
-              credential = JSON.parse(resolved.value);
-            } catch {
-              values2.push({
-                accountId: account.id,
-                nickname: account.nickname,
-                balance: null,
-                error: "\u51ED\u636E\u89E3\u6790\u5931\u8D25"
-              });
-              continue;
-            }
-            const balance = await loomy.fetchCreditBalance(credential);
-            values2.push({
-              accountId: account.id,
-              nickname: account.nickname,
-              balance,
-              // 查不到时带原因（不显示成 0，0 是「已用光」的语义）。
-              ...balance === null ? { error: "\u79EF\u5206\u67E5\u8BE2\u5931\u8D25\uFF08\u51ED\u636E\u5931\u6548\u6216\u54CD\u5E94\u5F02\u5E38\uFF09" } : {}
-            });
-          }
+          const values2 = await collectCreditBalances(accounts, LOOMY, {
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalance: (credential) => loomy.fetchCreditBalance(credential),
+            warn: (msg) => ctx.logger?.warn?.(msg)
+          });
           return { ok: true, value: { accounts: values2 } };
         }
         if (req.provider === RACCOON.id) {
-          const values2 = [];
-          for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
-            if (!resolved) {
-              values2.push({
-                accountId: account.id,
-                nickname: account.nickname,
-                balance: null,
-                error: "\u51ED\u636E\u672A\u914D\u7F6E"
-              });
-              continue;
-            }
-            let credential;
-            try {
-              credential = JSON.parse(resolved.value);
-            } catch {
-              values2.push({
-                accountId: account.id,
-                nickname: account.nickname,
-                balance: null,
-                error: "\u51ED\u636E\u89E3\u6790\u5931\u8D25"
-              });
-              continue;
-            }
-            const balance = await raccoon.fetchCreditBalance(credential);
-            values2.push({
-              accountId: account.id,
-              nickname: account.nickname,
-              balance,
-              // ⚠️ 查不到时带原因（**不显示成 0** —— 0 是「已用光」的语义，
-              // 把「查询失败」显示成 0 会让用户以为自己积分没了）。
-              ...balance === null ? { error: "\u79EF\u5206\u67E5\u8BE2\u5931\u8D25\uFF08\u51ED\u636E\u5931\u6548\u6216\u54CD\u5E94\u5F02\u5E38\uFF09" } : {}
-            });
-          }
+          const values2 = await collectCreditBalances(accounts, void 0, {
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalance: (credential) => raccoon.fetchCreditBalance(credential),
+            warn: (msg) => ctx.logger?.warn?.(msg)
+          });
           return { ok: true, value: { accounts: values2 } };
         }
         if (req.provider === ZCODE.id) {
-          const values2 = [];
-          for (const account of accounts) {
-            const resolved = await ctx.credentials.resolve(credentialRef13(account.credentialRef));
-            if (!resolved) {
-              values2.push({
-                accountId: account.id,
-                nickname: account.nickname,
-                balance: null,
-                error: "\u51ED\u636E\u672A\u914D\u7F6E"
-              });
-              continue;
-            }
-            let credential;
-            try {
-              credential = JSON.parse(resolved.value);
-            } catch {
-              values2.push({
-                accountId: account.id,
-                nickname: account.nickname,
-                balance: null,
-                error: "\u51ED\u636E\u89E3\u6790\u5931\u8D25"
-              });
-              continue;
-            }
-            let result;
-            try {
-              result = await zcode.fetchBalanceFor(credential);
-            } catch (error) {
-              values2.push({
-                accountId: account.id,
-                nickname: account.nickname,
-                balance: null,
-                error: `\u989D\u5EA6\u67E5\u8BE2\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`
-              });
-              continue;
-            }
-            if (result === void 0) {
-              values2.push({
-                accountId: account.id,
-                nickname: account.nickname,
-                balance: null,
-                error: "\u989D\u5EA6\u67E5\u8BE2\u5931\u8D25\uFF08\u51ED\u636E\u5931\u6548\u6216\u7F51\u7EDC\u5F02\u5E38\uFF09"
-              });
-              continue;
-            }
-            if (result.enterprise === true) {
-              values2.push({
-                accountId: account.id,
-                nickname: account.nickname,
-                balance: null,
-                error: "\u4F01\u4E1A\u7248\u8D26\u53F7\u4E0D\u4E0B\u53D1\u989D\u5EA6\u6570\u5B57\uFF0C\u8BF7\u5728 ZCode \u5185\u67E5\u770B"
-              });
-              continue;
-            }
-            values2.push({
-              accountId: account.id,
-              nickname: account.nickname,
-              /**
-               * ⚠ `CreditBalance` 的形状是 `{total, packages[], expiredTotal?}`
-               * 这类**积分包**结构，而 ZCode 是「按日的 token 额度池」。
-               * 两者结构不同，故**逐桶**如实映射 —— 上游一个 resource bucket
-               * 就是一个包，包名用 `show_name`（实测是模型名，如
-               * `GLM-5.3-Flash`）。
-               *
-               * ## ⚠⚠ 这里曾经只映射 `buckets[0]`（真实缺陷）
-               *
-               * 旧实现只取 `result.planName`（= `buckets[0]?.showName`）拼**一个**
-               * 包 —— 多桶账号的其余额度被**静默丢掉**，UI 上看起来只有
-               * 一个模型的额度。而 `result.remaining` / `total` 却是**全桶汇总**，
-               * 于是那一个包的数字比它自己的 `totalUnits` 还大，自相矛盾。
-               *
-               * 实测（本机账号）上游只回一个桶（`GLM-5.3-Flash`），
-               * 但**不能按「只有一个桶」来写** —— 那正是把缺陷固化成契约；
-               * 且用户要看的恰恰是「GLM-5.3 与 GLM-5.3-Flash 各自剩多少」，
-               * 前端需要按模型逐行渲染、缺桶的模型显示占位。
-               */
-              balance: buildZcodeBalance(result)
-            });
-          }
+          const values2 = await collectCreditBalances(accounts, void 0, {
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            fetchBalanceDetailed: async (credential) => {
+              let result;
+              try {
+                result = await zcode.fetchBalanceFor(credential);
+              } catch (error) {
+                return { balance: null, error: `\u989D\u5EA6\u67E5\u8BE2\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}` };
+              }
+              if (result === void 0) {
+                return { balance: null, error: "\u989D\u5EA6\u67E5\u8BE2\u5931\u8D25\uFF08\u51ED\u636E\u5931\u6548\u6216\u7F51\u7EDC\u5F02\u5E38\uFF09" };
+              }
+              if (result.enterprise === true) {
+                return { balance: null, error: "\u4F01\u4E1A\u7248\u8D26\u53F7\u4E0D\u4E0B\u53D1\u989D\u5EA6\u6570\u5B57\uFF0C\u8BF7\u5728 ZCode \u5185\u67E5\u770B" };
+              }
+              return { balance: buildZcodeBalance(result) };
+            },
+            warn: (msg) => ctx.logger?.warn?.(msg)
+          });
           return { ok: true, value: { accounts: values2 } };
         }
         const product = productById(req.provider);

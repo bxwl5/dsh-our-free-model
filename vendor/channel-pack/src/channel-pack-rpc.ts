@@ -36,6 +36,13 @@ import type { QoderAuth } from './qoder-auth.js'
 import type { TraeAuth } from './trae-auth.js'
 import type { ClineAuth } from './cline-auth.js'
 import { LOOMY } from './loomy-product.js'
+import {
+  type ChannelAccountEnv,
+  type ChannelAccountRegistry,
+  EMPTY_CHANNEL_ACCOUNT_REGISTRY,
+  toStatusEnvelope,
+} from './channel-account.js'
+import { buildChannelAccountRegistry } from './channel-accounts/index.js'
 import { buddyExpiringWindowDays } from './buddy-balance-rank.js'
 import { readCredits } from './commandcode-credits.js'
 import type { CreditPackage } from './credits.js'
@@ -1513,6 +1520,28 @@ function registerChannelPackEndpoints(
    * ⚠️ 不要直接调它 —— 外部一律走下面的 `handleMethod` 包装，那里负责
    * 「签到明细记录」这件跨切面的事（见 `handleMethod` 的说明）。
    */
+  // 渠道账户资产注册表（2026-11-06 纵切阶段 0：空表，OPT-IN 全关）。
+  // 装配期构建一次；后续阶段逐项往工厂里加实现，未迁移组合落原 switch 分支。
+  const accountsRegistry: ChannelAccountRegistry = buildChannelAccountRegistry({ pool })
+
+  // 每次 RPC 现建 env：fetcher 必须是本函数内 codeartsFetcher（绑 signal 级联）。
+  function makeCreditsEnv(
+    req: { provider: string; force?: boolean },
+    accounts: readonly ProviderAccountEntry[],
+    codeartsFetcher: typeof fetch,
+    signal?: AbortSignal,
+  ): ChannelAccountEnv {
+    return {
+      provider: req.provider,
+      accounts,
+      resolve: (ref) => ctx.credentials.resolve(ref),
+      warn: (msg) => ctx.logger?.warn?.(msg),
+      fetcher: codeartsFetcher,
+      signal,
+      ...req.force === undefined ? {} : { force: req.force },
+    }
+  }
+
   async function dispatchMethod(method: string, payload: unknown, signal?: AbortSignal): Promise<unknown> {
     // 每个 RPC 独立绑定传输与取消信号，避免使用最后挂载上下文的默认出口。
     // 合并上游自行设置的超时，既保留超时也响应客户端断开；后台调用可省略 signal。
@@ -2925,6 +2954,13 @@ function registerChannelPackEndpoints(
       // 只对**未知** provider 生效。
       case 'credits.status': {
         const req = payload as RpcCreditsStatusRequest
+        // 纵切阶段 0 骨架：已迁移组合走注册表，未迁移组合落下面原 if 链（一字不改）。
+        const migratedStatus = accountsRegistry.get(req.provider)?.status
+        if (migratedStatus !== undefined) {
+          const statusAccounts = await pool.listAccounts(req.provider)
+          return toStatusEnvelope(await migratedStatus(
+            makeCreditsEnv(req, statusAccounts, codeartsFetcher, signal)))
+        }
         if (req.provider === 'codearts') {
           // CodeArts 没有独立的「签到状态」端点：可领状态要经
           // `statistics/plugin`（账户类型）+ `/v1/ops/delivery`（活动列表）
@@ -2997,6 +3033,10 @@ function registerChannelPackEndpoints(
       case 'credits.claimAll': {
         const req = payload as RpcCreditsClaimAllRequest
         const accounts = await pool.listAccounts(req.provider)
+        const migratedClaim = accountsRegistry.get(req.provider)?.claim
+        if (migratedClaim !== undefined) {
+          return await migratedClaim(makeCreditsEnv(req, accounts, codeartsFetcher, signal))
+        }
         if (req.provider === AUTOCLAW.id) {
           // AutoClaw 的签到是「完成客户端任务」通用入口的一个 task_id
           // （`autoclaw-task-complete` + `task_id=daily_signin`），走 userapi 域
@@ -3274,6 +3314,10 @@ function registerChannelPackEndpoints(
       case 'credits.balances': {
         const req = payload as RpcCreditsBalancesRequest
         const accounts = await pool.listAccounts(req.provider)
+        const migratedBalances = accountsRegistry.get(req.provider)?.balances
+        if (migratedBalances !== undefined) {
+          return await migratedBalances(makeCreditsEnv(req, accounts, codeartsFetcher, signal))
+        }
         if (req.provider === 'codearts') {
           // 余额来自 `statistics/plugin`（与账户类型检测同一个响应），
           // 故用带原因的钩子：非积分账户要显示「Token 计费账户」而不是
