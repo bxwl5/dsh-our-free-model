@@ -58552,16 +58552,47 @@ async function disposeGatewayRuntime() {
 }
 
 // vendor/channel-pack/src/channel-account.ts
+function nullStatusAccounts(accounts) {
+  return accounts.map((entry) => ({
+    accountId: entry.id,
+    nickname: entry.nickname,
+    status: null
+  }));
+}
 function toStatusEnvelope(outcome) {
   return outcome.kind === "bad-request" ? { ok: false, error: { code: "bad-request", message: outcome.message } } : { ok: true, value: { accounts: [...outcome.accounts] } };
 }
 
 // vendor/channel-pack/src/channel-accounts/index.ts
+function nullStatusCapabilityAccount(id) {
+  return Object.freeze({
+    id,
+    async status(env) {
+      return { kind: "no-status-capability", accounts: nullStatusAccounts(env.accounts) };
+    }
+  });
+}
+function badRequestClaimAccount(id, message2) {
+  return Object.freeze({
+    id,
+    async claim(_env) {
+      return { ok: false, error: { code: "bad-request", message: message2 } };
+    }
+  });
+}
 function buildChannelAccountRegistry(_io) {
-  const entries = [
-    // 阶段 1 起逐项追加；每家只捕获自己需要的 io 字段。
-  ];
-  return new Map(entries.map((account) => [account.id, Object.freeze(account)]));
+  const byId = /* @__PURE__ */ new Map();
+  const add = (account) => {
+    const prev = byId.get(account.id);
+    byId.set(account.id, Object.freeze(prev === void 0 ? account : { ...prev, ...account }));
+  };
+  add(nullStatusCapabilityAccount("codearts"));
+  add(nullStatusCapabilityAccount("trae"));
+  add(nullStatusCapabilityAccount("cline"));
+  add(badRequestClaimAccount("cline", "Cline \u4E0D\u652F\u6301\u6BCF\u65E5\u7B7E\u5230\uFF08\u5176\u540E\u7AEF\u6CA1\u6709\u7B7E\u5230\u63A5\u53E3\uFF09"));
+  add(badRequestClaimAccount("workbuddy", "WorkBuddy \u56FD\u9645\u7248\u4E0D\u652F\u6301\u6BCF\u65E5\u7B7E\u5230\uFF08\u5176\u540E\u7AEF\u6CA1\u6709\u7B7E\u5230\u63A5\u53E3\uFF09"));
+  add(badRequestClaimAccount("raccoon", "Raccoon Work \u4E0D\u652F\u6301\u6BCF\u65E5\u7B7E\u5230\uFF08\u79EF\u5206\u7531\u670D\u52A1\u7AEF\u81EA\u52A8\u53D1\u653E\uFF0C\u5956\u52B1\u89C1\u300C\u65B0\u624B\u4EFB\u52A1\u300D\uFF09"));
+  return new Map([...byId].map(([id, account]) => [id, Object.freeze(account)]));
 }
 
 // vendor/channel-pack/src/buddy-balance-rank.ts

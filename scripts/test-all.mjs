@@ -69,6 +69,7 @@ const suites = [
   // 由 channel-pack-test.mjs --source 调用。此前把它同时列为套件 = **假绿**：
   // `node scripts/channel-credits-ui-test.mjs` 直跑零断言、exit 0。
   // 现已在那个文件里加 exitIfDirectRun 守卫，这里不能再把它当套件跑（否则守卫会判失败）。
+  ['channel-account-slice', 'channel-account-slice-test.mjs', []],
   ['channel-login', 'channel-login-test.mjs', []],
   // 登录方式矩阵的漂移守卫：文档 / client.js 的 login 字段 / ADOPTABLE_CHANNELS 三方一致。
   ['channel-login-methods', 'channel-login-methods-test.mjs', []],
