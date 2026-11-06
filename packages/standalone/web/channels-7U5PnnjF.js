@@ -26,10 +26,10 @@ import{c as uo,R as po,r as Y,j as N,N as fo,S as lt,I as ct,C as go,B as ha,a a
 .ofm_pagetitle{display:flex;flex-direction:column;gap:6px;min-width:0}
 .ofm_pagetitle h2{margin:0;font-size:23px;font-weight:760;letter-spacing:-.6px;line-height:1.2;background:linear-gradient(120deg,var(--dsw-alias-label-primary) 20%,color-mix(in srgb,var(--dsw-alias-label-primary) 55%,var(--dsw-alias-state-business-primary)));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
 .ofm_pagesub{margin:0;font-size:12.5px;color:var(--dsw-alias-label-secondary);max-width:70ch}
-/* 渠道页（2026-11-07 用户）：副标题与右侧两个统计胶囊同一行齐平；窄屏时胶囊换到副标题下方，不再挤压文案。 */
-.ofm_subrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0}
+/* 渠道页（2026-11-07 用户）：副标题、统计胶囊、下方自动签到行全部左对齐紧凑排；胶囊紧随文案，不推到最右。 */
+.ofm_subrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0}
 .ofm_subrow .ofm_pagesub{max-width:none}
-.ofm_subpills{display:flex;gap:6px;margin-left:auto;flex-shrink:0}
+.ofm_subpills{display:flex;gap:6px;flex-shrink:0}
 /* ── 账号轮询（渠道内，全局）────────────────────────────────────────────
    2026-11-04 起**并入顶部卡片的自动签到那一行**（用户要求），不再单独成块。
    与「路由轮询」（combo 成员之间，通常就是不同渠道）是两套独立机制。
