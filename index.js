@@ -908,8 +908,13 @@ let channelRosterReadAt = 0
            * 不受开关影响（见 adapter.js runChannel 的历史遗漏修复）。
            */
           .filter(entry => !isComboEntry(entry))
+          // 2026-11-07 修正判据：**catalog 存储行上免费车道行没有 channel 字段**
+          // （map 输出时才 `?? 'free'` 补默认）——按 entry.channel==='free' 判断
+          // 恒真、永不排除（实测运行实例 35 项候选含 11 个 free 行）。改用
+          // 「无 channel 字段 = 免费车道行」+ channel==='kilo' 两个判据；
+          // 渠道模型行的 channel 恒为 `channel:<provider>`，不受影响。
           .filter(entry => settings.get().enabled !== false
-            || (entry.channel !== 'free' && entry.channel !== 'kilo'))
+            || (entry.channel !== undefined && entry.channel !== 'kilo'))
           .map(entry => ({
             id: entry.id, name: entry.name, channel: entry.channel ?? 'free', vision: entry.vision === true,
             contextWindow: entry.contextWindow, maxOutput: entry.maxOutput,
