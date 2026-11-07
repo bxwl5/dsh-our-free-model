@@ -1,0 +1,61 @@
+name: cleanup-runs
+
+# 手动清理 workflows 运行记录：保留最近 N 条（输入 keep），其余删除。
+# 用途：本地批量删除会撞 GitHub API 限流，交给 Actions 在 runner 里跑不受此限。
+
+on:
+  workflow_dispatch:
+    inputs:
+      keep:
+        description: '保留最近几条记录（默认 1：只留最新一条）'
+        required: false
+        default: '1'
+      dry_run:
+        description: '只列出将要删除的记录，不实际删除（默认 false）'
+        required: false
+        default: 'false'
+
+permissions:
+  actions: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete workflow runs (keep latest N)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          KEEP: ${{ github.event.inputs.keep }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          KEEP_COUNT=$(( ${KEEP:-1} < 0 ? 0 : ${KEEP:-1} ))
+          echo "保留最近 ${KEEP_COUNT} 条；dry_run=${DRY_RUN}"
+          # 分页拉全部 run（每页 100，最多 20 页），按时间倒序天然满足「保留最新」
+          ids=$(gh api --paginate -H "Accept: application/vnd.github+json" \
+            "repos/${REPO}/actions/runs?per_page=100" \
+            --jq '.workflow_runs[].id')
+          total=$(echo "$ids" | grep -c . || true)
+          echo "共 ${total} 条运行记录"
+          i=0
+          deleted=0
+          skipped=0
+          for id in $ids; do
+            i=$((i+1))
+            if [ "$i" -le "$KEEP_COUNT" ]; then
+              echo "保留 #$i: $id"
+              continue
+            fi
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "[dry-run] 将删除: $id"
+              skipped=$((skipped+1))
+              continue
+            fi
+            if gh api -X DELETE "repos/${REPO}/actions/runs/${id}" >/dev/null 2>&1; then
+              deleted=$((deleted+1))
+            else
+              echo "删除失败: $id"
+            fi
+            sleep 0.2
+          done
+          echo "完成：删除 ${deleted} 条（dry-run 标记 ${skipped} 条）；保留 ${KEEP_COUNT} 条"
