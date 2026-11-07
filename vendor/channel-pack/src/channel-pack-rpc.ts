@@ -1860,6 +1860,19 @@ function registerChannelPackEndpoints(
               // ⚠️ 恒 false：Loomy 无续期端点。
               refreshable: false,
             })
+            // 2026-11-07（用户定稿）：新手任务从「签到」移到「登录成功」——它是一次性
+            // 账号初始化奖励，天然属于登录时刻。此处幂等补领：已领的 skip、重复登录
+            // 零副作用（claimAll 内部按 tasks 状态跳过，且服务端幂等置位）。
+            // 失败只记 warn 不影响登录成果（积分可日后手动再领）。
+            try {
+              const onboarding = await loomy.claimOnboardingTasks(credential)
+              const earned = onboarding.claimed.reduce((sum, row) => sum + row.points, 0)
+              if (onboarding.claimed.length > 0) {
+                ctx.logger?.warn?.(`[channel-pack] ${LOOMY.id} 新手任务自动领取：${onboarding.claimed.length} 项，+${earned} 积分（${onboarding.skipped.length} 项已领过跳过）`)
+              }
+            } catch (error: unknown) {
+              ctx.logger?.warn?.(`[channel-pack] ${LOOMY.id} 新手任务自动领取失败（不影响登录）：${error instanceof Error ? error.message : String(error)}`)
+            }
           }).catch((error: unknown) => {
             ctx.logger.warn(`[channel-pack] background ${LOOMY.id} wechat login failed for ${id}: ${String(error)}`)
             recordLoginFailure(id, error)
