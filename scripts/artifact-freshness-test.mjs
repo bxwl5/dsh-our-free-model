@@ -14,12 +14,21 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
-// 与构建命令同口径：esbuild 从 packages/standalone 自带 node_modules 解析
-//（vfat 上不可执行的包内二进制走 ESBUILD_BINARY_PATH 指向持久目录原生件）。
-const BUILD_ENV = {
-  OFM_ESBUILD_DIR: path.join(root, 'packages/standalone'),
-  ESBUILD_BINARY_PATH: process.env.ESBUILD_BINARY_PATH ?? '/home/kuye/Documents/deepseek-harness/esbuild-bin/esbuild-0.25.9',
-}
+// 环境适配（2026-11-07 修复 CI 红）：
+// - CI（ubuntu，root npm install）：esbuild 在 root/node_modules，build-channel-pack
+//   的 require.resolve 候选（cwd/root）天然命中，**不需要**任何环境变量；
+// - 本机 vfat：esbuild 包内二进制不可执行，必须 ESBUILD_BINARY_PATH 指向持久目录
+//   原生件 + OFM_ESBUILD_DIR 指向 packages/standalone —— 仅在「本机特征」存在时注入
+//   （硬编码 /home/kuye 路径进 CI 曾把门禁打红）。
+const LOCAL_ESBUILD_BIN = '/home/kuye/Documents/deepseek-harness/esbuild-bin/esbuild-0.25.9'
+const isLocalVfat = process.env.ESBUILD_BINARY_PATH !== undefined
+  || (await import('node:fs')).existsSync(LOCAL_ESBUILD_BIN)
+const BUILD_ENV = isLocalVfat
+  ? {
+      OFM_ESBUILD_DIR: path.join(root, 'packages/standalone'),
+      ESBUILD_BINARY_PATH: process.env.ESBUILD_BINARY_PATH ?? LOCAL_ESBUILD_BIN,
+    }
+  : {}
 const run = (label, cmd, args, env) => {
   try {
     execFileSync(cmd, args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env }, timeout: 120_000 })
