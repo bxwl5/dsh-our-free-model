@@ -64821,7 +64821,13 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
               ...permission.principalId === void 0 ? {} : { principal_id: permission.principalId },
               ...permission.nickname === void 0 ? {} : { nickname: permission.nickname },
               ...permission.projectId === void 0 ? {} : { project_id: permission.projectId },
-              ...permission.modelInfo === void 0 ? {} : { model_info: permission.modelInfo },
+              // 2026-11-07（Windows 用户报障「登录 3 次仍缺 model_api_url_base」）：
+              // 上游 validate 对某些账号下发的 model_info **对象存在但 model_api_url_base
+              // 为空** —— 三件套校验通过（baseUrl/appKey/appSecret 有值），旧逻辑原样
+              // 把残缺 modelInfo 写进凭据 ⇒ 余额/订阅路径读 `.model_api_url_base` 报
+              // 「凭据缺少」。判据收紧：base 不可用就不写入残缺对象（续期链会走
+              // client-subscription 重新拉取，见 ⑥b）。
+              ...permission.modelInfo === void 0 ? {} : String(permission.modelInfo.model_api_url_base ?? "").trim() !== "" ? { model_info: permission.modelInfo } : {},
               // 续期链的钥匙：一次性 refresh_token + 本次 DPoP 密钥对（JWK 落库，
               // 续期签 proof 必须用同一把私钥 —— 参考实现同款约束）。
               dpop: dpopJwk
@@ -65290,8 +65296,17 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
                     ...permission.principalId === void 0 ? {} : { principal_id: permission.principalId },
                     ...permission.nickname === void 0 ? {} : { nickname: permission.nickname },
                     ...permission.projectId === void 0 ? {} : { project_id: permission.projectId },
-                    ...permission.modelInfo === void 0 ? {} : { model_info: permission.modelInfo }
+                    // 2026-11-07：同登录链 —— model_info 内 model_api_url_base 为空时
+                    // 不覆盖旧值（保持凭据里可能已有的可用网关信息）。
+                    ...permission.modelInfo === void 0 ? {} : String(permission.modelInfo.model_api_url_base ?? "").trim() !== "" ? { model_info: permission.modelInfo } : {}
                   });
+                  if (permission.modelInfo === void 0 || String(permission.modelInfo.model_api_url_base ?? "").trim() === "") {
+                    const persist2 = JSON.parse((await ctx.credentials.resolve(credentialRef14(entry.credentialRef)))?.value ?? "{}");
+                    if (persist2.model_info !== void 0) {
+                      delete persist2.model_info;
+                      await ctx.credentials.set(credentialRef14(entry.credentialRef), JSON.stringify(persist2));
+                    }
+                  }
                 }
               } catch (error) {
                 ctx.logger?.warn?.(

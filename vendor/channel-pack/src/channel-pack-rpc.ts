@@ -1683,7 +1683,17 @@ function registerChannelPackEndpoints(
               ...(permission.principalId === undefined ? {} : { principal_id: permission.principalId }),
               ...(permission.nickname === undefined ? {} : { nickname: permission.nickname }),
               ...(permission.projectId === undefined ? {} : { project_id: permission.projectId }),
-              ...(permission.modelInfo === undefined ? {} : { model_info: permission.modelInfo }),
+              // 2026-11-07（Windows 用户报障「登录 3 次仍缺 model_api_url_base」）：
+              // 上游 validate 对某些账号下发的 model_info **对象存在但 model_api_url_base
+              // 为空** —— 三件套校验通过（baseUrl/appKey/appSecret 有值），旧逻辑原样
+              // 把残缺 modelInfo 写进凭据 ⇒ 余额/订阅路径读 `.model_api_url_base` 报
+              // 「凭据缺少」。判据收紧：base 不可用就不写入残缺对象（续期链会走
+              // client-subscription 重新拉取，见 ⑥b）。
+              ...(permission.modelInfo === undefined
+                ? {}
+                : String((permission.modelInfo as Record<string, unknown>).model_api_url_base ?? '').trim() !== ''
+                  ? { model_info: permission.modelInfo }
+                  : {}),
               // 续期链的钥匙：一次性 refresh_token + 本次 DPoP 密钥对（JWK 落库，
               // 续期签 proof 必须用同一把私钥 —— 参考实现同款约束）。
               dpop: dpopJwk,
@@ -2408,8 +2418,25 @@ function registerChannelPackEndpoints(
                     ...(permission.principalId === undefined ? {} : { principal_id: permission.principalId }),
                     ...(permission.nickname === undefined ? {} : { nickname: permission.nickname }),
                     ...(permission.projectId === undefined ? {} : { project_id: permission.projectId }),
-                    ...(permission.modelInfo === undefined ? {} : { model_info: permission.modelInfo }),
+                    // 2026-11-07：同登录链 —— model_info 内 model_api_url_base 为空时
+                    // 不覆盖旧值（保持凭据里可能已有的可用网关信息）。
+                    ...(permission.modelInfo === undefined
+                      ? {}
+                      : String((permission.modelInfo as Record<string, unknown>).model_api_url_base ?? '').trim() !== ''
+                        ? { model_info: permission.modelInfo }
+                        : {}),
                   })
+                  // 残缺 model_info（base 为空）不能留在凭据里：续期链每次都会
+                  // 重新 validate，若上游持续不下发 base，这里显式清掉旧残缺对象，
+                  // 让「凭据缺少」报错与真实状态一致，并提示用户走官方客户端兑换。
+                  if (permission.modelInfo === undefined
+                    || String((permission.modelInfo as Record<string, unknown>).model_api_url_base ?? '').trim() === '') {
+                    const persist = JSON.parse((await ctx.credentials.resolve(credentialRef(entry.credentialRef)))?.value ?? '{}') as Record<string, unknown>
+                    if (persist.model_info !== undefined) {
+                      delete persist.model_info
+                      await ctx.credentials.set(credentialRef(entry.credentialRef), JSON.stringify(persist))
+                    }
+                  }
                 }
               } catch (error) {
                 ctx.logger?.warn?.(
