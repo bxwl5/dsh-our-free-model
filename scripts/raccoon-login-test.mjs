@@ -8,15 +8,17 @@
  *   用户扫码后一直 pending（`raccoon-login-page.ts` 原注释已记录）；
  * - 短信：要过阿里云滑块，失败率高且需多步手填。
  *
- * 现改为官方桌面端的网页授权：点「去登录」→ 浏览器登录并授权 →
+ * 现改为官方桌面端的网页授权：浏览器登录并授权 →
  * 302 回 `http://127.0.0.1:<port>/auth/callback?code=...&state=...` →
  * 宿主侧换码落定。**无需扫码、无需验证码、无需复制地址。**
+ * 2026-11-07（用户）：壳页（只含一个「去登录」链接）删除 —— loginUrl 直接是
+ * 上游授权页，点「添加账号」即直达。
  *
  * 本用例锁死：
- *   1. 授权 URL 的三个硬约束（login_source / desktop_callback=loopback / 64 位 hex state）；
- *   2. 页面结构（有「去登录」、无旧 Tab、不含任何秘密）；
- *   3. loopback 回调的 state 校验（伪造 state 必须 400）；
- *   4. 换码成功/失败两条路径。
+ *   1. 授权 URL 的硬约束（/code/authorize、login_source、desktop_callback=loopback、
+ *      appname、loopback redirect、64 位 hex state）；
+ *   2. loopback 回调的 state 校验（伪造 state 必须 400）；
+ *   3. 换码成功/失败两条路径。
  *
  * 不联网：全部走注入的假 fetch；本地页用 node:http 直连。
  */
@@ -73,22 +75,30 @@ export async function verifyRaccoonLogin() {
   // 安全：页面不得内联任何秘密
   assert.ok(!/access_token|refresh_token|phoneCipher|qrcode_code/i.test(html), '页面不得内联任何秘密')
 
-  // ── 3) 本地页可打开且带授权链接 ──
+  // ── 3) loginUrl 直链授权页（2026-11-07 用户：壳页多次一举，已删）──
   const started = await page.startRaccoonLoginFlow({
     fetcher: async () => new Response('not found', { status: 404 }),
     timeoutMs: 5000,
   })
   let stateFromPage
   try {
-    const pageResponse = await getText(started.loginUrl)
-    assert.equal(pageResponse.status, 200)
-    assert.ok(pageResponse.text.includes('去登录'))
-    // 从页面抽出真实的 state，用于下一步的伪造测试。
-    const m = pageResponse.text.match(/[?&]state=([0-9a-f]{64})/)
+    // loginUrl 必须是上游授权页（https），带全部硬参数；不再有本地壳页。
+    const login = new URL(started.loginUrl)
+    assert.equal(login.protocol, 'https:', `loginUrl 应直链授权页：${started.loginUrl}`)
+    assert.equal(login.pathname, '/code/authorize', '授权页路径')
+    assert.equal(login.searchParams.get('login_source'), 'desktop')
+    assert.equal(login.searchParams.get('desktop_callback'), 'loopback')
+    assert.equal(login.searchParams.get('appname'), '办公小浣熊客户端')
+    const redirect = login.searchParams.get('redirect') ?? ''
+    assert.ok(redirect.startsWith('http://127.0.0.1:'), 'redirect 必须是 loopback 回调')
+    // 从授权 URL 抽取真实的 state，用于下一步的伪造测试。
+    const m = started.loginUrl.match(/[?&]state=([0-9a-f]{64})/)
     assert.ok(m !== null, '授权 URL 必须带 64 位 hex state')
     stateFromPage = m[1]
 
-    const port = new URL(started.loginUrl).port
+    // 本地 authCallback 服务器仍在（授权后的落点），端口取自 redirect 参数。
+    const port = new URL(redirect).port
+    assert.ok(port !== '', 'redirect 必须带 loopback 端口')
     const callback = (query) => getText(`http://127.0.0.1:${port}/auth/callback?${query}`)
 
     // ── 4) 伪造 state 必须被拒 ──
@@ -118,10 +128,10 @@ export async function verifyRaccoonLogin() {
   }
   const okFlow = await page.startRaccoonLoginFlow({ fetcher: tokenFetcher, timeoutMs: 5000 })
   try {
-    const pageResponse = await getText(okFlow.loginUrl)
-    const m = pageResponse.text.match(/[?&]state=([0-9a-f]{64})/)
-    assert.ok(m !== null)
-    const port = new URL(okFlow.loginUrl).port
+    const m = okFlow.loginUrl.match(/[?&]state=([0-9a-f]{64})/)
+    assert.ok(m !== null, '授权 URL 必须带 state')
+    const port = new URL(new URL(okFlow.loginUrl).searchParams.get('redirect') ?? 'http://127.0.0.1/').port
+    assert.ok(port !== '', 'redirect 必须带 loopback 端口')
     const done = await getText(`http://127.0.0.1:${port}/auth/callback?code=good-code&state=${m[1]}`)
     assert.equal(done.status, 200, '换码成功必须 200')
     const credential = await okFlow.result

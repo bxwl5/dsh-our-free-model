@@ -236,6 +236,11 @@ window.__ModuleLoader__.load({
         'chan.login.step1': '在浏览器中完成登录（若没有自动打开，点下面的按钮）。',
         'chan.login.step2': '登录成功后本页会自动完成，无需复制任何东西。',
         'chan.login.open': '打开登录页',
+        'chan.login.embedded.qrLoading': '正在获取二维码…',
+        'chan.login.embedded.phoneBind': '该微信号未绑定手机号，请绑定后继续（或跳过用积分直接登录）',
+        'chan.login.embedded.smsSent': '验证码已发送',
+        'chan.login.embedded.smsSend': '发送验证码',
+        'chan.login.embedded.smsSkip': '跳过绑定，直接登录',
         'chan.login.embedded.phone': '手机号',
         'chan.login.embedded.phonePlaceholder': '11 位手机号',
         'chan.login.embedded.send': '发送验证码',
@@ -740,6 +745,11 @@ window.__ModuleLoader__.load({
         'chan.login.step1': 'Finish the sign-in in your browser (if it did not open, use the button below).',
         'chan.login.step2': 'This page completes by itself once the browser flow does — nothing to copy.',
         'chan.login.open': 'Open sign-in page',
+        'chan.login.embedded.qrLoading': 'Loading QR code…',
+        'chan.login.embedded.phoneBind': 'This WeChat account has no phone bound — bind one to continue (or skip and sign in directly)',
+        'chan.login.embedded.smsSent': 'Code sent',
+        'chan.login.embedded.smsSend': 'Send code',
+        'chan.login.embedded.smsSkip': 'Skip binding, sign in directly',
         'chan.login.embedded.phone': 'Phone',
         'chan.login.embedded.phonePlaceholder': '11-digit phone number',
         'chan.login.embedded.send': 'Send code',
@@ -1071,6 +1081,11 @@ window.__ModuleLoader__.load({
    ⚠ 只作用渠道页的专用 class —— 全局 .ofm_hero .ofm_pagetitle 会破坏
    数据看板/运行日志等页（它们 pagetitle 有兄弟 pills 靠 auto margin 贴右）。 */
 .ofm_pagetitle.ofm_pagetitle_chan{flex:1;min-width:0}
+/* Loomy 卡片内嵌二维码（2026-11-07）：居中显示 + 手机号绑定表单区域。 */
+.ofm_qrwrap{display:flex;flex-direction:column;align-items:center;gap:8px}
+.ofm_qr{width:180px;height:180px;border-radius:10px;border:1px solid var(--dsw-alias-border-l1);background:#fff}
+.ofm_smsbind{display:flex;flex-direction:column;gap:6px;width:100%}
+
 .ofm_subrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0;width:100%}
 .ofm_subrow .ofm_pagesub{max-width:none}
 .ofm_subpills{display:flex;gap:6px;margin-left:auto;flex-shrink:0;justify-content:flex-end}
@@ -3193,7 +3208,7 @@ window.__ModuleLoader__.load({
       // 卡片恢复「刷新模型」按钮；首拉失败时适配器回落静态兜底表。
       { id: 'antigravity', name: 'Antigravity', org: 'Google', accent: '#4285F4', note: 'Google Antigravity 免费线', login: 'browser' },
       { id: 'commandcode', name: 'Command Code', org: 'Command Code', accent: '#111827', note: '浏览器授权，自动回调', login: 'browser' },
-      { id: 'officeace', name: 'OfficeAce 果办', org: '华为云', accent: '#C7000B', note: '浏览器授权，扫码登录', login: 'browser' },
+      { id: 'officeace', name: 'OfficeAce 果办', org: '华为云', accent: '#C7000B', note: '浏览器授权，自动回调', login: 'browser' },
       { id: 'autoclaw', name: 'AutoClaw', org: '智谱', accent: '#3D5AFE', note: '手机号 + 短信验证码登录，国内站', login: 'browser' },
     ]
 
@@ -3432,7 +3447,10 @@ window.__ModuleLoader__.load({
           // 卡片内嵌登录（2026-10-30）：autoclaw 短信不再弹本地页
           //（127.0.0.1 远程浏览器打不开），account.create 直接回 flowId 与二维码，
           // 由本卡片渲染并经 DSH 路由驱动。url 存在与否区分两种形态。
-          const loginKind = value?.loginKind === 'autoclaw-sms' ? value.loginKind : null
+          // 2026-11-07：loomy-wechat 加入卡片内嵌（二维码直出，不弹本地页）。
+          const loginKind = value?.loginKind === 'autoclaw-sms' || value?.loginKind === 'loomy-wechat'
+            ? value.loginKind
+            : null
           setLogin({
             accountId,
             url: typeof url === 'string' ? url : '',
@@ -3488,6 +3506,53 @@ window.__ModuleLoader__.load({
         return () => { alive = false; clearInterval(timer) }
       }, [login, rpc, channel.id, t, onChanged, loadAccounts, loadCredits, loadBalances])
 
+
+      // Loomy 卡片内嵌二维码轮询（2026-11-07）：拉一次二维码，随后 2.5s 轮询
+      // wechatPoll；need_phone 出绑定表单；done 走与 login.poll 相同的收尾。
+      useEffect(() => {
+        if (login === null || login.loginKind !== 'loomy-wechat' || login.flowId === '') return undefined
+        let alive = true
+        let qrLoaded = false
+        const finish = (success, reason) => {
+          if (!alive) return
+          setLogin(null)
+          if (success) {
+            flashNotice(t('chan.login.done').replace('{login}', ''))
+            notifyChanged()
+            void loadAccounts()
+            void loadCredits()
+            void loadBalances(true)
+          } else {
+            setNotice(t('chan.login.failed').replace('{reason}', reason ?? '未知原因'))
+          }
+        }
+        const tick = async () => {
+          if (!qrLoaded) {
+            try {
+              const qr = await rpc('loomy.wechatQr', { flowId: login.flowId })
+              if (alive && qr?.qrDataUrl) { setLoomyQr(String(qr.qrDataUrl)); qrLoaded = true }
+            } catch (error) { if (alive) setLoomyError(String(error?.message ?? error)); return }
+          }
+          try {
+            const outcome = await rpc('loomy.wechatPoll', { flowId: login.flowId })
+            if (!alive) return
+            if (outcome?.status === 'done') {
+              setLoomyQr(''); setLoomySmsNeeded(false); setLoomyError('')
+              finish(true, '')
+            } else if (outcome?.status === 'need_phone') {
+              setLoomySmsNeeded(true)
+            } else if (outcome?.status === 'error') {
+              setLoomyError(String(outcome.message ?? '轮询失败'))
+            }
+          } catch (error) {
+            // 流程不存在（过期/已收尾）→ 收尾，避免死轮询
+            if (alive && /不存在或已过期/.test(String(error?.message ?? error))) finish(false, String(error?.message ?? error))
+          }
+        }
+        void tick()
+        const timer = setInterval(tick, 2500)
+        return () => { alive = false; clearInterval(timer) }
+      }, [login, rpc, channel.id, t, notifyChanged, loadAccounts, loadCredits, loadBalances, flashNotice])
 
       // The pack's login is two-phase: `account.create` returns the URL to open
       // *immediately* (a popup opened after a 30-second await is blocked), then
@@ -4029,8 +4094,51 @@ window.__ModuleLoader__.load({
         return () => clearInterval(timer)
       }, [smsSentAt])
 
+      // Loomy 卡片内嵌二维码（2026-11-07）：qr data URL + 轮询状态 + 绑定手机号表单。
+      const [loomyQr, setLoomyQr] = useState('')
+      const [loomySmsNeeded, setLoomySmsNeeded] = useState(false)
+      const [loomyError, setLoomyError] = useState('')
       const embeddedLogin = login?.loginKind === 'autoclaw-sms' ? login : null
+      const loomyEmbedded = login?.loginKind === 'loomy-wechat' ? login : null
       const embeddedBody = (() => {
+        if (loomyEmbedded !== null) {
+          if (loomyQr === '') {
+            return h('div', { className: 'ofm_embedlogin' },
+              h('span', { className: 'ofm_note' }, loomyError !== '' ? loomyError : t('chan.login.embedded.qrLoading')))
+          }
+          return h('div', { className: 'ofm_embedlogin' },
+            h('div', { className: 'ofm_qrwrap' },
+              h('img', { className: 'ofm_qr', alt: 'Loomy 微信登录二维码', src: loomyQr }),
+              loomySmsNeeded
+                ? h('div', { className: 'ofm_smsbind' },
+                  h('span', { className: 'ofm_note' }, t('chan.login.embedded.phoneBind')),
+                  h('input', {
+                    className: 'ofm_input', type: 'tel', inputMode: 'numeric', maxLength: 14,
+                    placeholder: t('chan.login.embedded.phonePlaceholder'),
+                    value: smsPhone, onInput: event => setSmsPhone(event.target.value),
+                  }),
+                  h('div', { className: 'ofm_fieldrow' },
+                    h('button', {
+                      type: 'button', className: 'ofm_btn',
+                      disabled: smsBusy || smsPhone.trim() === '',
+                      onClick: async () => {
+                        setSmsBusy(true)
+                        try {
+                          await rpc('loomy.wechatSms', { flowId: loomyEmbedded.flowId, action: 'send_sms', phone: smsPhone.trim() })
+                          flashNotice(t('chan.login.embedded.smsSent'))
+                        } catch (error) { setLoomyError(String(error?.message ?? error)) } finally { setSmsBusy(false) }
+                      },
+                    }, t('chan.login.embedded.smsSend')),
+                    h('button', {
+                      type: 'button', className: 'ofm_btn', disabled: smsBusy,
+                      onClick: async () => {
+                        setSmsBusy(true)
+                        try { await rpc('loomy.wechatSms', { flowId: loomyEmbedded.flowId, action: 'skip' }); flashNotice(t('chan.login.done').replace('{login}', '')); setLogin(null) } catch (error) { setLoomyError(String(error?.message ?? error)) } finally { setSmsBusy(false) }
+                      },
+                    }, t('chan.login.embedded.smsSkip'))))
+                : null),
+            loomyError !== '' ? h('span', { className: 'ofm_note ofm_balanceerror' }, loomyError) : null)
+        }
         if (embeddedLogin === null) return null
         // autoclaw 短信表单
         const waitSeconds = smsSentAt === 0 ? 0 : Math.max(0, 60 - Math.round((Date.now() - smsSentAt) / 1000))

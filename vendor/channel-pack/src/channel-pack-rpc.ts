@@ -42,6 +42,14 @@ import {
   toStatusEnvelope,
 } from './channel-account.js'
 import { buildChannelAccountRegistry } from './channel-accounts/index.js'
+import {
+  loomyWechatFlow,
+  forgetLoomyWechatFlow,
+  wechatQrOf,
+  wechatPollOf,
+  wechatSmsOf,
+  type LoomyWechatFlowContext,
+} from './loomy-wechat-login.js'
 import { buddyExpiringWindowDays } from './buddy-balance-rank.js'
 import { readCredits } from './commandcode-credits.js'
 import type { CreditPackage } from './credits.js'
@@ -1880,7 +1888,9 @@ function registerChannelPackEndpoints(
             void pool.removeAccount(id).catch(() => {})
           })
 
-          return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } }
+          // 2026-11-07（用户）：卡片内嵌二维码——不再弹本地页；前端凭 loginKind
+          // 轮询 loomy.wechatQr / wechatPoll / wechatSms 渲染。
+          return { ok: true, value: { accountId: id, loginKind: 'loomy-wechat', flowId: started.flowId } }
         } else if (provider === RACCOON.id) {
           // raccoon 走**本地页承载**的微信扫码 / 短信双路径登录（与 Loomy 同型）：
           // `startLogin` 立即返回指向 127.0.0.1 的 `loginUrl`，后台 await 结果。
@@ -2468,6 +2478,49 @@ function registerChannelPackEndpoints(
             },
           }
         }
+      }
+
+      // ── Loomy 卡片内嵌二维码登录（2026-11-07 用户：不再弹本地页）──
+      // flowId 由 account.create（loomy 分支）返回；qr/poll/sms 三条 RPC 由卡片驱动。
+      case 'loomy.wechatQr': {
+        const req = payload as { flowId: string }
+        const flow = loomyWechatFlow(String(req.flowId ?? ''))
+        if (flow === undefined) {
+          return { ok: false, error: { code: 'bad-request', message: '登录流程不存在或已过期，请重新点「添加账号」' } }
+        }
+        try {
+          return { ok: true, value: await wechatQrOf(flow) }
+        } catch (error: unknown) {
+          return { ok: false, error: { code: 'provider-error', message: `获取二维码失败：${error instanceof Error ? error.message : String(error)}` } }
+        }
+      }
+      case 'loomy.wechatPoll': {
+        const req = payload as { flowId: string }
+        const flow = loomyWechatFlow(String(req.flowId ?? ''))
+        if (flow === undefined) {
+          return { ok: false, error: { code: 'bad-request', message: '登录流程不存在或已过期，请重新点「添加账号」' } }
+        }
+        try {
+          const outcome = await wechatPollOf(flow)
+          if (outcome.status === 'done') forgetLoomyWechatFlow(String(req.flowId ?? ''))
+          return { ok: true, value: outcome }
+        } catch (error: unknown) {
+          return { ok: false, error: { code: 'provider-error', message: error instanceof Error ? error.message : String(error) } }
+        }
+      }
+      case 'loomy.wechatSms': {
+        const req = payload as { flowId: string; action: 'send_sms' | 'verify_sms' | 'skip'; phone?: string; code?: string }
+        const flow: LoomyWechatFlowContext | undefined = loomyWechatFlow(String(req.flowId ?? ''))
+        if (flow === undefined) {
+          return { ok: false, error: { code: 'bad-request', message: '登录流程不存在或已过期，请重新点「添加账号」' } }
+        }
+        const result = await wechatSmsOf(flow, req.action, { phone: req.phone, code: req.code })
+        if (!result.ok) {
+          // 单步失败不终止流程（验证码输错等），卡片就地提示并允许重试。
+          return { ok: false, error: { code: 'provider-error', message: result.message } }
+        }
+        if ('login' in result) forgetLoomyWechatFlow(String(req.flowId ?? ''))
+        return { ok: true, value: result }
       }
 
       case 'login.poll': {

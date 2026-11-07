@@ -141,7 +141,15 @@ export async function startRaccoonLoginFlow(
   })
 
   const port = await listenOnRandomPort(server)
-  const loginUrl = `http://127.0.0.1:${port}${RACCOON_LOGIN_PAGE_PATHS.login}`
+  // 2026-11-07（用户）：壳页（/raccoon/login 只有一个「去登录」链接）纯属多次一举——
+  // 直接把 OAuth 授权页当 loginUrl 返回，用户点「添加账号」即直达授权页；
+  // 授权完成后浏览器仍回本地 /auth/callback（redirect_uri 不变），凭据由宿主侧拿下。
+  // 壳页与其 poll 端点不再被访问（路由保留以防旧窗口残留）。
+  const authorizeUrl = buildRaccoonAuthorizeUrl(product, {
+    state: state.oauthState,
+    redirectUri: `http://127.0.0.1:${port}${RACCOON_LOGIN_PAGE_PATHS.authCallback}`,
+  })
+  const loginUrl = authorizeUrl
 
   let closed = false
   const close = async (): Promise<void> => {
