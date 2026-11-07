@@ -240,11 +240,9 @@ export class FreeModelAdapter {
     const rejectedTurn = attempts => {
       this.deps.recordTurn?.({ at: started, model: entry.id, ok: false, recovered: false, attempts, origin: 'harness' })
     }
-    if (settings.enabled === false) {
-      rejectedTurn(0)
-      yield { type: 'finish', reason: { kind: 'error', failure: { message: 'our free model is switched off in its settings page', code: 'CONFIG_DISABLED' } } }
-      return
-    }
+    // 2026-11-07（用户）：开关（settings.enabled）只管**免费车道**。链路成员若是
+    // 渠道模型，开关关掉也不应拦截（历史遗漏：路由早已支持渠道模型）；免费成员
+    // 的拦截由 runSingle 内部的同款判断承担 —— 这里不再一刀切。
     /**
      * ★ 轮询铁律（用户 2026-11-05）：**无视禁期、无视限流**。
      *
@@ -426,11 +424,9 @@ export class FreeModelAdapter {
       type: 'finish',
       reason: { kind: 'error', failure: { message, code } },
     })
-    if (settings.enabled === false) {
-      this.deps.recordTurn?.({ at: started, model: entry.id, ok: false, recovered: false, attempts: 0, origin: 'harness' })
-      yield fail('our free model is switched off in its settings page', 'CONFIG_DISABLED')
-      return { advance: false, verdict: null, ok: false }
-    }
+    // 2026-11-07（用户）：渠道车道不受「启用免费模型」开关影响 —— 该开关只关
+    // 本插件自己的免费车道；渠道模型凭据在各自渠道，与开关无关（历史遗漏修复：
+    // 路由/链路调用渠道模型曾被这里一刀切拦死）。
     if (target === undefined) {
       this.deps.recordTurn?.({ at: started, model: entry.id, ok: false, recovered: false, attempts: 0, origin: 'harness' })
       yield fail(`"${entry.id}" is not a channel model id`, CODE.server)
@@ -564,6 +560,8 @@ export class FreeModelAdapter {
       })
     }
 
+    // ★ 开关拦截（免费车道核心语义，2026-11-07 确认保留）：settings.enabled=false
+    //    时免费模型一律拒绝 —— 「启用免费模型」开关的真正含义。
     if (settings.enabled === false) {
       recordRejectedTurn()
       yield { type: 'finish', reason: { kind: 'error', failure: { message: 'our free model is switched off in its settings page', code: 'CONFIG_DISABLED' } } }

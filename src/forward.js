@@ -345,6 +345,7 @@ export async function startForwardServer({ config, complete, modelRows, log = ()
     const url = new URL(req.url ?? '/', 'http://localhost')
     const path = url.pathname.replace(/\/+$/, '') || '/'
     const settings = config()
+    // 安全门（同 chan-relay）：总开关关 ⇒ 对外端口一并下线。
     if (!settings.enabled) {
       openAiError(res, 503, 'service_unavailable', 'the forward listener is switched off in Our Free Model settings')
       return
@@ -533,6 +534,7 @@ export async function startLanRelay({ config, log = () => {}, onTrace = () => {}
       return
     }
     const settings = config()
+    // 安全门（同 chan-relay）。
     if (!settings.enabled) {
       openAiError(res, 503, 'service_unavailable', 'the LAN relay is switched off in Our Free Model settings')
       return

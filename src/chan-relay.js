@@ -115,6 +115,8 @@ export async function startChanRelay({ config, log = () => {} }) {
       return
     }
     const settings = config()
+    // 安全门（语义 2026-11-07 确认保留）：总开关关掉 ⇒ 插件不再对外提供任何
+    // API 端口（对外暴露面控制）；「启用免费模型」只影响免费车道的模型可用性。
     if (!settings.enabled) {
       openAiError(res, 503, 'service_unavailable', 'the channel-gateway relay is switched off in Our Free Model settings')
       return
