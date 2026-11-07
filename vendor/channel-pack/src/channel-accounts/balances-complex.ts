@@ -200,6 +200,12 @@ const autoclawBalances: BalanceMethod = async (env) => {
         credential,
       })
       if (wallets === undefined) return { balance: null, error: '未返回积分数据' }
+      // 2026-11-07（用户报障）：上游可能返回「钱包列表存在但全部余额为 0 且
+      // display=false」（新注册号未发奖励）—— reduce 后 total=0 会被误读成
+      // 「已用光」，空列表则更糟。这里如实区分：有 wallet 结构但无可用余额。
+      if (wallets.length === 0) {
+        return { balance: null, error: '上游账户当前无可用积分钱包（所有钱包余额为 0 或已隐藏）' }
+      }
       const total = wallets.reduce((sum, w) => sum + w.balance, 0)
       return {
         balance: {

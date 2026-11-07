@@ -61029,6 +61029,9 @@ var autoclawBalances = async (env) => {
         credential
       });
       if (wallets === void 0) return { balance: null, error: "\u672A\u8FD4\u56DE\u79EF\u5206\u6570\u636E" };
+      if (wallets.length === 0) {
+        return { balance: null, error: "\u4E0A\u6E38\u8D26\u6237\u5F53\u524D\u65E0\u53EF\u7528\u79EF\u5206\u94B1\u5305\uFF08\u6240\u6709\u94B1\u5305\u4F59\u989D\u4E3A 0 \u6216\u5DF2\u9690\u85CF\uFF09" };
+      }
       const total = wallets.reduce((sum, w) => sum + w.balance, 0);
       return {
         balance: {

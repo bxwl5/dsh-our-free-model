@@ -3760,6 +3760,12 @@ window.__ModuleLoader__.load({
        * 走后端 `account.adopt` —— 它用各渠道自己的解析函数做形状校验，
        * 避免「UI 收下了、适配器用不了」的半残凭据。
        */
+      /** 账号行显示名：nickname 空串/null 都回退 id（autoclaw 旧凭据 nickname=''）。 */
+      const displayNameOf = row => {
+        const nickname = typeof row?.nickname === 'string' ? row.nickname.trim() : ''
+        return nickname !== '' ? nickname : String(row?.id ?? '')
+      }
+
       const accountAction = async (key, accountId, fn) => {
         setBusy(key); setNotice('')
         try { await fn() } catch (error) { onError(channel, error) } finally { setBusy('') }
@@ -3982,7 +3988,9 @@ window.__ModuleLoader__.load({
               : h('div', { className: 'ofm_acctlist' }, accounts.map(row => {
                 const pending = row.refreshable !== true && !Number.isFinite(row.expiresAt)
                 return h('div', { className: 'ofm_acct' + (pending ? ' pending' : ''), key: row.id },
-                  h('span', { className: 'ofm_acctname', title: row.nickname ?? row.id }, row.nickname ?? row.id),
+                  // 2026-11-07（用户报障 autoclaw 不显示账号名）：nickname 可能是空字符串
+                  //（旧凭据时代登录的存量账号），空串不是 nullish → 必须显式兜底到 id。
+                  h('span', { className: 'ofm_acctname', title: displayNameOf(row) }, displayNameOf(row)),
                   h('span', { className: 'ofm_acctmeta' },
                     row.enabled === false ? t('chan.disabled') : t('chan.enabled'),
                     ' · ',
