@@ -179,9 +179,9 @@ export const Config = Schema.object({
  *   旧实现在这条分支上会打一条误导性的
  *   「settings 服务不可用」告警（启动日志实证）。
  *
- * ⚠️ **2026-10-01 起各 provider 不再声明为可配置 provider**（`settingsNamespaceFor`
- * 因此没有调用方），模型设置页不再有这些 namespace 的消费者 —— 这份注册此后只影响
- * ≤0.1.6 的老契约 profile，属遗留行为，本次未一并删除。
+ * ⚠️ **2026-10-01 起各 provider 不再声明为可配置 provider**（相关兼容函数
+ * `settingsNamespaceFor`/`ownEntryId` 已随 2026-11-07 #10 删除），模型设置页不再有
+ * 这些 namespace 的消费者 —— 这份注册此后只影响 ≤0.1.6 的老契约 profile，属遗留行为。
  */
 function registerProviderSettings(ctx: Context, ...namespaces: string[]): void {
   const settings = settingsOf(ctx)

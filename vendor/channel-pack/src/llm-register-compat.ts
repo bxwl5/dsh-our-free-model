@@ -67,8 +67,8 @@
  * 路由，**不再**声明可配置 provider。**恢复方式**：从 git 历史取回本文件的旧版本
  *（含 `registerConfigurableProvidersIdempotent`），在十个 adapter 的 `registerXxxLlm`
  * 里恢复 `ctx.llm.registerConfigurableProviders([...])` 声明块，并恢复
- * `settingsNamespaceFor()` 的调用 —— 该函数与 `ownEntryId` 仍保留在
- * `settings-compat.ts` 中（当前无调用方）。
+ * `settingsNamespaceFor()` 的调用 —— 该函数与 `ownEntryId` 已随 2026-11-07 的 #10
+ * 清理从 `settings-compat.ts` 删除（当时无调用方），恢复时从 git 历史找回。
  */
 
 import { withDeadModelPruning } from './dead-model-store.js'
