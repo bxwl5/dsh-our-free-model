@@ -59135,6 +59135,7 @@ import { homedir as homedir3 } from "node:os";
 import { join as join7 } from "node:path";
 var RUNTIME_INFO_TIMEOUT_MS = 2e4;
 var cached;
+var cachedByAccount = /* @__PURE__ */ new Map();
 function candidatePaths() {
   const override = process.env.QODER_MACHINE_TOKEN_PATH;
   if (override !== void 0 && override.length > 0) return [override];
@@ -59173,21 +59174,28 @@ function parseFile(path2) {
   if (typeof type !== "string" || type.length === 0) return void 0;
   return { token, type };
 }
-async function resolveQoderMachineIdentityAsync(forceExecutable) {
-  if (cached !== void 0) return cached ?? void 0;
-  const live = await readFromRuntimeInfoAsync(forceExecutable);
+async function resolveQoderMachineIdentityAsync(forceExecutable, account) {
+  const cacheKey = account ?? "";
+  if (cacheKey === "") {
+    if (cached !== void 0) return cached ?? void 0;
+  } else if (cachedByAccount.has(cacheKey)) {
+    return cachedByAccount.get(cacheKey) ?? void 0;
+  }
+  const live = await readFromRuntimeInfoAsync(forceExecutable, account);
   if (live !== void 0) {
-    cached = live;
+    if (cacheKey === "") cached = live;
+    else cachedByAccount.set(cacheKey, live);
     return live;
   }
   for (const path2 of candidatePaths()) {
     const identity = parseFile(path2);
     if (identity !== void 0) {
-      cached = identity;
+      if (cacheKey === "") cached = identity;
+      else cachedByAccount.set(cacheKey, identity);
       return identity;
     }
   }
-  cached = null;
+  if (cacheKey === "") cached = null;
   return void 0;
 }
 var QODER_DATA_DIR_NAMES = [".qoder", ".qoder-cn"];
@@ -59237,7 +59245,7 @@ function parseRuntimeInfoOutput(out) {
   if (typeof type !== "string" || type.length === 0) return void 0;
   return { token, type };
 }
-async function readFromRuntimeInfoAsync(override) {
+async function readFromRuntimeInfoAsync(override, account) {
   const exe = locateRuntimeInfo(override);
   if (exe === void 0) return void 0;
   return await new Promise((resolve2) => {
@@ -59278,11 +59286,11 @@ async function readFromRuntimeInfoAsync(override) {
     });
     child.stdin?.on("error", () => {
     });
-    child.stdin?.end(JSON.stringify({ account: "" }));
+    child.stdin?.end(JSON.stringify({ account: account ?? "" }));
   });
 }
-async function withQoderMachineHeadersAsync(headers, forceExecutable) {
-  const identity = await resolveQoderMachineIdentityAsync(forceExecutable);
+async function withQoderMachineHeadersAsync(headers, forceExecutable, account) {
+  const identity = await resolveQoderMachineIdentityAsync(forceExecutable, account);
   if (identity === void 0) return headers;
   return {
     ...headers,
@@ -59326,13 +59334,14 @@ async function fetchQoderUsageRaw(credential, product, fetcher = fetch) {
   }
 }
 async function creditsHeaders(credential, product) {
+  const account = credential.uid ?? credential.machine_id ?? "";
   return await withQoderMachineHeadersAsync({
     Accept: "application/json",
     Authorization: `Bearer ${qoderBearerToken(credential)}`,
     // 桌面 app 身份（`'10'`）；服务端据此进入活动下发分支。
     "Cosy-ClientType": product.sashClientType,
     "User-Agent": "Qoder"
-  });
+  }, void 0, account);
 }
 function readNumber4(source, key) {
   if (typeof source !== "object" || source === null) return void 0;

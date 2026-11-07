@@ -230,13 +230,17 @@ async function creditsHeaders(
   credential: QoderCredential,
   product: QoderProduct,
 ): Promise<Record<string, string>> {
+  // 2026-11-07（Windows 侧转达）：machine 指纹按账号区分 —— runtime-info 的 stdin
+  // 传 credential.uid（优先）或 machine_id，让每个账号拿到各自稳定的 machineToken，
+  // 避免多账号被上游 SAME_PERSON_ALREADY_CLAIMED 判成同一人。
+  const account = credential.uid ?? credential.machine_id ?? ''
   return await withQoderMachineHeadersAsync({
     Accept: 'application/json',
     Authorization: `Bearer ${qoderBearerToken(credential)}`,
     // 桌面 app 身份（`'10'`）；服务端据此进入活动下发分支。
     'Cosy-ClientType': product.sashClientType,
     'User-Agent': 'Qoder',
-  })
+  }, undefined, account)
 }
 
 /** 安全读数字字段（容忍字符串与缺失）；无法解析时返回 undefined。 */

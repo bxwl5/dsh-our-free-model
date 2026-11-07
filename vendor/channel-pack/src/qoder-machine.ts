@@ -98,6 +98,7 @@ export interface QoderMachineIdentity {
  * IO；缓存后仅在首次调用时有代价。
  */
 let cached: QoderMachineIdentity | null | undefined
+const cachedByAccount = new Map<string, QoderMachineIdentity>()
 
 /**
  * `machine_token.json` 的候选路径。
@@ -239,21 +240,32 @@ export function resolveQoderMachineIdentity(
  */
 export async function resolveQoderMachineIdentityAsync(
   forceExecutable?: string,
+  account?: string,
 ): Promise<QoderMachineIdentity | undefined> {
-  if (cached !== undefined) return cached ?? undefined
-  const live = await readFromRuntimeInfoAsync(forceExecutable)
+  // 2026-11-07（Windows 侧转达）：缓存键必须含 account —— 不同账号的指纹不同，
+  // 共用一个缓存会让多账号串用同一个 machineToken（SAME_PERSON_ALREADY_CLAIMED）。
+  // 文件回退路径（SharedClientCache）没有 account 概念，仅作无 account 时的兜底。
+  const cacheKey = account ?? ''
+  if (cacheKey === '') {
+    if (cached !== undefined) return cached ?? undefined
+  } else if (cachedByAccount.has(cacheKey)) {
+    return cachedByAccount.get(cacheKey) ?? undefined
+  }
+  const live = await readFromRuntimeInfoAsync(forceExecutable, account)
   if (live !== undefined) {
-    cached = live
+    if (cacheKey === '') cached = live
+    else cachedByAccount.set(cacheKey, live)
     return live
   }
   for (const path of candidatePaths()) {
     const identity = parseFile(path)
     if (identity !== undefined) {
-      cached = identity
+      if (cacheKey === '') cached = identity
+      else cachedByAccount.set(cacheKey, identity)
       return identity
     }
   }
-  cached = null
+  if (cacheKey === '') cached = null
   return undefined
 }
 
@@ -431,8 +443,8 @@ function readFromRuntimeInfo(override?: string): QoderMachineIdentity | undefine
   }
 }
 
-/** 异步实时生成身份（生产路径）。 */
-async function readFromRuntimeInfoAsync(override?: string): Promise<QoderMachineIdentity | undefined> {
+/** 异步实时生成身份（生产路径）。account = 当前账号标识（uid），让指纹按账号区分。 */
+async function readFromRuntimeInfoAsync(override?: string, account?: string): Promise<QoderMachineIdentity | undefined> {
   const exe = locateRuntimeInfo(override)
   if (exe === undefined) return undefined
   return await new Promise<QoderMachineIdentity | undefined>((resolve) => {
@@ -466,7 +478,10 @@ async function readFromRuntimeInfoAsync(override?: string): Promise<QoderMachine
       done(parseRuntimeInfoOutput(stdout))
     })
     child.stdin?.on('error', () => {})
-    child.stdin?.end(JSON.stringify({ account: '' }))
+    // 2026-11-07（Windows 侧转达）：stdin 传当前账号标识 —— runtime-info 对不同
+    // account 产出**不同且各自稳定**的 machineToken/machineType；传空串则回退为
+    // 与账号无关的通用指纹，导致多账号被上游 SAME_PERSON_ALREADY_CLAIMED 拦截。
+    child.stdin?.end(JSON.stringify({ account: account ?? '' }))
   })
 }
 
@@ -474,8 +489,9 @@ async function readFromRuntimeInfoAsync(override?: string): Promise<QoderMachine
 export async function withQoderMachineHeadersAsync(
   headers: Record<string, string>,
   forceExecutable?: string,
+  account?: string,
 ): Promise<Record<string, string>> {
-  const identity = await resolveQoderMachineIdentityAsync(forceExecutable)
+  const identity = await resolveQoderMachineIdentityAsync(forceExecutable, account)
   if (identity === undefined) return headers
   return {
     ...headers,
