@@ -59130,7 +59130,7 @@ async function fetchMinimaxCreditBalance(credential, fetcher = fetch, product = 
 
 // vendor/channel-pack/src/qoder-machine.ts
 import { execFileSync, spawn as spawn3 } from "node:child_process";
-import { existsSync as existsSync7, readFileSync as readFileSync8, readdirSync } from "node:fs";
+import { existsSync as existsSync7, readFileSync as readFileSync8, readdirSync, statSync as statSync2 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
 import { join as join7 } from "node:path";
 var RUNTIME_INFO_TIMEOUT_MS = 2e4;
@@ -59209,10 +59209,27 @@ function findRuntimeInfoExecutable(home, dataDirNames = QODER_DATA_DIR_NAMES) {
     } catch {
       continue;
     }
-    const dir = entries.find((name2) => name2.startsWith("umid-"));
-    if (dir === void 0) continue;
-    const exe = join7(binDir, dir, exeName);
-    if (existsSync7(exe)) return exe;
+    const candidates = [];
+    for (const name2 of entries) {
+      let exe;
+      if (name2.startsWith("umid-")) {
+        const candidate = join7(binDir, name2, exeName);
+        if (existsSync7(candidate)) exe = candidate;
+      } else if (name2.startsWith(`runtime-info-${process.platform}-${process.arch}-`) && !name2.endsWith(".tmp")) {
+        const candidate = join7(binDir, name2);
+        if (existsSync7(candidate)) exe = candidate;
+      }
+      if (exe !== void 0) {
+        try {
+          candidates.push({ exe, mtimeMs: statSync2(exe).mtimeMs });
+        } catch {
+        }
+      }
+    }
+    if (candidates.length > 0) {
+      candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+      return candidates[0].exe;
+    }
   }
   return void 0;
 }

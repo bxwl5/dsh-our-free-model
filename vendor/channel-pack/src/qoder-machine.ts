@@ -66,7 +66,7 @@
  */
 
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -312,10 +312,31 @@ export function findRuntimeInfoExecutable(
       // 该目录不存在（未安装该版本）：试下一个
       continue
     }
-    const dir = entries.find((name) => name.startsWith('umid-'))
-    if (dir === undefined) continue
-    const exe = join(binDir, dir, exeName)
-    if (existsSync(exe)) return exe
+    // 2026-11-07（用户装客户端后实测）：CLI 缓存有两种形态——
+    //   ① 目录 umid-<…>/ 内含 runtime-info（Windows）；
+    //   ② **裸文件** runtime-info-<platform>-<arch>-<hash>（Linux/macOS）。
+    // 旧实现只认 ①，Linux/macOS 装了客户端也会 miss。两种都支持，
+    // 多个候选时取 mtime 最新的（与 magpie 同策略）。
+    const candidates: Array<{ exe: string; mtimeMs: number }> = []
+    for (const name of entries) {
+      let exe: string | undefined
+      if (name.startsWith('umid-')) {
+        const candidate = join(binDir, name, exeName)
+        if (existsSync(candidate)) exe = candidate
+      } else if (name.startsWith(`runtime-info-${process.platform}-${process.arch}-`) && !name.endsWith('.tmp')) {
+        const candidate = join(binDir, name)
+        if (existsSync(candidate)) exe = candidate
+      }
+      if (exe !== undefined) {
+        try {
+          candidates.push({ exe, mtimeMs: statSync(exe).mtimeMs })
+        } catch { /* 忽略不可 stat 的条目 */ }
+      }
+    }
+    if (candidates.length > 0) {
+      candidates.sort((a, b) => b.mtimeMs - a.mtimeMs)
+      return candidates[0].exe
+    }
   }
   return undefined
 }
