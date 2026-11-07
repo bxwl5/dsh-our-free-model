@@ -54,9 +54,9 @@ export async function verifyAutoclawSms() {
   assert.equal(headers['X-Channel'], 'official')
 
   // 2) 手机号归一：容忍 +86 / 86 / 空格横线，拒绝非法。
-  assert.equal(sms.normalizeAutoclawPhone('+8617683839846'), '17683839846')
-  assert.equal(sms.normalizeAutoclawPhone('8617683839846'), '17683839846')
-  assert.equal(sms.normalizeAutoclawPhone('176 8383 9846'), '17683839846')
+  assert.equal(sms.normalizeAutoclawPhone('+8613800138000'), '13800138000')
+  assert.equal(sms.normalizeAutoclawPhone('8613800138000'), '13800138000')
+  assert.equal(sms.normalizeAutoclawPhone('138 0013 8000'), '13800138000')
   assert.equal(sms.normalizeAutoclawPhone('12345'), '')
   assert.equal(sms.normalizeAutoclawPhone('+1 555 0100'), '')
 
@@ -71,12 +71,12 @@ export async function verifyAutoclawSms() {
   const sent = await sms.sendAutoclawCode({
     product: AUTOCLAW,
     fetcher: fakeFetch({ code: 0, msg: 'SUCCESS' }),
-    phone: '+8617683839846',
+    phone: '+8613800138000',
     deviceId,
   })
   assert.deepEqual(sent, { ok: true })
   assert.ok(seen[0].url.endsWith('/userapi/v1/agent-send-code'), seen[0].url)
-  assert.equal(seen[0].body.phone, '17683839846')
+  assert.equal(seen[0].body.phone, '13800138000')
   assert.equal(seen[0].body.source_id, 'autoclaw')
   assert.equal(seen[0].body.device_id, deviceId)
   assert.equal(
@@ -101,7 +101,7 @@ export async function verifyAutoclawSms() {
   const login = await sms.loginAutoclawWithCode({
     product: AUTOCLAW,
     fetcher: loginFetch,
-    phone: '17683839846',
+    phone: '13800138000',
     code: '645067',
     deviceId,
   })
@@ -124,17 +124,17 @@ export async function verifyAutoclawSms() {
     assert.equal(withUid.credential.account_id, 'uid-7', 'JWT uid 也可作为标识')
   }
   assert.equal(credential.device_id, deviceId, 'device_id 必须随凭据保存')
-  assert.equal(credential.nickname, 'AutoClaw 9846')
+  assert.equal(credential.nickname, 'AutoClaw 8000')
   const loginSeen = seen[1]
   assert.ok(loginSeen.url.endsWith('/userapi/v1/agent-login'))
   assert.equal(loginSeen.body.code, 645067, 'code 必须发数字')
-  assert.equal(loginSeen.body.phone, '17683839846')
+  assert.equal(loginSeen.body.phone, '13800138000')
 
   // 5) 错误码透传：code !== 0 时给出上游 msg，且不产生凭据。
   const bad = await sms.loginAutoclawWithCode({
     product: AUTOCLAW,
     fetcher: fakeFetch({ code: 1001, msg: '验证码错误' }),
-    phone: '17683839846',
+    phone: '13800138000',
     code: '000000',
     deviceId,
   })
@@ -144,7 +144,7 @@ export async function verifyAutoclawSms() {
   // 6) 非法输入在本地就被拒，不发请求。
   const noNetwork = async () => { throw new Error('不应该发请求') }
   assert.equal((await sms.sendAutoclawCode({ product: AUTOCLAW, fetcher: noNetwork, phone: '123', deviceId })).ok, false)
-  assert.equal((await sms.loginAutoclawWithCode({ product: AUTOCLAW, fetcher: noNetwork, phone: '17683839846', code: 'abc', deviceId })).ok, false)
+  assert.equal((await sms.loginAutoclawWithCode({ product: AUTOCLAW, fetcher: noNetwork, phone: '13800138000', code: 'abc', deviceId })).ok, false)
 
 
   // 7) 卡片内嵌流程端到端（2026-10-30 改版，本地页已删）：发码 → 提交验证码 → result 落定。
@@ -167,10 +167,10 @@ export async function verifyAutoclawSms() {
   }
   const started = await page.startAutoclawLoginFlow({ product: AUTOCLAW, fetcher: upstream, deviceId, timeoutMs: 5000 })
   assert.equal(started.loginUrl, undefined, '卡片形态不再有本地页 URL')
-  const sendResponse = await started.sendCode('+8617683839846')
+  const sendResponse = await started.sendCode('+8613800138000')
   assert.deepEqual(sendResponse, { ok: true })
   // 服务端 60 秒冷却：立刻再发必须被拒且带等待秒数
-  const throttled = await started.sendCode('+8617683839846')
+  const throttled = await started.sendCode('+8613800138000')
   assert.equal(throttled.ok, false)
   assert.match(throttled.message ?? '', /秒后再试/, '发码必须有服务端冷却')
   const verifyResponse = await started.verify('645067')
