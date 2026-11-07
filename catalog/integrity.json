@@ -54,8 +54,8 @@
     },
     {
       "path": "src/adapter.js",
-      "size": 54386,
-      "sha256": "64249f85c78bcec89eca5d819eb89e680ebec765975a93894f6e061d8d04d72f"
+      "size": 54637,
+      "sha256": "6d115f5598b52697ae770104ad21c97c5e0217f30afa07239c9a63ce2880f94c"
     },
     {
       "path": "src/anthropic.js",
@@ -69,8 +69,8 @@
     },
     {
       "path": "src/chan-relay.js",
-      "size": 8580,
-      "sha256": "2d6ffa259f19a4dcbcb34f48cbf8db43e20da0716e6deda63c88804e3a08d859"
+      "size": 8800,
+      "sha256": "ba601fe025e16c216eccc1d5086651b76524ba8f1ae7a9a630fac400daad2fff"
     },
     {
       "path": "src/channel-catalog.js",
@@ -129,8 +129,8 @@
     },
     {
       "path": "src/forward.js",
-      "size": 60737,
-      "sha256": "909506b0e57da1b934d16a2dacff505f5ccecbd355f7e9dfece3cc25111537aa"
+      "size": 60861,
+      "sha256": "f4337c1b4d08b57c3e48c938f225203514740543f699f4a119fdbd72928d9e4b"
     },
     {
       "path": "src/http.js",
