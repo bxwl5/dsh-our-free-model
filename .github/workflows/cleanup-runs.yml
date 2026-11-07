@@ -11,9 +11,10 @@ on:
         required: false
         default: '1'
       dry_run:
-        description: '只列出将要删除的记录，不实际删除（默认 false）'
+        description: '只列出将要删除的记录，不实际删除'
         required: false
-        default: 'false'
+        type: boolean
+        default: false
 
 permissions:
   actions: write
