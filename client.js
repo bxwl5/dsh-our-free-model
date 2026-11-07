@@ -237,6 +237,8 @@ window.__ModuleLoader__.load({
         'chan.login.step2': '登录成功后本页会自动完成，无需复制任何东西。',
         'chan.login.open': '打开登录页',
         'chan.login.embedded.qrLoading': '正在获取二维码…',
+        'chan.login.embedded.qrHint': '请使用微信扫一扫，扫描二维码登录 Loomy',
+        'chan.login.embedded.qrScanDone': '已扫码，请在手机上确认；如需绑定手机号请在下方填写',
         'chan.login.embedded.phoneBind': '该微信号未绑定手机号，请绑定后继续（或跳过用积分直接登录）',
         'chan.login.embedded.smsSent': '验证码已发送',
         'chan.login.embedded.smsSend': '发送验证码',
@@ -746,6 +748,8 @@ window.__ModuleLoader__.load({
         'chan.login.step2': 'This page completes by itself once the browser flow does — nothing to copy.',
         'chan.login.open': 'Open sign-in page',
         'chan.login.embedded.qrLoading': 'Loading QR code…',
+        'chan.login.embedded.qrHint': 'Scan the QR code with WeChat to sign in to Loomy',
+        'chan.login.embedded.qrScanDone': 'Scanned — confirm on your phone; fill the form below if binding a phone is required',
         'chan.login.embedded.phoneBind': 'This WeChat account has no phone bound — bind one to continue (or skip and sign in directly)',
         'chan.login.embedded.smsSent': 'Code sent',
         'chan.login.embedded.smsSend': 'Send code',
@@ -1084,6 +1088,7 @@ window.__ModuleLoader__.load({
 /* Loomy 卡片内嵌二维码（2026-11-07）：居中显示 + 手机号绑定表单区域。 */
 .ofm_qrwrap{display:flex;flex-direction:column;align-items:center;gap:8px}
 .ofm_qr{width:180px;height:180px;border-radius:10px;border:1px solid var(--dsw-alias-border-l1);background:#fff}
+.ofm_qrhint{font-size:11.5px;color:var(--dsw-alias-label-secondary);text-align:center;max-width:220px;line-height:1.5}
 .ofm_smsbind{display:flex;flex-direction:column;gap:6px;width:100%}
 
 .ofm_subrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0;width:100%}
@@ -4112,6 +4117,7 @@ window.__ModuleLoader__.load({
           return h('div', { className: 'ofm_embedlogin' },
             h('div', { className: 'ofm_qrwrap' },
               h('img', { className: 'ofm_qr', alt: 'Loomy 微信登录二维码', src: loomyQr }),
+              h('span', { className: 'ofm_qrhint' }, loomySmsNeeded ? t('chan.login.embedded.qrScanDone') : t('chan.login.embedded.qrHint')),
               loomySmsNeeded
                 ? h('div', { className: 'ofm_smsbind' },
                   h('span', { className: 'ofm_note' }, t('chan.login.embedded.phoneBind')),

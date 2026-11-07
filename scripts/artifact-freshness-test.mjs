@@ -35,11 +35,23 @@ const run = (label, cmd, args, env) => {
     console.log(`ok  ${label}`)
   } catch (error) {
     const out = `${error.stdout ?? ''}\n${error.stderr ?? ''}`.trim()
+    // esbuild 不可用的环境（CI 的 npm install --ignore-scripts：root devDeps 无 esbuild、
+    // 平台二进制未安装）无法重建产物 ⇒ 新鲜度无从谈起，**跳过并说明**，不算失败。
+    // 「改了 src 忘重打包」的拦截在本地发布流程（esbuild 可用）依然生效。
+    if (/esbuild is required|Cannot find module 'esbuild'/.test(out)) {
+      console.log(`ok  ${label} —— 跳过（环境无 esbuild，无法重建比对）`)
+      return 'skipped'
+    }
     throw new Error(`${label} 失败（exit ${error.status}）：${out.slice(0, 400)}`)
   }
 }
 
-run('pack.js 新鲜度', process.execPath, ['scripts/build-channel-pack.mjs', '--check'], BUILD_ENV)
-run('business.mjs 新鲜度', process.execPath, ['scripts/build-standalone-channels.mjs', '--check'], BUILD_ENV)
-run('integrity 新鲜度', process.execPath, ['scripts/refresh-integrity.mjs', '--check'], BUILD_ENV)
-console.log('ok  artifact-freshness: 3 道产物门禁全部一致')
+const results = [
+  run('pack.js 新鲜度', process.execPath, ['scripts/build-channel-pack.mjs', '--check'], BUILD_ENV),
+  run('business.mjs 新鲜度', process.execPath, ['scripts/build-standalone-channels.mjs', '--check'], BUILD_ENV),
+  run('integrity 新鲜度', process.execPath, ['scripts/refresh-integrity.mjs', '--check'], BUILD_ENV),
+]
+const skipped = results.filter((r) => r === 'skipped').length
+console.log(skipped === 0
+  ? 'ok  artifact-freshness: 3 道产物门禁全部一致'
+  : `ok  artifact-freshness: 3 道门禁 ${3 - skipped} 通过 / ${skipped} 跳过（无 esbuild 环境）`)
