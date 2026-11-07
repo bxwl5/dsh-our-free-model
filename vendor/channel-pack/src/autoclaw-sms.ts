@@ -695,7 +695,11 @@ export async function fetchAutoClawWallets(options: {
         wallets.sort((a, b) => a.priority - b.priority)
         return wallets
       }
-      continue
+      // 2026-11-07（用户报障「未返回积分数据」）：v2 响应结构有效（code=0）但
+      // 过滤后为空 = 上游明确说「该账号当前没有可展示的钱包余额」（新注册号
+      // 未发奖励的实测形态）。**返回空数组**而非继续兜底 v1 —— 继续兜底会把
+      // 「确证无余额」降级成「没查到」，卡片只能显示误导性的「未返回积分数据」。
+      return wallets
     }
     if (code !== undefined && AUTOCLAW_AUTH_EXPIRED_CODES.has(code)) {
       throw new Error('AutoClaw：登录态已过期，无法查询积分（请重新登录）')

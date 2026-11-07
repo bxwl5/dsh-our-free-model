@@ -29556,7 +29556,7 @@ async function fetchAutoClawWallets(options) {
         wallets.sort((a, b) => a.priority - b.priority);
         return wallets;
       }
-      continue;
+      return wallets;
     }
     if (code !== void 0 && AUTOCLAW_AUTH_EXPIRED_CODES.has(code)) {
       throw new Error("AutoClaw\uFF1A\u767B\u5F55\u6001\u5DF2\u8FC7\u671F\uFF0C\u65E0\u6CD5\u67E5\u8BE2\u79EF\u5206\uFF08\u8BF7\u91CD\u65B0\u767B\u5F55\uFF09");
