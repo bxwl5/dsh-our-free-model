@@ -88,7 +88,6 @@ import { ANTIGRAVITY, antigravityAccountLabel, antigravityCredentialExpiresAtMs,
 import type { AntigravityCredential } from './antigravity.js'
 import type { AntigravityAuth, StartedAntigravityLoginFlow } from './antigravity-auth.js'
 import { fetchGeminiCreditBalance } from './antigravity-credits.js'
-import { LOOMY_TASK_POINTS, LOOMY_TASK_TITLES } from './loomy-onboarding.js'
 import { QODER, QODER_CN, type QoderProduct } from './qoder-product.js'
 import { TRAE } from './trae-product.js'
 import { CLINE } from './cline-product.js'
