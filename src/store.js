@@ -249,6 +249,11 @@ export function validateModelVisibility(patch) {
 
 export function isModelHidden(entry, settings) {
   return (Array.isArray(settings?.hiddenModelIds) && settings.hiddenModelIds.includes(entry.id))
+    // 2026-11-07（用户）：总开关关闭（settings.enabled=false，即「启用免费模型」关）
+    // 时免费车道与 Kilo 的模型**实际不可用**（runSingle 会拦）——系统模型候选里
+    // 一并隐藏，与「添加成员」候选的过滤同口径。
+    || (settings?.enabled === false && (!entry.channel || entry.channel === 'anonymous' || entry.channel === 'kilo'
+      || (entry.channel === 'combo' && Array.isArray(entry.lanes) && entry.lanes.length > 0 && entry.lanes.every(lane => lane === 'free'))))
     || (settings?.hideFreeModels === true && (!entry.channel || entry.channel === 'anonymous' || entry.channel === 'kilo'
       || (entry.channel === 'combo' && Array.isArray(entry.lanes) && entry.lanes.length > 0 && entry.lanes.every(lane => lane === 'free'))))
 }

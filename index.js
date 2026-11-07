@@ -894,14 +894,22 @@ let channelRosterReadAt = 0
            * 保留：渠道模型（`channel:<provider>`）、本机免费车道（`free`）、
            * Kilo（`kilo`）—— 它们都是本插件供的模型，都能当链路成员。
            *
-           * 排除：`combo` 行。理由不是「不想要」，而是**链路不能嵌套**：
+           * 排除①：`combo` 行。理由不是「不想要」，而是**链路不能嵌套**：
            * `buildComboCatalog` 建索引时就是 `if (!isComboEntry(entry)) byId.set(...)`，
            * 嵌套链路在那里永远解析不到，选进去也只会变成一个死成员。
            *
            * ⚠️ 早期这里没有过滤，于是两个链路会互相出现在对方的成员候选里，
            * 选了之后静默失效。
+           *
+           * 排除②（2026-11-07 用户）：总开关关闭（settings.enabled=false，即
+           * 「启用免费模型」关）时，免费车道与 Kilo 的模型**实际不可用**
+           * （adapter 的 runSingle 会拦），候选里再列出来只会误导 —— 与之匹配，
+           * 排除 `channel === 'free'` 与 `channel === 'kilo'` 两类行；渠道模型
+           * 不受开关影响（见 adapter.js runChannel 的历史遗漏修复）。
            */
           .filter(entry => !isComboEntry(entry))
+          .filter(entry => settings.get().enabled !== false
+            || (entry.channel !== 'free' && entry.channel !== 'kilo'))
           .map(entry => ({
             id: entry.id, name: entry.name, channel: entry.channel ?? 'free', vision: entry.vision === true,
             contextWindow: entry.contextWindow, maxOutput: entry.maxOutput,
