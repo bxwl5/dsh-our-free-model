@@ -25,7 +25,6 @@ import { AccountPool, providerCatalogVisible } from './account-pool.js'
 import { nextUtc8DayStartMs } from './model-queue.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
 import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
-import { settingsNamespaceFor } from './settings-compat.js'
 import {
   isLoomyChatModel,
   isLoomyExpired,

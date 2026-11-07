@@ -8,7 +8,6 @@ import type { GenerateOptions, LlmModelInfo, LlmProviderInfo, LlmResolvedModelIn
 import { ReasoningEffortId, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { AccountPool, providerCatalogVisible } from './account-pool.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
-import { settingsNamespaceFor } from './settings-compat.js'
 import { nextUtc8DayStartMs } from './model-queue.js'
 import { availableCodeArtsModels, isCodeArtsBenefitModel, type RemoteModel } from './models.js'
 import { readModelCatalog, writeModelCatalogClosingNew } from './model-catalog-cache.js'

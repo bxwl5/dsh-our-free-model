@@ -32,7 +32,6 @@ import type {
 import { AccountPool, providerCatalogVisible } from './account-pool.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
 import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
-import { settingsNamespaceFor } from './settings-compat.js'
 import { nextUtc8DayStartMs } from './model-queue.js'
 import { isRaccoonExpired, type RaccoonCredential } from './raccoon.js'
 import {

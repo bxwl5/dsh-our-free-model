@@ -65,7 +65,6 @@ import type {
 import { AccountPool, providerCatalogVisible } from './account-pool.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
 import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
-import { settingsNamespaceFor } from './settings-compat.js'
 import { collectImages, serializeMessages } from './openai-compat.js'
 import { projectRequestImage, type ImageRequestTarget } from './image-budget.js'
 import type { ModelQuota } from './types.js'

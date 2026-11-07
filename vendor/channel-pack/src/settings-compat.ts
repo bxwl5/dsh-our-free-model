@@ -10,11 +10,10 @@
  *   标了 `.volatile()` 的字段；写入走 `update/replace/mutate`（最终落到
  *   profile 的 `cordis.patch.yml`）。
  *
- * 因此旧写法 `settings.register(...)` 在 0.1.7 上恒为「服务不可用」，
- * 而 provider 的 `settingsNs` 也必须改成**本插件的条目 id**（官方适配器同做法：
- * `ctx.fiber.entry?.options.id ?? NS`）—— 2026-10-01 起本插件已不再向 DSH 声明
- * 可配置 provider，故当前只有 {@link settingsNamespaceFor} 承载这条语义而没有调用方
- * （见 `llm-register-compat.ts` 模块头）。
+ * 因此旧写法 `settings.register(...)` 在 0.1.7 上恒为「服务不可用」。
+ * 2026-10-01 起本插件已不再向 DSH 声明可配置 provider，曾经的
+ * `settingsNamespaceFor`/`ownEntryId` 兼容函数已随 #10 清理删除
+ * （恢复 configurable provider 时从 git 历史找回）。
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -69,11 +68,7 @@ export function hasLegacyNamespaceRegistration(
  * `fiber.entry` 在 cordis 4.0.2 的类型里尚未暴露，故按结构读取并在缺失时
  * 返回 undefined —— 调用方必须能接受「拿不到」。
  */
-export function ownEntryId(ctx: Context): string | undefined {
-  const fiber = (ctx as unknown as { fiber?: { entry?: { options?: { id?: unknown } } } }).fiber
-  const id = fiber?.entry?.options?.id
-  return typeof id === 'string' && id.length > 0 ? id : undefined
-}
+
 
 /**
  * 解析 `registerConfigurableProviders` 的 `settingsNs`。
@@ -83,10 +78,7 @@ export function ownEntryId(ctx: Context): string | undefined {
  *   因为一个插件实例只对应一个条目）。拿不到条目 id 时退回旧名，此时该
  *   provider 在模型设置页会显示为「未配置」，但**不影响路由与收发**。
  */
-export function settingsNamespaceFor(ctx: Context, legacyNs: string): string {
-  if (hasLegacyNamespaceRegistration(settingsOf(ctx))) return legacyNs
-  return ownEntryId(ctx) ?? legacyNs
-}
+
 
 /**
  * 关闭 0.1.7 自动生成的插件配置页。
