@@ -34,8 +34,8 @@
     },
     {
       "path": "index.js",
-      "size": 91347,
-      "sha256": "f2ee7a20c521bca4f153e75284f7476f63051aec75e4270f908b90f05631c8ac"
+      "size": 91823,
+      "sha256": "2469a68309f5667397d534f4688ec6ca3619463c654f51755ba7e764af5a8cd2"
     },
     {
       "path": "locale/en.json",
@@ -199,8 +199,8 @@
     },
     {
       "path": "src/store.js",
-      "size": 22922,
-      "sha256": "532fe91ddc9b28db4b1cc1e70da94fb387556ba966fd7071ff7db38e2a57d82f"
+      "size": 23126,
+      "sha256": "4f8fe580827b96f8d2198959993851b29c69e75b35b887c03f3a8d37839338e1"
     },
     {
       "path": "src/stream.js",
