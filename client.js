@@ -3507,6 +3507,10 @@ window.__ModuleLoader__.load({
       }, [login, rpc, channel.id, t, onChanged, loadAccounts, loadCredits, loadBalances])
 
 
+      const [loomyQr, setLoomyQr] = useState('')
+      const [loomySmsNeeded, setLoomySmsNeeded] = useState(false)
+      const [loomyError, setLoomyError] = useState('')
+      useEffect(() => { if (login === null) { setLoomyQr(''); setLoomySmsNeeded(false); setLoomyError('') } }, [login === null])
       // Loomy 卡片内嵌二维码轮询（2026-11-07）：拉一次二维码，随后 2.5s 轮询
       // wechatPoll；need_phone 出绑定表单；done 走与 login.poll 相同的收尾。
       useEffect(() => {
@@ -3579,7 +3583,8 @@ window.__ModuleLoader__.load({
       }, [rpc])
       return { login, setLogin, startLogin,
                smsPhone, setSmsPhone, smsCode, setSmsCode, smsSentAt, setSmsSentAt,
-               smsBusy, setSmsBusy, smsMessage, setSmsMessage, smsTick }
+               smsBusy, setSmsBusy, smsMessage, setSmsMessage, smsTick,
+               loomyQr, loomySmsNeeded, loomyError }
     }
 
     function ChannelCard(props) {
@@ -3689,7 +3694,8 @@ window.__ModuleLoader__.load({
       // ── 登录两阶段（2026-11-06 审计 #22 拆分第一步）：state/effect 全在 hook 内，行为等价 ──
       const { login, setLogin, startLogin,
               smsPhone, setSmsPhone, smsCode, setSmsCode, smsSentAt, setSmsSentAt,
-              smsBusy, setSmsBusy, smsMessage, setSmsMessage, smsTick } =
+              smsBusy, setSmsBusy, smsMessage, setSmsMessage, smsTick,
+              loomyQr, loomySmsNeeded, loomyError } =
         useChannelLogin({ channel, rpc, post, t, onError, channelTransport, notifyChanged, onChanged,
                           loadAccounts, loadCredits, loadBalances, flashNotice, setOpen,
                           zcodeProvider, busy, setBusy, notice, setNotice })
@@ -4095,9 +4101,6 @@ window.__ModuleLoader__.load({
       }, [smsSentAt])
 
       // Loomy 卡片内嵌二维码（2026-11-07）：qr data URL + 轮询状态 + 绑定手机号表单。
-      const [loomyQr, setLoomyQr] = useState('')
-      const [loomySmsNeeded, setLoomySmsNeeded] = useState(false)
-      const [loomyError, setLoomyError] = useState('')
       const embeddedLogin = login?.loginKind === 'autoclaw-sms' ? login : null
       const loomyEmbedded = login?.loginKind === 'loomy-wechat' ? login : null
       const embeddedBody = (() => {
