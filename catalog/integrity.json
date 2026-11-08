@@ -34,8 +34,8 @@
     },
     {
       "path": "index.js",
-      "size": 91823,
-      "sha256": "2469a68309f5667397d534f4688ec6ca3619463c654f51755ba7e764af5a8cd2"
+      "size": 93126,
+      "sha256": "c91fe3bd834e426c5116ccc1161a7ab6aecf75c8e908218194b252596a30341d"
     },
     {
       "path": "locale/en.json",
@@ -54,8 +54,8 @@
     },
     {
       "path": "src/adapter.js",
-      "size": 54637,
-      "sha256": "6d115f5598b52697ae770104ad21c97c5e0217f30afa07239c9a63ce2880f94c"
+      "size": 55020,
+      "sha256": "fe1ee65815728815648b16af3fec590ab2cd3cc736c777b34291c3ad410ef0b7"
     },
     {
       "path": "src/anthropic.js",
@@ -119,8 +119,8 @@
     },
     {
       "path": "src/egress.js",
-      "size": 37623,
-      "sha256": "3ec85ab5865498469a372dc9a1f3436b879c8f219ad9f7f867c9bca1ce23ec7a"
+      "size": 38039,
+      "sha256": "40c25df11e022fb5d0b272f423b9a12f9bfe7c11636c9ae2fa972eaa91465f72"
     },
     {
       "path": "src/failure.js",
@@ -324,13 +324,13 @@
     },
     {
       "path": "vendor/channel-pack/NOTICE.md",
-      "size": 3785,
-      "sha256": "6f30de5f4c76c01535e384ab2cfed5e97b621876f5eb8de836fa6cc466f57035"
+      "size": 4848,
+      "sha256": "202ed88f0748b11c3a4cd360d3a9853e452debc26a62244c936f4bfe7dee498f"
     },
     {
       "path": "vendor/channel-pack/pack.js",
-      "size": 3118565,
-      "sha256": "0fbd29a4f490a9b0e716ad7e8c1b9c8296cb0f6914676856eb45b61d7c269675"
+      "size": 3124507,
+      "sha256": "7193f50e7a5a3f1e90f8f1b8394d7af1c7b39a6becca70ce1804301018bd0554"
     },
     {
       "path": "vendor/channel-pack/qoder-auth-wasm.wasm",
