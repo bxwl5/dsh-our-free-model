@@ -149,7 +149,6 @@ export class MinimaxAuth extends Service {
    */
   async startLogin(): Promise<StartedMinimaxLoginFlow> {
     const auth = await this.fetchDeviceAuthorization()
-    let aborted = false
     const controller = new AbortController()
     const result = pollMinimaxDeviceToken(auth, {
       fetcher: this.fetchImpl,
@@ -169,7 +168,6 @@ export class MinimaxAuth extends Service {
       loginUrl: auth.verificationUriComplete,
       result,
       close: () => {
-        aborted = true
         controller.abort()
       },
     }

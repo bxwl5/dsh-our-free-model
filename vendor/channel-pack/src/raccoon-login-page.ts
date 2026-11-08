@@ -285,26 +285,6 @@ function writeJson(response: ServerResponse, payload: unknown): void {
 }
 
 /** 读取并解析请求体（上限 64KB，避免被塞爆）。 */
-async function readJsonBody(request: IncomingMessage): Promise<Record<string, unknown>> {
-  const chunks: Buffer[] = []
-  let total = 0
-  for await (const chunk of request) {
-    const buf = chunk as Buffer
-    total += buf.length
-    if (total > 64 * 1024) throw new Error('请求体过大')
-    chunks.push(buf)
-  }
-  const text = Buffer.concat(chunks).toString('utf-8')
-  if (text.length === 0) return {}
-  try {
-    const parsed = JSON.parse(text) as unknown
-    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : {}
-  } catch {
-    throw new Error('请求体不是合法 JSON')
-  }
-}
 
 /**
  * 在 `127.0.0.1` 的随机空闲端口上启动服务器。

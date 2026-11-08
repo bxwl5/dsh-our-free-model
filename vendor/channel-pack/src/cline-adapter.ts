@@ -72,7 +72,6 @@ import {
 } from './openai-compat.js'
 
 /** 本适配器注册的 provider 路由名（等价于 `CLINE.id`）。 */
-export const PROVIDER = 'cline'
 
 /** 换号次数上限（对齐 buddy / lobsterai / trae 的 `MaxRotate = 3`）。 */
 const CLINE_MAX_ROTATE = 3

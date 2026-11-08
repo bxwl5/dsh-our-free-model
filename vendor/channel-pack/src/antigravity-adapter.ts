@@ -961,8 +961,11 @@ export class AntigravityAdapter extends LlmAdapter {
               continue
             }
           }
+          const tail = lastFailure?.text !== undefined && lastFailure.text !== ''
+            ? `；最后一次上游响应：${lastFailure.text.slice(0, 200)}`
+            : ''
           throw new LlmError(
-            `antigravity: 模型 ${options.model} 的所有账号均不可用（限流或额度耗尽），请稍后再试`,
+            `antigravity: 模型 ${options.model} 的所有账号均不可用（限流或额度耗尽），请稍后再试${tail}`,
             'QUOTA_EXCEEDED',
             { status },
           )
@@ -974,7 +977,6 @@ export class AntigravityAdapter extends LlmAdapter {
     } finally {
       // 中途异常也要落盘：签名缓存是「下次能命中」的唯一来源。
       await sigStore?.flush().catch(() => {})
-      void lastFailure
     }
   }
 

@@ -529,10 +529,6 @@ export class AccountPool {
     return this.accountStrategy()
   }
 
-  providerOrder(): string[] {
-    this.ensureLoaded()
-    return this.providerOrderCache
-  }
 
   /**
    * 写入供应商自定义显示顺序并落盘。
@@ -542,19 +538,6 @@ export class AccountPool {
    * 的顺序无法保留。脏值防护由两层承担：RPC 层校验 `string[]`，
    * store 层 `sanitizeProviderOrder` 去重/剔除非字符串。
    */
-  async setProviderOrder(order: string[]): Promise<void> {
-    this.ensureLoaded()
-    const next = Array.isArray(order) ? [...order] : []
-    if (this.providerOrderCache.length === next.length
-      && this.providerOrderCache.every((id, index) => id === next[index])) return
-    this.providerOrderCache = next
-    this.loaded = true
-    if (this.store.kind === 'memory') {
-      this.ctx.logger?.warn?.('[channel-pack] 无持久化后端，供应商顺序仅本次会话有效')
-      return
-    }
-    await this.queueStoreSave()
-  }
 
   /**
    * 打开/关闭某个模型。

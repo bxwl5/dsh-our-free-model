@@ -388,8 +388,6 @@ async function traeClaim(
           credential as TraeCredential,
           TRAE,
           env.fetcher,
-          io.pool.traeCheckinDeviceGenerationFor(entry.id),
-          (next) => io.pool.updateTraeCheckinDeviceGeneration(entry.id, next),
         ),
       warn: env.warn,
     },

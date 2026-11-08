@@ -60,7 +60,6 @@ import { baseHttpErrorCode, serializeMessages as originSerializeMessages } from 
  * `` `${this.product.endpoint}/v2` `` —— 国际版 WorkBuddy 的域名不同
  * （www.workbuddy.ai），故不能再用本常量拼接请求 URL。
  */
-export const CHAT_API_BASE = 'https://copilot.tencent.com/v2'
 
 /**
  * 是否为 DeepSeek 系模型（前缀匹配，不区分大小写）。
@@ -80,7 +79,6 @@ function isDeepSeekModel(model: string): boolean {
  * 注意：适配器实例实际使用的路由名是 `product.id`（`this.product.id`），
  * 本常量只表示 CodeBuddy 那一份取值，不再代表所有产品。
  */
-export const PROVIDER = 'buddy'
 
 /** 静态默认模型（对齐 /v3/config 返回的 craft agent models；动态拉取失败时的兜底）。 */
 const DEFAULT_MODELS: readonly string[] = [

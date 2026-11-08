@@ -2972,8 +2972,6 @@ function registerChannelPackEndpoints(
                 credential as TraeCredential,
                 TRAE,
                 fetch,
-                pool.traeCheckinDeviceGenerationFor(entry.id),
-                (next) => pool.updateTraeCheckinDeviceGeneration(entry.id, next),
               ),
             warn: (msg) => ctx.logger?.warn?.(msg),
           })
@@ -4027,8 +4025,9 @@ function registerChannelPackEndpoints(
         return { ok: true, value }
       }
 
-      // ── 供应商自定义显示顺序（「供应商开关」弹窗的拖拽排序）──
       // ── 本机 OpenAI 网关（`src/openai-gateway/`）──
+      // （终审 A6 清理：原「供应商自定义显示顺序」注释下从未有过对应 case——
+      // providerOrder/setProviderOrder 无 RPC 入口，方法已随死代码清理移除。）
       case 'gateway.getEnabled': {
         // ⚠️ **每个字段独立降级**：这里是设置页唯一的网关状态来源，任何一个附属
         // 字段采集失败都不该让**整个面板变空白**（开关、地址、密钥全看不到），

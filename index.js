@@ -26,7 +26,6 @@
 import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs'
-import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { externalUrl, openExternal } from './src/open-external.js'
 import { ROUTE_LABELS, ROUTE_MAIN, ROUTE_REGION } from './src/adapter.js'
@@ -141,7 +140,8 @@ export function apply(ctx, config) {
 
   /** `managed` stands down everything that would rewrite the installed bytes. */
   const distribution = distributionOf(config, settings)
-  const managed = distribution === 'managed'
+  // （终审 A6：原 `const managed = distribution === 'managed'` 零消费已删——
+  // managed 语义承诺「停用热重载/公告/自更新」未实现，属 t6 待实现项而非死变量。）
 
   let forward = null
   let forwardError = ''
@@ -1109,8 +1109,7 @@ let channelRosterReadAt = 0
       lastReload: globalThis[Symbol.for('our-free-model.last-reload')] ?? undefined,
       purgeSample: globalThis[Symbol.for('our-free-model.purge-sample')] ?? undefined,
     }),
-    /** Fixed for this generation; the settings API cannot flip it (see below). */
-    managedDistribution: managed,
+    /** SSE push channel（client.js 的日志/看板流消费；attach:1147/dispose:1178）。 */
     push,
     connection: fenceConnection,
     onAdmissionRejection: logAdmissionRejection('settings API'),
@@ -1339,12 +1338,13 @@ function sanitizeSettings(patch, current) {
     next[key] = Number.isFinite(value) && value > 0 ? Math.trunc(value) : (Number(current[key]) || fallback)
   }
   positive('probeIntervalMinutes', 15)
-  positive('feedPollMinutes', 30)
+  // 2026-11-08 终审 A6 清理：feedPollMinutes/updateCheckHours 属已删的公告中心
+  // 与自更新器——规整分支删除（残留键不再被读取，见下方 DELETE_STALE_KEYS）。
   positive('defaultMaxTokens', 32768)
-  if (next.updateCheckHours !== undefined) {
-    // Zero is a real answer here: it means "stop checking for updates".
-    const hours = Number(next.updateCheckHours)
-    next.updateCheckHours = Number.isFinite(hours) && hours >= 0 ? Math.trunc(hours) : (Number(current.updateCheckHours) || 6)
+  // B5 残留清理：历史版本写进 settings 的已删功能键，读到即剥除。
+  for (const stale of ['feedUrl', 'feedPollMinutes', 'updateCheckHours', 'updateNotifiedFor', 'announcementsAcked', 'installedVersion', 'hideEacModels', 'hideChannelModels', 'notifyOs', 'aggregate']) {
+    delete next[stale]
+    if (current[stale] !== undefined) delete current[stale]
   }
   // 文件变化自动热重载：只认严格布尔，其它值丢弃（保持当前值）。
   if (next.autoReloadWatch !== undefined && typeof next.autoReloadWatch !== 'boolean') {

@@ -220,8 +220,6 @@ export async function claimTraeDailyCheckin(
   credential: TraeCredential,
   product: TraeProduct,
   fetcher: typeof fetch = fetch,
-  generation = 0,
-  onRotate?: (nextGeneration: number) => void | Promise<void>,
   userId?: string,
   retryCount = 3,
 ): Promise<ClaimOutcome & { errorType?: string; cooldownSecs?: number }> {

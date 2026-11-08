@@ -49,11 +49,8 @@ import {
 export const LOOMY_WECHAT_LOGIN_TIMEOUT_MS = 5 * 60 * 1000
 
 /** 本地弹窗页的路径。 */
-export const LOOMY_WECHAT_QR_PATH = '/wechat/qr'
 /** 前端轮询端点。 */
-export const LOOMY_WECHAT_POLL_PATH = '/wechat/poll'
 /** 提交端点（微信 code 或手机号验证码）。 */
-export const LOOMY_WECHAT_COMPLETE_PATH = '/wechat/complete'
 
 /** 微信登录流程的选项。 */
 export interface LoomyWechatLoginOptions {
@@ -79,8 +76,6 @@ interface FlowState {
   uuid: string
   /** 最近一次长轮询的 errcode（作为下次的 `last` 参数）。 */
   lastErrcode: string
-  /** 微信确认后拿到的 code（一次性）。 */
-  wechatCode: string
   /** bindAuth 返回的上下文（拿 code 后填充）。 */
   rcode: string
   /** `bindAuthThirdAccount` 的 bind 值。 */
@@ -108,7 +103,6 @@ export async function startLoomyWechatLoginFlow(
     flowId: '',
     uuid: '',
     lastErrcode: '',
-    wechatCode: '',
     rcode: '',
     bind: 0,
     nickname: '',
@@ -201,9 +195,6 @@ export type WechatPollOutcome =
 
 export async function wechatPollOf(flow: LoomyWechatFlowContext): Promise<WechatPollOutcome> {
   const { state, settleOk, settleErr, product, fetcher } = flow
-  if (state.wechatCode.length > 0) {
-    return { status: 'done' }
-  }
   const polled = await pollLoomyWechatOnce(state.uuid, state.lastErrcode, fetcher)
   if (polled.errcode.length > 0) state.lastErrcode = polled.errcode
   if (polled.status === LOOMY_WECHAT_POLL_STATUS.confirmed && polled.code.length > 0) {

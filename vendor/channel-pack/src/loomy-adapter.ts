@@ -47,7 +47,6 @@ import {
 } from './openai-compat.js'
 
 /** 本适配器注册的 provider 路由名（等价于 `LOOMY.id`）。 */
-export const PROVIDER = 'loomy'
 
 /** 远端模型条目（已归一）。 */
 export interface LoomyRemoteModel {

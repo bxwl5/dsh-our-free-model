@@ -55,16 +55,6 @@ export const LOOMY_TASK_POINTS: Readonly<Record<string, number>> = Object.freeze
 })
 
 /** 任务 key → 中文标题（客户端 `GE` 注册表里的 `title`）。 */
-export const LOOMY_TASK_TITLES: Readonly<Record<string, string>> = Object.freeze({
-  first_message: '发送你的第一条消息',
-  pick_skill: '试试选择一个技能',
-  generate_ppt: '生成第一份 PPT',
-  set_schedule: '设置定时任务',
-  install_skill: '在技能广场安装一个技能',
-  configure_remote: '配置远程控制',
-  create_soul: '创建你的第一个搭子',
-  share_soul: '把搭子分享给朋友',
-})
 
 /** 任务积分合计（10000）。 */
 export const LOOMY_ONBOARDING_TOTAL = 10_000
