@@ -4107,11 +4107,9 @@ window.__ModuleLoader__.load({
       // ── 卡片内嵌登录（2026-10-30）：autoclaw 短信表单 ──
       // 这两个渠道不再有 127.0.0.1 本地页（远程浏览器打不开），状态直接渲染在
       // 渠道卡片里；成功/失败仍由 login.poll 收尾（见上方 effect）。
-      useEffect(() => {
-        if (smsSentAt === 0) return undefined
-        const timer = setInterval(() => setSmsTick(v => v + 1), 1000)
-        return () => clearInterval(timer)
-      }, [smsSentAt])
+      // 2026-11-08 终审修复：此处原有一段重复的短信倒计时 effect（setInterval
+      // 引用未解构的 setSmsTick）——走针逻辑已由 useChannelLogin 内的同款 effect
+      // 承担（3403-3408），该残留每秒抛一次未捕获 ReferenceError，已整段删除。
 
       // Loomy 卡片内嵌二维码（2026-11-07）：qr data URL + 轮询状态 + 绑定手机号表单。
       const embeddedLogin = login?.loginKind === 'autoclaw-sms' ? login : null
