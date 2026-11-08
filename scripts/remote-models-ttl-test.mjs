@@ -121,12 +121,20 @@ export async function verifyChannelCheckinJudgements() {
   let taskBody = { data: { already_completed: true, reward_points: 0, success: false, task_id: 'daily_signin' } }
   let taskStatus = 200
   const acServer = http.createServer((req, res) => {
-    req.resume()
+    const chunks = []
+    req.on('data', c => chunks.push(c))
     req.on('end', () => {
       if (!req.url.startsWith('/autoclaw-proxy/proxy/autoclaw-task-complete')) {
         res.writeHead(404, { Connection: 'close' }).end('{}'); return
       }
-      res.writeHead(taskStatus, { 'Content-Type': 'application/json', Connection: 'close' }).end(JSON.stringify(taskBody))
+      // 2026-11-08 扩展：按请求 task_id 分流——灵感中心独立回「已处理」，
+      // 模拟真实上游的按天幂等（签到与同级任务的账互不串）。
+      let taskId = ''
+      try { taskId = (JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}').task_id) ?? '' } catch { /* 缺 body 视为签到 */ }
+      const body = taskId === 'daily_inspiration_center'
+        ? { data: { already_completed: true, reward_points: 0, success: false, task_id: 'daily_inspiration_center' } }
+        : taskBody
+      res.writeHead(taskStatus, { 'Content-Type': 'application/json', Connection: 'close' }).end(JSON.stringify(body))
     })
   })
   await new Promise(r => acServer.listen(0, '127.0.0.1', r))
@@ -140,11 +148,14 @@ export async function verifyChannelCheckinJudgements() {
     assert.equal(already.claimed, 0, '已领过不能算成功领取')
     assert.match(already.message, /已签到/, '要说明「今天已签到过」')
 
-    // 2) reward_points > 0 → 成功且报到数
+    // 2) reward_points > 0 → 成功且报到数（2026-11-08 扩展：签到后还会领
+    //    AUTOCLAW_EXTRA_TASKS（daily_inspiration_center）——mock 按返回的 task_id
+    //    分流：签到给 200，灵感中心给 already，total 应恰为 200）
     taskBody = { data: { already_completed: false, reward_points: 200, success: true, task_id: 'daily_signin' } }
     const won = await claimAutoclawDailyCheckin({ product: acProduct, fetcher: realFetch, credential: acCredential })
-    assert.equal(won.claimed, 200, 'reward_points>0 才算成功并上报积分数')
+    assert.equal(won.claimed, 200, 'reward_points>0 才算成功并上报积分数（灵感中心 already 不计入）')
     assert.match(won.message, /已领取 200/, '文案要带积分数')
+    assert.match(won.message, /daily_inspiration_center: 今日已处理/, '同级任务幂等要如实记录')
 
     // 3) 401 → 登录态过期（明确归因，不当成「已领过」）
     taskStatus = 401

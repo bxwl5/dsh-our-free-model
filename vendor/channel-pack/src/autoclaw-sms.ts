@@ -346,6 +346,16 @@ export const AUTOCLAW_TASK_COMPLETE_PATH = '/autoclaw-proxy/proxy/autoclaw-task-
 export const AUTOCLAW_DAILY_SIGNIN_TASK = 'daily_signin'
 
 /**
+ * 每日可叠加领取的**同级任务**（同一 `autoclaw-task-complete` 入口，2026-11-08
+ * 用户要求扩展）。实测（888607 凭据直调）：
+ * - `daily_inspiration_center`（灵感中心）：HTTP 200、按天幂等，可加入自动领取；
+ * - `upgrade_pc_app`：上游明确回「任务不支持客户端触发」——**不可加入**，
+ *   加了只会每天产生一次必然失败的请求。
+ * 新增任务前先照此实测一次再进表。
+ */
+export const AUTOCLAW_EXTRA_TASKS: readonly string[] = ['daily_inspiration_center']
+
+/**
  * userapi 域请求头（官方客户端指纹 + `X-Auth-Sign`）。
  *
  * 签名口径与 SMS 登录完全一致（`md5(appId & timestamp & appKey)`，
@@ -437,13 +447,77 @@ export async function claimAutoclawDailyCheckin(options: {
     : Number(record.reward_points ?? 0)
   const success = record.success === true
   const already = record.already_completed === true
-  if (reward > 0) return { claimed: reward, message: `已领取 ${reward} 积分` }
-  if (success) return { claimed: 0, message: '签到成功（本轮未返回积分数）' }
-  if (already) return { claimed: 0, message: '今天已签到过（上游按天幂等）' }
-  // 2026-11-08 终审 M-2：兜底文案不得含「已领/已签到」字样——RPC 侧用
-  // /已签到|已领/ 归类 already-claimed，旧文案「今日可能已领过」会被误判成
-  // 「今日已办」并记 coversToday，未确证结局当天不再补救。
-  return { claimed: 0, message: '上游未返回可判定的领取结果（今日是否入账未知）' }
+  // 签到主体判定（2026-11-08 终审 M-2：兜底文案不得含「已领/已签到」字样——
+  // RPC 侧 /已签到|已领/ 只允许命中 already 分支的确定语义）。
+  let baseClaimed = 0
+  let baseMessage: string
+  if (reward > 0) {
+    baseClaimed = reward
+    baseMessage = `已领取 ${reward} 积分`
+  } else if (success) {
+    baseMessage = '签到成功（本轮未返回积分数）'
+  } else if (already) {
+    baseMessage = '今天已签到过（上游按天幂等）'
+  } else {
+    baseMessage = '上游未返回可判定的领取结果（今日是否入账未知）'
+  }
+
+  // 2026-11-08 用户要求：签到之外叠加领取同级任务（AUTOCLAW_EXTRA_TASKS）。
+  // 各任务独立判据与超时，失败/幂等只追加文案，不影响签到主体的 already-claimed
+  // 归类（RPC 侧正则只看主 message 前缀语义，追加段不含「已签到/已领」开头）。
+  let extraClaimed = 0
+  const extraNotes: string[] = []
+  for (const taskId of AUTOCLAW_EXTRA_TASKS) {
+    const outcome = await completeAutoclawTask({ ...options, taskId })
+    extraClaimed += outcome.claimed
+    extraNotes.push(outcome.ok ? `${taskId}: ${outcome.message}` : `${taskId}: 失败（${outcome.message}）`)
+  }
+  const total = baseClaimed + extraClaimed
+  const parts = [baseMessage]
+  if (extraClaimed > 0) parts.push(`同级任务再领 ${extraClaimed} 积分`)
+  else if (extraNotes.length > 0) parts.push(...extraNotes)
+  return { claimed: total, message: parts.join('；') }
+}
+
+/**
+ * 完成单个同级任务（`autoclaw-task-complete` 通用入口）。与签到同判据：
+ * reward_points>0 算领取；already_completed 算幂等；HTTP 非 200 算失败。
+ * 每次带独立 20s 超时（R14 同款），单个任务失败不影响后续任务。
+ */
+async function completeAutoclawTask(options: {
+  product: AutoClawProduct
+  fetcher: typeof fetch
+  credential: AutoClawCredential
+  taskId: string
+}): Promise<{ claimed: number; already: boolean; ok: boolean; message: string }> {
+  const token = stripBearer(options.credential.access_token)
+  const timestamp = Math.floor(Date.now() / 1000)
+  const url = `${options.product.apiBase}${AUTOCLAW_TASK_COMPLETE_PATH}`
+  try {
+    const response = await options.fetcher(url, {
+      method: 'POST',
+      headers: autoclawUserapiHeaders(token, timestamp),
+      body: JSON.stringify({ task_id: options.taskId }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    })
+    if (!response.ok) {
+      return { claimed: 0, already: false, ok: false, message: `HTTP ${response.status}` }
+    }
+    const body: unknown = await response.json().catch(() => undefined)
+    const data = body !== null && typeof body === 'object' ? (body as { data?: unknown }).data : undefined
+    const record = data !== null && typeof data === 'object' ? data as Record<string, unknown> : {}
+    const reward = typeof record.reward_points === 'number' && Number.isFinite(record.reward_points)
+      ? record.reward_points
+      : Number(record.reward_points ?? 0)
+    if (reward > 0) return { claimed: reward, already: false, ok: true, message: `+${reward}` }
+    // ⚠️ 文案避开「已领/已签到」字样（RPC 侧 /已签到|已领/ 归类 already-claimed
+    // 是对整条 message 匹配，追加段用词会污染签到主体的归类——终审 M-2 同源教训）。
+    if (record.already_completed === true) return { claimed: 0, already: true, ok: true, message: '今日已处理' }
+    if (record.success === true) return { claimed: 0, already: false, ok: true, message: '完成（本轮未返回积分数）' }
+    return { claimed: 0, already: false, ok: false, message: String(record.failureCode ?? '未返回可判定结果') }
+  } catch (error) {
+    return { claimed: 0, already: false, ok: false, message: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 // ── 模型路由（上游 `providers/autoclaw/models.rs` 的 resolve_model_route）──
