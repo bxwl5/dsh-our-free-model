@@ -359,9 +359,13 @@ export class FreeModelAdapter {
       this.deps.warn?.(`our-free-model: chain "${entry.name}" advanced past ${candidate.id} — ${reason}`)
     }
     rejectedTurn(candidates.length)
+    // 2026-11-08 终审 R10：链路耗尽改不可重试码——此前返 CODE.server 而宿主
+    // retryableCodes 含 SERVER，内核会把**整条链**原样重放（×2），每候选独立
+    // 预算下最坏 N×30min×3。耗尽是「这条链的全部成员都拒了本次回合」，重放
+    // 同一条链没有意义；真要再试由用户重新发起回合。
     yield { type: 'finish', reason: { kind: 'error', failure: {
       message: `the chain "${entry.name}" exhausted every candidate: ${tried.join('; ')}`,
-      code: CODE.server,
+      code: CODE.client,
     } } }
   }
 

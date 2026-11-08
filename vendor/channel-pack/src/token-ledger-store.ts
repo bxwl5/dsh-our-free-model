@@ -298,7 +298,7 @@ class FileLedgerStore implements TokenLedgerStore {
       for (const [day, buckets] of pruneDays(merged)) {
         days[day] = Object.fromEntries(buckets)
       }
-      const tmp = `${this.path}.tmp`
+      const tmp = `${this.path}.${process.pid}.tmp` // 2026-11-08 终审 R3：pid 后缀防跨进程互相覆盖/ENOENT
       writeFileSync(tmp, JSON.stringify({ schema: SCHEMA, days }, null, 2), 'utf-8')
       renameSync(tmp, this.path)
       // ④ 基线前移（只在写盘成功后）

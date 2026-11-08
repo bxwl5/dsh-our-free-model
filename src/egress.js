@@ -227,6 +227,10 @@ export async function startEgressRelay({ config, dataDir, log = () => {}, onDead
       for (const socket of sockets) socket.destroy()
       await new Promise(resolve => server.close(resolve))
       await killChild(child)
+      // 2026-11-08 终审 R13：订阅 URL 与控制 secret 属「订阅链接即凭据」——
+      // 进程退净后把落盘的配置文件清掉，不留凭据在盘上（此前全仓无清理）。
+      try { fs.rmSync(path.join(dir, 'mihomo.yaml'), { force: true }) } catch { /* best-effort */ }
+      try { fs.rmSync(path.join(dir, 'egress-provider.yaml'), { force: true }) } catch { /* best-effort */ }
     },
   }
   if (child !== null) {

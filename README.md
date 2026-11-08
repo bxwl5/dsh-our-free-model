@@ -91,6 +91,11 @@ docker logs ofm | head -5     # 拿一次性的面板登录链接
 
 **免密车道（2 个）**：匿名免费车道（OpenCode）、Kilo 免费池。都不需要账号。
 
+> ⚠️ **数据外发披露（2026-11-08 终审）**：Trae 渠道的推理请求（含对话内容）
+> 发往 `https://trae-api-cn.mchost.guru`（协议复刻的既定上游主机，非 trae.cn
+> 官方域）。出口 IP 探测周期性访问 ipify/ipinfo/ipapi（仅取 IP/国家）。
+> 详见 `vendor/channel-pack/NOTICE.md` 的披露章节。
+
 **账号渠道（15 个）**，在「渠道接入」页添加：
 
 | 渠道 | 登录方式 | 对话 |

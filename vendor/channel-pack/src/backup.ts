@@ -1,5 +1,5 @@
 import { credentialRef, type CredentialRef } from '@deepseek-ai/dsh-credentials'
-import { sanitizePermanentLocks } from './channel-pack-store.js'
+import { ACCOUNT_REF_RE, sanitizePermanentLocks } from './channel-pack-store.js'
 import type { ChannelPackState, ModelDisableMap, PermanentLockMap } from './channel-pack-store.js'
 import type { ProviderAccountEntry } from './types.js'
 import { BACKUP_FORMAT, BACKUP_VERSION, type BackupPayload } from './types.js'
@@ -210,6 +210,13 @@ export async function importBackup(
   let credentialsImported = 0
   for (const [refName, value] of Object.entries(payload.credentials)) {
     if (typeof value !== 'string') {
+      skipped.push(refName)
+      continue
+    }
+    // 2026-11-08 终审 H2：导入白名单——只接受**本插件渠道命名空间**的 ref
+    // （ACCOUNT_REF_RE = channel-pack-store 单一真相源派生的 {PREFIX}_ACCOUNT_xxx）。
+    // 否则恶意/误导入的备份可覆写跨插件凭据（DEEPSEEK_API_KEY、ZCODE_CREDENTIAL 等）。
+    if (!ACCOUNT_REF_RE.test(refName)) {
       skipped.push(refName)
       continue
     }

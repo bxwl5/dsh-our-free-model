@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { createRoot } from 'react-dom/client'
 import { shared } from 'ofm-shared-client'
+import { providers as channelProviders } from 'ofm-provider-list'
 import { ChannelBrowser } from './components/channel-browser'
 import 'ofm-shared-styles.css'
 
@@ -92,7 +93,7 @@ function ChannelTools({ summary }) {
     h('h3', null, '供应商与数据管理'),
     h('div', { className: 'ofm_row' },
       h('label', null, '供应商 ', h('select', { value: provider, disabled: busy, onChange: event => setProvider(event.target.value) },
-        CHANNEL_PROVIDERS.map(row => h('option', { value: row.id, key: row.id }, row.name)))),
+        channelProviders.map(row => h('option', { value: row.id, key: row.id }, row.name)))),
       h('button', { className: 'ofm_btn', disabled: busy || !status, onClick: () => run(() => rpc('provider.setEnabled', { provider, enabled: status.closed === true })) },
         status?.closed ? '启用供应商' : '关闭供应商'),
       lock ? h('label', null, h('input', { type: 'checkbox', checked: lock.locked === true, disabled: busy, onChange: event => run(() => rpc('credits.permanentLock', { provider, locked: event.target.checked })) }), ' 锁定永久积分') : null),

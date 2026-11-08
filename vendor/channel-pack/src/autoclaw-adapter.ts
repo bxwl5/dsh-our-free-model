@@ -522,7 +522,7 @@ export class AutoClawAdapter extends LlmAdapter {
       if (isAutoClawAccountBanned(text)) {
         throw new LlmError(
           `AutoClaw：账号被限制（HTTP ${response.status}）${suffix}`,
-          'PERMISSION',
+          'PERMISSION_DENIED',
           { status: response.status },
         )
       }

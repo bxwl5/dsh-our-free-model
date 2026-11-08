@@ -382,17 +382,28 @@ export async function startCommandCodeLogin(options: CommandCodeLoginOptions): P
   }
 
   const timeoutMs = options.timeoutMs ?? COMMANDCODE_LOGIN_TIMEOUT_MS
+  let timeoutSettled = false
+  const timerRef: { current?: ReturnType<typeof setTimeout> } = {}
   const resultWithTimeout = Promise.race([
     result,
     new Promise<never>((_, reject) => {
       const timer = setTimeout(
-        () => reject(new Error(`Command Code 登录超时（${Math.round(timeoutMs / 1000)} 秒内未完成）`)),
+        () => {
+          timeoutSettled = true
+          reject(new Error(`Command Code 登录超时（${Math.round(timeoutMs / 1000)} 秒内未完成）`))
+        },
         timeoutMs,
       )
+      timerRef.current = timer
       timer.unref?.()
     }),
   ])
-  resultWithTimeout.catch(() => {}).finally(() => { void close() })
+  resultWithTimeout.catch(() => {}).finally(() => {
+    // 2026-11-08 终审 R8：先落定的一方清掉另一方（超时未触发时 clearTimeout，
+    // 避免提前成功后定时器仍触发一次被吞的 reject）。
+    if (!timeoutSettled && timerRef.current !== undefined) clearTimeout(timerRef.current)
+    void close()
+  })
 
   return { loginUrl, port, portFallback: binding.fallback, result: resultWithTimeout, close }
 }

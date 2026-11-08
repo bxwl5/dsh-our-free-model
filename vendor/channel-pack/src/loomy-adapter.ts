@@ -604,7 +604,31 @@ export class LoomyAdapter extends LlmAdapter {
       }
     }
   }
-}
+
+  /**
+   * 2026-11-08 终审 H4：补齐 providerRetryPolicy——此前缺省，429 落 'RATE_LIMIT'
+   * 被内核默认策略（maxRetries=5 且含 RATE_LIMIT）重试，与内部换号叠加成风暴
+   * （buddy 14003 路径单轮 ≈18 次上游请求）。对照 autoclaw-adapter.ts:562-579 与
+   * 宿主 lane adapter.js:86-93（issue #13 教训）：429 不自动重试，上限 2 次。
+   */
+  providerRetryPolicy(): {
+    mode: 'normal'
+    retryableCodes: readonly string[]
+    maxRetries: number
+    initialDelayMs: number
+    maxDelayMs: number
+    jitterRatio: number
+  } {
+    return {
+      mode: 'normal',
+      retryableCodes: ['TRANSPORT', 'TIMEOUT', 'SERVER'],
+      maxRetries: 2,
+      initialDelayMs: 800,
+      maxDelayMs: 4_000,
+      jitterRatio: 0.25,
+    }
+  }
+  }
 
 function isLoomyQuotaError(data: Record<string, unknown>): boolean {
   const error = typeof data.error === 'object' && data.error !== null

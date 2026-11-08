@@ -795,7 +795,7 @@ class FileAutoCheckinStore implements AutoCheckinStore {
 
   async save(doc: AutoCheckinDoc): Promise<void> {
     mkdirSync(join(this.path, '..'), { recursive: true })
-    const tmp = `${this.path}.tmp`
+    const tmp = `${this.path}.${process.pid}.tmp` // 2026-11-08 终审 R3：pid 后缀防跨进程互相覆盖/ENOENT
     writeFileSync(tmp, JSON.stringify({
       schema: SCHEMA,
       enabled: doc.enabled,

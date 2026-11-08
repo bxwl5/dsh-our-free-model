@@ -1279,8 +1279,14 @@ interface CaptchaPage {
  * ## 生命周期
  *
  * `dispose()` 必须被调用（`ZcodeAuth.stop()` 里做），否则会留下
- * 一个孤儿 chromium 进程（约 200-400MB）。此外还注册了进程退出钩子兜底。
+ * 一个孤儿 chromium 进程（约 200-400MB）。进程退出兜底见文件底部
+ * 的 `process.once('exit')` 注册（2026-11-08 终审 R9：原注释声称有钩子
+ * 但实现不存在，现已补上——同步 killProcessTree，best-effort）。
  */
+/** 终审 R9：存活实例登记——进程退出兜底用（弱引用，不阻止 GC）。 */
+const LIVE_CAPTCHA_BROWSERS = new Set<ZcodeCaptchaBrowser>()
+let EXIT_HOOK_INSTALLED = false
+
 export class ZcodeCaptchaBrowser {
   private child: ChildProcess | undefined
   private browserWs: WebSocket | undefined
@@ -1551,6 +1557,19 @@ export class ZcodeCaptchaBrowser {
       ws.addEventListener('error', () => reject(new Error('zcode: 连接浏览器调试端口失败')), { once: true })
     })
     this.browserWs = ws
+    LIVE_CAPTCHA_BROWSERS.add(this)
+    if (!EXIT_HOOK_INSTALLED) {
+      EXIT_HOOK_INSTALLED = true
+      // 终审 R9：进程退出兜底——dispose() 只在 ZcodeAuth.stop() 正常路径被调，
+      // 宿主崩溃/被 kill 时 chromium 会成孤儿（自述 200-400MB）。'exit' 是同步
+      // 阶段，只能 best-effort 发信号杀；profile 目录清理交给系统临时目录回收。
+      process.once('exit', () => {
+        for (const browser of LIVE_CAPTCHA_BROWSERS) {
+          try { browser.kill() } catch { /* 退出期尽力而为 */ }
+        }
+        LIVE_CAPTCHA_BROWSERS.clear()
+      })
+    }
     this.browserCdp = new CdpConnection(ws)
 
     /**
@@ -2084,6 +2103,7 @@ export class ZcodeCaptchaBrowser {
 
   /** 关闭浏览器并清理临时 profile。 */
   dispose(): void {
+    LIVE_CAPTCHA_BROWSERS.delete(this)
     this.kill()
     const dir = this.profileDir
     this.profileDir = undefined

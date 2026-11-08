@@ -1388,7 +1388,7 @@ export interface RpcBackupExportResponse {
 
 /** RPC: 导入备份请求。 */
 export interface RpcBackupImportRequest {
-  /** 备份载荷（明文 JSON 解析后的对象；加密文件在浏览器侧解密后传入）。 */
+  /** 备份载荷（明文 JSON 解析后的对象；当前无加密层，导入侧有 ref 白名单防护）。 */
   payload: unknown
 }
 

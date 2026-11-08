@@ -89,6 +89,8 @@ interface FlowState {
   nickname: string
   /** 绑手机号流程里 `bindSendMsg` 返回的 msgid。 */
   bindMsgid: string
+  /** 终审 R6：最近一次绑定发码时间（冷却用，0=未发过）。 */
+  lastBindSentAt: number
 }
 
 /**
@@ -111,6 +113,7 @@ export async function startLoomyWechatLoginFlow(
     bind: 0,
     nickname: '',
     bindMsgid: '',
+    lastBindSentAt: 0,
   }
 
   let resolveResult!: (value: LoomyLoginResult & { phone: string; nickname?: string }) => void
@@ -142,12 +145,21 @@ export async function startLoomyWechatLoginFlow(
   // 手机号经 RPC（loomy.wechatQr / loomy.wechatPoll / loomy.wechatSms）由渠道卡片
   // 直接渲染与提交；本函数只负责注册流程并返回 flowId 与 result promise。
   state.flowId = randomUUID()
+  // 2026-11-08 终审 R5（t2 M-4 / t4 #8 同源）：流程必须有超时——此前 Map 全进程
+  // 驻留、清理只在两条成功路径，用户放弃/关卡片即永久泄漏 uuid/rcode/bindMsgid
+  // 且占位账号永不结算。LOOMY_WECHAT_LOGIN_TIMEOUT_MS 此前声明后零引用，这里启用。
+  const flowTimeout = setTimeout(() => {
+    if (LOOMY_WECHAT_FLOWS.delete(state.flowId) && !settled) {
+      settleErr(new Error('Loomy 微信登录流程超时（10 分钟未完成，请重新发起）'))
+    }
+  }, LOOMY_WECHAT_LOGIN_TIMEOUT_MS)
+  flowTimeout.unref?.()
   LOOMY_WECHAT_FLOWS.set(state.flowId, {
     state,
     product,
     fetcher,
-    settleOk,
-    settleErr,
+    settleOk: (value) => { clearTimeout(flowTimeout); settleOk(value) },
+    settleErr: (error) => { clearTimeout(flowTimeout); settleErr(error) },
     isSettledOk: () => settled,
   })
 
@@ -224,7 +236,18 @@ export async function wechatSmsOf(
   const { state, settleOk, product, fetcher } = flow
   try {
     if (action === 'send_sms') {
-      const phone = String(payload.phone ?? '')
+      // 2026-11-08 终审 R6：发码冷却 + 手机号校验（真实短信副作用，照 autoclaw
+      // login-page.ts:77-85 同形；此前无任何防护，重复点按可连发）。
+      const elapsed = Date.now() - state.lastBindSentAt
+      if (state.lastBindSentAt !== 0 && elapsed < 60_000) {
+        const wait = Math.ceil((60_000 - elapsed) / 1000)
+        return { ok: false, message: `发送过于频繁，请 ${wait} 秒后再试` }
+      }
+      const phone = String(payload.phone ?? '').replace(/\D/g, '').slice(-11)
+      if (!/^1[3-9]\d{9}$/.test(phone)) {
+        return { ok: false, message: '请输入有效的 11 位手机号' }
+      }
+      state.lastBindSentAt = Date.now()
       state.bindMsgid = await bindLoomySendMsg(state.rcode, phone, product, fetcher)
       return { ok: true }
     }

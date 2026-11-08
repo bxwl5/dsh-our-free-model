@@ -600,6 +600,10 @@ export async function startTraeLoginFlow(
   const machineId = generateMachineId()
   const deviceId = generateDeviceId()
   const preferredPort = options.callbackPort ?? TRAE_CALLBACK_PORT
+  // 2026-11-08 终审 R7（t3 中危#3）：记录本次登录期望的 login_trace_id，回调时
+  // 比对——防其它进程/页面向回环端口投递伪造回调（登录 CSRF）。上游会回传该
+  // 字段（:69 注释），antigravity/commandcode/raccoon 均有同型校验。
+  const expectedTraceId = machineTraceId(machineId, deviceId)
 
   const server = createServer()
   let resultTimer: ReturnType<typeof setTimeout> | undefined
@@ -629,16 +633,19 @@ export async function startTraeLoginFlow(
       // 不是 OAuth 的 `?code=` 授权码 —— 早期按 OAuth 惯例找 code，
       // 恒判失败 → 回 400 → 前端永远「认证中」（详见 parseTraeCallback）。
       const parsed = parseTraeCallbackDetailed(url)
-      if (!parsed.ok) {
+      // 终审 R7：核对回调自带 login_trace_id 与本次登录期望值一致（防伪造回调）。
+      let callbackTraceId = ''
+      try { callbackTraceId = new URL(url, 'http://127.0.0.1').searchParams.get('login_trace_id') ?? '' } catch { /* 保持空串即判定不匹配 */ }
+      if (!parsed.ok || callbackTraceId !== expectedTraceId) {
         // ⚠️ **必须落定结果 Promise**：这里的早期实现在 `res.end()` 之后
         // 直接 return，`result` Promise 既没 resolve 也没 reject ——
         // 前端 `login.poll` 永远拿不到 `done:true`，界面永久停在「认证中」，
         // 与「回调解析错了」的症状完全一样，但根因是**这里漏了落定**。
         if (resultTimer) clearTimeout(resultTimer)
         res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' })
-        res.end(`TRAE 登录回调无效：${parsed.reason}`)
+        res.end(`TRAE 登录回调无效：${parsed.ok ? 'login_trace_id 不匹配' : parsed.reason}`)
         server.close()
-        reject(new Error(`TRAE 登录回调无效：${parsed.reason}`))
+        reject(new Error(`TRAE 登录回调无效：${parsed.ok ? 'login_trace_id 不匹配' : parsed.reason}`))
         return
       }
       const callback = parsed.info
@@ -735,6 +742,7 @@ export async function startCallbackServer(
       }
       // ⚠️ TRAE 回调直接回传 token（refreshToken/userInfo/userJwt），不是 ?code=。
       const parsed = parseTraeCallbackDetailed(url)
+      // （终审 R7 的 trace 校验只加在生产路径 startTraeLoginFlow；本函数全仓无调用方、属旧 API，不改行为。）
       if (!parsed.ok) {
         // ⚠️ **必须落定结果 Promise**（与 startTraeLoginFlow 同款的真实缺陷）：
         // 早期实现只 res.end() 后 return，既不 resolve 也不 reject ——

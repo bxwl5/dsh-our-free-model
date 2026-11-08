@@ -318,6 +318,10 @@ let channelRosterReadAt = 0
         onTrace: event => logger.info?.(`our-free-model request: ${JSON.stringify(event)}`),
       })
       forwardError = ''
+      if (disposed) { // 终审 R12：dispose 已落——立刻回收刚起的服务防泄漏
+        void forward.close().catch(() => {})
+        forward = undefined
+      }
       // Keep the requested configuration; the bound port belongs to runtime state.
       forwardNotice = forward.fellBack === true && forward.bindError !== null
         ? `port ${forward.requestedPort} is not available on this machine (${forward.bindError.code}); the listener is on port ${forward.port} instead`
@@ -537,6 +541,11 @@ let channelRosterReadAt = 0
         log: message => logger.warn?.(`our-free-model channel relay: ${message}`),
       })
       chanRelayError = ''
+      if (disposed) { // 终审 R12：同上，防泄漏
+        chanRelay.server?.closeAllConnections?.()
+        chanRelay.server?.close(() => {})
+        chanRelay = undefined
+      }
       // The bound port goes back into the settings, so the page shows the
       // address that actually answers (the OS picks when 0 was asked for).
       const settled = settings.get().chanGateway ?? {}
@@ -673,6 +682,10 @@ let channelRosterReadAt = 0
       })
       outletFingerprint = fingerprint
       outletError = ''
+      if (disposed) { // 终审 R12：同上，防泄漏（含 mihomo 子进程）
+        outletRelay?.close?.()
+        outletRelay = undefined
+      }
       outletUpSince = Date.now()
       logger.info?.(`our-free-model: egress outlet up (${outletLabel(url)} via ${mode})`)
       // Same as the close path: the exit IP, its country and the region-gated
@@ -937,6 +950,14 @@ let channelRosterReadAt = 0
       },
       save: async patch => {
         if (patch === null || typeof patch !== 'object') throw httpError(400, 'the request body must be a JSON object')
+        // 2026-11-08 终审 R11：链成员条数上限对齐 preview 的 1000（index.js:930-937
+        // 已有先例）——无上限的链长会被 runCombo 顺序全走，放大 B1 的重试面。
+        const rawCombos = Array.isArray(patch.combos) ? patch.combos : []
+        for (const row of rawCombos) {
+          if (row !== null && typeof row === 'object' && Array.isArray(row.models) && row.models.length > 1000) {
+            throw httpError(400, 'a combo chain may reference at most 1000 models')
+          }
+        }
         const rows = normalizeCombos(patch.combos)
         // Stored as entered. Links that name nothing right now are kept on purpose:
         // a chain that reaches an EAC model is still correct on a day the lane is
@@ -1239,7 +1260,7 @@ let channelRosterReadAt = 0
       await watchEgress()
       await refreshCatalog({ probe: true })
     })().catch(error => logger.warn?.(`our-free-model: periodic refresh failed (${error?.message ?? error})`))
-  }, () => positiveOr(settings.get().probeIntervalMinutes, 15, 1) * 60_000)
+  }, () => positiveOr(settings.get().probeIntervalMinutes, 15, 1, 10080) * 60_000)
   // A failing egress watch means the network is down, which is worth one line —
   // and only the first of a streak, or a dead link would write every two minutes
   // until the next restart. A success resets the flag for the next outage.
@@ -1293,10 +1314,12 @@ function httpError(statusCode, message) {
  * user edits by hand (the only way in on a headless composition) can carry
  * anything. Both timers below take their period from a stored number, so the
  * guard belongs here rather than in each caller.
- */function positiveOr(value, fallback, floor = 1) {
+ */function positiveOr(value, fallback, floor = 1, ceil = Number.MAX_SAFE_INTEGER) {
   const number = Number(value)
   if (!Number.isFinite(number) || number <= 0) return fallback
-  return Math.max(floor, Math.trunc(number))
+  // 2026-11-08 终审：补上限——Node 对 >2^31-1ms 的 setTimeout 会钳成 1ms
+  // （实测 setTimeout(6e9)._idleTimeout===1），探测周期填天文数字会变 1ms 热循环。
+  return Math.min(Math.max(floor, Math.trunc(number)), ceil)
 }
 
 /**

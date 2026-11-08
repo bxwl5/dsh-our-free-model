@@ -675,7 +675,7 @@ function broadcastCatalogChanged(ctx: Context): void {
  *
  * 两条路径的优先级（与 `model.list` 保持一致的取舍，但**不需要展示名**：
  * 这里只要 id 来写黑名单，故不走 `model.list` 那套回填 disabled 的复杂逻辑）：
- * 1. 优先 `modelAdapters[provider].listAllModels()` —— **同步**，不触发远端拉取；
+ * 1. 优先 `ownEntry(modelAdapters, provider)?.listAllModels()` —— **同步**，不触发远端拉取；
  * 2. 缺失时退化 `llm.listModels(provider)` —— 异步，且**结果已被黑名单过滤**。
  *
  * ⚠️ 第 2 条路径拿不到「已关闭」的模型（它们不在 `listModels` 返回值里），
@@ -690,7 +690,7 @@ async function fullCatalogIds(
   modelAdapters: Readonly<Record<string, ModelCatalogSource>> | undefined,
   provider: string,
 ): Promise<{ ids: string[] } | { error: string }> {
-  const all = modelAdapters?.[provider]?.listAllModels()
+  const all = ownEntry(modelAdapters, provider)?.listAllModels()
   if (all !== undefined) return { ids: all.map((model) => model.id) }
   const llm = llmServiceOf(ctx)
   if (llm === undefined) return { error: 'llm 服务不可用' }
@@ -892,6 +892,11 @@ function registerChannelPackEndpoints(
         || !Object.prototype.hasOwnProperty.call(call, 'payload')
       ) {
         return reply(rpcId, { ok: false, error: { code: 'gateway/bad-request', message: 'Invalid Channel Pack management request.' } })
+      }
+      if (call.payload !== null && typeof call.payload !== 'object') {
+        // 2026-11-08 终审 R2：payload 必须是对象（或 null→按无参处理），原始类型
+        // 会让各 case 的属性访问抛 TypeError 并把异常 message 回显给调用方。
+        return reply(rpcId, { ok: false, error: { code: 'gateway/bad-request', message: 'payload must be an object.' } })
       }
 
       try {
@@ -1296,7 +1301,7 @@ function registerChannelPackEndpoints(
         const req = payload as { provider?: unknown; credential?: unknown }
         const provider = typeof req.provider === 'string' ? req.provider : ''
         const text = typeof req.credential === 'string' ? req.credential : ''
-        const channel = ADOPTABLE_CHANNELS[provider]
+        const channel = ownEntry(ADOPTABLE_CHANNELS, provider)
         if (channel === undefined) {
           return { ok: false, error: { code: 'bad-request', message: `provider does not accept pasted credentials: ${provider}` } }
         }
@@ -1382,7 +1387,7 @@ function registerChannelPackEndpoints(
            * ⚠️ 「是否全部模型都被限」必须用 **id** 比较（key 就是 id），
            * 早期版本拿 `name` 和 id 比，永远不相等 → 该分支是死代码。
            */
-          const catalog = modelAdapters?.[provider]?.listAllModels() ?? []
+          const catalog = ownEntry(modelAdapters, provider)?.listAllModels() ?? []
           const idToName = new Map(catalog.map((model) => [model.id, model.name]))
           const knownIds = catalog.map((model) => model.id)
           for (const account of accounts) {
@@ -2166,7 +2171,15 @@ function registerChannelPackEndpoints(
 
       case 'account.update': {
         const req = payload as RpcUpdateAccountRequest
-        await pool.updateAccount(req.accountId, req.patch)
+        // 2026-11-08 终审 H3：patch 字段白名单——RPC 契约（RpcUpdateAccountRequest）
+        // 只允许 nickname/enabled；直接透传任意键会被 account-pool 的展开合并
+        // 越权改写 credentialRef/id/provider/opencodeProxy 等内部字段。
+        const patch: Record<string, unknown> = {}
+        if (req.patch !== null && typeof req.patch === 'object') {
+          if (typeof req.patch.nickname === 'string') patch.nickname = req.patch.nickname
+          if (typeof req.patch.enabled === 'boolean') patch.enabled = req.patch.enabled
+        }
+        await pool.updateAccount(req.accountId, patch as Partial<ProviderAccountEntry>)
         return { ok: true, value: undefined }
       }
 
@@ -3582,7 +3595,7 @@ function registerChannelPackEndpoints(
         // id 可用。适配器实例由 `registerChannelPackRpc` 的 `modelAdapters` 传入
         // （DSH 的 `ctx.llm` 只保证 `listModels`，不透传自定义方法）。
         // 对话框模型选择器读的仍是过滤后的 `listModels`，可见性行为完全不变。
-        const catalogSource = modelAdapters?.[req.provider]
+        const catalogSource = ownEntry(modelAdapters, String(req.provider ?? ''))
         const all = catalogSource?.listAllModels()
         /**
          * 补回条目时的展示名：**先问适配器**（`displayNameFor` 能给出本地化名 +
@@ -3685,7 +3698,7 @@ function registerChannelPackEndpoints(
         if (typeof req.provider !== 'string' || req.provider.length === 0) {
           return { ok: false, error: { code: 'bad-request', message: 'provider 必填' } }
         }
-        const source = modelAdapters?.[req.provider]
+        const source = ownEntry(modelAdapters, String(req.provider ?? ''))
         if (source?.refreshCatalog === undefined) {
           return {
             ok: false,
@@ -3877,7 +3890,7 @@ function registerChannelPackEndpoints(
        *
        * 为什么一次取全部：8 个供应商若逐个查，就是 16 次往返，且每次都要走
        * 异步凭据解析。这里**全程只用同步的内存副本**，不产生任何网络请求：
-       * - 模型目录用 `modelAdapters[provider].listAllModels()`（同步；它内部
+       * - 模型目录用 `ownEntry(modelAdapters, provider)?.listAllModels()`（同步；它内部
        *   在冷缓存时会**后台**补拉，但不阻塞本次返回）；
        * - 账号用 `pool.listAccountsByProvider()`（同步读内存）。
        *
@@ -4219,8 +4232,11 @@ function registerChannelPackEndpoints(
       // （账号索引 + 凭据原文 + 模型黑名单，见 src/backup.ts），与 DSH 版本
       // 无关 —— 导入时按**当前版本**的存储契约重建，天然跨版本。
       //
-      // 安全约定：加密在浏览器侧完成（PBKDF2 + AES-GCM），RPC 只接收/返回
-      // 明文载荷；明文 JSON 不经过本层持久化与日志。
+      // 安全事实（2026-11-08 终审 H1 修正，原"浏览器侧 PBKDF2+AES-GCM 加密"表述失实）：
+      // 导出载荷为**明文凭据**（access_token/refresh_token/DPoP 私钥全量），
+      // RPC 只接收/返回明文载荷；明文 JSON 不经过本层持久化与日志。
+      // 前端负责提示保存到可信位置（channels.mjs「请保存在可信的本地位置」）——
+      // 当前没有任何加密层，导入端见 backup.import 的 ref 白名单防护。
       case 'backup.export': {
         const result = await exportBackup(pool, ctx.credentials)
         const value: RpcBackupExportResponse = {
@@ -4341,7 +4357,7 @@ function registerChannelPackEndpoints(
         const catalogFor = (provider: string) => {
           let list = catalogByProvider.get(provider)
           if (list === undefined) {
-            list = modelAdapters?.[provider]?.listAllModels() ?? []
+            list = ownEntry(modelAdapters, provider)?.listAllModels() ?? []
             catalogByProvider.set(provider, list)
           }
           return list
@@ -4477,7 +4493,7 @@ function registerChannelPackEndpoints(
            * `wrapAdapterWithTokenLedger` 的注释），再映射一次会把
            * `DeepSeek-Flash · x0.1` 当 id 去查，查不到就原样返回（无害但白跑）。
            */
-          const catalog = modelAdapters?.[provider]?.listAllModels() ?? []
+          const catalog = ownEntry(modelAdapters, provider)?.listAllModels() ?? []
           if (catalog.some((m) => m.name === modelId)) return raw
           const named = modelAdapters?.[provider]?.displayNameFor?.(modelId)
             ?? catalog.find((m) => m.id === modelId)?.name
@@ -4614,11 +4630,23 @@ function registerChannelPackEndpoints(
 }
 
 /** 构造带 rpcId 的响应 JSON */
+/** 2026-11-08 终审 R4：原型链安全的属性查表（'constructor'/'__proto__' 等
+ * Object.prototype 成员名会让 `table[key]` 拿到继承值再炸调用方）。 */
+function ownEntry<T>(table: Record<string, T> | undefined, key: string): T | undefined {
+  if (table === undefined) return undefined
+  return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : undefined
+}
+
 function reply(rpcId: string, result: unknown): Response {
+  // 2026-11-08 终审 R1（原 t4 #11+#4 合并）：失败信封不再强注空 details 覆盖端点
+  // 自带的真实 details；响应补 no-store——本响应承载 gateway Key/账号信息/备份
+  // 载荷，禁止被任何中间层缓存。
   const value = typeof result === 'object' && result !== null && (result as Record<string, unknown>).ok === false
-    ? { ...result as Record<string, unknown>, error: { ...(result as Record<string, unknown>).error as Record<string, unknown>, details: {} } }
+    ? { ...result as Record<string, unknown>, error: { ...(result as Record<string, unknown>).error as Record<string, unknown> } }
     : result
-  return Response.json({ type: 'server-response', rpcId, result: value })
+  return Response.json({ type: 'server-response', rpcId, result: value }, {
+    headers: { 'cache-control': 'no-store' },
+  })
 }
 
 // ── 需要手动粘贴凭据的渠道（无自动化登录流程）──────────────
@@ -4648,5 +4676,5 @@ const ADOPTABLE_CHANNELS: Readonly<Record<string, AdoptableChannel>> = {}
 
 /** 列出可粘贴凭据的渠道（UI 据此决定「添加账号」的交互形态）。 */
 export function adoptableChannelHint(provider: string): string | undefined {
-  return ADOPTABLE_CHANNELS[provider]?.hint
+  return ownEntry(ADOPTABLE_CHANNELS, provider)?.hint
 }

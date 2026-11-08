@@ -485,7 +485,8 @@ const REF_PREFIX_TO_PROVIDER: ReadonlyArray<readonly [string, string]> = [
 ]
 
 /** 账号凭据 ref 形态：`{PREFIX}_ACCOUNT_{HEX}`（前缀由单一真相源派生）。 */
-const ACCOUNT_REF_RE = new RegExp(
+/** 备份导入白名单（2026-11-08 终审 H2）：凭据 ref 必须能被本插件命名空间识别。 */
+export const ACCOUNT_REF_RE = new RegExp(
   // ⚠️ 按前缀长度**降序**排列：`QODERCN` 必须排在 `QODER` 之前。虽然正则的
   // 回溯最终仍能让 `QODERCN_*` 匹配成功（所以顺序错了也**暂时**看不出问题），
   // 但那时匹配结果就取决于引擎的尝试顺序而非规则 —— 一旦将来加入更多同前缀的
@@ -616,7 +617,7 @@ class FileStore implements ChannelPackStore {
   /** 最近一次**由本进程**写盘后的 mtime（写盘后同步，避免「刚写完就被判外部改动」）。 */
   private write(state: ChannelPackState): void {
     mkdirSync(join(this.home, 'channel-pack'), { recursive: true })
-    const tmp = `${this.path}.tmp`
+    const tmp = `${this.path}.${process.pid}.tmp` // 2026-11-08 终审 R3：pid 后缀防跨进程互相覆盖/ENOENT
     writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf-8')
     renameSync(tmp, this.path)
     // 记录写后 mtime：调用方据此跳过「刚写就被判为外部改动」的误判。

@@ -55,3 +55,22 @@ rm -rf vendor/channel-pack/node_modules
 本目录**不含**上游的浏览器半身（`plugin-src/client`）与其设置页——
 界面由 `dsh-our-free-model` 自己的三页界面取代，渠道操作经上游的
 `/api/channel-pack` RPC 完成（`connection.rpc.call('/api', 'channel-pack', { method, payload })`）。
+
+
+## 随包分发的上游公开常数声明（2026-11-08 终审披露）
+
+以下常数为逆向自各渠道**官方客户端公开分发文件**的接入常数，非我方或用户
+的私密凭据，随本插件产物一同分发：
+
+| 常数 | 位置 | 来源 |
+|---|---|---|
+| AutoClaw appId/appKey | `src/autoclaw-sms.ts:39-40` | 官方 PC 客户端 |
+| Loomy accessKey/secret/appId | `src/loomy-product.ts:124-126` | 官方客户端 `.env.prod` |
+| Loomy 微信 AppID | `src/loomy-wechat.ts:33` | 官方客户端 |
+| Cline WorkOS client_id | `src/cline-product.ts:259` | 官方客户端 |
+| Antigravity Google client_secret | `src/antigravity-oauth.ts:38` | 上游 Cloud Code 客户端（RFC 8252 原生应用公开 client）|
+
+另披露（2026-11-08 终审 H6）：**Trae 渠道的推理请求**（含用户对话内容）
+发往 `https://trae-api-cn.mchost.guru`——这是该渠道协议复刻时的既定上游
+主机（非 trae.cn 官方域；签到/积分/OAuth 走官方域）。使用 Trae 渠道前请
+知悉并自行评估该主机的可信度。

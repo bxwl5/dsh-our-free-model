@@ -524,13 +524,19 @@ export async function startGeminiOAuthFlow(
   const fetcher = options.fetcher ?? fetch
   const timeoutMs = options.timeoutMs ?? ANTIGRAVITY_AUTH_FLOW_TIMEOUT_MS
 
+  let timeoutSettled = false
+  const timerRef: { current?: ReturnType<typeof setTimeout> } = {}
   const result = Promise.race([
     codePromise,
     new Promise<never>((_, reject) => {
       const timer = setTimeout(
-        () => reject(new AntigravityLoginExpiredError()),
+        () => {
+          timeoutSettled = true
+          reject(new AntigravityLoginExpiredError())
+        },
         timeoutMs,
       )
+      timerRef.current = timer
       timer.unref?.()
     }),
   ]).then(async (code) => {
@@ -551,7 +557,11 @@ export async function startGeminiOAuthFlow(
 
   // 先挂空处理器：结果可能在调用方 await 之前就落定（用户授权极快或立刻超时），
   // 那一段窗口里 Node 会把它当成未处理拒绝并打印告警。
-  result.catch(() => {}).finally(() => { void close() })
+  result.catch(() => {}).finally(() => {
+    // 2026-11-08 终审 R8：先落定的一方清掉另一方（见 commandcode 同款）。
+    if (!timeoutSettled && timerRef.current !== undefined) clearTimeout(timerRef.current)
+    void close()
+  })
 
   return { loginUrl, result, close }
 }

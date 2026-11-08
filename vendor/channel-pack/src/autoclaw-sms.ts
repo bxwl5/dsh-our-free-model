@@ -364,7 +364,9 @@ export function autoclawUserapiHeaders(
     'X-Product': 'autoclaw',
     'X-Client-Type': 'pc',
     'X-Harness-Type': 'zcode',
-    'X-Tm': process.platform === 'win32' ? 'win' : 'linux',
+    // 2026-11-08 终审 R15：与对话链路（autoclaw.ts autoclawPlatformTm）统一——
+    // 上游只拒「恰好等于 linux」的值（403/406），两个链路口径必须一致回落 win。
+    'X-Tm': 'win',
     'X-Lang': 'zh-CN',
     'X-Channel': 'official',
     'X-Auth-Appid': AUTOCLAW_SMS_APP_ID,
@@ -414,7 +416,9 @@ export async function claimAutoclawDailyCheckin(options: {
     method: 'POST',
     headers: autoclawUserapiHeaders(token, timestamp),
     body: JSON.stringify({ task_id: AUTOCLAW_DAILY_SIGNIN_TASK }),
-    ...(options.signal === undefined ? {} : { signal: options.signal }),
+    // 2026-11-08 终审 R14：兜底超时——后台自动签到路径不传 signal，上游悬挂
+    // 会让 auto-checkin 的 running 永不复位（卡死当日全部渠道）。
+    signal: options.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
   if (response.status === 401) {
     return { claimed: 0, message: '登录态已过期，无法签到（请先续期或重新登录）' }
@@ -436,7 +440,10 @@ export async function claimAutoclawDailyCheckin(options: {
   if (reward > 0) return { claimed: reward, message: `已领取 ${reward} 积分` }
   if (success) return { claimed: 0, message: '签到成功（本轮未返回积分数）' }
   if (already) return { claimed: 0, message: '今天已签到过（上游按天幂等）' }
-  return { claimed: 0, message: '上游未返回可领取的积分（今日可能已领过）' }
+  // 2026-11-08 终审 M-2：兜底文案不得含「已领/已签到」字样——RPC 侧用
+  // /已签到|已领/ 归类 already-claimed，旧文案「今日可能已领过」会被误判成
+  // 「今日已办」并记 coversToday，未确证结局当天不再补救。
+  return { claimed: 0, message: '上游未返回可判定的领取结果（今日是否入账未知）' }
 }
 
 // ── 模型路由（上游 `providers/autoclaw/models.rs` 的 resolve_model_route）──
@@ -658,7 +665,8 @@ export async function fetchAutoClawWallets(options: {
     const response = await options.fetcher(`${options.product.apiBase}${path}`, {
       method: 'GET',
       headers,
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      // 终审 R14：同上，兜底超时。
+      signal: options.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
     if (!response.ok) continue
     const body: unknown = await response.json().catch(() => undefined)

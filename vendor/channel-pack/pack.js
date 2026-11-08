@@ -28196,18 +28196,25 @@ async function startCommandCodeLogin(options) {
     await new Promise((resolve2) => server.close(() => resolve2()));
   };
   const timeoutMs = options.timeoutMs ?? COMMANDCODE_LOGIN_TIMEOUT_MS;
+  let timeoutSettled = false;
+  const timerRef = {};
   const resultWithTimeout = Promise.race([
     result,
     new Promise((_, reject) => {
       const timer = setTimeout(
-        () => reject(new Error(`Command Code \u767B\u5F55\u8D85\u65F6\uFF08${Math.round(timeoutMs / 1e3)} \u79D2\u5185\u672A\u5B8C\u6210\uFF09`)),
+        () => {
+          timeoutSettled = true;
+          reject(new Error(`Command Code \u767B\u5F55\u8D85\u65F6\uFF08${Math.round(timeoutMs / 1e3)} \u79D2\u5185\u672A\u5B8C\u6210\uFF09`));
+        },
         timeoutMs
       );
+      timerRef.current = timer;
       timer.unref?.();
     })
   ]);
   resultWithTimeout.catch(() => {
   }).finally(() => {
+    if (!timeoutSettled && timerRef.current !== void 0) clearTimeout(timerRef.current);
     void close();
   });
   return { loginUrl, port, portFallback: binding.fallback, result: resultWithTimeout, close };
@@ -29441,7 +29448,9 @@ function autoclawUserapiHeaders(token, timestamp = Math.floor(Date.now() / 1e3))
     "X-Product": "autoclaw",
     "X-Client-Type": "pc",
     "X-Harness-Type": "zcode",
-    "X-Tm": process.platform === "win32" ? "win" : "linux",
+    // 2026-11-08 终审 R15：与对话链路（autoclaw.ts autoclawPlatformTm）统一——
+    // 上游只拒「恰好等于 linux」的值（403/406），两个链路口径必须一致回落 win。
+    "X-Tm": "win",
     "X-Lang": "zh-CN",
     "X-Channel": "official",
     "X-Auth-Appid": AUTOCLAW_SMS_APP_ID,
@@ -29458,7 +29467,9 @@ async function claimAutoclawDailyCheckin(options) {
     method: "POST",
     headers: autoclawUserapiHeaders(token, timestamp),
     body: JSON.stringify({ task_id: AUTOCLAW_DAILY_SIGNIN_TASK }),
-    ...options.signal === void 0 ? {} : { signal: options.signal }
+    // 2026-11-08 终审 R14：兜底超时——后台自动签到路径不传 signal，上游悬挂
+    // 会让 auto-checkin 的 running 永不复位（卡死当日全部渠道）。
+    signal: options.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS2)
   });
   if (response.status === 401) {
     return { claimed: 0, message: "\u767B\u5F55\u6001\u5DF2\u8FC7\u671F\uFF0C\u65E0\u6CD5\u7B7E\u5230\uFF08\u8BF7\u5148\u7EED\u671F\u6216\u91CD\u65B0\u767B\u5F55\uFF09" };
@@ -29476,7 +29487,7 @@ async function claimAutoclawDailyCheckin(options) {
   if (reward > 0) return { claimed: reward, message: `\u5DF2\u9886\u53D6 ${reward} \u79EF\u5206` };
   if (success) return { claimed: 0, message: "\u7B7E\u5230\u6210\u529F\uFF08\u672C\u8F6E\u672A\u8FD4\u56DE\u79EF\u5206\u6570\uFF09" };
   if (already) return { claimed: 0, message: "\u4ECA\u5929\u5DF2\u7B7E\u5230\u8FC7\uFF08\u4E0A\u6E38\u6309\u5929\u5E42\u7B49\uFF09" };
-  return { claimed: 0, message: "\u4E0A\u6E38\u672A\u8FD4\u56DE\u53EF\u9886\u53D6\u7684\u79EF\u5206\uFF08\u4ECA\u65E5\u53EF\u80FD\u5DF2\u9886\u8FC7\uFF09" };
+  return { claimed: 0, message: "\u4E0A\u6E38\u672A\u8FD4\u56DE\u53EF\u5224\u5B9A\u7684\u9886\u53D6\u7ED3\u679C\uFF08\u4ECA\u65E5\u662F\u5426\u5165\u8D26\u672A\u77E5\uFF09" };
 }
 function stripAutoClawRoutePrefix(routeId) {
   for (const prefix of AUTOCLAW_ROUTE_PREFIXES) {
@@ -29529,7 +29540,8 @@ async function fetchAutoClawWallets(options) {
     const response = await options.fetcher(`${options.product.apiBase}${path2}`, {
       method: "GET",
       headers,
-      ...options.signal === void 0 ? {} : { signal: options.signal }
+      // 终审 R14：同上，兜底超时。
+      signal: options.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS2)
     });
     if (!response.ok) continue;
     const body = await response.json().catch(() => void 0);
@@ -31823,7 +31835,7 @@ var FileStore = class {
   /** 最近一次**由本进程**写盘后的 mtime（写盘后同步，避免「刚写完就被判外部改动」）。 */
   write(state) {
     mkdirSync(join(this.home, "channel-pack"), { recursive: true });
-    const tmp = `${this.path}.tmp`;
+    const tmp = `${this.path}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(state, null, 2), "utf-8");
     renameSync(tmp, this.path);
   }
@@ -31932,7 +31944,7 @@ var FileLockStore = class {
   }
   async save(locks) {
     mkdirSync2(join2(this.path, ".."), { recursive: true });
-    const tmp = `${this.path}.tmp`;
+    const tmp = `${this.path}.${process.pid}.tmp`;
     writeFileSync2(tmp, JSON.stringify({ schema: SCHEMA, locks }, null, 2), "utf-8");
     renameSync2(tmp, this.path);
   }
@@ -35545,7 +35557,7 @@ var FileDeadModelStore = class {
   }
   save(records) {
     mkdirSync5(join4(this.path, ".."), { recursive: true });
-    const tmp = `${this.path}.tmp`;
+    const tmp = `${this.path}.${process.pid}.tmp`;
     writeFileSync5(tmp, JSON.stringify({ schema: SCHEMA3, providers: records }, null, 2), "utf-8");
     renameSync5(tmp, this.path);
   }
@@ -40002,6 +40014,22 @@ var BuddyAdapter = class _BuddyAdapter extends LlmAdapter2 {
       "reasoning"
     ) } : loopDetected ? { kind: "max-tokens" } : finishReason2 === "length" || finishReason2 === void 0 && toolOrder.length > 0 || argsTruncated || proseCutByStopString || droppedUnnamedCalls && toolOrder.length === 0 ? { kind: "max-tokens" } : finishReason2 === "tool_calls" || toolOrder.length > 0 ? { kind: "tool-calls" } : { kind: "stop" };
     yield { type: "finish", reason: resolveEmptyResponseReason(reason, blockCount) };
+  }
+  /**
+   * 2026-11-08 终审 H4：补齐 providerRetryPolicy——此前缺省，429 落 'RATE_LIMIT'
+   * 被内核默认策略（maxRetries=5 且含 RATE_LIMIT）重试，与内部换号叠加成风暴
+   * （buddy 14003 路径单轮 ≈18 次上游请求）。对照 autoclaw-adapter.ts:562-579 与
+   * 宿主 lane adapter.js:86-93（issue #13 教训）：429 不自动重试，上限 2 次。
+   */
+  providerRetryPolicy() {
+    return {
+      mode: "normal",
+      retryableCodes: ["TRANSPORT", "TIMEOUT", "SERVER"],
+      maxRetries: 2,
+      initialDelayMs: 800,
+      maxDelayMs: 4e3,
+      jitterRatio: 0.25
+    };
   }
 };
 function isCredentialExpired(credential) {
@@ -45023,6 +45051,22 @@ var ClineAdapter = class extends LlmAdapter5 {
       throw error;
     }
   }
+  /**
+   * 2026-11-08 终审 H4：补齐 providerRetryPolicy——此前缺省，429 落 'RATE_LIMIT'
+   * 被内核默认策略（maxRetries=5 且含 RATE_LIMIT）重试，与内部换号叠加成风暴
+   * （buddy 14003 路径单轮 ≈18 次上游请求）。对照 autoclaw-adapter.ts:562-579 与
+   * 宿主 lane adapter.js:86-93（issue #13 教训）：429 不自动重试，上限 2 次。
+   */
+  providerRetryPolicy() {
+    return {
+      mode: "normal",
+      retryableCodes: ["TRANSPORT", "TIMEOUT", "SERVER"],
+      maxRetries: 2,
+      initialDelayMs: 800,
+      maxDelayMs: 4e3,
+      jitterRatio: 0.25
+    };
+  }
 };
 function isClineRotatableFailure(status, body) {
   if (status === 429 || status === 402) return true;
@@ -46457,7 +46501,7 @@ var AutoClawAdapter = class extends LlmAdapter8 {
       if (isAutoClawAccountBanned(text)) {
         throw new LlmError12(
           `AutoClaw\uFF1A\u8D26\u53F7\u88AB\u9650\u5236\uFF08HTTP ${response.status}\uFF09${suffix}`,
-          "PERMISSION",
+          "PERMISSION_DENIED",
           { status: response.status }
         );
       }
@@ -46970,6 +47014,22 @@ var LoomyAdapter = class extends LlmAdapter9 {
         if (isLoomyExpired(credential)) credential = await this.options.refresh(accountId) ?? credential;
       }
     }
+  }
+  /**
+   * 2026-11-08 终审 H4：补齐 providerRetryPolicy——此前缺省，429 落 'RATE_LIMIT'
+   * 被内核默认策略（maxRetries=5 且含 RATE_LIMIT）重试，与内部换号叠加成风暴
+   * （buddy 14003 路径单轮 ≈18 次上游请求）。对照 autoclaw-adapter.ts:562-579 与
+   * 宿主 lane adapter.js:86-93（issue #13 教训）：429 不自动重试，上限 2 次。
+   */
+  providerRetryPolicy() {
+    return {
+      mode: "normal",
+      retryableCodes: ["TRANSPORT", "TIMEOUT", "SERVER"],
+      maxRetries: 2,
+      initialDelayMs: 800,
+      maxDelayMs: 4e3,
+      jitterRatio: 0.25
+    };
   }
 };
 function isLoomyQuotaError(data) {
@@ -49394,6 +49454,7 @@ async function startTraeLoginFlow(options) {
   const machineId = generateMachineId();
   const deviceId = generateDeviceId();
   const preferredPort = options.callbackPort ?? TRAE_CALLBACK_PORT;
+  const expectedTraceId = machineTraceId(machineId, deviceId);
   const server = createServer3();
   let resultTimer;
   let rejectResult;
@@ -49413,12 +49474,17 @@ async function startTraeLoginFlow(options) {
         return;
       }
       const parsed = parseTraeCallbackDetailed(url);
-      if (!parsed.ok) {
+      let callbackTraceId = "";
+      try {
+        callbackTraceId = new URL(url, "http://127.0.0.1").searchParams.get("login_trace_id") ?? "";
+      } catch {
+      }
+      if (!parsed.ok || callbackTraceId !== expectedTraceId) {
         if (resultTimer) clearTimeout(resultTimer);
         res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
-        res.end(`TRAE \u767B\u5F55\u56DE\u8C03\u65E0\u6548\uFF1A${parsed.reason}`);
+        res.end(`TRAE \u767B\u5F55\u56DE\u8C03\u65E0\u6548\uFF1A${parsed.ok ? "login_trace_id \u4E0D\u5339\u914D" : parsed.reason}`);
         server.close();
-        reject(new Error(`TRAE \u767B\u5F55\u56DE\u8C03\u65E0\u6548\uFF1A${parsed.reason}`));
+        reject(new Error(`TRAE \u767B\u5F55\u56DE\u8C03\u65E0\u6548\uFF1A${parsed.ok ? "login_trace_id \u4E0D\u5339\u914D" : parsed.reason}`));
         return;
       }
       const callback = parsed.info;
@@ -50981,7 +51047,8 @@ async function startLoomyWechatLoginFlow(options) {
     rcode: "",
     bind: 0,
     nickname: "",
-    bindMsgid: ""
+    bindMsgid: "",
+    lastBindSentAt: 0
   };
   let resolveResult;
   let rejectResult;
@@ -51004,12 +51071,24 @@ async function startLoomyWechatLoginFlow(options) {
   };
   state.uuid = await fetchLoomyWechatUuid(randomUUID7(), fetcher);
   state.flowId = randomUUID7();
+  const flowTimeout = setTimeout(() => {
+    if (LOOMY_WECHAT_FLOWS.delete(state.flowId) && !settled) {
+      settleErr(new Error("Loomy \u5FAE\u4FE1\u767B\u5F55\u6D41\u7A0B\u8D85\u65F6\uFF0810 \u5206\u949F\u672A\u5B8C\u6210\uFF0C\u8BF7\u91CD\u65B0\u53D1\u8D77\uFF09"));
+    }
+  }, LOOMY_WECHAT_LOGIN_TIMEOUT_MS);
+  flowTimeout.unref?.();
   LOOMY_WECHAT_FLOWS.set(state.flowId, {
     state,
     product,
     fetcher,
-    settleOk,
-    settleErr,
+    settleOk: (value) => {
+      clearTimeout(flowTimeout);
+      settleOk(value);
+    },
+    settleErr: (error) => {
+      clearTimeout(flowTimeout);
+      settleErr(error);
+    },
     isSettledOk: () => settled
   });
   return { flowId: state.flowId, result };
@@ -51055,7 +51134,16 @@ async function wechatSmsOf(flow, action, payload) {
   const { state, settleOk, product, fetcher } = flow;
   try {
     if (action === "send_sms") {
-      const phone = String(payload.phone ?? "");
+      const elapsed = Date.now() - state.lastBindSentAt;
+      if (state.lastBindSentAt !== 0 && elapsed < 6e4) {
+        const wait = Math.ceil((6e4 - elapsed) / 1e3);
+        return { ok: false, message: `\u53D1\u9001\u8FC7\u4E8E\u9891\u7E41\uFF0C\u8BF7 ${wait} \u79D2\u540E\u518D\u8BD5` };
+      }
+      const phone = String(payload.phone ?? "").replace(/\D/g, "").slice(-11);
+      if (!/^1[3-9]\d{9}$/.test(phone)) {
+        return { ok: false, message: "\u8BF7\u8F93\u5165\u6709\u6548\u7684 11 \u4F4D\u624B\u673A\u53F7" };
+      }
+      state.lastBindSentAt = Date.now();
       state.bindMsgid = await bindLoomySendMsg(state.rcode, phone, product, fetcher);
       return { ok: true };
     }
@@ -53334,6 +53422,8 @@ function safeRemoveDir(dir) {
   } catch {
   }
 }
+var LIVE_CAPTCHA_BROWSERS = /* @__PURE__ */ new Set();
+var EXIT_HOOK_INSTALLED = false;
 var ZcodeCaptchaBrowser = class {
   constructor(options = {}) {
     this.options = options;
@@ -53484,6 +53574,19 @@ var ZcodeCaptchaBrowser = class {
       ws.addEventListener("error", () => reject(new Error("zcode: \u8FDE\u63A5\u6D4F\u89C8\u5668\u8C03\u8BD5\u7AEF\u53E3\u5931\u8D25")), { once: true });
     });
     this.browserWs = ws;
+    LIVE_CAPTCHA_BROWSERS.add(this);
+    if (!EXIT_HOOK_INSTALLED) {
+      EXIT_HOOK_INSTALLED = true;
+      process.once("exit", () => {
+        for (const browser of LIVE_CAPTCHA_BROWSERS) {
+          try {
+            browser.kill();
+          } catch {
+          }
+        }
+        LIVE_CAPTCHA_BROWSERS.clear();
+      });
+    }
     this.browserCdp = new CdpConnection(ws);
     if (hide && this.child?.pid !== void 0) hideWindowFromTaskbar(this.child.pid, this.log);
   }
@@ -53881,6 +53984,7 @@ var ZcodeCaptchaBrowser = class {
   }
   /** 关闭浏览器并清理临时 profile。 */
   dispose() {
+    LIVE_CAPTCHA_BROWSERS.delete(this);
     this.kill();
     const dir = this.profileDir;
     this.profileDir = void 0;
@@ -62937,6 +63041,10 @@ async function importBackup(credentials, pool, raw) {
       skipped.push(refName);
       continue;
     }
+    if (!ACCOUNT_REF_RE.test(refName)) {
+      skipped.push(refName);
+      continue;
+    }
     try {
       await credentials.set(credentialRef12(refName), value);
       credentialsImported++;
@@ -63191,7 +63299,7 @@ var FilePreferenceStore = class {
   }
   async save(preference) {
     mkdirSync7(join8(this.path, ".."), { recursive: true });
-    const tmp = `${this.path}.tmp`;
+    const tmp = `${this.path}.${process.pid}.tmp`;
     writeFileSync8(tmp, JSON.stringify({ schema: SCHEMA4, badgePreference: preference }, null, 2), "utf-8");
     renameSync6(tmp, this.path);
   }
@@ -63616,7 +63724,7 @@ var FileAutoCheckinStore = class {
   }
   async save(doc) {
     mkdirSync8(join9(this.path, ".."), { recursive: true });
-    const tmp = `${this.path}.tmp`;
+    const tmp = `${this.path}.${process.pid}.tmp`;
     writeFileSync9(tmp, JSON.stringify({
       schema: SCHEMA5,
       enabled: doc.enabled,
@@ -64272,7 +64380,7 @@ function broadcastCatalogChanged(ctx) {
   }
 }
 async function fullCatalogIds(ctx, modelAdapters, provider) {
-  const all = modelAdapters?.[provider]?.listAllModels();
+  const all = ownEntry(modelAdapters, provider)?.listAllModels();
   if (all !== void 0) return { ids: all.map((model) => model.id) };
   const llm = llmServiceOf(ctx);
   if (llm === void 0) return { error: "llm \u670D\u52A1\u4E0D\u53EF\u7528" };
@@ -64349,6 +64457,9 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
       const call = message2.payload;
       if (message2.type !== "client-request" || typeof message2.rpcId !== "string" || message2.method !== CHANNEL_PACK_ENDPOINT || !call || typeof call.method !== "string" || !Object.prototype.hasOwnProperty.call(call, "payload")) {
         return reply(rpcId, { ok: false, error: { code: "gateway/bad-request", message: "Invalid Channel Pack management request." } });
+      }
+      if (call.payload !== null && typeof call.payload !== "object") {
+        return reply(rpcId, { ok: false, error: { code: "gateway/bad-request", message: "payload must be an object." } });
       }
       try {
         const result = await handleMethod(call.method, call.payload, request2.signal);
@@ -64564,7 +64675,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         const req = payload;
         const provider = typeof req.provider === "string" ? req.provider : "";
         const text = typeof req.credential === "string" ? req.credential : "";
-        const channel = ADOPTABLE_CHANNELS[provider];
+        const channel = ownEntry(ADOPTABLE_CHANNELS, provider);
         if (channel === void 0) {
           return { ok: false, error: { code: "bad-request", message: `provider does not accept pasted credentials: ${provider}` } };
         }
@@ -64626,7 +64737,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           } catch {
             continue;
           }
-          const catalog = modelAdapters?.[provider]?.listAllModels() ?? [];
+          const catalog = ownEntry(modelAdapters, provider)?.listAllModels() ?? [];
           const idToName = new Map(catalog.map((model) => [model.id, model.name]));
           const knownIds = catalog.map((model) => model.id);
           for (const account of accounts) {
@@ -65153,7 +65264,12 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
       }
       case "account.update": {
         const req = payload;
-        await pool.updateAccount(req.accountId, req.patch);
+        const patch = {};
+        if (req.patch !== null && typeof req.patch === "object") {
+          if (typeof req.patch.nickname === "string") patch.nickname = req.patch.nickname;
+          if (typeof req.patch.enabled === "boolean") patch.enabled = req.patch.enabled;
+        }
+        await pool.updateAccount(req.accountId, patch);
         return { ok: true, value: void 0 };
       }
       case "account.delete": {
@@ -66129,7 +66245,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           return { ok: false, error: { code: "bad-request", message: `\u8BFB\u53D6\u6A21\u578B\u5217\u8868\u5931\u8D25\uFF1A${reason}` } };
         }
         const disabledMap = pool.listDisabledModels(req.provider);
-        const catalogSource = modelAdapters?.[req.provider];
+        const catalogSource = ownEntry(modelAdapters, String(req.provider ?? ""));
         const all = catalogSource?.listAllModels();
         const nameOf = (id) => catalogSource?.displayNameFor?.(id) ?? id;
         const deadIds = deadModelIdsFor(req.provider);
@@ -66196,7 +66312,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         if (typeof req.provider !== "string" || req.provider.length === 0) {
           return { ok: false, error: { code: "bad-request", message: "provider \u5FC5\u586B" } };
         }
-        const source = modelAdapters?.[req.provider];
+        const source = ownEntry(modelAdapters, String(req.provider ?? ""));
         if (source?.refreshCatalog === void 0) {
           return {
             ok: false,
@@ -66364,7 +66480,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
        *
        * 为什么一次取全部：8 个供应商若逐个查，就是 16 次往返，且每次都要走
        * 异步凭据解析。这里**全程只用同步的内存副本**，不产生任何网络请求：
-       * - 模型目录用 `modelAdapters[provider].listAllModels()`（同步；它内部
+       * - 模型目录用 `ownEntry(modelAdapters, provider)?.listAllModels()`（同步；它内部
        *   在冷缓存时会**后台**补拉，但不阻塞本次返回）；
        * - 账号用 `pool.listAccountsByProvider()`（同步读内存）。
        *
@@ -66626,8 +66742,11 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
       // （账号索引 + 凭据原文 + 模型黑名单，见 src/backup.ts），与 DSH 版本
       // 无关 —— 导入时按**当前版本**的存储契约重建，天然跨版本。
       //
-      // 安全约定：加密在浏览器侧完成（PBKDF2 + AES-GCM），RPC 只接收/返回
-      // 明文载荷；明文 JSON 不经过本层持久化与日志。
+      // 安全事实（2026-11-08 终审 H1 修正，原"浏览器侧 PBKDF2+AES-GCM 加密"表述失实）：
+      // 导出载荷为**明文凭据**（access_token/refresh_token/DPoP 私钥全量），
+      // RPC 只接收/返回明文载荷；明文 JSON 不经过本层持久化与日志。
+      // 前端负责提示保存到可信位置（channels.mjs「请保存在可信的本地位置」）——
+      // 当前没有任何加密层，导入端见 backup.import 的 ref 白名单防护。
       case "backup.export": {
         const result = await exportBackup(pool, ctx.credentials);
         const value = {
@@ -66712,7 +66831,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
         const catalogFor = (provider) => {
           let list = catalogByProvider.get(provider);
           if (list === void 0) {
-            list = modelAdapters?.[provider]?.listAllModels() ?? [];
+            list = ownEntry(modelAdapters, provider)?.listAllModels() ?? [];
             catalogByProvider.set(provider, list);
           }
           return list;
@@ -66807,7 +66926,7 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           if (slash <= 0) return raw2;
           const provider = raw2.slice(0, slash);
           const modelId = raw2.slice(slash + 1);
-          const catalog = modelAdapters?.[provider]?.listAllModels() ?? [];
+          const catalog = ownEntry(modelAdapters, provider)?.listAllModels() ?? [];
           if (catalog.some((m) => m.name === modelId)) return raw2;
           const named = modelAdapters?.[provider]?.displayNameFor?.(modelId) ?? catalog.find((m) => m.id === modelId)?.name;
           return named === void 0 || named === "" ? raw2 : `${provider}/${named}`;
@@ -66907,9 +67026,15 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
     return result;
   }
 }
+function ownEntry(table, key) {
+  if (table === void 0) return void 0;
+  return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : void 0;
+}
 function reply(rpcId, result) {
-  const value = typeof result === "object" && result !== null && result.ok === false ? { ...result, error: { ...result.error, details: {} } } : result;
-  return Response.json({ type: "server-response", rpcId, result: value });
+  const value = typeof result === "object" && result !== null && result.ok === false ? { ...result, error: { ...result.error } } : result;
+  return Response.json({ type: "server-response", rpcId, result: value }, {
+    headers: { "cache-control": "no-store" }
+  });
 }
 var ADOPTABLE_CHANNELS = {};
 
@@ -69044,7 +69169,7 @@ var FileLedgerStore = class {
       for (const [day2, buckets] of pruneDays(merged)) {
         days[day2] = Object.fromEntries(buckets);
       }
-      const tmp = `${this.path}.tmp`;
+      const tmp = `${this.path}.${process.pid}.tmp`;
       writeFileSync11(tmp, JSON.stringify({ schema: SCHEMA6, days }, null, 2), "utf-8");
       renameSync9(tmp, this.path);
       this.written = cloneDays(this.days);
@@ -70720,13 +70845,19 @@ async function startGeminiOAuthFlow(options = {}) {
   };
   const fetcher = options.fetcher ?? fetch;
   const timeoutMs = options.timeoutMs ?? ANTIGRAVITY_AUTH_FLOW_TIMEOUT_MS;
+  let timeoutSettled = false;
+  const timerRef = {};
   const result = Promise.race([
     codePromise,
     new Promise((_, reject) => {
       const timer = setTimeout(
-        () => reject(new AntigravityLoginExpiredError()),
+        () => {
+          timeoutSettled = true;
+          reject(new AntigravityLoginExpiredError());
+        },
         timeoutMs
       );
+      timerRef.current = timer;
       timer.unref?.();
     })
   ]).then(async (code) => {
@@ -70743,6 +70874,7 @@ async function startGeminiOAuthFlow(options = {}) {
   });
   result.catch(() => {
   }).finally(() => {
+    if (!timeoutSettled && timerRef.current !== void 0) clearTimeout(timerRef.current);
     void close();
   });
   return { loginUrl, result, close };

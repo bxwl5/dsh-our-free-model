@@ -101,7 +101,7 @@ class FileLockStore implements PermanentLockStore {
 
   async save(locks: PermanentLockMap): Promise<void> {
     mkdirSync(join(this.path, '..'), { recursive: true })
-    const tmp = `${this.path}.tmp`
+    const tmp = `${this.path}.${process.pid}.tmp` // 2026-11-08 终审 R3：pid 后缀防跨进程互相覆盖/ENOENT
     // 带 schema 标记：与本仓库其它状态文档同惯例，便于将来演进时判别。
     writeFileSync(tmp, JSON.stringify({ schema: SCHEMA, locks }, null, 2), 'utf-8')
     renameSync(tmp, this.path)
