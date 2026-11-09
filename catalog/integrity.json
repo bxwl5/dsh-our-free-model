@@ -54,8 +54,8 @@
     },
     {
       "path": "src/adapter.js",
-      "size": 55020,
-      "sha256": "fe1ee65815728815648b16af3fec590ab2cd3cc736c777b34291c3ad410ef0b7"
+      "size": 55062,
+      "sha256": "4b4a180ef70b93b1f99be30f5252638d541176b4997e1029202bc234a30be993"
     },
     {
       "path": "src/anthropic.js",
@@ -64,8 +64,8 @@
     },
     {
       "path": "src/catalog.js",
-      "size": 20053,
-      "sha256": "f082c3c1649fefff53acc03688fb4ec71671a36e85a0798d91ee49e5cbd69ccd"
+      "size": 20184,
+      "sha256": "1539344cd6b3c1b4eab159b03be2bf8ef37948188a5b86e1e655c3edb0c4a766"
     },
     {
       "path": "src/chan-relay.js",
@@ -74,8 +74,8 @@
     },
     {
       "path": "src/channel-catalog.js",
-      "size": 13008,
-      "sha256": "33fb5111a7757d31102ea413be6e053279110d5c15573fd9b2b329746d911e08"
+      "size": 20830,
+      "sha256": "0d3c150d5c6dcaa4ef35d2dfa1a63e542cc4b3af758556559ad64a35a376b892"
     },
     {
       "path": "src/channel.js",
@@ -84,8 +84,8 @@
     },
     {
       "path": "src/combos.js",
-      "size": 11544,
-      "sha256": "d791b94c63e4f3212eb719fd7b163ef5ed303bf078bdb6f974b87e8239de0594"
+      "size": 11624,
+      "sha256": "f210b2f21ca2b70ec207852ed906f489887091f01f2be9987e4f88c5259c0911"
     },
     {
       "path": "src/core/channel-usage.js",
@@ -99,8 +99,8 @@
     },
     {
       "path": "src/core/runtime.js",
-      "size": 22381,
-      "sha256": "d0def9433e92b6be75425f8b41cd1430adb68ee550949280afee5fff9a205675"
+      "size": 23868,
+      "sha256": "0cefbc13ffdb9bc2c7fc87830ad375f589f6c9642c508440d678e74417f0b239"
     },
     {
       "path": "src/core/stats.js",
