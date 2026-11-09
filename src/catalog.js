@@ -12,6 +12,7 @@
  */
 
 import { baseModelId } from './upstream.js'
+import { FALLBACK_CONTEXT_WINDOW } from './channel-catalog.js'
 
 /** Ids that are free-tier without carrying the `-free` suffix. */
 /** Free-tier ids the listing does not mark with a `-free` suffix. `big-pickle`
@@ -179,7 +180,7 @@ export function capabilitiesFor(modelId) {
   const override = FREE_ID_OVERRIDES[base]
   if (override !== undefined) return { reasoning: true, ...override }
   for (const entry of CAPABILITIES) if (entry.match.test(base)) return entry
-  return { vision: false, reasoning: true, contextWindow: 131072, maxOutput: 32768 }
+  return { vision: false, reasoning: true, contextWindow: FALLBACK_CONTEXT_WINDOW, maxOutput: 32768 }
 }
 
 export function isRegionSensitive(modelId) {
@@ -223,7 +224,7 @@ export function buildCatalog(ids) {
       name: displayModelName(base),
       vision: caps.vision === true,
       reasoning: caps.reasoning !== false,
-      contextWindow: number(caps.contextWindow) ?? 131072,
+      contextWindow: number(caps.contextWindow) ?? FALLBACK_CONTEXT_WINDOW,
       maxOutput: number(caps.maxOutput) ?? 32768,
       canDisableThinking: Array.isArray(caps.efforts)
         ? caps.efforts.includes('disabled')
@@ -337,7 +338,7 @@ export function kiloDisplayName(row) {
 }
 
 function kiloEntryOf(row) {
-  const context = number(row?.context_length) ?? number(row?.top_provider?.context_length) ?? 131072
+  const context = number(row?.context_length) ?? number(row?.top_provider?.context_length) ?? FALLBACK_CONTEXT_WINDOW
   const output = number(row?.top_provider?.max_completion_tokens) ?? 32768
   const modalities = Array.isArray(row?.architecture?.input_modalities) ? row.architecture.input_modalities : []
   const menu = kiloEffortMenuFor(row)
@@ -395,7 +396,7 @@ export function reviveKiloCatalog(stored) {
     const entry = {
       ...kiloEntryOf({ ...row, name: typeof row.name === 'string' && row.name !== '' ? row.name : row.id }),
       name: typeof row.name === 'string' && row.name !== '' ? row.name : kiloDisplayName({ id: row.id }),
-      contextWindow: number(row.contextWindow) ?? 131072,
+      contextWindow: number(row.contextWindow) ?? FALLBACK_CONTEXT_WINDOW,
       maxOutput: number(row.maxOutput) ?? 32768,
       vision: row.vision === true,
     }

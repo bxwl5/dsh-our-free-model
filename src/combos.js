@@ -31,6 +31,7 @@
  */
 
 import { createHash } from 'node:crypto'
+import { FALLBACK_CONTEXT_WINDOW } from './channel-catalog.js'
 
 export const COMBO_CHANNEL = 'combo'
 export const COMBO_PREFIX = 'combo:'
@@ -148,7 +149,7 @@ export function buildComboCatalog(combos, catalog) {
       // Intersection, not union — see the module header.
       vision: members.every(entry => entry.vision === true),
       reasoning: members.some(entry => entry.reasoning === true),
-      contextWindow: Math.min(...members.map(entry => number(entry.contextWindow) ?? 131072)),
+      contextWindow: Math.min(...members.map(entry => number(entry.contextWindow) ?? FALLBACK_CONTEXT_WINDOW)),
       maxOutput: Math.min(...members.map(entry => number(entry.maxOutput) ?? 32768)),
       canDisableThinking: members.every(entry => entry.canDisableThinking !== false),
       regionSensitive: false,

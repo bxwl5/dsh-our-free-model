@@ -3,7 +3,7 @@ import path from 'node:path'
 import { FreeModelAdapter, ROUTE_MAIN, ROUTE_REGION } from '../adapter.js'
 import { buildCatalog, buildKiloCatalog, isKiloEntry, parseListing, reviveKiloCatalog } from '../catalog.js'
 import { buildComboCatalog, isComboEntry, normalizeCombos, pruneRotation, comboLastServed } from '../combos.js'
-import { isChannelEntry, readChannelRosters } from '../channel-catalog.js'
+import { isChannelEntry, readChannelRosters, reviveChannelCatalog, mergeChannelCatalogRows } from '../channel-catalog.js'
 import { JsonStore, SETTINGS_INITIAL, STATS_INITIAL, STATS_VERSION, migrateStats, pruneDays, recordTurn, recordUsage, isModelHidden } from '../store.js'
 import { STATE, detectEgress, probeCatalog } from '../probe.js'
 import { CODE, UpstreamError, getJson } from '../http.js'
@@ -40,7 +40,11 @@ export function createRuntimeStores({ dataDir, logger = console }) {
   })
   const stats = open('stats.json', STATS_INITIAL)
   const availability = open('availability.json', { version: 1, at: 0, egress: null, results: {} })
-  const catalogStore = open('catalog.json', { version: 1, at: 0, entries: FALLBACK_CATALOG.map(entry => entry.id) })
+  const catalogStore = open('catalog.json', {
+    version: 1, at: 0, entries: FALLBACK_CATALOG.map(entry => entry.id),
+    /** 渠道目录行的持久化快照(含真实 contextWindow),冷启动据此上屏。 */
+    channelRows: [],
+  })
   if (stats.get().version !== STATS_VERSION) stats.edit(migrateStats)
   return {
     settings, stats, availability, catalogStore,
@@ -76,8 +80,15 @@ export function createModelRuntime({
   let comboCatalog = []
   /** The free lane's own roster: the base every other lane is merged onto. */
   let freeCatalog = catalog
-  /** 渠道包各 provider 的目录行；由 {@link refreshChannelCatalog} 重建。 */
-  let channelCatalog = []
+  /**
+   * 渠道包各 provider 的目录行；由 {@link refreshChannelCatalog} 重建。
+   *
+   * 冷启动先从 `catalog.json` 的 `channelRows` 回灌上一次成功扫描的真值:
+   * 6s 预算内的完整扫描常常在冷机时被掐断,若这里从空数组起,路由页就会把
+   * 所有渠道模型显示成兜底容量(用户 2026-11-09 报障「重启后回到 131K」)。
+   * 回灌的行随后被完整扫描逐 provider 覆盖,不会挡住新目录。
+   */
+  let channelCatalog = reviveChannelCatalog(catalogStore.get().channelRows)
   /** 本轮取到目录的渠道 provider id（用于空状态说清原因）。 */
   let channelProviders = []
   let egress = availability.get().egress ?? null
@@ -259,14 +270,27 @@ export function createModelRuntime({
   async function refreshChannelCatalog(options = {}) {
     if (disposed) return channelCatalog
     const light = options.light === true
+    const cachedRows = reviveChannelCatalog(catalogStore.get().channelRows)
     const { rows, providers } = await readChannelRosters(llm, packProviders, (provider, error) => {
       onChannelError?.(provider, error)
       if (provider !== 'listProviders') {
         logger.warn?.(`our-free-model: channel ${provider} model list unavailable (${String(error?.message ?? error)}); skipping this round`)
       }
-    }, light ? { light: true, previousRows: channelCatalog } : {})
+    }, light ? { light: true, previousRows: channelCatalog, cachedRows } : {})
     if (disposed) return channelCatalog
-    channelCatalog = rows
+    if (light) {
+      // light 只刷新启用清单,容量全靠回灌;它会把「本轮没扫到的 provider」的
+      // 行丢掉(那些 provider 此刻可能只是没登录),所以**不写盘** —— 否则一次
+      // 打开路由页就会把磁盘缓存削掉一大半。内存目录仍按本轮结果更新,让
+      // 启用开关立刻反映;下一次完整扫描会把磁盘真值重新并回来。
+      channelCatalog = rows
+    } else {
+      // 完整扫描:按 provider 合并磁盘真值,避免 6s 预算掐断 / 包未挂载时的
+      // 残缺结果把上一次攒下的真值洗掉(见 mergeChannelCatalogRows)。
+      channelCatalog = mergeChannelCatalogRows(rows, cachedRows, providers)
+      catalogStore.update({ channelRows: channelCatalog })
+      catalogStore.flush()
+    }
     channelProviders = providers
     rebuildCatalog()
     emitTopology()

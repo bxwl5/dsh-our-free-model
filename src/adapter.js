@@ -27,7 +27,7 @@ import { createChannel } from './channel.js'
 import { recoveryPolicy, canRecover, canRecoverSilentStop, recoveryMessages, continuationMessages, checkpointFits, addUsage, createBlockTracker } from './recovery.js'
 import { isKiloEntry } from './catalog.js'
 import { isComboEntry, comboChain, noteComboServed } from './combos.js'
-import { isChannelEntry, parseChannelModelId } from './channel-catalog.js'
+import { isChannelEntry, parseChannelModelId, FALLBACK_CONTEXT_WINDOW } from './channel-catalog.js'
 import { applyTokenSavers, saverConfig } from './token-saver/index.js'
 import { classifyFailure, describeVerdict, shouldAdvance } from './route/classify.js'
 import { FALLBACK_IMAGE_PRICING } from './image-pricing.js'
@@ -136,7 +136,7 @@ export class FreeModelAdapter {
         provider,
         id: baseModelId(model),
         name: baseModelId(model),
-        context: { contextWindow: 131072 },
+        context: { contextWindow: FALLBACK_CONTEXT_WINDOW },
         defaultMaxTokens: 8192,
       }
     }

@@ -23,8 +23,9 @@ resolveModel(provider, model)
 ```
 
 关键点：**①②③ 都命中不了时，`resolved.context` 整个字段就不设** ——
-于是上游 `buildChannelCatalog` 会填自己的兜底值 131072 / 32768。
-所以「看到 131072」= 该渠道根本没提供容量信息。
+于是上游 `buildChannelCatalog` 会填自己的兜底值。2026-11-09 起该上下文
+伪装值改为 **512000（界面显示 512K）**（此前是 131072），输出上限仍是 32768。
+所以「看到 512K」= 该渠道这次没提供容量信息。
 
 `ensureRemoteModels()` 是「有值即返回」的一次性懒加载，只在进程内首次
 需要时拉一次远端；之后（含重启后）都读磁盘快照（`restoreFromDisk()`）。
@@ -74,5 +75,26 @@ resolveModel(provider, model)
 已经落地（`combos.list` 的 light 刷新）。light 模式**跳过**逐模型
 `resolveModelInfo`，因此不触碰上面这套三层解析 —— 只问 `llm.listModels()`
 拿启用清单。好处是点「添加成员」从秒级降到约 30ms，且开关立刻反映；
-代价是**新出现**的模型第一次看到时容量是本插件的兜底值 131072，
+代价是**新出现**的模型第一次看到时容量是本插件的伪装值 512K，
 下一次完整扫描（启动/定时）会补齐。
+
+## 2026-11-09 补记：重启后上下文掉回兜底值
+
+用户报障：全新安装 / 重启后路由页里模型上下文显示 131K，点「刷新模型列表」
+无效，「重新获取模型」短暂修复、重启复现，随后又会自己恢复。根因不在上面
+三层解析，而在**本插件自己的目录行没有持久化**：
+
+- `channelCatalog` 是 `runtime.js` 的进程内变量；`catalogStore` 只存免费车道
+  id 和 `kiloRows`，从没存过渠道行。远端目录（channel-pack 的
+  `model-catalogs/*.json`）虽然落盘，本插件重建目录时却只靠
+  `resolveModelInfo` 间接拿，冷启动那轮完整扫描又常被 6s 预算掐断。
+- light 模式只复用进程内 `previousRows`；冷启动它为空或就是占位符，于是
+  「复用上次结果」=「复用错误值」，路由页（恰好走 light）最后一个恢复。
+- 定时轮询（默认 15 分钟）跑完一轮完整扫描后缓存变热，所以「自己恢复」。
+
+修复（本次）：
+1. `catalog.json` 新增 `channelRows`：完整扫描后按 provider 合并写盘
+   （`mergeChannelCatalogRows` 保证残缺扫描不洗掉真值），冷启动先
+   `reviveChannelCatalog` 回灌上屏。
+2. light 模式新增 `cachedRows` 磁盘回退层，且伪装值不入回灌 map。
+3. 伪装值 131072 → **512000**（界面显示 512K），仍只是占位符，不是真实容量。

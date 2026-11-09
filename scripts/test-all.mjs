@@ -128,6 +128,9 @@ const suites = [
   ['local-optimize', 'local-optimize-test.mjs', []],
   ['route', 'route-test.mjs', []],
   ['channel-catalog', 'channel-catalog-test.mjs', []],
+  // 重启后渠道模型上下文掉回兜底值（2026-11-09 报障）：冷启动回灌、完整扫描
+  // 写盘、残缺扫描不清空、light 只读不写。用真实 runtime + 真实 catalog.json。
+  ['channel-catalog-persistence', 'channel-catalog-persistence-test.mjs', []],
   ['combo-advance', 'combo-advance-test.mjs', []],
   ['prompt-saver', 'prompt-saver-test.mjs', []],
   ['anthropic', 'anthropic-test.mjs', []],

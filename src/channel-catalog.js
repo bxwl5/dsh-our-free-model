@@ -32,6 +32,33 @@
 /** Catalog `channel` value prefix for rows that belong to an absorbed provider. */
 export const CHANNEL_PREFIX = 'channel:'
 
+/**
+ * 拿不到真实容量时对外声称的上下文窗口 **512K**（用户 2026-11-09 定）。
+ *
+ * 仍是「伪装值」，不是任何模型的真实容量：它只在 `buildChannelCatalog` 与
+ * 链路容量交集里占位。之所以从 131072 抬到 512000，是因为冷启动时序让大量
+ * 真实模型暂时落到兜底，131K 会被误读成「模型只有 128K」；512K 至少不把
+ * 1M 级的模型低估得那么刺眼。**真正修好冷启动靠目录行持久化（catalog.json
+ * 的 `channelRows`）+ light 模式读盘回退，不靠把这个数字调大。**
+ *
+ * ⚠️ 只用于「上下文」；输出上限的兜底仍是 32768，两者不要混。
+ * 全仓库所有「上下文窗口未知」的兜底统一 import 本常量,避免各写各的魔数。
+ * 注意:模型能力表里的 `maxOutput: 131072`、stream/recovery 的
+ * `checkpointLimit: 131072`、设置页 512–131072 的输出上限是**不同语义**,不改。
+ *
+ * 取 **512000** 而不是 524288(2^19):前端 `kilo()` 用 1000 进制渲染
+ * (`131072 → "131K"`), 524288 会显示成 "524K"。要显示成 512K,数值必须是
+ * 512000。
+ */
+export const FALLBACK_CONTEXT_WINDOW = 512_000
+
+/**
+ * 历次用过的伪装值。回灌磁盘/进程内缓存时要跳过它们 —— 否则冷启动那轮
+ * 残缺快照会把占位符当成真值一路传下去。真实模型恰好等于这些数值时跳过
+ * 也无害(回退值同值)。
+ */
+export const PLACEHOLDER_CONTEXT_WINDOWS = new Set([131_072, FALLBACK_CONTEXT_WINDOW])
+
 /** Route ids this plugin owns, which must never be absorbed. */
 const OWN_ROUTES = new Set(['our-free-model', 'our-free-model-region'])
 
@@ -110,7 +137,7 @@ export function buildChannelCatalog(rosters) {
         channel: `${CHANNEL_PREFIX}${provider}`,
         vision: Array.isArray(model.inputModalities) && model.inputModalities.includes('image'),
         reasoning: true,
-        contextWindow: Number.isFinite(contextWindow) && contextWindow > 0 ? Math.trunc(contextWindow) : 131072,
+        contextWindow: Number.isFinite(contextWindow) && contextWindow > 0 ? Math.trunc(contextWindow) : FALLBACK_CONTEXT_WINDOW,
         maxOutput: Number.isFinite(maxOutput) && maxOutput > 0 ? Math.trunc(maxOutput) : 32768,
         // The host owns the thinking menu for its own providers and applies the
         // right one on dispatch; this plugin must not claim to know it.
@@ -123,6 +150,107 @@ export function buildChannelCatalog(rosters) {
     }
   }
   return rows
+}
+
+/**
+ * 从持久化的 `channelRows` 回读目录行,逐字段校验。
+ *
+ * 这些行是 `buildChannelCatalog` 的成品(不是宿主 listing 行),所以只需重建
+ * 结构、验证 id 形态与容量数字,损坏项直接丢弃 —— 宁可少一列候选,也不能让
+ * 一条畸形记录污染整张目录。字段与 `reviveKiloCatalog` 同策略。
+ *
+ * 用途有二(用户 2026-11-09 报障:重启后路由里模型上下文掉回 131K):
+ *  - 冷启动:磁盘真值先上屏,不必等 6s 预算内的完整扫描;
+ *  - light 模式:上一次完整扫描的结果从磁盘回灌,而不是只靠进程内
+ *    `previousRows`(冷启动那轮被预算掐断时它本身就是兜底值)。
+ *
+ * @param {unknown} stored
+ * @returns {Array<object>}
+ */
+export function reviveChannelCatalog(stored) {
+  const seen = new Set()
+  const rows = []
+  for (const row of Array.isArray(stored) ? stored : []) {
+    if (row === null || typeof row !== 'object' || Array.isArray(row)) continue
+    if (typeof row.id !== 'string' || row.id.trim() === '' || !isChannelEntry(row)) continue
+    const provider = providerOfChannel(row.channel)
+    if (provider === undefined) continue
+    const parsed = parseChannelModelId(row.id)
+    if (parsed === undefined || parsed.provider !== provider) continue
+    const contextWindow = Number(row.contextWindow)
+    const maxOutput = Number(row.maxOutput)
+    const id = row.id.trim()
+    if (seen.has(id)) continue
+    seen.add(id)
+    rows.push({
+      id,
+      name: typeof row.name === 'string' && row.name !== '' ? row.name : parsed.model,
+      channel: row.channel,
+      vision: row.vision === true,
+      reasoning: row.reasoning !== false,
+      contextWindow: Number.isFinite(contextWindow) && contextWindow > 0 ? Math.trunc(contextWindow) : FALLBACK_CONTEXT_WINDOW,
+      maxOutput: Number.isFinite(maxOutput) && maxOutput > 0 ? Math.trunc(maxOutput) : 32768,
+      canDisableThinking: row.canDisableThinking !== false,
+      regionSensitive: row.regionSensitive === true,
+      providerModel: typeof row.providerModel === 'string' && row.providerModel !== '' ? row.providerModel : parsed.model,
+      provider: typeof row.provider === 'string' && row.provider !== '' ? row.provider : provider,
+    })
+  }
+  return rows
+}
+
+/**
+ * 把一次扫描的结果并入持久化目录行,供写盘(以及重启回灌)使用。
+ *
+ * ## 为什么不能直接 `rows` 覆盖(2026-11-09 报障的第二层)
+ *
+ * 完整扫描有 {@link ROSTER_BUDGET_MS} 预算:冷机时常常只扫到前几家就 break,
+ * 且渠道包是**异步挂载**的 —— 启动那轮 `packProviders` 往往还是空的,
+ * `rows` 直接就是 `[]`。若拿它覆盖磁盘,上一次攒下的真值会被一次残缺扫描
+ * 全部洗掉,下次重启更空,反复劣化。
+ *
+ * 规则:
+ * - `scannedProviders` 里**没出现**的 provider:整家保留磁盘旧行(本轮没扫,
+ *   不代表它不存在;凭据过期/未登录时尤其如此);
+ * - 出现过的 provider:磁盘旧行作废,以本轮 `fresh` 为权威启用清单(用户刚
+ *   关掉的模型必须能消失);
+ * - 本轮行的上下文若是**伪装值**,而磁盘同 id 有真实容量 → 回填真值,
+ *   避免预算中途耗尽把已解析到的真值洗成占位符。
+ *
+ * @param {readonly object[]} fresh - 本轮 `readChannelRosters` 产出的行
+ * @param {readonly object[]} cached - 磁盘上已有的行(已 revive 校验)
+ * @param {readonly string[]} scannedProviders - 本轮确实问过 listModels 的 provider
+ * @returns {Array<object>}
+ */
+export function mergeChannelCatalogRows(fresh, cached, scannedProviders) {
+  const scanned = new Set(Array.isArray(scannedProviders) ? scannedProviders : [])
+  const safeFresh = Array.isArray(fresh) ? fresh : []
+  const safeCached = Array.isArray(cached) ? cached : []
+  const byId = new Map(safeCached.map(row => [row.id, row]))
+  const out = []
+  const seen = new Set()
+  // ① 本轮没扫到的 provider:磁盘行整体保留。
+  for (const row of safeCached) {
+    if (scanned.has(row.provider)) continue
+    if (seen.has(row.id)) continue
+    seen.add(row.id)
+    out.push(row)
+  }
+  // ② 本轮扫到的 provider:以 fresh 为权威,必要时回填磁盘真值。
+  for (const row of safeFresh) {
+    if (seen.has(row.id)) continue
+    seen.add(row.id)
+    const prior = byId.get(row.id)
+    if (prior !== undefined && PLACEHOLDER_CONTEXT_WINDOWS.has(Number(row.contextWindow))) {
+      const real = Number(prior.contextWindow)
+      if (Number.isFinite(real) && real > 0 && !PLACEHOLDER_CONTEXT_WINDOWS.has(real)) {
+        out.push({ ...row, contextWindow: Math.trunc(real) })
+        continue
+      }
+    }
+    out.push(row)
+  }
+  return out
 }
 
 /**
@@ -151,16 +279,36 @@ export async function readChannelRosters(llm, packProviders, onError, options = 
    * 走 light 模式时：
    * - 仍会问 `llm.listModels(provider)`（宿主返回的本就是**已启用**的模型，
    *   适配器的 `listModels` 内部已按黑名单过滤）⇒ 开关立刻反映；
-   * - 复用 `previousRows` 里同 id 行的容量元数据（上次完整扫描的结果）；
+   * - 复用 `previousRows` + `cachedRows` 里同 id 行的容量元数据；
    * - 新出现的行用兜底值，下一次完整扫描会补齐。
    *
-   * @type {{ light?: boolean, previousRows?: readonly object[] }}
+   * ## 为什么多一层 `cachedRows`（2026-11-09 用户报障）
+   *
+   * `previousRows` 是**进程内**变量,冷启动时为空;而冷启动那轮完整扫描又
+   * 常被 6s 预算掐断,`previousRows` 里存的就是兜底值。于是 light 模式「复用
+   * 上次结果」等于「复用错误值」,路由页永远显示 131K。`cachedRows` 来自
+   * `catalog.json` 的 `channelRows`(上一次成功扫描写盘的真值),跨重启可读,
+   * 正好补上这个断层。优先级:进程内(最新) > 磁盘(较旧但真实)。
+   *
+   * @type {{ light?: boolean, previousRows?: readonly object[], cachedRows?: readonly object[] }}
    */
   const light = options.light === true
   const previous = new Map()
-  for (const row of Array.isArray(options.previousRows) ? options.previousRows : []) {
-    if (typeof row?.id === 'string') previous.set(row.id, row)
+  // 优先级不是简单的「谁新谁赢」:磁盘较旧但通常是真值,进程内较新但冷启动
+  // 那轮常是被预算掐断后的占位符。规则:
+  //  - 两边都只收「非伪装值」的容量(见 PLACEHOLDER_CONTEXT_WINDOWS);
+  //  - 磁盘先放,进程内后放并覆盖 —— 同为真实值时后者更接近当下;
+  //  - 进程内若是占位符,直接跳过,绝不能盖掉磁盘真值(2026-11-09 报障)。
+  // 占位符干脆不入 map: light 循环里没有 prior 时该行自然落到兜底值,等价。
+  const remember = rows => {
+    for (const row of Array.isArray(rows) ? rows : []) {
+      if (typeof row?.id !== 'string') continue
+      if (PLACEHOLDER_CONTEXT_WINDOWS.has(Number(row.contextWindow))) continue
+      previous.set(row.id, row)
+    }
   }
+  remember(options.cachedRows)
+  remember(options.previousRows)
   const rows = []
   const providers = []
   if (llm === undefined || llm === null) return { rows, providers }
@@ -174,10 +322,10 @@ export async function readChannelRosters(llm, packProviders, onError, options = 
   }
   if (typeof llm.listModels !== 'function') return { rows, providers }
   // `listModels` 只有 id/name/模态，**没有** contextWindow / maxOutput —— 早期版本
-  // 因此把每个渠道模型都标成 131072/32768 的兜底值，用户看到「所有渠道模型都是
-  // 131K/33K」。适配器自己的 `resolveModelInfo` 才带真实容量（它读远端目录 +
-  // 产品兜底表 + 静态表三级），所以这里逐模型补一次查询；失败不阻塞目录，
-  // 那一行保持未知而不是编一个假数字。
+  // 因此把每个渠道模型都标成兜底值，用户看到「所有渠道模型都是 131K/33K」。
+  // 适配器自己的 `resolveModelInfo` 才带真实容量（它读远端目录 + 产品兜底表 +
+  // 静态表三级），所以这里逐模型补一次查询；失败不阻塞目录，那一行保持未知
+  // 而不是编一个假数字。
   const resolve = typeof llm.resolveModelInfo === 'function' ? llm.resolveModelInfo.bind(llm) : undefined
   const startedAt = Date.now()
   for (const info of listed) {
@@ -208,13 +356,16 @@ export async function readChannelRosters(llm, packProviders, onError, options = 
       if (roster.length === 0) continue
       providers.push(provider)
       if (light) {
-        // 复用上次完整扫描拿到的容量（同 id 才算），新行留给兜底值。
+        // 复用「进程内上次扫描 / 磁盘 channelRows」拿到的真实容量（同 id 才算）。
+        // 只认非伪装值：131K(旧版)/512K(现行) 都是占位符,不能当真值回灌,
+        // 否则冷启动那轮残缺快照会把错误值一直传下去。新行留给兜底值,
+        // 下一次完整扫描补齐。
         for (const model of roster) {
           const prior = previous.get(channelModelId(provider, String(model?.id ?? '')))
           if (prior === undefined) continue
           const context = Number(prior.contextWindow)
           const maxOutput = Number(prior.maxOutput)
-          if (Number.isFinite(context) && context > 0) model.contextWindow = Math.trunc(context)
+          if (Number.isFinite(context) && context > 0 && !PLACEHOLDER_CONTEXT_WINDOWS.has(context)) model.contextWindow = Math.trunc(context)
           if (Number.isFinite(maxOutput) && maxOutput > 0) model.maxOutput = Math.trunc(maxOutput)
         }
       } else if (resolve !== undefined && roster.length <= 64) {
