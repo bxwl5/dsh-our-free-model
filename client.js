@@ -432,26 +432,6 @@ window.__ModuleLoader__.load({
         'chan.checkin.already': '今日已领',
         'chan.checkin.failed': '领取异常',
         'chan.checkin.skipped': '无可领',
-        // ── 账号看板（2026-11-10，用户要求）：渠道接入页的「签到结果」「异常汇总」
-        //    两张卡片迁到这里，再加账号余额/到期汇总。数据源与加载节奏的说明见
-        //    AccountsPage 的组件头注释。
-        'nav.tab.accounts': '账号看板',
-        'acct.title': '账号看板',
-        'acct.sub': '全部渠道账号的余额、到期、签到结果与异常一览',
-        'acct.balances.title': '账号余额与到期',
-        'acct.balances.hint': '实时余额来自各渠道上游，卡片页 90 秒一轮；本页手动刷新立即拉取',
-        'acct.balances.refresh': '刷新余额',
-        'acct.balances.refreshing': '刷新中…',
-        'acct.balances.col.channel': '渠道',
-        'acct.balances.col.account': '账号',
-        'acct.balances.col.balance': '余额',
-        'acct.balances.col.expiring': '即将到期',
-        'acct.balances.none': '无',
-        'acct.balances.err': '余额查询失败：{reason}',
-        'acct.balances.expiredHint': '该包的剩余额度会在到期时刻作废',
-        'acct.expiringTitle': '{days} 天内到期',
-        'acct.expiredRow': '{name} · {amount}{unit} · {date}',
-        'acct.balance.na': '该渠道未返回余额',
         'nav.tab.saver': '省 Token',
         'nav.tab.routing': '路由',
         'agg.enabled': '启用',
@@ -950,23 +930,6 @@ window.__ModuleLoader__.load({
         'chan.checkin.already': 'Already claimed',
         'chan.checkin.failed': 'Failed',
         'chan.checkin.skipped': 'Nothing to claim',
-        'nav.tab.accounts': 'Accounts',
-        'acct.title': 'Accounts',
-        'acct.sub': 'Balances, expiring packages, check-in results and anomalies across every channel account',
-        'acct.balances.title': 'Balances & expiring packages',
-        'acct.balances.hint': 'Live balances come from each channel upstream (the cards poll every 90s); refresh here pulls immediately',
-        'acct.balances.refresh': 'Refresh',
-        'acct.balances.refreshing': 'Refreshing…',
-        'acct.balances.col.channel': 'Channel',
-        'acct.balances.col.account': 'Account',
-        'acct.balances.col.balance': 'Balance',
-        'acct.balances.col.expiring': 'Expiring soon',
-        'acct.balances.none': 'None',
-        'acct.balances.err': 'Balance query failed: {reason}',
-        'acct.balances.expiredHint': 'The remaining quota is voided at the expiry time',
-        'acct.expiringTitle': 'Expiring within {days} days',
-        'acct.expiredRow': '{name} · {amount}{unit} · {date}',
-        'acct.balance.na': 'No balance returned for this channel',
         'nav.tab.saver': 'Token savers',
         'nav.tab.routing': 'Routing',
         'agg.enabled': 'Enabled',
@@ -4396,9 +4359,26 @@ window.__ModuleLoader__.load({
       /**
        * 「异常汇总」：跨渠道拉当前仍在生效的模型限流。
        *
-       * ⚠️ 2026-11-10：本板块（连同其 45 秒轮询）已迁入「账号看板」页 ——
-       * 见 AccountsPage。渠道页不再拉 account.anomalies。
+       * 用户的实际场景是 4 账号 × 2 模型交叉限流（a 缺 hy3、b 缺 ds、
+       * c 缺 hy3、d 缺 ds）—— 这种二维状态放进账号界面或模型界面都会丢信息，
+       * 而 15 个渠道要逐个点开才能发现有谁被限。故单独汇总成一个板块，
+       * 放在渠道列表下方。
        */
+      const [anomalies, setAnomalies] = useState([])
+      const loadAnomalies = useCallback(async () => {
+        if (!available) return
+        try {
+          const value = await rpc('account.anomalies', {}, RPC_TIMEOUT.probe)
+          setAnomalies(Array.isArray(value?.anomalies) ? value.anomalies : [])
+        } catch { setAnomalies([]) }
+      }, [available, rpc])
+      useEffect(() => {
+        void loadAnomalies()
+        // 与状态轮询同节奏（45 秒），限流解禁后板块自动收缩。
+        const timer = setInterval(() => { void loadAnomalies() }, 45_000)
+        return () => clearInterval(timer)
+      }, [loadAnomalies])
+
       return h('div', { className: 'ofm_page' },
         h('header', { className: 'ofm_hero ofm_glass' },
           h('div', { className: 'ofm_pagehead' },
@@ -4507,13 +4487,22 @@ window.__ModuleLoader__.load({
             // 见 ChannelCard.todayClaimed。
             auto,
             onAutoRefresh: loadAuto,
-          }))) : null),
-        /*
-         * ⚠️ 「异常汇总」与「签到结果」两张卡片已迁入新的「账号看板」页
-         * （2026-11-10，用户要求：导航栏渠道接入右边加账号看板，两卡片迁入）。
-         * 这里的 loadAnomalies / 45 秒轮询因此整体移除 —— 数据源与节奏由
-         * AccountsPage 承接（usage.autoCheckin / account.anomalies 同源）。
-         */
+          }))) : null,
+          anomalies.length === 0 ? null : h(AnomalyPanel, {
+            anomalies,
+            channelName: id => CHANNEL_PROVIDERS.find(row => row.id === id)?.name ?? id,
+            t,
+          }),
+          /*
+           * 签到结果表格（用户 2026-10-27）：排在异常汇总之后，两者都是
+           * 「15 个渠道下方」的汇总板块，视觉同源。
+           * ⚠️ 组件内部在没有行时自己返回 null，这里不用再判一次。
+           */
+          h(CheckinPanel, {
+            results: Array.isArray(auto?.results) ? auto.results : [],
+            channelName: id => CHANNEL_PROVIDERS.find(row => row.id === id)?.name ?? id,
+            t,
+          })),
         error !== '' && !failed ? h('p', { className: 'ofm_note' }, `${t('chan.error').replace('{reason}', error)}`) : null)
     }
 
@@ -4750,249 +4739,6 @@ window.__ModuleLoader__.load({
           h('span', { className: 'ofm_checkinchev', 'aria-hidden': 'true' }, open ? '▾' : '▸')),
         open ? h('div', { className: 'ofm_checkinscroll' },
           h('div', { className: 'ofm_checkinbody', role: 'rowgroup' }, rows)) : null)
-    }
-
-    // ── 账号看板（2026-11-10，用户要求） ──────────────────────────────────────
-    //
-    // 用户原话：「今日任务在导航栏，渠道接入右边加一个账号看板功能……把渠道
-    // 接入界面下面的两张卡片，签到结果，异常统计都给迁入此界面」。
-    //
-    // ## 本页放什么（首轮实现；用户会后续逐步提醒完善）
-    //
-    // 1. **账号余额与到期汇总表** —— 此前余额只在各渠道卡片里逐账号展示，
-    //    想看「哪些账号的哪些包快过期」要把 15 张卡片逐个点开。本页一次拉全
-    //    15 个渠道的 credits.balances，每账号一行，并把**带到期时间的包**
-    //    （OfficeAce 的 cycleEndTime、CodeBuddy 系的 deductionEndTime/cycleEndTime）
-    //    按「剩余额度 > 0 且 30 天内到期」挑出来汇总显示。
-    //    ⚠️ 到期口径与插件既有语义对齐：buddy 系的「15 天内到期优先消耗」档位
-    //    （BUDDY_EXPIRING_WINDOW_DAYS）是**选号**用的；本页是**展示**用的，
-    //    窗口取 30 天，能看到更远的作废点。
-    // 2. **签到结果**（CheckinPanel 原样迁入）—— 渠道接入页不再显示。
-    // 3. **异常汇总**（AnomalyPanel 原样迁入）—— 渠道接入页不再显示。
-    //
-    // ## 加载节奏（与渠道卡片页的既有约定一致）
-    //
-    // - `credits.balances` 是重请求（每渠道一次上游调用、RPC_TIMEOUT.heavy），
-    //   卡片页为此做了「按卡片序号错峰 + 90 秒慢轮询」。本页是汇总视图，
-    //   **不做自动轮询**（避免与 15 张卡片的轮询叠加成双倍上游请求），只在
-    //   挂载时拉一次、用户点「刷新余额」再拉；到期汇总与余额同源。
-    // - 签到结果 / 异常汇总保持其原有数据源与 45 秒节奏：auto 由
-    //   usage.autoCheckin 拉取，anomalies 由 account.anomalies 拉取。
-    function AccountsPage(props) {
-      const { t, ctx } = props
-      const { available, rpc } = useChannelRpc(ctx)
-      // ── 余额与到期（挂载一次 + 手动刷新） ──
-      const [balances, setBalances] = useState(undefined)
-      const [balanceBusy, setBalanceBusy] = useState(false)
-      const [balanceError, setBalanceError] = useState('')
-      const balanceGeneration = useRef(0)
-      const loadBalances = useCallback(async () => {
-        if (!available || !rpc) return
-        const generation = ++balanceGeneration.current
-        setBalanceBusy(true)
-        setBalanceError('')
-        try {
-          // 逐渠道拉取后聚合成「每账号一行」。15 个渠道顺序发出（上游各自
-          // 限流），与卡片页的错峰语义一致——这里无卡片渲染，直接顺序即可。
-          const collected = []
-          for (const channel of CHANNEL_PROVIDERS) {
-            if (!CHANNEL_CREDITS[channel.id]) continue
-            try {
-              const value = await rpc('credits.balances', { provider: channel.id }, RPC_TIMEOUT.heavy)
-              if (generation !== balanceGeneration.current) return
-              for (const row of value?.accounts ?? []) collected.push({ provider: channel.id, ...row })
-            } catch (error) {
-              if (generation !== balanceGeneration.current) return
-              collected.push({ provider: channel.id, accountId: '', nickname: '', balance: null, error: String(error?.message ?? error) })
-            }
-          }
-          if (generation === balanceGeneration.current) setBalances(collected)
-        } catch (error) {
-          if (generation === balanceGeneration.current) setBalanceError(String(error?.message ?? error))
-        } finally {
-          if (generation === balanceGeneration.current) setBalanceBusy(false)
-        }
-      }, [available, rpc])
-      useEffect(() => { void loadBalances() }, [loadBalances])
-
-      // ── 签到结果（原渠道页数据源） ──
-      const [auto, setAuto] = useState(undefined)
-      const loadAuto = useCallback(async () => {
-        if (!available) return
-        try { const value = await rpc('usage.autoCheckin', {}, RPC_TIMEOUT.probe); setAuto(value?.autoCheckin ?? null) } catch { setAuto(null) }
-      }, [available, rpc])
-      useEffect(() => { void loadAuto() }, [loadAuto])
-      // ⚠️ 迁入后渠道页不再加载 auto（见下方 ChannelsPage 的改动），本页的
-      // 45 秒节奏承接渠道卡片「今日已领」徽标的刷新——那些徽标读的是本页
-      // 同一份 usage.autoCheckin 文档，节奏对齐即可。
-      useEffect(() => {
-        const timer = setInterval(() => { void loadAuto() }, 45_000)
-        return () => clearInterval(timer)
-      }, [loadAuto])
-
-      // ── 异常汇总（原渠道页数据源） ──
-      const [anomalies, setAnomalies] = useState([])
-      const loadAnomalies = useCallback(async () => {
-        if (!available) return
-        try {
-          const value = await rpc('account.anomalies', {}, RPC_TIMEOUT.probe)
-          setAnomalies(Array.isArray(value?.anomalies) ? value.anomalies : [])
-        } catch { setAnomalies([]) }
-      }, [available, rpc])
-      useEffect(() => {
-        void loadAnomalies()
-        const timer = setInterval(() => { void loadAnomalies() }, 45_000)
-        return () => clearInterval(timer)
-      }, [loadAnomalies])
-
-      /**
-       * 从一行余额里挑「即将到期的包」。
-       *
-       * ## 到期时刻的取值优先级（与后端语义对齐）
-       *
-       * 1. `deductionEndTime`（CodeBuddy 系，Unix 毫秒；观测值 < 10¹² 的极老
-       *    时间戳按秒折算，防御性处理）；
-       * 2. `cycleEndTime`（OfficeAce 是 ISO 字符串 `2026-11-10T15:59:59.000Z`，
-       *    CodeBuddy 系是本地时间串 `2026-11-13 23:13:29`——两种格式都要认）；
-       * 3. `expiredTime`（ISO，带 Z）。
-       *
-       * ⚠️ 三个字段都空 = 上游不给到期（qoder/qodercn/codearts/loomy/minimax），
-       * 如实跳过——不是漏查，是上游没有这个数据。
-       */
-      const expiringPackagesOf = row => {
-        const packages = row?.balance?.packages
-        if (!Array.isArray(packages)) return []
-        const out = []
-        const horizon = Date.now() + 30 * 86_400_000
-        for (const pkg of packages) {
-          if (!pkg || pkg.active === false) continue
-          const remaining = Number(pkg.remaining)
-          if (!Number.isFinite(remaining) || remaining <= 0) continue
-          let atMs = null
-          const deduction = Number(pkg.deductionEndTime)
-          if (Number.isFinite(deduction) && deduction > 0) atMs = deduction < 10 ** 12 ? deduction * 1000 : deduction
-          if (atMs === null && typeof pkg.cycleEndTime === 'string' && pkg.cycleEndTime !== '') {
-            const iso = Date.parse(pkg.cycleEndTime)
-            const local = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(pkg.cycleEndTime)
-              ? new Date(pkg.cycleEndTime.replace(' ', 'T')).getTime()
-              : NaN
-            atMs = Number.isFinite(iso) ? iso : Number.isFinite(local) ? local : null
-          }
-          if (atMs === null && typeof pkg.expiredTime === 'string' && pkg.expiredTime !== '') {
-            const iso = Date.parse(pkg.expiredTime)
-            atMs = Number.isFinite(iso) ? iso : null
-          }
-          if (atMs === null || atMs > horizon) continue
-          out.push({ name: pkg.name ?? '', remaining, unit: pkg.unit ?? '', atMs })
-        }
-        out.sort((a, b) => a.atMs - b.atMs)
-        return out
-      }
-
-      const formatDate = ms => {
-        const at = new Date(ms)
-        const sameYear = at.getFullYear() === new Date().getFullYear()
-        const md = `${at.getMonth() + 1}月${at.getDate()}日`
-        const hhmm = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
-        return sameYear ? `${md}${hhmm}` : `${at.getFullYear()}年${md}${hhmm}`
-      }
-
-      const formatBalance = (pkg, unit) => {
-        const value = Number(pkg)
-        if (!Number.isFinite(value)) return '—'
-        if (unit === 'token') return formatTokens(value)
-        if (unit === 'USD') return `$${value.toLocaleString()}`
-        return value.toLocaleString()
-      }
-
-      const channelName = id => CHANNEL_PROVIDERS.find(row => row.id === id)?.name ?? id
-      const rows = Array.isArray(balances) ? balances : []
-      const expiringRows = rows
-        .map(row => ({ row, expiring: expiringPackagesOf(row) }))
-        .filter(entry => entry.expiring.length > 0)
-
-      const balanceTable = h(Section, { title: t('acct.balances.title'), hint: t('acct.balances.hint') },
-        h('div', { className: 'ofm_row', style: { marginBottom: 10 } },
-          h(Button, { onClick: () => void loadBalances(), disabled: balanceBusy }, balanceBusy ? t('acct.balances.refreshing') : t('acct.balances.refresh'))),
-        balanceError !== '' ? h('p', { className: 'ofm_note' }, t('acct.balances.err').replace('{reason}', balanceError)) : null,
-        balances === undefined ? h('div', { className: 'ofm_chanwrap' }, [0, 1, 2].map(i => h('div', { className: 'ofm_skel', key: i, style: { minHeight: 64 } })))
-          : rows.length === 0 ? h('p', { className: 'ofm_note' }, t('acct.balance.na'))
-            : h('div', { className: 'ofm_tablewrap' }, h('table', { className: 'ofm_table' },
-              h('thead', null, h('tr', null,
-                h('th', { key: 'channel' }, t('acct.balances.col.channel')),
-                h('th', { key: 'account' }, t('acct.balances.col.account')),
-                h('th', { key: 'balance' }, t('acct.balances.col.balance')),
-                h('th', { key: 'expiring' }, t('acct.balances.col.expiring')))),
-              h('tbody', null, rows.map((row, index) => {
-                const expiring = expiringPackagesOf(row)
-                const balance = row?.balance
-                const total = Number(balance?.total)
-                const unit = balance?.packages?.find(pkg => Number(pkg.remaining) > 0)?.unit
-                return h('tr', { key: `${row.provider}:${row.accountId}:${index}` },
-                  h('td', null, channelName(row.provider)),
-                  h('td', null, h('b', null, row?.nickname || row?.accountId || '—')),
-                  h('td', { className: 'ofm_num' },
-                    balance === null || balance === undefined
-                      ? h('span', { className: 'ofm_note', title: row?.error ?? '' }, row?.error ?? '—')
-                      : Number.isFinite(total) && total > 0
-                        ? `${unit === 'token' ? formatTokens(total) : unit === 'USD' ? `$${total.toLocaleString()}` : total.toLocaleString()}${unit === 'token' ? 'token' : unit === 'USD' ? '' : t('chan.unit.credit')}`
-                        : '0'),
-                  h('td', null, expiring.length === 0
-                    ? h('span', { className: 'ofm_note' }, t('acct.balances.none'))
-                    : expiring.map((pkg, pkgIndex) => h('div', {
-                      key: pkgIndex,
-                      className: 'ofm_note',
-                      title: t('acct.balances.expiredHint'),
-                      style: pkgIndex > 0 ? { marginTop: 2 } : undefined,
-                    }, t('acct.expiredRow')
-                      .replace('{name}', pkg.name || '—')
-                      .replace('{amount}', formatBalance(pkg.remaining, pkg.unit))
-                      .replace('{unit}', pkg.unit === 'token' ? 'token' : pkg.unit === 'USD' ? '' : t('chan.unit.credit'))
-                      .replace('{date}', formatDate(pkg.atMs))))),
-                )
-              })))))
-      // ⚠️ 到期 > 0 的账号聚成一小节放最上面（有问题先看见）；其余顺序不变。
-      const expiringCell = pkg => h('div', { className: 'ofm_note' },
-        t('acct.expiredRow')
-          .replace('{name}', pkg.name || '—')
-          .replace('{amount}', formatBalance(pkg.remaining, pkg.unit))
-          .replace('{unit}', pkg.unit === 'token' ? 'token' : pkg.unit === 'USD' ? '' : t('chan.unit.credit'))
-          .replace('{date}', formatDate(pkg.atMs)))
-      const expiringSection = expiringRows.length > 0
-        ? h(Section, {
-            title: t('acct.expiringTitle').replace('{days}', '30'),
-            hint: t('acct.balances.expiredHint'),
-          },
-            h('div', { className: 'ofm_tablewrap' },
-              h('table', { className: 'ofm_table' },
-                h('thead', null,
-                  h('tr', null,
-                    h('th', { key: 'channel' }, t('acct.balances.col.channel')),
-                    h('th', { key: 'account' }, t('acct.balances.col.account')),
-                    h('th', { key: 'expiring' }, t('acct.balances.col.expiring')))),
-                h('tbody', null,
-                  expiringRows.map((entry, index) =>
-                    h('tr', { key: `${entry.row.provider}:${entry.row.accountId}:${index}` },
-                      h('td', null, channelName(entry.row.provider)),
-                      h('td', null, h('b', null, entry.row?.nickname || entry.row?.accountId || '—')),
-                      h('td', null, entry.expiring.map(pkg => expiringCell(pkg)))))))))
-        : null
-      return h('div', { className: 'ofm_page' },
-        h(PageHero, { title: t('acct.title'), sub: t('acct.sub') }),
-        balanceError !== '' && balances === undefined ? h('div', { className: 'ofm_callout ofm_error' }, h('div', null, t('acct.balances.err').replace('{reason}', balanceError))) : null,
-        !available ? h('div', { className: 'ofm_callout' }, h('div', null, t('chan.rpc.unavailable'))) : null,
-        expiringSection,
-        balanceTable,
-        anomalies.length === 0 ? null : h(AnomalyPanel, {
-          anomalies,
-          channelName,
-          t,
-        }),
-        h(CheckinPanel, {
-          results: Array.isArray(auto?.results) ? auto.results : [],
-          channelName,
-          t,
-        }))
     }
 
     // ── 数据看板 / 运行日志 / 网关设置 ────────────────────────────────────────
@@ -6315,7 +6061,7 @@ window.__ModuleLoader__.load({
     // The active page lives in localStorage so a reload — or the hot reload the
     // upgrader triggers — comes back to the page the user was reading.
     const TAB_KEY = 'ofm.tab'
-    const TABS = ['free', 'channels', 'accounts', 'saver', 'routing', 'ledger', 'logs', 'gateway']
+    const TABS = ['free', 'channels', 'saver', 'routing', 'ledger', 'logs', 'gateway']
 
     function Shell(props) {
       const { t, data, counts, summary, stats, busy, setBusy, apply, bench, benches, ctx } = props
@@ -6358,7 +6104,6 @@ window.__ModuleLoader__.load({
       const tabs = [
         ['free', t('nav.tab.free'), counts.available ?? 0],
         ['channels', t('nav.tab.channels'), CHANNEL_PROVIDERS.length],
-        ['accounts', t('nav.tab.accounts'), null],
         ['saver', t('nav.tab.saver'), null],
         ['routing', t('nav.tab.routing'), data.catalog.filter(m => m.channel === 'combo').length],
         ['ledger', t('nav.tab.ledger'), null],
@@ -6381,9 +6126,7 @@ window.__ModuleLoader__.load({
 
       const page = tab === 'channels'
         ? h(ChannelsPage, { t, ctx, summary })
-          : tab === 'accounts'
-            ? h(AccountsPage, { t, ctx })
-            : tab === 'saver'
+          : tab === 'saver'
             ? h(SaverPage, { t })
             : tab === 'routing'
               ? h(RoutingPage, { t, summary, ctx })
