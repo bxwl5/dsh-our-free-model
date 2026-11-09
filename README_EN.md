@@ -37,6 +37,9 @@ You can just say:
 
 > Install this plugin for me: https://github.com/bxwl5/dsh-our-free-model
 
+Manual install: drop the repository tarball into the profile's `vendor/`, set the dependency to
+`"dsh-our-free-model": "file:./vendor/dsh-our-free-model-2.5.7-priv.2.tgz"`, then append it to `dsh.profile.bundles`.
+
 > The same-named package on npm is **not** published by this repository — do not install from npm.
 
 ## Usage

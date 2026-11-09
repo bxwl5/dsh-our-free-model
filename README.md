@@ -35,6 +35,9 @@ https://github.com/bxwl5/dsh-our-free-model
 
 > 帮我安装这个插件：https://github.com/bxwl5/dsh-our-free-model
 
+手工安装：把仓库 tarball 放进 profile 的 `vendor/`，依赖写
+`"dsh-our-free-model": "file:./vendor/dsh-our-free-model-2.5.7-priv.2.tgz"`，再追加到 `dsh.profile.bundles`。
+
 > npm 上的同名包不是本仓库发布的，请勿从 npm 安装。
 
 ## 使用
