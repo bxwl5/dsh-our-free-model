@@ -73,6 +73,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { homedir, tmpdir } from 'node:os'
 import { basename, isAbsolute, join, posix } from 'node:path'
+import { defaultBrowserExecutable } from './zcode-default-browser.js'
 
 /** 阿里云 captcha 配置（服务端下发；此处为实测兜底值）。 */
 export interface ZcodeCaptchaConfig {
@@ -349,12 +350,34 @@ function linuxBrowserCandidates(home: string): string[] {
  * `os.homedir()` 求（它还会看 `HOME`，且在 `USERPROFILE` 被改写时仍正确）。
  * 用 `process.env.USERPROFILE` 拼路径会在「环境变量异常/被沙箱改写」时失效 ——
  * 实测：把 `USERPROFILE` 指到沙箱后，原本可用的 scoop chromium 就找不到了。
+ *
+ * ## ★ 顺序（2026-11-09 起）：显式指定 → **用户默认浏览器** → 硬编码链
+ *
+ * 用户问过「就不能看看用户有什么浏览器吗」—— 这个顺序就是那个要求的落点：
+ *
+ * 1. `ZCODE_CHROME_PATH`（用户**显式**指定，最高优先级，见 `browserCandidates`）；
+ * 2. {@link defaultBrowserExecutable} 探到的**系统默认浏览器**（且必须是
+ *    Chromium 内核，否则这条不出现）；
+ * 3. 本函数生成的三平台硬编码链（保底）。
+ *
+ * ⚠️ `defaultBrowser` 入参是**纯数据**：它由调用方探好后传进来，
+ * 本函数**不起子进程** —— 否则纯函数不可测（见上一段）。
+ * 探测发生在 {@link findBrowserExecutable} 里，那本来就要碰文件系统。
+ *
+ * ⚠️ `defaultBrowser` 为 `undefined`（探测失败 / 默认浏览器是 Firefox）时
+ * 行为与引入本参数**逐字一致**。
  */
 export function browserCandidates(
   input: {
     platform?: NodeJS.Platform
     env?: Record<string, string | undefined>
     home?: string
+    /**
+     * 用户系统默认浏览器的可执行文件（**已**经是 Chromium 内核）。
+     *
+     * 供 {@link findBrowserExecutable} 把探测结果带进来；单测直接传字符串即可。
+     */
+    defaultBrowser?: string
   } = {},
 ): string[] {
   const platform = input.platform ?? process.platform
@@ -368,6 +391,10 @@ export function browserCandidates(
   } else {
     candidates = windowsBrowserCandidates(env, home)
   }
+  const defaultBrowser = input.defaultBrowser
+  if (typeof defaultBrowser === 'string' && defaultBrowser.trim().length > 0) {
+    candidates.unshift(defaultBrowser.trim())
+  }
   const override = env.ZCODE_CHROME_PATH
   if (typeof override === 'string' && override.trim().length > 0) {
     candidates.unshift(override.trim())
@@ -375,9 +402,33 @@ export function browserCandidates(
   return candidates
 }
 
-/** 在候选链里挑第一个**存在**的绝对路径。 */
-export function findBrowserExecutable(): string | undefined {
-  for (const candidate of browserCandidates()) {
+/**
+ * 在候选链里挑第一个**存在**的绝对路径。
+ *
+ * ⚠️ `defaultBrowser` 用 **`in` 判「调用方给过没有」**，不用 `!== undefined`：
+ * 前端那条语义差别很关键 —— 显式传 `{ defaultBrowser: undefined }` 表示
+ * 「**我探过了，没有**」（跳过探测），而不传表示「**你替我去探**」。
+ * 用 `!== undefined` 会把前者也当成后者，于是每次单测都去真跑 `xdg-settings`。
+ *
+ * ⚠️ `ZCODE_CHROME_PATH` 存在时**跳过探测**：显式指定已经能决定结果，
+ * 再去跑一条子进程只是白花时间。
+ */
+export function findBrowserExecutable(input: {
+  platform?: NodeJS.Platform
+  env?: Record<string, string | undefined>
+  home?: string
+  /** 覆盖默认浏览器的探测（单测注入；`in` 判据见上）。 */
+  defaultBrowser?: string | undefined
+} = {}): string | undefined {
+  const env = input.env ?? process.env
+  const override = env.ZCODE_CHROME_PATH
+  const hasOverride = typeof override === 'string' && override.trim().length > 0
+  const defaultBrowser = 'defaultBrowser' in input
+    ? input.defaultBrowser
+    : hasOverride
+      ? undefined
+      : defaultBrowserExecutable({ platform: input.platform, env, home: input.home })
+  for (const candidate of browserCandidates({ ...input, defaultBrowser })) {
     try {
       /**
        * ⚠ 只接受**绝对路径**：空环境变量产生的相对路径会相对 CWD 解析，
@@ -444,6 +495,27 @@ export function browserNotFoundMessage(platform: NodeJS.Platform = process.platf
 export function isEdgeExecutable(executable: string): boolean {
   const name = basename(executable).toLowerCase()
   return name === 'msedge.exe' || name === 'microsoft edge'
+}
+
+/**
+ * 这个可执行文件是不是**用户自己挑的默认浏览器**（而不是兜底落到它）。
+ *
+ * 用来把 Edge 告警分成两种来源（见 `launch()` 里的调用点）：
+ * - 用户默认浏览器就是 Edge ⇒ **不告警**（他没需要被建议改用 chrome）；
+ * - 候选链兜底落到 Edge ⇒ 照旧告警（IKJLB1 的期望行为 2）。
+ *
+ * ⚠️ `options.executablePath`（显式指定）也视为「用户挑的」：那是
+ * `ZCODE_CHROME_PATH` 注入进来的，用户已经明确表态了。
+ * ⚠️ 探测**失败**（`undefined`）时判 `false` —— 宁可多喊一句，也不要
+ * 在真兜底时静默（静默正是 IKJLB1 报的那个缺陷）。
+ */
+function isUserDefaultBrowser(options: ZcodeCaptchaBrowserOptions, executable: string): boolean {
+  if (options.executablePath !== undefined) return true
+  try {
+    return defaultBrowserExecutable() === executable
+  } catch {
+    return false
+  }
 }
 
 /** 极简 CDP 客户端（用 Node 内置 WebSocket，**零第三方依赖**）。 */
@@ -1369,8 +1441,13 @@ export class ZcodeCaptchaBrowser {
      * ⚠️ 判断用文件名（`msedge.exe`）而不是 `includes('Edge')` ——
      * 前者对路径里的 `Microsoft\Edge\` 与 scoop 布局都成立，且不会把
      * `ZCODE_CHROME_PATH` 指向的第三方 chromium 误报成 Edge。
+     *
+     * ⚠️⚠️ **用户默认浏览器就是 Edge 时不再告警**（2026-11-09）：自从默认浏览器
+     * 排到候选链前面（见 `browserCandidates` 的顺序），Edge 有两种到达方式 ——
+     * 「用户自己选的」与「兜底落到这儿」。前者再喊「未检测到 Chrome/Chromium，
+     * 改用系统 Edge」就是**错的**（用户本来就要用 Edge），故按来源分开。
      */
-    if (isEdgeExecutable(executable)) {
+    if (isEdgeExecutable(executable) && !isUserDefaultBrowser(this.options, executable)) {
       this.log?.(
         '[channel-pack] zcode captcha 未检测到 Chrome/Chromium，改用系统 Edge（msedge.exe）产出 —— ' +
         '若 Edge 异常导致 captcha 失败，可安装 Chrome/Chromium 或用 ZCODE_CHROME_PATH 指定其它浏览器。',

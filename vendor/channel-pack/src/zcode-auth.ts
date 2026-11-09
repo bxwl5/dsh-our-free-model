@@ -1254,7 +1254,20 @@ export class ZcodeAuth extends Service {
      * （否则 Channel Pack 的汇总会把 1 亿 token 显示成 1 亿积分）。
      *
      * `todayCheckedIn` 只能由「有没有可领的 plan」推断（ZCode 没有独立的
-     * 「今日是否已领」端点）：有可领 = 还没领；没有 = 已领或未投放。
+     * 「今日是否已领」端点）：有可领 = 还没领；没有 = **已领或未投放**（两者
+     * 在此层不可分，见 `claimDailyWith` 里对 `marketing/touch` 的取证）。
+     *
+     * ⚠️ 这个推断在 `inactive` 的方向上是**偏向乐观**的（空投放也报「已签」），
+     * 但它**不影响任何判定**：`todayCredit` 恒为 0、`dailyCredit` 恒为 0，
+     * 故前端的「今日已领多少」在台账没有 `claimed` 行时仍然返回 `null`
+     * （见 `client.js` 的 `todayClaimedAmount`）。真正决定「今天办没办完」的是
+     * `computeClaimSummary` 的 `coversToday`，那条路径已按 `inactive` 修正
+     * （见 `claimDailyWith`）。
+     *
+     * ⚠️ 若将来要给 `todayCheckedIn` 填真值，**不能**再靠「列表为空」——
+     * 正确的判据是 `billing/balance` 的 `plans[]` 里有没有当日 plan
+     * （2026-11-09 实测：领取后立刻出现 `…-start-plan-1109`、`starts_at` 就是
+     * 领取那一刻）。那要多打一次 GET（实测 103–235ms），当前没有这个必要。
      */
     return {
       active: true,
@@ -1385,12 +1398,57 @@ export class ZcodeAuth extends Service {
       await reportZcodeActivation(credential, this.fetchImpl)
       const plans = await fetchZcodeClaimablePlans(credential, this.fetchImpl)
       /**
-       * ⚠ 「没有可领 plan」**不等于**「今天已领」——也可能是活动未投放。
-       * 但两种情况下用户的动作都是「明天再来」，故归为 `already-claimed`
-       * 并给出如实文案（与 Buddy / Qoder 的幂等语义一致）。
+       * ★★ 「没有可领 plan」**不能**记成 `already-claimed`（真实缺陷，2026-11-09）。
+       *
+       * ## 缺陷形态（用户报障：签到失败、而这次并没有拉起浏览器）
+       *
+       * 旧行为把空投放归为 `already-claimed`，理由是「两种情况下用户的动作都是
+       * 明天再来」—— 但**记账层**看到的不是「明天再来」，而是「今天已经办完了」：
+       *
+       * ```text
+       * already-claimed（→ coversToday += 1）
+       *   → auto-checkin 记 status = done
+       *   → nextAttemptAt 对非 pending 返回 null
+       *   → 当天再也不会重试
+       * ```
+       *
+       * 而 `ZCODE_MAX_ATTEMPTS_PER_DAY = 2` 本来就是为「19:40 刚到、上游还没铺
+       * 开投放」准备的第二次机会，被这条错误归类整条吃掉。
+       *
+       * ## 2026-11-09 的取证（当天就复现了）
+       *
+       * | 时刻 | 事实 |
+       * |---|---|
+       * | 19:02 | 自动那轮三个账号全判 `already-claimed`（「今日暂无可领额度」） |
+       * | 19:28 | 实测 `marketing/touch`：A/B 号投放 `deliveries: []`，C 号已有 plan |
+       * | 19:32–19:33 | 用户手动点，三个账号**依次领到 300M token** |
+       *
+       * ⇒ 空投放是**上游还没发**，不是「已领」。而且这条路径在
+       * `claimOnePlan` **之前**就 return，**永远产不出 captcha**（也就不可能
+       * 拉起 chromium）—— 用户观察到的「这次没拉起浏览器」正是它。
+       *
+       * ## 改法：用 `inactive`（活动未开启）如实表达，并让记账层去重试
+       *
+       * `inactive` 不计 `coversToday`（见 `computeClaimSummary`），于是：
+       *
+       * ```text
+       * coversToday = 0、failed = 0
+       *   → settle('none') → status = pending
+       *   → nextAttemptAt：'none' + 当日 10:00 已过 → lastAt + 30min
+       *   → 20:10 补跑一次；attempts 到 2 时 giveUpOrRetry 置 given-up
+       * ```
+       *
+       * 正好是用户要求的「空投放不产 captcha、30 分钟后重试一次」。
+       *
+       * ⚠️ **不用** `already-claimed + coversToday:false`：那样面板会显示
+       *   「3 个今天已领，非今日轮次」—— 自相矛盾，比原缺陷更容易误导。
+       * ⚠️ 文案不写「已领 / 已签到」字样：面板与账本会把它们归到「今天办完了」。
        */
       if (plans.length === 0) {
-        return [{ kind: 'already-claimed', message: '今日暂无可领额度（服务端按日刷新）' }]
+        return [{
+          kind: 'inactive',
+          message: '上游尚未投放今日额度（服务端按日投放，稍后自动重试）',
+        }]
       }
 
       /**

@@ -179,7 +179,7 @@ export interface AutoCheckinAccountResult {
   /**
    * ★ 这一行属于哪个「签到日」（per-row，2026-11-04）。
    *
-   * 为什么不是全局 `resultsDay`：zcode 的签到日是 **09:00 分界**（`19:00 → 次日
+   * 为什么不是全局 `resultsDay`：zcode 的签到日是 **09:00 分界**（`19:40 → 次日
    * 09:00`），而其余渠道是 00:00 分界。用全局字段会让 `00:30` 时把 zcode 昨晚
    * 20:00 领的那行判成「昨天」而清空（用户要求「09:00 刷新」），也会反过来影响
    * 其他渠道的展示。故日界随行携带。
@@ -515,7 +515,7 @@ export const AUTO_CHECKIN_REFRESH_HOUR_UTC8 = 10
  *
  * ```
  * 09:00  token 清零（当日额度作废，签到记录同时刷新）      ← 日界
- * 19:00  签到开放（此后开展「今天」的签到窗口）
+ * 19:40  签到开放（此后开展「今天」的签到窗口）
  * 23:00  领到的 token 开始可用
  * 次日 09:00  token 再次清零（循环回到第一行）
  * ```
@@ -523,17 +523,46 @@ export const AUTO_CHECKIN_REFRESH_HOUR_UTC8 = 10
  * 三处都必须照这个窗口对齐，缺一个就会踩坑：
  *
  * - **日界不是 00:00 而是 09:00**：账本按 `utc8DateString` 记日（00:00 分界）时，
- *   19:00 领完、00:05 再启动一次就会被判成「新的一天、还没签」⇒ 白跑一轮
+ *   19:40 领完、00:05 再启动一次就会被判成「新的一天、还没签」⇒ 白跑一轮
  *   （每次都是 3 个账号各 mint 一次 captcha）。故 zcode 的账本日界用
  *   {@link zcodeCheckinDayString}（09:00 分界）。
- * - **19:00 之前不能跑**：`preview` 在窗口外回的是**空列表**，而
+ * - **19:40 之前不能跑**：`preview` 在窗口外回的是**空列表**，而
  *   `fetchCheckinStatus` 只能靠「有没有可领 plan」推断今天签没签 ⇒ 早跑会被
  *   判成 `already-claimed` / `coversToday` 为真，把当天记成 `done` 后
- *   **19:00 之后再也不跑**（真漏签）。故要显式门控。
- * - **09:00 前不算「今天」**：与第一条同源，`19:00–24:00` 与 `00:00–09:00`
+ *   **19:40 之后再也不跑**（真漏签）。故要显式门控。
+ * - **09:00 前不算「今天」**：与第一条同源，`19:40–24:00` 与 `00:00–09:00`
  *   属于**同一个** zcode 签到日。
+ *
+ * ## ★ 为什么从整点 19:00 挪到 19:40（2026-11-09 实测）
+ *
+ * 用户 2026-11-09 报「签到又失败了、而且没拉起浏览器」。当天取证：
+ *
+ * | 时刻 | 事实 |
+ * |---|---|
+ * | 19:02 | 窗口枪准点跑完，3 个账号全判 `already-claimed`（「今日暂无可领额度」） |
+ * | 19:28 | 实测 `marketing/touch`：A/B 号 `deliveries: []`，**只有 C 号有投放** |
+ * | 19:32–19:33 | 用户手动点，三个账号依次领到 300M token |
+ *
+ * 即「窗口一开就跑」时上游**还没把投放铺开**，且**逐个账号**铺得很分散
+ * （19:28 时两个号仍是空的）。`serializeUpstream` 之外的另一个既有口径也印证
+ * 这点 —— 见 `zcode-product.ts` 的「19:00 投放、（20:00）前领不到东西」。
+ *
+ * 故开窗时刻取 **19:40**：留 40 分钟给上游铺量，同时离 23:00「token 可真正
+ * 用于推理」仍有充裕余量（早领本来也不产生收益）。
+ *
+ * ⚠️ 这是**时刻**，不是「哪个渠道几点刷新」的表 —— 后者必然漂移（见
+ * `credits.ts` 的 `coversToday` 说明）。这里只有一个渠道、一个已知硬窗口。
  */
 export const ZCODE_CHECKIN_OPEN_HOUR_UTC8 = 19
+
+/**
+ * 与 {@link ZCODE_CHECKIN_OPEN_HOUR_UTC8} 配对的**分钟位**（UTC+8）。
+ *
+ * ⚠️ 必须与小时一起当「当日第几分钟」比较，不能只比小时：
+ * `hour >= 19` 会把 19:00–19:39 也算进窗口，正是 2026-11-09 那次失败的形态
+ * （见 {@link ZCODE_CHECKIN_OPEN_HOUR_UTC8} 的取证表）。
+ */
+export const ZCODE_CHECKIN_OPEN_MINUTE_UTC8 = 40
 
 /** ZCode 的 token 清零 / 签到记录刷新时刻（UTC+8）：也就是它的**日界**；
  * 领到的额度到这一刻才真正可用于推理。 */
@@ -545,7 +574,7 @@ export const ZCODE_TOKEN_RESET_HOUR_UTC8 = 9
  * 比通用的 {@link AUTO_CHECKIN_MAX_ATTEMPTS_PER_DAY}（3）更紧：每次领取要现场
  * 产一个阿里云 captcha，而阿里云按**设备**限流「同设备每小时 150 次」——
  * 3 个账号失败 3 轮就是 9 次 captcha，纯烧设备配额（用户明确要求限流）。
- * 取 2：够覆盖「19:00 刚到、上游还没投放」这一类时序抖动一次。
+ * 取 2：够覆盖「19:40 刚到、上游还没投放」这一类时序抖动一次。
  */
 export const ZCODE_MAX_ATTEMPTS_PER_DAY = 2
 
@@ -558,9 +587,21 @@ export function utc8HourOfDay(nowMs: number = Date.now()): number {
 }
 
 /**
+ * UTC+8 的「此刻是当日第几分钟」（0–1439）。
+ *
+ * ★ 签到开窗是 **19:40**，不是整点 ⇒ 判据必须细到分钟（见
+ * {@link ZCODE_CHECKIN_OPEN_MINUTE_UTC8}）。只比小时会把 19:00–19:39 误判成
+ * 已开窗，而那 40 分钟正是上游还没铺开投放的时段。
+ */
+export function utc8MinuteOfDay(nowMs: number = Date.now()): number {
+  const shifted = new Date(nowMs + QODER_BILLING_UTC_OFFSET_MS)
+  return shifted.getUTCHours() * 60 + shifted.getUTCMinutes()
+}
+
+/**
  * ZCode 的签到日（**09:00 分界**，不是 00:00）。
  *
- * `19:00 → 次日 09:00` 是同一天：所以把时刻整体**往前推 9 小时**再取 UTC+8
+ * `19:40 → 次日 09:00` 是同一天：所以把时刻整体**往前推 9 小时**再取 UTC+8
  * 日期，日界自然落在 09:00。例：
  * - `11-04 20:00` → 推 9h = `11-04 11:00` → `2026-11-04`
  * - `11-05 08:00` → 推 9h = `11-04 23:00` → `2026-11-04`（**同一天** ✓）
@@ -571,27 +612,32 @@ export function zcodeCheckinDayString(nowMs: number = Date.now()): string {
 }
 
 /**
- * 此刻是否在 ZCode 的签到窗口内（`19:00 – 次日 09:00`）。
+ * 此刻是否在 ZCode 的签到窗口内（`19:40 – 次日 09:00`）。
  *
  * ⚠️ 窗口外的 `preview` 是空列表，跑一轮只会被误判成「今天已签」而**锁死当天**
  * （见 {@link ZCODE_CHECKIN_OPEN_HOUR_UTC8} 的说明）—— 所以这不是「优化」，
  * 是正确性前提。
+ *
+ * ⚠️ 开窗侧必须比到**分钟**：`19:00–19:39` 仍是窗口外（上游还没铺投放）。
+ * 关窗侧（`< 09:00`）保持整点即可 —— 那是 token 清零时刻，不是区间估计。
  */
 export function inZcodeCheckinWindow(nowMs: number = Date.now()): boolean {
-  const hour = utc8HourOfDay(nowMs)
-  return hour >= ZCODE_CHECKIN_OPEN_HOUR_UTC8 || hour < ZCODE_TOKEN_RESET_HOUR_UTC8
+  const minuteOfDay = utc8MinuteOfDay(nowMs)
+  const openMinute = ZCODE_CHECKIN_OPEN_HOUR_UTC8 * 60 + ZCODE_CHECKIN_OPEN_MINUTE_UTC8
+  return minuteOfDay >= openMinute || minuteOfDay < ZCODE_TOKEN_RESET_HOUR_UTC8 * 60
 }
 
 /**
  * 下一次 zcode 签到窗口打开的绝对毫秒（窗口外才需要；窗口内返回 `nowMs`）。
  *
- * 用途：窗口外启动时把补跑排到 19:00，而不是干等到下次启动。
+ * 用途：窗口外启动时把补跑排到 **19:40**，而不是干等到下次启动。
  */
 export function nextZcodeWindowOpenMs(nowMs: number = Date.now()): number {
   if (inZcodeCheckinWindow(nowMs)) return nowMs
   const shifted = nowMs + QODER_BILLING_UTC_OFFSET_MS
   const dayStartShifted = Math.floor(shifted / DAY_MS) * DAY_MS
-  const openShifted = dayStartShifted + ZCODE_CHECKIN_OPEN_HOUR_UTC8 * 3_600_000
+  const openMinute = ZCODE_CHECKIN_OPEN_HOUR_UTC8 * 60 + ZCODE_CHECKIN_OPEN_MINUTE_UTC8
+  const openShifted = dayStartShifted + openMinute * 60_000
   return openShifted - QODER_BILLING_UTC_OFFSET_MS
 }
 
@@ -599,7 +645,7 @@ export function nextZcodeWindowOpenMs(nowMs: number = Date.now()): number {
  * 该渠道的「今天」是哪一天（账本日界）。
  *
  * ⚠️ 只有 zcode 特殊（09:00 分界）：其余渠道的上游刷新口径各不相同，但都没有
- * 一个「19:00 才开放、09:00 就清零」的硬窗口，故沿用 00:00（`utc8DateString`）。
+ * 一个「19:40 才开放、09:00 就清零」的硬窗口，故沿用 00:00（`utc8DateString`）。
  */
 export function checkinDayString(provider: string, nowMs: number = Date.now()): string {
   return provider === ZCODE.id ? zcodeCheckinDayString(nowMs) : utc8DateString(nowMs)
@@ -915,7 +961,7 @@ export function isAutoCheckinExcluded(provider: string): boolean {
    * 原排除理由是「每次领取都要现场产 captcha，会拉起 headful Chromium，且
    * 阿里云按设备限流」。用户的接受条件是「一天一次、失败限流」—— 这两条现在都由
    * {@link ZCODE_MAX_ATTEMPTS_PER_DAY}（2 轮/天）+ 签到窗口
-   * （{@link ZCODE_CHECKIN_OPEN_HOUR_UTC8}：19:00 前不跑）保证：
+   * （{@link ZCODE_CHECKIN_OPEN_HOUR_UTC8}：19:40 前不跑）保证：
    * 一个 zcode 签到日最多 2 轮 × 3 账号 = 6 次 captcha，且窗口外一次都不跑。
    *
    * ⚠️ 保留本函数（而不是删掉）：将来若又出现「必须用户在场」的渠道，登记点在这里；
@@ -1217,7 +1263,7 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
    */
   let followUp: { cancel(): void } | null = null
   /**
-   * ★ **签到窗口打开**那一枪（2026-11-04，用户要求「每天 19:00 准点自动跑一次」）。
+   * ★ **签到窗口打开**那一枪（2026-11-04，用户要求「每天 19:40 准点自动跑一次」）。
    *
    * 与 {@link followUp} 的区别：`followUp` 排的是「待补跑渠道的最早可跑时刻」
    * （`nextPendingAttemptAt`，账本里**已有** pending 条目才算），而启动时若账本里
@@ -1253,7 +1299,7 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
        *
        * ★ 2026-11-04：日界**逐行判**（`row.day ?? doc.resultsDay` 与该渠道的今日比）。
        * 全局 `resultsDay === today()` 有两个副作用：
-       * 1. zcode 的签到日是 09:00 分界（`19:00 → 次日 09:00`）—— `00:30` 时全局
+       * 1. zcode 的签到日是 09:00 分界（`19:40 → 次日 09:00`）—— `00:30` 时全局
        *    判据会把昨晚 20:00 领的 zcode 行判成「昨天」而清空，与用户要求的
        *    「09:00 刷新」相反；
        * 2. 反过来，任何一次按 zcode 日界写的 `resultsDay` 都会污染其他渠道的行。
@@ -1273,7 +1319,7 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
   /** 今天这个渠道的账本条目（跨日的条目一律视为不存在，见 `nextAttemptAt`）。 */
   function ledgerEntry(provider: string): AutoCheckinProviderLedger | undefined {
     const entry = doc.providers[provider]
-    // ⚠️ 日界 per-provider：zcode 的一天是 `19:00 → 次日 09:00`（09:00 分界），
+    // ⚠️ 日界 per-provider：zcode 的一天是 `19:40 → 次日 09:00`（09:00 分界），
     // 用全局 `today()`（00:00 分界）会把同一个 zcode 签到日劈成两天。
     return entry !== undefined && entry.day === checkinDayString(provider, now()) ? entry : undefined
   }
@@ -1308,7 +1354,7 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
   async function performRun(providerIds: readonly string[]): Promise<void> {
     const totals = emptyTotals()
     /**
-     * ⚠️ 账本日界**不能**在这里算一次全局值：zcode 的一天是 `19:00 → 次日 09:00`
+     * ⚠️ 账本日界**不能**在这里算一次全局值：zcode 的一天是 `19:40 → 次日 09:00`
      * （{@link zcodeCheckinDayString}），与其它渠道的 00:00 不同源。故每个渠道
      * 各取一次（`dayOf(provider)`）。
      */
@@ -1357,18 +1403,19 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
         continue
       }
       /**
-       * ★ 签到窗口门控（2026-11-04，用户要求「每天 19:00 之后才能签」）。
+       * ★ 签到窗口门控（2026-11-04，用户要求「每天 19:40 之后才能签」）。
        *
        * 窗口外**绝不**打上游：zcode 的 `preview` 在窗口外回空列表，跑了只会被
        * 误判成「今天已签」而不写 `lastDate` ⇒ 每次启动重来（白烧 captcha），
-       * 更糟的是会把当天记成 `done` 而**19:00 之后不再跑**（真漏签）。
+       * 更糟的是会把当天记成 `done` 而**19:40 之后不再跑**（真漏签）。
        *
        * 记账上留 `pending` 且 `attempts` 不增：这不是一次尝试，只是「还没到点」。
        * 面板给出可读的窗口提示，用户不必猜为什么没动静。
        */
       if (!checkinWindowOpen(provider, now())) {
         const hour = ZCODE_CHECKIN_OPEN_HOUR_UTC8
-        const text = `每日 ${hour}:00 后可签到`
+        const minute = ZCODE_CHECKIN_OPEN_MINUTE_UTC8
+        const text = `每日 ${hour}:${String(minute).padStart(2, '0')} 后可签到`
         texts.set(provider, text)
         ledgers = withLedger(ledgers, provider, {
           ...base,
@@ -1583,11 +1630,11 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
   /**
    * 排一枪「下一个签到窗口打开时再跑」（目前只有 zcode 有窗口）。
    *
-   * 调用点在 `start()` 与 `runIfDue()` 末尾：窗口外启动 → 排到 19:00；
+   * 调用点在 `start()` 与 `runIfDue()` 末尾：窗口外启动 → 排到 19:40；
    * 到点跑完（无论成败）→ 这里会因为「已在窗口内」而不排，避免自旋。
    *
    * ⚠️ 与 `followUp` 一样必须 `unref()`（见 `defaultSchedule`），否则一个等到
-   * 19:00 的定时器会拖住宿主进程退出。
+   * 19:40 的定时器会拖住宿主进程退出。
    */
   function scheduleWindowWake(providerIds: readonly string[]): void {
     if (!doc.enabled) return
@@ -1599,7 +1646,7 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
     if (at <= now()) return
     const ms = at - now()
     /**
-     * @cap 24 小时：`nextZcodeWindowOpenMs` 正常不会给出更远的时刻（最多当天 19:00），
+     * @cap 24 小时：`nextZcodeWindowOpenMs` 正常不会给出更远的时刻（最多当天 19:40），
      * 但 `setTimeout` 的 32 位溢出（> 约 24.8 天会立刻触发）必须挡住 —— 溢出的
      * 后果是「一排就立刻跑」，那是窗口外跑 zcode，会被误判成今天已签。
      */
@@ -1607,7 +1654,7 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
     const fire = (): void => {
       windowTimer = null
       if (!doc.enabled) return
-      deps.warn?.('[channel-pack] 自动签到：zcode 签到窗口已打开（19:00），开始跑一轮')
+      deps.warn?.('[channel-pack] 自动签到：zcode 签到窗口已打开（19:40），开始跑一轮')
       void runIfDue()
     }
     windowTimer = (deps.schedule ?? defaultSchedule)(fire, ms)
@@ -1643,7 +1690,7 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
         // 失败过）⇒ 把补跑排到最早那一刻，别让用户非等到下次启动。
         // ⚠️ `scheduleFollowUp` 取的是**未来**时刻，故不会自旋（见那里的说明）。
         if (pendingProviderCount(doc.providers, now(), providerIds) > 0) scheduleFollowUp(providerIds)
-        // ★ 19:00 前启动的常见形态就落在这里（zcode 还没到窗口）⇒ 必须排窗口枪，
+        // ★ 19:40 前启动的常见形态就落在这里（zcode 还没到窗口）⇒ 必须排窗口枪，
         // 否则用户上午开 DSH、晚上一直开着，就永远不会自动签。
         scheduleWindowWake(providerIds)
         return
@@ -1657,7 +1704,7 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
         followUp?.cancel()
         followUp = null
       }
-      // 窗口外（19:00 之前 / 09:00 之后已跑完的那种）⇒ 排到窗口打开时刻。
+      // 窗口外（19:40 之前 / 09:00 之后已跑完的那种）⇒ 排到窗口打开时刻。
       // 窗口内调用恒不排（`scheduleWindowWake` 自己判），故不会自旋。
       scheduleWindowWake(providerIds)
     })().catch((error: unknown) => {

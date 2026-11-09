@@ -617,25 +617,37 @@ try {
     assert.equal(h.store.peek().channels.filter(entry => entry.provider === 'zcode').length, 1, '渠道行不能重复堆积')
   })
 
-  // ── 13. zcode 签到窗口（19:00 开窗 / 次日 09:00 清零 / 每天准点跑 / 限流）──
+  // ── 13. zcode 签到窗口（19:40 开窗 / 次日 09:00 清零 / 每天准点跑 / 限流）──
   //
   // 用户 2026-11-04 给的上游口径：
-  //   19:00  签到开放
+  //   19:00  上游开始投放当日签到额度
   //   23:00  领到的 token 开始可用
   //   次日 09:00 token 清零，签到记录同时刷新
   // 并明确「这些规则只针对 zcode，不影响其他渠道的签到」。
-  await check('zcode 签到窗口：19:00 开窗、次日 09:00 换天、窗口外不跑', async () => {
-    // 纯函数层：UTC+8 的 19:00 之前一律不在窗口内
+  //
+  // ★ 2026-11-09 用户要求把**自动开窗**挪到 19:40：当天实测 19:02 那轮三个账号
+  //   全部拿到空投放（19:28 时 A/B 号仍是 `deliveries: []`，只有 C 号有），
+  //   而 19:32–19:33 手动点就依次领到了。即「上游 19:00 开始投放」≠「19:00 已
+  //   投放完」，留 40 分钟铺量。开窗判据因此必须**细到分钟**，见
+  //   `ZCODE_CHECKIN_OPEN_MINUTE_UTC8`。
+  await check('zcode 签到窗口：19:40 开窗、次日 09:00 换天、窗口外不跑', async () => {
+    // 纯函数层：UTC+8 的 19:40 之前一律不在窗口内
     const at = (hhmm) => Date.parse(`2026-11-04T${hhmm}:00+08:00`)
     assert.equal(ac.inZcodeCheckinWindow(at('18:59')), false, '18:59 还没开窗')
-    assert.equal(ac.inZcodeCheckinWindow(at('19:00')), true, '19:00 开窗')
+    // ⚠️ 这两条是 2026-11-09 那次失败的核心：只比小时会把它们判成「已开窗」
+    assert.equal(ac.inZcodeCheckinWindow(at('19:00')), false, '19:00 仍未开窗（上游刚开始投放，多半还是空列表）')
+    assert.equal(ac.inZcodeCheckinWindow(at('19:39')), false, '19:39 仍未开窗')
+    assert.equal(ac.inZcodeCheckinWindow(at('19:40')), true, '19:40 开窗')
+    // 分钟位必须是常量的一部分，不能是「19 点过后任何时刻」
+    assert.equal(ac.ZCODE_CHECKIN_OPEN_HOUR_UTC8, 19, '开窗小时')
+    assert.equal(ac.ZCODE_CHECKIN_OPEN_MINUTE_UTC8, 40, '开窗分钟')
     assert.equal(ac.inZcodeCheckinWindow(at('22:59')), true, '窗口内（token 23:00 才可用，但签到已可做）')
     assert.equal(ac.inZcodeCheckinWindow(at('23:30')), true, '23:30 窗口内')
     assert.equal(ac.inZcodeCheckinWindow(at('08:59')), true, '次日 08:59 仍属同一签到日')
     assert.equal(ac.inZcodeCheckinWindow(at('09:00')), false, '09:00 清零 ⇒ 窗口关闭')
 
-    // 日界（09:00 分界）：19:00–23:59 与次日 00:00–08:59 是**同一个**签到日
-    assert.equal(ac.zcodeCheckinDayString(at('19:00')), '2026-11-04')
+    // 日界（09:00 分界）：19:40–23:59 与次日 00:00–08:59 是**同一个**签到日
+    assert.equal(ac.zcodeCheckinDayString(at('19:40')), '2026-11-04')
     assert.equal(ac.zcodeCheckinDayString(at('23:59')), '2026-11-04')
     assert.equal(ac.zcodeCheckinDayString('2026-11-05T00:30:00+08:00' && Date.parse('2026-11-05T00:30:00+08:00')), '2026-11-04', '凌晨仍属前一签到日')
     assert.equal(ac.zcodeCheckinDayString(Date.parse('2026-11-05T08:59:00+08:00')), '2026-11-04', '08:59 仍是前一签到日')
@@ -649,7 +661,7 @@ try {
     // 18:00 启动：窗口外 ⇒ 一次上游都不打，账本留 pending 且给出窗口提示
     const h = harness({ providers: ['zcode'], responses: { zcode: [claimed()] }, now: at('18:00') })
     await h.engine.runIfDue()
-    assert.equal(h.calls.length, 0, '⚠️ 19:00 前绝不能打上游（会被误判成今天已签）')
+    assert.equal(h.calls.length, 0, '⚠️ 19:40 前绝不能打上游（会被误判成今天已签）')
     // 窗口外连 `performRun` 都没进（`shouldRunProvider` 就把它挡掉了）⇒ 账本不会
     // 出现「今天已处理」的痕迹；真正写 pending + 窗口提示的是强制进 `performRun`
     // 的路径（下面单独验，因为面板要靠那条文案告诉用户几点后可签）。
@@ -669,10 +681,10 @@ try {
     await hForce.engine.runIfDue()
     assert.equal(hForce.calls.length, 0, '窗口外仍不打上游')
 
-    // 19:00 到点：正常跑并记完成
-    const h2 = harness({ providers: ['zcode'], responses: { zcode: [claimed(3, 0)] }, now: at('19:05') })
+    // 19:40 到点：正常跑并记完成
+    const h2 = harness({ providers: ['zcode'], responses: { zcode: [claimed(3, 0)] }, now: at('19:45') })
     await h2.engine.runIfDue()
-    assert.equal(h2.calls.length, 1, '19:00 后窗口内应当真的跑一轮')
+    assert.equal(h2.calls.length, 1, '19:40 后窗口内应当真的跑一轮')
     assert.equal(h2.ledger('zcode').status, 'done')
 
     // 次日 08:30（同一签到日）：已完成 ⇒ 不再跑
@@ -680,17 +692,17 @@ try {
       providers: ['zcode'],
       responses: { zcode: [claimed()] },
       now: Date.parse('2026-11-05T08:30:00+08:00'),
-      initial: { providers: { zcode: { day: '2026-11-04', status: 'done', attempts: 1, lastAt: at('19:05'), lastOutcome: 'claimed', lastText: '1 个 +100' } } },
+      initial: { providers: { zcode: { day: '2026-11-04', status: 'done', attempts: 1, lastAt: at('19:45'), lastOutcome: 'claimed', lastText: '1 个 +100' } } },
     })
     await h3.engine.runIfDue()
-    assert.equal(h3.calls.length, 0, '⚠️ 同一签到日（19:00→次日09:00）已完成就不再跑')
+    assert.equal(h3.calls.length, 0, '⚠️ 同一签到日（19:40→次日09:00）已完成就不再跑')
 
-    // 次日 19:00（新签到日）：会重新跑
+    // 次日 19:40（新签到日）：会重新跑
     const h4 = harness({
       providers: ['zcode'],
       responses: { zcode: [claimed()] },
-      now: Date.parse('2026-11-05T19:05:00+08:00'),
-      initial: { providers: { zcode: { day: '2026-11-04', status: 'done', attempts: 1, lastAt: at('19:05'), lastOutcome: 'claimed', lastText: '1 个 +100' } } },
+      now: Date.parse('2026-11-05T19:45:00+08:00'),
+      initial: { providers: { zcode: { day: '2026-11-04', status: 'done', attempts: 1, lastAt: at('19:45'), lastOutcome: 'claimed', lastText: '1 个 +100' } } },
     })
     await h4.engine.runIfDue()
     assert.equal(h4.calls.length, 1, '新签到日必须重跑')
@@ -701,8 +713,8 @@ try {
     const h5 = harness({
       providers: ['zcode'],
       responses: { zcode: [failedSummary()] },
-      now: at('19:10'),
-      initial: { providers: { zcode: { day: '2026-11-04', status: 'pending', attempts: 2, lastAt: at('19:00'), lastOutcome: 'failed', lastText: '出错' } } },
+      now: at('19:50'),
+      initial: { providers: { zcode: { day: '2026-11-04', status: 'pending', attempts: 2, lastAt: at('19:40'), lastOutcome: 'failed', lastText: '出错' } } },
     })
     await h5.engine.runIfDue()
     assert.equal(h5.calls.length, 0, '⚠️ 已达 zcode 上限（2 次）当天不再打上游')
@@ -747,7 +759,7 @@ try {
   await check('zcode 的 09:00 日界不污染其他渠道的签到记录与账本', async () => {
     /*
      * 用户 2026-11-04：「这些规则只针对 zcode，不影响其他渠道的签到」。
-     * 场景：凌晨 00:30 —— zcode 还是**昨天**那个签到日（19:00→次日09:00），
+     * 场景：凌晨 00:30 —— zcode 还是**昨天**那个签到日（19:40→次日09:00），
      * 而其他渠道已经是新的一天（00:00 日界）。两条记录必须各自成立。
      */
     const at = (hhmm) => Date.parse(`2026-11-05T${hhmm}:00+08:00`)
@@ -853,7 +865,59 @@ try {
     assert.equal(ac.mergeAccountResult(failedRow, { ...failedRow, message: '新原因' }).message, '新原因', '失败原因取最近一次')
   })
 
-  console.log(`auto-checkin-ledger: ${checks} 组断言通过（失败渠道补跑 / 非今日轮次 / 刷新前 inactive 不烧额度 / 重跑上限 / 旧格式兼容 / 全失败不记日 / 跳过不重试 / 补跑排定 / 纯函数边界 / running 反馈 / 常量漂移 / 计数过滤 / 逐账号明细聚合 / 明细容错 / 全天累计 / 合并规则 / 手动签到回填渠道状态 / zcode 签到窗口 / 渠道间日界隔离 / 结果行不重复 / zcode 额度恢复点 23:00）`)
+  // ── 22. 空投放（inactive）必须走 30 分钟重试，不能被记成「今天办完了」──
+  //
+  // 真实缺陷（2026-11-09 用户报「签到又失败、而且这次没拉起浏览器」）：
+  // zcode 的 `claimDailyWith` 把「没有可领 plan」判成 `already-claimed`，
+  // 于是 coversToday 被 +1 ⇒ 记 `done` ⇒ `nextAttemptAt` 返回 null
+  // ⇒ `ZCODE_MAX_ATTEMPTS_PER_DAY = 2` 的第二次机会**整条被吃掉**，当天不再重试。
+  //
+  // 改法是让那条路径返回 `inactive`（活动未开启）：它不计 coversToday，
+  // 记账层落 `none` ⇒ `lastAt + 30 分钟` 再试一次，到上限才 given-up。
+  await check('空投放（inactive）不占「今天已完成」，30 分钟后会自动重试一次', async () => {
+    // 19:40 窗口刚开就跑到空投放 —— 正是 2026-11-09 的形态
+    const at = (hhmm) => Date.parse(`2026-11-04T${hhmm}:00+08:00`)
+    const openAt = at('19:40')
+    const inactiveSummary = () => summary({ inactive: 1, coversToday: 0 })
+    const h = harness({
+      providers: ['zcode'],
+      responses: { zcode: [inactiveSummary(), claimed(3, 0)] },
+      now: openAt,
+    })
+    await h.engine.runIfDue()
+    assert.equal(h.calls.length, 1, '第一轮要真的跑（网关了才会知道投放没到）')
+    const first = h.ledger('zcode')
+    assert.equal(first.status, 'pending', '⚠️ 空投放绝不能记 done（记 done 当天就不再有第二次机会）')
+    assert.equal(first.attempts, 1, '空投放算一次真尝试（它确实打过上游）')
+    assert.equal(first.lastOutcome, 'none', "结局落 none：'inactive' 不产生 claimed/alreadyClaimed 痕迹")
+    assert.doesNotMatch(first.lastText, /已领|已签到/, '⚠️ 文案不得出现「已领/已签到」字样（会被面板与账本当成今天办完了）')
+
+    // `nextAttemptAt` 必须给出「30 分钟后」，而不是 null
+    const retryAt = ac.nextAttemptAt(first, openAt, 'zcode')
+    assert.notEqual(retryAt, null, '⚠️ 空投放必须可重试，不能返回 null')
+    assert.equal(retryAt - openAt, 30 * MIN, '重试间隔是 30 分钟（不是等到次日刷新）')
+
+    // 到点补跑：这一轮上游投放到了，领到 3 个
+    h.clock.ms = openAt + 30 * MIN
+    await h.engine.runIfDue()
+    assert.equal(h.calls.length, 2, '30 分钟后必须再打一次上游')
+    assert.equal(h.ledger('zcode').status, 'done', '第二轮真领到 ⇒ 记 done')
+    assert.equal(h.ledger('zcode').lastOutcome, 'claimed')
+
+    // 上限仍是 2：两轮都空投放 ⇒ 置 given-up，不再无限烧
+    const h2 = harness({
+      providers: ['zcode'],
+      responses: { zcode: [inactiveSummary()] },
+      now: openAt,
+      initial: { providers: { zcode: { day: '2026-11-04', status: 'pending', attempts: 1, lastAt: openAt - 30 * MIN, lastOutcome: 'none', lastText: '上游尚未投放今日额度' } } },
+    })
+    await h2.engine.runIfDue()
+    assert.equal(h2.calls.length, 1, '第二次尝试照常打上游')
+    assert.equal(h2.ledger('zcode').status, 'given-up', '⚠️ 两轮都空投放 ⇒ 今日已放弃（ZCODE_MAX_ATTEMPTS_PER_DAY = 2）')
+    assert.match(h2.ledger('zcode').lastText, /今日已放弃/, '面板要能看出今天不再补救')
+  })
+
+  console.log(`auto-checkin-ledger: ${checks} 组断言通过（失败渠道补跑 / 非今日轮次 / 刷新前 inactive 不烧额度 / 重跑上限 / 旧格式兼容 / 全失败不记日 / 跳过不重试 / 补跑排定 / 纯函数边界 / running 反馈 / 常量漂移 / 计数过滤 / 逐账号明细聚合 / 明细容错 / 全天累计 / 合并规则 / 手动签到回填渠道状态 / zcode 签到窗口 / 渠道间日界隔离 / 结果行不重复 / zcode 额度恢复点 23:00 / 空投放 30 分钟重试）`)
 } finally {
   hooks.deregister()
   fs.rmSync(scratch, { recursive: true, force: true })
