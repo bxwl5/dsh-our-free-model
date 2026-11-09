@@ -35,26 +35,11 @@ https://github.com/bxwl5/dsh-our-free-model
 
 > 帮我安装这个插件：https://github.com/bxwl5/dsh-our-free-model
 
-手工安装时，在 profile 的 `vendor/` 下放入本仓库 tarball，然后在 `package.json` 的 dependencies 中加入：
-
-```
-"dsh-our-free-model": "file:./vendor/dsh-our-free-model-2.5.7-priv.2.tgz"
-```
-
-并在 `dsh.profile.bundles` 末尾追加 `"dsh-our-free-model"`。
-
 > npm 上的同名包不是本仓库发布的，请勿从 npm 安装。
 
 ## 使用
 
 装上后重启，输入框的模型选择器里会多出 **Our Free Model** 分组，直接选即可。
-
-- **思考强度**——模型菜单里的 Effort。能关思考的模型给开关，其余给 Light / Balanced / Deep 三档。
-- **本地网关**——设置 → Our Free Model → 本地转发，启用后本机其它工具即可通过 base URL + Key 调用，兼容 OpenAI 与 Anthropic 接口。
-- **局域网访问**——同一面板可开启，供同网段设备调用（默认关闭，需要单独的 Key）。
-- **换网络后**——点一下"重新探测可用性"，可用模型会按当前出口重新分组。
-
-设置页共七部分：免费模型、渠道接入、省 Token、路由、数据看板、运行日志、网关设置。
 
 ## Docker（独立服务）
 
@@ -72,29 +57,9 @@ docker run -d --name ofm \
 docker logs ofm | head -5     # 拿一次性的面板登录链接
 ```
 
-- **镜像**：`ghcr.io/bxwl5/dsh-our-free-model`，标签 `latest` / `2.5.7-priv.2` / `2.5`
-  （打 `v*` tag 时自动生成）。基础镜像 `node:22-alpine`，约 5 MB 应用文件、零 npm 运行时依赖。
-- **面板端口**：`18900`（面板 / 管理 API / `/v1` 推理 / `/health` 同一个端口）；
-  `18901` 是可选的局域网推理中继，**不转发管理面**。
-- **必须 `--network host`**：服务只绑回环地址（`isLoopbackHost()` 是硬校验），
-  bridge 网络下端口映射转发不进管理页面。
-- **数据卷**：`/data` 里是账号凭据、账号池、Token 账本和 API Key，不挂卷等于重建即丢。
-  bind mount（`-v ./ofm-data:/data`）也直接可用——镜像入口脚本会先修好目录属主再降权运行。
-- 从别的机器管理面板：`ssh -L 18900:127.0.0.1:18900 用户名@NAS`，然后本地开
-  `http://127.0.0.1:18900`。
-
-完整说明（GHCR 可见性、端口冲突、升级、已知限制）见 [docs/docker.md](docs/docker.md)。
-
-自己构建独立服务、Windows 桌面壳（Tauri）或改动产物，见 [PACKAGING.md](PACKAGING.md)。
-
 ## 渠道
 
 **免密车道（2 个）**：匿名免费车道（OpenCode）、Kilo 免费池。都不需要账号。
-
-> ⚠️ **数据外发披露（2026-11-08 终审）**：Trae 渠道的推理请求（含对话内容）
-> 发往 `https://trae-api-cn.mchost.guru`（协议复刻的既定上游主机，非 trae.cn
-> 官方域）。出口 IP 探测周期性访问 ipify/ipinfo/ipapi（仅取 IP/国家）。
-> 详见 `vendor/channel-pack/NOTICE.md` 的披露章节。
 
 **账号渠道（15 个）**，在「渠道接入」页添加：
 
@@ -106,14 +71,5 @@ docker logs ofm | head -5     # 拿一次性的面板登录链接
 | Command Code | 浏览器授权（自动回调） | ✅ |
 | OfficeAce 果办 | 浏览器授权（轮询授权码） | ✅ |
 | AutoClaw（国内） | 手机号 + 短信验证码（本地弹窗页） | ✅ |
-
-
-**关于 AutoClaw**：用**手机号 + 短信验证码**登录（无需浏览器，本地弹窗页承载）。国际版（`autoclaw-intl`）与其 OAuth 已按用户要求整渠道移除。
-
-**看不到某个渠道的模型？** 模型选择器只列**已登录渠道**的模型：没有可用账号的渠道不进候选
-（点了也用不了）。设置页里仍能看到它们的模型清单与模型开关；给渠道加一个账号，下一次打开选择器
-就会自动刷新出完整目录。想先在候选里预览未登录渠道的静态模型表，把环境变量
-`DSH_HIDE_MODELS_WITHOUT_ACCOUNT` 设为 `0`。各渠道支持哪种登录方式见
-[docs/channel-login-methods.md](docs/channel-login-methods.md)。
 
 MIT，见 [LICENSE](LICENSE)。本项目与任何模型提供方无隶属或背书关系。

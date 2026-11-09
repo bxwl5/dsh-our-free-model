@@ -3,6 +3,8 @@
 
 # dsh-our-free-model
 
+<sub>Private snapshot 2.5.7-priv.2 · EAC co-pay and the announcement/update/sponsor/aggregation features have been removed</sub>
+
 [简体中文](README.md) | **English**
 
   <img alt="license" src="https://img.shields.io/badge/license-MIT-263146?style=flat-square">
@@ -29,42 +31,17 @@ Repository:
 https://github.com/bxwl5/dsh-our-free-model
 ```
 
+> Open Add plugin in DSH settings and paste the repository address.
+
 You can just say:
 
 > Install this plugin for me: https://github.com/bxwl5/dsh-our-free-model
-> Use the local source directory method, target my `web` profile, restart the host when done.
-
-What the AI does (or you can do by hand):
-
-1. Clone or unpack this repository anywhere locally.
-2. In that directory run `npm pack --ignore-scripts --pack-destination "<DSH_HOME>/profiles/<profile>/vendor"` to produce the tarball.
-3. Add to the profile's `package.json` dependencies:
-
-```
-"dsh-our-free-model": "file:./vendor/dsh-our-free-model-2.5.7-priv.2.tgz"
-```
-
-4. Append `"dsh-our-free-model"` to `dsh.profile.bundles`.
-5. Restart the host.
-
-The AI can also install straight from the command line:
-
-```
-dsh plugin --profile web add /absolute/path/to/dsh-our-free-model
-```
 
 > The same-named package on npm is **not** published by this repository — do not install from npm.
 
 ## Usage
 
 After restarting, the composer's model picker gains an **Our Free Model** group. Pick a model and go.
-
-- **Thinking effort** — the Effort control in the model menu: an on/off switch where the model supports it, otherwise Light / Balanced / Deep.
-- **Local gateway** — Settings → Our Free Model → Local forward. Enable it and other local tools can call these models through a base URL plus a key, over OpenAI- and Anthropic-compatible endpoints.
-- **LAN access** — the same panel exposes a relay for other devices on your network (off by default, uses a separate key).
-- **After changing networks** — hit "Re-probe availability" and the groups re-measure from your current egress.
-
-The settings page has seven parts: free models, channels, token savers, routing, dashboard, request log and gateway.
 
 ## Docker (standalone service)
 
@@ -82,26 +59,6 @@ docker run -d --name ofm \
 docker logs ofm | head -5     # one-time dashboard login link
 ```
 
-- **Image**: `ghcr.io/bxwl5/dsh-our-free-model`, tags `latest` / `2.5.7-priv.2` / `2.5`
-  (version tags are produced when you push a `v*` tag). Base image `node:22-alpine`,
-  ~5 MB of app files, zero npm runtime dependencies.
-- **Dashboard port**: `18900` (dashboard, admin API, `/v1` inference and `/health` share
-  one port); `18901` is the optional LAN inference relay and never proxies the admin side.
-- **`--network host` is required**: the service binds loopback only (`isLoopbackHost()`
-  is a hard check), so a bridged container cannot reach the dashboard through a port map.
-- **Volume**: `/data` holds credentials, the account pool, the token ledger and the API
-  key — without a volume a rebuild loses everything. A bind mount
-  (`-v ./ofm-data:/data`) works too: the entrypoint fixes the directory ownership
-  before dropping privileges.
-- Managing from another machine: `ssh -L 18900:127.0.0.1:18900 user@nas`, then open
-  `http://127.0.0.1:18900`.
-
-Full details (GHCR visibility, port conflicts, upgrades, known limits):
-[docs/docker.md](docs/docker.md).
-
-To build the standalone service or the Windows desktop shell (Tauri) yourself, or to
-regenerate the shipped artifacts, see [PACKAGING.md](PACKAGING.md).
-
 ## Channels
 
 **Keyless lanes (2)** — anonymous free lane (OpenCode) and the Kilo free pool. Neither needs an account.
@@ -116,15 +73,5 @@ regenerate the shipped artifacts, see [PACKAGING.md](PACKAGING.md).
 | Command Code | browser (auto callback) | ✅ |
 | OfficeAce | browser (polling) | ✅ |
 | AutoClaw (CN) | phone + SMS code | ✅ |
-
-**On paste-based channels** — these upstreams expose no scriptable authorization flow. Sign in on the official site first, then copy the cookie or token out of the browser's developer tools.
-
-**On AutoClaw** — signs in with a **phone number plus SMS code** (no browser; the local page carries it). The international channel (`autoclaw-intl`) and its OAuth were removed entirely on request.
-
-**Can't see a channel's models?** The picker only lists models of channels you are signed in to;
-a channel with no usable account is not offered (its rows could not work). Its model list and the
-per-model switches still show up in the settings page, and signing in refreshes the picker on the
-next open. To preview signed-out channels' static catalogs in the picker, set
-`DSH_HIDE_MODELS_WITHOUT_ACCOUNT=0`. Per-channel sign-in methods: [docs/channel-login-methods.md](docs/channel-login-methods.md).
 
 MIT, see [LICENSE](LICENSE). This project has no affiliation with, and no endorsement from, any model provider.
