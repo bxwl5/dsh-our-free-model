@@ -54,8 +54,8 @@
     },
     {
       "path": "src/adapter.js",
-      "size": 59627,
-      "sha256": "270c7f49f61cabe5f0e01bcdf5f00613a91cb71523dd7fb0a72001692e3754d1"
+      "size": 60518,
+      "sha256": "69dbab568c422c35b5630cddd690385c391f09a7ee6084517c5cb3deeb283d8b"
     },
     {
       "path": "src/anthropic.js",
@@ -99,8 +99,8 @@
     },
     {
       "path": "src/core/runtime.js",
-      "size": 24871,
-      "sha256": "7972a3c876ed1acccc40a9b2351bf7bfa22ec80ef4d41285af2392d8207839c0"
+      "size": 26837,
+      "sha256": "f705c43376022bce1e8dbc2450b8b94935c401ffb3dd8a86c41f024b7c67392c"
     },
     {
       "path": "src/core/stats.js",
