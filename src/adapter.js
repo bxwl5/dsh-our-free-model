@@ -26,7 +26,7 @@ import { DEFAULT_LEVEL, MIN_BUDGET, budgetFor, defaultEffortFor, effortPatchFor,
 import { createChannel } from './channel.js'
 import { recoveryPolicy, canRecover, canRecoverSilentStop, recoveryMessages, continuationMessages, checkpointFits, addUsage, createBlockTracker } from './recovery.js'
 import { isKiloEntry } from './catalog.js'
-import { isComboEntry, comboChain, noteComboServed } from './combos.js'
+import { isComboEntry, comboChain, noteComboServed, comboRotationSlot } from './combos.js'
 import { isChannelEntry, parseChannelModelId, FALLBACK_CONTEXT_WINDOW } from './channel-catalog.js'
 import { applyTokenSavers, saverConfig } from './token-saver/index.js'
 import { classifyFailure, describeVerdict, shouldAdvance } from './route/classify.js'
@@ -51,6 +51,16 @@ export class FreeModelAdapter {
    * @param {(record: object) => void} dependencies.recordUsage
    * @param {(record: object) => void} [dependencies.recordTurn]
    * @param {(message: string) => void} [dependencies.warn]
+   * @param {(message: string) => void} [dependencies.log]
+   *
+   * ⚠️ `log` 与 `warn` 是**两个**依赖，别把 `log` 当成 `warn` 的别名随手省掉
+   * （真实缺陷，2026-11-10）：`runCombo` 每次作答都调 `this.deps.log?.(...)`
+   * 记「本轮由谁作答」，而装配层（`src/core/runtime.js`）**只注入了 `warn`**、
+   * 没有 `log` ⇒ 可选链静默吞掉，一行都不输出。后果是用户完全无法确认轮询
+   * 有没有在转（反馈原话「为什么路由功能没有在轮询」），而实测它一直在转
+   * （账本里 trae/raccoon/officeace 的分布就是证据）。语义上也该分开：
+   * `log` 是「正常诊断信息」，`warn` 是「确实出问题了」——把成功作答也写成
+   * warn 会让真正的告警被淹没。
    */
   constructor(dependencies) {
     this.deps = dependencies
@@ -259,6 +269,28 @@ export class FreeModelAdapter {
     const candidates = isRoundRobin
       ? comboChain(entry, snapshot.catalog)
       : this.orderByCooldown(comboChain(entry, snapshot.catalog))
+    /**
+     * ★ 链路成员**从目录里消失**时必须出声（真实盲区，2026-11-10）。
+     *
+     * `comboChain` 用 `ids.map(id => byId.get(id)).filter(row => row !== undefined)`
+     * 把「目录里查不到的成员」**静默丢掉**——于是链路上少了一个成员，用户与
+     * 排查者都看不出来：成员明明写在设置里，却从不出现在日志、也从不被调用。
+     *
+     * 这正是本次「qodercn 在路由里从未出现」的候选解释之一（它的模型行若在
+     * 目录快照里缺失，就会被这样丢掉）。差别很关键：
+     * - 「被丢掉」= 配置里写了但根本没参与轮询（要修的是目录/可见性）；
+     * - 「轮到了但失败」= 会走下面的 `advanced past` 日志（要修的是上游）。
+     * 两者此前**都表现为「从没出现」**，无法区分，故这里补一条明确诊断。
+     */
+    const declared = Array.isArray(entry.combo) ? entry.combo : []
+    if (declared.length > 0 && candidates.length < declared.length) {
+      const present = new Set(candidates.map(row => row.id))
+      const missing = declared.filter(id => !present.has(id))
+      this.deps.warn?.(
+        `our-free-model: chain "${entry.name}" is missing ${missing.length}/${declared.length} member(s) `
+        + `from the catalog and they will not be rotated: ${missing.join(', ')}`,
+      )
+    }
     if (candidates.length === 0) {
       rejectedTurn(0)
       yield { type: 'finish', reason: { kind: 'error', failure: { message: `the chain "${entry.name}" has no model available on this egress`, code: CODE.server } } }
@@ -308,11 +340,25 @@ export class FreeModelAdapter {
          * 「看不到」等于「没实现」。这条日志让每次作答都留下可核对的记录。
          */
         noteComboServed(entry.id, candidate.id)
+        /**
+         * ★ 字号必须带上**游标进度**（`2026-11-10`）：只写 `served by X` 时，
+         * 用户看到连续 10 次都是同一个成员，仍会怀疑「是不是没在轮」。
+         * 把「第几个名额 / sticky 上限」一并写出来，就不用二次推算：
+         *
+         * ```text
+         * served by channel:trae/glm-5.3-flash (candidate 1/5, round-robin, sticky 10, slot 3/10)
+         * ```
+         *
+         * `slot` 取自 `comboChain` 已经写回的游标（`used` 在满额那一刻归零，
+         * 故这里用 `used || limit` 表达「本轮是这一期名额的最后一次」）。
+         */
+        const slot = comboRotationSlot(entry)
         this.deps.log?.(
           `our-free-model: chain "${entry.name}" served by ${candidate.id}`
           + ` (candidate ${index + 1}/${candidates.length}`
           + `, strategy ${entry.strategy ?? 'fallback'}`
-          + `${entry.strategy === 'round-robin' ? `, sticky ${entry.stickyLimit ?? 1}` : ''})`,
+          + `${entry.strategy === 'round-robin' ? `, sticky ${entry.stickyLimit ?? 1}` : ''}`
+          + `${slot === null ? '' : `, slot ${slot}`})`,
         )
         /*
          * ★ 成功作答后**不动游标**（用户 2026-11-04 的轮询规则）：

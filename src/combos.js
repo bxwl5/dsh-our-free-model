@@ -67,6 +67,35 @@ export function comboLastServed(comboIdValue) {
   return lastServed.get(comboIdValue) ?? ''
 }
 
+/**
+ * 该链路当前处在「这一期名额」的第几次（`3/10` 里的 3）；非轮询返回 `null`。
+ *
+ * ## 为什么需要它（2026-11-10 用户反馈「为什么路由功能没有在轮询」）
+ *
+ * 轮询**一直在工作**（渠道账本里 trae/raccoon/officeace 的分布就是证据），但
+ * 对外完全看不出来：`combo:xxx` 这个模型名下不暴露任何成员信息，而装配层又
+ * 漏注入了 `log` 依赖（见 `adapter.js` 的构造参数说明），连「本轮由谁作答」
+ * 的日志都被静默吞掉。用户只能看到「连续很多轮都像在用同一个渠道」。
+ *
+ * 把名额进度一并写进日志，才能让「sticky=10 所以前 10 轮是同一个」与
+ * 「压根没在轮」在观感上彻底分开 —— 这两件事在只看成员名时是同一种表现。
+ *
+ * ⚠️ `used` 在数满 `stickyLimit` 的那一刻被 `comboChain` **归零并前移游标**，
+ * 所以「归零」代表的是「这一期的最后一次已经用掉」，而不是「还没开始」。
+ * 用 `used || limit` 把这层语义补回来，否则每 10 次里会有 1 次显示成 `slot 0`。
+ *
+ * @returns {string | null} 形如 `'3/10'`；非 round-robin 或没有游标时 `null`
+ */
+export function comboRotationSlot(entry) {
+  if (entry?.strategy !== 'round-robin') return null
+  const cursor = rotation.get(entry?.id)
+  if (cursor === undefined) return null
+  const limit = Number.isFinite(Number(entry.stickyLimit)) && Number(entry.stickyLimit) > 0
+    ? Math.trunc(Number(entry.stickyLimit))
+    : 1
+  return `${cursor.used || limit}/${limit}`
+}
+
 export function isComboEntry(entry) {
   return entry?.channel === COMBO_CHANNEL && Array.isArray(entry.combo)
 }

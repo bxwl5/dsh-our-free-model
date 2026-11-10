@@ -175,6 +175,21 @@ export function createModelRuntime({
       }
     },
     warn: message => logger.warn?.(message) ?? logger.log?.(message),
+    /**
+     * ★ `log` 是**独立依赖**，不能省（真实缺陷，2026-11-10）。
+     *
+     * `runCombo` 每次作答都调 `this.deps.log?.(...)` 写「本轮由谁作答 + 名额
+     * 进度」，而本对象此前**只注入了 `warn`** ⇒ 可选链静默吞掉，一行都不输出。
+     * 用户因此完全无法确认轮询有没有在转（原话：「为什么路由功能没有在轮询」），
+     * 而实测它一直在轮（渠道账本里 trae/raccoon/officeace 的分布就是证据）。
+     *
+     * ⚠️ 语义上也要与 `warn` 分开：成功作答是正常诊断信息，写成 warn 会让
+     *   真正的告警（失败顺延、限流换号）淹没在成功日志里。
+     * ⚠️ 走 `logger.warn` 而不是 `logger.info`：DSH 宿主的 `info` 通道在当前
+     *   桌面版不落盘（实测 `desktop.log` 里只有 WARN 及以上），用 info 等于
+     *   换一个地方继续静默。
+     */
+    log: message => logger.warn?.(message),
     onRegionBlocked: () => {
       if (disposed || reprobeTimer !== undefined) return
       reprobeTimer = setTimeout(() => {

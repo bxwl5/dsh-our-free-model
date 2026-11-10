@@ -478,6 +478,107 @@ await check('a candidate that hit its quota is deprioritised next turn, never dr
     '⚠️ 队首坏掉后其余渠道仍须严格 10 次')
 }
 
+// ── 2026-11-10：轮询「看不出来」的两个盲区 ──────────────────────────────
+//
+// 用户原话：「为什么路由功能没有在轮询？」而实测它一直在轮（渠道账本里
+// trae/raccoon/officeace 的分布就是证据）。根因不在轮询逻辑，而在**观测**：
+//   ① 装配层只注入了 `warn`、没注入 `log`，`runCombo` 的 `this.deps.log?.(...)`
+//      被可选链静默吞掉 ⇒ 「本轮由谁作答」一行都不输出；
+//   ② 链路成员在目录里查不到时被 `comboChain` 静默丢掉 ⇒ 配置里写了却从不
+//      参与轮询，与「轮到了但失败」表现完全相同（都叫「从没出现」）。
+await check('作答日志真的会输出，且带名额进度（deps.log 不再被静默吞掉）', async () => {
+  const logged = []
+  const turns = []
+  const controller = new AbortController()
+  // `answers` 是**按尝试序号取**的数组（见测试桩 `scenario.answers[ordinal]`），
+  // 不是单个响应对象 —— 只给对象会让第 0 次尝试命中「unexpected extra request」。
+  const okAnswer = { body: sse({ choices: [{ index: 0, delta: { content: ANSWER } }] }) + sse({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }) + 'data: [DONE]\n\n' }
+  const scenario = { answers: [okAnswer, okAnswer], requests: [] }
+  activeCase = scenario
+  const adapter = new FreeModelAdapter({
+    state: () => ({
+      catalog: CATALOG,
+      membership: { [ROUTE_MAIN]: MODELS },
+      settings: { enabled: true, defaultMaxTokens: 32768, streamRecovery: false },
+      attributionUserAgent: 'offline-combo-advance-test',
+    }),
+    recordUsage: () => {},
+    recordTurn: row => turns.push(row),
+    warn: () => {},
+    log: message => logged.push(message),
+  })
+  const stream = adapter.stream({
+    provider: ROUTE_MAIN,
+    model: ROTATION_ID,
+    maxTokens: 4096,
+    sessionId: 'combo-log-slot',
+    messages: [{ role: 'user', content: [{ type: 'text', text: TASK }] }],
+    signal: controller.signal,
+  })
+  for await (const _chunk of stream) { /* drain */ }
+  assert.ok(logged.length > 0, '⚠️ 作答日志必须真的落地（此前 deps.log 未注入 → 一行都没有）')
+  const served = logged.find(line => line.includes('served by'))
+  assert.ok(served !== undefined, `作答日志要含 "served by"，实际：${JSON.stringify(logged).slice(0, 200)}`)
+  assert.match(served, /slot \d+\/\d+/, '⚠️ 还要带名额进度 slot N/M：只有成员名时，连续 10 次同名会被误读成「没在轮」')
+})
+
+await check('成员在目录里缺失时要明确告警（不再静默丢弃）', async () => {
+  const warnings = []
+  const turns = []
+  const controller = new AbortController()
+  // 声明 3 个成员，但运行时目录里只有 2 个 —— 模拟「qodercn 行从目录消失」。
+  //
+  // ⚠️ 必须**手工**构造 combo 条目：`buildComboCatalog` 会先把未知成员过滤掉，
+  //    经它出来的 `combo` 数组已经是「瘦身后的」，永远触发不了本诊断。
+  //    真实场景是「设置里写着 5 个成员、运行时快照少了 1 个」（渠道扫描失败时
+  //    目录会缩水，而 settings 不变），所以这里的形状才是对的。
+  const ghost = 'channel:ghost/not-in-catalog'
+  const ghostId = 'combo:ghosty'
+  const catalog = [
+    ...FREE_CATALOG,
+    {
+      id: ghostId,
+      name: 'ghosty',
+      channel: 'combo',
+      combo: ['deepseek-v4-flash-free', 'mimo-v2.5-free', ghost],
+      strategy: 'round-robin',
+      stickyLimit: 1,
+      vision: false,
+      reasoning: false,
+      contextWindow: 128000,
+      maxOutput: 32768,
+      canDisableThinking: true,
+      regionSensitive: false,
+      lanes: ['free'],
+    },
+  ]
+  const adapter = new FreeModelAdapter({
+    state: () => ({
+      catalog,
+      membership: { [ROUTE_MAIN]: MODELS },
+      settings: { enabled: true, defaultMaxTokens: 32768, streamRecovery: false },
+      attributionUserAgent: 'offline-combo-advance-test',
+    }),
+    recordUsage: () => {},
+    recordTurn: row => turns.push(row),
+    warn: message => warnings.push(message),
+    log: () => {},
+  })
+  const stream = adapter.stream({
+    provider: ROUTE_MAIN,
+    model: ghostId,
+    maxTokens: 4096,
+    sessionId: 'combo-missing-member',
+    messages: [{ role: 'user', content: [{ type: 'text', text: TASK }] }],
+    signal: controller.signal,
+  })
+  try { for await (const _chunk of stream) { /* drain */ } } catch { /* 结尾不重要 */ }
+  const missingWarn = warnings.find(line => line.includes('is missing') && line.includes(ghost))
+  assert.ok(missingWarn !== undefined,
+    `⚠️ 目录里缺失的成员必须告警（否则「被丢掉」与「轮到了但失败」无法区分），实际：${JSON.stringify(warnings).slice(0, 300)}`)
+  assert.match(missingWarn, /1\/3 member/, '要说清缺几个：这次是 3 个里的 1 个')
+})
+
 server.close()
 if (failures > 0) console.error(`combo-advance-test: ${failures} failure(s)`)
 else console.log('combo-advance-test: the chain commits on answers only and fails over on everything else')
