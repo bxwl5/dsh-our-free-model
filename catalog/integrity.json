@@ -54,8 +54,8 @@
     },
     {
       "path": "src/adapter.js",
-      "size": 58078,
-      "sha256": "2d43d573fe0f7e210a402ca6150130ef953bf2026bfdb5bd50fa0223e2333a50"
+      "size": 59627,
+      "sha256": "270c7f49f61cabe5f0e01bcdf5f00613a91cb71523dd7fb0a72001692e3754d1"
     },
     {
       "path": "src/anthropic.js",
