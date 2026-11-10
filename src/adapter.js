@@ -491,7 +491,22 @@ export class FreeModelAdapter {
 
     let handle
     try {
-      handle = await prepare(target.provider, target.model, options.signal)
+      /**
+       * ⚠️ **必须把调用方的 controls 交给内核**（真实缺陷，2026-11-10）。
+       *
+       * 早先这里只传 `(provider, model, signal)` —— 调用方的 `maxTokens` /
+       * `temperature` / `stop` 全被丢掉，于是内核 resolve 出的权威 config 里
+       * 没有这些值，而派发时又要与它逐字段相等：结果要么把用户设置静默删掉
+       * （渠道成员上 maxTokens 从未生效），要么在删不干净时抛
+       * `INVALID_PREPARED_CALL`（qodercn 每回合被撞的直接原因）。
+       *
+       * `reasoningEffort` 不在其中：本插件档位与渠道私有档位不同域。
+       */
+      handle = await prepare(target.provider, target.model, options.signal, {
+        maxTokens: options.maxTokens,
+        temperature: options.temperature,
+        stop: options.stop,
+      })
     } catch (error) {
       const message = String(error?.message ?? error)
       this.deps.recordTurn?.({ at: started, model: entry.id, ok: false, recovered: false, attempts: 0, origin: 'harness', message })
@@ -500,42 +515,46 @@ export class FreeModelAdapter {
     }
 
     /**
+     * ⚠️ 没有 `locked` 时**绝不能**用残缺回退去覆盖调用方的 controls
+     * （真实缺陷，2026-11-10 同类排查第三处）。
+     *
+     * 早先是 `handle?.config ?? { provider, model }` —— 看上去「总有值」，
+     * 但那份回退**只有两个键**。于是当宿主没给 config（旧内核 / 适配器没实现
+     * `prepareCall` 的 config 契约）时，下面的「locked 没有就删掉」会把调用方的
+     * `maxTokens` / `temperature` / `stop` **统统删光**，用户的设置静默失效，
+     * 而且没有任何报错 —— 比抛错更难发现。
+     *
+     * 正确语义分两种情况：
+     * - **有** `locked`：它是权威，逐字段对齐（下面那段）；
+     * - **没有**：没有可比对的权威值，就**原样保留调用方的 controls**，
+     *   只改写 provider / model（否则会回跳到本路由自身）。此时若内核仍要
+     *   校验 config，它收到的是我们自己 resolve 的结果，与 options 一致。
+     */
+    const locked = handle?.config
+    /**
      * 派发前必须让调用与 handle 锁定的配置**逐字段相等**，否则内核的
      * `callConfigEquals` 会以 `INVALID_PREPARED_CALL` 拒绝。
      *
-     * ## ⚠️ 只是「合并一下」不够（真实缺陷，2026-11-10 用户报 qodercn 每轮必挂）
-     *
-     * 内核只比较 **5 个字段**（`provider` / `model` / `reasoningEffort` /
-     * `temperature` / `maxTokens`，外加 `stop` 数组），而 `{ ...options, ...locked }`
-     * 是「键存在才覆盖」——`locked` 里**没有声明**的键会保留 `options` 的原值。
-     * 于是出现下面这种必然失败的组合：
-     *
-     * - 内核 `resolveCallWithInfo` 只在 `config.maxTokens === undefined` 且
-     *   `adapterCall.model.defaultMaxTokens !== undefined` 时才补 `maxTokens`；
-     * - qoder 系适配器的 `resolveModel` 是
-     *   `if (maxTokens !== void 0) resolved.defaultMaxTokens = maxTokens`，
-     *   `remoteModel.maxTokens` 缺失时**不设**该字段；
-     * - 而本插件调用方通常带了 `maxTokens`（`settings.defaultMaxTokens`）⇒
-     *   `locked.maxTokens` 不存在、`forwarded.maxTokens` 仍是调用方那个数 ⇒
-     *   `callConfigEquals` 判 false ⇒ 抛 `INVALID_PREPARED_CALL`。
-     *
-     * 为什么「单测渠道可用、直接对话也正常」：这两条路都不经过
-     * `prepareCall` 的配置锁 —— 只有**路由里的渠道成员**才走这里。所以症状是
-     * 「渠道本身好的，一放进链路就每轮失败」，全靠换号顺延到别的成员兜底，
-     * 观感就成了「qodercn 每回合都被撞一次」。
-     *
-     * ⇒ 正确做法是**以 `locked` 为唯一权威**逐一赋值，`locked` 没声明的字段
-     * 一律从 `forwarded` 里**删掉**（而不是留着调用方的值）。
+     * 内核只比较 **6 个字段**（`provider` / `model` / `reasoningEffort` /
+     * `temperature` / `maxTokens` / `stop`），所以对齐也只需覆盖这 6 个：
+     * **有的照抄，`locked` 没声明的删掉**。`{ ...options, ...locked }` 不够，
+     * 因为它是「键存在才覆盖」——`locked` 缺的键会保留 `options` 的原值，
+     * 那种残留正是当初 qodercn 每回合 `INVALID_PREPARED_CALL` 的来源。
      */
-    const locked = handle?.config ?? { provider: target.provider, model: target.model }
-    const forwarded = { ...options, ...locked }
-    // 内核比较的字段必须与 `locked` 完全一致：有的照抄，没有的删掉。
-    for (const field of ['reasoningEffort', 'temperature', 'maxTokens', 'stop']) {
-      if (locked[field] === undefined) delete forwarded[field]
-      else forwarded[field] = locked[field]
+    const forwarded = { ...options }
+    if (locked === undefined || locked === null) {
+      // 没有权威值可比对 ⇒ 保留调用方 controls，只把路由名换成渠道自己的，
+      // 否则宿主会拿本路由的 id 再进一次自己的适配器（自递归）。
+      forwarded.provider = target.provider
+      forwarded.model = target.model
+    } else {
+      for (const field of ['reasoningEffort', 'temperature', 'maxTokens', 'stop']) {
+        if (locked[field] === undefined) delete forwarded[field]
+        else forwarded[field] = locked[field]
+      }
+      forwarded.provider = locked.provider ?? target.provider
+      forwarded.model = locked.model ?? target.model
     }
-    forwarded.provider = locked.provider
-    forwarded.model = locked.model
     let ok = false
     let committed = false
     let lastFailureMessage = ''

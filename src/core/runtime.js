@@ -143,10 +143,40 @@ export function createModelRuntime({
    * 缺 `prepareCall`（旧内核）时返回 undefined，由适配器给出明确错误而不是
    * 静默失败。
    */
+  /**
+   * 渠道成员的 `prepareCall` 桥。
+   *
+   * ## ⚠️ 必须把调用方的 controls 一并传下去（真实缺陷，2026-11-10）
+   *
+   * 早先的签名只传 `{ provider, model }`，把调用方的 `maxTokens` /
+   * `temperature` / `stop` **整个丢掉**。后果是一条链式反应：
+   *
+   * 1. 内核 `resolveCallWithInfo` 拿到的 `config` 里没有这些 controls，于是
+   *    它只能按适配器的 `defaultMaxTokens` 兜底（适配器没声明该字段时就彻底没有）；
+   * 2. `handle.config`（即锁定的权威配置）因此可能**缺少**调用方真正想要的值；
+   * 3. 适配器派发时又要与这份 config 逐字段相等，只能把调用方的值删掉 ⇒
+   *    **用户的 maxTokens / temperature / stop 在路由内的渠道成员上从没生效过**；
+   *    删不干净时就抛 `INVALID_PREPARED_CALL`（qodercn 每回合被撞的直接原因）。
+   *
+   * 正确做法就是这里把 controls 原样交给内核，让它 resolve 出**包含调用方意图**
+   * 的权威配置 —— 之后派发阶段自然逐字段相等，既不用删也不用猜。
+   *
+   * `reasoningEffort` **有意不传**：本插件的档位 id（`off`/`low`/`high`…）与
+   * 渠道私有的档位域（`light`/`xhigh`/`max`）不同域，透传会撞 400。档位由渠道
+   * 按自己的默认值决定（见 `runChannel` 的说明）。
+   */
   const prepareChannelCall = typeof llm?.prepareCall === 'function'
-    ? async (provider, model, signal) => {
+    ? async (provider, model, signal, controls) => {
       if (disposed) throw new UpstreamError('the model runtime is disposed', CODE.aborted)
-      const handle = await llm.prepareCall({ provider, model }, signal)
+      /**
+       * 只透传内核 `callConfigEquals` 会参与比较、且渠道能理解的三项。
+       * `undefined` 的键**不进对象**（否则会覆盖内核自己的默认值语义）。
+       */
+      const forwardedControls = {}
+      if (controls?.maxTokens !== undefined) forwardedControls.maxTokens = controls.maxTokens
+      if (controls?.temperature !== undefined) forwardedControls.temperature = controls.temperature
+      if (controls?.stop !== undefined) forwardedControls.stop = controls.stop
+      const handle = await llm.prepareCall({ provider, model, ...forwardedControls }, signal)
       // `config` 是内核为这次派发锁定的权威配置；适配器必须照它派发，
       // 否则会被 `INVALID_PREPARED_CALL` 拒绝。
       return { config: handle?.config, stream: options => handle.stream(options) }
