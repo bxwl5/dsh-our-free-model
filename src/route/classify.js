@@ -167,6 +167,11 @@ const CODE_VERDICTS = Object.freeze({
   stream_cut: Object.freeze({ kind: FAILURE_KIND.UPSTREAM, scope: FAILURE_SCOPE.TRANSIENT, retryable: true, cooldownMs: TRANSIENT_COOLDOWN_MS }),
   empty_response: Object.freeze({ kind: FAILURE_KIND.UPSTREAM, scope: FAILURE_SCOPE.TRANSIENT, retryable: true, cooldownMs: TRANSIENT_COOLDOWN_MS }),
   client_error: Object.freeze({ kind: FAILURE_KIND.INVALID_REQUEST, scope: FAILURE_SCOPE.REQUEST, retryable: false, cooldownMs: 0 }),
+  // 渠道适配器对 400 的另一个拼写（`httpErrorCode` 的 INVALID_REQUEST）。
+  // ⚠️ 请求级：参数错换成员/换时刻都会原样复现，零冷却、不顺延 —— 与
+  // client_error 同语义。早先缺这一行会让它落进 30s transient（retryable），
+  // 路由便拿着一个坏参数把整条链撞一遍（2026-11-11 全路由审查）。
+  invalid_request: Object.freeze({ kind: FAILURE_KIND.INVALID_REQUEST, scope: FAILURE_SCOPE.REQUEST, retryable: false, cooldownMs: 0 }),
   invalid_credential: Object.freeze({ kind: FAILURE_KIND.AUTH, scope: FAILURE_SCOPE.ACCOUNT, retryable: false, cooldownMs: COOLDOWN_LONG_MS }),
   invalid_api_key: Object.freeze({ kind: FAILURE_KIND.AUTH, scope: FAILURE_SCOPE.ACCOUNT, retryable: false, cooldownMs: COOLDOWN_LONG_MS }),
   unauthorized: Object.freeze({ kind: FAILURE_KIND.AUTH, scope: FAILURE_SCOPE.ACCOUNT, retryable: false, cooldownMs: COOLDOWN_LONG_MS }),

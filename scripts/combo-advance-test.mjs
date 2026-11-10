@@ -522,16 +522,14 @@ await check('作答日志真的会输出，且带名额进度（deps.log 不再�
   assert.match(served, /slot \d+\/\d+/, '⚠️ 还要带名额进度 slot N/M：只有成员名时，连续 10 次同名会被误读成「没在轮」')
 })
 
-await check('成员在目录里缺失时要明确告警（不再静默丢弃）', async () => {
+await check('runCombo 对缺失成员保持静默（告警职责已移到目录重建层）', async () => {
+  // `entry.combo` 是 buildComboCatalog 过滤后的产物，「目录里查不到」的成员
+  // 根本进不来 —— runCombo 里比不出差值，那里的告警是死代码（2026-11-11 审查）。
+  // 真正的告警在 runtime.js 的 rebuildCatalog（reportMissingComboMembers）。
+  // 这里锁定：幽灵成员不炸 runCombo，幸存成员照常轮询、照常作答。
   const warnings = []
   const turns = []
   const controller = new AbortController()
-  // 声明 3 个成员，但运行时目录里只有 2 个 —— 模拟「qodercn 行从目录消失」。
-  //
-  // ⚠️ 必须**手工**构造 combo 条目：`buildComboCatalog` 会先把未知成员过滤掉，
-  //    经它出来的 `combo` 数组已经是「瘦身后的」，永远触发不了本诊断。
-  //    真实场景是「设置里写着 5 个成员、运行时快照少了 1 个」（渠道扫描失败时
-  //    目录会缩水，而 settings 不变），所以这里的形状才是对的。
   const ghost = 'channel:ghost/not-in-catalog'
   const ghostId = 'combo:ghosty'
   const catalog = [
@@ -540,7 +538,7 @@ await check('成员在目录里缺失时要明确告警（不再静默丢弃）'
       id: ghostId,
       name: 'ghosty',
       channel: 'combo',
-      combo: ['deepseek-v4-flash-free', 'mimo-v2.5-free', ghost],
+      combo: ['deepseek-v4-flash-free', ghost],
       strategy: 'round-robin',
       stickyLimit: 1,
       vision: false,
@@ -564,19 +562,22 @@ await check('成员在目录里缺失时要明确告警（不再静默丢弃）'
     warn: message => warnings.push(message),
     log: () => {},
   })
-  const stream = adapter.stream({
-    provider: ROUTE_MAIN,
-    model: ghostId,
-    maxTokens: 4096,
-    sessionId: 'combo-missing-member',
-    messages: [{ role: 'user', content: [{ type: 'text', text: TASK }] }],
-    signal: controller.signal,
-  })
-  try { for await (const _chunk of stream) { /* drain */ } } catch { /* 结尾不重要 */ }
-  const missingWarn = warnings.find(line => line.includes('is missing') && line.includes(ghost))
-  assert.ok(missingWarn !== undefined,
-    `⚠️ 目录里缺失的成员必须告警（否则「被丢掉」与「轮到了但失败」无法区分），实际：${JSON.stringify(warnings).slice(0, 300)}`)
-  assert.match(missingWarn, /1\/3 member/, '要说清缺几个：这次是 3 个里的 1 个')
+  const okAnswer = { body: sse({ choices: [{ index: 0, delta: { content: ANSWER } }] }) + sse({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }) + 'data: [DONE]\n\n' }
+  const scenario = { answers: [okAnswer], requests: [] }
+  activeCase = scenario
+  try {
+    for await (const _chunk of adapter.stream({
+      provider: ROUTE_MAIN,
+      model: ghostId,
+      maxTokens: 4096,
+      sessionId: 'combo-missing-member',
+      messages: [{ role: 'user', content: [{ type: 'text', text: TASK }] }],
+      signal: controller.signal,
+    })) { /* drain */ }
+  } catch { /* 结尾不重要 */ }
+  assert.equal(scenario.requests.length, 1, '幸存成员必须照常被调用一次')
+  assert.ok(warnings.every(line => !line.includes('is missing')),
+    'runCombo 不得再产出缺失告警（那是 rebuildCatalog 的职责，重复告警只会刷屏）')
 })
 
 server.close()

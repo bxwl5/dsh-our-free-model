@@ -118,6 +118,43 @@ export function createModelRuntime({
       merged.push(entry)
     }
     const combos = normalizeCombos(settings.get().combos)
+    /**
+     * ★ 链路成员从目录消失时在这里告警（2026-11-11 审查，从 runCombo 移来）。
+     *
+     * `settings.combos` 存的是**用户写的原样名单**（save 时有意不删失效成员，
+     * 见 index.js 的注释），而 `buildComboCatalog` 会把当时目录里查不到的成员
+     * 静默过滤 —— 于是「目录缩水」后这条链的成员悄悄变少：渠道扫描失败、
+     * 模型被下架、channelRow 快照没落盘，都表现为「配置里写了却从不轮到」。
+     * 这里对照的是**原始名单 vs 聚合产物**，是唯一能看到差值的位置；runCombo
+     * 拿到的 `entry.combo` 已是过滤后的，在那里比较永远相等（死代码）。
+     *
+     * 告警而不是拒绝：目录是流动的（渠道上下线、探测刷新），把缺成员当硬错误
+     * 会让整条链在窗口期不可用；记录一行让「被丢掉」与「轮到了但失败」从此
+     * 可区分即可。只在**变化**时告警（按链路 id 记忆上次缺失集合），目录每次
+     * 刷新都会走这里，逐次重复会刷屏。
+     */
+    const missingReport = new Map()
+    for (const combo of combos) {
+      if (combo.enabled === false) continue
+      const missing = combo.models.filter(id => !merged.some(entry => entry.id === id))
+      if (missing.length > 0) missingReport.set(combo.id, missing)
+    }
+    for (const [comboId, missing] of missingReport) {
+      const previous = reportedMissingCombos.get(comboId)
+      const same = previous !== undefined
+        && previous.length === missing.length
+        && previous.every((id, i) => id === missing[i])
+      if (!same) {
+        const combo = combos.find(row => row.id === comboId)
+        logger.warn?.(`our-free-model: chain "${combo?.name ?? comboId}" is missing `
+          + `${missing.length}/${combo.models.length} member(s) from the catalog `
+          + `and they will not be rotated until they reappear: ${missing.join(', ')}`)
+      }
+      reportedMissingCombos.set(comboId, missing)
+    }
+    for (const comboId of [...reportedMissingCombos.keys()]) {
+      if (!missingReport.has(comboId)) reportedMissingCombos.delete(comboId)
+    }
     comboCatalog = buildComboCatalog(combos, merged)
     pruneRotation(combos)
     for (const entry of comboCatalog) {
@@ -127,6 +164,8 @@ export function createModelRuntime({
     }
     catalog = merged
   }
+  /** 每条链路上一次报告的缺失成员（`rebuildCatalog` 的去重记忆）。 */
+  const reportedMissingCombos = new Map()
   rebuildCatalog()
   const state = () => ({
     catalog,

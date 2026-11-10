@@ -270,27 +270,14 @@ export class FreeModelAdapter {
       ? comboChain(entry, snapshot.catalog)
       : this.orderByCooldown(comboChain(entry, snapshot.catalog))
     /**
-     * ★ 链路成员**从目录里消失**时必须出声（真实盲区，2026-11-10）。
-     *
-     * `comboChain` 用 `ids.map(id => byId.get(id)).filter(row => row !== undefined)`
-     * 把「目录里查不到的成员」**静默丢掉**——于是链路上少了一个成员，用户与
-     * 排查者都看不出来：成员明明写在设置里，却从不出现在日志、也从不被调用。
-     *
-     * 这正是本次「qodercn 在路由里从未出现」的候选解释之一（它的模型行若在
-     * 目录快照里缺失，就会被这样丢掉）。差别很关键：
-     * - 「被丢掉」= 配置里写了但根本没参与轮询（要修的是目录/可见性）；
-     * - 「轮到了但失败」= 会走下面的 `advanced past` 日志（要修的是上游）。
-     * 两者此前**都表现为「从没出现」**，无法区分，故这里补一条明确诊断。
+     * 「成员从目录消失」的告警在**目录重建处**（`runtime.js` 的
+     * `reportMissingComboMembers`），不在这里：`entry.combo` 是
+     * `buildComboCatalog` 对照当时的目录**过滤后**的产物，「目录里查不到」的
+     * 成员根本进不了 `entry.combo`，这里的比较永远相等 —— 早先放在本函数里的
+     * 那条告警在生产路径上是死代码（2026-11-11 审查修正）。本函数仍会在
+     * prepareCall 快照与回合快照错位（目录在两刻之间刷新）时兜底，但常态告警
+     * 归重建层。
      */
-    const declared = Array.isArray(entry.combo) ? entry.combo : []
-    if (declared.length > 0 && candidates.length < declared.length) {
-      const present = new Set(candidates.map(row => row.id))
-      const missing = declared.filter(id => !present.has(id))
-      this.deps.warn?.(
-        `our-free-model: chain "${entry.name}" is missing ${missing.length}/${declared.length} member(s) `
-        + `from the catalog and they will not be rotated: ${missing.join(', ')}`,
-      )
-    }
     if (candidates.length === 0) {
       rejectedTurn(0)
       yield { type: 'finish', reason: { kind: 'error', failure: { message: `the chain "${entry.name}" has no model available on this egress`, code: CODE.server } } }
@@ -432,13 +419,37 @@ export class FreeModelAdapter {
     return healthy.length === 0 ? candidates : [...healthy, ...cooling]
   }
 
-  /** 记录一次成员失败给出的冷却时长；判不出来时按一分钟保守处理。 */
+  /**
+   * 记录一次成员失败给出的冷却时长。
+   *
+   * ⚠️ verdict 决定一切，不再有「判不出来就 60 秒」的兜底（2026-11-11 审查修正）：
+   *
+   * - `cooldownMs > 0`：按规则表入禁期（429 退避、401/403 两分钟……）；
+   * - `cooldownMs === 0`：规则表**有意**判零 —— 请求级 4xx（参数错、上下文超限）、
+   *   region_blocked、authorization_required。这些失败换一个成员、换一个时刻都会
+   *   原样复现，禁期只会隐藏真正的原因（9router 的明确 carve-out，classify.js
+   *   的 scope 文档同源）。早先的 60 秒兜底会把这条语义整个吃掉。
+   * - `verdict === null`：调用方（runChannel 的 prepare 失败路径等）确实给不出
+   *   分类，才按一分钟保守处理。
+   */
   markFaulty(id, verdict) {
-    const suggested = Number(verdict?.cooldownMs)
-    const wait = Number.isFinite(suggested) && suggested > 0 ? suggested : 60_000
-    // 上限 30 分钟：上游偶尔回一个荒谬的 retry-after，不该让成员消失半天。
-    this.chainCooldown.set(id, Date.now() + Math.min(wait, 30 * 60_000))
-    // 别让它无限增长：过期项顺手清掉。
+    if (verdict !== null && verdict !== undefined) {
+      const suggested = Number(verdict?.cooldownMs)
+      if (Number.isFinite(suggested)) {
+        // 0 = 规则有意不冷却（请求级/地域类失败），不写条目。
+        if (suggested <= 0) { this.chainCooldown.delete(id); return }
+        const wait = Math.min(suggested, 30 * 60_000)
+        this.chainCooldown.set(id, Date.now() + wait)
+        this.pruneCooldowns()
+        return
+      }
+    }
+    this.chainCooldown.set(id, Date.now() + 60_000)
+    this.pruneCooldowns()
+  }
+
+  /** 禁期表的过期清理与容量上限（markFaulty 专用）。 */
+  pruneCooldowns() {
     if (this.chainCooldown.size > 64) {
       const now = Date.now()
       for (const [key, until] of this.chainCooldown) if (until <= now) this.chainCooldown.delete(key)
@@ -557,7 +568,7 @@ export class FreeModelAdapter {
     }
     let ok = false
     let committed = false
-    let lastFailureMessage = ''
+    // （失败形态统一记在 lastFailure：message + code，交给 classifyFailure。）
     /**
      * 渠道适配器报告失败有**两种**形态，都必须当成候选失败处理：
      *
@@ -570,6 +581,8 @@ export class FreeModelAdapter {
      * 原样甩给用户。
      */
     let failed = false
+    /** 最后一次失败的原始形态（message + code），交给 classifyFailure 分类。 */
+    let lastFailure = null
     try {
       for await (const chunk of handle.stream(forwarded)) {
         if (chunk?.type === 'text-delta' && typeof chunk.text === 'string' && chunk.text.trim() !== '') committed = true
@@ -578,28 +591,52 @@ export class FreeModelAdapter {
           if (chunk.reason?.kind === 'stop') ok = true
           else if (chunk.reason?.kind === 'error') {
             failed = true
-            lastFailureMessage = chunk.reason?.failure?.message ?? String(chunk.reason?.failure ?? '')
+            lastFailure = {
+              message: chunk.reason?.failure?.message ?? String(chunk.reason?.failure ?? ''),
+              code: chunk.reason?.failure?.code,
+            }
           }
         }
         yield chunk
       }
     } catch (error) {
       const message = String(error?.message ?? error)
+      const aborted = options.signal?.aborted === true
       this.deps.recordTurn?.({ at: started, model: entry.id, ok: false, recovered: false, attempts: 1, origin: 'harness', message })
       // Before any answer-bearing delta this is still an invisible candidate
       // fault, so a chain may move on; afterwards the caller already saw output.
-      yield fail(`channel ${target.provider} failed: ${message}`, CODE.server)
+      yield fail(`channel ${target.provider} failed: ${message}`, aborted ? CODE.aborted : CODE.server)
       // ★ failure 随 return 带出（审查 2026-11-05）：runCombo 的失败日志靠它，
       //   否则 `failureMessage` 恒空、排查「轮到某成员就换人」没有线索。
-      return { advance: !committed, verdict: null, ok: false, failure: { message } }
+      return { advance: !committed && !aborted, verdict: null, ok: false, failure: { message } }
     }
     // ⚠️ 把最后的 finish 错误块一并带给 recordTurn（2026-11-04 排查 qodercn 用）：
     // 渠道适配器把上游业务错误规整成 `finish(error)`，那个 reason 里才有真话。
+    const failureMessage = lastFailure?.message ?? ''
     this.deps.recordTurn?.({ at: started, model: entry.id, ok: !failed && ok, recovered: false, attempts: 1, origin: 'harness',
-      message: lastFailureMessage })
+      message: failureMessage })
+    /**
+     * ★ 失败要走与 runSingle **同一套**分类（2026-11-11 审查修正，此前 verdict
+     * 恒 null）。两条成员路径现在共享一个失败词汇表：
+     *
+     * - `classifyFailure` 的规则表决定 verdict（429 指数退避、401/403 两分钟
+     *   冷却、请求级 4xx 零冷却不入禁期 —— runSingle 一直有，渠道成员一直没有）；
+     * - `shouldAdvance` 决定能否顺延：region_blocked / authorization_required /
+     *   请求级 4xx 这类「换成员也没用」的失败不再连撞整条链（轮询铁律说的是
+     *   「上游拒了就换人」，不是「无论如何都要把名单撞完」）；abort 同理，
+     *   用户取消后拿已中止的 signal 去撞剩余成员只会收获一排 aborted。
+     * - 渠道错误码（`INVALID_REQUEST` / `RATE_LIMIT` / …，来自渠道适配器的
+     *   LlmError.code）直接进 classifyFailure 的 code 层，与 HTTP 状态互补。
+     */
+    const verdict = failed || lastFailure !== null
+      ? classifyFailure({ code: lastFailure?.code, message: failureMessage })
+      : null
+    const aborting = options.signal?.aborted === true
     // 已经交出内容就不能再换模型（调用方看得到那段输出）；还没交出的失败
     // 才是「换一个再来」的场景。
-    return { advance: failed && !committed, verdict: null, ok: !failed && ok }
+    const advanceable = (failed || lastFailure !== null) && !committed
+      && !aborting && shouldAdvance(verdict)
+    return { advance: advanceable, verdict: failed || lastFailure !== null ? verdict : null, ok: !failed && ok }
   }
 
   /**

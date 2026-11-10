@@ -138,6 +138,7 @@ const suites = [
   ['combo-advance', 'combo-advance-test.mjs', []],
   ['chain-channel-config', 'chain-channel-config-test.mjs', []],
   ['chain-channel-controls', 'chain-channel-controls-test.mjs', []],
+  ['chain-channel-verdict', 'chain-channel-verdict-test.mjs', []],
   ['prompt-saver', 'prompt-saver-test.mjs', []],
   ['anthropic', 'anthropic-test.mjs', []],
   ['model-test', 'model-test-test.mjs', []],
