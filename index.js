@@ -116,8 +116,50 @@ function distributionOf(config, settings) {
   return 'self'
 }
 
+/**
+ * 插件诊断日志的实际出口。
+ *
+ * ## 为什么不能直接用 `ctx.logger`（实测缺陷，2026-11-10）
+ *
+ * 桌面版 DSH 里 `ctx.logger.warn(...)` **不落盘**：`desktop.log` 里能搜到的
+ * 全部是同进程的 `console.warn` 输出（例如 channel-pack 的 `[buddy] 账号 …`
+ * 共 263 条，而它走 `ctx.logger?.warn` 的 `[channel-pack] …` 是 **0 条**）。
+ *
+ * 后果是本插件的诊断信息（「本轮由谁作答」、成员缺失、换号失败原因）一条都
+ * 看不到 —— 用户据此判定「路由没有在轮询」，而实测它一直在轮（`stats.json`
+ * 的 `logical.models` 里各成员 turns 持续增长就是证据）。排查时反复被误导。
+ *
+ * 所以这里**同时**往两边写：
+ * - `ctx.logger.warn`：保留给宿主内其它消费者（面板、遥测）的原有语义；
+ * - `console.warn`：真正落到 `desktop.log` 的那一路，可事后核对。
+ *
+ * ⚠️ 顺序无关但**必须都调**：只留 `ctx.logger` 就继续静默；只留 `console`
+ *   则丢掉宿主日志的等级/命名空间。两个都调不会重复计费，仅多一行输出。
+ * ⚠️ `log` 与 `warn` 在本插件里是**语义不同**的两个依赖（见 `adapter.js` 的
+ *   构造参数说明），但两者都只是诊断信息，走同一条落盘通道即可。
+ */
+function createDiagnosticLogger(ctx) {
+  const host = ctx.logger ?? undefined
+  const write = (level, message) => {
+    try { host?.[level]?.(message) } catch { /* 宿主 logger 坏掉不该影响对话 */ }
+    // `console.warn` 是唯一确认落盘的一条；debug/info 在桌面版会被丢掉。
+    if (level === 'warn' || level === 'error') {
+      try { (level === 'error' ? console.error : console.warn).call(console, message) } catch { /* ignore */ }
+      return
+    }
+    try { console.warn.call(console, message) } catch { /* ignore */ }
+  }
+  return {
+    warn: message => write('warn', message),
+    error: message => write('error', message),
+    info: message => write('info', message),
+    log: message => write('log', message),
+    debug: message => write('debug', message),
+  }
+}
+
 export function apply(ctx, config) {
-  const logger = ctx.logger ?? console
+  const logger = createDiagnosticLogger(ctx)
   const home = resolveDshHome()
   const dataDir = path.resolve(home, DATA_DIR_NAME)
   fs.mkdirSync(dataDir, { recursive: true })
