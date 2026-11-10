@@ -503,15 +503,39 @@ export class FreeModelAdapter {
      * 派发前必须让调用与 handle 锁定的配置**逐字段相等**，否则内核的
      * `callConfigEquals` 会以 `INVALID_PREPARED_CALL` 拒绝。
      *
-     * 所以这里从 handle 自己报告的 `config` 取权威值，而不是从我们这边的
-     * `options` 猜：provider / model 一定是渠道自己的名字，`maxTokens` 等
-     * 字段若被渠道适配器解析出默认值也必须照它说的传。`signal` 不参与比较，
-     * 保留调用方的取消链路。
+     * ## ⚠️ 只是「合并一下」不够（真实缺陷，2026-11-10 用户报 qodercn 每轮必挂）
+     *
+     * 内核只比较 **5 个字段**（`provider` / `model` / `reasoningEffort` /
+     * `temperature` / `maxTokens`，外加 `stop` 数组），而 `{ ...options, ...locked }`
+     * 是「键存在才覆盖」——`locked` 里**没有声明**的键会保留 `options` 的原值。
+     * 于是出现下面这种必然失败的组合：
+     *
+     * - 内核 `resolveCallWithInfo` 只在 `config.maxTokens === undefined` 且
+     *   `adapterCall.model.defaultMaxTokens !== undefined` 时才补 `maxTokens`；
+     * - qoder 系适配器的 `resolveModel` 是
+     *   `if (maxTokens !== void 0) resolved.defaultMaxTokens = maxTokens`，
+     *   `remoteModel.maxTokens` 缺失时**不设**该字段；
+     * - 而本插件调用方通常带了 `maxTokens`（`settings.defaultMaxTokens`）⇒
+     *   `locked.maxTokens` 不存在、`forwarded.maxTokens` 仍是调用方那个数 ⇒
+     *   `callConfigEquals` 判 false ⇒ 抛 `INVALID_PREPARED_CALL`。
+     *
+     * 为什么「单测渠道可用、直接对话也正常」：这两条路都不经过
+     * `prepareCall` 的配置锁 —— 只有**路由里的渠道成员**才走这里。所以症状是
+     * 「渠道本身好的，一放进链路就每轮失败」，全靠换号顺延到别的成员兜底，
+     * 观感就成了「qodercn 每回合都被撞一次」。
+     *
+     * ⇒ 正确做法是**以 `locked` 为唯一权威**逐一赋值，`locked` 没声明的字段
+     * 一律从 `forwarded` 里**删掉**（而不是留着调用方的值）。
      */
     const locked = handle?.config ?? { provider: target.provider, model: target.model }
     const forwarded = { ...options, ...locked }
-    delete forwarded.reasoningEffort
-    if (locked.reasoningEffort !== undefined) forwarded.reasoningEffort = locked.reasoningEffort
+    // 内核比较的字段必须与 `locked` 完全一致：有的照抄，没有的删掉。
+    for (const field of ['reasoningEffort', 'temperature', 'maxTokens', 'stop']) {
+      if (locked[field] === undefined) delete forwarded[field]
+      else forwarded[field] = locked[field]
+    }
+    forwarded.provider = locked.provider
+    forwarded.model = locked.model
     let ok = false
     let committed = false
     let lastFailureMessage = ''
