@@ -54,8 +54,8 @@
     },
     {
       "path": "src/adapter.js",
-      "size": 55062,
-      "sha256": "4b4a180ef70b93b1f99be30f5252638d541176b4997e1029202bc234a30be993"
+      "size": 58078,
+      "sha256": "2d43d573fe0f7e210a402ca6150130ef953bf2026bfdb5bd50fa0223e2333a50"
     },
     {
       "path": "src/anthropic.js",
@@ -84,8 +84,8 @@
     },
     {
       "path": "src/combos.js",
-      "size": 11624,
-      "sha256": "f210b2f21ca2b70ec207852ed906f489887091f01f2be9987e4f88c5259c0911"
+      "size": 13237,
+      "sha256": "066ebac4625343afdd7f6641ded5794d12fb88c1a4fa4908a4d2dad88863b659"
     },
     {
       "path": "src/core/channel-usage.js",
@@ -99,8 +99,8 @@
     },
     {
       "path": "src/core/runtime.js",
-      "size": 23868,
-      "sha256": "0cefbc13ffdb9bc2c7fc87830ad375f589f6c9642c508440d678e74417f0b239"
+      "size": 24871,
+      "sha256": "7972a3c876ed1acccc40a9b2351bf7bfa22ec80ef4d41285af2392d8207839c0"
     },
     {
       "path": "src/core/stats.js",
