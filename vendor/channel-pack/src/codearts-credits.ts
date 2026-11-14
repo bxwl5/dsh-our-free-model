@@ -621,12 +621,7 @@ export async function claimCodeArtsDailyCheckin(
     return { kind: 'inactive', message: '未找到每日签到活动' }
   }
 
-  const outcomes: Array<
-    | { kind: 'claimed'; credit: number; message?: string }
-    | { kind: 'already-claimed'; message: string }
-    | { kind: 'inactive'; message: string }
-    | { kind: 'failed'; code: number; message: string }
-  > = []
+  const outcomes: CodeArtsClaimActivityOutcome[] = []
   for (const activity of dailyActivities) {
     outcomes.push(await claimOneCodeArtsActivity(activity, credential, fetcher))
   }
@@ -662,6 +657,13 @@ export async function claimCodeArtsDailyCheckin(
   return inactive[0] ?? { kind: 'inactive', message: '当前没有可领取的每日签到活动' }
 }
 
+/** 单个活动的领取结果（claimed 带 streakDays/isStreakDay，与 ClaimOutcome 对齐）。 */
+type CodeArtsClaimActivityOutcome =
+  | { kind: 'claimed'; credit: number; streakDays: number; isStreakDay: boolean; message?: string }
+  | { kind: 'already-claimed'; message: string }
+  | { kind: 'inactive'; message: string }
+  | { kind: 'failed'; code: number; message: string }
+
 /**
  * 领取**单个**每日活动（claim → confirm → 读积分）。
  *
@@ -673,12 +675,7 @@ async function claimOneCodeArtsActivity(
   activity: CodeArtsOpsActivity,
   credential: CodeArtsCredential,
   fetcher: typeof fetch,
-): Promise<
-  | { kind: 'claimed'; credit: number; message?: string }
-  | { kind: 'already-claimed'; message: string }
-  | { kind: 'inactive'; message: string }
-  | { kind: 'failed'; code: number; message: string }
-> {
+): Promise<CodeArtsClaimActivityOutcome> {
   if (!activity.claimable) {
     return CLAIMED_STATUSES.includes(activity.status)
       ? { kind: 'already-claimed', message: '今天已领取' }
