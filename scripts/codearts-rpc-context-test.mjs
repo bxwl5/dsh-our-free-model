@@ -106,8 +106,10 @@ async function createLane(id, balance) {
     if (pathname === infoPath) res.end(JSON.stringify(info(balance)))
     else if (pathname === deliveryPath) res.end(JSON.stringify({ code: 0, data: { items: [
       lane.claimWasRejected
-        ? { campaignId: id, type: 'USER_LOGIN', claimable: false, status: 'CONFIRMED', benefitAmount: balance }
-        : { campaignId: id, type: 'USER_LOGIN', claimable: true, status: 'AVAILABLE', benefitAmount: balance },
+        // 2026-11-14：真实活动条目带 title，且新判据（对齐 magpie 0.3.18）按
+        // 「标题含 签到/每日」筛选每日类活动 —— 夹具同步补上。
+        ? { campaignId: id, type: 'USER_LOGIN', title: '每日签到得积分', claimable: false, status: 'CONFIRMED', benefitAmount: balance }
+        : { campaignId: id, type: 'USER_LOGIN', title: '每日签到得积分', claimable: true, status: 'AVAILABLE', benefitAmount: balance },
     ] } }))
     else if (pathname === claimPath || pathname === confirmPath) {
       const request = JSON.parse(body)

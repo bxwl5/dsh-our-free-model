@@ -542,7 +542,27 @@ export async function fetchCodeArtsOpsActivitiesDetailed(
   }
 }
 
-/** 在活动列表里找「每日签到」那一项；没有则返回 undefined。 */
+/**
+ * 「每日签到」活动的标题判据（2026-11-14 对齐 magpie opencode-codearts-auth
+ * 0.3.18，#1110）。
+ *
+ * 活动列表里 `USER_LOGIN` 类型**不止一个**：普通的「每日签到得积分」，以及
+ * 各类赛事附带的每日签到（如小红书 Skill 创新赛的每日 1000，2026-11-11–12-05）
+ * ——它们都是 `USER_LOGIN`，靠标题区分；一次性报名礼（type 也是 `USER_LOGIN`）
+ * **不是**每日签到，留给用户自己领。
+ */
+export const CODEARTS_DAILY_CHECKIN_TITLE = /签到|每日/
+
+/** 在活动列表里找全部「每日签到」活动（普通的 + 赛事附带的）；顺序保持服务端给的。 */
+export function findDailyCheckinActivities(
+  activities: readonly CodeArtsOpsActivity[],
+): CodeArtsOpsActivity[] {
+  return activities.filter(activity =>
+    activity.type === CODEARTS_DAILY_LOGIN_TYPE
+    && CODEARTS_DAILY_CHECKIN_TITLE.test(activity.title))
+}
+
+/** 在活动列表里找「每日签到」活动；没有则返回 undefined。 */
 export function findDailyCheckinActivity(
   activities: readonly CodeArtsOpsActivity[],
 ): CodeArtsOpsActivity | undefined {
@@ -588,10 +608,77 @@ export async function claimCodeArtsDailyCheckin(
   if (!activitiesResult.ok) {
     return { kind: 'failed', code: -1, message: `活动列表查询失败：${activitiesResult.message}` }
   }
-  const activity = findDailyCheckinActivity(activitiesResult.activities)
-  if (activity === undefined) {
+  /**
+   * ★ 领取**全部**每日类活动，不是只领第一个（2026-11-14 对齐 magpie 0.3.18）。
+   *
+   * 列表里同时挂着普通每日签到（100）与赛事每日签到（1000/天）；旧实现
+   * `find` 第一个 —— 一旦排在前面的是**已确认**的（如赛事报名礼，IDE 领过
+   * 且它从不 confirm），整个函数就提前返回 already-claimed / done，两个
+   * 每日签到都漏领。现在逐个活动走完整的「领取 → 确认」流程，积分求和。
+   */
+  const dailyActivities = findDailyCheckinActivities(activitiesResult.activities)
+  if (dailyActivities.length === 0) {
     return { kind: 'inactive', message: '未找到每日签到活动' }
   }
+
+  const outcomes: Array<
+    | { kind: 'claimed'; credit: number; message?: string }
+    | { kind: 'already-claimed'; message: string }
+    | { kind: 'inactive'; message: string }
+    | { kind: 'failed'; code: number; message: string }
+  > = []
+  for (const activity of dailyActivities) {
+    outcomes.push(await claimOneCodeArtsActivity(activity, credential, fetcher))
+  }
+
+  // 汇总：积分求和、级别取最重的一个失败；全成功才是 claimed。
+  // （与 magpie 0.3.18 的聚合口径一致：failed > claimed > already-claimed > inactive。）
+  const failed = outcomes.filter((o): o is { kind: 'failed'; code: number; message: string } => o.kind === 'failed')
+  const claimed = outcomes.filter(o => o.kind === 'claimed')
+  const already = outcomes.filter(o => o.kind === 'already-claimed')
+  const inactive = outcomes.filter(o => o.kind === 'inactive')
+  if (failed.length > 0) {
+    return {
+      kind: 'failed',
+      code: failed[0].code,
+      message: failed.length === 1
+        ? failed[0].message
+        : `${failed[0].message}（另有 ${failed.length - 1} 个活动失败）`,
+    }
+  }
+  if (claimed.length > 0) {
+    // 有领取成功（可能伴随个别 already-claimed）：积分是本次实际领到的和。
+    const credit = claimed.reduce((sum, o) => sum + o.credit, 0)
+    const note = claimed.find(o => o.message !== undefined)?.message
+    return {
+      kind: 'claimed',
+      credit,
+      streakDays: 0,
+      isStreakDay: false,
+      ...(note === undefined ? {} : { message: note }),
+    }
+  }
+  if (already.length > 0) return { kind: 'already-claimed', message: already[0].message }
+  return inactive[0] ?? { kind: 'inactive', message: '当前没有可领取的每日签到活动' }
+}
+
+/**
+ * 领取**单个**每日活动（claim → confirm → 读积分）。
+ *
+ * 从 `claimCodeArtsDailyCheckin` 的原主体抽出，逐活动调用；语义不变：
+ * claim 失败先复查列表防「刚被别处领走」，confirm 失败重试一次并把
+ * 「待确认」写进 message —— claim 已成功，无论 confirm 结果都返回 claimed。
+ */
+async function claimOneCodeArtsActivity(
+  activity: CodeArtsOpsActivity,
+  credential: CodeArtsCredential,
+  fetcher: typeof fetch,
+): Promise<
+  | { kind: 'claimed'; credit: number; message?: string }
+  | { kind: 'already-claimed'; message: string }
+  | { kind: 'inactive'; message: string }
+  | { kind: 'failed'; code: number; message: string }
+> {
   if (!activity.claimable) {
     return CLAIMED_STATUSES.includes(activity.status)
       ? { kind: 'already-claimed', message: '今天已领取' }
@@ -610,15 +697,24 @@ export async function claimCodeArtsDailyCheckin(
   )
   if (!claimResult.ok) {
     // 2026-10-29（对齐 magpie）：claim 失败可能是「刚被别处领走」（IDE / 另一
-    // 实例），重查一次活动列表 —— 已是已领取态就如实报 already-claimed，
-    // 不报 failed（failed 会进自动签到重试，白白多打上游）。
+    // 实例），重查一次活动列表 —— **同一个活动**已是已领取态就如实报
+    // already-claimed，不报 failed（failed 会进自动签到重试，白白多打上游）。
+    // 2026-11-14：复查也改为**按 campaignId 对上本次那个活动**（对齐 magpie
+    // 0.3.18 的 sameCampaign）——旧的 `find` 第一个 USER_LOGIN 在多活动列表里
+    // 可能对到别的活动上，把「赛事签到被拒」误读成「普通签到已领」。
     const again = await fetchCodeArtsOpsActivitiesDetailed(credential, fetcher)
     if (again.ok) {
-      const latest = findDailyCheckinActivity(again.activities)
+      const latest = again.activities.find(row => row.campaignId === activity.campaignId)
       if (latest !== undefined && !latest.claimable
         && CLAIMED_STATUSES.includes(latest.status)) {
         return { kind: 'already-claimed', message: '今天已领取' }
       }
+    }
+    // 上游对「未报名赛事」的拒绝是**无资格**，不是可重试失败（magpie 0.3.18
+    // 的 INELIGIBLE_CLAIM）：如实标 inactive，让汇总走 inactive 分支而不是
+    // 触发自动签到的重试。
+    if (/需要先通过触发接口激活|未参与|未报名|无资格/.test(claimResult.message)) {
+      return { kind: 'inactive', message: `当前无资格参与该活动：${claimResult.message}` }
     }
     return { kind: 'failed', code: claimResult.code, message: claimResult.message }
   }
