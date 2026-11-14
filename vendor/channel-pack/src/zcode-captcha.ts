@@ -986,33 +986,7 @@ function safeRemoveDir(dir: string): void {
   } catch { /* 忽略 */ }
 }
 
-/**
- * 一个可复用的 captcha 页面。
- *
- * ⚠ **页面被复用**（不再每次新建）—— 见 `mint()` 的说明。
- * 复用要求它一直停在 {@link CAPTCHA_PAGE_ORIGIN} 上。
- */
-interface CaptchaPage {
-  /** CDP target id（诊断用）。 */
-  readonly targetId: string
-  /** 页面级 WebSocket。 */
-  readonly ws: WebSocket
-  /** 页面级 CDP 连接。 */
-  readonly cdp: CdpConnection
-  /** 上次成功使用它的时刻（用于空闲判定）。 */
-  lastUsedAt: number
-  /**
-   * 是否已做过「建 DOM + 注入 SDK」的完整准备。
-   *
-   * ⚠ **不能每次都重做**（真实缺陷，见 `mintOnPage` 的取证）：
-   * 重置 `document.body.innerHTML` 会销毁 captcha 元素，而 SDK 已加载时
-   * 不会重建实例 —— 两者叠加必然 `F001`。
-   *
-   * 故只在**首次使用**时准备（`undefined`/`false` ⇒ 准备一次），
-   * 之后复用同一元素与实例。
-   */
-  prepared?: boolean
-}
+
 
 /**
  * 常驻浏览器会话。

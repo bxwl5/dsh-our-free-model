@@ -54782,7 +54782,8 @@ var ZcodeAuth = class extends Service9 {
   captchaConfigCache;
   captchaConfigCacheInstance() {
     this.captchaConfigCache ??= new TtlCache({
-      ttlMs: CAPTCHA_CONFIG_TTL_MS,
+      ttlMs: 6e4,
+      // 原从 captcha-backoff.js 导入（CAPTCHA_CONFIG_TTL_MS=60_000）；该文件已随外挂链退役
       load: async () => {
         const credential = await this.current();
         if (credential === void 0) return void 0;
@@ -54932,7 +54933,7 @@ var ZcodeAuth = class extends Service9 {
       ...captchaRequirementObservability(),
       failureStreak: 0,
       queuePending: 0,
-      cooldownRemainingMs: this.captchaBackoff.remainingMs(),
+      cooldownRemainingMs: 0,
       /**
        * 内部载体的取舍计数（`internalUsed` / `chromiumUsed` / `internalRejected` /
        * `disabledAfter`），并带一份供给槽快照 `supply`
