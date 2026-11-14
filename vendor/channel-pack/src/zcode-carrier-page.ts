@@ -31,6 +31,19 @@
  * ⚠ 刻意**不带** `STEALTH_PATCH`：那是外挂 chromium 遮 `--headless` 痕迹用的，
  * 内部载体（Electron 真实 guest）实测 `webdriver=false`、UA 带 `Electron/44.0.0`
  * 时 4/4 产出合法 param ⇒ 搬进来属于无据扩面。
+ *
+ * ## ★ 回传通道（2026-11-14，用户定的方向：captcha 只走客户端内置浏览器）
+ *
+ * 页面由 client 经 `captcha.carrierHtml` RPC 拿到全文、塞进 `iframe.srcdoc`
+ * —— **不经过载体页小服务**（那是给旧 carrierUrl 路径用的，对 NAS/web 必死：
+ * server 本机的 127.0.0.1 端口在用户浏览器里指向用户自己的回环）。
+ * 因此页面产完结果后 `parent.postMessage` 交给面板，面板再经
+ * `captcha.contribute` RPC 送进供给槽 —— 同源（srcdoc 继承父 origin）、
+ * 无端口依赖、三端同一行为。
+ *
+ * ⚠ `MESSAGE_TYPE` 与 client.js 的监听键必须两边同步（无共享模块，注释互指）。
+ * ⚠ `elapsedMs` 由页面测「文档开始 → param 落袋」的耗时；contribute 的时效闸
+ *   用它修正跨机时钟（协议见 `types.ts` 的 RpcCaptchaContributeRequest）。
  */
 import {
   buildDomExpression,
@@ -41,6 +54,12 @@ import {
 
 /** 结果挂载位（Task 5 的 `executeJavaScript` 读的就是这个名字，改名要两边同步）。 */
 export const CAPTCHA_CARRIER_RESULT_KEY = '__zcodeCaptcha'
+
+/**
+ * postMessage 的消息类型键（client.js 的 message 监听按它过滤，两边同步）。
+ * client 侧还会校验 `event.source === iframe.contentWindow`，伪造消息进不来。
+ */
+export const CAPTCHA_CARRIER_MESSAGE_TYPE = 'zcode-captcha-param'
 
 /**
  * 构造载体页 HTML。
@@ -58,6 +77,7 @@ export function buildCarrierPageHtml(config: ZcodeCaptchaConfig): string {
     '<title>dsh captcha carrier</title></head><body>',
     '<script>',
     `window.${CAPTCHA_CARRIER_RESULT_KEY} = { stage: "pending", param: "", interactive: false, updatedAt: 0 };`,
+    '    const pageStartedAt = Date.now();',
     '(async () => {',
     '  try {',
     // 三段与生产 chromium 路径**逐字同源**（同一批构造函数，不留第二份）。
@@ -75,6 +95,16 @@ export function buildCarrierPageHtml(config: ZcodeCaptchaConfig): string {
     '      updatedAt: Date.now(),',
     '      error: outcome.err === undefined ? undefined : String(outcome.err),',
     '    };',
+    // ★ 回传给面板（client.js）：postMessage 允许跨源，srcdoc 与父同源更无碍。
+    //   elapsedMs = 页面文档开始到现在的耗时（页面加载即开始 mint，无其余阶段），
+    //   contribute 的时效闸用它修正跨机时钟漂移。
+    //   只在产出成功时回传 —— 失败形态面板不关心（client 只认 param），
+    //   面板对失败的处理是超时放弃并回落「不支持」提示。
+    '    if (window.__zcodeCaptcha.stage === "success" && window.__zcodeCaptcha.param) {',
+    '      try {',
+    `        parent.postMessage({ type: ${JSON.stringify(CAPTCHA_CARRIER_MESSAGE_TYPE)}, param: window.__zcodeCaptcha.param, interactive: window.__zcodeCaptcha.interactive === true, elapsedMs: Math.max(0, Date.now() - pageStartedAt) }, "*");`,
+    '      } catch (postError) { /* 回传失败不影响 param 落在 window 上（旧路径还能读） */ }',
+    '    }',
     '  } catch (error) {',
     '    const detail = String((error && (error.stack || error.message)) || error);',
     `    window.${CAPTCHA_CARRIER_RESULT_KEY} = {`,

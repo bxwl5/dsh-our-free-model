@@ -9,8 +9,8 @@
  *           account.test / account.reset / account.resetAll / login.poll /
  *           credits.status / credits.claimAll / credits.balances /
  *           model.list / model.setDisabled /
- *           captcha.demand / captcha.carrierUrl / captcha.contribute（内部载体，
- *           载体页见 src/zcode-carrier-page.ts 与 src/captcha-carrier-server.ts）/
+ *           captcha.demand / captcha.carrierHtml / captcha.contribute（内部载体，
+ *           载体页见 src/zcode-carrier-page.ts，经 captcha.carrierHtml 下发）/
  *           backup.export / backup.import / backup.status
  * 另有一条 GET 路由 `/api/channel-pack/captcha-carrier`：渲染内部载体的载体页
  * （⚠ 手工诊断用；guest 加载不到它，见该路由注释里的主进程取证）。
@@ -221,7 +221,7 @@ import type {
   RpcGatewaySetEnabledRequest,
   RpcGatewayModel,
   RpcCaptchaDemandResponse,
-  RpcCaptchaCarrierUrlResponse,
+  RpcCaptchaCarrierHtmlResponse,
   RpcCaptchaContributeRequest,
   RpcCaptchaContributeResponse,
   RpcUsageBadgeRequest,
@@ -1006,7 +1006,7 @@ function registerChannelPackEndpoints(
    *   Host 的会话 cookie 在 `defaultSession` 里 ⇒ 即便加载到了也过不了 `/api/*` 的认证。
    *
    * ⇒ 内部载体的真正入口是**独立回环端口上的小服务**
-   * （`src/captcha-carrier-server.ts`，地址由 `captcha.carrierUrl` 这条 RPC 给）。
+   * （`captcha.carrierHtml` RPC 直接回 HTML，client 用 iframe.srcdoc 加载）。
    *
    * ## 那为什么还留着这条
    * ① 它是**手工诊断**用的：web 版下 GUI 就是 `http://127.0.0.1:<port>`，
@@ -4166,20 +4166,26 @@ function registerChannelPackEndpoints(
        * 拒掉「**端口相同** 且 主机相同/回环」的地址（asar `lib/main.js`），
        * 而那个端口就是 Host 自己的端口 ⇒ guest 连文档都建不起来。
        * 换端口才绕得开 ⇒ 端口是 server 运行时挑的，client 只能**问**（见
-       * `src/captcha-carrier-server.ts` 文件头的完整取证）。
+       * 旧载体页小服务文件头的完整取证（该服务已随外挂链退役删除））。
        *
        * ## 返回 `null` 的含义
        * 服务没起（`DSH_ZCODE_INTERNAL_CARRIER=0` / 候选端口全被占）。client 拿到
        * `null` 就记一条 `no-carrier-url` 并**安静返回**：不建 guest、不导航。
        * ⚠ 这是 web 版之外的另一条「安静退出」路径，别把它当错误报。
        */
-      case 'captcha.carrierUrl': {
-        // ⚠ 判一下方法存不存在：这条 RPC 允许「没有内部载体能力」的宿主形态（老插件
-        //   骨架 / 替身）回答，**回 null 即可**，不该把整次分派变成错误。
-        const url = typeof zcode.carrierPageUrl === 'function'
-          ? await zcode.carrierPageUrl()
+      /**
+       * 载体页 HTML 全文（2026-11-14）：client 用 `iframe.srcdoc` 加载。
+       *
+       * 载体页 HTML 由 server 渲染后内联进面板（iframe.srcdoc）：mint 载体是
+       * 用户自己的浏览器 —— 与部署形态无关，桌面/NAS/手机三端同一行为。
+       * 页面 mint 完 `parent.postMessage` 回传，client 经 `captcha.contribute`
+       * 送进供给槽；param 与 region 的同源由 server 渲染时一次配齐（IKJNPS）。
+       */
+      case 'captcha.carrierHtml': {
+        const html = typeof zcode.carrierHtml === 'function'
+          ? await zcode.carrierHtml()
           : null
-        const value: RpcCaptchaCarrierUrlResponse = { url: url ?? null }
+        const value: RpcCaptchaCarrierHtmlResponse = { html: html ?? null }
         return { ok: true, value }
       }
 

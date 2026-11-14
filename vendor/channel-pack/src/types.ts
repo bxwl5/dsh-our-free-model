@@ -1448,13 +1448,31 @@ export interface RpcCaptchaDemandResponse {
  *   ——桌面版主进程的 `allowedNavigation()` / `onBeforeRequest` 都以
  *   `isApplicationHost(url)` 拒绝「端口相同 + 主机相同/回环」的地址
  *   （DSH Desktop 0.2.0-rc.2，`app.asar/lib/main.js`）。
- *   端口由 server 运行时挑（`src/captcha-carrier-server.ts`）⇒ 只能问。
+ *   端口由 server 运行时挑（原载体页小服务，已退役）。⇒ 只能问。
  *
  * ⚠ `null` = **现在没有可用地址**（env 关掉 / 候选端口全被占）。client 拿到它就
  *   安静退出（本轮不建 guest、不导航）；这不是错误，别当异常报。
  */
-export interface RpcCaptchaCarrierUrlResponse {
-  url: string | null
+
+/**
+ * RPC: 取载体页 **HTML 全文**（2026-11-14 新增，用户定的方向：captcha 只走
+ * 客户端内置浏览器，外挂浏览器链整条退役）。
+ *
+ * ## 为什么不能复用 `captcha.carrierUrl`（跨机必死）
+ *
+ * 载体页小服务监听的是 server 本机的 `127.0.0.1:<port>` —— 桌面版下面板与它
+ * 同机可达；NAS/web 形态下那个地址在**用户的浏览器**里指向用户自己的回环，
+ * 导航必然失败。而 captcha 的 mint 载体（用户的浏览器）与 server（NAS）跨机，
+ * 页面必须直接内联进面板：`iframe.srcdoc = html`。
+ *
+ * ⚠ HTML 由 server 渲染（`buildCarrierPageHtml`），region/prefix/sceneId 与
+ *   server 侧同源；页面不含凭据（契约见 `zcode-carrier-page.ts`）。
+ *
+ * ⚠ `null` = captcha 配置拉不到 / 内部载体被 env 关掉。client 拿到 null 安静
+ *   退出本轮（与 carrierUrl 的 null 语义一致）。
+ */
+export interface RpcCaptchaCarrierHtmlResponse {
+  html: string | null
 }
 
 /**

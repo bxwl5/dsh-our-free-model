@@ -88,7 +88,6 @@ import {
   toAnthropicTools,
 } from './zcode-anthropic.js'
 import {
-  ZcodeCaptchaBrowser,
   ZCODE_CAPTCHA_FALLBACK,
   type ZcodeCaptchaConfig,
 } from './zcode-captcha.js'
@@ -235,7 +234,7 @@ export interface ZcodeAdapterOptions {
    * 由 `index.ts` 注入（它持有 `ZcodeAuth`，能从服务端拉 captcha 配置并
    * 驱动浏览器）。缺省时适配器会自建一个常驻浏览器。
    *
-   * ⚠ `options.signal` 必须被**透传**到浏览器侧（`ZcodeCaptchaBrowser.mint`）：
+   * ⚠ `options.signal` 必须被**透传**到 captcha 侧（供给槽等待可取消）：
    * captcha 的取页等待与 WebSocket 建连历史上都没有超时，
    * 不透传就等于「用户点停止也停不下来」（真实缺陷，2026-09-29）。
    */
@@ -430,8 +429,6 @@ export class ZcodeAdapter extends LlmAdapter {
   private modelRemainingAt = 0
   /** 目录加载闸门：并发去重 + 失败/空结果冷却（见 `remote-catalog-gate.ts`）。 */
   private readonly catalogGate = new RemoteCatalogGate()
-  /** 自建的常驻浏览器（仅当调用方没注入 `mintCaptcha` 时用）。 */
-  private captchaBrowser: ZcodeCaptchaBrowser | undefined
   /** captcha 配置缓存（配置很少变，但与凭据一样**不长期缓存**）。 */
   private captchaConfig: ZcodeCaptchaConfig | undefined
   /**
@@ -797,14 +794,12 @@ export class ZcodeAdapter extends LlmAdapter {
     }
   }
 
-  /** 取得 captcha param（注入优先，否则自建常驻浏览器）。 */
+  /** 取得 captcha param（唯一来源：注入的载体链；无注入即「不支持当前客户端」）。 */
   private async mintCaptcha(options: { signal?: AbortSignal } = {}): Promise<string> {
     if (this.options.mintCaptcha !== undefined) return await this.options.mintCaptcha(options)
-    if (this.captchaBrowser === undefined) this.captchaBrowser = new ZcodeCaptchaBrowser()
-    return await this.captchaBrowser.mint(
-      this.captchaConfig ?? ZCODE_CAPTCHA_FALLBACK,
-      options,
-    )
+    // 2026-11-14：自建常驻浏览器随外挂链退役。`index.ts` 一定注入；落到这里
+    // 的是替身/测试形态，给与 claim 路径一致的明确文案，而不是悄悄弹浏览器。
+    throw new Error('zcode 签到不支持当前客户端：captcha 需要在 DSH 桌面版的 Our Free Model 面板中完成')
   }
 
   /**
@@ -1769,8 +1764,6 @@ export class ZcodeAdapter extends LlmAdapter {
    * （`plugin-src/client/index.js` 把停止函数挂在 `ctx.effect` 的清理路径上）。
    */
   stop(): void {
-    this.captchaBrowser?.dispose()
-    this.captchaBrowser = undefined
   }
 }
 

@@ -46,8 +46,16 @@ import { validateCaptchaParam } from './zcode-captcha.js'
  */
 export const PARAM_MAX_AGE_MS = 20_000
 
-/** 有界等待的默认上限（毫秒）——与 client 的贡献心跳同量级。 */
-export const DEFAULT_CARRIER_WAIT_MS = 1_500
+/**
+ * 有界等待的默认上限（毫秒）。
+ *
+ * 2026-11-14：外挂浏览器链退役后 GUI 贡献是**唯一** param 来源 —— 等待必须
+ * 覆盖「面板收到 demand → 建 srcdoc iframe → 阿里云 SDK mint → postMessage 回传」
+ * 全程（实测约 1s，跨机网络再加余量）。旧的 1.5s 是给「同进程双源」设计的，
+ * 内部载体只是加速器；现在它是唯一来源，等不到=失败，等待太短会把成功误判成
+ * 不可用。10s 与 claim 的 180s 总超时之间留了足够余量。
+ */
+export const DEFAULT_CARRIER_WAIT_MS = 10_000
 
 interface SupplySlot {
   param: string

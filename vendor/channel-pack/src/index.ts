@@ -1857,23 +1857,18 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
     await zcode.refreshAll(pool)
   },
   // ⚠ captcha 是**一次性**的 —— 每次调用都必须现产一个新 param。
-  // 走 `zcode.mintCaptcha`：整个插件**共用一台**常驻浏览器
-  //（适配器自建会变成两台，白占 200MB）。
+  // 2026-11-14：外挂浏览器链退役，唯一来源 = 客户端内置浏览器（面板 srcdoc
+  // 载体页贡献）。`zcode.mintCaptcha` 现在内部走载体链等贡献；等不到时抛
+  // CarrierUnavailableError（claim 转成「不支持当前客户端」）。
   //
-  // ⚠ `options.signal` 必须继续往下传：captcha 侧的取页等待与建连历史上有
-  // 无超时的路径，不传就等于「用户点停止也停不下来」（真实缺陷，2026-09-29）。
+  // ⚠ `options.signal` 必须继续往下传：供给槽的有界等待必须可取消
+  // （无超时等待把整轮钉住的历史缺陷，2026-09-29）。
   mintCaptcha: async (options?: { signal?: AbortSignal }) => {
     const config = await resolveZcodeCaptchaConfig()
     return await zcode.mintCaptcha(config, options)
   },
   /**
-   * ★ 二期内部载体：推理热路径取 param 走**载体链**（内部供给槽优先，等不到才落
-   * 上面那条 chromium 链）。与 `mintCaptcha` 的差别只有「返回值带来源」这一层。
-   *
-   * ⚠ 这两条回调**必须都在**：少接一条，被 `3007` 拒的那一发就退回普通入口重新取，
-   *   归因（内部 vs chromium）就此丢失 —— 累计拒绝到阈值的自动禁用也就永远到不了。
-   * ⚠ 载体链不可用（`DSH_ZCODE_INTERNAL_CARRIER=0` / web 版从未收到贡献）时
-   *   `zcode.mintCaptchaParam` 自己会退回那条 chromium 链 ⇒ 这里不需要判断开关。
+   * 推理热路径取 param 走载体链（与上面同一来源，返回值带来源标记供归因）。
    */
   mintCaptchaParam: async (options?: { signal?: AbortSignal }) => {
     const config = await resolveZcodeCaptchaConfig()

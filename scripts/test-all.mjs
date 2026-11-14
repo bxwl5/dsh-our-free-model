@@ -53,13 +53,13 @@ const suites = [
   // 3.17.2–3.20.x / 兜底 3.20.9）；而凭据里存着登录时的旧值 —— 不钳制就永远「今日没到账」。
   // 同时锁死「领取先裸发、3007 才产 captcha」这条不依赖浏览器的路径。
   ['zcode-app-version', 'zcode-app-version-test.mjs', []],
+  ['zcode-carrier-html', 'zcode-carrier-html-test.mjs', []],
   // 自动签到的逐渠道记账（2026-10-26）：失败渠道当天可补跑 / coversToday=false
   // 不记日（Qoder 10:00 窗口）/ 重跑上限 / 旧格式兼容。假上游 + 内存 store。
   ['auto-checkin-ledger', 'auto-checkin-ledger-test.mjs', []],
   // 「系统默认浏览器优先」（2026-11-09 用户要求）：候选链顺序 / 只认 Chromium 内核 /
   // 三平台解析器（Linux .desktop、Windows UserChoice、macOS LaunchServices）/
   // 失败静默回落。全部注入式，零子进程。
-  ['zcode-default-browser', 'zcode-default-browser-test.mjs', []],
   // 热重载按钮（首页设置）：模块/后端路由/settings 开关/前端按钮 + 202 安全降级
   ['reload-ui', 'reload-ui-test.mjs', []],
   // 实测成功即清异常标记（2026-11-05）：成功才清、失败/空流/无账号/未注入不清、

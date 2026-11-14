@@ -50,19 +50,14 @@ import {
 import { ZCODE, type ZcodeProduct, type ZcodeRemoteModelLike } from './zcode-product.js'
 import type { ZcodeClaimablePlan } from './zcode-upstream.js'
 import {
-  ZcodeCaptchaBrowser,
   ZCODE_CAPTCHA_FALLBACK,
   validateCaptchaParam,
   type ZcodeCaptchaConfig,
 } from './zcode-captcha.js'
-import { CaptchaPool, captchaPoolConfigFromEnv } from './captcha-pool.js'
 import { captchaRequirementObservability } from './captcha-requirement.js'
-import { CaptchaBackoff, captchaBackoffConfigFromEnv, captchaQueueEnabledFromEnv, CAPTCHA_CONFIG_TTL_MS } from './captcha-backoff.js'
-import { CaptchaCarrier, type CarrierOutcome } from './captcha-carrier.js'
-import { CarrierPageServer } from './captcha-carrier-server.js'
+import { CaptchaCarrier, CarrierUnavailableError, type CarrierOutcome } from './captcha-carrier.js'
 import { buildCarrierPageHtml } from './zcode-carrier-page.js'
 import { captchaDemand, captchaSupplyStats, setCaptchaDemand } from './captcha-supply.js'
-import { SerialQueue } from './serial-queue.js'
 import { TtlCache } from './ttl-cache.js'
 import { generateDeviceMid, runZcodeLogin, type ZcodeLoginProvider } from './zcode-login.js'
 import { fetchCodingPlanApiKey } from './zcode-transport.js'
@@ -206,13 +201,11 @@ export class ZcodeAuth extends Service {
    * 上游不要验证的窗口里这条路一次都不走。
    * 生命周期由 `stop()` 收尾。
    */
-  private captchaBrowser: ZcodeCaptchaBrowser | undefined
   /**
    * captcha **预取池**（挂在与浏览器同一个生命周期上）。
    *
    * ⚠ 惰性创建：纯插件登录、从不用推理的用户不该为它做任何事。
    */
-  private captchaPool: CaptchaPool | undefined
   /**
    * 最近一次 `mintCaptcha` 用的 captcha 配置。
    *
@@ -223,16 +216,14 @@ export class ZcodeAuth extends Service {
   /**
    * captcha **产出失败退避**（设备级信誉保护）。
    *
-   * ⚠ 与 `captchaPool` 不同，它**不惰性创建**：闸门要在第一次
+   * ⚠ 它**不惰性创建**：闸门要在第一次
    * `mintCaptcha` 之前就生效，且构造它无任何副作用。
    */
-  private readonly captchaBackoff: CaptchaBackoff
   /**
    * captcha 产出的**全局串行队列**（对齐官方 `jnn`/`wnn`）。
    *
    * ⚠ 必须是**实例字段**：队列靠共享的尾巴指针生效，每次新建等于没有队列。
    */
-  private readonly captchaQueue: SerialQueue
   /**
    * captcha **载体链**（二期 Task 5 接线）：内部载体（DSH Desktop 的 guest 产的 param）
    * 优先，等不到再落回 {@link mintWithChromium} 那条既有链。
@@ -264,7 +255,7 @@ export class ZcodeAuth extends Service {
   /** 内部载体的 env 开关（构造期读一次，与 `captchaQueueEnabledFromEnv` 同一读取点）。 */
   private readonly internalCarrierEnabled: boolean
   /**
-   * 载体页小服务（评审 C1/C2 的形态 B，见 `src/captcha-carrier-server.ts` 文件头）。
+   * 载体页小服务（评审 C1/C2 的形态 B）—— 已随外挂链退役删除。
    *
    * ## 为什么它必须挂在**插件自己的 `/api/…` 之外**（这轮修掉的致命缺陷）
    * 桌面版主进程对 guest 的请求有两道硬闸（asar `lib/main.js`，DSH Desktop 0.2.0-rc.2）：
@@ -278,7 +269,6 @@ export class ZcodeAuth extends Service {
    * 一个 RPC 都不发）—— 那就别给 web 版开一个常驻监听器（凭空多一个端口是行为变化）。
    * 懒起也让「起了就一定用得上」成立：唯一调用方是 `captcha.carrierUrl` 那条 RPC。
    */
-  private carrierPageServer: CarrierPageServer | undefined
   /** 构造期注入的诊断日志（载体链与载体页小服务共用同一条通道，见 `ZcodeAuthOptions`）。 */
   private readonly carrierLog: ((message: string) => void) | undefined
   /**
@@ -319,22 +309,12 @@ export class ZcodeAuth extends Service {
     this.product = product
     this.fetchImpl = options.fetchImpl ?? fetch
     this.injectedPool = options.accountPool
-    this.captchaBackoff = new CaptchaBackoff({
-      /**
-       * 阈值与冷却沿用 `dsh-free-glm` 的实测值（同一个上游）。
-       * 关闭方式：`DSH_ZCODE_CAPTCHA_BACKOFF=0`（回到「每次都试」的旧行为）。
-       */
-      ...captchaBackoffConfigFromEnv(),
-    })
-    this.captchaQueue = new SerialQueue({ enabled: captchaQueueEnabledFromEnv() })
     this.internalCarrierEnabled = internalCarrierEnabledFromEnv()
     this.carrierLog = options.carrierLog
     this.carrier = new CaptchaCarrier({
-      // ★ 这条腿**就是**既有的那条链（闸门 + 串行队列 + 池 take），见 `carrier` 字段注释。
-      //   配置沿用最近一次 `mintCaptcha*` 落下的那份（`captchaMintConfig`）；
-      //   从未 mint 过时它是 undefined ⇒ `mintWithChromium` 自己在队列内现拉一次配置，
-      //   与一期「config 缺省 → 队列内 fetch」那条分支逐字同义。
-      mintWithChromium: async (options) => await this.mintWithChromium(this.captchaMintConfig, options),
+      // 2026-11-14：外挂 chromium 腿退役 —— 内置浏览器（面板 srcdoc 载体页）是
+      // 唯一 param 来源。等不到贡献就抛 CarrierUnavailableError（claim 转成
+      // 「不支持当前客户端」文案），不再找本机浏览器。
       ...(this.carrierLog === undefined ? {} : { log: this.carrierLog }),
     })
   }
@@ -789,131 +769,24 @@ export class ZcodeAuth extends Service {
   }
 
   /**
-   * 那条**外挂 chromium** 的产出链（退避闸门 → 全局串行队列 → 预取池 take）。
-   *
-   * 历史上它就是 `mintCaptcha` 的全部；Task 5 起被 {@link CaptchaCarrier} 当作
-   * 「chromium 兜底」那一腿注入进去，公开入口改叫 {@link mintCaptcha}。
-   *
-   * ## 走**预取池**（2026-09-30 新增）
-   *
-   * 每次请求现产的成本实测 0.5-3.7 秒（页面空闲 <8s 复用约 0.5s，更久则要
-   * 新建页面约 3.7s），而 agent 多步循环的两步间隔通常**大于 8 秒** ——
-   * 也就是说现产路径几乎每步都付新建页面的钱。
-   * {@link CaptchaPool} 把这段成本移到**后台**：上一轮结束时产好下一轮的 param。
-   * ⚠ 上面那句「更久要新建页面」的**前提已被推翻**（2026-10-01 复测：`F001` 与空闲
-   * 时长没有稳定因果，见 `zcode-captcha.ts` 的 `mint()` 第 2 条），现行策略是
-   * **复用优先、失败才换页** ⇒ 常态下现产只要约 0.4–0.5 秒，本池的相对收益随之变小。
-   *
-   * ⚠ 语义没变：池只存**尚未使用**的 param，取走即弃（在索要验证的窗口里复用必 `3007`）。
-   *
-   * 关闭方式：`DSH_ZCODE_CAPTCHA_POOL=0`（关闭后行为与引入池之前逐字一致）。
-   *
-   * ⚠ `options.signal` 会被透传到浏览器侧（取页等待 / 建连超时 / abort）——
-   * 推理链路的「停止」能否生效就靠它（真实缺陷，2026-09-29）。
-   *
-   * ## ★ 产出失败会进入**指数退避**（2026-10-01 新增，会话实证驱动）
-   *
-   * `session-eced01ed` 里额度耗尽后连续 **12 次**空响应，而每次重试都重新
-   * mint 一个 captcha —— 在注定失败的情况下白耗 12 个配额，且**扣设备信誉**
-   * （同分钟另一个 session 就报 `502 Failed to mint auth material`）。
-   *
-   * 故这里加闸门：连续产出失败达阈值后，**直接抛错不再发起 mint**
-   * （那边注释原话：「继续请求不会让信誉恢复，只会更糟」）。
-   * 详见 {@link CaptchaBackoff}。
-   *
-   * ## ★★ 产出走**全局串行队列**（2026-10-01 新增，对齐官方）
-   *
-   * 官方闭源版把 captcha 产出链在一条全局 promise 上（`jnn`/`wnn`，
-   * 日志 `zcode-plan verification queue slot acquired`）——
-   * **同一时刻只产一个**。原因是阿里云按**设备维度**限流
-   * （官方文档：同设备每小时 150 次），并发产出是纯浪费。
-   *
-   * 而 DSH 会并发发请求（主回复 + 标题生成 + 压缩），此前每个都独立 mint。
-   *
-   * ⚠ **Task 5 把它改成了 private**：函数体一行语义没动（闸门 → 队列 → 池 take），
-   *   只是换了名字，让 {@link CaptchaCarrier} 能把「chromium 兜底」这一腿注回**同一条链**。
-   *   公开入口是同文件的 {@link mintCaptcha}（claim/签到与 `account-probe` 仍在用它）。
-   */
-  private async mintWithChromium(
-    config?: { region: string; prefix: string; sceneId: string },
-    options: { signal?: AbortSignal } = {},
-  ): Promise<string> {
-    /**
-     * ⚠ 闸门必须在**取池之前**：池的 `prefetch()` 后台路径也走同一个
-     * `mint` 回调，故它天然也被挡住（不需要池自己判断退避）。
-     */
-    const remainMs = this.captchaBackoff.remainingMs()
-    if (remainMs > 0) {
-      throw new Error(
-        `zcode: captcha 产出处于冷却中（连续 ${this.captchaBackoff.failureStreak()} 次失败），` +
-        `约 ${Math.ceil(remainMs / 1000)} 秒后可重试。` +
-        '这通常意味着设备信誉不足（上游把无感验证降级为滑块），' +
-        '继续重试只会让信誉更差 —— 请稍后再试。',
-      )
-    }
-
-    /**
-     * ⚠ 串行队列**包住整个「取配置 + 产出」**，而不是只包浏览器那一跳：
-     * 排队本身要尽早发生，否则 N 个并发调用会各自先把配置拉一遍再排队。
-     *
-     * ⚠ 队列**不吞中断**：等待期间 `signal` 中止会抛 `QueueAbortedError`。
-     */
-    return await this.captchaQueue.run(async () => {
-      const resolved = config ?? await this.fetchCaptchaConfig() ?? ZCODE_CAPTCHA_FALLBACK
-      // 池的 mint 回调不接受参数，故把「本次的 captcha 配置」记在实例字段上。
-      this.captchaMintConfig = resolved
-      return await this.captchaPoolInstance().take(options)
-    }, options)
-  }
-
-  /**
    * 产出 captcha param —— `ctx.zcodeAuth` 的公开入口（`account-probe` 与 claim 的注入回调用）。
    *
-   * ⚠ **不经载体链**，逐字就是那条 chromium 链：
-   * - **`account-probe.ts`**：探测要的是「现在就发得出去」的 param，等一个
-   *   「为下一发就位」的 param 毫无意义；
-   * - **claim/签到**：`channel-pack-rpc.ts` 注入进来的是**这条兜底腿**（要现取
-   *   `fetchCaptchaConfig()`，故由调用方提供），claim 入口在其之上还叠了
-   *   「内部载体优先」那一层，见 {@link mintClaimCaptcha}。
-   * 推理热路径那条「内部优先 + 当次回退」走 {@link mintCaptchaParam}。
+   * 2026-11-14：外挂 chromium 链退役，公开入口改为**经载体链等内部贡献**
+   * （面板 srcdoc 载体页 → postMessage → contribute → 供给槽）。
+   * 等不到贡献时抛 {@link CarrierUnavailableError} —— 「不支持当前客户端」。
    */
   async mintCaptcha(
     config?: { region: string; prefix: string; sceneId: string },
     options: { signal?: AbortSignal } = {},
   ): Promise<string> {
-    return await this.mintWithChromium(config, options)
+    const outcome = await this.mintCaptchaParam(config, options)
+    return outcome.param
   }
 
-  /**
-   * ★ **载体页的地址**（`captcha.carrierUrl` 那条 RPC 的唯一来源）。
-   *
-   * 第一次调用时懒起一个**只监听 `127.0.0.1` 的独立小服务**，之后一直复用；
-   * `stop()` 里关掉（插件卸载 ⇒ 不留常驻监听器）。
-   *
-   * ## 返回 `null` 的三种情况（client 拿到 null 就安静退出，本轮不导航）
-   * 1. `DSH_ZCODE_INTERNAL_CARRIER=0`（用户显式关掉内部载体）；
-   * 2. 端口候选全被占 / 监听失败（`CarrierPageServer.start()` 的契约是不抛、回 null）；
-   * 3. 尚未起（只有在被问到时才会起，所以「没起」等价于「没人要」）。
-   *
-   * ⚠ **不要**在这里再做「是不是桌面版」的判断：server 侧判断不了 GUI 形态
-   *   （web 版与桌面版跑的是同一个宿主进程）。真正把 web 版挡在门外的是 client 侧
-   *   规则 1（拿不到 `dshDesktop.browser` 就整体 return，一个 RPC 都不发）——
-   *   见 `plugin-src/client/zcode-carrier.js`。
-   */
-  async carrierPageUrl(): Promise<string | null> {
+  async carrierHtml(): Promise<string | null> {
     if (!this.internalCarrierEnabled) return null
-    this.carrierPageServer ??= new CarrierPageServer({
-      /**
-       * ⚠ 配置跟着远端走（60 秒 TTL，`fetchCaptchaConfig()`），与旧路由那条
-       *   `carrierCaptchaConfig()` **同一份口径**（拉不到就回兜底值）。
-       *   页面每次请求都现渲染：缓存 HTML 只会让载体页拿旧 SceneId。
-       */
-      renderPage: async () => buildCarrierPageHtml(
-        await this.fetchCaptchaConfig() ?? ZCODE_CAPTCHA_FALLBACK,
-      ),
-      log: (message) => { this.carrierLog?.(message) },
-    })
-    return await this.carrierPageServer.start()
+    const config = await this.fetchCaptchaConfig() ?? ZCODE_CAPTCHA_FALLBACK
+    return buildCarrierPageHtml(config)
   }
 
   /**
@@ -954,15 +827,13 @@ export class ZcodeAuth extends Service {
    * 「记一次 internalRejected + 当次换注入链重发一次」（见那里）。
    */
   private async mintClaimCaptcha(
-    injected: ZcodeClaimCaptchaMint | undefined,
+    _injected: ZcodeClaimCaptchaMint | undefined,
     config: ZcodeCaptchaConfig,
   ): Promise<CarrierOutcome> {
-    if (injected === undefined) {
-      return { param: await this.mintWithChromium(config), source: 'chromium' }
-    }
-    if (!this.internalCarrierAvailable() || !captchaDemand()) {
-      return { param: await injected(config), source: 'chromium' }
-    }
+    // 2026-11-14：外挂 chromium 注入链退役 —— 领取与推理同走载体链
+    // （面板 srcdoc 载体页贡献）。等不到贡献时抛 CarrierUnavailableError，
+    // claim 的 catch 把它转成「不支持当前客户端」。
+    if (config !== undefined) this.captchaMintConfig = config
     return await this.carrier.mint()
   }
 
@@ -1002,9 +873,6 @@ export class ZcodeAuth extends Service {
     options: { signal?: AbortSignal } = {},
   ): Promise<CarrierOutcome> {
     if (config !== undefined) this.captchaMintConfig = config
-    if (!this.internalCarrierAvailable()) {
-      return { param: await this.mintWithChromium(config, options), source: 'chromium' }
-    }
     return await this.carrier.mint(options)
   }
 
@@ -1025,83 +893,9 @@ export class ZcodeAuth extends Service {
     options: { signal?: AbortSignal } = {},
   ): Promise<CarrierOutcome> {
     if (config !== undefined) this.captchaMintConfig = config
-    if (!this.internalCarrierAvailable()) {
-      return { param: await this.mintWithChromium(config, options), source: 'chromium' }
-    }
     return await this.carrier.mintWithFallbackAfterRejection(outcome, options)
   }
 
-  /** 取（并惰性创建）captcha 预取池。 */
-  private captchaPoolInstance(): CaptchaPool {
-    this.captchaPool ??= new CaptchaPool({
-      mint: async (options) => {
-        try {
-          /**
-           * ⚠ `log` 接线：候选链落到系统 Edge 时会告警一次（issue IKJLB1）。
-           * 之前是**静默**选中的，用户既不知道用了哪个浏览器、也不知道该去哪换。
-           * 用 `warn` 而非 `error` —— captcha 只是领取路径的一环，失败由下面的
-           * catch 正常上报，不该在正常降级时刷错误级日志。
-           */
-          this.captchaBrowser ??= new ZcodeCaptchaBrowser({
-            log: (message) => { this.ctx.logger?.warn?.(message) },
-          })
-          const outcome = await this.captchaBrowser.mintWithOutcome(
-            this.captchaMintConfig ?? ZCODE_CAPTCHA_FALLBACK,
-            options,
-          )
-          /**
-           * ★ **观测**（对齐官方 `mnn` 的上报口径）：
-           * 记下本次是「无感直接通过」还是「弹了交互式验证」。
-           *
-           * ⚠ `interactiveDisplayed` 的**上升趋势**是设备信誉恶化的先行指标 ——
-           * 而此前我们完全没有这个数，排查时只能靠猜（这正是本次最缺的东西）。
-           */
-          if (outcome.interactive) this.captchaStats.interactiveDisplayed += 1
-          else this.captchaStats.tracelessPassed += 1
-          /**
-           * ⚠ **降级要显式告警**（不能只默默计数）：它意味着上游已把我们
-           * 当风险用户，继续高频请求只会更糟。
-           */
-          if (outcome.interactive) {
-            this.ctx.logger?.warn?.(
-              '[channel-pack] zcode captcha 被要求**交互式验证**（滑块/拼图）—— ' +
-              '设备信誉可能已下降；若频繁出现请降低调用频率或稍后再试。' +
-              `（累计：无感 ${this.captchaStats.tracelessPassed} 次 / ` +
-              `交互 ${this.captchaStats.interactiveDisplayed} 次）`,
-            )
-          }
-          /**
-           * ⚠ **只有真的产出成功才清零**。
-           *
-           * 注意成功在此处、而非在 `take()` 返回时判定：池命中时根本没调
-           * 这个回调，那种情况不该影响信誉计数（它说明本机产出能力正常）。
-           */
-          this.captchaBackoff.noteSuccess()
-          return outcome.param
-        } catch (error) {
-          this.captchaStats.failed += 1
-          const until = this.captchaBackoff.noteFailure()
-          if (until > 0) {
-            this.ctx.logger?.warn?.(
-              `[channel-pack] zcode captcha 连续产出失败 ${this.captchaBackoff.failureStreak()} 次，` +
-              `进入冷却约 ${Math.ceil((until - Date.now()) / 1000)} 秒（期间不再发起 mint）`,
-            )
-          }
-          throw error
-        }
-      },
-      ...captchaPoolConfigFromEnv(),
-      /**
-       * 入池与取出时各校验一次：阿里云 SDK 的**降级产物**看起来像正常返回值，
-       * 但在索要验证的窗口里发出去必然 `3007`（那边实测：合法 280 字符 vs 降级约 76 字符；
- * 上游不要验证的那些窗口里连非法 param 也能 200 —— 那不能证明它合法，本地判据照旧）。
-       * 宁可在本地丢掉重产，也不要让它变成用户可见的一次失败。
-       */
-      validate: (param) => validateCaptchaParam(param).ok,
-      onWarn: (message) => this.ctx.logger?.warn?.(message),
-    })
-    return this.captchaPool
-  }
 
   /**
    * captcha 产出的**观测快照**（供 Channel Pack / 诊断读取）。
@@ -1130,8 +924,8 @@ export class ZcodeAuth extends Service {
        * 形状占位（恒为 0），反过来写就会被 0 盖掉，读数永远是 0。
        */
       ...captchaRequirementObservability(),
-      failureStreak: this.captchaBackoff.failureStreak(),
-      queuePending: this.captchaQueue.stats().pending,
+      failureStreak: 0,
+      queuePending: 0,
       cooldownRemainingMs: this.captchaBackoff.remainingMs(),
       /**
        * 内部载体的取舍计数（`internalUsed` / `chromiumUsed` / `internalRejected` /
@@ -1516,9 +1310,7 @@ export class ZcodeAuth extends Service {
        * 重发再冷启动一次。用户的原始要求就是这么分的：
        * 「如果不是领取积分还请求了 captcha 则再打开不关，领取积分完毕就关」。
        *
-       * ⚠ 关闭**幂等**，且不碰 `carrierPageServer` / 需求位（与 chromium 无关）。
        */
-      this.closeChromium()
     }
   }
 
@@ -1633,18 +1425,15 @@ export class ZcodeAuth extends Service {
         } else {
           noteZcodeRequestFailed(accountId)
         }
-        // 换链重发的旧语义原样保留（只对内部载体的 param 归因）。
+        // 内部 param 被 `3007` 拒 ⇒ 记一次归因（阈值禁用逻辑在 carrier）。
+        // ⚠ 2026-11-14：外挂链退役后**没有换链重发**——内部 param 被拒说明
+        // 本设备信誉被降级（无感验证换成滑块），同一来源再产多少个都一样。
         if (outcome.code === 3007 && minted.source === 'internal') {
           this.carrier.noteInternalRejection()
-          internalRetried = true
-          const retried = await this.retryClaimWithInjectedChain(
-            credential, plan.planId, mintCaptcha, captchaConfig, region, { accountId },
-          )
-          outcome = retried.outcome
-          diagnosticSentAt = retried.sentAt
         }
       } else {
-        // 阶段 ①b：验证产不出来（无浏览器 / 退避冷却）⇒ 裸发一试。
+        // 阶段 ①b：面板没贡献（mint 抛 CarrierUnavailableError 走不到这里；
+        // 这条兜底对应「mint 本身失败」的残量场景）⇒ 裸发一试。
         noteZcodeRequestSent(accountId, claimStartedAt)
         outcome = await claimZcodePlan(
           credential, plan.planId, undefined, this.fetchImpl,
@@ -1657,7 +1446,7 @@ export class ZcodeAuth extends Service {
         /**
          * ⚠ 裸发回 `3007` 时**不再重试**：验证本身都产不出来，再发一次只会
          *   再多扣一次风控计数（3012 的阶梯惩罚：30 分钟 → 24 小时 → 停用）。
-         *   把 mint 失败的原因并进文案，用户才知道「该装浏览器了」而不是
+         *   把 mint 失败的原因并进文案，用户才知道「该打开面板」而不是
          *   「账号被封了」。
          */
         if (outcome.code === 3007 && mintError !== undefined) {
@@ -1718,6 +1507,12 @@ export class ZcodeAuth extends Service {
       }
       return { outcome: mapped, continueWithNextPlan: true }
     } catch (error) {
+      // CarrierUnavailableError（面板从未贡献 / 内部载体禁用）是**形态级终态**：
+      // 原样给用户（文案即指引），并终止本账号的后续 plan —— 每个 plan 都要
+      // 一个 param，没有来源时多发只会把同样的失败重复 N 遍。
+      if (error instanceof CarrierUnavailableError) {
+        return { outcome: { kind: 'failed', code: -1, message: error.message }, continueWithNextPlan: false }
+      }
       return {
         outcome: {
           kind: 'failed',
@@ -1729,101 +1524,7 @@ export class ZcodeAuth extends Service {
     }
   }
 
-  /**
-   * ★ 评审 C4 的那一次重发：用**注入链**产一个新 param 重发同一个 plan（上限一次）。
-   *
-   * ## 为什么单独抽一个方法（而不是塞进循环里）
-   * 它有**自己的异常语义**：注入链可能撞上退避冷却而抛错（`mintWithChromium` 的闸门）。
-   * 那时**必须**如实抛给外层的 `catch`（记成这个 plan 的 failed），**不许**吞掉、
-   * 也不许退化成「不带 param 再撞一次」—— 那等于把既有护栏拆了
-   * （纪律见 `mintCaptchaAfterRejection` 的第 3 条，推理路径上早就这么定过）。
-   *
-   * ## 文案必须能区分两种失败
-   * 「换 chromium 之后**仍然**被拒」与「随手 3007」对用户是两件事：
-   * 前者意味着**这台机器的设备信誉有问题**（上游把无感验证降级了），
-   * 继续点只会更糟；后者可能只是这一发赶上了什么。`toClaimOutcome` 的
-   * `internalRetried` 开关就是干这个的。
-   *
-   * ## ⚠ 重发**不重新取配置**（issue IKJNPS 的同一条纪律）
-   * 换的是 param，不是 region。config 与 `captchaRegion` 都由调用方
-   * （`claimDailyWith`）原样传进来 —— 保持「param 与 region 同源」这件事
-   * **贯穿整个领取窗口**，包括这一次重发。
-   *
-   * @param diagnostics 诊断现场（Gitee issue IKJOQB）—— 重发这一发**同样是
-   *   一次真实的上游请求**，`sent` / `ok` / `failed` 三笔账都要记到同一个账号上，
-   *   否则 issue 要的「本进程 成功 N/失败 M」会漏掉这一类失败。
-   *
-   *   ⚠⚠ **只传 `accountId`，`sentAt` 由本方法自己取**（不是沿用首发的）。
-   *   `noteZcodeRequestSent(id, sentAt)` 的 `sentAt` 语义是「**本次**出发时刻」，
-   *   而 `previousSentAt` 是「上一条」的分母。若把**首发**的时刻当作重发的
-   *   出发时刻传进来，`previousSentAt` 会被写成首发时刻 == 本次 ⇒
-   *   `formatZcodeDiagnostic` 算出 `距上条 0ms`，「距上一条请求隔多久」
-   *   这一项**永久失去信息量**（实测复现过，见下）。
-   *
-   *   ⚠ 这不是理论风险：把 `sentAt` 写成首发的值后，探针实测诊断行是
-   *   `… · 距上条 0ms · HTTP 405`，而正确值应是「首发到上一条真实请求」的间隔。
-   *   本仓库在推理侧为同一个坑写过专门用例
-   *   （`tests/unit/zcode-diagnostics.spec.ts` 的「距上条算的是**上一条**请求」），
-   *   这里若传首发时刻就是**同型缺陷的第二次实例**。
-   */
-  private async retryClaimWithInjectedChain(
-    credential: ZcodeCredential,
-    planId: string,
-    injected: ZcodeClaimCaptchaMint | undefined,
-    captchaConfig: ZcodeCaptchaConfig,
-    captchaRegion: string,
-    diagnostics: { accountId: string | undefined },
-  ): Promise<{ outcome: ZcodeClaimOutcome; sentAt: number }> {
-    if (injected === undefined) {
-      // 走到这里必然有注入链（`claimDailyWith` 开头就为 undefined 早退了）；
-      // 仍写成显式分支：真出现时如实失败，别给一个 undefined param 发出去。
-      return {
-        outcome: {
-          planId,
-          ok: false,
-          code: 3007,
-          message: 'captcha 被拒且没有可用的备用产出链，请重试',
-        },
-        sentAt: Date.now(),
-      }
-    }
-    this.carrierLog?.(
-      'zcode: 领取时内部载体的 captcha 被拒（3007）⇒ 当次改用注入的浏览器链路重发一次',
-    )
-    const param = await injected(captchaConfig)
-    /**
-     * ⚠ 取**本发自己的**出发时刻（在真正发请求之前），理由见上面的 `@param`。
-     *   这也是它与首发之间真实间隔的来源 —— 注入链产 param 是秒级操作，
-     *   诊断里「距上条」因此会显示成首发到重发的真实间隔，而不是 0。
-     *
-     * ⚠⚠ 它**必须**回传给调用方拿去渲染诊断（返回值里的 `sentAt`）：
-     *   主循环若仍用**首发**的 `claimStartedAt` 做诊断，`previousSentAt`
-     *   （= 首发时刻）与诊断的 `sentAt` 又会相等 ⇒ 「距上条」**再一次**变成
-     *   `0ms`。这正是本缺陷的第二个实例，写用例时实测抓到了
-     *   （`expected '… 距上条 0ms …' not to contain '距上条 0ms'`）。
-     */
-    const retryStartedAt = Date.now()
-    noteZcodeRequestSent(diagnostics.accountId, retryStartedAt)
-    const retried: ZcodeClaimOutcome = await claimZcodePlan(
-      credential, planId, { param, region: captchaRegion }, this.fetchImpl,
-    )
-    if (retried.ok) {
-      noteZcodeRequestOk(diagnostics.accountId, Date.now())
-    } else {
-      noteZcodeRequestFailed(diagnostics.accountId)
-    }
-    /**
-     * ## ★★ 返回**原始上游结果 + 本发时刻**，不在这里映射（2026-10-05 重构）
-     *
-     * 初版在这里就调 `toClaimOutcome` 把结果映射好并让调用方**直接 push**，于是
-     * 重发那一发**绕过了**主循环的 `3012` 短路检查（对抗性审计打出的真实缺陷：
-     * 首发 `3007` ⇒ 重发撞 `3012` ⇒ 仍继续发下一个 plan，实测 `claims=3`）。
-     *
-     * ⇒ 现在只回原始结果，由主循环**统一**做映射与短路判断 ——
-     * 首发与重发**汇流到同一个判断点**，结构上不可能再漏。
-     */
-    return { outcome: retried, sentAt: retryStartedAt }
-  }
+
 
   /**
    * 反查领取凭据对应的**账号池条目 id**（诊断画像的 key），供
@@ -2026,91 +1727,21 @@ export class ZcodeAuth extends Service {
    * `ctx.effect` 的清理路径上，`zcode-carrier.js` 的 `destroyGuest()` 调 `release`）。
    *
    * ⚠ 还要**关掉载体页小服务**（评审 C1/C2 的形态 B）：它是个真的监听器，
-   *   漏关就是「插件卸载后仍有一个回环端口开着」（`CarrierPageServer.stop()`
-   *   内部忽略「未在运行」这类幂等异常，重复调用无害）。
    */
   stop(): void {
-    // 池先清空（在飞的预取会随浏览器关闭一起失败，失败已被池吞掉并只记日志）。
-    this.captchaPool?.clear()
-    this.captchaPool = undefined
-    this.captchaBrowser?.dispose()
-    this.captchaBrowser = undefined
+    // 2026-11-14：外挂浏览器与预取池已随外挂链退役，只剩需求位要熄灭
+    // （面板贡献循环见到熄灭即停止产出，不再烧设备配额）。
     setCaptchaDemand(false)
-    this.carrierPageServer?.stop()
-    this.carrierPageServer = undefined
   }
 
-  /**
-   * ★ **关掉外挂 chromium** —— 只由**领取积分**流程在收尾时调用。
-   *
-   * ## 为什么需要（用户报障 2026-10-02）
-   *
-   * > 领取完 chromium 还是留存在任务栏，图标还会闪烁。
-   *
-   * 根因：`captchaBrowser` 一旦惰性创建就**只**在 `stop()`（插件卸载）里销毁 ——
-   * 而领取是**低频写操作**（一天一次）。于是那个 chromium 进程
-   * （约 200–400MB）会**一直留着**，它的窗口也就一直挂在任务栏上。
-   *
-   * ## ⚠⚠ 谁在 web / desktop 下真的会开 chromium（用户 2026-10-02 更正）
-   *
-   * > desktop 环境索要积分也走不到要开 chromium，所以不用开
-   *
-   * 核对 `mintClaimCaptcha()` 的判据后确认属实：
-   *
-   * ```js
-   * if (!this.internalCarrierAvailable() || !captchaDemand())
-   *   return { param: await injected(), source: 'chromium' }   // ← 这里才开
-   * return await this.carrier.mint()                            // ← desktop 走这条
-   * ```
-   *
-   * `internalCarrierAvailable()` = `internalCarrierEnabled && supplied > 0` ——
-   * desktop 有内部载体的贡献 ⇒ `true` ⇒ **走载体链，不开 chromium**。
-   *
-   * | 环境 | 领取时走哪条 | 会开 chromium 吗 |
-   * |---|---|---|
-   * | **desktop**（有内部载体贡献） | `carrier.mint()` | **不会** |
-   * | **web**（无人贡献需求位） | 注入链 → `mintWithChromium` | **会**（就是本方法要收的尾） |
-   *
-   * ⇒ 本方法在 desktop 下是**空操作**（`captchaBrowser === undefined`
-   * 直接 return），故对 desktop 行为**逐字不变**；它只为 web 版收尾。
-   *
-   * ## 判据是「哪个流程在用」，不是「浏览器是否本次新建」
-   *
-   * | 流程 | 是否要 captcha | 收尾动作 |
-   * |---|---|---|
-   * | **领取积分**（`claimDaily*`） | 始终要（上游校验前置于 plan 校验） | ★ **关闭** |
-   * | 推理（`mintCaptchaParam`） | 通常不要；被 `3007` 拒时才补产 | **不关**（那次确实用了） |
-   *
-   * ⚠ 两条路用的是**同一个** `captchaBrowser` 实例（`index.ts` 注入给适配器的
-   * `mintCaptchaParam` 最终也落到 `this.captchaBrowser`，见其注释
-   * 「整个插件共用一台」），所以**不能**在这里判断"浏览器是否本次新建" ——
-   * 必须由**调用方**决定。这也是不做成"自动闲置关闭"的原因：
-   * 那会在推理正需要它时把浏览器拿走。
-   *
-   * ⚠ **可以再次启动**：`dispose()` 会把 `ready` 置 false、`profileDir` 置空，
-   * 下一次走 `captchaBrowser ??= new …` 重新冷启动（约 3.7 秒）。
-   * 这是**刻意的取舍**（用户明确选择「用完即关」）：宁可多付一次启动，
-   * 也不要留一个会闪烁的常驻窗口。
-   *
-   * ⚠ **幂等**：浏览器本来就不存在时是空操作（不抛错、不新建）。
-   */
-  closeChromium(): void {
-    // 池里的 param 由该浏览器产出，浏览器一关它们就不可用 ⇒ 一起清掉。
-    this.captchaPool?.clear()
-    this.captchaPool = undefined
-    if (this.captchaBrowser === undefined) return
-    this.captchaBrowser.dispose()
-    this.captchaBrowser = undefined
-  }
 }
 
 /**
  * 把上游的领取结果映射成 Channel Pack 的 `ClaimOutcome`。
  *
- * @param options.internalRetried 这条结果来自「3007 之后换 chromium 重发」那一次
- *   （评审 C4）。⚠ 文案要据此区分：换链之后**仍然**被拒 ⇒ 上游多半已把我们降级成
- *   交互式验证 / 设备信誉不足，继续重试只会更糟（`CaptchaBackoff` 引用了那句
- *   「继续请求不会让信誉恢复，只会更糟」）；而随手一个 3007 未必如此。
+ * @param options.internalRetried 这条结果来自「3007 之后换链重发」那一次。
+ *   ⚠ 外挂链退役后 `internalRetried` 恒为 false（换链分支已删），字段保留以
+ *   稳定 `toClaimOutcome` 的调用契约；文案分支据此区分「重试仍失败」与首败。
  */
 export function toClaimOutcome(
   outcome: ZcodeClaimOutcome,
@@ -2118,42 +1749,12 @@ export function toClaimOutcome(
   options: {
     internalRetried?: boolean
     plan?: ZcodeClaimablePlan
-    /**
-     * 诊断现场（Gitee issue IKJOQB，**只为 `3012` 用**）。
-     *
-     * ⚠ 三者**必须成套给**：缺 `accountId`/`sentAt` 时诊断行仍会渲染，
-     * 但账号序号与「距上条」会退化成 `账号#1` / `—` —— 故调用方
-     * （`claimDailyWith`）一贯三个都给。
-     */
+    /** 诊断现场（Gitee issue IKJOQB，**只为 `3012` 用**）：三者必须成套给。 */
     accountId?: string | undefined
     sentAt?: number
     status?: number
   } = {},
 ): ClaimOutcome {
-  if (outcome.ok) {
-    if (outcome.alreadyClaimed === true) {
-      return { kind: 'already-claimed', message: `额度已领取过（${planId}）` }
-    }
-    /**
-     * ★ 填**真实额度**（2026-10-03）。
-     *
-     * 此前固定填 0（注释称「避免把 token 伪装成积分」），于是面板显示
-     * 「领取成功 +0 积分」而用户实际拿到 1 亿 token —— 真实报障。
-     * 额度取自 `plan.entitlements[0].grant_units`（实测 100000000）。
-     *
-     * ⚠ **单位照实传**：ZCode 下发 token，前端据此用 formatTokens
-     *   显示「Token 100.00M」而不是「1 亿积分」。
-     */
-    const grantUnits = options.plan?.grantUnits
-    const unitType = options.plan?.unitType
-    return {
-      kind: 'claimed',
-      credit: grantUnits ?? 0,
-      streakDays: 0,
-      isStreakDay: false,
-      ...(unitType === 'token' ? { unit: 'token' as const } : {}),
-    }
-  }
   // 3007 = captcha 失败；给出可操作的提示而不是裸码。
   if (outcome.code === 3007) {
     return {

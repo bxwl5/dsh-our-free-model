@@ -1,45 +1,31 @@
 /**
- * captcha **载体链**：内部载体（DSH Desktop 的 webview guest 产的 param）优先，
- * 外挂 chromium 兜底。三级 = ①供给槽 ②有界等待 ③chromium。
+ * captcha **载体链**（2026-11-14 重构，用户定的方向）：**客户端内置浏览器是唯一
+ * param 来源** —— 面板（client.js）轮询需求位，用 srcdoc 载体页 mint，经
+ * `captcha.contribute` RPC 送进供给槽；本类只做「取槽 / 有界等待」。
  *
- * ## 为什么必须「当次回退」而不是「把失败抛给用户」
- * 内部载体的 param 能不能被上游接受**尚未在真实校验窗口验证过**：普通即时推理
- * 连续 6 个采样点上游都不校验这个头（实测记录见
- * `docs/superpowers/specs/2026-10-01-zcode-captcha-lazy-mint-design.md` 9.2 节，
- * 该文件不入库，本地留档）⇒ 「内部 param 能过」目前只是 guest 侧的自检结论
- * （4/4 产出 `certifyId` + `securityToken=128`、零滑块），**不是**上游接受性的证据。
- * 所以不能拿用户的请求去赌一个未验证假设：被 `3007` 拒的**当次**就必须用 chromium
- * 重产重发，在同一发请求内解决，外面完全看不出来。
- * 上游那侧的「3007 → 本轮补产重发」分支本来就在（`src/zcode-adapter.ts` 的
- * 「③ ★ captcha 被拒（3007）」那一段），本文件只是把「补产」从
- * 「必然走 chromium」换成「chromium 之外的第二个来源也试过」。
+ * ## 外挂浏览器链为什么整个退役
  *
- * ## 为什么要「累计 N 次就禁用」
- * 每次赌错都要多付一次上游往返 + 一段有界等待。若这台机器就是不行（旧版桌面壳、
- * 载体页被 CSP/网络拦、guest partition 状态异常），反复赌只会持续亏 ——
- * 方向同 `src/captcha-backoff.ts` 文件头引的那句「继续请求不会让信誉恢复，只会更糟」。
+ * 用户部署形态两类：桌面三端（宿主 Electron，面板 iframe 常驻）与 NAS/web
+ * （无头，本机无任何浏览器）。外挂链在 NAS **永远失败**（找不到可执行文件），
+ * 在桌面**每次冷启都弹窗口 + 烧一轮设备级风控指纹**（阿里云同设备 150 次/小时）。
+ * 内部载体三端同一行为：param 由**用户自己的浏览器**产出，与部署形态无关；
+ * 上游校验的是阿里云签发的 param 本身（实测 2026-11-14：载体页 param 发真实
+ * claim，上游接受——`code:1003`，校验通过后才到 plan 层）。
  *
- * ⚠ **这个计数器与 `CaptchaBackoff` 的失败计数是两回事，不要合并**：
- * backoff 数的是「**本机产出失败**」（SDK `F001`/超时/降级产物），并明确写了
- * 「mint 成功但上游回 `3007`」归因不清 ⇒ **不计数**（见该文件「本实现的两个关键设计」
- * 第 2 条）。这里数的恰恰是那一类「产出成功但被上游拒」，而且**只数内部载体的**，
- * 所以它必须独立存在：既不该被 backoff 冷却掉（那会把一条没问题的 chromium 链路
- * 一起关进冷却），也不该被 backoff 的成功清零（内部载体不行这件事不因
- * chromium 能用而消失）。
+ * ## 等不到贡献时怎么办（不再回退）
  *
- * ## 两条不改动的既有护栏
- * 1. `mintWithChromium` 就是既有的 `ZcodeAuth.mintCaptcha`（`src/zcode-auth.ts`），
- *    它内部自带退避闸门（`this.captchaBackoff.remainingMs()`）与串行队列
- *    （`this.captchaQueue`）⇒ 本文件**原样透传、不吞异常**：闸门要如实回它的
- *    「冷却中」，这里替它兜住就等于把冷却护栏拆了。
- * 2. 时效判定不在这里做第二遍：槽的 `takeFreshParam` 是唯一那道闸
- *    （见 `src/captcha-supply.ts` 同名函数的注释），本文件不碰 `PARAM_MAX_AGE_MS`。
+ * 抛 {@link CarrierUnavailableError}：claim 把它转成「签到不支持当前客户端」
+ * 的明确文案。NAS/web 的用户看到的是可行动的指引；桌面版若面板没开过
+ * （无人贡献）同样如此 —— 修法是打开一次面板，而不是装浏览器。
  *
- * ## web 版
- * 拿不到 `dshDesktop.browser` ⇒ 供给槽永远空、需求位也没人置起 ⇒ 走的是
- * 「不等待、直接 chromium」那条最快分支，与引入本文件之前**逐字一致**。
- * 若连这一跳的开销都不想要，开关是 `DSH_ZCODE_INTERNAL_CARRIER=0`
- * （由 Task 4 的接线处读取后决定要不要构造本类）。
+ * ## 保留的两条既有护栏（逐字不动的语义）
+ * 1. 时效判定只在供给槽的 `takeFreshParam`（唯一那道闸）；
+ * 2. 「内部 param 被上游拒」累计到阈值即本次运行禁用内部载体
+ *    （`noteInternalRejection`）——禁用后 mint 直接抛不可用，别再赌。
+ *
+ * ## 归因
+ * `CarrierOutcome.source` 只剩 `'internal'` 一种，保留字段是为了诊断日志
+ * 与既有调用点（`mintClaimCaptcha` 的归因注释）不必整批改写。
  */
 import {
   captchaDemand,
@@ -52,15 +38,37 @@ import {
 /** 内部载体的 param 被上游拒到第几次就本次运行停用（阈值取自 spec 9.3）。 */
 export const CARRIER_REJECT_DISABLE_THRESHOLD = 3
 
-/** 一次产出的结果：param 加上**它从哪来** —— 回退决策与归因都靠这个标记。 */
+/**
+ * 没有任何 param 来源可用（面板从未贡献 / 内部载体被禁用 / env 关掉）。
+ *
+ * claim 把它的 message 原样给用户： NAS/web 形态这是**预期终态**——
+ * 文案就是指引；桌面三端出现它 = 面板没开过，指引是「打开 Our Free Model
+ * 面板一次」。外挂浏览器链退役后没有别的来源，这不是错误重试能解决的。
+ */
+export class CarrierUnavailableError extends Error {
+  constructor(message = CARRIER_UNAVAILABLE_MESSAGE) {
+    super(message)
+    this.name = 'CarrierUnavailableError'
+  }
+}
+
+/**
+ * mint 无来源时的统一文案（claim 原样给用户）。
+ *
+ * ⚠ 语义是「这条部署形态做不了 zcode 的安全验证」，不是「坏了」：
+ * NAS/web 是预期形态；桌面三端出现它 = 面板没开过（打开 Our Free Model
+ * 面板一次，GUI 会自动开始贡献）。
+ */
+export const CARRIER_UNAVAILABLE_MESSAGE =
+  'zcode 签到不支持当前客户端：captcha 需要在 DSH 桌面版的 Our Free Model 面板中完成（打开面板即自动产出）'
+
+/** 一次产出的结果：param 加上来源标记（现只余 internal；字段保留供诊断日志）。 */
 export interface CarrierOutcome {
   param: string
   source: 'internal' | 'chromium'
 }
 
 export interface CaptchaCarrierDeps {
-  /** 外挂 chromium 产出一个新鲜 param（既有链路：含退避闸门与串行队列）。 */
-  mintWithChromium: (options?: { signal?: AbortSignal }) => Promise<string>
   /** 等内部载体贡献的上限（毫秒）。默认与 client 贡献心跳同量级，取自供给槽模块。 */
   waitMs?: number
   /** 时钟（注入以便单测推进 param 年龄）。 */
@@ -70,7 +78,6 @@ export interface CaptchaCarrierDeps {
 }
 
 export class CaptchaCarrier {
-  private readonly mintWithChromium: (options?: { signal?: AbortSignal }) => Promise<string>
   private readonly waitMs: number
   private readonly nowImpl: () => number
   private readonly log: ((message: string) => void) | undefined
@@ -80,7 +87,6 @@ export class CaptchaCarrier {
   private readonly counters = { internalUsed: 0, chromiumUsed: 0 }
 
   constructor(deps: CaptchaCarrierDeps) {
-    this.mintWithChromium = deps.mintWithChromium
     this.waitMs = deps.waitMs ?? DEFAULT_CARRIER_WAIT_MS
     this.nowImpl = deps.now ?? (() => Date.now())
     this.log = deps.log
@@ -116,9 +122,8 @@ export class CaptchaCarrier {
       if (captchaDemand()) {
         // ⚠ 第一个实参是**时钟函数**本身，不是 `this.nowImpl()`：
         // `waitForFreshParam(now, maxWaitMs, …)` 要在超时与被唤醒时各读一次时钟。
-        // 任务书这里写成了调用结果（数字），而它给的 8 条用例**测不出来** ——
-        // 那几条都没置起需求位，永远走不到这一行。补的网在
-        // `tests/unit/zcode-captcha-carrier.spec.ts` 里「需求位开」的那两条用例。
+        // GUI 贡献循环（client.js 面板）就是被这个等待等出来的：demand 置起后
+        // 面板建 srcdoc 载体页 mint，postMessage → contribute → 槽被唤醒。
         const waited = await waitForFreshParam(this.nowImpl, this.waitMs, options)
         if (waited !== undefined) {
           this.counters.internalUsed += 1
@@ -126,27 +131,22 @@ export class CaptchaCarrier {
         }
       }
     }
-    return await this.mintByChromium(options)
+    throw new CarrierUnavailableError(CARRIER_UNAVAILABLE_MESSAGE)
   }
 
   /**
-   * 带着上一次的产出去撞过上游、结果被 `3007` 拒 ⇒ **当次**改用 chromium 重产。
+   * 带着上一次的产出去撞过上游、结果被 `3007` 拒 ⇒ 记一次归因。
    *
-   * 本方法**不向外抛失败**：赌错是我们的事，用户看到的应该只是一次稍慢的成功。
-   *
-   * @param outcome - 上一次 `mint()` 的结果。来源是 `chromium` 时**不记拒绝**
-   *   （那是 param 自身过期/降级，与内部载体无关，见文件头的归因纪律）。
+   * 外挂链退役后**没有第二个来源**：内部 param 被拒说明本设备信誉被降级
+   * （无感验证被换成了滑块），换浏览器/换链重发都救不了 —— 如实向上抛，
+   * claim 的换链分支（`retryClaimWithInjectedChain`）随之退役。
    */
   async mintWithFallbackAfterRejection(
-    outcome: CarrierOutcome,
-    options: { signal?: AbortSignal } = {},
+    _outcome: CarrierOutcome,
+    _options: { signal?: AbortSignal } = {},
   ): Promise<CarrierOutcome> {
-    if (outcome.source !== 'internal') {
-      this.log?.('zcode: chromium 的 param 也被拒（3007）⇒ 按既有逻辑换新 param 重试')
-      return await this.mintByChromium(options)
-    }
     this.noteInternalRejection()
-    return await this.mintByChromium(options)
+    throw new CarrierUnavailableError(CARRIER_UNAVAILABLE_MESSAGE)
   }
 
   /**
@@ -199,8 +199,4 @@ export class CaptchaCarrier {
   }
 
   /** chromium 产出并记账。**唯一**出口，异常原样上抛（退避闸门的语义要保住）。 */
-  private async mintByChromium(options: { signal?: AbortSignal }): Promise<CarrierOutcome> {
-    this.counters.chromiumUsed += 1
-    return { param: await this.mintWithChromium(options), source: 'chromium' }
-  }
 }

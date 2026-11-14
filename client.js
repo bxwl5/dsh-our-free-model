@@ -29,6 +29,21 @@ window.__ModuleLoader__.load({
     const NS = 'settings.ourFreeModel'
     const inject = ['slots', 'locale']
 
+    /**
+     * 宿主形态判定（2026-11-14，用户定的方向：captcha 只用客户端内置浏览器）。
+     *
+     * - 桌面版：宿主在 `<html data-platform=…>` 标了运行平台（与宿主 keyboard
+     *   bridge 同源的判据）⇒ 面板贡献循环可用，zcode 签到正常。
+     * - web（NAS 等远程无头）：`data-platform` 不存在 ⇒ 本机没有任何浏览器可被
+     *   插件驱动（外挂链已退役），zcode 签到在 server 侧必然失败。面板不发
+     *   claim、直接给「不支持当前客户端」—— 不烧验证配额，不撞 3007。
+     *
+     * ⚠ 判定只能在 client 侧做：web 与桌面跑的是同一个宿主进程，server 判不出
+     *   GUI 形态（zcode-auth.ts 的 carrierHtml 注释同源）。
+     */
+    const DESKTOP_HOST = typeof document !== 'undefined'
+      && document.documentElement?.dataset?.platform !== undefined
+
 
     // ── copy ──────────────────────────────────────────────────────────────────
     const DICT = {
@@ -3841,6 +3856,14 @@ window.__ModuleLoader__.load({
 
       const claim = async () => {
         if (!creditCapability?.claim || busy !== '' || claimPending.current) return
+        // web 形态（NAS 等远程无头）没有 captcha 来源：zcode 的签到需要
+        // 用户浏览器产 param，而 server 在另一台机器上 —— 面板的 param 经
+        // 贡献循环回传后 server 才能用；面板未打开时 server 侧直接失败。
+        // 这里提前拦截给出可行动文案，不发注定失败的 claim。
+        if (!DESKTOP_HOST && channel.id === 'zcode') {
+          setNotice('zcode 签到不支持当前客户端：请在 DSH 桌面版的 Our Free Model 面板中完成签到')
+          return
+        }
         claimPending.current = true
         setBusy('claim'); setNotice('')
         try {
@@ -6063,8 +6086,91 @@ window.__ModuleLoader__.load({
     const TAB_KEY = 'ofm.tab'
     const TABS = ['free', 'channels', 'saver', 'routing', 'ledger', 'logs', 'gateway']
 
+    /**
+     * captcha 贡献循环（2026-11-14，用户定的方向：captcha 只用客户端内置浏览器）。
+     *
+     * server 的 claim 在 captcha 索要窗口里置起需求位（`captchaDemand`）并等
+     * 供给槽；本循环轮询 `captcha.demand`，见到需求就把载体页塞进隐藏 iframe
+     * （`srcdoc`，server 经 `captcha.carrierHtml` 给的 HTML）。页面在**用户自己的
+     * 浏览器**里跑阿里云 SDK mint，`postMessage` 把 param 交回来，这里再经
+     * `captcha.contribute` RPC 送进供给槽 —— server 等到 param，签到继续。
+     *
+     * ## 三端同一行为
+     * 桌面（面板 iframe 在宿主 GUI 里）与 NAS/web（面板 iframe 在用户浏览器里）
+     * 跑的是同一份 client.js、同一条 postMessage 链 —— mint 载体永远是「打开
+     * 面板的那个浏览器」，与 server 部署形态无关。
+     *
+     * ## 结束条件
+     * param 一次性：contribute 被接受（或超时放弃）就拆 iframe 回 idle；
+     * server 取走 param 后需求位自动熄灭。NAS/web 下若面板从未打开，demand
+     * 无人应答，claim 直接得到「签到不支持当前客户端」—— 这是**预期终态**。
+     */
+    function CaptchaContributor({ rpc }) {
+      const [state, setState] = useState('idle') // idle | minting
+      const frameRef = useRef(null)
+      const busyRef = useRef(false)
+
+      useEffect(() => {
+        let disposed = false
+        let frame = null
+        let timeoutTimer = null
+        const teardown = () => {
+          if (frame !== null) { frame.remove(); frame = null }
+          if (timeoutTimer !== null) { clearTimeout(timeoutTimer); timeoutTimer = null }
+          busyRef.current = false
+          setState('idle')
+        }
+        const onMessage = async (event) => {
+          if (frame === null || event.source !== frame.contentWindow) return
+          if (event.data?.type !== 'zcode-captcha-param') return
+          const started = event.data.elapsedMs !== undefined ? undefined : 0
+          try {
+            await rpc('captcha.contribute', {
+              param: String(event.data.param ?? ''),
+              interactive: event.data.interactive === true,
+              // 页面已带自己的 elapsedMs（文档开始→param 落袋）；这里不再叠加，
+              // 直接透传 —— contribute 协议用它修正跨机时钟漂移。
+              ...(event.data.elapsedMs === undefined ? {} : { elapsedMs: event.data.elapsedMs }),
+            }, 10_000)
+          } catch { /* 供给槽拒收（超龄/无效）—— 本轮结束，server 已先超时 */ }
+          void started
+          teardown()
+        }
+        window.addEventListener('message', onMessage)
+        const poll = setInterval(async () => {
+          if (disposed || busyRef.current) return
+          let demand = false
+          try { demand = (await rpc('captcha.demand', {}, 5_000))?.active === true } catch { return }
+          if (!demand || disposed) return
+          let html = null
+          try { html = (await rpc('captcha.carrierHtml', {}, 10_000))?.html ?? null } catch { return }
+          if (!html || disposed) return
+          busyRef.current = true
+          setState('minting')
+          frame = document.createElement('iframe')
+          frame.style.cssText = 'position:absolute;width:420px;height:320px;left:-9999px;top:-9999px;visibility:hidden'
+          frame.setAttribute('title', 'captcha')
+          frame.srcdoc = html
+          document.body.appendChild(frame)
+          // 兜底：90s 没等到回传（页面被 CSP 拦 / SDK 异常）就放弃本轮，
+          // server 侧 waitForFreshParam（1.5s）早已超时并把 claim 判成不可用。
+          timeoutTimer = setTimeout(teardown, 90_000)
+        }, 5_000)
+        return () => {
+          disposed = true
+          clearInterval(poll)
+          window.removeEventListener('message', onMessage)
+          if (frame !== null) frame.remove()
+          if (timeoutTimer !== null) clearTimeout(timeoutTimer)
+        }
+      }, [rpc])
+      void state; void frameRef
+      return null
+    }
+
     function Shell(props) {
       const { t, data, counts, summary, stats, busy, setBusy, apply, bench, benches, ctx } = props
+      const { rpc: channelRpc } = useChannelRpc(ctx)
       const [tab, setTab] = useState(() => {
         try {
           const saved = window.localStorage?.getItem(TAB_KEY)
@@ -6139,6 +6245,7 @@ window.__ModuleLoader__.load({
                     : h(FreePage, { t, data, counts, summary, stats, busy, catalogBusy, apply, bench, benches, refresh, reprobe })
 
       return h('div', { className: 'ofm_root ofm_shell' },
+        h(CaptchaContributor, { rpc: channelRpc }),
         h('div', { className: 'ofm_aurora', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
         nav,
         page)
