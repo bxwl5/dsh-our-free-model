@@ -633,19 +633,35 @@ export async function startTraeLoginFlow(
       // 不是 OAuth 的 `?code=` 授权码 —— 早期按 OAuth 惯例找 code，
       // 恒判失败 → 回 400 → 前端永远「认证中」（详见 parseTraeCallback）。
       const parsed = parseTraeCallbackDetailed(url)
-      // 终审 R7：核对回调自带 login_trace_id 与本次登录期望值一致（防伪造回调）。
+      // login_trace_id 比对（2026-11-08 终审 R7 引入；2026-11-15 放宽为「带则比」）。
+      //
+      // ## 为什么放宽（用户 Windows 实测，2026-11-15）
+      //
+      // R7 当年的依据是「上游会回传该字段」—— **假设，未实测**。Windows 端
+      // 真机登录推翻了它：浏览器授权成功，回跳的 query **不带**
+      // `login_trace_id`（或带的值与我们的派生值不同），旧判据把合法回调
+      // 拒成「login_trace_id 不匹配」⇒ 登录永远失败。magpie 同期完全不校验
+      // 该字段（只发不比），同期登录成功 —— 行为差异坐实。
+      //
+      // 新口径：**带则比，不带则放**。
+      // - 回调带了 `login_trace_id` 且与期望不符 → 仍拒（保留 R7 的防伪造价值：
+      //   攻击者若知道期望值之外的 trace，说明回调不是本次登录的）；
+      // - 回调不带 → 放行。伪造窗口本就极小：只听 127.0.0.1、端口随机、
+      //   10 分钟窗口、且回调直接携带 token（trace 校验防不住能投递 token
+      //   的攻击者，它的真实价值只剩「防其它本地进程误投」）。
       let callbackTraceId = ''
-      try { callbackTraceId = new URL(url, 'http://127.0.0.1').searchParams.get('login_trace_id') ?? '' } catch { /* 保持空串即判定不匹配 */ }
-      if (!parsed.ok || callbackTraceId !== expectedTraceId) {
+      try { callbackTraceId = new URL(url, 'http://127.0.0.1').searchParams.get('login_trace_id') ?? '' } catch { /* 解析失败按未携带处理 */ }
+      const traceMismatch = callbackTraceId !== '' && callbackTraceId !== expectedTraceId
+      if (!parsed.ok || traceMismatch) {
         // ⚠️ **必须落定结果 Promise**：这里的早期实现在 `res.end()` 之后
         // 直接 return，`result` Promise 既没 resolve 也没 reject ——
         // 前端 `login.poll` 永远拿不到 `done:true`，界面永久停在「认证中」，
         // 与「回调解析错了」的症状完全一样，但根因是**这里漏了落定**。
         if (resultTimer) clearTimeout(resultTimer)
         res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' })
-        res.end(`TRAE 登录回调无效：${parsed.ok ? 'login_trace_id 不匹配' : parsed.reason}`)
+        res.end(`TRAE 登录回调无效：${parsed.ok ? 'login_trace_id 不匹配（非本次登录的回调）' : parsed.reason}`)
         server.close()
-        reject(new Error(`TRAE 登录回调无效：${parsed.ok ? 'login_trace_id 不匹配' : parsed.reason}`))
+        reject(new Error(`TRAE 登录回调无效：${parsed.ok ? 'login_trace_id 不匹配（非本次登录的回调）' : parsed.reason}`))
         return
       }
       const callback = parsed.info

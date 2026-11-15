@@ -150,6 +150,7 @@ const suites = [
   ['codearts-body-too-large', 'codearts-body-too-large-test.mjs', []],
   ['codearts-no-benefit-channel', 'codearts-no-benefit-channel-test.mjs', []],
   ['buddy-schema-guard', 'buddy-schema-guard-test.mjs', []],
+  ['trae-trace-relax', 'trae-trace-relax-test.mjs', []],
   ['gateway-source', 'gateway-source-test.mjs', []],
   ['commandcode', 'commandcode-test.mjs', []],
 ].filter(([name]) => (mode === 'contributor' ? ![].includes(name)

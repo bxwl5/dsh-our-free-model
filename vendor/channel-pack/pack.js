@@ -49556,12 +49556,13 @@ async function startTraeLoginFlow(options) {
         callbackTraceId = new URL(url, "http://127.0.0.1").searchParams.get("login_trace_id") ?? "";
       } catch {
       }
-      if (!parsed.ok || callbackTraceId !== expectedTraceId) {
+      const traceMismatch = callbackTraceId !== "" && callbackTraceId !== expectedTraceId;
+      if (!parsed.ok || traceMismatch) {
         if (resultTimer) clearTimeout(resultTimer);
         res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
-        res.end(`TRAE \u767B\u5F55\u56DE\u8C03\u65E0\u6548\uFF1A${parsed.ok ? "login_trace_id \u4E0D\u5339\u914D" : parsed.reason}`);
+        res.end(`TRAE \u767B\u5F55\u56DE\u8C03\u65E0\u6548\uFF1A${parsed.ok ? "login_trace_id \u4E0D\u5339\u914D\uFF08\u975E\u672C\u6B21\u767B\u5F55\u7684\u56DE\u8C03\uFF09" : parsed.reason}`);
         server.close();
-        reject(new Error(`TRAE \u767B\u5F55\u56DE\u8C03\u65E0\u6548\uFF1A${parsed.ok ? "login_trace_id \u4E0D\u5339\u914D" : parsed.reason}`));
+        reject(new Error(`TRAE \u767B\u5F55\u56DE\u8C03\u65E0\u6548\uFF1A${parsed.ok ? "login_trace_id \u4E0D\u5339\u914D\uFF08\u975E\u672C\u6B21\u767B\u5F55\u7684\u56DE\u8C03\uFF09" : parsed.reason}`));
         return;
       }
       const callback = parsed.info;
