@@ -147,6 +147,7 @@ const suites = [
   ['plugin-bench-ui', 'plugin-bench-ui-test.mjs', []],
   ['codearts-direct-fetch', 'codearts-direct-fetch-test.mjs', []],
   ['codearts-multi-checkin', 'codearts-multi-checkin-test.mjs', []],
+  ['codearts-body-too-large', 'codearts-body-too-large-test.mjs', []],
   ['gateway-source', 'gateway-source-test.mjs', []],
   ['commandcode', 'commandcode-test.mjs', []],
 ].filter(([name]) => (mode === 'contributor' ? ![].includes(name)

@@ -435,6 +435,41 @@ function isQueueError(status: number, body: string): boolean {
  * 策略：触发一次静默 refresh，用新 AK/SK/SecurityToken 重试一次；仍失败
  * 才抛 AUTH，避免把可自愈的瞬时鉴权失败暴露给用户。
  */
+/**
+ * APIG 可签名 body 的上限：**12 MB**（magpie 0.3.20 实测定值，2026-11-15）。
+ *
+ * ⚠️ 这是**签名层**的硬上限，不是模型上下文窗口 —— 它与 token 数无关，
+ *   只与请求体的**字节数**有关（多图、长历史的 base64 图片最容易撞）。
+ */
+export const CODEARTS_MAX_SIGNABLE_BODY_BYTES = 12 * 1024 * 1024
+
+/**
+ * 判断报文是不是「body 太大，APIG 签不了」。
+ *
+ * 报文实例（HTTP 401）：
+ * `calc ak sk signature fail:body too large`
+ *
+ * ⚠️ 判据必须**先于** {@link isAuthError}：这条 401 的文案里同时带着
+ *   `APIG.0301` 与 `signature fail`，任何一条鉴权判据都会把它吃掉。
+ */
+export function isBodyTooLargeError(status: number, body: string): boolean {
+  if (status !== 401 && status !== 403 && status !== 413) return false
+  return /body\s+too\s+large/i.test(body)
+}
+
+/**
+ * 「请求体超过 APIG 签名上限」的用户可见文案。
+ *
+ * 给的必须是**可操作**的两条出路（magpie 0.3.20 的口径），而不是把
+ * 用户引去重新登录 —— 那对着这个原因是纯误导。
+ */
+export function codeartsBodyTooLargeMessage(bytes: number): string {
+  const mb = (bytes / 1024 / 1024).toFixed(1)
+  return `codearts: 单次请求体 ${mb} MB，超过网关可签名上限 `
+    + `${CODEARTS_MAX_SIGNABLE_BODY_BYTES / 1024 / 1024} MB（多图或很长的对话最容易撞上）。`
+    + '请新开一个对话，或减少本轮的图片数量后重试 —— 这不是登录过期，凭据不需要重新登录。'
+}
+
 export function isAuthError(status: number, body: string): boolean {
   /**
    * ⚠️ **403 不能无条件判鉴权**（真实缺陷，用户报障 2026-11-04：
@@ -459,6 +494,15 @@ export function isAuthError(status: number, body: string): boolean {
    * - 403 ⇒ **只有**报文里出现确凿的 token/签名错误才算鉴权；
    *   其余一律交给下游分类（繁忙 → 可重试，无权 → 不可重试）。
    */
+  /**
+   * ⚠️ **先排除「body too large」**（2026-11-15，对齐 magpie 0.3.20）。
+   *
+   * 那条 401 的报文是 `calc ak sk signature fail:body too large` ——
+   * 下面的 `status === 401`、`APIG.0301`、`signature fail` 三条判据**都会命中它**，
+   * 于是刷新凭据、重试同一个超大 body、再吃一次网关 30 秒延迟，最后抛 AUTH，
+   * 把用户引去重新登录。真正该做的是让他新开对话 / 少放图。
+   */
+  if (isBodyTooLargeError(status, body)) return false
   if (status === 401) return true
   if (body.includes('APIG.0602') || body.includes('APIG.0301')) return true
   if (/invalid\s+token|token\s+has\s+expired|token\s+is\s+invalid|signature\s+fail/i.test(body)) return true
@@ -1270,6 +1314,32 @@ export class CodeArtsAdapter extends LlmAdapter {
       max_tokens: options.maxTokens ?? 65536,
       ...wireTools !== undefined && wireTools.length > 0 ? { tools: wireTools } : {},
     })
+    /**
+     * ★ **发送前体量预检**（APIG 签名上限 12 MB，2026-11-15 对齐 magpie 0.3.20）
+     *
+     * 华为 APIG 的 AK/SK 签名走的是 `Sdk-Hmac-Sha256`，它对**可签名 body 设有
+     * 12 MB 上限**。超过时不报「请求太大」，而是回一个**看起来像鉴权失败**的
+     * 401：
+     *
+     * ```
+     * 401 APIG.0301 "calc ak sk signature fail:body too large"
+     * ```
+     *
+     * 而我们要等网关约 **30 秒**才拿到这个回答（magpie 实测：21 张图的
+     * ~20 MB 请求）。若交给下游 {@link isAuthError} 判，`status === 401`
+     * 与 `APIG.0301` 两条都会命中 ⇒ 白白刷新一次凭据（IAM 往返 + token
+     * 轮换）、重试同一个超大 body、再吃一次 30 秒，最后抛 AUTH ⇒ 用户看到
+     * 「API 密钥无效」并被告知重新登录，而凭据完全是好的。
+     *
+     * 所以在这里就拒：不等网关、不签名、不刷凭据。
+     *
+     * ⚠️ 只拒，**不裁剪**：图片/历史一条都不动。删掉用户自己发的东西会改变
+     *   他要问的问题，那不是这个适配器该做的决定。
+     */
+    const bodyBytes = Buffer.byteLength(body, 'utf8')
+    if (bodyBytes > CODEARTS_MAX_SIGNABLE_BODY_BYTES) {
+      throw new LlmError(codeartsBodyTooLargeMessage(bodyBytes), 'INVALID_REQUEST', { status: 413 })
+    }
     const url = `${CHAT_API_BASE}/chat/completions`
 
     // CodeArts 按账户限制并发：当会话上限
@@ -1432,6 +1502,18 @@ export class CodeArtsAdapter extends LlmAdapter {
         // 鉴权失败（SecurityToken 过期/被吊销/APIG.0602）：刷新一次凭据后
         // 重试整个 chat 请求。入口的 expires_at 预判无法覆盖后端提前吊销
         // 或时钟偏差场景，这里做兜底，避免把可自愈的鉴权失败抛给用户。
+        /**
+         * ⚠️ **必须先于鉴权判据**（2026-11-15）：`body too large` 那条 401 若落进
+         * 下面的 `isAuthError`，就会白刷一次凭据再重试同一个超大 body。
+         * 这里直接按 413 语义抛（不可重试、不给登录提示）。
+         */
+        if (isBodyTooLargeError(response.status, errorText)) {
+          throw new LlmError(
+            codeartsBodyTooLargeMessage(Buffer.byteLength(body, 'utf8')),
+            'INVALID_REQUEST',
+            { status: 413 },
+          )
+        }
         if (isAuthError(response.status, errorText) && !authRefreshed) {
           authRefreshed = true
           await this.options.refresh()

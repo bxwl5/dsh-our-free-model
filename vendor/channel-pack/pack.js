@@ -36967,7 +36967,17 @@ function codeartsQuotaExhaustedMessage(model, resetAtMs, nowMs = Date.now()) {
 function isQueueError(status, body) {
   return status === 400 && (body.includes("TM.00001041") || /peak\s+usage|try\s+again\s+after|peak\s+hours/i.test(body) || /high\s+demand|too\s+many\s+requests/i.test(body));
 }
+var CODEARTS_MAX_SIGNABLE_BODY_BYTES = 12 * 1024 * 1024;
+function isBodyTooLargeError(status, body) {
+  if (status !== 401 && status !== 403 && status !== 413) return false;
+  return /body\s+too\s+large/i.test(body);
+}
+function codeartsBodyTooLargeMessage(bytes) {
+  const mb = (bytes / 1024 / 1024).toFixed(1);
+  return `codearts: \u5355\u6B21\u8BF7\u6C42\u4F53 ${mb} MB\uFF0C\u8D85\u8FC7\u7F51\u5173\u53EF\u7B7E\u540D\u4E0A\u9650 ${CODEARTS_MAX_SIGNABLE_BODY_BYTES / 1024 / 1024} MB\uFF08\u591A\u56FE\u6216\u5F88\u957F\u7684\u5BF9\u8BDD\u6700\u5BB9\u6613\u649E\u4E0A\uFF09\u3002\u8BF7\u65B0\u5F00\u4E00\u4E2A\u5BF9\u8BDD\uFF0C\u6216\u51CF\u5C11\u672C\u8F6E\u7684\u56FE\u7247\u6570\u91CF\u540E\u91CD\u8BD5 \u2014\u2014 \u8FD9\u4E0D\u662F\u767B\u5F55\u8FC7\u671F\uFF0C\u51ED\u636E\u4E0D\u9700\u8981\u91CD\u65B0\u767B\u5F55\u3002`;
+}
 function isAuthError(status, body) {
+  if (isBodyTooLargeError(status, body)) return false;
   if (status === 401) return true;
   if (body.includes("APIG.0602") || body.includes("APIG.0301")) return true;
   if (/invalid\s+token|token\s+has\s+expired|token\s+is\s+invalid|signature\s+fail/i.test(body)) return true;
@@ -37452,6 +37462,10 @@ var CodeArtsAdapter = class extends LlmAdapter {
       max_tokens: options.maxTokens ?? 65536,
       ...wireTools !== void 0 && wireTools.length > 0 ? { tools: wireTools } : {}
     });
+    const bodyBytes = Buffer.byteLength(body, "utf8");
+    if (bodyBytes > CODEARTS_MAX_SIGNABLE_BODY_BYTES) {
+      throw new LlmError3(codeartsBodyTooLargeMessage(bodyBytes), "INVALID_REQUEST", { status: 413 });
+    }
     const url = `${CHAT_API_BASE}/chat/completions`;
     let response;
     let queueAttempts = 0;
@@ -37527,6 +37541,13 @@ var CodeArtsAdapter = class extends LlmAdapter {
         }
       } else {
         const errorText = await response.text().catch(() => "");
+        if (isBodyTooLargeError(response.status, errorText)) {
+          throw new LlmError3(
+            codeartsBodyTooLargeMessage(Buffer.byteLength(body, "utf8")),
+            "INVALID_REQUEST",
+            { status: 413 }
+          );
+        }
         if (isAuthError(response.status, errorText) && !authRefreshed) {
           authRefreshed = true;
           await this.options.refresh();
