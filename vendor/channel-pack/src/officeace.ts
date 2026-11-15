@@ -643,13 +643,31 @@ function resolveSubscriptionGateway(credential: OfficeAceCredential): string {
     ? stringValue(credential.model_info.model_api_url_base)
     : undefined
   if (rawBase === undefined || rawBase === '') {
-    throw new Error('OfficeAce：凭据缺少 model_info.model_api_url_base（重新登录可重建）')
+    throw new Error(officeaceGatewayMissingMessage())
   }
   const stripped = rawBase.replace(/^https?:\/\//, '').replace(/\/+$/, '')
   if (stripped === '') {
-    throw new Error('OfficeAce：凭据缺少 model_info.model_api_url_base（重新登录可重建）')
+    throw new Error(officeaceGatewayMissingMessage())
   }
   return /^https?:\/\//.test(rawBase) ? rawBase.replace(/\/+$/, '') : `https://${stripped}`
+}
+
+/**
+ * 「凭据里没有模型网关信息」的统一文案（余额 / 订阅 / 倍率 / 签到共用）。
+ *
+ * 这个状态的真实含义是**账号未开通果办服务**（登录时 validate 拿不到
+ * 三件套，账号按「STS 先落盘、账号保留」策略留了下来）；旧文案
+ * 「凭据缺少 model_info.model_api_url_base（重新登录可重建）」有两个问题：
+ * - 暴露内部字段名，用户无从行动；
+ * - 「重新登录可重建」是**错的** —— 未开通时重新登录永远拿不到网关信息，
+ *   用户会陷入「登录 → 失败 → 再登录」的循环（Windows 端实测，2026-11-15）。
+ *
+ * 出路只有一条：官方客户端开通 → 点「续期」（续期只换 AK/SK 并重读 validate，
+ * 开通后三件套就有了；refresh_token/DPoP 都在，无需重新授权）。
+ */
+export function officeaceGatewayMissingMessage(): string {
+  return 'OfficeAce：该账号尚未开通果办服务（无模型网关信息，余额/签到不可用）。'
+    + '请用此账号在 OfficeAce 官方客户端开通/兑换，然后回到面板点「续期」补齐 —— 无需重新登录。'
 }
 
 /** V11 签名的 GET 请求（订阅面通用：`/v1/subscription`、`/v1/model-token-rates`）。 */
@@ -875,7 +893,7 @@ export async function claimBonus(
     ? stringValue(credential.model_info.model_api_url_base)
     : undefined
   if (rawBase === undefined || rawBase === '') {
-    throw new Error('OfficeAce：凭据缺少 model_info.model_api_url_base（重新登录可重建）')
+    throw new Error(officeaceGatewayMissingMessage())
   }
   const stripped = rawBase.replace(/^https?:\/\//, '').replace(/\/+$/, '')
   const gateway = /^https?:\/\//.test(rawBase) ? rawBase.replace(/\/+$/, '') : `https://${stripped}`

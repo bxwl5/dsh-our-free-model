@@ -1673,11 +1673,24 @@ function registerChannelPackEndpoints(
             })
             const permission = await oa.validatePermission(codeartsFetcher, OFFICEACE, sts)
             // 网关三件套在 validate 的 model_info 里（STS 响应没有）；缺了说明
-            // 账号未开通 —— 抛可读错误。⚠ 凭据**已落盘**、账号条目**保留**：
-            // catch 不删账号（下方 catch 与本分支约定：凭据可用时只报失败原因），
-            // 用户开通服务后点「续期」补齐网关信息即可，无需重新授权。
+            // 账号未开通。⚠ 凭据**已落盘**、账号条目**保留**：catch 不删账号
+            // （下方 catch 与本分支约定：凭据可用时只报失败原因）。
+            //
+            // 文案口径（2026-11-15，用户实测 Windows 端后定稿）：
+            // - 「登录」本身**没有失败** —— 浏览器授权、STS 换取、凭据落盘全部
+            //   成功，refresh_token + DPoP 都保住了；失败的只是「读取订阅」这一步。
+            // - 旧文案「云端未返回模型网关信息（可能未开通服务…）」把业务状态说成
+            //   了模糊的「可能」，且不提「续期可补」这条现成的补救路径 —— 用户
+            //   会去反复重新登录（永远没用：没开通时 validate 永远拿不到三件套）。
+            // - 新文案三件事说死：①这不是登录失败，凭据已保存；②需要用**该账号**
+            //   在官方客户端开通服务；③开通后点「续期」即可补齐，无需重新授权。
+            //   （续期 = 换 AK/SK + 重读 validate，只读；开通 = POST
+            //   client-subscription，本插件与 magpie 都未实现 —— 唯一途径是官方客户端。）
             if (permission.baseUrl === undefined || permission.appKey === undefined || permission.appSecret === undefined) {
-              throw new Error('OfficeAce：云端未返回模型网关信息（可能未开通服务，请先在官方客户端兑换邀请码）')
+              throw new Error(
+                'OfficeAce：授权成功、凭据已保存，但该账号尚未开通果办服务（无模型网关信息）。'
+                + '请用此账号在 OfficeAce 官方客户端开通/兑换后，回到面板点「续期」补齐 —— 无需重新登录。',
+              )
             }
             const credential = {
               ...sts,

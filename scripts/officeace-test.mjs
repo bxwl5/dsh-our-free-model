@@ -484,10 +484,12 @@ async function main() {
       assert.ok(subReq.auth.includes('/cn-southwest-2/apic'), 'scope 是 <date>/cn-southwest-2/apic')
       assert.equal(subReq.subscriptionType, 'v2', '必须带 x-subscription-type: v2')
       assert.equal(subReq.securityToken, 'sec-token-2', '必须带 X-Security-Token')
-      // 缺 model_info 的凭据：明确报错（引导重登）
+      // 缺 model_info 的凭据：明确报错（2026-11-15 文案改版：不暴露内部字段名，
+      // 也不再引导「重新登录」—— 未开通时重登永远拿不到网关信息；出路是
+      // 官方客户端开通后点「续期」）。
       await assert.rejects(
         () => fetchSubscriptionSnapshot(realFetch, product, { base_url: `${base}/v2`, app_key: 'k', app_secret: 's', access_key: 'AK', secret_key: 'SK' }),
-        /model_api_url_base/,
+        /尚未开通果办服务.*续期/,
       )
     }
 
