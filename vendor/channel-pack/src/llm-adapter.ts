@@ -36,6 +36,47 @@ export const PROVIDER = 'codearts'
 const BENEFIT_NOT_FOUND_CODE = 'BENEFIT_NOT_FOUND'
 /** CodeArts 在账号没有 benefit 包时下发的事件 error_code。 */
 const CODEARTS_BENEFIT_NOT_FOUND_ERROR_CODE = 'InferHub.4004.200'
+/**
+ * 「该账号**根本没有**免费通道」的 error_code（magpie #905 实测，2026-11-15）。
+ *
+ * 与 `InferHub.4004.200`（有通道但今天没额度）是**同一类后果、另一种报文**：
+ * 账号没有开通 free/benefit 通道时，带 `maas_type: benefit` 签名的请求会被
+ * 网关回成
+ *
+ * ```
+ * InferHub.APIG.0101.404 "The API does not exist or has not been published in the environment"
+ * ```
+ *
+ * ⚠️ 这句话听着像**路径打错 / API 未发布**，实际上是「你这个账号没有 benefit
+ *   环境」—— 同一个模型去掉 `maas_type` 头再发就是它的普通通道，正常作答
+ *   （magpie 的用例把两种报文逐字锁在同一处）。所以处理方式与 4004 相同：
+ *   去掉该头重试一次，而不是把它当配置错误抛给用户。
+ */
+const CODEARTS_NO_BENEFIT_CHANNEL_ERROR_CODE = 'InferHub.APIG.0101.404'
+/** 该报文的正文字面（error_code 可能被网关改写，正文更稳）。 */
+const NO_BENEFIT_CHANNEL_TEXT = /does not exist or has not been published in the environment/i
+
+/**
+ * 这一发 SSE 流内的错误，是不是「账号没有 benefit/免费通道」。
+ *
+ * 两种等价报文都算（magpie #905 与 #1121 的实测量）：
+ * - `InferHub.4004.200` / 裸 `4004`：有通道、今天没额度或额度用尽；
+ * - `InferHub.APIG.0101.404` 或正文含 `does not exist or has not been published
+ *   in the environment`：该账号**根本没开通**免费通道（听起来像路径打错，
+ *   其实是环境不存在）。
+ *
+ * 两者的处置相同：去掉签名的 `maas_type: benefit` 头重试一次，走模型的普通通道。
+ *
+ * ⚠ 判据做成**导出纯函数**：这段逻辑此前内联在 `consumeSse` 里，无法单测，
+ *   于是 `APIG.0101.404` 这一支长期缺失（用户 2026-11-15 报障
+ *   「codearts: The API does not exist or has not been published in the
+ *   environment」——报文被原样抛给用户，一句话都没提它其实是没开免费通道）。
+ */
+export function isNoBenefitChannelError(errorCode: string, message: string): boolean {
+  if (errorCode === CODEARTS_BENEFIT_NOT_FOUND_ERROR_CODE || errorCode === '4004') return true
+  if (errorCode === CODEARTS_NO_BENEFIT_CHANNEL_ERROR_CODE) return true
+  return NO_BENEFIT_CHANNEL_TEXT.test(message)
+}
 
 /**
  * 编译期兜底目录：**只在「从来没拉到过远端」时使用**（新机器首启、断网）。
@@ -1953,8 +1994,9 @@ export class CodeArtsAdapter extends LlmAdapter {
             if (isSseQueueErrorCode(errorCode)) {
               throw new SseQueueRetryError(errorCode, message)
             }
-            if (errorCode === CODEARTS_BENEFIT_NOT_FOUND_ERROR_CODE || errorCode === '4004') {
-              // 账号没有 benefit 包（积分制账户）：交给 stream() 去掉该头重试
+            if (isNoBenefitChannelError(errorCode, message)) {
+              // 账号没有 benefit 包 / 没开通免费通道：交给 stream() 去掉
+              // `maas_type` 头重试一次（判据见 `isNoBenefitChannelError`）。
               throw new LlmError(`codearts: ${message}`, BENEFIT_NOT_FOUND_CODE, { status: 200 })
             }
             throw new LlmError(`codearts: ${message}`, 'INVALID_REQUEST', { status: 200 })
