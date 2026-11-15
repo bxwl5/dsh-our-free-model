@@ -739,6 +739,39 @@ function collectImages(content: readonly unknown[], refs: Map<string, unknown>):
 }
 
 /** buddy (腾讯 CodeBuddy 系) 模型适配器。使用 Bearer access_token 鉴权。 */
+/**
+ * REA 的 surrogate 路径守卫字面量（magpie 0.2.34 / #1080，2026-11-15）：
+ * `^[^\uD800-\uDFFF]*$`。WorkBuddy AI 的 `deepseek-v4.1-flash-sg` 拒绝
+ * **任何**携带它的 tools 请求 —— "400: invalid function call parameters"，
+ * 且发生在**任何工具被调用之前**。我们出站原样透传（探针实测），所以
+ * DSH 内核带这个守卫的工具定义会把整个请求打挂。
+ */
+const REA_SURROGATE_PATH_GUARD = '^[^\\uD800-\\uDFFF]*$'
+
+/**
+ * 清洗**出站**的工具参数 schema：递归删掉 {@link REA_SURROGATE_PATH_GUARD}
+ * 这一个**精确字面量**的 `pattern`，其余字段、其它 pattern、外层结构与
+ * REA 自己的校验全部保留（与 magpie `fitSchema` 同口径：只删出事的那一个，
+ * 不做泛化 pattern 清洗 —— 那会改变工具语义）。
+ *
+ * ⚠️ 只动出站；本地执行的 `tool.parameters`（内核自己校验用）原样不动 ——
+ *   守卫在本地依然生效，删的只是发给上游的那一份。
+ *
+ * 纯函数、不抛：任何畸形输入（null / 数组 / 非对象）原样返回。
+ */
+export function cleanToolsSchema<T>(schema: T): T {
+  if (schema === null || typeof schema !== 'object') return schema
+  if (Array.isArray(schema)) {
+    return schema.map((item) => cleanToolsSchema(item)) as unknown as T
+  }
+  const out: Record<string, unknown> = { ...(schema as Record<string, unknown>) }
+  if (out.pattern === REA_SURROGATE_PATH_GUARD) delete out.pattern
+  for (const [key, value] of Object.entries(out)) {
+    if (value !== null && typeof value === 'object') out[key] = cleanToolsSchema(value)
+  }
+  return out as unknown as T
+}
+
 export class BuddyAdapter extends LlmAdapter {
   /** 本适配器所属的产品配置（默认 CodeBuddy）。 */
   private readonly product: BuddyProduct
@@ -1295,7 +1328,7 @@ export class BuddyAdapter extends LlmAdapter {
       function: {
         name: tool.name,
         description: tool.description,
-        parameters: tool.parameters,
+        parameters: cleanToolsSchema(tool.parameters),
       },
     }))
 

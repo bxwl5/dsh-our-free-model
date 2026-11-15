@@ -39110,6 +39110,19 @@ function collectImages2(content, refs) {
     if (block.type === "tool-result" && Array.isArray(block.content)) collectImages2(block.content, refs);
   }
 }
+var REA_SURROGATE_PATH_GUARD = "^[^\\uD800-\\uDFFF]*$";
+function cleanToolsSchema(schema) {
+  if (schema === null || typeof schema !== "object") return schema;
+  if (Array.isArray(schema)) {
+    return schema.map((item) => cleanToolsSchema(item));
+  }
+  const out = { ...schema };
+  if (out.pattern === REA_SURROGATE_PATH_GUARD) delete out.pattern;
+  for (const [key, value] of Object.entries(out)) {
+    if (value !== null && typeof value === "object") out[key] = cleanToolsSchema(value);
+  }
+  return out;
+}
 var BuddyAdapter = class _BuddyAdapter extends LlmAdapter2 {
   constructor(options) {
     super();
@@ -39550,7 +39563,7 @@ var BuddyAdapter = class _BuddyAdapter extends LlmAdapter2 {
       function: {
         name: tool.name,
         description: tool.description,
-        parameters: tool.parameters
+        parameters: cleanToolsSchema(tool.parameters)
       }
     }));
     const bodyObj = {
