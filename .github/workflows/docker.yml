@@ -29,17 +29,57 @@ jobs:
       # 统一从 package.json 读，作为 OCI 标签的 org.opencontainers.image.version。
       - id: appver
         run: |
-          echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+          node -e '
+            const fs = require("node:fs")
+            const v = require("./package.json").version
+            // 2.5.7-priv.2 → 主版本标签 2.5（与 semver 的 major.minor 同口径）
+            const core = v.split("-")[0].split(".")
+            const majorMinor = core.slice(0, 2).join(".")
+            const out = fs.readFileSync(process.env.GITHUB_OUTPUT, "utf8")
+            fs.appendFileSync(process.env.GITHUB_OUTPUT,
+              `version=${v}\nmajorMinor=${majorMinor}\nshortSha=${process.env.GITHUB_SHA.slice(0, 7)}\n`)
+            void out
+          '
           echo "built=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
+      # 每个架构一套标签（后缀 -amd64 / -arm64）。合并成 index 在后面的
+      # manifest 步骤里做，所以 :latest / :版本 最终仍是多架构引用。
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          # 仓库名已是全小写，符合 GHCR 要求。
           images: ghcr.io/${{ github.repository }}
+          # suffix 加到**所有**标签上（含 latest）⇒ 产出 latest-amd64 /
+          # 2.5.7-priv.2-amd64 等；无后缀的 index 由 manifest 步骤另行合成。
+          flavor: |
+            suffix=-amd64
+          tags: |
+            # git tag 存在时（push tag 触发）：v1.2.3 → 1.2.3 / 1.2
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            # ★ 手动 dispatch 没有 git tag，semver 两条都不会出标签 —— 于是
+            # 2026-11-16 那次手动构建只推出一个 :latest，版本号无从辨认。
+            # 用 package.json 的版本补一条 raw 标签，并派生出 major.minor：
+            #   version 2.5.7-priv.2 → 2.5.7-priv.2 与 2.5
+            type=raw,value=${{ steps.appver.outputs.version }}
+            type=raw,value=${{ steps.appver.outputs.majorMinor }}
+            # 提交短 SHA：同一版本重构建时能分辨是哪一次提交（GHCR 上
+            # :latest 会被覆盖，:sha-xxxxx 永久保留）。
+            type=raw,value=sha-${{ steps.appver.outputs.shortSha }}
+            type=raw,value=latest
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+
+      - id: meta-arm64
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          flavor: |
+            suffix=-arm64
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ steps.appver.outputs.version }}
+            type=raw,value=${{ steps.appver.outputs.majorMinor }}
+            type=raw,value=sha-${{ steps.appver.outputs.shortSha }}
             type=raw,value=latest
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
 
@@ -53,48 +93,127 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - id: build
+      # ★ 逐架构构建 + 推送（2026-11-16 用户要求「版本、架构我都要」）
+      #
+      # 为什么拆成两步而不是一次 `platforms: linux/amd64,linux/arm64`：
+      # 一次多平台构建只会产出**一个 index**，任何 tag 都指向 index 而不是
+      # 具体架构 —— Docker 生态里没有「:tag-amd64」这种由 buildx 自动生成的
+      # 标签，用户想看某个架构就得 `docker pull --platform`。用户明确要求每个
+      # 架构都有可辨认的 tag，所以：
+      #   步骤 A：两个架构**各自**构建，各推一套带 `-amd64` / `-arm64` 后缀的标签
+      #   步骤 B：用 buildx imagetools create 把这些标签合成回**同一个 index**，
+      #           于是 `:latest` / `:版本` 仍是多架构引用，`docker pull`（不带
+      #           --platform）自动选本机架构 —— 两种用法都成立。
+      #
+      # ⚠️ 后缀由 metadata-action 的 `flavor: suffix` 生成，它作用于**该步**
+      #   的 tags，所以每步只推自己架构的标签，不会互相覆盖。
+      - id: build-amd64
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           build-args: |
             APP_VERSION=${{ steps.appver.outputs.version }}
             VCS_REF=${{ github.sha }}
             BUILD_DATE=${{ steps.appver.outputs.built }}
           tags: ${{ steps.meta.outputs.tags }}
-          # ⚠️ 刻意**不传** `labels: ${{ steps.meta.outputs.labels }}`：
+          # ⚠️ 刻意**不传** `labels:`（含自写的 architecture 标签）：
           # docker/build-push-action 的 labels 会覆盖 Dockerfile 里的 LABEL，
           # 实测把 org.opencontainers.image.version 写成了 "latest"、
-          # description 写成仓库简介。版本/提交/构建时间由 Dockerfile 的
-          # ARG + LABEL 负责（值来自上面的 appver 与 github.sha）。
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # description 写成仓库简介。一旦传了 `labels`，buildx 就不再沿用
+          # Dockerfile 的 LABEL 集合，`org.opencontainers.image.architecture`
+          # 这类附加标签会连带把 version/description 一起冲掉。架构信息本来
+          # 就在 manifest 里（`docker buildx imagetools inspect` 可见），
+          # 不需要额外 label。
+          # 架构后缀来自 meta / meta-arm64 的 `flavor: suffix`。
+          cache-from: type=gha,scope=amd64
+          cache-to: type=gha,mode=max,scope=amd64
+
+      - id: build-arm64
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/arm64
+          build-args: |
+            APP_VERSION=${{ steps.appver.outputs.version }}
+            VCS_REF=${{ github.sha }}
+            BUILD_DATE=${{ steps.appver.outputs.built }}
+          tags: ${{ steps.meta-arm64.outputs.tags }}
+          cache-from: type=gha,scope=arm64
+          cache-to: type=gha,mode=max,scope=arm64
+
+      # ★ 合成多架构 index：把两套架构标签挂回主标签
+      # 主标签（:latest / :版本 / :2.5）指向的是 index，而不是某个架构 —
+      # 这正是 `docker pull` 能自动选架构的原因。
+      - id: manifest
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${{ github.repository }}"
+          VER="${{ steps.appver.outputs.version }}"
+          MM="${{ steps.appver.outputs.majorMinor }}"
+          SHA="${{ steps.appver.outputs.shortSha }}"
+          # 每个主标签都合成一次：latest / 版本 / major.minor / sha-xxxxxxx
+          for TAG in latest "$VER" "$MM" "sha-$SHA"; do
+            docker buildx imagetools create -t "$IMAGE:$TAG" \
+              "$IMAGE:$TAG-amd64" "$IMAGE:$TAG-arm64"
+            echo "✓ $TAG 已合成多架构 index"
+          done
+          echo '--- 核对 latest 的架构清单 ---'
+          docker buildx imagetools inspect "$IMAGE:latest" | sed -n '1,25p'
 
       # 构建完成后把镜像摘要写进 job summary，便于核对"这个 tag 对应哪次提交"。
       # runner 自带 docker，所以推送后可以真拉下来核对：标签是否写进去了、
       # 多架构清单是否齐全。这两样在别处（无 read:packages 权限时）都查不到。
       - id: verify
         run: |
-          IMAGE="ghcr.io/${{ github.repository }}:latest"
-          docker pull "$IMAGE"
+          set -euo pipefail
+          REPO="ghcr.io/${{ github.repository }}"
+          VER="${{ steps.appver.outputs.version }}"
+          MM="${{ steps.appver.outputs.majorMinor }}"
+          SHA="${{ steps.appver.outputs.shortSha }}"
+          echo '--- 每个主标签的架构清单（应各有 amd64 + arm64）---'
+          for TAG in latest "$VER" "$MM" "sha-$SHA"; do
+            echo "== :$TAG =="
+            docker buildx imagetools inspect "$REPO:$TAG" \
+              | grep -E 'Platform:|Name:' | head -6
+          done
+          echo '--- 架构专属标签（用户要的可辨认标签）---'
+          for TAG in "$VER-amd64" "$VER-arm64" "latest-amd64" "latest-arm64"; do
+            printf '%-28s ' ":$TAG"
+            docker buildx imagetools inspect "$REPO:$TAG" --format '{{json .Manifest}}' >/dev/null 2>&1 \
+              && echo '存在' || echo '缺失'
+          done
+          echo '--- 拉一次确认可运行（本 runner 是 amd64）---'
+          docker pull "$REPO:$VER"
           echo '--- OCI labels ---'
-          docker image inspect "$IMAGE" --format '{{json .Config.Labels}}' | tr ',' '\n'
-          echo '--- base image ---'
-          docker image inspect "$IMAGE" --format '{{.Config.Env}}'
-          echo '--- platforms in manifest ---'
-          docker buildx imagetools inspect "$IMAGE" | sed -n '1,20p'
+          docker image inspect "$REPO:$VER" --format '{{json .Config.Labels}}' | tr ',' '\n' | head -12
 
       - id: summary
         run: |
           {
             echo "### 镜像已推送"
             echo ''
+            echo '**多架构 index（docker pull 自动选架构）**'
             echo '```'
-            echo "${{ steps.meta.outputs.tags }}"
+            for TAG in latest "${{ steps.appver.outputs.version }}" \
+                       "${{ steps.appver.outputs.majorMinor }}" \
+                       "sha-${{ steps.appver.outputs.shortSha }}"; do
+              echo "ghcr.io/${{ github.repository }}:$TAG"
+            done
+            echo '```'
+            echo '**架构专属标签**'
+            echo '```'
+            for TAG in "${{ steps.appver.outputs.version }}-amd64" \
+                       "${{ steps.appver.outputs.version }}-arm64" \
+                       "latest-amd64" "latest-arm64"; do
+              echo "ghcr.io/${{ github.repository }}:$TAG"
+            done
             echo '```'
             echo ''
-            echo "digest: ${{ steps.build.outputs.digest }}"
+            echo "amd64 digest: ${{ steps.build-amd64.outputs.digest }}"
+            echo "arm64 digest: ${{ steps.build-arm64.outputs.digest }}"
           } >> "$GITHUB_STEP_SUMMARY"
