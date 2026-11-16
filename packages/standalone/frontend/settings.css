@@ -9,7 +9,7 @@
 /* ---------- 1. 服务设置：基础布局 ---------- */
 .settings-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .settings-card { margin-bottom: 20px; }
-.settings-card-heading { display: flex; align-items: center; gap: 11px; padding-bottom: 6px; }
+.settings-card-heading { display: flex; align-items: center; gap: 12px; padding-bottom: 6px; }
 .settings-card-heading > svg { color: var(--amber-ink); flex-shrink: 0; }
 .settings-card-heading h2 { font-size: 15px; }
 .settings-card-heading p { font-size: 12px; margin-top: 4px; }
@@ -17,7 +17,7 @@
 .settings-field:last-child { border-bottom: 0; padding-bottom: 0; }
 .settings-field > span, .settings-field > label { min-width: 0; }
 .settings-field strong { display: block; font-size: 13px; font-weight: 550; }
-.settings-field small { display: block; font-size: 12px; line-height: 1.7; color: var(--muted); margin-top: 5px; }
+.settings-field small { display: block; font-size: 12px; line-height: 1.7; color: var(--muted); margin-top: 4px; }
 .settings-toggle { appearance: none; width: 40px; height: 23px; flex-shrink: 0; border: 1px solid var(--amber-line); border-radius: 999px; background: linear-gradient(180deg, #efe8db, #e6ddcc); position: relative; padding: 0; cursor: pointer; box-shadow: inset 0 1px 3px rgba(var(--warm-shadow), 0.14); transition: background 250ms cubic-bezier(0.16, 1, 0.3, 1), border-color 250ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 250ms cubic-bezier(0.16, 1, 0.3, 1); }
 .settings-toggle:after { content: ""; width: 17px; height: 17px; position: absolute; top: 2px; left: 2px; border-radius: 5px; background: linear-gradient(180deg, #f0d8a4, #cf9a3f 60%, #b5761f); box-shadow: 0 1px 2px rgba(var(--warm-shadow), 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.72), inset 0 -1px 0 rgba(120, 74, 12, 0.28); transform-origin: left center; transition: transform 250ms cubic-bezier(0.34, 1.4, 0.64, 1); }
 .settings-toggle:hover { background: linear-gradient(180deg, #ece4d5, #e0d5c0); }
@@ -35,7 +35,7 @@
 .settings-note { display: flex; align-items: flex-start; gap: 8px; background: var(--amber-soft); color: var(--amber-ink); padding: 12px; border-radius: 6px; font-size: 12px; margin-top: 16px; border: 1px solid var(--amber-line); animation: feedbackIn 260ms cubic-bezier(0.16, 1, 0.3, 1); }
 .settings-note > svg { flex-shrink: 0; margin-top: 2px; }
 .settings-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; padding: 16px 2px 10px; border-top: 1px solid var(--line); margin-top: 4px; }
-.settings-footer > span { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 7px; }
+.settings-footer > span { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 8px; }
 .settings-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .settings-save-error { display: flex; gap: 8px; align-items: flex-start; color: var(--danger); background: var(--danger-soft); border: 1px solid var(--danger-line); padding: 12px; border-radius: 6px; font-size: 12px; margin-top: 14px; animation: feedbackIn 260ms cubic-bezier(0.16, 1, 0.3, 1); }
 .settings-save-error > svg { flex-shrink: 0; }
@@ -48,7 +48,7 @@
 
 /* 分组卡片：标题区与字段区之间的呼吸感 */
 .settings-card-heading { align-items: flex-start; padding-bottom: 14px; margin-bottom: 2px; border-bottom: 1px solid var(--line); }
-.settings-card-heading > svg { margin-top: 1px; padding: 7px; box-sizing: content-box; background: var(--amber-soft); color: var(--amber-ink); border-radius: 8px; }
+.settings-card-heading > svg { margin-top: 2px; padding: 8px; box-sizing: content-box; background: var(--amber-soft); color: var(--amber-ink); border-radius: 8px; }
 .settings-card-heading h2 { letter-spacing: -0.005em; }
 .settings-field:first-of-type, .settings-number-field:first-of-type { padding-top: 14px; }
 
@@ -76,19 +76,19 @@
 
 /* 反馈条：成功 / 错误 */
 .connection-feedback, .connection-error {
-  padding: 10px 13px; border-radius: 7px;
+  padding: 10px 13px; border-radius: 8px;
   animation: feedbackIn 260ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .connection-feedback { background: var(--success-soft); border: 1px solid var(--success-line); }
 .connection-error { background: var(--danger-soft); border: 1px solid var(--danger-line); }
-.connection-error > svg { margin-top: 1px; }
+.connection-error > svg { margin-top: 2px; }
 
 /* 卡片标题图标底块 */
 .cx-icon { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; background: var(--amber-soft); color: var(--amber-ink); border-radius: 8px; }
 .cx-icon-danger { background: var(--danger-soft); color: var(--danger); }
 
 /* 凭证字段：密码箱质感（等宽字体 + 内敛底槽） */
-.cx-field { flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px; padding: 2px 4px 2px 12px; border: 1px solid var(--amber-line); border-radius: 7px; background: #fffdf8; transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1), background 150ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1); }
+.cx-field { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 2px 4px 2px 12px; border: 1px solid var(--amber-line); border-radius: 8px; background: #fffdf8; transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1), background 150ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1); }
 .cx-field:focus-within { border-color: var(--amber); background: var(--surface); box-shadow: 0 0 0 3px var(--amber-glow); }
 .cx-field > svg { color: var(--dsw-alias-label-tertiary); }
 .cx-field input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 9px 0; font-family: Consolas, "SFMono-Regular", monospace; font-size: 12.5px; box-shadow: none !important; }
@@ -104,7 +104,7 @@
 
 /* 快速开始：迷你终端（昼主题也是深色代码块） */
 .cx-code {
-  position: relative; margin-top: 15px; padding: 15px 16px 15px 42px;
+  position: relative; margin-top: 16px; padding: 15px 16px 15px 42px;
   background: #221f1a; color: #d9d2c5; border: 1px solid #3b352c; border-radius: 8px;
   font-family: Consolas, "SFMono-Regular", monospace; font-size: 12px; line-height: 1.75;
   overflow-x: auto; white-space: pre; overflow-wrap: normal;
@@ -129,7 +129,7 @@
 /* 汇总条：状态仪表感 */
 .ch-metric { display: flex; align-items: center; gap: 10px; }
 .ch-metric-icon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--amber-soft); color: var(--amber-ink); flex-shrink: 0; }
-.ch-metric-body { display: flex; flex-direction: column; gap: 1px; }
+.ch-metric-body { display: flex; flex-direction: column; gap: 2px; }
 .ch-metric-label { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
 .ch-metric-value { font-size: 19px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1.25; }
 .ch-metric-value small { font-size: 12px; font-weight: 400; color: var(--dsw-alias-label-tertiary); }
@@ -145,7 +145,7 @@
 
 /* 供应商卡片：logo 质感 / 计数 tabular-nums / 悬停按钮显现 */
 .provider-grid { animation: settingsIn 320ms cubic-bezier(0.16, 1, 0.3, 1); }
-.provider-logo { border-radius: 9px; font-size: 12px; letter-spacing: 0.02em; box-shadow: inset 0 0 0 1px rgba(72, 58, 42, 0.06), 0 1px 2px rgba(72, 58, 42, 0.07); }
+.provider-logo { border-radius: 10px; font-size: 12px; letter-spacing: 0.02em; box-shadow: inset 0 0 0 1px rgba(72, 58, 42, 0.06), 0 1px 2px rgba(72, 58, 42, 0.07); }
 .provider-card .status-dot { animation: none; }
 .provider-counts strong { font-variant-numeric: tabular-nums; font-weight: 600; }
 .provider-manage svg { opacity: 0; transform: translateX(-4px); transition: opacity 180ms cubic-bezier(0.16, 1, 0.3, 1), transform 180ms cubic-bezier(0.16, 1, 0.3, 1); }
@@ -155,8 +155,8 @@
 /* 详情：侧边选中态左侧竖条 + 安全提示条 */
 .detail-provider-link { border-left: 2px solid transparent; border-radius: 0 6px 6px 0; padding-left: 10px; }
 .detail-provider-link.active { border-left-color: var(--amber); font-weight: 550; }
-.detail-security-note { padding: 11px 13px; background: var(--amber-soft); border: 1px solid var(--amber-line); border-radius: 7px; }
-.detail-security-note > svg { flex-shrink: 0; margin-top: 1px; color: var(--amber-ink); }
+.detail-security-note { padding: 11px 13px; background: var(--amber-soft); border: 1px solid var(--amber-line); border-radius: 8px; }
+.detail-security-note > svg { flex-shrink: 0; margin-top: 2px; color: var(--amber-ink); }
 
 /* 空态 */
 .channel-empty { animation: settingsIn 300ms cubic-bezier(0.16, 1, 0.3, 1); }
@@ -186,7 +186,7 @@
 .ofm_root .ofm_hero:hover { transform: none; box-shadow: var(--shadow-sm); }
 .ofm_root .ofm_row { align-items: center; padding: 6px 0; border-top: 1px solid rgba(110, 100, 84, 0.10); }
 .ofm_root .ofm_row:first-of-type { border-top: 0; }
-.ofm_root .ofm_row.ofm_acts { padding-top: 13px; }
+.ofm_root .ofm_row.ofm_acts { padding-top: 12px; }
 .ofm_root .ofm_row label { font-size: 12px; color: var(--ink-soft); gap: 8px; }
 .ofm_root .ofm_row select, .ofm_root .ofm_row input[type=text], .ofm_root .ofm_row input:not([type]) { font-size: 12px; border-radius: 6px; }
 .ofm_root .ofm_row input[type=checkbox] { accent-color: var(--amber); width: 15px; height: 15px; }
@@ -230,25 +230,25 @@
 /* ---------- 圆角统一：图标块 10 / 控件 9 / 卡面 12 / 弹窗 16 ---------- */
 :root:not([data-theme="dark"]) .settings-card-heading > svg { border-radius: 10px; }
 :root:not([data-theme="dark"]) .settings-note,
-:root:not([data-theme="dark"]) .settings-save-error { border-radius: 9px; }
-:root:not([data-theme="dark"]) .settings-number input { border-radius: 9px; }
+:root:not([data-theme="dark"]) .settings-save-error { border-radius: 10px; }
+:root:not([data-theme="dark"]) .settings-number input { border-radius: 10px; }
 :root:not([data-theme="dark"]) .connection-feedback,
-:root:not([data-theme="dark"]) .connection-error { border-radius: 9px; }
+:root:not([data-theme="dark"]) .connection-error { border-radius: 10px; }
 :root:not([data-theme="dark"]) .cx-icon { border-radius: 10px; }
-:root:not([data-theme="dark"]) .cx-field { border-radius: 9px; }
+:root:not([data-theme="dark"]) .cx-field { border-radius: 10px; }
 :root:not([data-theme="dark"]) .cx-code { border-radius: 10px; }
 :root:not([data-theme="dark"]) .detail-provider-link { border-radius: 0 8px 8px 0; }
-:root:not([data-theme="dark"]) .detail-security-note { border-radius: 9px; }
+:root:not([data-theme="dark"]) .detail-security-note { border-radius: 10px; }
 :root:not([data-theme="dark"]) .ch-metric-icon { border-radius: 10px; }
-:root:not([data-theme="dark"]) .ofm_root .ofm_btn { min-height: 32px; border-radius: 9px; }
+:root:not([data-theme="dark"]) .ofm_root .ofm_btn { min-height: 32px; border-radius: 10px; }
 :root:not([data-theme="dark"]) .ofm_root .ofm_hero { border-radius: 12px; }
-:root:not([data-theme="dark"]) .ofm_root .ofm_chanlogo { border-radius: 9px; }
+:root:not([data-theme="dark"]) .ofm_root .ofm_chanlogo { border-radius: 10px; }
 :root:not([data-theme="dark"]) .ofm_root .ofm_chanstate { border-radius: 6px; }
 :root:not([data-theme="dark"]) .ofm_root .ofm_row select,
 :root:not([data-theme="dark"]) .ofm_root .ofm_row input[type=text],
-:root:not([data-theme="dark"]) .ofm_root .ofm_row input:not([type]) { border-radius: 9px; }
+:root:not([data-theme="dark"]) .ofm_root .ofm_row input:not([type]) { border-radius: 10px; }
 :root:not([data-theme="dark"]) .ofm_root .ofm_modal { border-radius: 16px; }
-:root:not([data-theme="dark"]) .ofm_root .ofm_toast { border-radius: 11px; }
+:root:not([data-theme="dark"]) .ofm_root .ofm_toast { border-radius: 12px; }
 :root:not([data-theme="dark"]) .ofm_root .ofm_glass,
 :root:not([data-theme="dark"]) .ofm_root .ofm_ann,
 :root:not([data-theme="dark"]) .ofm_root .ofm_newsitem,
@@ -403,7 +403,7 @@
 .settings-field small { text-wrap: pretty; }
 label.settings-field { cursor: pointer; }
 @media (hover: hover) {
-  label.settings-field { border-radius: 9px; transition: background-color 160ms cubic-bezier(0.16, 1, 0.3, 1); }
+  label.settings-field { border-radius: 10px; transition: background-color 160ms cubic-bezier(0.16, 1, 0.3, 1); }
   label.settings-field:hover { background: var(--ofm-hover-wash); }
 }
 
@@ -442,7 +442,7 @@ label.settings-field { cursor: pointer; }
 .settings-note { line-height: 1.65; overflow-wrap: anywhere; }
 .settings-save-error { line-height: 1.6; text-wrap: pretty; overflow-wrap: anywhere; }
 .settings-save-error > span { min-width: 0; }
-.settings-save-error > svg { margin-top: 1px; }
+.settings-save-error > svg { margin-top: 2px; }
 
 /* ==========================================================================
    2. API 接入（connection-* / cx-*）
@@ -481,13 +481,13 @@ label.settings-field { cursor: pointer; }
 
 /* 2.5 反馈条：图标对齐与长文案兜底 */
 .connection-feedback, .connection-error { line-height: 1.6; overflow-wrap: anywhere; }
-.connection-feedback > svg { flex-shrink: 0; margin-top: 1px; }
+.connection-feedback > svg { flex-shrink: 0; margin-top: 2px; }
 
 /* 2.6 字段标签与复制行：两组凭据之间的关系更清楚 */
 .field-label { font-weight: 550; letter-spacing: 0.01em; margin: 20px 0 8px; overflow-wrap: anywhere; }
 .copy-field { align-items: stretch; }
 .copy-field > .ui-button { flex-shrink: 0; }
-.copy-field + .field-label { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+.copy-field + .field-label { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
 .footnote { line-height: 1.65; text-wrap: pretty; overflow-wrap: anywhere; }
 
 /* ==========================================================================
@@ -518,38 +518,38 @@ label.settings-field { cursor: pointer; }
    ========================================================================== */
 
 /* 4.1 按钮与折叠开关：圆角/高度对齐，触摸目标 ≥24px */
-.ofm_root .ofm_btn { min-height: 32px; border-radius: 9px; }
+.ofm_root .ofm_btn { min-height: 32px; border-radius: 10px; }
 .ofm_root .ofm_btn:disabled { cursor: not-allowed; }
-.ofm_root .ofm_minibtn { display: inline-flex; align-items: center; justify-content: center; min-height: 24px; border-radius: 7px; }
-.ofm_root .ofm_foldtoggle { min-height: 24px; padding: 3px 8px; margin-left: -8px; border-radius: 7px; transition: background-color 160ms cubic-bezier(0.16, 1, 0.3, 1), color 160ms cubic-bezier(0.16, 1, 0.3, 1); }
+.ofm_root .ofm_minibtn { display: inline-flex; align-items: center; justify-content: center; min-height: 24px; border-radius: 8px; }
+.ofm_root .ofm_foldtoggle { min-height: 24px; padding: 3px 8px; margin-left: -8px; border-radius: 8px; transition: background-color 160ms cubic-bezier(0.16, 1, 0.3, 1), color 160ms cubic-bezier(0.16, 1, 0.3, 1); }
 .ofm_root .ofm_foldtoggle:hover { background: var(--dsw-alias-bg-layer-2); }
 [data-theme="dark"] .ofm_root .ofm_foldtoggle:hover { background: var(--cp-cyan-soft); color: var(--cp-cyan); }
 
 /* 4.2 行与分隔：上下对称的发丝线，控件圆角对齐 9px */
 .ofm_root .ofm_row { margin: 0; padding: 11px 0; border-top: 1px solid var(--ofm-hair); }
-.ofm_root .ofm_row.ofm_acts { padding-top: 13px; }
-.ofm_root .ofm_row select, .ofm_root .ofm_row input[type=text], .ofm_root .ofm_row input:not([type]) { border-radius: 9px; }
+.ofm_root .ofm_row.ofm_acts { padding-top: 12px; }
+.ofm_root .ofm_row select, .ofm_root .ofm_row input[type=text], .ofm_root .ofm_row input:not([type]) { border-radius: 10px; }
 .ofm_root .ofm_row input[type=checkbox] { margin: 0; cursor: pointer; }
 
 /* 4.3 卡片 / 弹窗 / 提示条圆角：夜主题与昼主题同刻度 */
 .ofm_root .ofm_card, .ofm_root .ofm_hero, .ofm_root .ofm_glass, .ofm_root .ofm_chan { border-radius: 12px; }
 .ofm_root .ofm_glass, .ofm_root .ofm_ann, .ofm_root .ofm_newsitem, .ofm_root .ofm_stat { border-radius: 12px; }
 .ofm_root .ofm_modal { border-radius: 16px; }
-.ofm_root .ofm_toast { border-radius: 11px; }
+.ofm_root .ofm_toast { border-radius: 12px; }
 [data-theme="dark"] .ofm_root .ofm_modal { border-radius: 16px; }
 
 /* 4.4 渠道折叠卡：logo 与状态标签跟主控制台同一语言（状态色交给内部圆点） */
-.ofm_root .ofm_chanlogo { border-radius: 9px; }
+.ofm_root .ofm_chanlogo { border-radius: 10px; }
 .ofm_root .ofm_chanstate { border-radius: 6px; background: var(--dsw-alias-bg-layer-2); box-shadow: inset 0 0 0 1px var(--dsw-alias-border-l1); }
 [data-theme="dark"] .ofm_root .ofm_chanstate { background: var(--cp-cyan-soft); color: var(--dsw-alias-label-secondary); box-shadow: inset 0 0 0 1px var(--cp-cyan-line); }
 
 /* ==========================================================================
    5. 圆角刻度：夜主题与昼主题同刻度（把昼主题已定的值原样镜像，不加新数值）
    ========================================================================== */
-.provider-logo { border-radius: 11px; }
+.provider-logo { border-radius: 12px; }
 .settings-card-heading > svg, .cx-icon, .cx-icon-danger, .ch-metric-icon { border-radius: 10px; }
 .settings-number input, .settings-note, .settings-save-error,
-.connection-feedback, .connection-error, .cx-field, .detail-security-note { border-radius: 9px; }
+.connection-feedback, .connection-error, .cx-field, .detail-security-note { border-radius: 10px; }
 .cx-code { border-radius: 10px; }
 .detail-provider-link { border-radius: 0 8px 8px 0; }
 

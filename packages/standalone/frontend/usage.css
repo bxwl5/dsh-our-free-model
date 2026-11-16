@@ -215,7 +215,7 @@
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px 24px;
   margin-bottom: 20px; color: var(--us-ink-tertiary); font-size: 12px;
 }
-.usage-scope strong { font-weight: 500; color: var(--us-ink-secondary); margin-left: 5px; font-variant-numeric: tabular-nums; }
+.usage-scope strong { font-weight: 500; color: var(--us-ink-secondary); margin-left: 4px; font-variant-numeric: tabular-nums; }
 
 /* ---- 反馈消息 ---- */
 .usage-feedback { margin-bottom: 20px; font-size: 12px; color: var(--us-success); }
@@ -290,7 +290,7 @@
 }
 .usage-model-search input {
   width: 100%; height: 40px; padding-left: 37px; font-size: 13px;
-  border: 1px solid var(--us-line); border-radius: 9px;
+  border: 1px solid var(--us-line); border-radius: 10px;
   background: var(--us-surface); color: var(--us-ink);
   transition: border-color var(--us-duration-fast) var(--us-ease-out), box-shadow var(--us-duration-fast) var(--us-ease-out);
 }
@@ -302,7 +302,7 @@
 .usage-model-search input::placeholder { color: var(--us-ink-muted); }
 .usage-model-filters select {
   height: 40px; font-size: 13px;
-  border: 1px solid var(--us-line); border-radius: 9px;
+  border: 1px solid var(--us-line); border-radius: 10px;
   background: var(--us-surface); color: var(--us-ink);
   transition: border-color var(--us-duration-fast) var(--us-ease-out), box-shadow var(--us-duration-fast) var(--us-ease-out);
 }
@@ -326,7 +326,7 @@
 .usage-model-table td:first-child { min-width: 200px; max-width: 300px; }
 .usage-model-table td:first-child strong { display: block; font-weight: 550; font-size: 12px; color: var(--us-ink); }
 .usage-model-table td:first-child code {
-  display: block; color: var(--us-ink-tertiary); font-size: 11px; margin-top: 3px;
+  display: block; color: var(--us-ink-tertiary); font-size: 11px; margin-top: 4px;
   overflow-wrap: anywhere;
   font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
 }
@@ -336,7 +336,7 @@
   text-align: right;
 }
 .usage-model-table td:first-child { text-align: left; }
-.usage-model-table td small { display: block; margin-top: 3px; font-size: 10px; color: var(--us-ink-muted); }
+.usage-model-table td small { display: block; margin-top: 4px; font-size: 10px; color: var(--us-ink-muted); }
 .usage-model-table tbody tr {
   transition: background var(--us-duration-normal) var(--us-ease-out);
 }
@@ -350,7 +350,7 @@
 }
 .usage-empty > svg { color: var(--us-ink-muted); margin: 0 auto 12px; opacity: 0.6; }
 .usage-empty h3 { font-size: 15px; color: var(--us-ink); }
-.usage-empty p { font-size: 12px; margin-top: 7px; color: var(--us-ink-tertiary); }
+.usage-empty p { font-size: 12px; margin-top: 8px; color: var(--us-ink-tertiary); }
 
 /* ---- 分页器 ---- */
 .usage-pagination {
@@ -442,7 +442,7 @@
 
 /* 图标容器升级：色彩印章 + 内描边，hover 有呼应 */
 .ov-metric-icon {
-  border-radius: 9px;
+  border-radius: 10px;
   box-shadow: var(--ov-icon-ring), var(--ov-icon-glow), 0 1px 2px rgba(32, 35, 41, 0.05);
 }
 .ov-metric:hover .ov-metric-icon {
@@ -576,7 +576,7 @@
 .usage-model-search > svg { top: auto; }
 .usage-model-search input {
   height: 40px;
-  border-radius: 9px;
+  border-radius: 10px;
   font-variant-numeric: tabular-nums;
 }
 .usage-model-search input:hover { background: var(--us-surface-raised); }
@@ -586,7 +586,7 @@
 }
 .usage-model-filters select {
   height: 40px;
-  border-radius: 9px;
+  border-radius: 10px;
   font-variant-numeric: tabular-nums;
 }
 .usage-model-filters select:hover { background: var(--us-surface-raised); }
@@ -834,7 +834,7 @@
   appearance: none; -webkit-appearance: none; cursor: pointer;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236b655c' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right 12px center; background-size: 10px 6px;
-  padding-right: 32px; padding-left: 11px;
+  padding-right: 32px; padding-left: 12px;
 }
 :root:not([data-theme="dark"]) .usage-model-search input:focus {
   background: var(--us-surface);
@@ -855,7 +855,7 @@
 :root[data-theme="dark"] .usage-model-filters select:focus-visible {
   outline: 2px solid var(--us-accent);
   outline-offset: 2px;
-  border-radius: 9px;
+  border-radius: 10px;
 }
 .usage-pagination > span[data-testid="usage-model-count"] { font-weight: 550; color: var(--us-ink-secondary); font-variant-numeric: tabular-nums; }
 .usage-pagination > span { white-space: nowrap; }
@@ -883,7 +883,7 @@
 .ov-chart-col:not([data-value])::after { display: none; }
 .ov-chart-total { letter-spacing: -0.02em; }
 .ov-endpoint code { overflow-wrap: anywhere; }
-.ov-failure-list .ov-failure-row { padding: 6px 8px; margin: 0 -8px; border-radius: 7px; }
+.ov-failure-list .ov-failure-row { padding: 6px 8px; margin: 0 -8px; border-radius: 8px; }
 .ov-source-row:focus-visible { outline: 2px solid var(--us-accent); outline-offset: -2px; border-radius: 8px; }
 :root:not([data-theme="dark"]) .ov-source-row:hover { background: var(--us-accent-soft); }
 :root[data-theme="dark"] .ov-source-row:hover { background: linear-gradient(90deg, color-mix(in srgb, var(--cp-cyan, #00d0c0) 8%, transparent), rgba(255, 255, 255, 0.02)); }
@@ -999,7 +999,7 @@
   display: inline-block;
   width: 7px;
   height: 7px;
-  margin-right: 9px;
+  margin-right: 8px;
   border-radius: 999px;
   background: var(--us-accent);
   opacity: 0.5;
