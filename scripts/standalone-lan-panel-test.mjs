@@ -191,6 +191,28 @@ const base = { port: 0, refresh: false, logger: { warn() {} }, startRelay }
       assert.equal((await request(url, '/v1/models')).status, 401, '无 key 必须 401')
     })
 
+    await check('⑧ 带 Referer/Origin 的面板请求不被 403（真浏览器形态）', async () => {
+      // 白屏根因回归：`structuralRejection` 要求 Host/Origin/Referer 同源。
+      // 中继删 Host 后必须把 Referer/Origin 也改写成上游 authority，否则
+      // 面板回 403 JSON ⇒ CSS 被当 application/json ⇒ 整页全白。
+      // curl 不带 Referer，所以这条只有模拟浏览器才能测出来。
+      const browserHeaders = {
+        referer: `http://127.0.0.1:${service.port}/`,
+        origin: `http://127.0.0.1:${service.port}`,
+        'sec-fetch-site': 'same-origin',
+        accept: 'text/css,*/*;q=0.1',
+      }
+      const css = await request(url, '/assets/app.css', { headers: browserHeaders })
+      assert.equal(css.status, 200, `CSS 应 200，实际 ${css.status} ${css.text.slice(0, 80)}`)
+      assert.match(String(css.headers.get('content-type')), /text\/css/, 'MIME 必须是 text/css')
+      assert.ok(css.text.length > 1000, 'CSS 应有实际内容')
+      const js = await request(url, '/assets/app.js', { headers: { ...browserHeaders, accept: '*/*' } })
+      assert.equal(js.status, 200)
+      assert.match(String(js.headers.get('content-type')), /javascript/, 'MIME 必须是 JS')
+      const summary = await request(url, '/api/management/summary', { headers: browserHeaders })
+      assert.equal(summary.status, 200, '带 Referer 的管理 API 也应 200')
+    })
+
     await check('⑦ 直通不依赖令牌：全新会话（无 Cookie / 无 token）直接可读', async () => {
       // 「我要直接可以访问」的落地检查：一个**干净请求**（不带任何凭据、
       // 不带 Cookie、不带 token）打开面板，管理 API 就该是 200。

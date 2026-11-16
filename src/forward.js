@@ -619,6 +619,42 @@ export async function startLanRelay({ config, log = () => {}, onTrace = () => {}
     delete headers.host
     delete headers.connection
     delete headers['x-api-key']
+    /**
+     * 面板请求：把浏览器带来的 `Referer` / `Origin` **改写成上游 authority**
+     * （2026-11-16，白屏实测根因）。
+     *
+     * `management.mjs` 的 `structuralRejection`（`src/trust.js`）要求
+     * Host / Origin / Referer **三者同源**才算本机页面：
+     *
+     *     if (authority.hostname !== host.hostname || authority.port !== host.port)
+     *       return `${header}-mismatch`     // → 403 JSON
+     *
+     * 中继删掉 `Host` 后 Node 重建为 `127.0.0.1:<targetPort>`（回环，第一关能过），
+     * 但浏览器发来的 `Referer: http://192.168.2.6:9981/` 主机名/端口都不一致
+     * ⇒ 面板回 **403 `{"error":"管理接口仅允许本机同源访问"}`**。
+     *
+     * 症状极具迷惑性：静态页 `/` 由 `handleRequest` 的 `asset` 分支直接吐出
+     * （不看 Referer），所以标签页标题正常；而 `app.css` / `app.js` 也走同一条
+     * `structuralRejection`——
+     *   - CSS 被当成 `application/json` ⇒ "Refused to apply style ... MIME type"
+     *   - 模块脚本同理 ⇒ React 永不挂载 ⇒ **整个页面全白**。
+     * 而 `curl` 不带 Referer，检查直接跳过，所以命令行永远复现不出来。
+     *
+     * 修法与任何反向代理一致：让上游看到的就是它自己的地址。
+     */
+    if (panelRequest) {
+      const upstreamAuthority = `http://127.0.0.1:${settings.targetPort}`
+      for (const header of ['referer', 'origin']) {
+        const raw = headers[header]
+        if (typeof raw !== 'string' || raw === '') continue
+        try {
+          const parsed = new URL(raw)
+          headers[header] = `${upstreamAuthority}${parsed.pathname}${parsed.search}`
+        } catch {
+          // 畸形值原样交给面板，让它自己判 403（不在中继里替它兜）
+        }
+      }
+    }
     if (!panelRequest) {
       // The caller's LAN key stops at this door; the local listener only ever
       // sees the key that belongs to this machine.
