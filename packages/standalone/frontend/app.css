@@ -341,7 +341,9 @@ th:first-child, td:first-child { text-align: left; overflow-wrap: anywhere; }
 .field-label { display: block; font-size: 12px; color: var(--dsw-alias-label-secondary); margin: 18px 0 8px; }
 .copy-field { display: flex; flex-wrap: wrap; gap: 8px; }
 .copy-field input { flex: 1; font-family: Consolas, monospace; }
-.connection-browser { max-width: 900px; }
+/* API 接入页：与设置页同一条规则（2026-11-16）。原 900px 左对齐，右侧留死白，
+   用户：「api接入和服务设置页面右边都空了」。改为铺满，理由见 settings.css 1.1。 */
+.connection-browser { max-width: none; }
 .connection-card { margin-bottom: 20px; }
 .connection-card-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; color: var(--dsw-alias-label-secondary); }
 .connection-card-heading > div { flex: 1; min-width: 0; }
