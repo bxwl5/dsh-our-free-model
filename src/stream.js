@@ -358,8 +358,28 @@ function feedClaude(sink, event, onFinish, renameMap) {
   if (event.type === 'message_start') {
     const usage = event.message?.usage
     if (usage) {
+      /**
+       * Anthropic `message_start` → 我们的 usage 形状（2026-11-16 修：缓存没算进输入）。
+       *
+       * ⚠️ 语义差异是这里的坑：
+       * - **OpenAI/Responses**：`input_tokens` **已含** `cached_tokens`（cached 是子集）
+       * - **Anthropic Messages**：`input_tokens` **不含** `cache_read_input_tokens`
+       *   （缓存读是额外的一笔，`cache_creation_input_tokens` 同理）
+       *
+       * 而 `mapUsage()` 是按 **OpenAI 语义**写的 —— 它做
+       * `inputTokens = prompt_tokens - cached_tokens`。若这里直接塞
+       * `prompt_tokens: input_tokens`（非缓存值），减完会变成负数并被
+       * `Math.max(0, …)` 抹成 0，**缓存输入整笔被吃掉**；随后
+       * `toOpenAiUsage()` 再 `+ cached` 也只剩缓存那一半，非缓存输入全丢。
+       *
+       * 所以此处必须先把 Anthropic 的「非缓存输入 + 缓存读」合成 OpenAI 口径的
+       * `prompt_tokens`，让下游的「减 cached」还原出真正的非缓存输入。
+       *
+       * `output_tokens` 不用动：Anthropic 的它本就含 thinking token。
+       */
+      const cacheRead = number(usage.cache_read_input_tokens) ?? 0
       const mapped = mapUsage({
-        prompt_tokens: number(usage.input_tokens),
+        prompt_tokens: (number(usage.input_tokens) ?? 0) + cacheRead,
         completion_tokens: number(usage.output_tokens),
         prompt_tokens_details: { cached_tokens: number(usage.cache_read_input_tokens), cache_write_tokens: number(usage.cache_creation_input_tokens) },
       })
