@@ -114,6 +114,14 @@ jobs:
           file: ./Dockerfile
           push: true
           platforms: linux/amd64
+          # ★ 关掉 attestation（2026-11-16 用户要求「只要 amd64 和 arm64，
+          # unknown/unknown 不要了，构建的产物太乱」）。
+          # buildx 默认给每个镜像挂一份 provenance（外加可选 sbom），在 manifest
+          # 里表现为一条 `unknown/unknown` 的 attestation 条目 —— GHCR 的
+          # Platforms 列表因此多出两行噪音，与实际可运行架构无关。
+          # 关掉只影响「证明文件」，不影响镜像内容与可运行性。
+          provenance: false
+          sbom: false
           build-args: |
             APP_VERSION=${{ steps.appver.outputs.version }}
             VCS_REF=${{ github.sha }}
@@ -138,6 +146,9 @@ jobs:
           file: ./Dockerfile
           push: true
           platforms: linux/arm64
+          # 同 build-amd64：不产 provenance / sbom，manifest 里只留真架构。
+          provenance: false
+          sbom: false
           build-args: |
             APP_VERSION=${{ steps.appver.outputs.version }}
             VCS_REF=${{ github.sha }}
