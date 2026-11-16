@@ -7,19 +7,19 @@
 
 /* ---- 昼主题变量（对齐全站暖纸工作台：纸底 / 暖灰 / 蓝墨） ---- */
 :root {
-  --md-surface: #fffdfa;
-  --md-surface-raised: #f9f5ee;
-  --md-surface-sunken: #f4efe6;
-  --md-line: #e9e4db;
-  --md-line-soft: #f1ece3;
-  --md-line-strong: #d8d2c7;
-  --md-ink: #262320;
-  --md-ink-secondary: #4b453d;
+  --md-surface: #ffffff;
+  --md-surface-raised: #fafbfc;
+  --md-surface-sunken: #f2f4f7;
+  --md-line: #e5e7eb;
+  --md-line-soft: #f0f2f5;
+  --md-line-strong: #d6dae1;
+  --md-ink: #14161a;
+  --md-ink-secondary: #4b5563;
   --md-ink-tertiary: #6b6458;
   --md-ink-muted: #726b5f;
-  --md-accent: var(--amber);
-  --md-accent-soft: var(--amber-soft);
-  --md-accent-border: var(--amber-line);
+  --md-accent: var(--dsw-alias-accent-primary);
+  --md-accent-soft: var(--accent-soft);
+  --md-accent-border: var(--accent-line);
   --md-accent-tint: rgba(180, 83, 9, 0.10);
   --md-success: #177552;
   --md-success-soft: #eff7f2;
@@ -30,9 +30,9 @@
   --md-error: #b23b4b;
   --md-error-soft: #fdf5f5;
   --md-error-border: #efd5d9;
-  --md-row-hover: var(--amber-soft);
+  --md-row-hover: var(--accent-soft);
   --md-row-edge: rgba(180, 83, 9, 0.34);
-  --md-focus-ring: 0 0 0 3px var(--amber-glow);
+  --md-focus-ring: 0 0 0 3px var(--accent-glow);
   --md-shadow-card: 1px 2px 0 rgba(var(--warm-shadow), 0.05), 0 10px 26px -14px rgba(var(--warm-shadow), 0.20);
   --md-shadow-card-hover: 1px 4px 0 rgba(var(--warm-shadow), 0.07), 0 18px 36px -16px rgba(var(--warm-shadow), 0.30);
   --md-shadow-inset: inset 0 1px 2px rgba(var(--warm-shadow), 0.05);
@@ -1022,15 +1022,15 @@
 [data-theme="dark"] .model-scroll::-webkit-scrollbar-thumb:hover { background: rgba(0, 208, 192, 0.6); }
 
 /* ---------- D-01 昼 · 纸面明细表：暖棕定向影（投向右下）+ 迎光上浮 ---------- */
-:root:not([data-theme="dark"]) .model-summary { border-bottom-color: var(--amber-line); }
-:root:not([data-theme="dark"]) .model-summary > span:nth-child(2) { color: var(--amber-ink); }
+:root:not([data-theme="dark"]) .model-summary { border-bottom-color: var(--accent-line); }
+:root:not([data-theme="dark"]) .model-summary > span:nth-child(2) { color: var(--dsw-alias-accent-primary); }
 :root:not([data-theme="dark"]) .model-table {
   border-radius: 8px;
   border-color: var(--md-line-strong);
   transition: border-color 240ms var(--md-ease-out), box-shadow 260ms var(--md-ease-out);
 }
 :root:not([data-theme="dark"]) .model-table:hover {
-  border-color: var(--amber-line);
+  border-color: var(--accent-line);
   box-shadow: var(--md-shadow-card-hover);
 }
 :root:not([data-theme="dark"]) .model-test-result {
@@ -1043,14 +1043,14 @@
 }
 
 /* ---------- D-02 昼 · 数据黄铜：读数 / 时间戳 / 纸白输入槽 ---------- */
-:root:not([data-theme="dark"]) .model-limits > span { color: var(--amber-ink); }
+:root:not([data-theme="dark"]) .model-limits > span { color: var(--dsw-alias-accent-primary); }
 :root:not([data-theme="dark"]) .model-identity code { color: #7d6b53; }
 :root:not([data-theme="dark"]) .model-filters select,
 :root:not([data-theme="dark"]) .model-search input { border-radius: 8px; }
 :root:not([data-theme="dark"]) .model-filters select:focus,
 :root:not([data-theme="dark"]) .model-search input:focus {
-  border-color: var(--amber);
-  box-shadow: 0 0 0 3px var(--amber-glow), 0 6px 16px -10px rgba(var(--warm-shadow), 0.45);
+  border-color: var(--dsw-alias-accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-glow), 0 6px 16px -10px rgba(var(--warm-shadow), 0.45);
 }
 
 /* ---------- D-03 昼 · 图标按钮：黄铜徽章泛暖光 ---------- */
@@ -1060,9 +1060,9 @@
     box-shadow 200ms var(--md-ease-out), transform 160ms var(--md-ease-out);
 }
 :root:not([data-theme="dark"]) .model-browser .model-row-actions .ui-button-ghost:hover:not(:disabled) {
-  color: var(--amber-ink);
+  color: var(--dsw-alias-accent-primary);
   background: radial-gradient(120% 120% at 30% 22%, #fffaf0 0%, #f9ecd6 56%, #f1ddb9 100%);
-  box-shadow: inset 0 0 0 1px var(--amber-line), 0 3px 9px -5px rgba(var(--warm-shadow), 0.45), 0 0 0 3px rgba(217, 119, 6, 0.10);
+  box-shadow: inset 0 0 0 1px var(--accent-line), 0 3px 9px -5px rgba(var(--warm-shadow), 0.45), 0 0 0 3px rgba(217, 119, 6, 0.10);
   transform: rotate(8deg) scale(1.05);
 }
 :root:not([data-theme="dark"]) .model-browser .model-row-actions .ui-button-ghost:active:not(:disabled) {
@@ -1081,8 +1081,8 @@
 }
 :root:not([data-theme="dark"]) .model-browser .model-row-actions .ui-button-outline:hover:not(:disabled) {
   transform: translateY(-1px);
-  border-color: var(--amber-line);
-  color: var(--amber-ink);
+  border-color: var(--accent-line);
+  color: var(--dsw-alias-accent-primary);
   box-shadow: 1px 3px 0 rgba(var(--warm-shadow), 0.12), 0 9px 18px -8px rgba(var(--warm-shadow), 0.34), inset 0 1px 0 #fff;
 }
 :root:not([data-theme="dark"]) .model-browser .model-row-actions .ui-button-outline:active:not(:disabled) {
@@ -1093,9 +1093,9 @@
 /* ---------- D-05 昼 · 复制成功：对勾像琥珀墨洇开 + 暖光泛起 ---------- */
 :root:not([data-theme="dark"]) .model-row-actions .md-copy-done {
   position: relative;
-  color: var(--amber-ink) !important;
-  background: var(--amber-soft) !important;
-  box-shadow: inset 0 0 0 1px var(--amber-line), 0 6px 16px -10px rgba(217, 119, 6, 0.55);
+  color: var(--dsw-alias-accent-primary) !important;
+  background: var(--accent-soft) !important;
+  box-shadow: inset 0 0 0 1px var(--accent-line), 0 6px 16px -10px rgba(217, 119, 6, 0.55);
   animation: none;
 }
 :root:not([data-theme="dark"]) .model-row-actions .md-copy-done > svg {
@@ -1111,7 +1111,7 @@
 
 /* ---------- D-06 昼 · 空态：稿纸 + 琥珀墨 ---------- */
 :root:not([data-theme="dark"]) .model-empty {
-  border-top: 1px solid var(--amber-line);
+  border-top: 1px solid var(--accent-line);
   background:
     repeating-linear-gradient(180deg, transparent 0 27px, rgba(var(--warm-shadow), 0.075) 27px 28px),
     radial-gradient(420px 160px at 50% 28%, rgba(217, 119, 6, 0.07), transparent 72%),
@@ -1121,24 +1121,24 @@
   content: "此页尚无记录";
   display: block; margin: 0 auto 16px;
   font-size: 11px; letter-spacing: 0.26em; text-indent: 0.26em;
-  color: var(--amber-ink); opacity: 0.75;
+  color: var(--dsw-alias-accent-primary); opacity: 0.75;
   animation: md-sheet-breathe 6.4s var(--md-ease-breathe) infinite;
 }
-:root:not([data-theme="dark"]) .model-empty h2 { color: var(--amber-ink); }
+:root:not([data-theme="dark"]) .model-empty h2 { color: var(--dsw-alias-accent-primary); }
 :root:not([data-theme="dark"]) .model-empty > svg { color: #c98a3c; opacity: 0.7; }
 
 /* ---------- D-07 昼 · 渠道筛选 chip：纸标签琥珀油墨 ---------- */
 :root:not([data-theme="dark"]) .model-list-toolbar .channel-filters button[aria-pressed="true"] {
-  background: linear-gradient(180deg, #fffdf8, #f7efe0);
-  color: var(--amber-ink);
-  box-shadow: 1px 2px 0 rgba(var(--warm-shadow), 0.10), inset 0 0 0 1px var(--amber-line);
+  background: linear-gradient(180deg, #ffffff, #f7efe0);
+  color: var(--dsw-alias-accent-primary);
+  box-shadow: 1px 2px 0 rgba(var(--warm-shadow), 0.10), inset 0 0 0 1px var(--accent-line);
 }
 
 /* ---------- D-08 昼 · 反馈条 / 滚动条：暖系 ---------- */
 :root:not([data-theme="dark"]) .model-feedback {
-  border-color: var(--amber-line);
-  background: var(--amber-soft);
-  color: var(--amber-ink);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--dsw-alias-accent-primary);
   box-shadow: 1px 2px 0 rgba(var(--warm-shadow), 0.06);
 }
 :root:not([data-theme="dark"]) .model-scroll { scrollbar-color: rgba(var(--warm-shadow), 0.32) transparent; }

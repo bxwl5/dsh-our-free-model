@@ -5,19 +5,19 @@
 
 /* ---- 昼主题变量 ---- */
 :root {
-  --us-surface: #fffdfa;
+  --us-surface: #ffffff;
   --us-surface-raised: #f7f3eb;
   --us-surface-sunken: #f5f1e8;
-  --us-line: #e9e4db;
+  --us-line: #e5e7eb;
   --us-line-soft: #ece6db;
-  --us-line-strong: #d8d2c7;
-  --us-ink: #262320;
-  --us-ink-secondary: #4b453d;
-  --us-ink-tertiary: #6b655c;
-  --us-ink-muted: #766f63;
-  --us-accent: var(--amber, #b45309);
-  --us-accent-soft: var(--amber-soft, #fdf6ec);
-  --us-accent-border: var(--amber-line, #eedfc6);
+  --us-line-strong: #d6dae1;
+  --us-ink: #14161a;
+  --us-ink-secondary: #4b5563;
+  --us-ink-tertiary: #6b7280;
+  --us-ink-muted: #7c8593;
+  --us-accent: var(--dsw-alias-accent-primary, #2656c9);
+  --us-accent-soft: var(--accent-soft, #edf1fb);
+  --us-accent-border: var(--accent-line, #c9d6f2);
   --us-accent-strong: #8a4b06;
   --us-success: #177552;
   --us-success-soft: #eff7f2;
@@ -82,7 +82,7 @@
 }
 
 /* 昼主题：纸面上的彩色印章 */
-:root .ov-metric:nth-child(1) .ov-metric-icon { background: var(--amber-soft, #fdf6ec); color: var(--amber, #b45309); }
+:root .ov-metric:nth-child(1) .ov-metric-icon { background: var(--accent-soft, #edf1fb); color: var(--dsw-alias-accent-primary, #2656c9); }
 :root .ov-metric:nth-child(2) .ov-metric-icon { background: #eff7f2; color: #177552; }
 :root .ov-metric:nth-child(3) .ov-metric-icon { background: #fbf6ea; color: #8a6215; }
 :root .ov-metric:nth-child(4) .ov-metric-icon { background: #f7f0f5; color: #875a7d; }
@@ -128,7 +128,7 @@
 }
 .ov-chart .dashboard-chart-column:hover .dashboard-chart-bar {
   transform: scaleY(1.02);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--amber, #b45309) 16%, transparent);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--dsw-alias-accent-primary, #2656c9) 16%, transparent);
 }
 [data-theme="dark"] .ov-chart .dashboard-chart-column:hover .dashboard-chart-bar {
   box-shadow: 0 0 12px color-mix(in srgb, var(--cp-cyan, #00d0c0) 24%, transparent);
@@ -146,7 +146,7 @@
   width: 40px; height: 40px; display: grid; place-items: center;
   border-radius: 10px; margin-bottom: 12px;
 }
-:root .ov-quick-icon { background: var(--amber-soft, #fdf6ec); color: var(--amber, #b45309); }
+:root .ov-quick-icon { background: var(--accent-soft, #edf1fb); color: var(--dsw-alias-accent-primary, #2656c9); }
 [data-theme="dark"] .ov-quick-icon { background: var(--cp-cyan-soft, rgba(0, 208, 192, 0.12)); color: var(--cp-cyan, #00d0c0); box-shadow: 0 0 10px color-mix(in srgb, var(--cp-cyan, #00d0c0) 10%, transparent); }
 
 .ov-endpoint {
@@ -269,7 +269,7 @@
 .usage-day:hover .usage-day-bar, .usage-day:focus .usage-day-bar {
   background: var(--us-accent-strong);
   transform: scaleY(1.02);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--amber, #b45309) 16%, transparent);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--dsw-alias-accent-primary, #2656c9) 16%, transparent);
 }
 [data-theme="dark"] .usage-day:hover .usage-day-bar {
   box-shadow: 0 0 12px color-mix(in srgb, var(--cp-cyan, #00d0c0) 24%, transparent);
@@ -418,7 +418,7 @@
     0 3px 10px -3px rgba(32, 35, 41, 0.08),
     0 0 0 1px inset color-mix(in srgb, var(--ov-accent) 12%, transparent);
 }
-.ov-metric:nth-child(1) { --ov-accent: var(--amber, #b45309); --ov-accent-soft: var(--amber-soft, #fdf6ec); }
+.ov-metric:nth-child(1) { --ov-accent: var(--dsw-alias-accent-primary, #2656c9); --ov-accent-soft: var(--accent-soft, #edf1fb); }
 .ov-metric:nth-child(2) { --ov-accent: #177552; --ov-accent-soft: #eff7f2; }
 .ov-metric:nth-child(3) { --ov-accent: #8a6215; --ov-accent-soft: #fbf6ea; }
 .ov-metric:nth-child(4) { --ov-accent: #875a7d; --ov-accent-soft: #f7f0f5; }
@@ -504,7 +504,7 @@
 .usage-day:focus .usage-day-bar,
 .usage-day:focus-visible .usage-day-bar {
   transform: scaleY(1.025);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34), 0 6px 16px -6px color-mix(in srgb, var(--amber, #b45309) 24%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34), 0 6px 16px -6px color-mix(in srgb, var(--dsw-alias-accent-primary, #2656c9) 24%, transparent);
 }
 .usage-day:hover .usage-day-bar:not(.zero) {
   background: linear-gradient(180deg, #ffd89a 0%, #e9a83f 42%, #b45309 100%);
@@ -747,7 +747,7 @@
    ========================================================================== */
 
 /* ---------- 1. 浏览器表面：选区 / 插入符 / 滚动条 / 焦点 ---------- */
-.usage-browser ::selection { background: color-mix(in srgb, var(--amber, #b45309) 18%, transparent); color: var(--us-ink); }
+.usage-browser ::selection { background: color-mix(in srgb, var(--dsw-alias-accent-primary, #2656c9) 18%, transparent); color: var(--us-ink); }
 :root[data-theme="dark"] .usage-browser ::selection { background: color-mix(in srgb, var(--cp-cyan, #00d0c0) 28%, transparent); }
 .usage-browser .usage-model-search input,
 .usage-browser .usage-model-filters select { caret-color: var(--us-accent); }
@@ -784,7 +784,7 @@
 :root:not([data-theme="dark"]) .usage-day-bar.zero { background: var(--us-line-strong); box-shadow: none; }
 :root:not([data-theme="dark"]) .usage-day:hover .usage-day-bar:not(.zero) {
   background: linear-gradient(180deg, #ffd89a 0%, #e9a83f 42%, #b45309 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34), 0 6px 16px -6px color-mix(in srgb, var(--amber, #b45309) 24%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34), 0 6px 16px -6px color-mix(in srgb, var(--dsw-alias-accent-primary, #2656c9) 24%, transparent);
 }
 :root:not([data-theme="dark"]) .ov-chart .dashboard-chart-bar {
   background: linear-gradient(180deg, #f0bb63 0%, #d98b2b 46%, #9c5a10 100%);
@@ -1397,7 +1397,7 @@
 /* --- 1. 总量：黄铜刻度质感（刻线尺 + 纸面压印） --- */
 :root:not([data-theme="dark"]) .usage-total,
 :root:not([data-theme="dark"]) .usage-browser .usage-window-total strong {
-  color: var(--amber-ink, #92400e);
+  color: var(--dsw-alias-accent-primary, #1e46ad);
   font-variant-numeric: tabular-nums;
   font-weight: 650;
   letter-spacing: 0.005em;
@@ -1413,25 +1413,25 @@
   right: 0;
   bottom: -7px;
   height: 5px;
-  background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--amber-ink, #92400e) 55%, transparent) 0 1px, transparent 1px 6px);
+  background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--dsw-alias-accent-primary, #1e46ad) 55%, transparent) 0 1px, transparent 1px 6px);
   opacity: 0.55;
   pointer-events: none;
 }
 :root:not([data-theme="dark"]) .usage-total span {
   text-shadow: none;
-  color: var(--us-ink-muted, #766f63);
+  color: var(--us-ink-muted, #7c8593);
 }
 
 /* --- 2. 指标卡：暖棕定向影 + 琥珀暖印章家族 ---- */
-:root:not([data-theme="dark"]) .ov-metric:nth-child(1) { --ov-accent: var(--amber, #b45309); --ov-accent-soft: var(--amber-soft, #fdf6ec); }
+:root:not([data-theme="dark"]) .ov-metric:nth-child(1) { --ov-accent: var(--dsw-alias-accent-primary, #2656c9); --ov-accent-soft: var(--accent-soft, #edf1fb); }
 :root:not([data-theme="dark"]) .ov-metric:nth-child(2) { --ov-accent: #8a6215; --ov-accent-soft: #fbf6ea; }
-:root:not([data-theme="dark"]) .ov-metric:nth-child(3) { --ov-accent: var(--amber, #b45309); --ov-accent-soft: var(--amber-soft, #fdf6ec); }
+:root:not([data-theme="dark"]) .ov-metric:nth-child(3) { --ov-accent: var(--dsw-alias-accent-primary, #2656c9); --ov-accent-soft: var(--accent-soft, #edf1fb); }
 :root:not([data-theme="dark"]) .ov-metric:nth-child(4) { --ov-accent: #9a5b12; --ov-accent-soft: #f9f1e6; }
 :root:not([data-theme="dark"]) .ov-metric:nth-child(5) { --ov-accent: #9c3343; --ov-accent-soft: #fdf5f5; }
 :root:not([data-theme="dark"]) .ov-metric:nth-child(6) { --ov-accent: #6f6a1e; --ov-accent-soft: #f6f4e5; }
-:root:not([data-theme="dark"]) .ov-metric:nth-child(1) .ov-metric-icon { background: var(--amber-soft, #fdf6ec); color: var(--amber, #b45309); }
+:root:not([data-theme="dark"]) .ov-metric:nth-child(1) .ov-metric-icon { background: var(--accent-soft, #edf1fb); color: var(--dsw-alias-accent-primary, #2656c9); }
 :root:not([data-theme="dark"]) .ov-metric:nth-child(2) .ov-metric-icon { background: #fbf6ea; color: #8a6215; }
-:root:not([data-theme="dark"]) .ov-metric:nth-child(3) .ov-metric-icon { background: var(--amber-soft, #fdf6ec); color: var(--amber, #b45309); }
+:root:not([data-theme="dark"]) .ov-metric:nth-child(3) .ov-metric-icon { background: var(--accent-soft, #edf1fb); color: var(--dsw-alias-accent-primary, #2656c9); }
 :root:not([data-theme="dark"]) .ov-metric:nth-child(4) .ov-metric-icon { background: #f9f1e6; color: #9a5b12; }
 :root:not([data-theme="dark"]) .ov-metric:nth-child(5) .ov-metric-icon { background: #fdf5f5; color: #9c3343; }
 :root:not([data-theme="dark"]) .ov-metric:nth-child(6) .ov-metric-icon { background: #f6f4e5; color: #6f6a1e; }
@@ -1441,7 +1441,7 @@
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 :root:not([data-theme="dark"]) .usage-browser .ov-metric:hover strong {
-  color: var(--ov-accent, var(--amber, #b45309));
+  color: var(--ov-accent, var(--dsw-alias-accent-primary, #2656c9));
 }
 :root:not([data-theme="dark"]) .usage-browser .ov-metric:hover {
   transform: translateY(-3px);
@@ -1486,30 +1486,30 @@
   background-image: repeating-linear-gradient(to top, rgba(86, 52, 10, 0.07) 0 1px, transparent 1px 25%);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-day span {
-  color: #8b8377;
+  color: #8b93a1;
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-day:hover span,
 :root:not([data-theme="dark"]) .usage-browser .usage-day:focus span,
 :root:not([data-theme="dark"]) .usage-browser .usage-day:focus-visible span {
-  color: var(--amber-ink, #92400e);
+  color: var(--dsw-alias-accent-primary, #1e46ad);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-trend-chart {
-  border-bottom-color: var(--amber-line, #eedfc6);
+  border-bottom-color: var(--accent-line, #c9d6f2);
 }
 
 /* --- 4. 表格：纸张表头高光 + 琥珀数据刻度 --- */
 :root:not([data-theme="dark"]) .usage-browser .usage-model-table th {
-  color: var(--us-ink-secondary, #4b453d);
+  color: var(--us-ink-secondary, #4b5563);
   background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0));
-  border-bottom-color: var(--amber-line, #eedfc6);
+  border-bottom-color: var(--accent-line, #c9d6f2);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.80);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-model-table td:not(:first-child) {
   font-variant-numeric: tabular-nums;
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-model-table tbody tr:hover td {
-  background-color: var(--amber-soft, #fdf6ec);
-  background-image: linear-gradient(90deg, color-mix(in srgb, var(--amber, #b45309) 7%, transparent), transparent 50%);
+  background-color: var(--accent-soft, #edf1fb);
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--dsw-alias-accent-primary, #2656c9) 7%, transparent), transparent 50%);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-model-table tbody tr td:first-child::before {
   content: "";
@@ -1518,7 +1518,7 @@
   top: 0;
   bottom: 0;
   width: 2px;
-  background: linear-gradient(180deg, transparent, var(--amber, #b45309) 18%, var(--amber, #b45309) 82%, transparent);
+  background: linear-gradient(180deg, transparent, var(--dsw-alias-accent-primary, #2656c9) 18%, var(--dsw-alias-accent-primary, #2656c9) 82%, transparent);
   opacity: 0;
   transform: scaleY(0.4);
   transform-origin: center;
@@ -1535,34 +1535,34 @@
 :root:not([data-theme="dark"]) .usage-browser .usage-model-search input,
 :root:not([data-theme="dark"]) .usage-browser .usage-model-filters select {
   border-radius: 8px;
-  border-color: var(--amber-line, #eedfc6);
-  background-color: var(--us-surface, #fffdfa);
-  caret-color: var(--amber-ink, #92400e);
+  border-color: var(--accent-line, #c9d6f2);
+  background-color: var(--us-surface, #ffffff);
+  caret-color: var(--dsw-alias-accent-primary, #1e46ad);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-model-search input:focus,
 :root:not([data-theme="dark"]) .usage-browser .usage-model-filters select:focus {
-  border-color: var(--amber, #b45309);
-  box-shadow: 0 0 0 3px var(--amber-glow, rgba(217, 119, 6, 0.14)), inset 0 0 0 1px var(--amber-line, #eedfc6);
+  border-color: var(--dsw-alias-accent-primary, #2656c9);
+  box-shadow: 0 0 0 3px var(--accent-glow, rgba(38, 86, 201, 0.13)), inset 0 0 0 1px var(--accent-line, #c9d6f2);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-trend .channel-filters button[aria-pressed="true"] {
-  background: var(--amber-soft, #fdf6ec);
-  color: var(--amber-ink, #92400e);
-  border-color: var(--amber-line, #eedfc6);
+  background: var(--accent-soft, #edf1fb);
+  color: var(--dsw-alias-accent-primary, #1e46ad);
+  border-color: var(--accent-line, #c9d6f2);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.70), 1px 2px 0 rgba(var(--warm-shadow, 86, 52, 10), 0.06);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-empty > svg {
   border-radius: 999px;
-  border-color: var(--amber-line, #eedfc6);
-  background: var(--amber-soft, #fdf6ec);
-  color: var(--amber, #b45309);
+  border-color: var(--accent-line, #c9d6f2);
+  background: var(--accent-soft, #edf1fb);
+  color: var(--dsw-alias-accent-primary, #2656c9);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-window-empty {
   border-radius: 8px;
-  border-color: var(--amber-line, #eedfc6);
-  background: var(--amber-soft, #fdf6ec);
+  border-color: var(--accent-line, #c9d6f2);
+  background: var(--accent-soft, #edf1fb);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-pagination > span[data-testid="usage-model-count"] {
-  color: var(--amber-ink, #92400e);
+  color: var(--dsw-alias-accent-primary, #1e46ad);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-pagination .ui-button {
   border-radius: 6px;
@@ -1570,9 +1570,9 @@
 
 /* --- 6. 反馈：琥珀墨洇开（us-ink-spread） --- */
 :root:not([data-theme="dark"]) .usage-browser .usage-feedback {
-  color: var(--amber-ink, #92400e);
-  background: var(--amber-soft, #fdf6ec);
-  border-color: var(--amber-line, #eedfc6);
+  color: var(--dsw-alias-accent-primary, #1e46ad);
+  background: var(--accent-soft, #edf1fb);
+  border-color: var(--accent-line, #c9d6f2);
   border-radius: 8px;
   box-shadow: 1px 3px 0 rgba(var(--warm-shadow, 86, 52, 10), 0.06);
 }
@@ -1586,32 +1586,32 @@
   height: 34px;
   margin: -17px 0 0 -17px;
   border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--amber, #b45309) 40%, transparent) 0%, transparent 68%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--dsw-alias-accent-primary, #2656c9) 40%, transparent) 0%, transparent 68%);
   opacity: 0;
   transform: scale(0.28);
   animation: us-ink-spread 520ms var(--us-ease-out, ease-out) both;
   pointer-events: none;
 }
 :root:not([data-theme="dark"]) .ov-copied {
-  box-shadow: 0 0 0 3px var(--amber-glow, rgba(217, 119, 6, 0.14));
+  box-shadow: 0 0 0 3px var(--accent-glow, rgba(38, 86, 201, 0.13));
 }
 
 /* --- 7. 页面特有容器：selection / caret / 滚动条 --- */
 :root:not([data-theme="dark"]) .usage-browser ::selection {
-  background: color-mix(in srgb, var(--amber, #b45309) 26%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-accent-primary, #2656c9) 26%, transparent);
   color: #3a2a12;
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-model-search input,
 :root:not([data-theme="dark"]) .usage-browser .usage-model-filters select {
-  caret-color: var(--amber-ink, #92400e);
+  caret-color: var(--dsw-alias-accent-primary, #1e46ad);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-trend-scroll,
 :root:not([data-theme="dark"]) .usage-browser .usage-model-scroll {
-  scrollbar-color: var(--us-line-strong, #d8d2c7) transparent;
+  scrollbar-color: var(--us-line-strong, #d6dae1) transparent;
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-trend-scroll::-webkit-scrollbar-thumb,
 :root:not([data-theme="dark"]) .usage-browser .usage-model-scroll::-webkit-scrollbar-thumb {
-  background: var(--us-line-strong, #d8d2c7);
+  background: var(--us-line-strong, #d6dae1);
   border: 2px solid transparent;
   background-clip: content-box;
   border-radius: 999px;
