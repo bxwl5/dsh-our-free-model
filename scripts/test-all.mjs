@@ -96,6 +96,7 @@ const suites = [
   ['standalone-management', 'standalone-management-test.mjs', []],
   ['standalone-lan', 'standalone-lan-test.mjs', []],
   ['standalone-lan-panel', 'standalone-lan-panel-test.mjs', []],
+  ['plugin-relay-unchanged', 'plugin-relay-unchanged-test.mjs', []],
   ['standalone-frontend', 'standalone-frontend-test.mjs', []],
   ['standalone-client-regression', 'standalone-client-regression-test.mjs', []],
   ['standalone-settings-host', 'standalone-settings-host-test.mjs', []],
