@@ -34,11 +34,54 @@ docker run -d --name ofm \
   ghcr.io/bxwl5/dsh-our-free-model:latest
 ```
 
-CLI 参数可以直传（镜像用 `ENTRYPOINT node cli.mjs` + `CMD --port 18900`）：
+CLI 参数可以直传（镜像用 `ENTRYPOINT node cli.mjs` + `CMD --port 18900`）。
+
+### 给局域网用（推荐组合）
 
 ```bash
-docker run … ghcr.io/bxwl5/dsh-our-free-model:latest --lan --lan-port 18901
+docker run -d --name ofm \
+  --network host \
+  -v ofm-data:/data \
+  -e TZ=Asia/Shanghai \
+  --restart unless-stopped \
+  ghcr.io/bxwl5/dsh-our-free-model:latest \
+  --lan --lan-port 18901 --lan-panel
 ```
+
+| 参数 | 作用 |
+|---|---|
+| `--lan` | 开 LAN 推理中继。**独立密钥**，与本机 `forwardKey` 不同，可单独轮换 |
+| `--lan-port 18901` | 中继期望端口（0 = 自动挑空闲端口）。不会自己去开中继，要配合 `--lan` |
+| `--lan-panel` | **额外把面板与管理 API 也经中继暴露**。默认关，见下节 |
+
+启动日志会直接给出两个地址：
+
+```
+LAN API：http://192.168.2.6:18901/v1
+LAN 面板（直接访问，无需令牌）：
+  http://192.168.2.6:18901/
+```
+
+### 面板中继的两种鉴权模式
+
+`--lan-panel` 开了之后，面板能不能直接进取决于环境变量 `OFM_PANEL_TOKEN`：
+
+| | **不设** `OFM_PANEL_TOKEN` | **设了** `OFM_PANEL_TOKEN` |
+|---|---|---|
+| 面板 | 打开即用，**不需要令牌** | 需在登录页输入该令牌 |
+| 令牌有效期 | — | **不过期**，重启容器仍是同一个 |
+| 推理 `/v1/*` | 只认 LAN Key | 只认 LAN Key |
+
+```bash
+# 模式 B：加一道门
+docker run … -e OFM_PANEL_TOKEN=你的密码 … --lan --lan-port 18901 --lan-panel
+```
+
+⚠️ **模式 A 意味着同网段任何设备都能打开并修改面板**（改设置、增删账号、看凭据）。
+家用网络通常没问题，公共网络请用模式 B。不开 `--lan-panel` 时面板仍只在回环。
+
+⚠️ **面板令牌与 LAN Key 是两套凭据，互不越权**：LAN Key 能调模型但进不了面板；
+面板令牌能改配置但调不了模型。
 
 改端口时要同时改健康检查用的环境变量，否则容器会一直不 healthy：
 
@@ -60,9 +103,9 @@ docker logs ofm | head -5
 
 | 端口 | 用途 | 说明 |
 |---|---|---|
-| **18900** | 面板 + 管理 API + `/v1` 推理 + `/health` | 同一个端口，不是分开的 |
-| 18901 | LAN 推理中继 | 只有加 `--lan` 才开；**不转发管理面** |
-| 18432 / 19654 / 19723 / 53699 | 各渠道 OAuth 登录回调 | 只在登录那几分钟存在 |
+| **18900** | 面板 + 管理 API + `/v1` 推理 + `/health` | 同一个端口，不是分开的；**只绑 127.0.0.1** |
+| LAN 中继端口 | LAN 推理中继（+ 面板，若开 `--lan-panel`） | 只有加 `--lan` 才开；端口由 `--lan-port` 指定，0 则自动挑 |
+| 18432 / 19654 / 19723 / 53699 / 5959 | 各渠道 OAuth 登录回调 | 只在登录那几分钟存在 |
 
 ⚠️ 端口不是固定的：服务会优先复用上次保存的端口，冲突时自动挑一个空闲端口。
 用 `docker logs` 或 `ss -ltnp | grep node` 确认真实端口；想固定就显式传
@@ -70,16 +113,53 @@ docker logs ofm | head -5
 
 ## 从局域网其它机器访问面板
 
-host 网络下 `127.0.0.1` 就是宿主机回环 —— **局域网里的其它设备依然打不开面板**。
-两种办法：
+服务的主端口**只绑回环**（`service.mjs` 里 `isLoopbackHost()` 是硬校验）——
+这是刻意的：面板带写权限，不该默认暴露给整个子网。
 
-1. SSH 隧道（推荐，不改安全边界）：
-   ```bash
-   ssh -L 18900:127.0.0.1:18900 用户名@NAS地址
-   # 本机浏览器打开 http://127.0.0.1:18900
-   ```
-2. 只在需要局域网推理时开中继：`--lan --lan-port 18901`，它只转发模型清单和
-   Chat/Responses/Messages，管理面一律不转发。
+三种办法，按场景选：
+
+### 1. `--lan-panel`（推荐，容器部署就该用这个）
+
+```bash
+docker run … ghcr.io/bxwl5/dsh-our-free-model:latest \
+  --lan --lan-port 18901 --lan-panel
+```
+
+局域网设备直接开 `http://<宿主机IP>:18901/`，无需任何隧道。鉴权模式见上文
+「面板中继的两种鉴权模式」——不设 `OFM_PANEL_TOKEN` 就是打开即用。
+
+### 2. SSH 隧道（不想暴露面板时）
+
+```bash
+ssh -L 18900:127.0.0.1:18900 用户名@NAS地址
+# 本机浏览器打开 http://127.0.0.1:18900
+```
+
+零改动，安全边界不变，但每台设备都得建隧道。
+
+### 3. 只开推理中继
+
+`--lan --lan-port 18901` 不带 `--lan-panel`：中继只转发
+`/v1/models`、`/v1/chat/completions`、`/v1/responses`、`/v1/messages`、
+`/v1/messages/count_tokens`，管理面一律 404。
+
+## 在局域网设备上添加账号（OAuth 回调）
+
+15 个渠道里 **11 个**（`buddy`/`workbuddy`/`qoder`/`qodercn`/`cline`/`minimax`/
+`zcode`/`officeace`/`loomy`/`raccoon`/`autoclaw`）是设备码轮询或本地页承载扫码/短信，
+**面板能开就能登**，不需要回调端口。
+
+剩 **4 个**用本机 HTTP 回调（`codearts` 华为云、`trae`、`antigravity`、
+`commandcode`），回调地址是进程内构造的 `http://127.0.0.1:<port>/…`。在局域网设备上
+点「添加账号」时，那个 `127.0.0.1` 指的是**你自己的电脑**，打不到容器里。开 SSH 隧道：
+
+```bash
+ssh -L 18080:127.0.0.1:18080 用户名@NAS地址   # trae
+ssh -L 5959:127.0.0.1:5959   用户名@NAS地址   # commandcode（5959 起最多试 10 个）
+ssh -L 8845:127.0.0.1:8845   用户名@NAS地址   # antigravity（动态端口，见日志）
+```
+
+容器用 host 网络，所以这些隧道正好落进容器。登录完成后隧道可以关掉。
 
 ## 数据目录
 
@@ -103,9 +183,52 @@ uid 1000（node）运行。镜像入口脚本会在以 root 启动时把 `/data`
 
 | 文件 | 内容 |
 |---|---|
-| `channel-credentials.json` | 各渠道凭据 |
-| `channel-pack/` | 账号池、积分、Token 账本、模型目录快照 |
-| `settings.json` | 本机 API Key（`forwardKey`）与 LAN Key |
+| `channel-credentials.json` | 各渠道凭据（`{ref: 字符串}` 的 JSON） |
+| `channel-pack/state.json` | 账号池、模型黑名单、轮询策略 |
+| `channel-pack/auto-checkin.json` | 自动签到状态 |
+| `channel-pack/token-ledger.json` | Token 用量账本 |
+| `channel-pack/model-catalogs/` | 模型目录快照 |
+| `settings.json` | 本机 API Key（`forwardKey`）与 LAN Key（`standaloneLanKey`） |
+
+取密钥：
+
+```bash
+# LAN Key（给局域网客户端调 /v1 用）—— 面板「网关设置」页也能直接看
+docker exec ofm grep -o 'standaloneLanKey": *"[^"]*' /data/settings.json
+```
+
+跑在容器里，没有 `python3`/`jq`，所以用 `grep` 而不是解析 JSON。
+
+### 从 DSH 插件迁移账号
+
+插件端的状态在 `$DSH_HOME/channel-pack/state.json`，凭据在
+`$DSH_HOME/.credentials.yaml` 的 `refs` 字段。搬到容器：
+
+```bash
+# 在宿主机上执行（假设插件数据在 /vol1/@appshare/Harness/.dsh，容器数据在 ./ofm-data）
+SRC=/vol1/@appshare/Harness/.dsh
+DST=./ofm-data
+
+mkdir -p "$DST/channel-pack"
+python3 -c "
+import yaml, json, os
+refs = yaml.safe_load(open('$SRC/.credentials.yaml'))['refs']
+json.dump(refs, open('$DST/channel-credentials.json','w'), ensure_ascii=False, indent=2)
+"
+cp "$SRC/channel-pack/state.json"          "$DST/channel-pack/"
+cp "$SRC/channel-pack/auto-checkin.json"   "$DST/channel-pack/" 2>/dev/null
+cp "$SRC/channel-pack/token-ledger.json"   "$DST/channel-pack/" 2>/dev/null
+chown -R 1000:1000 "$DST"
+```
+
+两边格式对得上：插件端 `{ref: 字符串}` 的 YAML `refs`，独立端 `{ref: 字符串}` 的
+JSON，键名一致，直接搬即可。
+
+⚠️ **绑定设备的凭证连同 `device_id`/`machine_id` 字段一起搬，所以能继续用**——
+凭证里的字段是自带的，不依赖宿主机指纹。但**服务端侧失效**的账号搬过来依然失效
+（额度用尽、权益过期等），那与迁移无关。
+
+⚠️ 迁移前先 `docker stop ofm`，搬完再 `docker start ofm`，否则可能被运行中的实例覆盖。
 
 同一个数据目录**只能跑一个实例**（有 `service.lock`）。非正常退出后若锁还在，
 确认旧进程已停止再删锁文件。
@@ -119,9 +242,10 @@ docker rm -f ofm && docker run -d …            # 数据在卷里，不受影�
 
 ## 已知限制
 
-- **只能用 host 网络**。要跑 bridge 网络，得先给 `cli.mjs`/`service.mjs` 加一个
-  `--bind` 之类的开关，那等于把管理面暴露出去，需要额外的白名单/反代鉴权，
-  属于降低安全边界的改动，当前没有做。
+- **只能用 host 网络**。主服务只绑回环，bridge 网络下宿主机访问不到。
+  要给局域网用请走 `--lan` / `--lan-panel`，那是有独立鉴权的中继，不是改绑定地址。
+- **`--lan-panel` 不做来源 IP 白名单**。开了之后同网段任何设备都能访问面板；
+  需要限制就配 `OFM_PANEL_TOKEN`，或在前面挡一层反代做 IP 过滤。
 - 镜像基于 `node:22-alpine`（musl）。纯 JS 应用理论上没问题；若遇到奇怪的
   TLS/DNS 行为，把 `Dockerfile` 第一行换成 `node:22-bookworm-slim` 并把
   `apk add` 改成 `apt-get install -y --no-install-recommends` 即可。

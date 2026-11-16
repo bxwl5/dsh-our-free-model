@@ -3582,12 +3582,26 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
 :root:not([data-theme="dark"]) .ui-card::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='p2'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23p2)' opacity='0.07'/%3E%3C/svg%3E") !important;
 }
+/**
+ * ⚠️ 这里曾是「屎黄」的**真正元凶**（2026-11-16 第三次修配色才挖到）。
+ *
+ * 顶上 `body::after`（app.css:85）用的是 `--beam1/2/3`，我把那三个变量改冷灰蓝
+ * 之后以为完事 —— 但**本规则带 `!important` 且选择器更具体**
+ * （`:root:not([data-theme="dark"]) body::after` 权重高于裸 `body::after`），
+ * 于是全屏铺了 4 层橙色径向/线性渐变，把变量版本完全盖掉。
+ *
+ * 症状极具误导性：CSS 变量查出来是 `#f7f8fa`、卡片是纯白，
+ * 但整页仍泛黄；用 CSSOM 查 `:root:not([data-theme=dark]) body::after`
+ * 的 computed backgroundImage 才看到 `rgba(255,209,140,…)` 还在。
+ *
+ * 现改为冷灰蓝，与变量版本同一色系；光束漂移动画保留（只动 transform，无重绘）。
+ */
 :root:not([data-theme="dark"]) body::after {
   background:
-    radial-gradient(900px 480px at 12% -8%, rgba(255,209,140,0.06), transparent 62%),
-    radial-gradient(820px 460px at 88% -4%, rgba(255,177,92,0.05), transparent 66%),
-    linear-gradient(115deg, transparent 36%, rgba(255,224,176,0.04) 48%, transparent 62%),
-    linear-gradient(-165deg, transparent 20%, rgba(255,200,130,0.03) 50%, transparent 78%) !important;
+    radial-gradient(900px 480px at 12% -8%, rgba(148,163,184,0.09), transparent 62%),
+    radial-gradient(820px 460px at 88% -4%, rgba(129,140,248,0.06), transparent 66%),
+    linear-gradient(115deg, transparent 36%, rgba(203,213,225,0.05) 48%, transparent 62%),
+    linear-gradient(-165deg, transparent 20%, rgba(148,163,184,0.03) 50%, transparent 78%) !important;
   animation: lt5-beam-drift 48s ease-in-out infinite alternate !important;
 }
 @keyframes lt5-beam-drift {
