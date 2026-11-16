@@ -59,7 +59,6 @@ import { CaptchaPool, captchaPoolConfigFromEnv } from './captcha-pool.js'
 import { captchaRequirementObservability } from './captcha-requirement.js'
 import { CaptchaBackoff, captchaBackoffConfigFromEnv, captchaQueueEnabledFromEnv, CAPTCHA_CONFIG_TTL_MS } from './captcha-backoff.js'
 import { CaptchaCarrier, type CarrierOutcome } from './captcha-carrier.js'
-import { buildCarrierPageHtml } from './zcode-carrier-page.js'
 import { SerialQueue } from './serial-queue.js'
 import { TtlCache } from './ttl-cache.js'
 import { generateDeviceMid, runZcodeLogin, type ZcodeLoginProvider } from './zcode-login.js'
@@ -325,7 +324,8 @@ export class ZcodeAuth extends Service {
       //   配置沿用最近一次 `mintCaptcha*` 落下的那份（`captchaMintConfig`）；
       //   从未 mint 过时它是 undefined ⇒ `mintWithChromium` 自己在队列内现拉一次配置，
       //   与一期「config 缺省 → 队列内 fetch」那条分支逐字同义。
-      mintWithChromium: async (options) => await this.mintWithChromium(this.captchaMintConfig, options),
+      mintWithBrowser: async (options: { signal?: AbortSignal } = {}) =>
+        await this.mintWithChromium(this.captchaMintConfig, options),
       // 2026-11-16：内部载体默认关（用户要求「只用默认浏览器」）⇒ 直接落到上面的链。
       ...(this.carrierLog === undefined ? {} : { log: this.carrierLog }),
     })
@@ -1547,7 +1547,7 @@ export class ZcodeAuth extends Service {
        *   `zcode-auth.ts` 的 `mintClaimCaptcha` 注释），同时也如实告诉用户
        *   「这次是没验证成，不是账号被风控」。
        */
-      let minted: { param: string, source: 'internal' | 'chromium' } | undefined
+      let minted: { param: string; source: 'browser' } | undefined
       let mintError: Error | undefined
       try {
         minted = await this.mintClaimCaptcha(mintCaptcha, captchaConfig)
@@ -1567,16 +1567,11 @@ export class ZcodeAuth extends Service {
         } else {
           noteZcodeRequestFailed(accountId)
         }
-        // 换链重发的旧语义原样保留（只对内部载体的 param 归因）。
-        if (outcome.code === 3007 && minted.source === 'internal') {
-          this.carrier.noteInternalRejection()
-          internalRetried = true
-          const retried = await this.retryClaimWithInjectedChain(
-            credential, plan.planId, mintCaptcha, captchaConfig, region, { accountId },
-          )
-          outcome = retried.outcome
-          diagnosticSentAt = retried.sentAt
-        }
+        /**
+         * 2026-11-16：内部载体已删除，这里原本的「内部 param 被 3007 拒 ⇒ 换链重发」
+         * 分支随之退役 —— 现在只有一个来源（系统默认浏览器），被拒就交给上层的
+         * `mintCaptchaAfterRejection` 重新产一个（param 一次性，不能复用）。
+         */
       } else {
         // 阶段 ①b：验证产不出来（无浏览器 / 退避冷却）⇒ 裸发一试。
         noteZcodeRequestSent(accountId, claimStartedAt)

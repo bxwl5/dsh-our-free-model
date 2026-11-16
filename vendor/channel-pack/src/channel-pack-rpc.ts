@@ -984,57 +984,6 @@ function registerChannelPackEndpoints(
     },
   })
 
-  /**
-   * 内部载体的载体页（**旧路由：已不是 guest 的入口**，见下面的取证）。
-   *
-   * ## ⚠⚠ 它**不可能**被 `<webview>` guest 加载（评审 C1/C2，2026-10-02 实测取证）
-   * 这条路由挂在应用自己的 host 上，而桌面版主进程对 guest 有两道硬闸
-   * （DSH Desktop 0.2.0-rc.2，`resources/app.asar/lib/main.js`）：
-   * - `allowedNavigation(value)` = http(s) + 无账号密码 + `!isApplicationHost(url)`；
-   * - `isApplicationHost(url)` = **`url.port === host.port` 且（主机相同或回环）**；
-   * - `configureSession().onBeforeRequest` 对命中者直接 `callback({ cancel: true })`；
-   * - guest 的 partition 是 `dsh-sidebar-browser-${randomUUID()}`（**无 `persist:`**），
-   *   Host 的会话 cookie 在 `defaultSession` 里 ⇒ 即便加载到了也过不了 `/api/*` 的认证。
-   *
-   * ⇒ 内部载体的真正入口是**独立回环端口上的小服务**
-   * （`src/captcha-carrier-server.ts`，地址由 `captcha.carrierUrl` 这条 RPC 给）。
-   *
-   * ## 那为什么还留着这条
-   * ① 它是**手工诊断**用的：web 版下 GUI 就是 `http://127.0.0.1:<port>`，
-   *   在浏览器标签里直接打开这一页可以验证「载体页本身能不能产 param」；
-   * ② 表达式只有这一份（`buildCarrierPageHtml`），删路由不会让逻辑分叉；
-   * ③ 保留 = 不破坏既有 `CAPTCHA_CARRIER_PATH` 契约（`tests/unit/zcode-carrier-rpc.spec.ts`）。
-   * ⚠ **别再把 client 导航指回这里** —— 那正是评审 C1/C2 指出的「收益恒为 0」的成因。
-   *
-   * ⚠ 只读、无凭据：这条 GET 不接收任何参数，输出里不含 JWT / token；
-   *   产出的 param 由 guest 自己经 `captcha.contribute` 回传，**不**经这条路由。
-   */
-  connection.fetch.register({
-    path: CAPTCHA_CARRIER_PATH,
-    methods: ['GET'],
-    requestBody: 'buffered' as const,
-    async fetch(request: Request): Promise<Response> {
-      /**
-       * ⚠ 真实挂载下这条**永远轮不到**：dsh 的分发器按 `methods` 集合筛过才调本 handler
-       * （`@deepseek-ai/dsh-client-connection` 里 `fetchRoutes.get(pathname)` +
-       * `methods.has(request.method)`）。留着它不是防御性装饰，是为了**不依赖挂载假设**：
-       * 直接调 handler 的用例（本仓库的 connection 替身就是这么跑的）要能自己判 405，
-       * 且将来有人把 `methods` 放宽成含 POST 时，这里不会静默把 RPC 流量当页面接走。
-       */
-      if (request.method !== 'GET') {
-        return new Response('method not allowed', { status: 405 })
-      }
-      const html = buildCarrierPageHtml(await carrierCaptchaConfig())
-      return new Response(html, {
-        status: 200,
-        headers: {
-          'content-type': 'text/html; charset=utf-8',
-          // 每次都现渲染：配置跟着远端 60 秒 TTL 变，缓存这份只会让载体页拿旧 SceneId。
-          'cache-control': 'no-store',
-        },
-      })
-    },
-  })
 
   /**
    * 给 `account.list` 的返回项补上**只存在于凭据里**的展示字段（账号名 / 手机号）。

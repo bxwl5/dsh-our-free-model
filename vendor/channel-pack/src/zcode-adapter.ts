@@ -818,7 +818,7 @@ export class ZcodeAdapter extends LlmAdapter {
     if (this.options.mintCaptchaParam !== undefined) {
       return await this.options.mintCaptchaParam(options)
     }
-    return { param: await this.mintCaptcha(options), source: 'chromium' }
+    return { param: await this.mintCaptcha(options), source: 'browser' }
   }
 
   /**
@@ -832,7 +832,7 @@ export class ZcodeAdapter extends LlmAdapter {
     if (this.options.mintCaptchaAfterRejection !== undefined) {
       return await this.options.mintCaptchaAfterRejection(outcome, options)
     }
-    return { param: await this.mintCaptcha(options), source: 'chromium' }
+    return { param: await this.mintCaptcha(options), source: 'browser' }
   }
 
   /** 允许外部（`index.ts`）设置服务端下发的 captcha 配置。 */
@@ -1303,7 +1303,7 @@ export class ZcodeAdapter extends LlmAdapter {
             `zcode: 前置耗时 captcha ${mintMs}ms + 响应头 ${headersMs}ms（${
               captchaParam === undefined
                 ? '未带 captcha'
-                : `带 captcha·${carrierOutcome?.source === 'internal' ? '内部载体' : 'chromium'}`
+                : `带 captcha·默认浏览器`
             }）`,
           )
           break
