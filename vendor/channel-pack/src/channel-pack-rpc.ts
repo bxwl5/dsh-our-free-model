@@ -9,8 +9,8 @@
  *           account.test / account.reset / account.resetAll / login.poll /
  *           credits.status / credits.claimAll / credits.balances /
  *           model.list / model.setDisabled /
- *           captcha.demand / captcha.carrierHtml / captcha.contribute（内部载体，
- *           载体页见 src/zcode-carrier-page.ts，经 captcha.carrierHtml 下发）/
+ *           captcha.demand / captcha.carrierUrl / captcha.contribute（内部载体，
+ *           载体页见 src/zcode-carrier-page.ts 与 src/captcha-carrier-server.ts）/
  *           backup.export / backup.import / backup.status
  * 另有一条 GET 路由 `/api/channel-pack/captcha-carrier`：渲染内部载体的载体页
  * （⚠ 手工诊断用；guest 加载不到它，见该路由注释里的主进程取证）。
@@ -123,12 +123,7 @@ import {
   type CreditBalance,
 } from './credits.js'
 import { CODEBUDDY, WORKBUDDY, productById, type BuddyProduct } from './product.js'
-import {
-  captchaDemand,
-  putSuppliedParam,
-} from './captcha-supply.js'
 import { ZCODE_CAPTCHA_FALLBACK, type ZcodeCaptchaConfig } from './zcode-captcha.js'
-import { buildCarrierPageHtml } from './zcode-carrier-page.js'
 import {
   claimCodeArtsDailyCheckin,
   fetchCodeArtsAccountInfoDetailed,
@@ -220,10 +215,6 @@ import type {
   RpcGatewayStatusResponse,
   RpcGatewaySetEnabledRequest,
   RpcGatewayModel,
-  RpcCaptchaDemandResponse,
-  RpcCaptchaCarrierHtmlResponse,
-  RpcCaptchaContributeRequest,
-  RpcCaptchaContributeResponse,
   RpcUsageBadgeRequest,
   RpcUsageBadgeResponse,
   RpcUsageBadgePreferenceRequest,
@@ -1006,7 +997,7 @@ function registerChannelPackEndpoints(
    *   Host 的会话 cookie 在 `defaultSession` 里 ⇒ 即便加载到了也过不了 `/api/*` 的认证。
    *
    * ⇒ 内部载体的真正入口是**独立回环端口上的小服务**
-   * （`captcha.carrierHtml` RPC 直接回 HTML，client 用 iframe.srcdoc 加载）。
+   * （`src/captcha-carrier-server.ts`，地址由 `captcha.carrierUrl` 这条 RPC 给）。
    *
    * ## 那为什么还留着这条
    * ① 它是**手工诊断**用的：web 版下 GUI 就是 `http://127.0.0.1:<port>`，
@@ -4164,85 +4155,6 @@ function registerChannelPackEndpoints(
       // ⚠ web 版：GUI 里没有 `dshDesktop.browser` ⇒ 没人读需求位、也没人贡献
       //   ⇒ 槽长期为空 ⇒ 载体链直接退回既有 chromium 路径，行为不变。
 
-      /** client 心跳问「现在要不要产 param」——不需要时 client 一次都不产（零配额消耗）。 */
-      case 'captcha.demand': {
-        const value: RpcCaptchaDemandResponse = { active: captchaDemand() }
-        return { ok: true, value }
-      }
-
-      /**
-       * ★ 评审 C1/C2：client 每轮问一次「载体页在哪个地址」。
-       *
-       * ## 为什么是 RPC 而不是 client 里的一个常量
-       * 载体页**不能**挂在插件自己的 `/api/…` 上：桌面版主进程的
-       * `allowedNavigation()` / `onBeforeRequest` 都会以 `isApplicationHost(url)`
-       * 拒掉「**端口相同** 且 主机相同/回环」的地址（asar `lib/main.js`），
-       * 而那个端口就是 Host 自己的端口 ⇒ guest 连文档都建不起来。
-       * 换端口才绕得开 ⇒ 端口是 server 运行时挑的，client 只能**问**（见
-       * 旧载体页小服务文件头的完整取证（该服务已随外挂链退役删除））。
-       *
-       * ## 返回 `null` 的含义
-       * 服务没起（`DSH_ZCODE_INTERNAL_CARRIER=0` / 候选端口全被占）。client 拿到
-       * `null` 就记一条 `no-carrier-url` 并**安静返回**：不建 guest、不导航。
-       * ⚠ 这是 web 版之外的另一条「安静退出」路径，别把它当错误报。
-       */
-      /**
-       * 载体页 HTML 全文（2026-11-14）：client 用 `iframe.srcdoc` 加载。
-       *
-       * 载体页 HTML 由 server 渲染后内联进面板（iframe.srcdoc）：mint 载体是
-       * 用户自己的浏览器 —— 与部署形态无关，桌面/NAS/手机三端同一行为。
-       * 页面 mint 完 `parent.postMessage` 回传，client 经 `captcha.contribute`
-       * 送进供给槽；param 与 region 的同源由 server 渲染时一次配齐（IKJNPS）。
-       */
-      case 'captcha.carrierHtml': {
-        const html = typeof zcode.carrierHtml === 'function'
-          ? await zcode.carrierHtml()
-          : null
-        const value: RpcCaptchaCarrierHtmlResponse = { html: html ?? null }
-        return { ok: true, value }
-      }
-
-      /** client 把内部载体产的 param 放进供给槽（一次性，取走即清）。 */
-      case 'captcha.contribute': {
-        const req = payload as RpcCaptchaContributeRequest
-        /**
-         * param 的「产出时刻」= **server 到达时刻 − client 报告的相对耗时**。
-         *
-         * ⚠ 不用 client 的绝对时间戳：那会把跨端时钟漂移引进时效闸（快了永不判过期、
-         *   慢了一投放就过期 ⇒ 内部载体静默永不可用，日志还看着像「client 没产」）。
-         * ⚠ 也不用纯到达时刻：那会把年龄**低估**一个 client→server 的跳数。
-         *   相对耗时是同机单向差值，比绝对时钟可靠 ⇒ 两者结合既无漂移也不低估。
-         * elapsedMs 缺失/非法时退回到达时刻（保守地偏小年龄，由 PARAM_MAX_AGE_MS 兜住）。
-         */
-        const elapsed = typeof req.elapsedMs === 'number' && Number.isSafeInteger(req.elapsedMs)
-          && req.elapsedMs >= 0 && req.elapsedMs < 5 * 60_000 ? req.elapsedMs : 0
-        const interactive = req.interactive === true
-        const accepted = putSuppliedParam(
-          typeof req.param === 'string' ? req.param : '',
-          Date.now() - elapsed,
-          { interactive },
-        )
-        ctx.logger.info(
-          `[channel-pack] zcode 内部载体贡献 param: accepted=${String(accepted)} elapsedMs=${String(elapsed)}`
-          + `${interactive ? ' interactive=true' : ''}`,
-        )
-        /**
-         * ⚠ 交互式必须**显式告警**（评审 I2）：那是 SDK 被降级成滑块/拼图的唯一信号，
-         *   也是这台机器**设备信誉下降**的唯一预警 —— chromium 那条腿早就有同样的
-         *   `warn`（见 `ZcodeAuth.captchaPoolInstance()`），内部载体这段此前只打进
-         *   client 控制台，host 侧一个字都看不到（等于没有预警）。
-         * ⚠ 只在被**收下**时告警：被拒的那条（垃圾 param）报「交互式」是噪声。
-         */
-        if (accepted && interactive) {
-          ctx.logger?.warn?.(
-            '[channel-pack] zcode 内部载体的 captcha 被降级为**交互式验证**（滑块/拼图）—— '
-            + '设备信誉可能已下降；内部载体的价值是「去掉对 chromium 的依赖」，'
-            + '不是绕过风控，请降低调用频率或稍后再试。',
-          )
-        }
-        const value: RpcCaptchaContributeResponse = { accepted }
-        return { ok: true, value }
-      }
 
       // ── 账号备份（导出 / 导入）──
       //

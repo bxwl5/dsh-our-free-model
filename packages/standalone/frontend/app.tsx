@@ -12,6 +12,61 @@ const API = '/api/management'
 const pageNames: Page[] = ['overview', 'models', 'usage', 'channels', 'settings', 'connection']
 const platform = document.getElementById('root')?.dataset.loginPlatform ?? (/Windows/i.test(navigator.userAgent) ? 'windows' : /Macintosh|Mac OS/i.test(navigator.userAgent) ? 'macos' : 'unsupported')
 const terminalName = platform === 'windows' ? 'PowerShell' : '终端'
+
+/**
+ * 复制到剪贴板（2026-11-16，修「复制地址/密钥失败」）。
+ *
+ * ## 为什么不能只用 `navigator.clipboard`
+ *
+ * 它在**安全上下文**（HTTPS 或 localhost）之外**根本不存在** —— 而本面板
+ * 局域网访问是 `http://<宿主IP>:9981`，既非 HTTPS 也非 localhost，
+ * 实测 `window.isSecureContext === false`、`navigator.clipboard === undefined`。
+ * 于是 `host.copy` 里那句 `await navigator.clipboard.writeText(value)` 直接抛
+ * `TypeError`，用户点了「复制」什么也没发生（也没有提示）。
+ *
+ * ## 三级降级
+ *
+ * 1. `navigator.clipboard.writeText` —— 安全上下文下的首选
+ * 2. `document.execCommand('copy')` —— 非安全上下文的传统通路（**HTTP 下唯一可用**）
+ * 3. 抛错，交给调用方提示「请手动选中复制」
+ *
+ * @returns 是否成功
+ */
+export async function copyText(value: string): Promise<boolean> {
+  const text = String(value ?? '')
+  // ① 现代 API：需要安全上下文
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // 落到 ②
+  }
+  // ② execCommand 兜底：HTTP 下这就是唯一能用的那条
+  try {
+    const area = document.createElement('textarea')
+    area.value = text
+    // 放在视口内但视觉上不可见 —— `display:none` 会让 select() 失效
+    area.setAttribute('readonly', '')
+    area.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;padding:0;border:0;opacity:0;'
+    document.body.appendChild(area)
+    const selection = document.getSelection()
+    const previous = selection !== null && selection.rangeCount > 0 ? selection.getRangeAt(0) : null
+    area.select()
+    area.setSelectionRange(0, text.length)
+    const ok = document.execCommand('copy')
+    area.remove()
+    // 还原用户原本的选区，避免复制行为打断输入
+    if (previous !== null && selection !== null) {
+      selection.removeAllRanges()
+      selection.addRange(previous)
+    }
+    return ok
+  } catch {
+    return false
+  }
+}
 type Request = <T = any>(path: string, body?: unknown, timeoutMs?: number, signal?: AbortSignal) => Promise<T>
 const messageOf = (error: unknown) => error instanceof Error ? error.name === 'TimeoutError' ? '请求超时，请检查服务是否仍在运行。' : error.message : '请求失败，请重试。'
 
@@ -24,7 +79,7 @@ function LoginScreen({ request }: { request: Request }) {
       : `node -e 'const fs = require("node:fs"); const key = JSON.parse(fs.readFileSync(process.argv[1], "utf8")).forwardKey; if (typeof key !== "string" || !key.trim()) throw new Error("missing login token"); process.stdout.write(key + "\\n");' "$HOME/.our-free-model/settings.json"`
   const submit = async (event: FormEvent) => { event.preventDefault(); if (busy) return; setBusy(true); setError(''); try { await request('/session', { key: key.trim() }); setKey(''); window.dispatchEvent(new CustomEvent('ofm:logged-in')) } catch (reason) { setError(messageOf(reason)) } finally { setBusy(false) } }
   const openTerminal = async () => { if (platform === 'unsupported' || busy) return; setBusy(true); setStatus(`正在本机打开${terminalName}…`); try { await request('/login/terminal', {}, 15000); setStatus(`已请求打开${terminalName}。窗口提示复制成功后，回到这里粘贴令牌。`); document.getElementById('login-key')?.focus() } catch (reason) { setStatus(`${messageOf(reason)}。可以展开下方的手动获取说明。`) } finally { setBusy(false) } }
-  const copyCommand = async () => { try { await navigator.clipboard.writeText(command); setStatus(`命令已复制。在${terminalName}执行后，回到这里粘贴令牌。`) } catch { const input = document.getElementById('login-command') as HTMLTextAreaElement | null; input?.focus(); input?.select(); setStatus(`浏览器未允许复制，已选中命令，请按 ${platform === 'macos' ? 'Command+C' : 'Ctrl+C'} 手动复制。`) } }
+  const copyCommand = async () => { const ok = await copyText(command); if (ok) { setStatus(`命令已复制。在${terminalName}执行后，回到这里粘贴令牌。`) } else { const input = document.getElementById('login-command') as HTMLTextAreaElement | null; input?.focus(); input?.select(); setStatus(`浏览器未允许复制，已选中命令，请按 ${platform === 'macos' ? 'Command+C' : 'Ctrl+C'} 手动复制。`) } }
   return <section id="login-screen" className="login-shell" data-testid="login-screen"><div className="login-card login-card-enter"><span className="login-card-glow" aria-hidden="true" /><div className="brand-mark" aria-hidden="true">ofm<span>.</span></div>
     <span className="eyebrow">OUR FREE MODEL / LOCAL CONSOLE</span><h1>连接你的本地服务</h1><p>使用启动时打印的一次性链接，或输入保存在本机的登录令牌。</p>
     <form id="login-form" onSubmit={event => { void submit(event) }}><label htmlFor="login-key">登录令牌（API Key）</label><input id="login-key" name="key" type="password" autoComplete="off" placeholder="ofm-…" required value={key} onChange={event => setKey(event.target.value)} /><button className={"primary" + (busy ? " is-busy" : "")} type="submit" disabled={busy}>{busy && <span className="ui-spinner" aria-hidden="true" />}<span className="login-submit-label">进入控制台</span> <span aria-hidden="true">→</span></button></form>
@@ -49,7 +104,7 @@ function App() {
   const enterLogin = (reason = '') => { generation.current++; loading.current = undefined; authenticated.current = false; setSnapshot(undefined); setVisited([]); setPage('overview'); setError(reason); setNotice(''); setMode('login') }
   const request: Request = async (path, body, timeoutMs = 10000, signal) => { const current = generation.current; const response = await fetch(API + path, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store', headers: body === undefined ? {} : { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body), signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) }); const value = await response.json(); if (!response.ok) { const reason = Object.assign(new Error(value.error ?? `请求失败（${response.status}）`), { status: response.status }); if (current === generation.current && response.status === 401 && path !== '/session') enterLogin(reason.message); throw reason } if (current !== generation.current) throw new Error('管理会话已变化，请重新操作。'); return value }
   const loadData = async () => { if (loading.current) return loading.current; const current = generation.current, revision = settingsRevision.current; const pending = Promise.all([request('/summary'), request('/stats')]).then(([summary, stats]) => { if (current !== generation.current) return; setSnapshot(previous => ({ summary: revision !== settingsRevision.current && previous ? { ...summary, settings: previous.summary.settings } : summary, stats })); authenticated.current = true; setMode('ready'); setError('') }).finally(() => { if (loading.current === pending) loading.current = undefined }); loading.current = pending; return pending }
-  const host = useMemo<Host>(() => ({ navigate: next => { if (pageNames.includes(next)) { setPage(next); setVisited(previous => previous.includes(next) ? previous : [...previous, next]); setError(''); setNotice('') } }, refresh: async () => { await loadData() }, copy: async value => { await navigator.clipboard.writeText(value); setNotice('已复制到剪贴板') }, getApiKey: async () => (await request<{ key: string }>('/key')).key, rotateKey: async () => (await request<{ key: string }>('/key/rotate', { confirm: true })).key, logout: async () => { await request('/logout', {}); enterLogin('已退出管理') }, error: reason => setError(messageOf(reason)), testModel: (model, signal) => request('/models/test', { model }, 330000, signal), refreshModels: async (probe, signal) => { await request('/models/refresh', { probe }, 300000, signal); if (!signal.aborted) await loadData() }, saveSettings: async (settings: Partial<ServiceSettings>) => { const value = await request<{ settings: ServiceSettings }>('/settings', settings); settingsRevision.current++; setSnapshot(previous => previous ? { ...previous, summary: { ...previous.summary, settings: value.settings } } : previous); return value.settings } }), [page])
+  const host = useMemo<Host>(() => ({ navigate: next => { if (pageNames.includes(next)) { setPage(next); setVisited(previous => previous.includes(next) ? previous : [...previous, next]); setError(''); setNotice('') } }, refresh: async () => { await loadData() }, copy: async value => { const ok = await copyText(value); setNotice(ok ? '已复制到剪贴板' : '浏览器不允许自动复制，请手动选中复制') }, getApiKey: async () => (await request<{ key: string }>('/key')).key, rotateKey: async () => (await request<{ key: string }>('/key/rotate', { confirm: true })).key, logout: async () => { await request('/logout', {}); enterLogin('已退出管理') }, error: reason => setError(messageOf(reason)), testModel: (model, signal) => request('/models/test', { model }, 330000, signal), refreshModels: async (probe, signal) => { await request('/models/refresh', { probe }, 300000, signal); if (!signal.aborted) await loadData() }, saveSettings: async (settings: Partial<ServiceSettings>) => { const value = await request<{ settings: ServiceSettings }>('/settings', settings); settingsRevision.current++; setSnapshot(previous => previous ? { ...previous, summary: { ...previous.summary, settings: value.settings } } : previous); return value.settings } }), [page])
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }) }, [page])
   useEffect(() => { const onUnauthorized = () => enterLogin('管理会话已失效，请重新登录'); window.addEventListener('ofm:unauthorized', onUnauthorized); return () => window.removeEventListener('ofm:unauthorized', onUnauthorized) }, [])
   useEffect(() => { const token = new URLSearchParams(location.hash.slice(1)).get('login'); if (token) history.replaceState(null, '', location.pathname + location.search); void (async () => { try { if (token) await request('/session', { bootstrapToken: token }); await loadData() } catch (reason) { enterLogin((reason as any)?.status === 401 && !token ? '' : messageOf(reason)) } })() }, [])

@@ -1430,84 +1430,9 @@ export interface RpcBackupStatusResponse {
   withoutExpiry: number
 }
 
-/**
- * RPC: 内部载体问「现在要不要产 param」。
- *
- * 需求位为 `false` 时 client **一次都不产**（零配额消耗）——阿里云按同设备
- * 每小时 150 次限流，白产比不产更贵（判据见 `src/captcha-supply.ts` 文件头
- * 「与预取池的区别」）。
- */
-export interface RpcCaptchaDemandResponse {
-  active: boolean
-}
 
-/**
- * RPC: 内部载体问「载体页在哪个地址」（评审 C1/C2）。
- *
- * ⚠ 为什么 client 不能自己拼：载体页必须待在**一个与 Host 端口不同**的回环端口上
- *   ——桌面版主进程的 `allowedNavigation()` / `onBeforeRequest` 都以
- *   `isApplicationHost(url)` 拒绝「端口相同 + 主机相同/回环」的地址
- *   （DSH Desktop 0.2.0-rc.2，`app.asar/lib/main.js`）。
- *   端口由 server 运行时挑（原载体页小服务，已退役）。⇒ 只能问。
- *
- * ⚠ `null` = **现在没有可用地址**（env 关掉 / 候选端口全被占）。client 拿到它就
- *   安静退出（本轮不建 guest、不导航）；这不是错误，别当异常报。
- */
 
-/**
- * RPC: 取载体页 **HTML 全文**（2026-11-14 新增，用户定的方向：captcha 只走
- * 客户端内置浏览器，外挂浏览器链整条退役）。
- *
- * ## 为什么不能复用 `captcha.carrierUrl`（跨机必死）
- *
- * 载体页小服务监听的是 server 本机的 `127.0.0.1:<port>` —— 桌面版下面板与它
- * 同机可达；NAS/web 形态下那个地址在**用户的浏览器**里指向用户自己的回环，
- * 导航必然失败。而 captcha 的 mint 载体（用户的浏览器）与 server（NAS）跨机，
- * 页面必须直接内联进面板：`iframe.srcdoc = html`。
- *
- * ⚠ HTML 由 server 渲染（`buildCarrierPageHtml`），region/prefix/sceneId 与
- *   server 侧同源；页面不含凭据（契约见 `zcode-carrier-page.ts`）。
- *
- * ⚠ `null` = captcha 配置拉不到 / 内部载体被 env 关掉。client 拿到 null 安静
- *   退出本轮（与 carrierUrl 的 null 语义一致）。
- */
-export interface RpcCaptchaCarrierHtmlResponse {
-  html: string | null
-}
 
-/**
- * RPC: 内部载体回传一个 param。
- *
- * ⚠ **故意没有** `atMs` / 任何绝对时间戳字段：产出时刻由 server 用
- * 「自己的到达时刻 − `elapsedMs`」推算（见 `channel-pack-rpc.ts` 的该 case 注释）。
- * client 传绝对时间戳会把跨端时钟漂移引进时效闸 —— 快了永不判过期、
- * 慢了一投放就过期，两种都表现为**内部载体静默不可用**。
- */
-export interface RpcCaptchaContributeRequest {
-  /** guest 里 SDK 产出的 param。空串/全空白一律不收。 */
-  param: string
-  /**
-   * client 侧「开始产 → 发这条 RPC」的**相对耗时**（毫秒）。
-   *
-   * 相对耗时是同机单向差值，比绝对时钟可靠；非法值（负数、非整数、
-   * ≥ 5 分钟）一律退回 0，即按到达时刻记账。
-   */
-  elapsedMs?: number
-  /**
-   * 这一发是不是被降级成了**交互式验证**（评审 I2）。
-   *
-   * ⚠ 这是内部载体**唯一**的设备信誉预警：chromium 那条腿在
-   *   `ZcodeAuth.captchaPoolInstance()` 里已经会 `warn`，而内部载体这段此前
-   *   只打进 client 控制台 —— host 侧看不到，等于没有预警。
-   * 缺省 / 非 `true` 一律当「无感通过」（不要把缺字段说成有）。
-   */
-  interactive?: boolean
-}
-
-/** RPC: 内部载体回传 param 的结果（`false` = 没进槽，client 可决定要不要重试）。 */
-export interface RpcCaptchaContributeResponse {
-  accepted: boolean
-}
 
 /**
  * ========================================

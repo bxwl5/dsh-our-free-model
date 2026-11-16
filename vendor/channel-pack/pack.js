@@ -25997,7 +25997,7 @@ var require_websocket = __commonJS({
       }
       return null;
     }
-    var WebSocket = class _WebSocket extends EventTarget {
+    var WebSocket2 = class _WebSocket extends EventTarget {
       #events = {
         open: null,
         error: null,
@@ -26379,11 +26379,11 @@ var require_websocket = __commonJS({
         };
       }
     };
-    WebSocket.CONNECTING = WebSocket.prototype.CONNECTING = states.CONNECTING;
-    WebSocket.OPEN = WebSocket.prototype.OPEN = states.OPEN;
-    WebSocket.CLOSING = WebSocket.prototype.CLOSING = states.CLOSING;
-    WebSocket.CLOSED = WebSocket.prototype.CLOSED = states.CLOSED;
-    Object.defineProperties(WebSocket.prototype, {
+    WebSocket2.CONNECTING = WebSocket2.prototype.CONNECTING = states.CONNECTING;
+    WebSocket2.OPEN = WebSocket2.prototype.OPEN = states.OPEN;
+    WebSocket2.CLOSING = WebSocket2.prototype.CLOSING = states.CLOSING;
+    WebSocket2.CLOSED = WebSocket2.prototype.CLOSED = states.CLOSED;
+    Object.defineProperties(WebSocket2.prototype, {
       CONNECTING: staticPropertyDescriptors,
       OPEN: staticPropertyDescriptors,
       CLOSING: staticPropertyDescriptors,
@@ -26407,7 +26407,7 @@ var require_websocket = __commonJS({
         configurable: true
       }
     });
-    Object.defineProperties(WebSocket, {
+    Object.defineProperties(WebSocket2, {
       CONNECTING: staticPropertyDescriptors,
       OPEN: staticPropertyDescriptors,
       CLOSING: staticPropertyDescriptors,
@@ -26456,7 +26456,7 @@ var require_websocket = __commonJS({
       return webidl.converters.USVString(V);
     };
     module.exports = {
-      WebSocket,
+      WebSocket: WebSocket2,
       ping
     };
   }
@@ -27758,8 +27758,8 @@ ${captureLines}` : capture.stack;
     module.exports.parseMIMEType = parseMIMEType;
     module.exports.serializeAMimeType = serializeAMimeType;
     var { CloseEvent, ErrorEvent, MessageEvent } = require_events();
-    var { WebSocket, ping } = require_websocket();
-    module.exports.WebSocket = WebSocket;
+    var { WebSocket: WebSocket2, ping } = require_websocket();
+    module.exports.WebSocket = WebSocket2;
     module.exports.CloseEvent = CloseEvent;
     module.exports.ErrorEvent = ErrorEvent;
     module.exports.MessageEvent = MessageEvent;
@@ -38341,10 +38341,10 @@ function promotionActiveNow(item, now) {
   if (!Array.isArray(schedule.daily) || schedule.daily.length === 0) return true;
   const minutes = zonedMinutes(now, schedule.timezone);
   if (minutes === void 0) return true;
-  return schedule.daily.some((slot2) => {
-    if (typeof slot2 !== "object" || slot2 === null) return false;
-    const start = parseHHMM(slot2.start);
-    const end = parseHHMM(slot2.end);
+  return schedule.daily.some((slot) => {
+    if (typeof slot !== "object" || slot === null) return false;
+    const start = parseHHMM(slot.start);
+    const end = parseHHMM(slot.end);
     if (start === void 0 || end === void 0) return false;
     return start <= end ? minutes >= start && minutes < end : minutes >= start || minutes < end;
   });
@@ -52980,11 +52980,244 @@ function zcodeProductById(id) {
 }
 
 // vendor/channel-pack/src/zcode-captcha.ts
-import { spawn as spawn2 } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync as writeFileSync7 } from "node:fs";
+import { spawn as spawn2, spawnSync as spawnSync2 } from "node:child_process";
+import { existsSync as existsSync7, mkdtempSync, rmSync, writeFileSync as writeFileSync7 } from "node:fs";
 import { createServer as createServer5 } from "node:net";
-import { tmpdir } from "node:os";
-import { join as join6, posix } from "node:path";
+import { homedir as homedir3, tmpdir } from "node:os";
+import { basename as basename2, isAbsolute, join as join6, posix as posix2 } from "node:path";
+
+// vendor/channel-pack/src/zcode-default-browser.ts
+import { spawnSync } from "node:child_process";
+import { existsSync as existsSync6, readFileSync as readFileSync8 } from "node:fs";
+import { homedir as homedir2 } from "node:os";
+import { basename, posix, win32 } from "node:path";
+var MAC_DEFAULT_BROWSER_BUNDLES = [
+  ["com.google.chrome", "Google Chrome.app", "Google Chrome"],
+  ["org.chromium.chromium", "Chromium.app", "Chromium"],
+  ["com.microsoft.edgemac", "Microsoft Edge.app", "Microsoft Edge"],
+  ["com.brave.browser", "Brave Browser.app", "Brave Browser"],
+  ["com.vivaldi.vivaldi", "Vivaldi.app", "Vivaldi"],
+  ["com.operasoftware.opera", "Opera.app", "Opera"],
+  // 非 Chromium 内核：识别得出、但**永不选**（见本文件头「判据必须限定」）。
+  ["com.apple.safari", "Safari.app", "Safari"]
+];
+function isChromiumFamilyExecutable(executable) {
+  const fileName = executable.split(/[\\/]/).pop() ?? "";
+  const normalized = fileName.toLowerCase().replace(/\.exe$/, "").replace(/\s+/g, "-");
+  return CHROMIUM_FAMILY_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+}
+var CHROMIUM_FAMILY_PREFIXES = [
+  "google-chrome",
+  "chrome",
+  "chromium",
+  "microsoft-edge",
+  "msedge",
+  "brave",
+  "vivaldi",
+  "opera",
+  "yandex",
+  "thorium"
+];
+function splitCommandLine(line2) {
+  const tokens = [];
+  let current = "";
+  let quote;
+  let started = false;
+  for (let index = 0; index < line2.length; index += 1) {
+    const char = line2[index];
+    if (quote !== void 0) {
+      if (char === "\\" && quote === '"' && line2[index + 1] === '"') {
+        current += '"';
+        index += 1;
+        continue;
+      }
+      if (char === quote) {
+        quote = void 0;
+        continue;
+      }
+      current += char;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      started = true;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      if (started) {
+        tokens.push(current);
+        current = "";
+        started = false;
+      }
+      continue;
+    }
+    current += char;
+    started = true;
+  }
+  if (started) tokens.push(current);
+  return tokens;
+}
+function parseDesktopEntryExec(text, input = {}) {
+  const env = input.env ?? process.env;
+  const home = input.home ?? homedir2();
+  const matched = /^Exec\s*=\s*(.+)$/m.exec(text);
+  if (matched === null) return [];
+  const tokens = splitCommandLine(matched[1].trim()).filter((token) => !/^%[A-Za-z]$/.test(token));
+  let index = 0;
+  while (index < tokens.length) {
+    const token = tokens[index] ?? "";
+    if (token === "env" || /^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) {
+      index += 1;
+      continue;
+    }
+    break;
+  }
+  const command = tokens[index];
+  if (command === void 0 || command === "") return [];
+  if (basename(command) === "flatpak") {
+    const appId = tokens.slice(index + 1).find((token) => /^[A-Za-z][\w-]*(\.[\w-]+){2,}$/.test(token));
+    if (appId === void 0) return [];
+    const dataHome = env.XDG_DATA_HOME?.trim() || posix.join(home, ".local", "share");
+    return [
+      posix.join(dataHome, "flatpak", "exports", "bin", appId),
+      posix.join("/var/lib/flatpak/exports/bin", appId)
+    ];
+  }
+  if (posix.isAbsolute(command)) return [command];
+  const pathDirs = (env.PATH ?? "").split(":").filter((dir) => dir.startsWith("/"));
+  return pathDirs.map((dir) => posix.join(dir, command));
+}
+function parseRegQueryValue(text) {
+  for (const line2 of text.split(/\r?\n/)) {
+    const matched = /\s+\S+\s+REG_[A-Z_]+\s+(.+)$/.exec(line2);
+    if (matched !== null && matched[1].trim() !== "") return matched[1].trim();
+  }
+  return void 0;
+}
+function parseWindowsCommandExecutable(command) {
+  const first = splitCommandLine(command)[0];
+  if (first === void 0 || !win32.isAbsolute(first)) return void 0;
+  return first;
+}
+function parseMacDefaultHandler(plistJson) {
+  if (typeof plistJson !== "object" || plistJson === null) return void 0;
+  const handlers = plistJson.LSHandlers;
+  if (!Array.isArray(handlers)) return void 0;
+  const pick = (scheme) => {
+    for (const item of handlers) {
+      if (typeof item !== "object" || item === null) continue;
+      const record = item;
+      if (record.LSHandlerURLScheme !== scheme) continue;
+      const id = record.LSHandlerRoleAll ?? record.LSHandlerRoleViewer;
+      if (typeof id === "string" && id.trim() !== "") return id.trim().toLowerCase();
+    }
+    return void 0;
+  };
+  return pick("https") ?? pick("http");
+}
+function defaultRun(command, args) {
+  try {
+    const result = spawnSync(command, [...args], {
+      encoding: "utf8",
+      timeout: 5e3,
+      windowsHide: true
+    });
+    if (result.error !== void 0) return void 0;
+    if (result.status !== 0) return void 0;
+    return typeof result.stdout === "string" ? result.stdout : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function defaultReadFile(path2) {
+  try {
+    return readFileSync8(path2, "utf8");
+  } catch {
+    return void 0;
+  }
+}
+function defaultBrowserExecutable(input = {}) {
+  const platform = input.platform ?? process.platform;
+  const env = input.env ?? process.env;
+  const home = input.home ?? homedir2();
+  const run = input.run ?? defaultRun;
+  const readFile2 = input.readFile ?? defaultReadFile;
+  const exists = input.exists ?? existsSync6;
+  const candidates = platform === "win32" ? windowsDefaultBrowserCandidates({ run }) : platform === "darwin" ? macosDefaultBrowserCandidates({ run, exists, home }) : linuxDefaultBrowserCandidates({ run, readFile: readFile2, env, home });
+  for (const candidate of candidates) {
+    if (candidate === void 0) continue;
+    if (!isChromiumFamilyExecutable(candidate)) continue;
+    if (!exists(candidate)) continue;
+    return candidate;
+  }
+  return void 0;
+}
+function linuxDefaultBrowserCandidates(input) {
+  const { run, readFile: readFile2, env, home } = input;
+  const desktopId = (run("xdg-settings", ["get", "default-web-browser"]) ?? run("xdg-mime", ["query", "default", "x-scheme-handler/https"]) ?? "").trim();
+  if (desktopId === "") return [];
+  const dataHome = env.XDG_DATA_HOME?.trim() || posix.join(home, ".local", "share");
+  const dataDirs = (env.XDG_DATA_DIRS?.trim() || "/usr/local/share:/usr/share").split(":");
+  const applicationDirs = [
+    posix.join(dataHome, "applications"),
+    ...dataDirs.filter((dir) => dir.startsWith("/")).map((dir) => posix.join(dir, "applications")),
+    // flatpak 导出的桌面文件（用户级优先）。
+    posix.join(dataHome, "flatpak", "exports", "share", "applications"),
+    "/var/lib/flatpak/exports/share/applications"
+  ];
+  const out = [];
+  for (const dir of applicationDirs) {
+    const text = readFile2(posix.join(dir, desktopId));
+    if (text === void 0) continue;
+    out.push(...parseDesktopEntryExec(text, { env, home }));
+  }
+  return out;
+}
+function windowsDefaultBrowserCandidates(input) {
+  const { run } = input;
+  const userChoice = "HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\https\\UserChoice";
+  const progIdOutput = run("reg", ["query", userChoice, "/v", "ProgId"]);
+  if (progIdOutput === void 0) return [];
+  const progId = parseRegQueryValue(progIdOutput);
+  if (progId === void 0) return [];
+  const commandKey = `HKCR\\${progId}\\shell\\open\\command`;
+  const commandOutput = run("reg", ["query", commandKey, "/ve"]);
+  if (commandOutput === void 0) return [];
+  const command = parseRegQueryValue(commandOutput);
+  if (command === void 0) return [];
+  const executable = parseWindowsCommandExecutable(command);
+  return executable === void 0 ? [] : [executable];
+}
+function macosDefaultBrowserCandidates(input) {
+  const { run, exists, home } = input;
+  const plist = posix.join(
+    home,
+    "Library",
+    "Preferences",
+    "com.apple.LaunchServices",
+    "com.apple.launchservices.secure.plist"
+  );
+  if (!exists(plist)) return [];
+  const output = run("plutil", ["-convert", "json", "-o", "-", plist]);
+  if (output === void 0) return [];
+  let parsed;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return [];
+  }
+  const bundleId = parseMacDefaultHandler(parsed);
+  if (bundleId === void 0) return [];
+  const entry = MAC_DEFAULT_BROWSER_BUNDLES.find(([id]) => id === bundleId);
+  if (entry === void 0) return [];
+  const [, bundle, exe] = entry;
+  return [
+    posix.join("/Applications", bundle, "Contents", "MacOS", exe),
+    posix.join(home, "Applications", bundle, "Contents", "MacOS", exe)
+  ];
+}
+
+// vendor/channel-pack/src/zcode-captcha.ts
 var ZCODE_CAPTCHA_FALLBACK = {
   region: "cn",
   prefix: "no8xfe",
@@ -52994,6 +53227,11 @@ var ALIYUN_CAPTCHA_SDK_URL = "https://o.alicdn.com/captcha-frontend/aliyunCaptch
 var CAPTCHA_CONTAINER_ID = "zcode-aliyun-captcha-container";
 var CAPTCHA_ELEMENT_ID = "zcode-aliyun-captcha-element";
 var CAPTCHA_BUTTON_ID = "zcode-aliyun-captcha-button";
+var CAPTCHA_PAGE_ORIGIN = "https://zcode.z.ai/";
+function resolveCaptchaPageOrigin(options = {}) {
+  const injected = options.pageOrigin?.trim() ?? "";
+  return injected.length > 0 ? injected : CAPTCHA_PAGE_ORIGIN;
+}
 function validateCaptchaParam(param) {
   if (typeof param !== "string" || param.length === 0) {
     return { ok: false, reason: "captcha param \u7F3A\u5931" };
@@ -53028,6 +53266,199 @@ function validateCaptchaParam(param) {
   }
   return { ok: true };
 }
+var MAC_BROWSER_BUNDLES = [
+  ["Google Chrome.app", "Google Chrome"],
+  ["Chromium.app", "Chromium"],
+  ["Microsoft Edge.app", "Microsoft Edge"],
+  ["Brave Browser.app", "Brave Browser"]
+];
+function windowsBrowserCandidates(env, home) {
+  const localAppData = env.LOCALAPPDATA ?? "";
+  const programFiles = env.PROGRAMFILES ?? "";
+  const programFilesX86 = env["PROGRAMFILES(X86)"] ?? "";
+  return [
+    /**
+     * ① scoop 的 **显式声明的**根目录优先于默认推导。
+     *
+     * `SCOOP` / `SCOOP_GLOBAL` 是 scoop 自己的「我装在哪」的权威声明 ——
+     * 用户设了它们就说明默认路径不对。若排在 `~/scoop` 之后，会出现
+     * 「旧默认路径恰好存在 → 用它，而用户实际在用的那个被忽略」。
+     */
+    ...env.SCOOP !== void 0 && env.SCOOP.trim().length > 0 ? [join6(env.SCOOP.trim(), "apps", "chromium", "current", "chrome.exe")] : [],
+    ...env.SCOOP_GLOBAL !== void 0 && env.SCOOP_GLOBAL.trim().length > 0 ? [join6(env.SCOOP_GLOBAL.trim(), "apps", "chromium", "current", "chrome.exe")] : [],
+    // ② scoop 默认根目录（`~/scoop`）。实测可用。
+    join6(home, "scoop", "apps", "chromium", "current", "chrome.exe"),
+    // ③ 系统 Chrome。
+    join6(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
+    join6(programFilesX86, "Google", "Chrome", "Application", "chrome.exe"),
+    join6(localAppData, "Google", "Chrome", "Application", "chrome.exe"),
+    // ④ Chromium。
+    join6(localAppData, "Chromium", "Application", "chrome.exe"),
+    join6(programFiles, "Chromium", "Application", "chrome.exe"),
+    // ⑤ Edge（Chromium 内核，系统普遍自带）。
+    join6(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe"),
+    join6(programFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
+    join6(localAppData, "Microsoft", "Edge", "Application", "msedge.exe")
+  ];
+}
+function macBrowserCandidates(home) {
+  const roots = ["/Applications", posix2.join(home, "Applications")];
+  const candidates = [];
+  for (const [bundle, exe] of MAC_BROWSER_BUNDLES) {
+    for (const root of roots) {
+      candidates.push(posix2.join(root, bundle, "Contents", "MacOS", exe));
+    }
+  }
+  return candidates;
+}
+function linuxBrowserCandidates(home) {
+  return [
+    // ① Chrome（`google-chrome` 与 `google-chrome-stable` 是两个包名）。
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/opt/google/chrome/chrome",
+    // ② Chromium（Debian/Ubuntu 的 `chromium`、`chromium-browser`；snap 版）。
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/snap/bin/chromium",
+    // ③ Edge（微软的 Linux 包）。
+    "/usr/bin/microsoft-edge",
+    // ④ Brave（chromium 内核）。
+    "/usr/bin/brave-browser",
+    // ⑤ flatpak 导出的**可执行文件**（见函数头关于 appstream 的警告）。
+    posix2.join(home, ".local", "share", "flatpak", "exports", "bin", "org.chromium.Chromium")
+  ];
+}
+function browserCandidates(input = {}) {
+  const platform = input.platform ?? process.platform;
+  const env = input.env ?? process.env;
+  const home = input.home ?? homedir3();
+  let candidates;
+  if (platform === "darwin") {
+    candidates = macBrowserCandidates(home);
+  } else if (platform === "linux") {
+    candidates = linuxBrowserCandidates(home);
+  } else {
+    candidates = windowsBrowserCandidates(env, home);
+  }
+  const defaultBrowser = input.defaultBrowser;
+  if (typeof defaultBrowser === "string" && defaultBrowser.trim().length > 0) {
+    candidates.unshift(defaultBrowser.trim());
+  }
+  const override = env.ZCODE_CHROME_PATH;
+  if (typeof override === "string" && override.trim().length > 0) {
+    candidates.unshift(override.trim());
+  }
+  return candidates;
+}
+function findBrowserExecutable(input = {}) {
+  const env = input.env ?? process.env;
+  const override = env.ZCODE_CHROME_PATH;
+  const hasOverride = typeof override === "string" && override.trim().length > 0;
+  const defaultBrowser = "defaultBrowser" in input ? input.defaultBrowser : hasOverride ? void 0 : defaultBrowserExecutable({ platform: input.platform, env, home: input.home });
+  for (const candidate of browserCandidates({ ...input, defaultBrowser })) {
+    try {
+      if (candidate.length === 0 || !isAbsolute(candidate)) continue;
+      if (existsSync7(candidate)) return candidate;
+    } catch {
+    }
+  }
+  return void 0;
+}
+function browserNotFoundMessage(platform = process.platform) {
+  if (platform === "darwin") {
+    return "\u5DF2\u5C1D\u8BD5 /Applications \u4E0E ~/Applications \u4E0B\u7684 Google Chrome / Chromium / Microsoft Edge / Brave\uFF1B\u53EF\u7528 ZCODE_CHROME_PATH \u663E\u5F0F\u6307\u5B9A\u53EF\u6267\u884C\u6587\u4EF6\u8DEF\u5F84\uFF08\u5982 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome\uFF09\u3002";
+  }
+  if (platform === "win32") {
+    return "\u5DF2\u5C1D\u8BD5 scoop chromium / Chrome / Chromium / Edge\uFF1B\u53EF\u7528 ZCODE_CHROME_PATH \u663E\u5F0F\u6307\u5B9A chrome.exe \u8DEF\u5F84\u3002";
+  }
+  if (platform === "linux") {
+    return "\u5DF2\u5C1D\u8BD5 /usr/bin \u4E0B\u7684 google-chrome / chromium / microsoft-edge / brave-browser\uFF08\u542B /opt/google/chrome\u3001/snap/bin \u4E0E flatpak \u5BFC\u51FA\u4F4D\u7F6E\uFF09\uFF1B\u53EF\u7528 ZCODE_CHROME_PATH \u663E\u5F0F\u6307\u5B9A\u53EF\u6267\u884C\u6587\u4EF6\u8DEF\u5F84\uFF08\u5982 /usr/bin/chromium\uFF09\u3002";
+  }
+  return "\u5DF2\u5C1D\u8BD5 Chrome / Chromium / Edge \u7684\u5E38\u89C1\u5B89\u88C5\u4F4D\u7F6E\uFF1B\u53EF\u7528 ZCODE_CHROME_PATH \u663E\u5F0F\u6307\u5B9A\u53EF\u6267\u884C\u6587\u4EF6\u8DEF\u5F84\u3002";
+}
+function isEdgeExecutable(executable) {
+  const name2 = basename2(executable).toLowerCase();
+  return name2 === "msedge.exe" || name2 === "microsoft edge";
+}
+function isUserDefaultBrowser(options, executable) {
+  if (options.executablePath !== void 0) return true;
+  try {
+    return defaultBrowserExecutable() === executable;
+  } catch {
+    return false;
+  }
+}
+var CdpConnection = class {
+  constructor(ws) {
+    this.ws = ws;
+    ws.addEventListener("message", (event) => {
+      let message2;
+      try {
+        message2 = JSON.parse(String(event.data));
+      } catch {
+        return;
+      }
+      if (message2.id === void 0) return;
+      const slot = this.pending.get(message2.id);
+      if (slot === void 0) return;
+      this.pending.delete(message2.id);
+      if (message2.error !== void 0) slot.reject(new Error(JSON.stringify(message2.error)));
+      else slot.resolve(message2.result);
+    });
+  }
+  nextId = 0;
+  pending = /* @__PURE__ */ new Map();
+  /** 发送一条 CDP 命令并等结果。 */
+  send(method, params = {}, timeoutMs = 3e4) {
+    const id = ++this.nextId;
+    return new Promise((resolve2, reject) => {
+      this.pending.set(id, { resolve: resolve2, reject });
+      try {
+        this.ws.send(JSON.stringify({ id, method, params }));
+      } catch (error) {
+        this.pending.delete(id);
+        reject(error instanceof Error ? error : new Error(String(error)));
+        return;
+      }
+      const timer = setTimeout(() => {
+        if (this.pending.has(id)) {
+          this.pending.delete(id);
+          reject(new Error(`CDP ${method} \u8D85\u65F6\uFF08${timeoutMs}ms\uFF09`));
+        }
+      }, timeoutMs);
+      timer.unref?.();
+    });
+  }
+  close() {
+    try {
+      this.ws.close();
+    } catch {
+    }
+  }
+};
+var STEALTH_PATCH = `
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en'] });
+Object.defineProperty(navigator, 'plugins', {
+  get: () => [{ name: 'PDF Viewer' }, { name: 'Chrome PDF Viewer' }, { name: 'Chromium PDF Viewer' }],
+});
+Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+window.chrome = window.chrome ?? { runtime: {}, loadTimes: () => {}, csi: () => {} };
+try {
+  const originalGetParameter = WebGLRenderingContext.prototype.getParameter;
+  WebGLRenderingContext.prototype.getParameter = function (parameter) {
+    if (parameter === 37445) return 'Intel Inc.';
+    if (parameter === 37446) return 'Intel Iris OpenGL Engine';
+    return originalGetParameter.call(this, parameter);
+  };
+} catch (error) { /* \u5185\u6838\u65E0 WebGL \u65F6\u5FFD\u7565 */ }
+`;
+var sleep4 = (ms) => new Promise((resolve2) => {
+  const timer = setTimeout(resolve2, ms);
+  timer.unref?.();
+});
 function buildDomExpression() {
   return `document.body.innerHTML =
     '<div id="${CAPTCHA_CONTAINER_ID}" aria-hidden="true">' +
@@ -53138,6 +53569,889 @@ function buildMintExpression(config) {
     }, 60000);
   })`;
 }
+async function pickFreePort() {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const candidate = 9300 + Math.floor(Math.random() * 500);
+    if (await isPortFree(candidate)) return candidate;
+  }
+  return 9300 + Math.floor(Math.random() * 500);
+}
+function isPortFree(port) {
+  return new Promise((resolve2) => {
+    const server = createServer5();
+    server.once("error", () => resolve2(false));
+    server.once("listening", () => {
+      server.close(() => resolve2(true));
+    });
+    try {
+      server.listen(port, "127.0.0.1");
+    } catch {
+      resolve2(false);
+    }
+  });
+}
+function hideWindowFromTaskbar(pid, log) {
+  try {
+    if (process.platform === "win32") hideWindowWindows(pid);
+    else if (process.platform === "linux") hideWindowLinux(pid);
+    else if (process.platform === "darwin") hideWindowMacos(pid, log);
+  } catch {
+  }
+}
+function hideWindowWindows(pid) {
+  let dirCreated;
+  try {
+    const script = `
+$ErrorActionPreference = 'SilentlyContinue'
+Add-Type @"
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+public class ZcodeWinStyle {
+  public delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr l);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
+  [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] public static extern IntPtr GetWindowLongPtr(IntPtr h, int i);
+  [DllImport("user32.dll", EntryPoint="SetWindowLongPtrW")] public static extern IntPtr SetWindowLongPtr(IntPtr h, int i, IntPtr v);
+  public static List<IntPtr> All() {
+    var r = new List<IntPtr>();
+    EnumWindows((h, l) => { r.Add(h); return true; }, IntPtr.Zero);
+    return r;
+  }
+}
+"@
+$EX = -20
+$TOOL = 0x80
+$APP = 0x40000
+$NOACT = 0x8000000
+$target = ${String(pid)}
+$n = 0
+$all = @([ZcodeWinStyle]::All())
+if ($all.Count -eq 0) { Write-Output 'enum-empty'; exit 0 }
+foreach ($h in $all) {
+  $wp = 0
+  [void][ZcodeWinStyle]::GetWindowThreadProcessId($h, [ref]$wp)
+  if ([int]$wp -ne $target) { continue }
+  $before = [int64][ZcodeWinStyle]::GetWindowLongPtr($h, $EX)
+  if ($before -eq 0) { continue }
+  $new = (($before -bor $TOOL -bor $NOACT) -band (-bnot $APP))
+  [void][ZcodeWinStyle]::SetWindowLongPtr($h, $EX, [IntPtr]$new)
+  $n++
+}
+Write-Output "hidden=$n"
+`;
+    const dir = mkdtempSync(join6(tmpdir(), "zcode-hide-"));
+    const file = join6(dir, "hide.ps1");
+    dirCreated = dir;
+    writeFileSync7(file, script, "ascii");
+    const child = spawn2("powershell.exe", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-WindowStyle",
+      "Hidden",
+      "-File",
+      file
+    ], { stdio: "ignore", windowsHide: true });
+    child.on("exit", () => {
+      safeRemoveDir(dir);
+    });
+    child.on("error", () => {
+      safeRemoveDir(dir);
+    });
+  } catch {
+    if (dirCreated !== void 0) safeRemoveDir(dirCreated);
+  }
+}
+function hideWindowLinux(pid) {
+  const list = spawn2("wmctrl", ["-lp"], { stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
+  const chunks = [];
+  list.stdout?.on("data", (c) => chunks.push(c));
+  list.on("error", () => {
+  });
+  list.on("exit", () => {
+    try {
+      const ids = parseWmctrlList(Buffer.concat(chunks).toString("utf8"), pid);
+      for (const id of ids) {
+        const child = spawn2("wmctrl", buildLinuxSkipTaskbarArgs(id), {
+          stdio: "ignore",
+          windowsHide: true
+        });
+        child.on("error", () => {
+        });
+      }
+    } catch {
+    }
+  });
+}
+function buildMacosMiniaturizeArgs(pid) {
+  const appleScript = `tell application "System Events" to set miniaturized of every window of (first process whose unix id is ${pid}) to true`;
+  return ["-e", appleScript];
+}
+var macosHideWarned = false;
+function warnMacosHideOnce(log, reason) {
+  if (log === void 0 || macosHideWarned)
+    return;
+  macosHideWarned = true;
+  log(
+    `[channel-pack] zcode macOS \u85CF\u7A97\u672A\u751F\u6548\uFF08${reason}\uFF09\u2014\u2014 \u7A97\u53E3\u4F1A\u7167\u5E38\u5F39\u51FA\uFF0C\u4F46\u4E0D\u5F71\u54CD captcha\u3002\u6700\u5E38\u89C1\u539F\u56E0\u662F\u5BBF\u4E3B\u672A\u83B7 macOS\u300C\u8F85\u52A9\u529F\u80FD\u300D\u6743\u9650\uFF1A\u7CFB\u7EDF\u8BBE\u7F6E \u2192 \u9690\u79C1\u4E0E\u5B89\u5168\u6027 \u2192 \u8F85\u52A9\u529F\u80FD \u2192 \u52FE\u9009\u5BBF\u4E3B\uFF08\u901A\u5E38\u9700\u91CD\u542F\u5E94\u7528\uFF09\u3002`
+  );
+}
+function hideWindowMacos(pid, log) {
+  const child = spawn2("osascript", buildMacosMiniaturizeArgs(pid), {
+    stdio: "ignore",
+    windowsHide: true
+  });
+  child.on("error", () => {
+    warnMacosHideOnce(log, "osascript \u4E0D\u53EF\u7528");
+  });
+  child.on("close", (code) => {
+    if (code !== 0)
+      warnMacosHideOnce(log, `osascript \u9000\u51FA\u7801 ${code}`);
+  });
+}
+function buildLinuxSkipTaskbarArgs(windowId) {
+  return ["-i", "-r", windowId, "-b", "add,skip_taskbar"];
+}
+function parseWmctrlList(output, pid) {
+  const ids = [];
+  for (const raw of output.split(/\r?\n/)) {
+    const line2 = raw.trim();
+    if (line2 === "") continue;
+    const fields = line2.split(/\s+/, 5);
+    if (fields.length < 3) continue;
+    const id = fields[0] ?? "";
+    if (!/^0x[0-9a-f]+$/i.test(id)) continue;
+    const linePid = Number(fields[2]);
+    if (!Number.isInteger(linePid) || linePid !== pid) continue;
+    ids.push(id);
+  }
+  return ids;
+}
+function safeRemoveDir(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true });
+  } catch {
+  }
+}
+var LIVE_CAPTCHA_BROWSERS = /* @__PURE__ */ new Set();
+var EXIT_HOOK_INSTALLED = false;
+var ZcodeCaptchaBrowser = class {
+  constructor(options = {}) {
+    this.options = options;
+    this.log = options.log;
+  }
+  child;
+  browserWs;
+  browserCdp;
+  profileDir;
+  port = 0;
+  starting;
+  /**
+   * 复用的 captcha 页面（停在 {@link CAPTCHA_PAGE_ORIGIN} 上）。
+   *
+   * ⚠ 复用而非每次新建：实测 546ms vs 1246ms（快 2.3 倍）。
+   * 前提是 origin 必须真实 —— 见 `mint()` 的说明。
+   */
+  reusablePage;
+  /**
+   * 页面是否正被某次 mint 占用。
+   *
+   * captcha param 是**一次性**的，两个并发 mint 共用同一页面会互相踩状态。
+   * 故用该标志把取页串行化（并发调用排队，而不是拿到同一个页面）。
+   */
+  pageBusy = false;
+  /** 诊断输出（见 {@link ZcodeCaptchaBrowserOptions.log}），缺省 undefined = 静默。 */
+  log;
+  /**
+   * 浏览器**起不来 / 自己没了**的可读原因（由 `launch()` 里的
+   * `'error'` / `'exit'` 监听写入，见该处注释）。
+   *
+   * `undefined` = 一切正常。轮询循环每轮检查它，命中即立刻失败 ——
+   * 否则「浏览器秒退」要白等满 `readyTimeoutMs`（默认 30 秒）才报错。
+   */
+  spawnFailure;
+  /** 浏览器是否已就绪。 */
+  get ready() {
+    return this.browserCdp !== void 0 && this.browserWs?.readyState === 1;
+  }
+  /** 启动（幂等；并发调用共享同一次启动）。 */
+  async start() {
+    if (this.ready) return;
+    if (this.starting !== void 0) {
+      await this.starting;
+      return;
+    }
+    const task = this.launch().finally(() => {
+      this.starting = void 0;
+    });
+    this.starting = task;
+    await task;
+  }
+  async launch() {
+    const executable = this.options.executablePath ?? findBrowserExecutable();
+    if (executable === void 0) {
+      throw new Error(
+        "zcode: \u627E\u4E0D\u5230\u53EF\u7528\u7684\u6D4F\u89C8\u5668\uFF08\u7528\u4E8E\u4EA7\u51FA\u963F\u91CC\u4E91 captcha\uFF09\u3002" + browserNotFoundMessage()
+      );
+    }
+    if (isEdgeExecutable(executable) && !isUserDefaultBrowser(this.options, executable)) {
+      this.log?.(
+        "[channel-pack] zcode captcha \u672A\u68C0\u6D4B\u5230 Chrome/Chromium\uFF0C\u6539\u7528\u7CFB\u7EDF Edge\uFF08msedge.exe\uFF09\u4EA7\u51FA \u2014\u2014 \u82E5 Edge \u5F02\u5E38\u5BFC\u81F4 captcha \u5931\u8D25\uFF0C\u53EF\u5B89\u88C5 Chrome/Chromium \u6216\u7528 ZCODE_CHROME_PATH \u6307\u5B9A\u5176\u5B83\u6D4F\u89C8\u5668\u3002"
+      );
+    }
+    this.spawnFailure = void 0;
+    this.profileDir = mkdtempSync(join6(tmpdir(), "zcode-captcha-"));
+    this.port = this.options.debugPort ?? await pickFreePort();
+    const hide = this.options.hideWindow !== false;
+    this.child = spawn2(executable, [
+      `--remote-debugging-port=${this.port}`,
+      `--user-data-dir=${this.profileDir}`,
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-background-networking",
+      "--disable-sync",
+      "--disable-features=Translate",
+      "--lang=zh-CN",
+      "--window-size=1280,900",
+      /**
+       * ⚠ **不用 `--headless=new`** —— 实测 headless 一律 `F001`，必须 headful。
+       * 为了不打扰用户，把窗口移到屏幕外。
+       */
+      ...hide ? ["--window-position=-32000,-32000"] : []
+    ], {
+      stdio: "ignore",
+      windowsHide: hide,
+      /**
+       * ⚠ POSIX 上必须 `detached: true`：这样 chromium 自成**进程组**，
+       * `killProcessTree()` 才能用负 pid 一次杀掉全部子进程。
+       * 不加的话子进程会脱离、变成孤儿（实测留下 12 个 chrome.exe）。
+       *
+       * ⚠ Windows 不用这个（它有 `taskkill /T`），且 `detached` 在 Windows
+       * 上会额外开一个控制台窗口 —— 与「不打扰用户」冲突。
+       */
+      detached: process.platform !== "win32"
+    });
+    const child = this.child;
+    child.once("error", (error) => {
+      this.spawnFailure = new Error(
+        `zcode: \u6D4F\u89C8\u5668\u65E0\u6CD5\u542F\u52A8\uFF08${executable}\uFF09\uFF1A${error.message}\u3002\u53EF\u5B89\u88C5 Chrome/Chromium\uFF0C\u6216\u7528 ZCODE_CHROME_PATH \u6307\u5B9A\u5176\u5B83 chromium \u5185\u6838\u6D4F\u89C8\u5668\u3002`
+      );
+    });
+    child.once("exit", (code, signal) => {
+      if (this.child !== child) return;
+      this.child = void 0;
+      const how = signal !== null && signal !== void 0 ? `signal=${signal}` : `code=${String(code)}`;
+      this.spawnFailure ??= new Error(
+        `zcode: \u6D4F\u89C8\u5668\u8FDB\u7A0B\u5F02\u5E38\u9000\u51FA\uFF08${executable}\uFF0C${how}\uFF09\u3002\u8BF7\u91CD\u8BD5\uFF0C\u6216\u7528 ZCODE_CHROME_PATH \u6307\u5B9A\u5176\u5B83 chromium \u5185\u6838\u6D4F\u89C8\u5668\u3002`
+      );
+    });
+    const timeoutMs = this.options.readyTimeoutMs ?? 3e4;
+    const deadline = Date.now() + timeoutMs;
+    let debuggerUrl;
+    while (Date.now() < deadline) {
+      if (this.spawnFailure !== void 0) {
+        const failure = this.spawnFailure;
+        this.kill();
+        throw failure;
+      }
+      try {
+        const response = await fetch(`http://127.0.0.1:${this.port}/json/version`, {
+          signal: AbortSignal.timeout(2e3)
+        });
+        if (response.ok) {
+          const version = await response.json();
+          if (typeof version.webSocketDebuggerUrl === "string") {
+            debuggerUrl = version.webSocketDebuggerUrl;
+            break;
+          }
+        }
+      } catch {
+      }
+      await sleep4(300);
+    }
+    if (debuggerUrl === void 0) {
+      this.kill();
+      throw this.spawnFailure ?? new Error(`zcode: \u6D4F\u89C8\u5668\u8C03\u8BD5\u7AEF\u53E3\u672A\u5C31\u7EEA\uFF08${timeoutMs}ms \u8D85\u65F6\uFF09`);
+    }
+    if (!debuggerUrl.includes(`:${this.port}/`)) {
+      this.kill();
+      throw new Error(
+        `zcode: \u8C03\u8BD5\u7AEF\u53E3 ${this.port} \u5E94\u7B54\u7684\u4E0D\u662F\u672C\u5B9E\u4F8B\uFF08${debuggerUrl}\uFF09\u2014\u2014 \u7591\u4F3C\u7AEF\u53E3\u88AB\u5176\u5B83 chromium \u5360\u7528\uFF0C\u5DF2\u653E\u5F03\u4EE5\u907F\u514D\u6CC4\u6F0F`
+      );
+    }
+    const ws = new WebSocket(debuggerUrl);
+    await new Promise((resolve2, reject) => {
+      ws.addEventListener("open", () => resolve2(), { once: true });
+      ws.addEventListener("error", () => reject(new Error("zcode: \u8FDE\u63A5\u6D4F\u89C8\u5668\u8C03\u8BD5\u7AEF\u53E3\u5931\u8D25")), { once: true });
+    });
+    this.browserWs = ws;
+    LIVE_CAPTCHA_BROWSERS.add(this);
+    if (!EXIT_HOOK_INSTALLED) {
+      EXIT_HOOK_INSTALLED = true;
+      process.once("exit", () => {
+        for (const browser of LIVE_CAPTCHA_BROWSERS) {
+          try {
+            browser.kill();
+          } catch {
+          }
+        }
+        LIVE_CAPTCHA_BROWSERS.clear();
+      });
+    }
+    this.browserCdp = new CdpConnection(ws);
+    if (hide && this.child?.pid !== void 0) hideWindowFromTaskbar(this.child.pid, this.log);
+  }
+  /**
+   * 产出**一个新鲜**的 captcha param。
+   *
+   * ## ⚠⚠ 实测约束（第 2 条曾在 2026-10-01 被**推翻并修正**，务必读完）
+   *
+   * ### 1. 页面 origin 必须是**真实 https**，不能用 `about:blank`
+   *
+   * | origin | 同页连续 mint |
+   * |---|---|
+   * | `about:blank` | **1/3**（#2 起 `F001`） |
+   * | `https://zcode.z.ai/` | 连续 5/5 |
+   *
+   * 阿里云 SDK 会检查 origin（`about:blank` 的是 `"null"`），风控据此拒绝。
+   *
+   * ### 2. ~~空闲约 15 秒后同一页面必然失效~~ → **已推翻**
+   *
+   * 曾经（2026-09-29）观测到下面这张表，据此加了「空闲 8 秒就换页」：
+   *
+   * | 用例 | 当时的结果 |
+   * |---|---|
+   * | 立即 mint | ✓ 3786ms |
+   * | **间隔 15s**（复用页面） | ✗ `F001` 416ms |
+   * | 间隔 45s / 90s（复用页面） | ✗ `F001` |
+   * | 全新浏览器 + 新页面 | ✓ 3692ms |
+   *
+   * ⚠ 但 2026-10-01 用**变量分离**复测（同一页面、零换页、每组都先预热成功）
+   * **无法复现**：
+   *
+   * | 场景 | 结果 | 耗时 |
+   * |---|---|---|
+   * | 空闲 20 秒后**什么都不做**直接 mint | ✓ **3/3** | **467ms** |
+   * | 空闲 20 秒后**重置 DOM** 再 mint（= 当时的生产行为） | ✓ 3/3 | 479ms |
+   * | 空闲 20 秒后清 SDK 全局 + 重注入 | ✓ 2/2 | 488ms |
+   *
+   * ⇒ **`F001` 与"空闲时长"没有稳定因果关系**（当时那次更可能是环境/风控
+   * 的瞬时状态，或与实验方法有关 —— 我早期两个实验分别在 baseline 前
+   * 跑了注入、以及误用了私有 `acquirePage`，两者都污染过结论）。
+   *
+   * ### 3. 因此现在的策略：**复用优先，失败才换页**
+   *
+   * ```
+   * 默认（idleReuseMs = Infinity）  → 只要页面还在就复用（约 0.5 秒）
+   * 任一次 mint 失败（F001 等）      → 丢弃该页、换新页重试一次（自愈链）
+   * ```
+   *
+   * ⚠ 原来的「预测式换页」让**每次空闲后都白付约 2.7 秒**建页成本 ——
+   * 这正是用户报障「一键签到里 ZCode 很久」的成因（而不是 captcha 慢）。
+   * 改成失败兜底后：**常态省约 2.7 秒、不增加 captcha 调用次数**，
+   * 真遇到 `F001` 时的自愈能力与原来一致（甚至更快：
+   * 原来"先换页"是必然付费，现在只在真失败时才付）。
+   */
+  /**
+   * 产出 captcha param，**并报告本次是否被降级为交互式验证**。
+   *
+   * ## 为什么需要（对齐官方 ZCode 的观测，2026-10-01）
+   *
+   * 官方闭源版对每次产出结果都会区分并上报（`out/renderer/assets/styles-*.js`）：
+   *
+   * ```js
+   * mnn({ result: e ? 'interactive_displayed' : 'traceless_passed', … })
+   * // pnn() 里维护 traceless_passed_count / captcha_displayed_count
+   * ```
+   *
+   * 那是它判断**设备信誉是否在恶化**的手段 —— 而此前我们没有任何这个数，
+   * 排查「为什么突然 502 mint failed」时只能靠猜（这正是本次最缺的东西）。
+   *
+   * ⚠ 与 {@link mint} 的关系：那个是「只要 param」的既有签名（多处调用），
+   * 这个是它的**超集**，内部复用同一条产出路径 —— 不要各写一份。
+   */
+  async mintWithOutcome(config = ZCODE_CAPTCHA_FALLBACK, options = {}) {
+    return await this.mintInternal(config, options);
+  }
+  /**
+   * 产出 captcha param。
+   *
+   * ## 复用策略（⚠ 空闲失效，见本方法上方的实测表）
+   *
+   * ```
+   * 默认（idleReuseMs = Infinity）→ 复用（约 0.5 秒）
+   * 任一次 mint 失败（F001 等）    → 丢弃页面、换新重试一次
+   * ```
+   *
+   * ⚠ **不再按空闲时长预测式换页**（2026-10-01 修正）：原「空闲 15 秒必然
+   * 失效」的推论在变量分离复测中**无法复现**，详见 `mintInternal` 上方的
+   * 完整对照表。预测式换页让每次空闲后白付约 2.7 秒。
+   */
+  async mint(config = ZCODE_CAPTCHA_FALLBACK, options = {}) {
+    return (await this.mintInternal(config, options)).param;
+  }
+  /** `mint` / `mintWithOutcome` 的共用实现（**唯一**的产出路径）。 */
+  async mintInternal(config, options) {
+    await this.start();
+    const attempts = 2;
+    let lastError;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      if (options.signal?.aborted === true) {
+        throw lastError ?? new Error("zcode: captcha \u4EA7\u51FA\u5DF2\u53D6\u6D88");
+      }
+      const forceFresh = attempt > 1;
+      const page = await this.acquirePage(forceFresh, options.signal);
+      try {
+        const outcome = await this.mintOnPage(page, config);
+        page.lastUsedAt = Date.now();
+        return outcome;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        this.discardPage(page);
+        if (attempt < attempts) {
+          await sleep4(300);
+        }
+      } finally {
+        if (this.reusablePage === page) this.releasePage(page);
+        else this.pageBusy = false;
+      }
+    }
+    throw lastError ?? new Error("zcode: captcha \u4EA7\u51FA\u5931\u8D25\uFF08\u672A\u77E5\u539F\u56E0\uFF09");
+  }
+  /** 在**指定页面**上跑一次 captcha（不含页面获取/重试逻辑）。 */
+  async mintOnPage(page, config) {
+    if (page.prepared !== true) {
+      await page.cdp.send("Runtime.evaluate", { expression: buildDomExpression(), returnByValue: true });
+      const injected = await page.cdp.send("Runtime.evaluate", {
+        expression: buildSdkInjectExpression(),
+        awaitPromise: true,
+        returnByValue: true
+      });
+      const injectedType = injected?.result?.value;
+      if (injectedType !== "function" && injectedType !== "already") {
+        throw new Error(`zcode: \u963F\u91CC\u4E91 captcha SDK \u672A\u52A0\u8F7D\uFF08${String(injectedType)}\uFF09`);
+      }
+      page.prepared = true;
+    }
+    const minted = await page.cdp.send("Runtime.evaluate", {
+      expression: buildMintExpression(config),
+      awaitPromise: true,
+      returnByValue: true
+    }, 75e3);
+    const raw = minted?.result?.value;
+    let parsed;
+    try {
+      parsed = JSON.parse(String(raw));
+    } catch {
+      throw new Error(`zcode: captcha \u7ED3\u679C\u65E0\u6CD5\u89E3\u6790\uFF08${String(raw).slice(0, 160)}\uFF09`);
+    }
+    if (parsed.stage !== "success" || typeof parsed.param !== "string") {
+      throw new Error(
+        `zcode: captcha \u4EA7\u51FA\u5931\u8D25\uFF08stage=${parsed.stage ?? "?"}${parsed.err !== void 0 ? `, err=${parsed.err}` : ""}\uFF09`
+      );
+    }
+    const verdict = validateCaptchaParam(parsed.param);
+    if (!verdict.ok) {
+      throw new Error(`zcode: captcha param \u4E0D\u53EF\u7528\uFF08${verdict.reason ?? "\u672A\u77E5"}\uFF09`);
+    }
+    return { param: parsed.param, interactive: parsed.interactive === true };
+  }
+  /**
+   * 取一个可用的页面。
+   *
+   * ## 复用策略：**复用优先，失败才换页**
+   *
+   * ```
+   * forceFresh = true            → 丢弃旧页、建新页（`mint()` 第一次失败后的重试）
+   * 空闲 > idleReuseMs           → 丢弃旧页、建新页（默认 Infinity ⇒ 不触发）
+   * 否则                          → 复用（约 0.5 秒）
+   * ```
+   *
+   * ⚠ **默认不再按空闲时长换页**（2026-10-01 修正）：原「空闲 15 秒必然
+   * `F001`」的推论在变量分离复测中**无法复现**（空闲 20 秒后直接复用
+   * 仍 3/3 成功、约 0.47 秒），而每次换页要付约 2.7 秒。
+   * 详见 `ZcodeCaptchaBrowserOptions.idleReuseMs` 的完整说明。
+   *
+   * ⚠ 串行化：captcha 是**一次性**的，两个并发 mint 共用同一页面会互相
+   * 踩状态。故用 `busy` 标志把取页串起来 —— 并发调用会排队，
+   * 而不是拿到同一个页面。
+   */
+  async acquirePage(forceFresh = false, signal) {
+    const waitTimeoutMs = this.options.pageWaitTimeoutMs ?? 3e4;
+    const deadline = Date.now() + waitTimeoutMs;
+    while (this.pageBusy) {
+      if (signal?.aborted === true) throw new Error("zcode: captcha \u53D6\u9875\u7B49\u5F85\u5DF2\u53D6\u6D88");
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `zcode: captcha \u9875\u9762\u88AB\u5360\u7528\u8D85\u8FC7 ${waitTimeoutMs}ms\uFF08\u7591\u4F3C\u4E0A\u4E00\u6B21 mint \u672A\u5F52\u8FD8\uFF09`
+        );
+      }
+      await sleep4(50);
+    }
+    this.pageBusy = true;
+    const idleReuseMs = this.options.idleReuseMs ?? Number.POSITIVE_INFINITY;
+    const existing = this.reusablePage;
+    if (existing !== void 0) {
+      const idle = Date.now() - existing.lastUsedAt;
+      if (!forceFresh && idle <= idleReuseMs) return existing;
+      this.discardPage(existing);
+    }
+    const browser = this.browserCdp;
+    if (browser === void 0) {
+      this.pageBusy = false;
+      throw new Error("zcode: \u6D4F\u89C8\u5668\u672A\u5C31\u7EEA");
+    }
+    let targetId;
+    try {
+      const created = await browser.send("Target.createTarget", { url: "about:blank" });
+      targetId = typeof created.targetId === "string" ? created.targetId : void 0;
+    } catch (error) {
+      this.pageBusy = false;
+      throw error;
+    }
+    if (targetId === void 0) {
+      this.pageBusy = false;
+      throw new Error("zcode: \u65E0\u6CD5\u65B0\u5EFA\u9875\u9762 target");
+    }
+    let ws;
+    try {
+      const targets = await (await fetch(`http://127.0.0.1:${this.port}/json/list`, {
+        signal: AbortSignal.timeout(5e3)
+      })).json();
+      const target = targets.find((item) => item.id === targetId);
+      if (typeof target?.webSocketDebuggerUrl !== "string") {
+        throw new Error("zcode: \u65B0\u9875\u9762\u6CA1\u6709\u53EF\u7528\u7684\u8C03\u8BD5\u5730\u5740");
+      }
+      ws = new WebSocket(target.webSocketDebuggerUrl);
+      const connectTimeoutMs = this.options.connectTimeoutMs ?? 1e4;
+      await new Promise((resolve2, reject) => {
+        let settled = false;
+        let timer;
+        const cleanup = () => {
+          if (timer !== void 0) clearTimeout(timer);
+          signal?.removeEventListener("abort", onAbort);
+        };
+        const done = (settle) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          settle();
+        };
+        const onAbort = () => done(() => reject(new Error("zcode: \u8FDE\u63A5\u65B0\u9875\u9762\u5DF2\u53D6\u6D88")));
+        timer = setTimeout(
+          () => done(() => reject(new Error(`zcode: \u8FDE\u63A5\u65B0\u9875\u9762\u8D85\u65F6\uFF08${connectTimeoutMs}ms\uFF09`))),
+          connectTimeoutMs
+        );
+        timer.unref?.();
+        ws?.addEventListener("open", () => done(resolve2), { once: true });
+        ws?.addEventListener("error", () => done(() => reject(new Error("zcode: \u8FDE\u63A5\u65B0\u9875\u9762\u5931\u8D25"))), { once: true });
+        signal?.addEventListener("abort", onAbort, { once: true });
+      });
+      const cdp = new CdpConnection(ws);
+      await cdp.send("Page.enable");
+      await cdp.send("Runtime.enable");
+      await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: STEALTH_PATCH });
+      await cdp.send("Page.navigate", { url: resolveCaptchaPageOrigin(this.options) });
+      await sleep4(this.options.navigationWaitMs ?? 1500);
+      const page = { targetId, ws, cdp, lastUsedAt: Date.now() };
+      this.reusablePage = page;
+      return page;
+    } catch (error) {
+      try {
+        ws?.close();
+      } catch {
+      }
+      this.pageBusy = false;
+      try {
+        await fetch(`http://127.0.0.1:${this.port}/json/close/${targetId}`, {
+          signal: AbortSignal.timeout(3e3)
+        });
+      } catch {
+      }
+      throw error;
+    }
+  }
+  /**
+   * 作废一个页面：关掉它、从池里摘掉。
+   *
+   * ⚠ **必须真的关闭 target**（不只是清引用）—— 否则页面会累积，
+   * 且每个坏页面都占着一份 SDK 实例。
+   *
+   * ⚠ 关不掉也不抛错：这是清理路径，不该因为清理失败而让 mint 报错。
+   */
+  discardPage(page) {
+    if (this.reusablePage === page) this.reusablePage = void 0;
+    try {
+      page.cdp.close();
+    } catch {
+    }
+    try {
+      page.ws.close();
+    } catch {
+    }
+    void (async () => {
+      try {
+        await fetch(`http://127.0.0.1:${this.port}/json/close/${page.targetId}`, {
+          signal: AbortSignal.timeout(3e3)
+        });
+      } catch {
+      }
+    })();
+  }
+  /** 归还页面（保留复用）。 */
+  releasePage(page) {
+    void page;
+    this.pageBusy = false;
+  }
+  /**
+   * 终止浏览器进程**树**并清理所有 CDP 连接。
+   *
+   * ## ⚠ 为什么必须杀**整棵树**（真实缺陷）
+   *
+   * 早期只写 `this.child?.kill()` —— 那只杀**主进程**。而 Chromium 是
+   * **多进程架构**（browser / gpu / renderer / utility 各一个进程），
+   * 主进程被 `SIGTERM` 后**子进程会变成孤儿继续运行**。
+   *
+   * 实测证据（一次被中断的测试后）：
+   *   - **12 个** 残留 `chrome.exe` 全指向同一个 `--user-data-dir`
+   *   - **28 个**残留的 `zcode-captcha-*` 临时 profile 目录
+   *
+   * 生产影响：**每次会话泄漏约 200MB**（一个 Chromium 实例），
+   * 且残留进程占着调试端口，会干扰后续启动（曾让一次 `max` 档位测试
+   * 表现得像「卡住 80 秒」，实为旧实例干扰）。
+   *
+   * 修法：POSIX 用进程组（`detached: true` + `kill(-pid)`），
+   * Windows 用 `taskkill /T /F`（`/T` = 含子进程树）。
+   */
+  kill() {
+    try {
+      this.reusablePage?.cdp.close();
+    } catch {
+    }
+    try {
+      this.reusablePage?.ws.close();
+    } catch {
+    }
+    this.reusablePage = void 0;
+    this.pageBusy = false;
+    try {
+      this.browserCdp?.close();
+    } catch {
+    }
+    try {
+      this.browserWs?.close();
+    } catch {
+    }
+    this.browserCdp = void 0;
+    this.browserWs = void 0;
+    this.killProcessTree();
+  }
+  /**
+   * 终止浏览器及其**全部子进程**。
+   *
+   * ⚠ 不能退回成 `child.kill()`（见 {@link kill} 的说明：会留下孤儿）。
+   *
+   * ⚠⚠ **必须同步等它做完**（真实缺陷）：早期用异步 `spawn('taskkill', …)`
+   * 后立即返回 —— 调用方以为清理完了、紧接着启动下一轮，而旧实例**还活着
+   * 占着端口**。若下一轮随机撞到同一端口就会串成：
+   * 连到旧实例 → `child` 指向已退出的新进程 → `dispose()` 打空 →
+   * **旧实例整棵树泄漏**（实测 10~14 个进程）。
+   *
+   * 实测对照：`dispose()` 后**立即**下一轮会偶发泄漏；
+   * 每轮间隔 2.5 秒则 5/5 干净 —— 正是「没等它退完」的特征。
+   *
+   * 故改用 `spawnSync`：清理路径阻塞几十毫秒是可接受的，
+   * 换来确定性的「返回即已终止」。
+   */
+  killProcessTree() {
+    const child = this.child;
+    this.child = void 0;
+    if (child === void 0 || child.pid === void 0) return;
+    const pid = child.pid;
+    if (process.platform === "win32") {
+      try {
+        spawnSync2("taskkill", ["/pid", String(pid), "/T", "/F"], {
+          stdio: "ignore",
+          windowsHide: true,
+          // 最多等 10 秒（正常几十毫秒；卡住说明系统异常，别无限等）。
+          timeout: 1e4
+        });
+      } catch {
+      }
+      try {
+        child.kill();
+      } catch {
+      }
+      return;
+    }
+    try {
+      process.kill(-pid, "SIGKILL");
+    } catch {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+      }
+    }
+  }
+  /** 关闭浏览器并清理临时 profile。 */
+  dispose() {
+    LIVE_CAPTCHA_BROWSERS.delete(this);
+    this.kill();
+    const dir = this.profileDir;
+    this.profileDir = void 0;
+    if (dir === void 0) return;
+    const attempts = [0, 100, 500, 1500];
+    const tryRemove = (index) => {
+      if (index >= attempts.length) return;
+      const delay2 = attempts[index];
+      const run = () => {
+        try {
+          rmSync(dir, { recursive: true, force: true });
+        } catch {
+          tryRemove(index + 1);
+        }
+      };
+      if (delay2 === 0) run();
+      else setTimeout(run, delay2).unref?.();
+    };
+    tryRemove(0);
+  }
+};
+
+// vendor/channel-pack/src/captcha-pool.ts
+var CaptchaPool = class {
+  mint;
+  ttlMs;
+  enabled;
+  now;
+  onWarn;
+  validate;
+  pooled;
+  /** 在飞的预取（用于去重：同一时刻只允许一个后台预取）。 */
+  inflight;
+  constructor(options) {
+    this.mint = options.mint;
+    this.ttlMs = options.ttlMs ?? DEFAULT_CAPTCHA_POOL_TTL_MS;
+    this.enabled = options.enabled ?? true;
+    this.now = options.now ?? (() => Date.now());
+    this.onWarn = options.onWarn;
+    this.validate = options.validate;
+  }
+  /**
+   * 池当前是否有**可用**（未过期且合法）的 param —— 仅供诊断与单测。
+   *
+   * ⚠ 必须是**只读**的：早期把 `hasFresh()` 实现成「调一次 `takeFresh()` 看结果」，
+   * 而 `takeFresh()` 会清空池 —— 于是「看一眼」就把预取好的 param 丢掉了，
+   * 预取池在诊断代码路过时**静默失效**（写单测时实测到了：
+   * `hasFresh()` 之后 `take()` 拿到的是现产物而不是池里的那个）。
+   */
+  hasFresh() {
+    return this.peekFresh() !== void 0;
+  }
+  /** 在飞的预取数量（0 或 1）—— 仅供诊断与单测。 */
+  inflightCount() {
+    return this.inflight === void 0 ? 0 : 1;
+  }
+  /** 清空池（关停时调用）。不取消在飞的预取 —— 它完成后会被 `stop()` 之后忽略。 */
+  clear() {
+    this.pooled = void 0;
+  }
+  /**
+   * 取一个 param 用于**本次请求**。
+   *
+   * 三条路径（顺序即优先级）：
+   * 1. **池命中**（未过期、合法）→ 取走，并立刻在后台补下一个。
+   * 2. **池空 / 已过期** → **现产**，产完同样触发一次补池。
+   * 3. 未启用预取 → 直接现产（与旧行为一致）。
+   *
+   * ⚠ **第 2 条里的「产完触发补池」是必需的**，不是锦上添花：
+   * 少了它，首次请求现产之后池永远是空的，之后每次都走现产 ——
+   * 这个优化就形同虚设。`dsh-free-glm` 把这条写成了实现陷阱记录
+   * （`takePooledCaptcha()` 的「池空也补一次」注释）。
+   */
+  async take(options = {}) {
+    if (!this.enabled) return await this.mint(options);
+    const pooled = this.takeFresh();
+    if (pooled !== void 0) {
+      this.prefetch();
+      return pooled.param;
+    }
+    const fresh = await this.mint(options);
+    this.prefetch();
+    return fresh;
+  }
+  /**
+   * 后台预取一个 param 入池（**不阻塞调用方、失败不抛**）。
+   *
+   * 去重：已有在飞的预取时直接返回 —— 否则每轮请求都会叠加一个预取，
+   * 白耗 captcha 配额（且它们的产物只有一个能入池）。
+   */
+  prefetch() {
+    if (!this.enabled) return;
+    if (this.inflight !== void 0) return;
+    if (this.pooled !== void 0 && this.now() - this.pooled.atMs < this.ttlMs) return;
+    const task = (async () => {
+      try {
+        const param = await this.mint();
+        if (this.validate !== void 0 && !this.validate(param)) {
+          this.onWarn?.("zcode: captcha \u9884\u53D6\u4EA7\u51FA\u4E86\u4E0D\u53EF\u7528\u7684 param\uFF08\u5DF2\u4E22\u5F03\uFF0C\u4E0B\u6B21\u8BF7\u6C42\u73B0\u4EA7\uFF09");
+          return;
+        }
+        const current = this.pooled;
+        if (current === void 0 || this.now() - current.atMs >= this.ttlMs) {
+          this.pooled = { param, atMs: this.now() };
+        }
+      } catch (error) {
+        this.onWarn?.(
+          `zcode: captcha \u9884\u53D6\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u8BF7\u6C42\uFF0C\u4E0B\u6B21\u73B0\u4EA7\uFF09\uFF1A${error instanceof Error ? error.message : String(error)}`
+        );
+      } finally {
+        this.inflight = void 0;
+      }
+    })();
+    this.inflight = task;
+  }
+  /**
+   * **只读**地看池里是否有可用项（不清空）。
+   *
+   * 判据与 {@link takeFresh} 逐条一致 —— 否则会出现「`hasFresh()` 说有、
+   * `take()` 却拿不到」的不一致。
+   */
+  peekFresh() {
+    const item = this.pooled;
+    if (item === void 0) return void 0;
+    if (this.now() - item.atMs >= this.ttlMs) return void 0;
+    if (this.validate !== void 0 && !this.validate(item.param)) return void 0;
+    return item;
+  }
+  /**
+   * 取出池里**未过期且合法**的一项（取走即清空）。
+   *
+   * 过期项直接丢弃并返回 `undefined` —— 让调用方走现产，
+   * 而不是把一个大概率被上游拒的 param 发出去（那是**一次可见的失败**）。
+   */
+  takeFresh() {
+    const item = this.peekFresh();
+    if (item === void 0) {
+      this.pooled = void 0;
+      return void 0;
+    }
+    this.pooled = void 0;
+    return item;
+  }
+};
+var DEFAULT_CAPTCHA_POOL_TTL_MS = 3e4;
+var CAPTCHA_POOL_DEFAULT_ENABLED = false;
+function captchaPoolConfigFromEnv(env = process.env) {
+  const rawSwitch = env["DSH_ZCODE_CAPTCHA_POOL"];
+  const enabled = rawSwitch === void 0 || rawSwitch.trim().length === 0 ? CAPTCHA_POOL_DEFAULT_ENABLED : rawSwitch.trim() !== "0";
+  const rawTtl = env["DSH_ZCODE_CAPTCHA_POOL_TTL_MS"];
+  const parsed = rawTtl === void 0 ? Number.NaN : Number(rawTtl);
+  const ttlMs2 = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : DEFAULT_CAPTCHA_POOL_TTL_MS;
+  return { enabled, ttlMs: ttlMs2 };
+}
 
 // vendor/channel-pack/src/captcha-requirement.ts
 var CAPTCHA_REQUIRED_TTL_MS = 2 * 6e4;
@@ -53172,238 +54486,107 @@ function captchaRequirementObservability() {
   return { probeFirstCount, knownRequiredCount };
 }
 
-// vendor/channel-pack/src/captcha-supply.ts
-var PARAM_MAX_AGE_MS = 2e4;
-var DEFAULT_CARRIER_WAIT_MS = 1e4;
-var slot;
-var demand = false;
-var stats = { supplied: 0, used: 0, stale: 0, waitTimeouts: 0, interactive: 0 };
-var waiters = [];
-function putSuppliedParam(param, arrivedAtMs, options = {}) {
-  if (typeof param !== "string" || param.trim().length === 0) return false;
-  if (!validateCaptchaParam(param).ok) return false;
-  const interactive = options.interactive === true;
-  slot = { param: param.trim(), atMs: arrivedAtMs, interactive };
-  stats.supplied += 1;
-  if (interactive) stats.interactive += 1;
-  waiters[0]?.();
-  return true;
-}
-function takeFreshParam(nowMs) {
-  const current = slot;
-  if (current === void 0) return void 0;
-  slot = void 0;
-  if (nowMs - current.atMs >= PARAM_MAX_AGE_MS) {
-    stats.stale += 1;
-    return void 0;
+// vendor/channel-pack/src/captcha-backoff.ts
+var CaptchaBackoff = class {
+  threshold;
+  baseMs;
+  maxMs;
+  enabled;
+  now;
+  /** 连续失败次数（成功即清零）。 */
+  streak = 0;
+  /** 冷却截止时刻（毫秒；0 = 不在冷却中）。 */
+  untilMs = 0;
+  constructor(options = {}) {
+    this.threshold = options.threshold ?? 3;
+    this.baseMs = options.baseMs ?? 6e4;
+    this.maxMs = options.maxMs ?? 30 * 6e4;
+    this.enabled = options.enabled ?? true;
+    this.now = options.now ?? (() => Date.now());
   }
-  stats.used += 1;
-  return current.param;
+  /** 当前连续失败次数（诊断用）。 */
+  failureStreak() {
+    return this.streak;
+  }
+  /**
+   * 还要冷却多久（毫秒）。`0` = 不在冷却中，可以正常发起。
+   *
+   * ⚠ 到点后**自动清零冷却**（但**不**清 `streak` —— 连续失败次数要保留，
+   * 否则一次到点就会让退避重新从 1 分钟起步，达不到「指数」的效果）。
+   */
+  remainingMs() {
+    if (!this.enabled) return 0;
+    const remain = this.untilMs - this.now();
+    if (remain <= 0) {
+      this.untilMs = 0;
+      return 0;
+    }
+    return remain;
+  }
+  /** 记一次**产出成功**（清零连续失败与冷却）。 */
+  noteSuccess() {
+    this.streak = 0;
+    this.untilMs = 0;
+  }
+  /**
+   * 记一次**产出失败**；返回本次进入/延长的冷却截止时刻
+   * （`0` = 还没到阈值，不需冷却）。
+   */
+  noteFailure() {
+    if (!this.enabled) return 0;
+    this.streak += 1;
+    if (this.streak < this.threshold) return 0;
+    const steps = this.streak - this.threshold;
+    const cooldown = Math.min(this.baseMs * 2 ** steps, this.maxMs);
+    this.untilMs = this.now() + cooldown;
+    return this.untilMs;
+  }
+  /** 清空状态（关停或用户手动重置）。 */
+  reset() {
+    this.streak = 0;
+    this.untilMs = 0;
+  }
+};
+function captchaBackoffConfigFromEnv(env = process.env) {
+  const rawSwitch = env["DSH_ZCODE_CAPTCHA_BACKOFF"];
+  const enabled = rawSwitch === void 0 || rawSwitch.trim().length === 0 ? true : rawSwitch.trim() !== "0";
+  return { enabled };
 }
-function setCaptchaDemand(active) {
-  demand = active;
-}
-function captchaDemand() {
-  return demand;
-}
-function waitForFreshParam(now, maxWaitMs = DEFAULT_CARRIER_WAIT_MS, options = {}) {
-  const immediate = takeFreshParam(now());
-  if (immediate !== void 0) return Promise.resolve(immediate);
-  if (options.signal?.aborted === true) return Promise.resolve(void 0);
-  return new Promise((resolve2) => {
-    let settled = false;
-    const finish = (timedOut, param) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      options.signal?.removeEventListener("abort", onAbort);
-      const index = waiters.indexOf(onWake);
-      if (index >= 0) waiters.splice(index, 1);
-      if (timedOut) stats.waitTimeouts += 1;
-      resolve2(param);
-    };
-    const onWake = () => {
-      const param = takeFreshParam(now());
-      if (param === void 0) return;
-      finish(false, param);
-    };
-    const onAbort = () => {
-      finish(false);
-    };
-    const timer = setTimeout(() => finish(true), maxWaitMs);
-    timer.unref?.();
-    waiters.push(onWake);
-    options.signal?.addEventListener("abort", onAbort, { once: true });
-  });
-}
-function captchaSupplyStats() {
-  return { ...stats, pendingInteractive: slot?.interactive === true };
+function captchaQueueEnabledFromEnv(env = process.env) {
+  const raw = env["DSH_ZCODE_CAPTCHA_QUEUE"];
+  return raw === void 0 || raw.trim().length === 0 ? true : raw.trim() !== "0";
 }
 
 // vendor/channel-pack/src/captcha-carrier.ts
-var CARRIER_REJECT_DISABLE_THRESHOLD = 3;
-var CarrierUnavailableError = class extends Error {
-  constructor(message2 = CARRIER_UNAVAILABLE_MESSAGE) {
-    super(message2);
-    this.name = "CarrierUnavailableError";
-  }
-};
-var CARRIER_UNAVAILABLE_MESSAGE = "zcode \u7B7E\u5230\u4E0D\u652F\u6301\u5F53\u524D\u5BA2\u6237\u7AEF\uFF1Acaptcha \u9700\u8981\u5728 DSH \u684C\u9762\u7248\u7684 Our Free Model \u9762\u677F\u4E2D\u5B8C\u6210\uFF08\u6253\u5F00\u9762\u677F\u5373\u81EA\u52A8\u4EA7\u51FA\uFF09";
 var CaptchaCarrier = class {
-  waitMs;
-  nowImpl;
+  mintWithBrowser;
   log;
-  /** 内部载体的 param 被上游拒的累计次数（达到阈值即禁用，见文件头）。 */
-  rejections = 0;
-  disabled = false;
-  counters = { internalUsed: 0, chromiumUsed: 0 };
+  counters = { browserUsed: 0, browserRejected: 0 };
   constructor(deps) {
-    this.waitMs = deps.waitMs ?? DEFAULT_CARRIER_WAIT_MS;
-    this.nowImpl = deps.now ?? (() => Date.now());
+    this.mintWithBrowser = deps.mintWithBrowser;
     this.log = deps.log;
   }
-  /** 内部载体是否已被本次运行禁用（禁用后连槽里有货也不用，见 `mint`）。 */
-  internalDisabled() {
-    return this.disabled;
-  }
-  /**
-   * 产出一个 param：内部优先，等不到即 chromium。
-   *
-   * 三条出口（顺序即优先级）：
-   * 1. **槽里已有新鲜 param** → 立刻用。⚠ 这条**不看需求位**：client 既然已经产出了，
-   *    再为了「统一走等待」把它留在槽里过期，等于白烧一份配额；
-   * 2. **需求位为真**（`captchaDemand`，语义同 `src/captcha-requirement.ts` 的
-   *    「上游要验证」）→ 有界等一次贡献，等到就用；
-   * 3. 其余一律 chromium，**不白等** —— 需求位为假时每条消息都等 `waitMs`
-   *    会把「上游不校验时零成本」这个收益整个赔回去。
-   *
-   * ⚠ 禁用之后必须**既不等也不取槽**：`waitForFreshParam` 被唤醒时自己会去
-   * `takeFreshParam`，所以「只把入口那条 take 短路掉」是不够的 —— 漏掉这一层短路，
-   * 内部 param 仍会从等待那条路溜出去，而它正是被上游拒过 3 次的那类东西。
-   */
+  /** 产出一个 param。抛错即「本机产不出」（无浏览器 / 被退避闸门挡住 / SDK 失败）。 */
   async mint(options = {}) {
-    if (!this.disabled) {
-      const ready = takeFreshParam(this.nowImpl());
-      if (ready !== void 0) {
-        this.counters.internalUsed += 1;
-        return { param: ready, source: "internal" };
-      }
-      if (captchaDemand()) {
-        const waited = await waitForFreshParam(this.nowImpl, this.waitMs, options);
-        if (waited !== void 0) {
-          this.counters.internalUsed += 1;
-          return { param: waited, source: "internal" };
-        }
-      }
-    }
-    throw new CarrierUnavailableError(CARRIER_UNAVAILABLE_MESSAGE);
+    this.counters.browserUsed += 1;
+    return { param: await this.mintWithBrowser(options), source: "browser" };
   }
   /**
-   * 带着上一次的产出去撞过上游、结果被 `3007` 拒 ⇒ 记一次归因。
+   * 上一次的产出被上游 `3007` 拒 ⇒ 换一个新 param 重发。
    *
-   * 外挂链退役后**没有第二个来源**：内部 param 被拒说明本设备信誉被降级
-   * （无感验证被换成了滑块），换浏览器/换链重发都救不了 —— 如实向上抛，
-   * claim 的换链分支（`retryClaimWithInjectedChain`）随之退役。
+   * param 是一次性的（复用必 `3007`），所以「被拒」只说明**那一发**无效，
+   * 不代表本机产不出 —— 直接再产一个即可。
    */
-  async mintWithFallbackAfterRejection(_outcome, _options = {}) {
-    this.noteInternalRejection();
-    throw new CarrierUnavailableError(CARRIER_UNAVAILABLE_MESSAGE);
+  async mintWithFallbackAfterRejection(_outcome, options = {}) {
+    this.counters.browserRejected += 1;
+    this.log?.("zcode: \u4E0A\u4E00\u6B21 param \u88AB 3007 \u62D2 \u21D2 \u91CD\u65B0\u4EA7\u4E00\u4E2A\u518D\u53D1");
+    return await this.mint(options);
   }
-  /**
-   * 记一次「内部载体的 param 被上游拒」，并在到阈值时**本次运行禁用**内部载体。
-   *
-   * ## 为什么单独暴露（评审 C4）
-   * 领取路径（`ZcodeAuth.claimDailyWith`）也要记同一笔账，但它重发时走的是
-   * **注入链**（`channel-pack-rpc.ts` 注入的那条），不是本类里那条 chromium 腿 ——
-   * 用 `mintWithFallbackAfterRejection` 会顺手多产一个没人用的 param。
-   * ⇒ 把「记账 + 阈值禁用」这段（也就是本文件头「累计 N 次就禁用」那套语义）
-   * 抽成这个方法，两个调用点共用**同一份**阈值判断，不会漂移成两处真相。
-   */
-  noteInternalRejection() {
-    this.rejections += 1;
-    this.log?.(
-      `zcode: \u5185\u90E8\u8F7D\u4F53\u7684 param \u88AB\u4E0A\u6E38\u62D2\uFF08\u7B2C ${String(this.rejections)} \u6B21\uFF09 \u21D2 \u5F53\u6B21\u6539\u7528 chromium \u91CD\u4EA7`
-    );
-    if (!this.disabled && this.rejections >= CARRIER_REJECT_DISABLE_THRESHOLD) {
-      this.disabled = true;
-      this.log?.(
-        `zcode: \u5185\u90E8\u8F7D\u4F53\u7D2F\u8BA1\u88AB\u62D2 ${String(this.rejections)} \u6B21 \u21D2 \u672C\u6B21\u8FD0\u884C\u7981\u7528\u5185\u90E8\u8F7D\u4F53\uFF0C\u53EA\u8D70 chromium\uFF08\u6392\u67E5\uFF1A\u8F7D\u4F53\u9875\u662F\u5426\u88AB CSP/\u7F51\u7EDC\u62E6\u3001guest \u7684 location.origin \u662F\u5426\u6B63\u5E38\uFF09`
-      );
-    }
-  }
-  /**
-   * 观测：本链路的取舍计数 + 供给槽统计（面板与日志用，与 `zcode-auth.ts` 的 stats 同处）。
-   *
-   * ⚠ 槽那份快照里有 `interactive` / `pendingInteractive`（评审 I2）：内部载体被 SDK
-   *   降级成**交互式验证**是这台机器设备信誉变差的**唯一**预警（chromium 那条腿
-   *   已经会 `warn`，内部载体这段此前只打进 client 控制台，host 侧看不到）。
-   *   `pendingInteractive` 说「**当前槽里那条**是不是交互式产物」—— 取走即归零。
-   */
+  /** 诊断计数（`status()` 暴露给 UI）。 */
   stats() {
-    return {
-      internalUsed: this.counters.internalUsed,
-      chromiumUsed: this.counters.chromiumUsed,
-      internalRejected: this.rejections,
-      disabledAfter: CARRIER_REJECT_DISABLE_THRESHOLD,
-      supply: captchaSupplyStats()
-    };
+    return { ...this.counters };
   }
-  /** chromium 产出并记账。**唯一**出口，异常原样上抛（退避闸门的语义要保住）。 */
 };
-
-// vendor/channel-pack/src/zcode-carrier-page.ts
-var CAPTCHA_CARRIER_RESULT_KEY = "__zcodeCaptcha";
-var CAPTCHA_CARRIER_MESSAGE_TYPE = "zcode-captcha-param";
-function buildCarrierPageHtml(config) {
-  return [
-    '<!doctype html><html><head><meta charset="utf-8">',
-    "<title>dsh captcha carrier</title></head><body>",
-    "<script>",
-    `window.${CAPTCHA_CARRIER_RESULT_KEY} = { stage: "pending", param: "", interactive: false, updatedAt: 0 };`,
-    "    const pageStartedAt = Date.now();",
-    "(async () => {",
-    "  try {",
-    // 三段与生产 chromium 路径**逐字同源**（同一批构造函数，不留第二份）。
-    // ⚠ 末尾那个 `;` 不是排版：`buildDomExpression()` 产出的是**语句串**（以 `'ok'`
-    // 收尾），下一行紧跟 `await (...)`。靠 ASI 今天能过，但它把整页的正确性押在
-    // 「上游表达式恰好不以可续接的表达式收尾」上 —— 表达式一改就整页语法错，
-    // 而载体页跑在离屏 guest 里，谁也看不见。
-    `    ${buildDomExpression()};`,
-    `    await (${buildSdkInjectExpression()});`,
-    `    const outcome = JSON.parse(await (${buildMintExpression(config)}));`,
-    `    window.${CAPTCHA_CARRIER_RESULT_KEY} = {`,
-    '      stage: String(outcome.stage || "fail"),',
-    '      param: typeof outcome.param === "string" ? outcome.param : "",',
-    "      interactive: outcome.interactive === true,",
-    "      updatedAt: Date.now(),",
-    "      error: outcome.err === undefined ? undefined : String(outcome.err),",
-    "    };",
-    // ★ 回传给面板（client.js）：postMessage 允许跨源，srcdoc 与父同源更无碍。
-    //   elapsedMs = 页面文档开始到现在的耗时（页面加载即开始 mint，无其余阶段），
-    //   contribute 的时效闸用它修正跨机时钟漂移。
-    //   只在产出成功时回传 —— 失败形态面板不关心（client 只认 param），
-    //   面板对失败的处理是超时放弃并回落「不支持」提示。
-    '    if (window.__zcodeCaptcha.stage === "success" && window.__zcodeCaptcha.param) {',
-    "      try {",
-    `        parent.postMessage({ type: ${JSON.stringify(CAPTCHA_CARRIER_MESSAGE_TYPE)}, param: window.__zcodeCaptcha.param, interactive: window.__zcodeCaptcha.interactive === true, elapsedMs: Math.max(0, Date.now() - pageStartedAt) }, "*");`,
-    "      } catch (postError) { /* \u56DE\u4F20\u5931\u8D25\u4E0D\u5F71\u54CD param \u843D\u5728 window \u4E0A\uFF08\u65E7\u8DEF\u5F84\u8FD8\u80FD\u8BFB\uFF09 */ }",
-    "    }",
-    "  } catch (error) {",
-    "    const detail = String((error && (error.stack || error.message)) || error);",
-    `    window.${CAPTCHA_CARRIER_RESULT_KEY} = {`,
-    '      stage: "throw", param: "", interactive: false, updatedAt: Date.now(), error: detail,',
-    "    };",
-    "    // \u8F7D\u4F53\u9875\u662F\u79BB\u5C4F guest\uFF0C\u51FA\u95EE\u9898\u65F6\u7684**\u552F\u4E00\u73B0\u573A**\u5C31\u662F\u8FD9\u4EFD\u6587\u6863 \u2014\u2014 \u4E0D\u5199\u8FDB DOM\uFF0C",
-    "    // \u300C\u4E3A\u4EC0\u4E48\u8FD9\u4E2A session \u4E00\u6B21\u90FD\u6CA1\u4EA7\u8FC7 param\u300D\u5C31\u53EA\u80FD\u9760\u731C\uFF08\u622A\u56FE\u4E5F\u770B\u4E0D\u5230\uFF0C\u5B83\u5728\u5C4F\u5916\uFF09\u3002",
-    "    try {",
-    '      document.body.insertAdjacentHTML("beforeend", "<pre id=carrier-throw></pre>");',
-    '      document.getElementById("carrier-throw").textContent = detail;',
-    "    } catch { /* DOM \u90FD\u6CA1\u4E86\u5C31\u6CA1\u522B\u7684\u53EF\u5199\u4E86 */ }",
-    "  }",
-    "})();",
-    "</script></body></html>"
-  ].join("\n");
-}
 
 // vendor/channel-pack/src/zcode-login.ts
 import { randomBytes as randomBytes6, randomUUID as randomUUID8 } from "node:crypto";
@@ -54345,10 +55528,6 @@ function shouldFallbackToOtherChannel(status, body) {
 }
 
 // vendor/channel-pack/src/zcode-auth.ts
-function internalCarrierEnabledFromEnv(env = process.env) {
-  const raw = env["DSH_ZCODE_INTERNAL_CARRIER"];
-  return raw === void 0 || raw.trim().length === 0 ? true : raw.trim() !== "0";
-}
 var CODING_PLAN_KEY_TIMEOUT_MS = 8e3;
 async function withTimeout(work, ms) {
   let timer;
@@ -54380,11 +55559,13 @@ var ZcodeAuth = class extends Service9 {
    * 上游不要验证的窗口里这条路一次都不走。
    * 生命周期由 `stop()` 收尾。
    */
+  captchaBrowser;
   /**
    * captcha **预取池**（挂在与浏览器同一个生命周期上）。
    *
    * ⚠ 惰性创建：纯插件登录、从不用推理的用户不该为它做任何事。
    */
+  captchaPool;
   /**
    * 最近一次 `mintCaptcha` 用的 captcha 配置。
    *
@@ -54395,14 +55576,16 @@ var ZcodeAuth = class extends Service9 {
   /**
    * captcha **产出失败退避**（设备级信誉保护）。
    *
-   * ⚠ 它**不惰性创建**：闸门要在第一次
+   * ⚠ 与 `captchaPool` 不同，它**不惰性创建**：闸门要在第一次
    * `mintCaptcha` 之前就生效，且构造它无任何副作用。
    */
+  captchaBackoff;
   /**
    * captcha 产出的**全局串行队列**（对齐官方 `jnn`/`wnn`）。
    *
    * ⚠ 必须是**实例字段**：队列靠共享的尾巴指针生效，每次新建等于没有队列。
    */
+  captchaQueue;
   /**
    * captcha **载体链**（二期 Task 5 接线）：内部载体（DSH Desktop 的 guest 产的 param）
    * 优先，等不到再落回 {@link mintWithChromium} 那条既有链。
@@ -54432,9 +55615,8 @@ var ZcodeAuth = class extends Service9 {
    */
   carrier;
   /** 内部载体的 env 开关（构造期读一次，与 `captchaQueueEnabledFromEnv` 同一读取点）。 */
-  internalCarrierEnabled;
   /**
-   * 载体页小服务（评审 C1/C2 的形态 B）—— 已随外挂链退役删除。
+   * 载体页小服务（评审 C1/C2 的形态 B，见 `src/captcha-carrier-server.ts` 文件头）。
    *
    * ## 为什么它必须挂在**插件自己的 `/api/…` 之外**（这轮修掉的致命缺陷）
    * 桌面版主进程对 guest 的请求有两道硬闸（asar `lib/main.js`，DSH Desktop 0.2.0-rc.2）：
@@ -54487,12 +55669,22 @@ var ZcodeAuth = class extends Service9 {
     this.product = product;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.injectedPool = options.accountPool;
-    this.internalCarrierEnabled = internalCarrierEnabledFromEnv();
+    this.captchaBackoff = new CaptchaBackoff({
+      /**
+       * 阈值与冷却沿用 `dsh-free-glm` 的实测值（同一个上游）。
+       * 关闭方式：`DSH_ZCODE_CAPTCHA_BACKOFF=0`（回到「每次都试」的旧行为）。
+       */
+      ...captchaBackoffConfigFromEnv()
+    });
+    this.captchaQueue = new SerialQueue({ enabled: captchaQueueEnabledFromEnv() });
     this.carrierLog = options.carrierLog;
     this.carrier = new CaptchaCarrier({
-      // 2026-11-14：外挂 chromium 腿退役 —— 内置浏览器（面板 srcdoc 载体页）是
-      // 唯一 param 来源。等不到贡献就抛 CarrierUnavailableError（claim 转成
-      // 「不支持当前客户端」文案），不再找本机浏览器。
+      // ★ 这条腿**就是**既有的那条链（闸门 + 串行队列 + 池 take），见 `carrier` 字段注释。
+      //   配置沿用最近一次 `mintCaptcha*` 落下的那份（`captchaMintConfig`）；
+      //   从未 mint 过时它是 undefined ⇒ `mintWithChromium` 自己在队列内现拉一次配置，
+      //   与一期「config 缺省 → 队列内 fetch」那条分支逐字同义。
+      mintWithChromium: async (options2) => await this.mintWithChromium(this.captchaMintConfig, options2),
+      // 2026-11-16：内部载体默认关（用户要求「只用默认浏览器」）⇒ 直接落到上面的链。
       ...this.carrierLog === void 0 ? {} : { log: this.carrierLog }
     });
   }
@@ -54855,20 +56047,77 @@ var ZcodeAuth = class extends Service9 {
     return await fetchZcodeBalance(credential, this.fetchImpl);
   }
   /**
+   * 那条**外挂 chromium** 的产出链（退避闸门 → 全局串行队列 → 预取池 take）。
+   *
+   * 历史上它就是 `mintCaptcha` 的全部；Task 5 起被 {@link CaptchaCarrier} 当作
+   * 「chromium 兜底」那一腿注入进去，公开入口改叫 {@link mintCaptcha}。
+   *
+   * ## 走**预取池**（2026-09-30 新增）
+   *
+   * 每次请求现产的成本实测 0.5-3.7 秒（页面空闲 <8s 复用约 0.5s，更久则要
+   * 新建页面约 3.7s），而 agent 多步循环的两步间隔通常**大于 8 秒** ——
+   * 也就是说现产路径几乎每步都付新建页面的钱。
+   * {@link CaptchaPool} 把这段成本移到**后台**：上一轮结束时产好下一轮的 param。
+   * ⚠ 上面那句「更久要新建页面」的**前提已被推翻**（2026-10-01 复测：`F001` 与空闲
+   * 时长没有稳定因果，见 `zcode-captcha.ts` 的 `mint()` 第 2 条），现行策略是
+   * **复用优先、失败才换页** ⇒ 常态下现产只要约 0.4–0.5 秒，本池的相对收益随之变小。
+   *
+   * ⚠ 语义没变：池只存**尚未使用**的 param，取走即弃（在索要验证的窗口里复用必 `3007`）。
+   *
+   * 关闭方式：`DSH_ZCODE_CAPTCHA_POOL=0`（关闭后行为与引入池之前逐字一致）。
+   *
+   * ⚠ `options.signal` 会被透传到浏览器侧（取页等待 / 建连超时 / abort）——
+   * 推理链路的「停止」能否生效就靠它（真实缺陷，2026-09-29）。
+   *
+   * ## ★ 产出失败会进入**指数退避**（2026-10-01 新增，会话实证驱动）
+   *
+   * `session-eced01ed` 里额度耗尽后连续 **12 次**空响应，而每次重试都重新
+   * mint 一个 captcha —— 在注定失败的情况下白耗 12 个配额，且**扣设备信誉**
+   * （同分钟另一个 session 就报 `502 Failed to mint auth material`）。
+   *
+   * 故这里加闸门：连续产出失败达阈值后，**直接抛错不再发起 mint**
+   * （那边注释原话：「继续请求不会让信誉恢复，只会更糟」）。
+   * 详见 {@link CaptchaBackoff}。
+   *
+   * ## ★★ 产出走**全局串行队列**（2026-10-01 新增，对齐官方）
+   *
+   * 官方闭源版把 captcha 产出链在一条全局 promise 上（`jnn`/`wnn`，
+   * 日志 `zcode-plan verification queue slot acquired`）——
+   * **同一时刻只产一个**。原因是阿里云按**设备维度**限流
+   * （官方文档：同设备每小时 150 次），并发产出是纯浪费。
+   *
+   * 而 DSH 会并发发请求（主回复 + 标题生成 + 压缩），此前每个都独立 mint。
+   *
+   * ⚠ **Task 5 把它改成了 private**：函数体一行语义没动（闸门 → 队列 → 池 take），
+   *   只是换了名字，让 {@link CaptchaCarrier} 能把「chromium 兜底」这一腿注回**同一条链**。
+   *   公开入口是同文件的 {@link mintCaptcha}（claim/签到与 `account-probe` 仍在用它）。
+   */
+  async mintWithChromium(config, options = {}) {
+    const remainMs = this.captchaBackoff.remainingMs();
+    if (remainMs > 0) {
+      throw new Error(
+        `zcode: captcha \u4EA7\u51FA\u5904\u4E8E\u51B7\u5374\u4E2D\uFF08\u8FDE\u7EED ${this.captchaBackoff.failureStreak()} \u6B21\u5931\u8D25\uFF09\uFF0C\u7EA6 ${Math.ceil(remainMs / 1e3)} \u79D2\u540E\u53EF\u91CD\u8BD5\u3002\u8FD9\u901A\u5E38\u610F\u5473\u7740\u8BBE\u5907\u4FE1\u8A89\u4E0D\u8DB3\uFF08\u4E0A\u6E38\u628A\u65E0\u611F\u9A8C\u8BC1\u964D\u7EA7\u4E3A\u6ED1\u5757\uFF09\uFF0C\u7EE7\u7EED\u91CD\u8BD5\u53EA\u4F1A\u8BA9\u4FE1\u8A89\u66F4\u5DEE \u2014\u2014 \u8BF7\u7A0D\u540E\u518D\u8BD5\u3002`
+      );
+    }
+    return await this.captchaQueue.run(async () => {
+      const resolved = config ?? await this.fetchCaptchaConfig() ?? ZCODE_CAPTCHA_FALLBACK;
+      this.captchaMintConfig = resolved;
+      return await this.captchaPoolInstance().take(options);
+    }, options);
+  }
+  /**
    * 产出 captcha param —— `ctx.zcodeAuth` 的公开入口（`account-probe` 与 claim 的注入回调用）。
    *
-   * 2026-11-14：外挂 chromium 链退役，公开入口改为**经载体链等内部贡献**
-   * （面板 srcdoc 载体页 → postMessage → contribute → 供给槽）。
-   * 等不到贡献时抛 {@link CarrierUnavailableError} —— 「不支持当前客户端」。
+   * ⚠ **不经载体链**，逐字就是那条 chromium 链：
+   * - **`account-probe.ts`**：探测要的是「现在就发得出去」的 param，等一个
+   *   「为下一发就位」的 param 毫无意义；
+   * - **claim/签到**：`channel-pack-rpc.ts` 注入进来的是**这条兜底腿**（要现取
+   *   `fetchCaptchaConfig()`，故由调用方提供），claim 入口在其之上还叠了
+   *   「内部载体优先」那一层，见 {@link mintClaimCaptcha}。
+   * 推理热路径那条「内部优先 + 当次回退」走 {@link mintCaptchaParam}。
    */
   async mintCaptcha(config, options = {}) {
-    const outcome = await this.mintCaptchaParam(config, options);
-    return outcome.param;
-  }
-  async carrierHtml() {
-    if (!this.internalCarrierEnabled) return null;
-    const config = await this.fetchCaptchaConfig() ?? ZCODE_CAPTCHA_FALLBACK;
-    return buildCarrierPageHtml(config);
+    return await this.mintWithChromium(config, options);
   }
   /**
    * claim（领取）路径的 param 产出：**内部载体优先**，等不到即落那条注入的 chromium 链。
@@ -54907,28 +56156,12 @@ var ZcodeAuth = class extends Service9 {
    * 比推理路径高得多，必须能归因。`claimDailyWith` 靠这个 `source` 决定
    * 「记一次 internalRejected + 当次换注入链重发一次」（见那里）。
    */
-  async mintClaimCaptcha(_injected, config) {
-    if (config !== void 0) this.captchaMintConfig = config;
+  async mintClaimCaptcha(injected, config) {
+    if (injected !== void 0) {
+      return { param: await injected(config), source: "browser" };
+    }
+    this.captchaMintConfig = config;
     return await this.carrier.mint();
-  }
-  /**
-   * 内部载体**此刻是否可用**（= 本次要不要走载体链）。两个条件缺一不可：
-   *
-   * 1. env 没关（`DSH_ZCODE_INTERNAL_CARRIER=0` ⇒ 既不等待也不取槽）；
-   * 2. 这个进程**真的收到过**至少一次贡献（`captchaSupplyStats().supplied > 0`）。
-   *
-   * ## 为什么第 2 条不能省（web 版逐字不变就靠它）
-   * web 版里**没有任何人**会去轮询需求位（拿不到 `dshDesktop.browser`，贡献循环整个
-   * 不启动），载体链若据此去 `waitForFreshParam`，就会**每次取 param 都白等 1.5 秒**
-   * 再走 chromium —— 而 web 版永远不会有贡献，这一等纯亏。拿「收到过贡献」当证据即可两全：
-   * 桌面版的贡献与消费在**同一进程**（RPC 直接落槽），一次投放之后才可能有第二次命中。
-   *
-   * ⚠ 这是一台**闩锁**（once true, stays true）：桌面版 client 后来死了不会自动关掉，
-   *   那种情况下每发最多多等 1.5 秒再退回 chromium，且 `carrier().supply.waitTimeouts`
-   *   会一路往上涨 —— 那个数就是「该关掉内部载体了」的现场证据（`DSH_ZCODE_INTERNAL_CARRIER=0`）。
-   */
-  internalCarrierAvailable() {
-    return this.internalCarrierEnabled && captchaSupplyStats().supplied > 0;
   }
   /**
    * 推理热路径的 param 产出：**内部载体优先**，等不到再落那条 chromium 链。
@@ -54960,6 +56193,52 @@ var ZcodeAuth = class extends Service9 {
     if (config !== void 0) this.captchaMintConfig = config;
     return await this.carrier.mintWithFallbackAfterRejection(outcome, options);
   }
+  /** 取（并惰性创建）captcha 预取池。 */
+  captchaPoolInstance() {
+    this.captchaPool ??= new CaptchaPool({
+      mint: async (options) => {
+        try {
+          this.captchaBrowser ??= new ZcodeCaptchaBrowser({
+            log: (message2) => {
+              this.ctx.logger?.warn?.(message2);
+            }
+          });
+          const outcome = await this.captchaBrowser.mintWithOutcome(
+            this.captchaMintConfig ?? ZCODE_CAPTCHA_FALLBACK,
+            options
+          );
+          if (outcome.interactive) this.captchaStats.interactiveDisplayed += 1;
+          else this.captchaStats.tracelessPassed += 1;
+          if (outcome.interactive) {
+            this.ctx.logger?.warn?.(
+              `[channel-pack] zcode captcha \u88AB\u8981\u6C42**\u4EA4\u4E92\u5F0F\u9A8C\u8BC1**\uFF08\u6ED1\u5757/\u62FC\u56FE\uFF09\u2014\u2014 \u8BBE\u5907\u4FE1\u8A89\u53EF\u80FD\u5DF2\u4E0B\u964D\uFF1B\u82E5\u9891\u7E41\u51FA\u73B0\u8BF7\u964D\u4F4E\u8C03\u7528\u9891\u7387\u6216\u7A0D\u540E\u518D\u8BD5\u3002\uFF08\u7D2F\u8BA1\uFF1A\u65E0\u611F ${this.captchaStats.tracelessPassed} \u6B21 / \u4EA4\u4E92 ${this.captchaStats.interactiveDisplayed} \u6B21\uFF09`
+            );
+          }
+          this.captchaBackoff.noteSuccess();
+          return outcome.param;
+        } catch (error) {
+          this.captchaStats.failed += 1;
+          const until = this.captchaBackoff.noteFailure();
+          if (until > 0) {
+            this.ctx.logger?.warn?.(
+              `[channel-pack] zcode captcha \u8FDE\u7EED\u4EA7\u51FA\u5931\u8D25 ${this.captchaBackoff.failureStreak()} \u6B21\uFF0C\u8FDB\u5165\u51B7\u5374\u7EA6 ${Math.ceil((until - Date.now()) / 1e3)} \u79D2\uFF08\u671F\u95F4\u4E0D\u518D\u53D1\u8D77 mint\uFF09`
+            );
+          }
+          throw error;
+        }
+      },
+      ...captchaPoolConfigFromEnv(),
+      /**
+            * 入池与取出时各校验一次：阿里云 SDK 的**降级产物**看起来像正常返回值，
+            * 但在索要验证的窗口里发出去必然 `3007`（那边实测：合法 280 字符 vs 降级约 76 字符；
+      * 上游不要验证的那些窗口里连非法 param 也能 200 —— 那不能证明它合法，本地判据照旧）。
+            * 宁可在本地丢掉重产，也不要让它变成用户可见的一次失败。
+            */
+      validate: (param) => validateCaptchaParam(param).ok,
+      onWarn: (message2) => this.ctx.logger?.warn?.(message2)
+    });
+    return this.captchaPool;
+  }
   /**
    * captcha 产出的**观测快照**（供 Channel Pack / 诊断读取）。
    *
@@ -54977,9 +56256,9 @@ var ZcodeAuth = class extends Service9 {
        * 形状占位（恒为 0），反过来写就会被 0 盖掉，读数永远是 0。
        */
       ...captchaRequirementObservability(),
-      failureStreak: 0,
-      queuePending: 0,
-      cooldownRemainingMs: 0,
+      failureStreak: this.captchaBackoff.failureStreak(),
+      queuePending: this.captchaQueue.stats().pending,
+      cooldownRemainingMs: this.captchaBackoff.remainingMs(),
       /**
        * 内部载体的取舍计数（`internalUsed` / `chromiumUsed` / `internalRejected` /
        * `disabledAfter`），并带一份供给槽快照 `supply`
@@ -55157,7 +56436,6 @@ var ZcodeAuth = class extends Service9 {
    */
   async claimDailyWith(credential, mintCaptcha, captchaRegion) {
     try {
-      setCaptchaDemand(true);
       await reportZcodeActivation(credential, this.fetchImpl);
       const plans = await fetchZcodeClaimablePlans(credential, this.fetchImpl);
       if (plans.length === 0) {
@@ -55185,7 +56463,7 @@ var ZcodeAuth = class extends Service9 {
       }
       return outcomes;
     } finally {
-      setCaptchaDemand(false);
+      this.closeChromium();
     }
   }
   /**
@@ -55245,6 +56523,17 @@ var ZcodeAuth = class extends Service9 {
         }
         if (outcome.code === 3007 && minted.source === "internal") {
           this.carrier.noteInternalRejection();
+          internalRetried = true;
+          const retried = await this.retryClaimWithInjectedChain(
+            credential,
+            plan.planId,
+            mintCaptcha,
+            captchaConfig,
+            region,
+            { accountId }
+          );
+          outcome = retried.outcome;
+          diagnosticSentAt = retried.sentAt;
         }
       } else {
         noteZcodeRequestSent(accountId, claimStartedAt);
@@ -55289,9 +56578,6 @@ var ZcodeAuth = class extends Service9 {
       }
       return { outcome: mapped, continueWithNextPlan: true };
     } catch (error) {
-      if (error instanceof CarrierUnavailableError) {
-        return { outcome: { kind: "failed", code: -1, message: error.message }, continueWithNextPlan: false };
-      }
       return {
         outcome: {
           kind: "failed",
@@ -55301,6 +56587,74 @@ var ZcodeAuth = class extends Service9 {
         continueWithNextPlan: true
       };
     }
+  }
+  /**
+   * ★ 评审 C4 的那一次重发：用**注入链**产一个新 param 重发同一个 plan（上限一次）。
+   *
+   * ## 为什么单独抽一个方法（而不是塞进循环里）
+   * 它有**自己的异常语义**：注入链可能撞上退避冷却而抛错（`mintWithChromium` 的闸门）。
+   * 那时**必须**如实抛给外层的 `catch`（记成这个 plan 的 failed），**不许**吞掉、
+   * 也不许退化成「不带 param 再撞一次」—— 那等于把既有护栏拆了
+   * （纪律见 `mintCaptchaAfterRejection` 的第 3 条，推理路径上早就这么定过）。
+   *
+   * ## 文案必须能区分两种失败
+   * 「换 chromium 之后**仍然**被拒」与「随手 3007」对用户是两件事：
+   * 前者意味着**这台机器的设备信誉有问题**（上游把无感验证降级了），
+   * 继续点只会更糟；后者可能只是这一发赶上了什么。`toClaimOutcome` 的
+   * `internalRetried` 开关就是干这个的。
+   *
+   * ## ⚠ 重发**不重新取配置**（issue IKJNPS 的同一条纪律）
+   * 换的是 param，不是 region。config 与 `captchaRegion` 都由调用方
+   * （`claimDailyWith`）原样传进来 —— 保持「param 与 region 同源」这件事
+   * **贯穿整个领取窗口**，包括这一次重发。
+   *
+   * @param diagnostics 诊断现场（Gitee issue IKJOQB）—— 重发这一发**同样是
+   *   一次真实的上游请求**，`sent` / `ok` / `failed` 三笔账都要记到同一个账号上，
+   *   否则 issue 要的「本进程 成功 N/失败 M」会漏掉这一类失败。
+   *
+   *   ⚠⚠ **只传 `accountId`，`sentAt` 由本方法自己取**（不是沿用首发的）。
+   *   `noteZcodeRequestSent(id, sentAt)` 的 `sentAt` 语义是「**本次**出发时刻」，
+   *   而 `previousSentAt` 是「上一条」的分母。若把**首发**的时刻当作重发的
+   *   出发时刻传进来，`previousSentAt` 会被写成首发时刻 == 本次 ⇒
+   *   `formatZcodeDiagnostic` 算出 `距上条 0ms`，「距上一条请求隔多久」
+   *   这一项**永久失去信息量**（实测复现过，见下）。
+   *
+   *   ⚠ 这不是理论风险：把 `sentAt` 写成首发的值后，探针实测诊断行是
+   *   `… · 距上条 0ms · HTTP 405`，而正确值应是「首发到上一条真实请求」的间隔。
+   *   本仓库在推理侧为同一个坑写过专门用例
+   *   （`tests/unit/zcode-diagnostics.spec.ts` 的「距上条算的是**上一条**请求」），
+   *   这里若传首发时刻就是**同型缺陷的第二次实例**。
+   */
+  async retryClaimWithInjectedChain(credential, planId, injected, captchaConfig, captchaRegion, diagnostics) {
+    if (injected === void 0) {
+      return {
+        outcome: {
+          planId,
+          ok: false,
+          code: 3007,
+          message: "captcha \u88AB\u62D2\u4E14\u6CA1\u6709\u53EF\u7528\u7684\u5907\u7528\u4EA7\u51FA\u94FE\uFF0C\u8BF7\u91CD\u8BD5"
+        },
+        sentAt: Date.now()
+      };
+    }
+    this.carrierLog?.(
+      "zcode: \u9886\u53D6\u65F6\u5185\u90E8\u8F7D\u4F53\u7684 captcha \u88AB\u62D2\uFF083007\uFF09\u21D2 \u5F53\u6B21\u6539\u7528\u6CE8\u5165\u7684\u6D4F\u89C8\u5668\u94FE\u8DEF\u91CD\u53D1\u4E00\u6B21"
+    );
+    const param = await injected(captchaConfig);
+    const retryStartedAt = Date.now();
+    noteZcodeRequestSent(diagnostics.accountId, retryStartedAt);
+    const retried = await claimZcodePlan(
+      credential,
+      planId,
+      { param, region: captchaRegion },
+      this.fetchImpl
+    );
+    if (retried.ok) {
+      noteZcodeRequestOk(diagnostics.accountId, Date.now());
+    } else {
+      noteZcodeRequestFailed(diagnostics.accountId);
+    }
+    return { outcome: retried, sentAt: retryStartedAt };
   }
   /**
    * 反查领取凭据对应的**账号池条目 id**（诊断画像的 key），供
@@ -55463,12 +56817,92 @@ var ZcodeAuth = class extends Service9 {
    * `ctx.effect` 的清理路径上，`zcode-carrier.js` 的 `destroyGuest()` 调 `release`）。
    *
    * ⚠ 还要**关掉载体页小服务**（评审 C1/C2 的形态 B）：它是个真的监听器，
+   *   漏关就是「插件卸载后仍有一个回环端口开着」（`CarrierPageServer.stop()`
+   *   内部忽略「未在运行」这类幂等异常，重复调用无害）。
    */
   stop() {
-    setCaptchaDemand(false);
+    this.captchaPool?.clear();
+    this.captchaPool = void 0;
+    this.captchaBrowser?.dispose();
+    this.captchaBrowser = void 0;
+  }
+  /**
+   * ★ **关掉外挂 chromium** —— 只由**领取积分**流程在收尾时调用。
+   *
+   * ## 为什么需要（用户报障 2026-10-02）
+   *
+   * > 领取完 chromium 还是留存在任务栏，图标还会闪烁。
+   *
+   * 根因：`captchaBrowser` 一旦惰性创建就**只**在 `stop()`（插件卸载）里销毁 ——
+   * 而领取是**低频写操作**（一天一次）。于是那个 chromium 进程
+   * （约 200–400MB）会**一直留着**，它的窗口也就一直挂在任务栏上。
+   *
+   * ## ⚠⚠ 谁在 web / desktop 下真的会开 chromium（用户 2026-10-02 更正）
+   *
+   * > desktop 环境索要积分也走不到要开 chromium，所以不用开
+   *
+   * 核对 `mintClaimCaptcha()` 的判据后确认属实：
+   *
+   * ```js
+   * if (!this.internalCarrierAvailable() || !captchaDemand())
+   *   return { param: await injected(), source: 'chromium' }   // ← 这里才开
+   * return await this.carrier.mint()                            // ← desktop 走这条
+   * ```
+   *
+   * `internalCarrierAvailable()` = `internalCarrierEnabled && supplied > 0` ——
+   * desktop 有内部载体的贡献 ⇒ `true` ⇒ **走载体链，不开 chromium**。
+   *
+   * | 环境 | 领取时走哪条 | 会开 chromium 吗 |
+   * |---|---|---|
+   * | **desktop**（有内部载体贡献） | `carrier.mint()` | **不会** |
+   * | **web**（无人贡献需求位） | 注入链 → `mintWithChromium` | **会**（就是本方法要收的尾） |
+   *
+   * ⇒ 本方法在 desktop 下是**空操作**（`captchaBrowser === undefined`
+   * 直接 return），故对 desktop 行为**逐字不变**；它只为 web 版收尾。
+   *
+   * ## 判据是「哪个流程在用」，不是「浏览器是否本次新建」
+   *
+   * | 流程 | 是否要 captcha | 收尾动作 |
+   * |---|---|---|
+   * | **领取积分**（`claimDaily*`） | 始终要（上游校验前置于 plan 校验） | ★ **关闭** |
+   * | 推理（`mintCaptchaParam`） | 通常不要；被 `3007` 拒时才补产 | **不关**（那次确实用了） |
+   *
+   * ⚠ 两条路用的是**同一个** `captchaBrowser` 实例（`index.ts` 注入给适配器的
+   * `mintCaptchaParam` 最终也落到 `this.captchaBrowser`，见其注释
+   * 「整个插件共用一台」），所以**不能**在这里判断"浏览器是否本次新建" ——
+   * 必须由**调用方**决定。这也是不做成"自动闲置关闭"的原因：
+   * 那会在推理正需要它时把浏览器拿走。
+   *
+   * ⚠ **可以再次启动**：`dispose()` 会把 `ready` 置 false、`profileDir` 置空，
+   * 下一次走 `captchaBrowser ??= new …` 重新冷启动（约 3.7 秒）。
+   * 这是**刻意的取舍**（用户明确选择「用完即关」）：宁可多付一次启动，
+   * 也不要留一个会闪烁的常驻窗口。
+   *
+   * ⚠ **幂等**：浏览器本来就不存在时是空操作（不抛错、不新建）。
+   */
+  closeChromium() {
+    this.captchaPool?.clear();
+    this.captchaPool = void 0;
+    if (this.captchaBrowser === void 0) return;
+    this.captchaBrowser.dispose();
+    this.captchaBrowser = void 0;
   }
 };
 function toClaimOutcome(outcome, planId, options = {}) {
+  if (outcome.ok) {
+    if (outcome.alreadyClaimed === true) {
+      return { kind: "already-claimed", message: `\u989D\u5EA6\u5DF2\u9886\u53D6\u8FC7\uFF08${planId}\uFF09` };
+    }
+    const grantUnits = options.plan?.grantUnits;
+    const unitType = options.plan?.unitType;
+    return {
+      kind: "claimed",
+      credit: grantUnits ?? 0,
+      streakDays: 0,
+      isStreakDay: false,
+      ...unitType === "token" ? { unit: "token" } : {}
+    };
+  }
   if (outcome.code === 3007) {
     return {
       kind: "failed",
@@ -55572,9 +57006,9 @@ function buildEnvironmentSection(options) {
 }
 function isGitRepo(cwd) {
   try {
-    const { existsSync: existsSync13 } = __require("node:fs");
+    const { existsSync: existsSync14 } = __require("node:fs");
     const { join: join15 } = __require("node:path");
-    return existsSync13(join15(cwd, ".git"));
+    return existsSync14(join15(cwd, ".git"));
   } catch {
     return false;
   }
@@ -55816,6 +57250,8 @@ var ZcodeAdapter = class extends LlmAdapter11 {
   modelRemainingAt = 0;
   /** 目录加载闸门：并发去重 + 失败/空结果冷却（见 `remote-catalog-gate.ts`）。 */
   catalogGate = new RemoteCatalogGate();
+  /** 自建的常驻浏览器（仅当调用方没注入 `mintCaptcha` 时用）。 */
+  captchaBrowser;
   /** captcha 配置缓存（配置很少变，但与凭据一样**不长期缓存**）。 */
   captchaConfig;
   /**
@@ -56080,10 +57516,14 @@ var ZcodeAdapter = class extends LlmAdapter11 {
       stream: (options) => this.stream(options)
     };
   }
-  /** 取得 captcha param（唯一来源：注入的载体链；无注入即「不支持当前客户端」）。 */
+  /** 取得 captcha param（注入优先，否则自建常驻浏览器）。 */
   async mintCaptcha(options = {}) {
     if (this.options.mintCaptcha !== void 0) return await this.options.mintCaptcha(options);
-    throw new Error("zcode \u7B7E\u5230\u4E0D\u652F\u6301\u5F53\u524D\u5BA2\u6237\u7AEF\uFF1Acaptcha \u9700\u8981\u5728 DSH \u684C\u9762\u7248\u7684 Our Free Model \u9762\u677F\u4E2D\u5B8C\u6210");
+    if (this.captchaBrowser === void 0) this.captchaBrowser = new ZcodeCaptchaBrowser();
+    return await this.captchaBrowser.mint(
+      this.captchaConfig ?? ZCODE_CAPTCHA_FALLBACK,
+      options
+    );
   }
   /**
    * 取一个 param 并说明**它从哪来**：接了载体链就走载体链，否则退到 {@link mintCaptcha}
@@ -56576,6 +58016,8 @@ var ZcodeAdapter = class extends LlmAdapter11 {
    * （`plugin-src/client/index.js` 把停止函数挂在 `ctx.effect` 的清理路径上）。
    */
   stop() {
+    this.captchaBrowser?.dispose();
+    this.captchaBrowser = void 0;
   }
 };
 function isFastEntitlementMiss(error, elapsedMs) {
@@ -57677,8 +59119,8 @@ async function fetchMinimaxCreditBalance(credential, fetcher = fetch, product = 
 
 // vendor/channel-pack/src/qoder-machine.ts
 import { execFileSync, spawn as spawn3 } from "node:child_process";
-import { existsSync as existsSync7, readFileSync as readFileSync8, readdirSync, statSync as statSync2 } from "node:fs";
-import { homedir as homedir3 } from "node:os";
+import { existsSync as existsSync8, readFileSync as readFileSync9, readdirSync, statSync as statSync2 } from "node:fs";
+import { homedir as homedir4 } from "node:os";
 import { join as join7 } from "node:path";
 var RUNTIME_INFO_TIMEOUT_MS = 2e4;
 var cached;
@@ -57693,7 +59135,7 @@ function candidatePaths() {
       paths.push(join7(appData, dir, "SharedClientCache", "cache", "machine_token.json"));
     }
   }
-  const home = homedir3();
+  const home = homedir4();
   for (const dir of ["Qoder", "Qoder CN"]) {
     paths.push(join7(home, "Library", "Application Support", dir, "SharedClientCache", "cache", "machine_token.json"));
     paths.push(join7(home, ".config", dir, "SharedClientCache", "cache", "machine_token.json"));
@@ -57703,7 +59145,7 @@ function candidatePaths() {
 function parseFile(path2) {
   let raw;
   try {
-    raw = readFileSync8(path2, "utf8");
+    raw = readFileSync9(path2, "utf8");
   } catch {
     return void 0;
   }
@@ -57761,10 +59203,10 @@ function findRuntimeInfoExecutable(home, dataDirNames = QODER_DATA_DIR_NAMES) {
       let exe;
       if (name2.startsWith("umid-")) {
         const candidate = join7(binDir, name2, exeName);
-        if (existsSync7(candidate)) exe = candidate;
+        if (existsSync8(candidate)) exe = candidate;
       } else if (name2.startsWith(`runtime-info-${process.platform}-${process.arch}-`) && !name2.endsWith(".tmp")) {
         const candidate = join7(binDir, name2);
-        if (existsSync7(candidate)) exe = candidate;
+        if (existsSync8(candidate)) exe = candidate;
       }
       if (exe !== void 0) {
         try {
@@ -57784,9 +59226,9 @@ function locateRuntimeInfo(override) {
   const fromEnv = process.env.QODER_RUNTIME_INFO;
   const candidate = override ?? (fromEnv !== void 0 && fromEnv.length > 0 ? fromEnv : void 0);
   if (candidate !== void 0) {
-    return existsSync7(candidate) ? candidate : void 0;
+    return existsSync8(candidate) ? candidate : void 0;
   }
-  return findRuntimeInfoExecutable(homedir3());
+  return findRuntimeInfoExecutable(homedir4());
 }
 var RUNTIME_INFO_ENVIRONMENT = "3";
 function runtimeInfoArgs() {
@@ -59368,8 +60810,8 @@ function parseGeminiGroupBuckets(payload) {
       const kind = bucketWindowOf(parsed.bucketId);
       if (kind === void 0) continue;
       const isThreeP = parsed.bucketId.startsWith("3p-");
-      const slot2 = kind === "weekly" ? isThreeP ? "threePWeekly" : "geminiWeekly" : isThreeP ? "threePFiveHour" : "geminiFiveHour";
-      if (out[slot2] === void 0) out[slot2] = parsed;
+      const slot = kind === "weekly" ? isThreeP ? "threePWeekly" : "geminiWeekly" : isThreeP ? "threePFiveHour" : "geminiFiveHour";
+      if (out[slot] === void 0) out[slot] = parsed;
     }
   }
   return out;
@@ -61738,7 +63180,7 @@ async function handleOpencodeRpc(ctx, pool, method, payload) {
 }
 
 // vendor/channel-pack/src/badge-preferences.ts
-import { existsSync as existsSync8, mkdirSync as mkdirSync7, readFileSync as readFileSync9, renameSync as renameSync6, writeFileSync as writeFileSync8 } from "node:fs";
+import { existsSync as existsSync9, mkdirSync as mkdirSync7, readFileSync as readFileSync10, renameSync as renameSync6, writeFileSync as writeFileSync8 } from "node:fs";
 import { join as join8 } from "node:path";
 var BADGE_PREFERENCES_FILE = "ui-preferences.json";
 var BADGE_PREFERENCES = ["auto", "subscription", "credits"];
@@ -61764,8 +63206,8 @@ var FilePreferenceStore = class {
   kind = "file";
   load() {
     try {
-      if (!existsSync8(this.path)) return DEFAULT_BADGE_PREFERENCE;
-      const parsed = JSON.parse(readFileSync9(this.path, "utf-8"));
+      if (!existsSync9(this.path)) return DEFAULT_BADGE_PREFERENCE;
+      const parsed = JSON.parse(readFileSync10(this.path, "utf-8"));
       return sanitizeBadgePreference(preferenceFieldOf(parsed));
     } catch (error) {
       this.logger?.warn(`[channel-pack] \u8BFB\u53D6 ${this.path} \u5931\u8D25\uFF0C\u7528\u91CF\u5FBD\u6807\u504F\u597D\u6309\u9ED8\u8BA4\u503C\u5904\u7406: ${String(error)}`);
@@ -61972,7 +63414,7 @@ function isAllFailed(snapshot) {
 }
 
 // vendor/channel-pack/src/auto-checkin.ts
-import { existsSync as existsSync9, mkdirSync as mkdirSync8, readFileSync as readFileSync10, renameSync as renameSync7, writeFileSync as writeFileSync9 } from "node:fs";
+import { existsSync as existsSync10, mkdirSync as mkdirSync8, readFileSync as readFileSync11, renameSync as renameSync7, writeFileSync as writeFileSync9 } from "node:fs";
 import { join as join9 } from "node:path";
 var AUTO_CHECKIN_FILE = "auto-checkin.json";
 var SCHEMA5 = "dsh-codearts-auth/auto-checkin/v2";
@@ -62193,8 +63635,8 @@ var FileAutoCheckinStore = class {
   kind = "file";
   load() {
     try {
-      if (!existsSync9(this.path)) return { ...DEFAULT_AUTO_CHECKIN };
-      return sanitizeAutoCheckin(JSON.parse(readFileSync10(this.path, "utf-8")));
+      if (!existsSync10(this.path)) return { ...DEFAULT_AUTO_CHECKIN };
+      return sanitizeAutoCheckin(JSON.parse(readFileSync11(this.path, "utf-8")));
     } catch (error) {
       this.logger?.warn(`[channel-pack] \u8BFB\u53D6 ${this.path} \u5931\u8D25\uFF0C\u81EA\u52A8\u7B7E\u5230\u6309\u9ED8\u8BA4\u8BBE\u7F6E\uFF08\u5F00\u542F\uFF09\u5904\u7406: ${String(error)}`);
       return { ...DEFAULT_AUTO_CHECKIN };
@@ -65169,61 +66611,6 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
       //
       // ⚠ web 版：GUI 里没有 `dshDesktop.browser` ⇒ 没人读需求位、也没人贡献
       //   ⇒ 槽长期为空 ⇒ 载体链直接退回既有 chromium 路径，行为不变。
-      /** client 心跳问「现在要不要产 param」——不需要时 client 一次都不产（零配额消耗）。 */
-      case "captcha.demand": {
-        const value = { active: captchaDemand() };
-        return { ok: true, value };
-      }
-      /**
-       * ★ 评审 C1/C2：client 每轮问一次「载体页在哪个地址」。
-       *
-       * ## 为什么是 RPC 而不是 client 里的一个常量
-       * 载体页**不能**挂在插件自己的 `/api/…` 上：桌面版主进程的
-       * `allowedNavigation()` / `onBeforeRequest` 都会以 `isApplicationHost(url)`
-       * 拒掉「**端口相同** 且 主机相同/回环」的地址（asar `lib/main.js`），
-       * 而那个端口就是 Host 自己的端口 ⇒ guest 连文档都建不起来。
-       * 换端口才绕得开 ⇒ 端口是 server 运行时挑的，client 只能**问**（见
-       * 旧载体页小服务文件头的完整取证（该服务已随外挂链退役删除））。
-       *
-       * ## 返回 `null` 的含义
-       * 服务没起（`DSH_ZCODE_INTERNAL_CARRIER=0` / 候选端口全被占）。client 拿到
-       * `null` 就记一条 `no-carrier-url` 并**安静返回**：不建 guest、不导航。
-       * ⚠ 这是 web 版之外的另一条「安静退出」路径，别把它当错误报。
-       */
-      /**
-       * 载体页 HTML 全文（2026-11-14）：client 用 `iframe.srcdoc` 加载。
-       *
-       * 载体页 HTML 由 server 渲染后内联进面板（iframe.srcdoc）：mint 载体是
-       * 用户自己的浏览器 —— 与部署形态无关，桌面/NAS/手机三端同一行为。
-       * 页面 mint 完 `parent.postMessage` 回传，client 经 `captcha.contribute`
-       * 送进供给槽；param 与 region 的同源由 server 渲染时一次配齐（IKJNPS）。
-       */
-      case "captcha.carrierHtml": {
-        const html = typeof zcode.carrierHtml === "function" ? await zcode.carrierHtml() : null;
-        const value = { html: html ?? null };
-        return { ok: true, value };
-      }
-      /** client 把内部载体产的 param 放进供给槽（一次性，取走即清）。 */
-      case "captcha.contribute": {
-        const req = payload;
-        const elapsed = typeof req.elapsedMs === "number" && Number.isSafeInteger(req.elapsedMs) && req.elapsedMs >= 0 && req.elapsedMs < 5 * 6e4 ? req.elapsedMs : 0;
-        const interactive = req.interactive === true;
-        const accepted = putSuppliedParam(
-          typeof req.param === "string" ? req.param : "",
-          Date.now() - elapsed,
-          { interactive }
-        );
-        ctx.logger.info(
-          `[channel-pack] zcode \u5185\u90E8\u8F7D\u4F53\u8D21\u732E param: accepted=${String(accepted)} elapsedMs=${String(elapsed)}${interactive ? " interactive=true" : ""}`
-        );
-        if (accepted && interactive) {
-          ctx.logger?.warn?.(
-            "[channel-pack] zcode \u5185\u90E8\u8F7D\u4F53\u7684 captcha \u88AB\u964D\u7EA7\u4E3A**\u4EA4\u4E92\u5F0F\u9A8C\u8BC1**\uFF08\u6ED1\u5757/\u62FC\u56FE\uFF09\u2014\u2014 \u8BBE\u5907\u4FE1\u8A89\u53EF\u80FD\u5DF2\u4E0B\u964D\uFF1B\u5185\u90E8\u8F7D\u4F53\u7684\u4EF7\u503C\u662F\u300C\u53BB\u6389\u5BF9 chromium \u7684\u4F9D\u8D56\u300D\uFF0C\u4E0D\u662F\u7ED5\u8FC7\u98CE\u63A7\uFF0C\u8BF7\u964D\u4F4E\u8C03\u7528\u9891\u7387\u6216\u7A0D\u540E\u518D\u8BD5\u3002"
-          );
-        }
-        const value = { accepted };
-        return { ok: true, value };
-      }
       // ── 账号备份（导出 / 导入）──
       //
       // 目的：更换 DSH 版本时迁移账号凭据。备份文件是**自包含**的 JSON
@@ -65529,11 +66916,11 @@ var ADOPTABLE_CHANNELS = {};
 // vendor/channel-pack/src/openai-gateway/server.ts
 import { createServer as createServer6 } from "node:http";
 import { randomUUID as randomUUID13 } from "node:crypto";
-import { homedir as homedir4 } from "node:os";
+import { homedir as homedir5 } from "node:os";
 import { join as join11 } from "node:path";
 
 // vendor/channel-pack/src/openai-gateway/auth.ts
-import { mkdirSync as mkdirSync9, readFileSync as readFileSync11, renameSync as renameSync8, writeFileSync as writeFileSync10, existsSync as existsSync10 } from "node:fs";
+import { mkdirSync as mkdirSync9, readFileSync as readFileSync12, renameSync as renameSync8, writeFileSync as writeFileSync10, existsSync as existsSync11 } from "node:fs";
 import { randomBytes as randomBytes10 } from "node:crypto";
 import { join as join10 } from "node:path";
 var KEY_FILE = "api-key";
@@ -65545,7 +66932,7 @@ function loadOrCreateApiKey(home, env = process.env) {
   const path2 = join10(directory, KEY_FILE);
   let stored;
   try {
-    stored = readFileSync11(path2, "utf8").trim();
+    stored = readFileSync12(path2, "utf8").trim();
   } catch {
   }
   if (stored) {
@@ -65561,8 +66948,8 @@ function loadOrCreateApiKey(home, env = process.env) {
   try {
     renameSync8(temporary, path2);
   } catch (error) {
-    if (existsSync10(path2)) {
-      const existing = readFileSync11(path2, "utf8").trim();
+    if (existsSync11(path2)) {
+      const existing = readFileSync12(path2, "utf8").trim();
       if (KEY_PATTERN2.test(existing)) return { value: existing, fromEnv: false, path: path2 };
     }
     throw error;
@@ -66982,7 +68369,7 @@ function authorized(request2, key) {
   return typeof value === "string" && value === `Bearer ${key}`;
 }
 function getHome(options) {
-  return options.home ?? options.env?.DSH_HOME ?? process.env.DSH_HOME ?? join11(homedir4(), ".dsh");
+  return options.home ?? options.env?.DSH_HOME ?? process.env.DSH_HOME ?? join11(homedir5(), ".dsh");
 }
 function createOpenAiGateway(options) {
   const env = options.env ?? process.env;
@@ -67488,7 +68875,7 @@ function installLoopResume(ctx) {
 }
 
 // vendor/channel-pack/src/token-ledger-store.ts
-import { existsSync as existsSync11, mkdirSync as mkdirSync10, readFileSync as readFileSync12, renameSync as renameSync9, writeFileSync as writeFileSync11 } from "node:fs";
+import { existsSync as existsSync12, mkdirSync as mkdirSync10, readFileSync as readFileSync13, renameSync as renameSync9, writeFileSync as writeFileSync11 } from "node:fs";
 import { join as join12 } from "node:path";
 var TOKEN_LEDGER_FILE = "token-ledger.json";
 var TOKEN_LEDGER_DAYS = 90;
@@ -67538,8 +68925,8 @@ var FileLedgerStore = class {
   readFile() {
     const out = /* @__PURE__ */ new Map();
     try {
-      if (!existsSync11(this.path)) return out;
-      const parsed = JSON.parse(readFileSync12(this.path, "utf-8"));
+      if (!existsSync12(this.path)) return out;
+      const parsed = JSON.parse(readFileSync13(this.path, "utf-8"));
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return out;
       const record = parsed;
       if (typeof record.days !== "object" || record.days === null || Array.isArray(record.days)) return out;
@@ -68019,7 +69406,7 @@ async function startMinimaxDeviceAuthorization(fetcher = fetch, product = MINIMA
 }
 async function pollMinimaxDeviceToken(auth, options = {}) {
   const fetcher = options.fetcher ?? fetch;
-  const sleep4 = options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  const sleep5 = options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   const now = options.now ?? Date.now;
   const product = options.product ?? MINIMAX;
   const deadline = now() + auth.expiresInSec * 1e3;
@@ -68040,12 +69427,12 @@ async function pollMinimaxDeviceToken(auth, options = {}) {
     const status = nonEmptyString3(record.status);
     const error = nonEmptyString3(record.error);
     if (response.ok && status === "pending") {
-      await sleep4(intervalMs);
+      await sleep5(intervalMs);
       continue;
     }
     if (response.ok && status === "slow_down") {
       intervalMs += 5e3;
-      await sleep4(intervalMs);
+      await sleep5(intervalMs);
       continue;
     }
     if (response.ok && (status === "denied" || status === "access_denied")) {
@@ -68055,12 +69442,12 @@ async function pollMinimaxDeviceToken(auth, options = {}) {
       throw new MinimaxLoginExpiredError();
     }
     if (error === "authorization_pending") {
-      await sleep4(intervalMs);
+      await sleep5(intervalMs);
       continue;
     }
     if (error === "slow_down") {
       intervalMs += 5e3;
-      await sleep4(intervalMs);
+      await sleep5(intervalMs);
       continue;
     }
     if (response.ok) return parseMinimaxTokenGrant(body, void 0, product);
@@ -69240,7 +70627,7 @@ async function fetchGeminiUserInfo(accessToken, options = {}) {
   }
 }
 var ANTIGRAVITY_CALLBACK_HTML = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>\u6388\u6743\u5B8C\u6210</title><style>body{font:15px/1.7 -apple-system,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f1115;color:#e6e8eb}.b{text-align:center}.k{font-size:34px;margin-bottom:8px}</style></head><body><div class="b"><div class="k">\u2713</div><div>\u6388\u6743\u5DF2\u5B8C\u6210\uFF0C\u53EF\u4EE5\u5173\u95ED\u6B64\u9875\u56DE\u5230\u9762\u677F\u3002</div></div></body></html>`;
-function pickFreePort() {
+function pickFreePort2() {
   return new Promise((resolve2, reject) => {
     const probe = createServer7();
     probe.once("error", reject);
@@ -69260,7 +70647,7 @@ async function listenCallback(handler, preferredPort) {
     return new Promise((resolve2, reject) => {
       primary.once("error", (error) => {
         if (error.code === "EADDRINUSE" && port !== 0) {
-          void pickFreePort().then((next) => resolve2(attempt(next)), reject);
+          void pickFreePort2().then((next) => resolve2(attempt(next)), reject);
           return;
         }
         reject(error);
@@ -69746,7 +71133,7 @@ var AntigravityAuth = class extends Service11 {
 
 // vendor/channel-pack/src/antigravity-sigstore.ts
 import { createHash as createHash10 } from "node:crypto";
-import { existsSync as existsSync12, mkdirSync as mkdirSync11, readFileSync as readFileSync13, renameSync as renameSync10, writeFileSync as writeFileSync12 } from "node:fs";
+import { existsSync as existsSync13, mkdirSync as mkdirSync11, readFileSync as readFileSync14, renameSync as renameSync10, writeFileSync as writeFileSync12 } from "node:fs";
 import { dirname as dirname2, join as join13 } from "node:path";
 var ANTIGRAVITY_SIG_FILE = "antigravity-sigs.json";
 var ANTIGRAVITY_SIG_MAX_ENTRIES = 2e3;
@@ -69869,8 +71256,8 @@ var AntigravitySigStore = class {
     const out = /* @__PURE__ */ new Map();
     if (this.path === void 0) return out;
     try {
-      if (!existsSync12(this.path)) return out;
-      const parsed = JSON.parse(readFileSync13(this.path, "utf-8"));
+      if (!existsSync13(this.path)) return out;
+      const parsed = JSON.parse(readFileSync14(this.path, "utf-8"));
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return out;
       for (const [key, value] of Object.entries(parsed)) {
         if (typeof value !== "object" || value === null) continue;
@@ -70122,8 +71509,8 @@ function buildOpencodePayloadWithToolMap(input) {
 
 // vendor/channel-pack/src/opencode-capability.ts
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { readFileSync as readFileSync14 } from "node:fs";
-import { homedir as homedir5 } from "node:os";
+import { readFileSync as readFileSync15 } from "node:fs";
+import { homedir as homedir6 } from "node:os";
 import { join as join14 } from "node:path";
 var MEASURED_IMAGE_OVERRIDES = {
   // 实测 2026-10-02：models.dev 标 `modalities.input: ["text"]`，
@@ -70184,7 +71571,7 @@ function normalizeEntry(id, raw) {
   };
 }
 function cacheFilePath() {
-  const home = process.env.DSH_HOME?.trim() || join14(homedir5(), ".dsh");
+  const home = process.env.DSH_HOME?.trim() || join14(homedir6(), ".dsh");
   return join14(home, "cache", "opencode-capabilities.json");
 }
 var memory = [];
@@ -70208,7 +71595,7 @@ function loadDiskCacheSync() {
   if (diskLoaded) return;
   diskLoaded = true;
   try {
-    const raw = readFileSync14(cacheFilePath(), "utf8");
+    const raw = readFileSync15(cacheFilePath(), "utf8");
     const parsed = JSON.parse(raw);
     if (parsed?.version === 3 && Array.isArray(parsed.entries) && parsed.entries.length > 0) {
       memory = parsed.entries;
@@ -70283,12 +71670,12 @@ function inputModalitiesOf(capabilities, modelId) {
 }
 var DEFAULT_CATALOG_TTL_MS = 3e5;
 var catalogCache = /* @__PURE__ */ new Map();
-async function loadOpencodeCatalog(fetchCatalog, slot2, ttlMs2 = DEFAULT_CATALOG_TTL_MS) {
-  const cached2 = catalogCache.get(slot2.id);
+async function loadOpencodeCatalog(fetchCatalog, slot, ttlMs2 = DEFAULT_CATALOG_TTL_MS) {
+  const cached2 = catalogCache.get(slot.id);
   if (cached2 !== void 0 && ttlMs2 > 0 && Date.now() - cached2.at < ttlMs2) return cached2.entries;
   let entries;
   try {
-    const response = await fetchCatalog(slot2);
+    const response = await fetchCatalog(slot);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const body = await response.json();
     if (!Array.isArray(body.data) || body.data.length === 0) throw new Error("\u7A7A\u76EE\u5F55");
@@ -70317,14 +71704,14 @@ async function loadOpencodeCatalog(fetchCatalog, slot2, ttlMs2 = DEFAULT_CATALOG
   } catch {
     entries = OPENCODE_FALLBACK_MODELS;
   }
-  catalogCache.set(slot2.id, { at: Date.now(), entries });
+  catalogCache.set(slot.id, { at: Date.now(), entries });
   return entries;
 }
 function pickSlot(slots, modelId, excluded) {
-  for (const slot2 of slots) {
-    if (excluded.has(slot2.id)) continue;
-    if (slot2.kind === "anonymous" && !isFreeOpencodeModel(modelId)) continue;
-    return slot2;
+  for (const slot of slots) {
+    if (excluded.has(slot.id)) continue;
+    if (slot.kind === "anonymous" && !isFreeOpencodeModel(modelId)) continue;
+    return slot;
   }
   return void 0;
 }
@@ -70361,11 +71748,11 @@ var OpencodeAdapter = class extends LlmAdapter14 {
   }
   async catalog() {
     const slots = await this.options.identitySlots();
-    const slot2 = slots.find((s) => s.kind === "account") ?? slots.at(-1);
-    if (this.options.fetchRemoteCatalog === void 0 || slot2 === void 0) {
+    const slot = slots.find((s) => s.kind === "account") ?? slots.at(-1);
+    if (this.options.fetchRemoteCatalog === void 0 || slot === void 0) {
       return OPENCODE_FALLBACK_MODELS;
     }
-    return loadOpencodeCatalog(this.options.fetchRemoteCatalog, slot2);
+    return loadOpencodeCatalog(this.options.fetchRemoteCatalog, slot);
   }
   /**
    * 完整目录（**同步**返回数组）。
@@ -70472,18 +71859,18 @@ var OpencodeAdapter = class extends LlmAdapter14 {
     const tried = /* @__PURE__ */ new Set();
     const limited = [];
     for (; ; ) {
-      const slot2 = pickSlot(slots, options.model, tried);
-      if (slot2 === void 0) {
+      const slot = pickSlot(slots, options.model, tried);
+      if (slot === void 0) {
         throw new LlmError21(
           `opencode: \u6240\u6709\u901A\u9053\u5BF9\u8BE5\u6A21\u578B\u5747\u53D7\u9650${limited.length > 0 ? `\uFF08${limited.join("\u3001")}\uFF09` : ""}`,
           "QUOTA_EXCEEDED"
         );
       }
-      tried.add(slot2.id);
-      reportLedgerAccount(OPENCODE.id, slot2.id);
+      tried.add(slot.id);
+      reportLedgerAccount(OPENCODE.id, slot.id);
       let delivered = false;
       try {
-        for await (const chunk of this.streamVia(slot2, options)) {
+        for await (const chunk of this.streamVia(slot, options)) {
           delivered = true;
           yield chunk;
         }
@@ -70503,23 +71890,23 @@ var OpencodeAdapter = class extends LlmAdapter14 {
           );
         }
         if (info.kind === "quota") {
-          await this.options.markLimited?.(slot2.id, options.model, Date.now() + 24 * 60 * 6e4);
-          limited.push(`${slot2.id}(\u4F59\u989D\u4E0D\u8DB3)`);
+          await this.options.markLimited?.(slot.id, options.model, Date.now() + 24 * 60 * 6e4);
+          limited.push(`${slot.id}(\u4F59\u989D\u4E0D\u8DB3)`);
           continue;
         }
         if (info.kind === "auth") {
           if (tried.size >= slots.length) throw error;
-          await this.options.markLimited?.(slot2.id, options.model, Date.now() + RATE_LIMIT_BASE_MS);
-          limited.push(`${slot2.id}(\u8BA4\u8BC1\u5931\u8D25)`);
+          await this.options.markLimited?.(slot.id, options.model, Date.now() + RATE_LIMIT_BASE_MS);
+          limited.push(`${slot.id}(\u8BA4\u8BC1\u5931\u8D25)`);
           continue;
         }
         if (info.kind === "server" || info.kind === "transport") {
-          this.options.warn?.(`opencode: \u901A\u9053 ${slot2.id} ${info.kind}\uFF0C\u6362\u4E0B\u4E00\u4E2A\uFF1A${info.detail}`);
+          this.options.warn?.(`opencode: \u901A\u9053 ${slot.id} ${info.kind}\uFF0C\u6362\u4E0B\u4E00\u4E2A\uFF1A${info.detail}`);
           continue;
         }
         const resetAtMs = Date.now() + opencodeRetryAfterMs(info.kind, info.retryAfterMs, tried.size);
-        await this.options.markLimited?.(slot2.id, options.model, resetAtMs);
-        limited.push(`${slot2.id}(${info.kind})`);
+        await this.options.markLimited?.(slot.id, options.model, resetAtMs);
+        limited.push(`${slot.id}(${info.kind})`);
       }
     }
   }
@@ -70558,7 +71945,7 @@ var OpencodeAdapter = class extends LlmAdapter14 {
     return out;
   }
   /** 用指定槽发一次请求（轮换循环的复用单元）。 */
-  async *streamVia(slot2, options) {
+  async *streamVia(slot, options) {
     const imageUrls = await this.resolveImageUrls(options.model, options.messages);
     const messages = serializeMessages(options.messages, imageUrls);
     const effort = resolveOpencodeEffort(
@@ -70581,10 +71968,10 @@ var OpencodeAdapter = class extends LlmAdapter14 {
       ...effort.effort !== void 0 ? { reasoningEffort: effort.effort } : {}
     });
     const headers = {
-      ...opencodeHeaders(slot2.fingerprint, sessionIdOf(options), opencodeUserAgent(slot2.userAgent)),
+      ...opencodeHeaders(slot.fingerprint, sessionIdOf(options), opencodeUserAgent(slot.userAgent)),
       "content-type": "application/json",
       accept: "text/event-stream",
-      authorization: `Bearer ${slot2.apiKey}`
+      authorization: `Bearer ${slot.apiKey}`
     };
     const init = {
       method: "POST",
@@ -70593,7 +71980,7 @@ var OpencodeAdapter = class extends LlmAdapter14 {
       ...options.signal !== void 0 ? { signal: options.signal } : {},
       // ⚠️ per-request dispatcher：只让本 provider 的这次请求走该账号的出口，
       // **不动全局**（两个插件抢全局槽位会互相短路整个路由层）。
-      ...slot2.proxy === void 0 ? {} : { dispatcher: buildProxyDispatcher(slot2.proxy) }
+      ...slot.proxy === void 0 ? {} : { dispatcher: buildProxyDispatcher(slot.proxy) }
     };
     let response;
     try {
@@ -71614,18 +73001,23 @@ function apply(ctx, config = {}) {
       await zcode.refreshAll(pool);
     },
     // ⚠ captcha 是**一次性**的 —— 每次调用都必须现产一个新 param。
-    // 2026-11-14：外挂浏览器链退役，唯一来源 = 客户端内置浏览器（面板 srcdoc
-    // 载体页贡献）。`zcode.mintCaptcha` 现在内部走载体链等贡献；等不到时抛
-    // CarrierUnavailableError（claim 转成「不支持当前客户端」）。
+    // 走 `zcode.mintCaptcha`：整个插件**共用一台**常驻浏览器
+    //（适配器自建会变成两台，白占 200MB）。
     //
-    // ⚠ `options.signal` 必须继续往下传：供给槽的有界等待必须可取消
-    // （无超时等待把整轮钉住的历史缺陷，2026-09-29）。
+    // ⚠ `options.signal` 必须继续往下传：captcha 侧的取页等待与建连历史上有
+    // 无超时的路径，不传就等于「用户点停止也停不下来」（真实缺陷，2026-09-29）。
     mintCaptcha: async (options) => {
       const config2 = await resolveZcodeCaptchaConfig();
       return await zcode.mintCaptcha(config2, options);
     },
     /**
-     * 推理热路径取 param 走载体链（与上面同一来源，返回值带来源标记供归因）。
+     * ★ 二期内部载体：推理热路径取 param 走**载体链**（内部供给槽优先，等不到才落
+     * 上面那条 chromium 链）。与 `mintCaptcha` 的差别只有「返回值带来源」这一层。
+     *
+     * ⚠ 这两条回调**必须都在**：少接一条，被 `3007` 拒的那一发就退回普通入口重新取，
+     *   归因（内部 vs chromium）就此丢失 —— 累计拒绝到阈值的自动禁用也就永远到不了。
+     * ⚠ 载体链不可用（`DSH_ZCODE_INTERNAL_CARRIER=0` / web 版从未收到贡献）时
+     *   `zcode.mintCaptchaParam` 自己会退回那条 chromium 链 ⇒ 这里不需要判断开关。
      */
     mintCaptchaParam: async (options) => {
       const config2 = await resolveZcodeCaptchaConfig();
@@ -71931,8 +73323,8 @@ function apply(ctx, config = {}) {
       // 没有超时 → `loadOpencodeCatalog` 的 try/catch 永远走不到 →
       // `listModels` 永不返回 → **模型列表与徽标同时空白**（用户报障）。
       // 有超时则超时后回退兜底表，UI 立刻可用（只是暂时看不到付费模型）。
-      fetchRemoteCatalog: (slot2, signal) => fetch(`${OPENCODE.baseUrl}${OPENCODE.modelsPath}`, {
-        headers: { authorization: `Bearer ${slot2.apiKey}` },
+      fetchRemoteCatalog: (slot, signal) => fetch(`${OPENCODE.baseUrl}${OPENCODE.modelsPath}`, {
+        headers: { authorization: `Bearer ${slot.apiKey}` },
         // 组合两个信号：调用方给的（取消）+ 自己的超时（防挂死）。
         signal: signal === void 0 ? AbortSignal.timeout(OPENCODE_CATALOG_TIMEOUT_MS) : AbortSignal.any([signal, AbortSignal.timeout(OPENCODE_CATALOG_TIMEOUT_MS)])
       }),
