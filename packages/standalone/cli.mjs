@@ -11,6 +11,8 @@ const usage = `Our Free Model 独立本地服务
   --probe             启用并保存自动探测设置，会产生上游请求
   --lan               启用并保存 LAN 推理中继（独立密钥，管理页仍仅限本机）
   --no-lan            关闭并保存 LAN 推理中继
+  --lan-panel         额外把**面板与管理 API** 也经中继暴露出去（同端口，默认关）
+  --no-lan-panel      关闭面板中继（默认即关）
   --lan-port <端口>   保存 LAN 期望端口，默认 0；不会单独开启中继
   --help              显示帮助
 `
@@ -23,6 +25,7 @@ async function main() {
     if (flag === '--no-refresh') { options.refresh = false; continue }
     if (flag === '--probe') { options.probe = true; continue }
     if (flag === '--lan' || flag === '--no-lan') { options.lanEnabled = flag === '--lan'; continue }
+    if (flag === '--lan-panel' || flag === '--no-lan-panel') { options.lanPanel = flag === '--lan-panel'; continue }
     if (!['--port', '--data-dir', '--lan-port'].includes(flag) || !process.argv[index + 1] || process.argv[index + 1].startsWith('--')) {
       throw new Error(`未知选项或缺少参数：${flag}`)
     }
@@ -47,6 +50,11 @@ async function main() {
   process.stdout.write(`${service.product} ${service.version}\n管理页面（10 分钟内一次性登录）：${service.managementUrl}\nAPI：${service.url}/v1\nAPI Key 保存在：${service.keyFile}\n`)
   if (service.lan.running) {
     process.stdout.write(`LAN API：${service.lan.baseUrls.join(', ') || `端口 ${service.lan.port}`}\nLAN Key：请在本机管理接口中查看（独立于本机 API Key）\n`)
+    if (service.lan.panel) {
+      const panelUrls = service.lan.addresses.map(address => `http://${address}:${service.lan.port}/`)
+      process.stdout.write(`LAN 面板：${panelUrls.join(', ') || `端口 ${service.lan.port}`}\n`
+        + '（登录令牌只能从本机取得：面板登录页「获取登录令牌」或本机日志的一次性链接）\n')
+    }
   } else if (service.lan.error) process.stderr.write(`${service.lan.error}\n`)
 }
 

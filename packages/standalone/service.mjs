@@ -105,7 +105,7 @@ async function acquireServiceLock(dataDir) {
 /** 直接创建核心和 HTTP 服务，不加载插件入口、Cordis 或 DSH 凭据。 */
 export async function startStandalone({
   dataDir = resolveStandaloneDataDir(), host = '127.0.0.1', port,
-  logger = console, refresh = true, probe, lanEnabled, lanPort,
+  logger = console, refresh = true, probe, lanEnabled, lanPort, lanPanel,
   startRelay = startLanRelay,
 } = {}) {
   if (!isLoopbackHost(host)) throw new TypeError('the standalone service binds a loopback address only')
@@ -114,6 +114,7 @@ export async function startStandalone({
     throw new TypeError('port must be an integer between 0 and 65535')
   }
   if (lanEnabled !== undefined && typeof lanEnabled !== 'boolean') throw new TypeError('lanEnabled must be a boolean')
+  if (lanPanel !== undefined && typeof lanPanel !== 'boolean') throw new TypeError('lanPanel must be a boolean')
   if (lanPort !== undefined && (!Number.isInteger(lanPort) || lanPort < 0 || lanPort > 65535)) {
     throw new TypeError('lanPort must be an integer between 0 and 65535')
   }
@@ -138,6 +139,8 @@ export async function startStandalone({
     const addresses = rankLanAddresses(os.networkInterfaces())
     return {
       enabled: value.standaloneLanEnabled === true,
+      // 面板中继（同端口）。默认关 —— 面板带写权限，要不要暴露给同网段由用户定。
+      panel: value.standaloneLanEnabled === true && value.standaloneLanPanel === true,
       running: relay !== undefined,
       host: relay?.host ?? '0.0.0.0',
       requestedPort: value.standaloneLanPort ?? 0,
@@ -190,6 +193,8 @@ export async function startStandalone({
             host: '0.0.0.0', port: wantedPort, targetPort,
             lanKey: stores.settings.get().standaloneLanKey,
             localKey: stores.settings.get().forwardKey,
+            // 面板中继开关（见 src/forward.js 的 isPanelPath）
+            panel: stores.settings.get().standaloneLanPanel === true,
           }),
           log: message => logger.warn?.(`our-free-model standalone LAN: ${message}`),
         })
@@ -224,6 +229,8 @@ export async function startStandalone({
     settings.update({
       forwardKey: key,
       standaloneLanEnabled: lanEnabled ?? settings.get().standaloneLanEnabled === true,
+      // 面板中继：**必须显式开启**（--lan-panel）。面板带写权限，默认不暴露给同网段。
+      standaloneLanPanel: lanPanel ?? settings.get().standaloneLanPanel === true,
       standaloneLanPort: lanPort ?? (Number.isInteger(savedLanPort) && savedLanPort >= 0 && savedLanPort <= 65535 ? savedLanPort : 0),
       ...probe === undefined ? {} : { standaloneProbe: probe === true },
     })

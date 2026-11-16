@@ -480,6 +480,42 @@ const RELAY_PATHS = new Set([
   '/v1/messages/count_tokens', '/messages/count_tokens',
 ])
 
+/**
+ * 面板与管理 API 的路径（2026-11-16，用户实测驱动）。
+ *
+ * ## 为什么需要
+ *
+ * Docker 部署的价值就是给局域网里**其它设备**用：手机、平板、另一台电脑。
+ * 而中继原来只放行推理路径，面板绑死在 `127.0.0.1` —— 用户拿到
+ * `http://192.168.2.6:18900` 只能看到连接失败，面板、渠道登录、模型开关
+ * 一个都打不开。用户原话：「我需要能访问到面板啊」。
+ *
+ * ⚠️ **必须显式开启**（`--lan-panel` / `standaloneLanPanel`），不跟着
+ *   `--lan` 一起打开：推理中继只需要一个可撤销的 key，面板却带着写权限
+ *   （改设置、加删账号、看凭据）。默认关，用户自己决定要不要把管理面
+ *   暴露给同网段。
+ *
+ * ## 鉴权：两套凭据互不越权
+ *
+ * - **推理**：LAN key（`standaloneLanKey`）——给程序用，可轮换。
+ * - **面板**：面板自己的 session cookie（`ofm_management_<port>`，
+ *   HttpOnly + SameSite=Strict）。中继**只透传**，不替它判权限。
+ * - 唯一「登录前」可达的写路径是 `/api/management/session`，它自己校验
+ *   一次性 bootstrap token（10 分钟、一用即焚、只能从本机日志取）。
+ */
+const PANEL_STATIC_PREFIXES = ['/assets/']
+
+/** 面板路径判定：静态资源前缀 + 明确的几个入口。 */
+export function isPanelPath(pathname) {
+  const path = pathname.replace(/\/+$/, '') || '/'
+  if (path === '/') return true
+  if (PANEL_STATIC_PREFIXES.some(prefix => path.startsWith(prefix))) return true
+  if (path === '/index.html') return true
+  // 管理 API 全部前缀放行；具体鉴权由面板自己做（未登录 → 401）
+  if (path === '/api/management' || path.startsWith('/api/management/')) return true
+  return false
+}
+
 /** Marks a request the relay produced, so a misconfigured loop is refused. */
 const RELAY_HOP_HEADER = 'x-ofm-relay-hop'
 
@@ -507,7 +543,9 @@ const RELAY_HOP_HEADER = 'x-ofm-relay-hop'
  *   business alone.
  *
  * @param {object} options
- * @param {() => {enabled: boolean, host: string, port: number, lanKey: string, localKey: string, targetPort: number}} options.config
+ * @param {() => {enabled: boolean, host: string, port: number, lanKey: string, localKey: string, targetPort: number, panel?: boolean}} options.config
+ *   `panel` 为真时，除推理路径外**还**转发面板与管理 API（`isPanelPath`）。
+ *   它不跟 `enabled` 联动：关掉推理仍可进面板改配置。默认关。
  * @param {(message: string) => void} [options.log]
  * @param {(event: object) => void} [options.onTrace] - bounded request diagnostics
  * @returns {Promise<{server: http.Server, port: number, host: string, close: () => Promise<void>}>}
@@ -534,14 +572,33 @@ export async function startLanRelay({ config, log = () => {}, onTrace = () => {}
       return
     }
     const settings = config()
-    // 安全门（同 chan-relay）。
-    if (!settings.enabled) {
-      openAiError(res, 503, 'service_unavailable', 'the LAN relay is switched off in Our Free Model settings')
-      return
-    }
-    if (!authorized(req, settings.lanKey)) {
-      openAiError(res, 401, 'invalid_request_error', 'missing or invalid LAN key')
-      return
+    /**
+     * 面板请求：走**面板自己的**鉴权，不走推理的三道门（2026-11-16）。
+     *
+     * - `settings.panel` 关着 → 面板一律 404（保持旧行为：中继只做推理）。
+     * - 开着 → 跳过 `enabled` / LAN key / RELAY_PATHS 三处判定：
+     *   `enabled` 是「推理总开关」，用户完全可能关掉推理只想进面板改配置；
+     *   LAN key 是给程序用的，浏览器导航带不上它。
+     *   真正的门在 `management.mjs` 的 `authenticated(req)`：未登录一律 401，
+     *   唯一的登录前入口是 `/api/management/session`（校验一次性 bootstrap token）。
+     */
+    const panelRequest = settings.panel === true && isPanelPath(path)
+    if (panelRequest) {
+      // 面板与推理共用同一个上游监听（主服务端口），只是门不一样。
+      if (!(settings.targetPort > 0)) {
+        openAiError(res, 503, 'service_unavailable', 'the local listener is not running')
+        return
+      }
+    } else {
+      // 安全门（同 chan-relay）—— 只挡推理路径。
+      if (!settings.enabled) {
+        openAiError(res, 503, 'service_unavailable', 'the LAN relay is switched off in Our Free Model settings')
+        return
+      }
+      if (!authorized(req, settings.lanKey)) {
+        openAiError(res, 401, 'invalid_request_error', 'missing or invalid LAN key')
+        return
+      }
     }
     // The one way this can happen is a relay port equal to the local forward
     // port: the relay would then be dialing itself. Refuse the second pass
@@ -554,7 +611,7 @@ export async function startLanRelay({ config, log = () => {}, onTrace = () => {}
       openAiError(res, 503, 'service_unavailable', 'the local forward listener is not running')
       return
     }
-    if (!RELAY_PATHS.has(path)) {
+    if (!panelRequest && !RELAY_PATHS.has(path)) {
       openAiError(res, 404, 'not_found_error', `no route for ${req.method} ${path}`)
       return
     }
@@ -562,10 +619,14 @@ export async function startLanRelay({ config, log = () => {}, onTrace = () => {}
     delete headers.host
     delete headers.connection
     delete headers['x-api-key']
-    // The caller's LAN key stops at this door; the local listener only ever sees
-    // the key that belongs to this machine.
-    headers.authorization = `Bearer ${settings.localKey}`
-    headers[RELAY_HOP_HEADER] = '1'
+    if (!panelRequest) {
+      // The caller's LAN key stops at this door; the local listener only ever
+      // sees the key that belongs to this machine.
+      headers.authorization = `Bearer ${settings.localKey}`
+      headers[RELAY_HOP_HEADER] = '1'
+    }
+    // 面板请求：Authorization / Cookie / Set-Cookie 全部原样透传 ——
+    // 面板的 session 凭据是它自己的事，中继不解读、不替换。
     delete headers[REQUEST_ID_HEADER]
     if (trace.requestId !== undefined) headers[REQUEST_ID_HEADER] = trace.requestId
     trace.step('relay_dispatch')
