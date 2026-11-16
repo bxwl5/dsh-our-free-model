@@ -25,6 +25,12 @@ worker
 # 2026-11-07（t4-C17）：许可与第三方声明随镜像分发（MIT 合规）
 !LICENSE
 !vendor/channel-pack/LICENSE
+# ⚠️ 2026-11-16：**必须**同时放行 NOTICE.md —— Dockerfile 第 58 行 COPY 它，
+# 但 `vendor/**` 与 `*.md` 两条排除规则都会把它挡在上下文之外，构建直接失败：
+#   failed to compute cache key: "/vendor/channel-pack/NOTICE.md": not found
+# 这是 t4-C17 那次提交引入的回归（只放行了 LICENSE，漏了同一次加的 NOTICE.md），
+# 后果是 GHCR 镜像自 2026-10-28 起再没成功构建过（标签一直停在 2.5.4）。
+!vendor/channel-pack/NOTICE.md
 !THIRD_PARTY_NOTICES.txt
 
 
