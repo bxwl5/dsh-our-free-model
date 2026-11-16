@@ -204,8 +204,8 @@
     },
     {
       "path": "src/stream.js",
-      "size": 27603,
-      "sha256": "4b79472861236d5331ea4f33c83b904470b17e93872f2c2008c51ae1114074b6"
+      "size": 28856,
+      "sha256": "aafa12798805af99ebcecdb02f5ee93fcfcfa64c138ef503c9b5809134f34717"
     },
     {
       "path": "src/token-saver/index.js",
