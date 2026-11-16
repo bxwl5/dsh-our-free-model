@@ -51,9 +51,27 @@ async function main() {
   if (service.lan.running) {
     process.stdout.write(`LAN API：${service.lan.baseUrls.join(', ') || `端口 ${service.lan.port}`}\nLAN Key：请在本机管理接口中查看（独立于本机 API Key）\n`)
     if (service.lan.panel) {
+      /**
+       * 面板中继：**直接可访问，不需要令牌**（2026-11-16 用户要求）。
+       *
+       * 中继在转发面板请求时注入本机 key（`localKey`），面板的
+       * `authenticated()` 认它 —— 所以浏览器打开根地址就是已登录状态。
+       * 一次性令牌那条路仍然可用（本机面板 / `#login=`），只是不再是必需。
+       *
+       * ⚠️ 风险必须写明：同网段的任何设备都能打开并修改面板（改设置、增删
+       *   账号、看凭据）。`--lan-panel` 是显式取舍，默认关。
+       */
       const panelUrls = service.lan.addresses.map(address => `http://${address}:${service.lan.port}/`)
-      process.stdout.write(`LAN 面板：${panelUrls.join(', ') || `端口 ${service.lan.port}`}\n`
-        + '（登录令牌只能从本机取得：面板登录页「获取登录令牌」或本机日志的一次性链接）\n')
+      const fixedToken = String(process.env.OFM_PANEL_TOKEN ?? '').trim() !== ''
+      process.stdout.write(fixedToken
+        ? '\nLAN 面板（登录令牌 = 环境变量 OFM_PANEL_TOKEN）：\n'
+        : '\nLAN 面板（直接访问，无需令牌）：\n')
+      for (const url of panelUrls.length > 0 ? panelUrls : [`http://<本机IP>:${service.lan.port}/`]) {
+        process.stdout.write(`  ${url}\n`)
+      }
+      process.stdout.write(fixedToken
+        ? '  在面板登录页的「登录令牌」框输入 OFM_PANEL_TOKEN 的值即可（不过期）。\n'
+        : '  ⚠️ 同网段设备均可打开并修改面板；想加一道门就设 OFM_PANEL_TOKEN。\n')
     }
   } else if (service.lan.error) process.stderr.write(`${service.lan.error}\n`)
 }

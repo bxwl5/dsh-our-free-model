@@ -69,6 +69,42 @@ const check = async (name, run) => {
 
 const base = { port: 0, refresh: false, logger: { warn() {} }, startRelay }
 
+// ── ⓪ 固定令牌档：设了 OFM_PANEL_TOKEN 就不直通，要求输入令牌 ──
+{
+  const dataDir = path.join(scratch, 'fixed-token')
+  process.env.OFM_PANEL_TOKEN = 'fixture-panel-token-0123456789'
+  const service = await startStandalone({
+    ...base, dataDir, lanEnabled: true, lanPanel: true, lanPort: 0,
+  })
+  try {
+    await service.ready
+    const url = `http://127.0.0.1:${service.lan.port}`
+    await check('⓪ 设了 OFM_PANEL_TOKEN：不直通，干净请求 401', async () => {
+      const response = await request(url, '/api/management/summary')
+      assert.equal(response.status, 401, '有固定令牌时不该直通')
+    })
+    await check('⓪ 固定令牌可换 Cookie（不过期、可重复用）', async () => {
+      const first = await request(url, '/api/management/session', { body: { bootstrapToken: 'fixture-panel-token-0123456789' } })
+      assert.equal(first.status, 200, first.text.slice(0, 120))
+      const second = await request(url, '/api/management/session', { body: { bootstrapToken: 'fixture-panel-token-0123456789' } })
+      assert.equal(second.status, 200, '固定令牌必须可重复使用（与一次性 bootstrap 的区别）')
+      const cookie = first.headers.get('set-cookie').split(';')[0]
+      const summary = await request(url, '/api/management/summary', { headers: { cookie } })
+      assert.equal(summary.status, 200)
+    })
+    await check('⓪ 固定令牌不解锁推理：/v1/models 仍要 LAN key', async () => {
+      const saved = JSON.parse(fs.readFileSync(service.keyFile, 'utf8'))
+      const viaPanelToken = await request(url, '/v1/models', { key: 'fixture-panel-token-0123456789' })
+      assert.equal(viaPanelToken.status, 401, '面板令牌不该能调模型')
+      const viaLanKey = await request(url, '/v1/models', { key: saved.standaloneLanKey })
+      assert.equal(viaLanKey.status, 200, 'LAN key 仍应可用')
+    })
+  } finally {
+    await service.close()
+    delete process.env.OFM_PANEL_TOKEN
+  }
+}
+
 // ── ① 默认关 ──────────────────────────────────────────────
 {
   const dataDir = path.join(scratch, 'default-off')
@@ -115,19 +151,23 @@ const base = { port: 0, refresh: false, logger: { warn() {} }, startRelay }
       assert.ok(asset.text.length > 1000, 'assets 应有实际内容')
     })
 
-    await check('③ 开启后：未登录访问管理 API → 401（面板自己的门）', async () => {
-      for (const route of ['/api/management/summary', '/api/management/key', '/api/management/settings']) {
+    await check('③ 开启后：免登录直通（中继注入本机 key）→ 管理 API 200', async () => {
+      // 2026-11-16 用户要求「我要直接可以访问」：中继为面板请求注入本机 key，
+      // 面板的 authenticated() 认 Bearer，于是打开即用、不需要令牌。
+      for (const route of ['/api/management/summary', '/api/management/key']) {
         const response = await request(url, route)
-        assert.equal(response.status, 401, `${route} 未登录应 401，实际 ${response.status}`)
+        assert.equal(response.status, 200, `${route} 应 200（免登录直通），实际 ${response.status}`)
       }
     })
 
-    await check('④ 开启后：LAN key 对面板无效（两套凭据互不越权）', async () => {
-      const response = await request(url, '/api/management/summary', { key: saved.standaloneLanKey })
-      assert.equal(response.status, 401, 'LAN key 不该能读管理面')
+    await check('④ 开启后：显式带错 key 仍被面板拒绝（注入只补空缺，不覆盖）', async () => {
+      // 中继只在 `Authorization` **缺失**时补本机 key；浏览器带上了就不会被替换。
+      // 所以显式带一个错 key → 面板自己判 401，证明注入不是「无脑放行」。
+      const response = await request(url, '/api/management/summary', { key: 'ofm-deliberately-wrong' })
+      assert.equal(response.status, 401, '错 key 应被面板拒绝')
     })
 
-    await check('⑤ 开启后：一次性 bootstrap token 经中继换 Cookie，随后管理面 200', async () => {
+    await check('⑤ 开启后：一次性 bootstrap token 链路仍可用（向后兼容）', async () => {
       // 一次性 token 只能从**本机**取得（`#login=` 片段 / 本机日志）。
       // 这里从 service.managementUrl 取，等价于用户在本机日志里看到的那条。
       const token = new URL(service.managementUrl).hash.replace(/^#login=/, '')
@@ -149,6 +189,16 @@ const base = { port: 0, refresh: false, logger: { warn() {} }, startRelay }
       assert.equal((await request(url, '/v1/models', { key: saved.standaloneLanKey })).status, 200)
       assert.equal((await request(url, '/v1/models', { key: saved.forwardKey })).status, 401)
       assert.equal((await request(url, '/v1/models')).status, 401, '无 key 必须 401')
+    })
+
+    await check('⑦ 直通不依赖令牌：全新会话（无 Cookie / 无 token）直接可读', async () => {
+      // 「我要直接可以访问」的落地检查：一个**干净请求**（不带任何凭据、
+      // 不带 Cookie、不带 token）打开面板，管理 API 就该是 200。
+      const fresh = await request(url, '/api/management/summary')
+      assert.equal(fresh.status, 200, '干净请求应直接可读')
+      assert.equal(fresh.value.version, service.version, '读到的应是真面板数据')
+      // 说明性：bootstrapFragment 仍暴露（令牌链路向后兼容），但不是必需
+      assert.match(service.bootstrapFragment, /^(#login=.{20,})?$/)
     })
 
     await check('⑥ 中继不注入本机 key：面板请求带不回推理权限', async () => {

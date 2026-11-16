@@ -117,9 +117,26 @@ export function createManagement({ stores, runtime, channels, info, onSettingsCh
   const pruneSessions = () => {
     for (const [id, until] of sessions) if (until <= Date.now()) sessions.delete(id)
   }
+  /**
+   * 固定面板令牌（环境变量 `OFM_PANEL_TOKEN`，2026-11-16 用户要求）。
+   *
+   * 为什么需要：一次性 bootstrap 链接在 Docker / 手机 / 电视这类设备上太难用
+   * —— 得先去 `docker logs` 里捞、10 分钟过期、用掉即焚。用户原话：
+   *   「我需要不带token或者token在环境变量里面设置，指的是登录面板」
+   *
+   * 设了这个变量之后：
+   * - 面板登录页的令牌框输入它即可（**不过期**，重启容器仍是同一个）；
+   * - 也可以直接 `Authorization: Bearer <它>` 调管理 API（脚本/自动化用）。
+   *
+   * ⚠️ 它只解锁**面板**，不解锁推理：`/v1/*` 仍然只认 LAN key（用户明确
+   *   要求「api 局域网使用 key 还是需要的」）。
+   * ⚠️ 空值 / 纯空白视为未设置。
+   */
+  const panelToken = String(process.env.OFM_PANEL_TOKEN ?? '').trim()
   const authenticated = req => {
     const bearer = /^Bearer (.+)$/i.exec(String(req.headers.authorization ?? ''))?.[1]
     if (matches(bearer, stores.settings.get().forwardKey)) return true
+    if (panelToken !== '' && matches(bearer, panelToken)) return true
     pruneSessions()
     return sessions.has(cookie(req))
   }
@@ -181,7 +198,11 @@ export function createManagement({ stores, runtime, channels, info, onSettingsCh
     if (method === 'POST' && pathname === `${PREFIX}/session`) {
       const body = await readBody(req)
       const validBootstrap = bootstrap !== null && bootstrap.until > Date.now() && matches(body.bootstrapToken, bootstrap.token)
-      if (!validBootstrap && !matches(body.key, stores.settings.get().forwardKey)) throw fail(401, '登录链接已失效或 API Key 不正确')
+      // 固定令牌（OFM_PANEL_TOKEN）与一次性 bootstrap 并列：前者可反复使用、不过期。
+      const validPanelToken = panelToken !== '' && (matches(body.bootstrapToken, panelToken) || matches(body.key, panelToken))
+      if (!validBootstrap && !validPanelToken && !matches(body.key, stores.settings.get().forwardKey)) {
+        throw fail(401, '登录链接已失效或 API Key 不正确')
+      }
       pruneSessions()
       if (sessions.size >= 64) throw fail(429, '管理会话过多，请稍后重试')
       if (validBootstrap) bootstrap = null

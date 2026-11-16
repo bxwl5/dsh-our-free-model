@@ -195,6 +195,14 @@ export async function startStandalone({
             localKey: stores.settings.get().forwardKey,
             // 面板中继开关（见 src/forward.js 的 isPanelPath）
             panel: stores.settings.get().standaloneLanPanel === true,
+            /**
+             * 是否**免登录直通**面板（中继注入本机 key）。
+             *
+             * 用户设了固定面板令牌（`OFM_PANEL_TOKEN`）时**不直通** —— 那种
+             * 情况下让他输入令牌，安全边界更清楚；没设就直通，打开即用。
+             * 用户原话：「我需要不带token或者token在环境变量里面设置」。
+             */
+            panelOpen: String(process.env.OFM_PANEL_TOKEN ?? '').trim() === '',
           }),
           log: message => logger.warn?.(`our-free-model standalone LAN: ${message}`),
         })
@@ -307,6 +315,10 @@ export async function startStandalone({
       product: PRODUCT, version: VERSION, dataDir,
       url: `http://${host === '::1' ? '[::1]' : host}:${listener.port}`,
       managementUrl: `http://${host === '::1' ? '[::1]' : host}:${listener.port}/${management.bootstrapFragment}`,
+      // 一次性登录片段（`#login=<token>`）。CLI 用它把**局域网**面板链接也拼出
+      // 来 —— 否则用户在 Docker 部署下只能拿到 127.0.0.1 那条，得手动改 host
+      // 和端口，很容易漏（2026-11-16 实测反馈）。
+      bootstrapFragment: management.bootstrapFragment,
       port: listener.port,
       keyFile: path.join(dataDir, 'settings.json'),
       runtime, channels, ready,
