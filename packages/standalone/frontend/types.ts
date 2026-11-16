@@ -38,6 +38,35 @@ export interface Summary {
   settings: ServiceSettings
   channels: { state: string; error?: string }
   catalog: Model[]
+  /**
+   * LAN 中继状态（`service.mjs` 的 `lanState()`）。
+   *
+   * 2026-11-17 补：此前后端一直返回这个字段，但前端**没有类型也没有渲染** ——
+   * 结果是开了 `--lan --lan-port 9981` 的用户在面板里找不到局域网地址与 LAN Key，
+   * 只能照着「API 接入」页显示的 `127.0.0.1:18900` + 本机 key 去连，必然 401。
+   */
+  lan?: LanState
+}
+
+/** LAN 中继状态。字段与后端 `lanState()` 一一对应。 */
+export interface LanState {
+  /** 用户在设置里是否开了中继。 */
+  enabled: boolean
+  /** 中继是否真的在监听（`enabled` 为真但端口被占时会为 false）。 */
+  running: boolean
+  host: string
+  /** 用户期望的端口（0 = 自动挑）。 */
+  requestedPort: number
+  /** 实际绑定的端口，未运行时为 null。 */
+  port: number | null
+  /** 本机的局域网地址列表。 */
+  addresses: string[]
+  /** 可直接复制的推理端点，如 `http://192.168.2.6:9981/v1`。 */
+  baseUrls: string[]
+  /** 面板中继是否也开着（`--lan-panel`）。 */
+  panel?: boolean
+  /** 启动失败时的原因。 */
+  error?: string
 }
 export interface Stats {
   requests: number
@@ -73,6 +102,10 @@ export interface Host {
   copy(value: string): Promise<void>
   getApiKey(): Promise<string>
   rotateKey(): Promise<string>
+  /** 取 LAN 中继用的密钥（与本机 `forwardKey` 是两套，见 `LanState` 注释）。 */
+  getLanKey(): Promise<string>
+  /** 轮换 LAN 密钥（只影响中继，不动本机密钥）。 */
+  rotateLanKey(): Promise<string>
   logout(): Promise<void>
   error(error: Error): void
   testModel(model: string, signal: AbortSignal): Promise<ModelTestResult>
