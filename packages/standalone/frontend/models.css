@@ -20,7 +20,7 @@
   --md-accent: var(--dsw-alias-accent-primary);
   --md-accent-soft: var(--accent-soft);
   --md-accent-border: var(--accent-line);
-  --md-accent-tint: rgba(180, 83, 9, 0.10);
+  --md-accent-tint: rgba(38, 86, 201, 0.08);
   --md-success: #177552;
   --md-success-soft: #eff7f2;
   --md-success-border: #cfe6da;
@@ -31,7 +31,7 @@
   --md-error-soft: #fdf5f5;
   --md-error-border: #efd5d9;
   --md-row-hover: var(--accent-soft);
-  --md-row-edge: rgba(180, 83, 9, 0.34);
+  --md-row-edge: rgba(38, 86, 201, 0.24);
   --md-focus-ring: 0 0 0 3px var(--accent-glow);
   --md-shadow-card: 1px 2px 0 rgba(var(--warm-shadow), 0.05), 0 10px 26px -14px rgba(var(--warm-shadow), 0.20);
   --md-shadow-card-hover: 1px 4px 0 rgba(var(--warm-shadow), 0.07), 0 18px 36px -16px rgba(var(--warm-shadow), 0.30);
@@ -693,7 +693,7 @@
 }
 .model-filters select:hover:not(:focus),
 .model-search input:hover:not(:focus) {
-  box-shadow: var(--md-shadow-inset), 0 1px 2px rgba(72, 58, 42, 0.06), 0 8px 18px -12px rgba(72, 58, 42, 0.45);
+  box-shadow: var(--md-shadow-inset), 0 1px 2px rgba(15, 23, 42, 0.06), 0 8px 18px -12px rgba(15, 23, 42, 0.45);
 }
 [data-theme="dark"] .model-filters select:hover:not(:focus),
 [data-theme="dark"] .model-search input:hover:not(:focus) {

@@ -74,8 +74,8 @@
    * 原来是 82 处装饰性强调色之一，与米黄底同色相，堆出"土黄"观感。
    * 现在主强调统一走 --green（蓝），琥珀只留给 warning 语义。
    */
-  --amber: #b45309;
-  --amber-ink: #92400e;
+  --amber: #2656c9;
+  --amber-ink: #1e46ad;
   --amber-soft: #fef7ed;
   --amber-line: #f0dfc4;
   --amber-glow: rgba(217, 119, 6, 0.12);
@@ -1563,10 +1563,10 @@ body, .app-shell, .sidebar, .topbar, .ui-card, .login-card, .login-shell, .loadi
 .ui-button-icon { min-height: 32px; min-width: 32px; padding: 8px; justify-content: center; }
 /* 昼主题 hover 微浮雕 */
 .ui-button-default:hover:not(:disabled), .primary:hover:not(:disabled) {
-  box-shadow: 0 1px 3px rgba(72, 58, 42, 0.14), 0 6px 16px -6px rgba(38, 86, 201, 0.38);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.14), 0 6px 16px -6px rgba(38, 86, 201, 0.38);
 }
 .ui-button-outline:hover:not(:disabled), .secondary:hover:not(:disabled) {
-  box-shadow: 0 1px 2px rgba(72, 58, 42, 0.06);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
 /* ---------- Card 精修：双层 bezel（外壳 hairline + 内芯高光） ---------- */
@@ -1619,7 +1619,7 @@ input, textarea { caret-color: var(--green); }
   background: #2b2721; color: #f4f5f7; font-size: 11px; font-weight: 400; line-height: 1.4;
   white-space: nowrap; pointer-events: none; opacity: 0;
   transition: opacity 150ms var(--ease-out-expo), transform 150ms var(--ease-out-expo);
-  z-index: 60; box-shadow: 0 3px 10px rgba(72, 58, 42, 0.22);
+  z-index: 60; box-shadow: 0 3px 10px rgba(15, 23, 42, 0.22);
 }
 .ui-tooltip:hover::after, .ui-tooltip:focus-within::after { opacity: 1; transform: translateX(-50%) translateY(0); }
 
@@ -1690,16 +1690,16 @@ section.page { animation: page-enter 260ms var(--ease-out-expo); }
 .login-card {
   position: relative;
   box-shadow:
-    0 1px 2px rgba(72, 58, 42, 0.05),
-    0 14px 44px -14px rgba(72, 58, 42, 0.16),
-    0 2px 8px -4px rgba(72, 58, 42, 0.07),
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 14px 44px -14px rgba(15, 23, 42, 0.16),
+    0 2px 8px -4px rgba(15, 23, 42, 0.07),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
   transition: box-shadow 300ms var(--ease-out-expo), transform 300ms var(--ease-out-expo);
 }
 .login-card:hover {
   box-shadow:
-    0 1px 2px rgba(72, 58, 42, 0.05),
-    0 22px 60px -16px rgba(72, 58, 42, 0.2),
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 22px 60px -16px rgba(15, 23, 42, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.95);
 }
 .login-card-glow {
@@ -2303,9 +2303,9 @@ input::placeholder, textarea::placeholder { color: #757064; opacity: 1; }
   --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-glide: cubic-bezier(0.22, 0.61, 0.36, 1);
   --focus-halo: rgba(38, 86, 201, 0.16);
-  --ink-quiet: #6a6459;              /* 极小号标签专用，对纸面 5.78:1 */
-  --thumb: rgba(80, 66, 48, 0.24);
-  --thumb-strong: rgba(80, 66, 48, 0.4);
+  --ink-quiet: #6b7280;              /* 极小号标签专用，对纸面 5.78:1 */
+  --thumb: rgba(15, 23, 42, 0.24);
+  --thumb-strong: rgba(15, 23, 42, 0.4);
   --mono-font: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, "SFMono-Regular", "DejaVu Sans Mono", monospace;
 }
 [data-theme="dark"] {
@@ -2327,7 +2327,7 @@ input::placeholder, textarea::placeholder { color: #757064; opacity: 1; }
   background: linear-gradient(180deg, #ffffff 0%, #ffffff 46%, #f9fafb 100%);
   box-shadow:
     inset -1px 0 0 rgba(255, 255, 255, 0.85),
-    16px 0 44px -40px rgba(72, 58, 42, 0.55);
+    16px 0 44px -40px rgba(15, 23, 42, 0.55);
 }
 
 /* A2 品牌区：字标节奏 + 图标（图片）圆角与带底色相的阴影 ---------- */
@@ -2341,13 +2341,13 @@ input::placeholder, textarea::placeholder { color: #757064; opacity: 1; }
     border-color 220ms var(--ease-out-expo);
 }
 :root:not([data-theme="dark"]) .console-mark {
-  box-shadow: 0 1px 2px rgba(72, 58, 42, 0.12), 0 10px 20px -14px rgba(38, 86, 201, 0.75);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12), 0 10px 20px -14px rgba(38, 86, 201, 0.75);
 }
 .console-brand:hover .console-mark { transform: translateY(-1px) scale(1.02); }
 .console-brand:active .console-mark { transform: translateY(0) scale(0.99); }
 :root:not([data-theme="dark"]) .console-brand:hover .console-mark {
   border-color: rgba(38, 86, 201, 0.3);
-  box-shadow: 0 2px 5px rgba(72, 58, 42, 0.14), 0 14px 26px -14px rgba(38, 86, 201, 0.85);
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.14), 0 14px 26px -14px rgba(38, 86, 201, 0.85);
 }
 [data-theme="dark"] .console-mark {
   border-color: rgba(255, 255, 255, 0.1);
@@ -2366,14 +2366,14 @@ input::placeholder, textarea::placeholder { color: #757064; opacity: 1; }
   gap: 10px;
 }
 :root:not([data-theme="dark"]) .workspace-switch {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(246, 241, 232, 0.6));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 1px 1px rgba(72, 58, 42, 0.03);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(241, 243, 246, 0.6));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 1px 1px rgba(15, 23, 42, 0.03);
 }
 :root:not([data-theme="dark"]) .workspace-switch small { color: var(--ink-quiet); }
 .workspace-avatar { width: 32px; height: 32px; border-radius: 10px; }
 :root:not([data-theme="dark"]) .workspace-avatar {
   background: linear-gradient(180deg, #ffffff, var(--accent-soft));
-  box-shadow: inset 0 0 0 1px rgba(38, 86, 201, 0.16), 0 1px 2px rgba(72, 58, 42, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(38, 86, 201, 0.16), 0 1px 2px rgba(15, 23, 42, 0.08);
 }
 [data-theme="dark"] .workspace-switch {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012));
@@ -2408,7 +2408,7 @@ input::placeholder, textarea::placeholder { color: #757064; opacity: 1; }
 }
 :root:not([data-theme="dark"]) .console-nav-item.selected {
   background: linear-gradient(90deg, rgba(38, 86, 201, 0.11), rgba(38, 86, 201, 0.04));
-  box-shadow: inset 0 0 0 1px rgba(38, 86, 201, 0.14), 0 1px 2px rgba(72, 58, 42, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(38, 86, 201, 0.14), 0 1px 2px rgba(15, 23, 42, 0.05);
 }
 .console-nav-indicator {
   height: 22px;
@@ -2448,9 +2448,9 @@ input::placeholder, textarea::placeholder { color: #757064; opacity: 1; }
   gap: 8px;
 }
 :root:not([data-theme="dark"]) .sidebar-support {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(247, 243, 236, 0.55));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(242, 244, 247, 0.55));
   color: var(--ink-quiet);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 1px 1px rgba(72, 58, 42, 0.03);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 1px 1px rgba(15, 23, 42, 0.03);
 }
 .sidebar-support > svg { margin-top: 2px; }
 :root:not([data-theme="dark"]) .sidebar-support > svg { color: var(--green); opacity: 0.9; }
@@ -2478,7 +2478,7 @@ input::placeholder, textarea::placeholder { color: #757064; opacity: 1; }
       两者共存会互相压盖，因此这里只做材质与层次，不动定位） ---------- */
 :root:not([data-theme="dark"]) .topbar {
   background: linear-gradient(180deg, #fffefc 0%, #ffffff 100%);
-  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.7), 0 10px 24px -22px rgba(72, 58, 42, 0.9);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.7), 0 10px 24px -22px rgba(15, 23, 42, 0.9);
 }
 [data-theme="dark"] .topbar {
   box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.02), 0 12px 28px -24px rgba(0, 0, 0, 1);
@@ -2512,13 +2512,13 @@ input::placeholder, textarea::placeholder { color: #757064; opacity: 1; }
   background: linear-gradient(180deg, #ffffff, #f2f4f7);
   border-color: var(--line);
   color: #4b5563;
-  box-shadow: inset 0 1px 0 #ffffff, 0 1px 2px rgba(72, 58, 42, 0.08);
+  box-shadow: inset 0 1px 0 #ffffff, 0 1px 2px rgba(15, 23, 42, 0.08);
 }
 :root:not([data-theme="dark"]) .theme-toggle:hover {
   background: linear-gradient(180deg, #ffffff, #f1ece1);
   border-color: var(--accent-line);
   color: var(--green);
-  box-shadow: inset 0 1px 0 #ffffff, 0 3px 8px -3px rgba(72, 58, 42, 0.2), 0 0 0 3px rgba(38, 86, 201, 0.06);
+  box-shadow: inset 0 1px 0 #ffffff, 0 3px 8px -3px rgba(15, 23, 42, 0.2), 0 0 0 3px rgba(38, 86, 201, 0.06);
 }
 .theme-toggle:hover, .theme-toggle:focus-visible, .theme-toggle:active { border-radius: 10px; }
 .console-sidebar-footer .ui-button { min-width: 34px; min-height: 34px; padding: 8px; border-radius: 10px; }
@@ -2611,15 +2611,15 @@ input::placeholder, textarea::placeholder { color: #757064; opacity: 1; }
     var(--surface);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.95),
-    0 1px 2px rgba(72, 58, 42, 0.05),
-    0 18px 48px -18px rgba(72, 58, 42, 0.2),
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 18px 48px -18px rgba(15, 23, 42, 0.2),
     0 40px 80px -60px rgba(38, 86, 201, 0.5);
 }
 :root:not([data-theme="dark"]) .login-card:hover {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.95),
-    0 1px 2px rgba(72, 58, 42, 0.05),
-    0 24px 60px -20px rgba(72, 58, 42, 0.24),
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 24px 60px -20px rgba(15, 23, 42, 0.24),
     0 48px 90px -64px rgba(38, 86, 201, 0.6);
 }
 :root:not([data-theme="dark"]) .login-card-glow {
@@ -2658,7 +2658,7 @@ input::placeholder, textarea::placeholder { color: #757064; opacity: 1; }
 :root:not([data-theme="dark"]) .login-card input {
   background: #ffffff;
   border-color: var(--dsw-alias-border-l2);
-  box-shadow: inset 0 1px 2px rgba(72, 58, 42, 0.05);
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.05);
 }
 :root:not([data-theme="dark"]) .login-card input:hover:not(:disabled) { border-color: var(--accent-line); }
 .login-card input:focus-visible {
@@ -2672,7 +2672,7 @@ input::placeholder, textarea::placeholder { color: #757064; opacity: 1; }
 }
 .login-card input:user-invalid {
   border-color: var(--danger);
-  box-shadow: 0 0 0 3px rgba(178, 59, 75, 0.1), inset 0 1px 2px rgba(72, 58, 42, 0.05);
+  box-shadow: 0 0 0 3px rgba(178, 59, 75, 0.1), inset 0 1px 2px rgba(15, 23, 42, 0.05);
 }
 [data-theme="dark"] .login-card input:user-invalid {
   border-color: var(--dsw-alias-state-error-primary);
@@ -2719,7 +2719,7 @@ code, pre, kbd { font-family: var(--mono-font); }
 }
 :root:not([data-theme="dark"]) .login-help textarea {
   background: #f4f5f7; border-color: var(--line);
-  box-shadow: inset 0 1px 3px rgba(72, 58, 42, 0.06);
+  box-shadow: inset 0 1px 3px rgba(15, 23, 42, 0.06);
 }
 :root:not([data-theme="dark"]) .login-help textarea:hover { border-color: var(--accent-line); }
 #login-help-status { color: var(--ink-soft); font-size: 12px; min-height: 18px; }
@@ -2759,7 +2759,7 @@ code, pre, kbd { font-family: var(--mono-font); }
 :root:not([data-theme="dark"]) .dashboard-metric p { color: var(--ink-quiet); }
 
 /* C3 图表：实线网格 + 仪器柱（顶部内高光），hover 与空态都照顾 ---------- */
-.chart-grid-lines span { border-top-style: solid; border-top-color: rgba(72, 58, 42, 0.085); }
+.chart-grid-lines span { border-top-style: solid; border-top-color: rgba(15, 23, 42, 0.085); }
 [data-theme="dark"] .chart-grid-lines span {
   border-top-style: solid; border-top-color: rgba(255, 255, 255, 0.055);
 }
@@ -2769,7 +2769,7 @@ code, pre, kbd { font-family: var(--mono-font); }
 }
 :root:not([data-theme="dark"]) .dashboard-chart-bar.zero {
   background: linear-gradient(180deg, #efe9de, #e8e1d4);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), inset 0 0 0 1px rgba(72, 58, 42, 0.05);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), inset 0 0 0 1px rgba(15, 23, 42, 0.05);
 }
 :root:not([data-theme="dark"]) .dashboard-chart-column:hover .dashboard-chart-bar {
   background: linear-gradient(180deg, #4a76e0 0%, #2656c9 100%);
@@ -2782,7 +2782,7 @@ code, pre, kbd { font-family: var(--mono-font); }
 .dashboard-chart-column > span { letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
 .chart-empty { gap: 6px; border-radius: 10px; }
 .chart-empty small { max-width: 42ch; text-align: center; line-height: 1.6; }
-:root:not([data-theme="dark"]) .chart-empty { box-shadow: inset 0 0 0 1px rgba(72, 58, 42, 0.04); }
+:root:not([data-theme="dark"]) .chart-empty { box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.04); }
 
 /* C4 API 接入卡：3px 蓝条 -> 1px 发丝线 + 顶部品牌微光 ---------- */
 .quick-connect { border-top-width: 1px; border-top-color: var(--accent-line); }
@@ -2797,7 +2797,7 @@ code, pre, kbd { font-family: var(--mono-font); }
 }
 .quick-icon { border-radius: 10px; }
 :root:not([data-theme="dark"]) .quick-icon {
-  box-shadow: inset 0 0 0 1px rgba(38, 86, 201, 0.12), 0 1px 2px rgba(72, 58, 42, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(38, 86, 201, 0.12), 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 [data-theme="dark"] .quick-icon {
   box-shadow: inset 0 0 0 1px rgba(0, 208, 192, 0.18), 0 0 14px -8px rgba(0, 208, 192, 0.9);
@@ -2810,12 +2810,12 @@ code, pre, kbd { font-family: var(--mono-font); }
   border-radius: 10px;
   border-color: var(--line);
   background: linear-gradient(180deg, #f8f5ef, #f3eee6);
-  box-shadow: inset 0 1px 2px rgba(72, 58, 42, 0.05);
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.05);
   transition: border-color 180ms var(--ease-glide), box-shadow 200ms var(--ease-out-expo);
 }
 :root:not([data-theme="dark"]) .quick-endpoint:hover {
   border-color: var(--accent-line);
-  box-shadow: inset 0 1px 2px rgba(72, 58, 42, 0.05), 0 0 0 3px rgba(38, 86, 201, 0.06);
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.05), 0 0 0 3px rgba(38, 86, 201, 0.06);
 }
 [data-theme="dark"] .quick-endpoint {
   border-radius: 10px;
@@ -2847,7 +2847,7 @@ code, pre, kbd { font-family: var(--mono-font); }
   width: 34px; height: 34px; border-radius: 10px;
   transition: transform 200ms var(--ease-spring), box-shadow 200ms var(--ease-out-expo);
 }
-:root:not([data-theme="dark"]) .source-icon { box-shadow: inset 0 0 0 1px rgba(72, 58, 42, 0.05); }
+:root:not([data-theme="dark"]) .source-icon { box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.05); }
 .source-row:hover .source-icon { transform: translateY(-1px) scale(1.03); }
 :root:not([data-theme="dark"]) .source-row strong { letter-spacing: -0.005em; }
 :root:not([data-theme="dark"]) .source-row small { color: var(--ink-quiet); }
@@ -2954,7 +2954,7 @@ code, pre { font-variant-ligatures: none; }
 :root:not([data-theme="dark"]) .ui-kbd {
   background: linear-gradient(180deg, #fbf8f2, #f2ece2);
   border-color: var(--line);
-  box-shadow: inset 0 1px 0 #ffffff, 0 1px 0 rgba(72, 58, 42, 0.06);
+  box-shadow: inset 0 1px 0 #ffffff, 0 1px 0 rgba(15, 23, 42, 0.06);
 }
 [data-theme="dark"] .ui-kbd {
   color: var(--dsw-alias-label-secondary);
@@ -2983,7 +2983,7 @@ code, pre { font-variant-ligatures: none; }
 :root:not([data-theme="dark"]) .primary {
   background: linear-gradient(180deg, #3163d6 0%, #2656c9 56%, #204ec0 100%);
   border-color: rgba(28, 66, 160, 0.55);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(72, 58, 42, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(15, 23, 42, 0.16);
 }
 :root:not([data-theme="dark"]) .ui-button-default:hover:not(:disabled),
 :root:not([data-theme="dark"]) .primary:hover:not(:disabled) {
@@ -2991,7 +2991,7 @@ code, pre { font-variant-ligatures: none; }
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
     0 6px 18px -8px rgba(38, 86, 201, 0.75),
-    0 1px 2px rgba(72, 58, 42, 0.16);
+    0 1px 2px rgba(15, 23, 42, 0.16);
 }
 :root:not([data-theme="dark"]) .ui-button-default:active:not(:disabled),
 :root:not([data-theme="dark"]) .primary:active:not(:disabled) {
@@ -3003,18 +3003,18 @@ code, pre { font-variant-ligatures: none; }
   background: linear-gradient(180deg, #ffffff, #f4f5f7);
   border-color: var(--dsw-alias-border-l2);
   color: var(--ink-soft);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 1px rgba(72, 58, 42, 0.04);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 1px rgba(15, 23, 42, 0.04);
 }
 :root:not([data-theme="dark"]) .ui-button-outline:hover:not(:disabled),
 :root:not([data-theme="dark"]) .secondary:hover:not(:disabled) {
   background: linear-gradient(180deg, #ffffff, #eef0f4);
   border-color: #c6beb0;
   color: var(--ink);
-  box-shadow: inset 0 1px 0 #ffffff, 0 3px 10px -6px rgba(72, 58, 42, 0.35);
+  box-shadow: inset 0 1px 0 #ffffff, 0 3px 10px -6px rgba(15, 23, 42, 0.35);
 }
 :root:not([data-theme="dark"]) .ui-button-ghost { color: var(--ink-soft); }
-:root:not([data-theme="dark"]) .ui-button-ghost:hover:not(:disabled):not(.theme-toggle) { background: rgba(72, 58, 42, 0.06); color: var(--ink); }
-:root:not([data-theme="dark"]) .ui-button-ghost:active:not(:disabled):not(.theme-toggle) { background: rgba(72, 58, 42, 0.09); }
+:root:not([data-theme="dark"]) .ui-button-ghost:hover:not(:disabled):not(.theme-toggle) { background: rgba(15, 23, 42, 0.06); color: var(--ink); }
+:root:not([data-theme="dark"]) .ui-button-ghost:active:not(:disabled):not(.theme-toggle) { background: rgba(15, 23, 42, 0.09); }
 :root:not([data-theme="dark"]) .danger-button:hover:not(:disabled) { background: #fbeceb; border-color: #e6c2c6; }
 .ui-button:disabled, .primary:disabled, .secondary:disabled, .danger-button:disabled {
   opacity: 0.5; transform: none; box-shadow: none; filter: saturate(0.7);
@@ -3034,7 +3034,7 @@ code, pre { font-variant-ligatures: none; }
 
 /* E5 徽章：计数用等宽数字，标签行高稳定 ---------- */
 .ui-badge { padding: 3px 8px; line-height: 1.35; font-variant-numeric: tabular-nums; }
-.ui-badge-neutral .ui-badge-dot { box-shadow: 0 0 0 2px rgba(72, 58, 42, 0.12); }
+.ui-badge-neutral .ui-badge-dot { box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.12); }
 [data-theme="dark"] .ui-badge-neutral .ui-badge-dot { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1); }
 
 /* E6 输入 / 开关：边界可辨认（控件边界 ≥3:1）与禁用态 ---------- */
@@ -3047,10 +3047,10 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
 }
 :root:not([data-theme="dark"]) .ui-switch {
   background: #ddd6c8;
-  box-shadow: inset 0 0 0 1px rgba(72, 58, 42, 0.5), inset 0 1px 2px rgba(72, 58, 42, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.5), inset 0 1px 2px rgba(15, 23, 42, 0.12);
 }
 :root:not([data-theme="dark"]) .ui-switch:hover:not(:disabled):not(.on) {
-  box-shadow: inset 0 0 0 1px rgba(72, 58, 42, 0.62), inset 0 1px 2px rgba(72, 58, 42, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.62), inset 0 1px 2px rgba(15, 23, 42, 0.12);
 }
 :root:not([data-theme="dark"]) .ui-switch.on:hover:not(:disabled) {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 0 0 1px rgba(28, 66, 160, 0.55), 0 4px 12px -6px rgba(38, 86, 201, 0.5);
@@ -3086,7 +3086,7 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
   max-width: 1440px;
   margin-left: auto; margin-right: auto;
   border-radius: 10px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 1px 2px rgba(72, 58, 42, 0.04);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 :root:not([data-theme="dark"]) .notice { border-radius: 10px; }
 [data-theme="dark"] .notice { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.3); }
@@ -3323,9 +3323,9 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
 :root:not([data-theme="dark"]) .ui-card,
 :root:not([data-theme="dark"]) .login-card {
   background: #ffffff !important;
-  border: 1px solid #e8e0d3 !important;
+  border: 1px solid #e0e4ea !important;
   border-radius: 8px !important;
-  box-shadow: 3px 4px 0 rgba(86,52,10,0.04), 6px 8px 22px -6px rgba(86,52,10,0.13), 0 1px 3px rgba(86,52,10,0.05) !important;
+  box-shadow: 3px 4px 0 rgba(15,23,42,0.04), 6px 8px 22px -6px rgba(15,23,42,0.13), 0 1px 3px rgba(15,23,42,0.05) !important;
   transition: transform 400ms cubic-bezier(0.32,0.72,0,1) !important, box-shadow 400ms cubic-bezier(0.32,0.72,0,1) !important;
   position: relative !important;
   overflow: hidden !important;
@@ -3350,7 +3350,7 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
   left: 0 !important;
   right: 0 !important;
   height: 1px !important;
-  background: linear-gradient(90deg, rgba(180,83,9,0.12), rgba(255,255,255,0.5) 30%, transparent) !important;
+  background: linear-gradient(90deg, rgba(38,86,201,0.12), rgba(255,255,255,0.5) 30%, transparent) !important;
   pointer-events: none !important;
   z-index: 1 !important;
 }
@@ -3363,21 +3363,21 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
 :root:not([data-theme="dark"]) .ui-card:hover,
 :root:not([data-theme="dark"]) .login-card:hover {
   transform: translateY(-2px) !important;
-  box-shadow: 4px 6px 0 rgba(86,52,10,0.03), 10px 14px 32px -6px rgba(86,52,10,0.17), 0 2px 5px rgba(86,52,10,0.06) !important;
+  box-shadow: 4px 6px 0 rgba(15,23,42,0.03), 10px 14px 32px -6px rgba(15,23,42,0.17), 0 2px 5px rgba(15,23,42,0.06) !important;
 }
 
 /* ---- 2. 黄铜按钮：不是橙色渐变，是"真黄铜" ---- */
 :root:not([data-theme="dark"]) body .ui-button-default,
 :root:not([data-theme="dark"]) body .primary {
-  background: linear-gradient(180deg, #c8842a 0%, #b45309 50%, #9a4708 100%) !important;
+  background: linear-gradient(180deg, #5b8def 0%, #2656c9 50%, #1e46ad 100%) !important;
   color: #fffdf6 !important;
   border: 1px solid #8a4a06 !important;
   border-radius: 6px !important;
   box-shadow:
     0 1px 0 rgba(255,240,200,0.45) inset,
     0 -1px 2px rgba(60,30,0,0.35) inset,
-    2px 3px 0 rgba(86,52,10,0.10),
-    3px 6px 14px -4px rgba(86,52,10,0.30) !important;
+    2px 3px 0 rgba(15,23,42,0.10),
+    3px 6px 14px -4px rgba(15,23,42,0.30) !important;
   transition: all 350ms cubic-bezier(0.32,0.72,0,1) !important;
   position: relative !important;
   overflow: hidden !important;
@@ -3423,20 +3423,20 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
   box-shadow:
     0 1px 0 rgba(255,240,200,0.5) inset,
     0 -1px 2px rgba(60,30,0,0.38) inset,
-    3px 4px 0 rgba(86,52,10,0.10),
-    4px 8px 18px -4px rgba(86,52,10,0.35) !important;
+    3px 4px 0 rgba(15,23,42,0.10),
+    4px 8px 18px -4px rgba(15,23,42,0.35) !important;
   transform: translateY(-1px) !important;
 }
 /* active：按进纸里，下沉 1px，高光收缩 */
 :root:not([data-theme="dark"]) body .ui-button-default:active,
 :root:not([data-theme="dark"]) body .primary:active {
-  background: linear-gradient(180deg, #a86407 0%, #9a4708 50%, #8a3e06 100%) !important;
+  background: linear-gradient(180deg, #1e46ad 0%, #1e46ad 50%, #16357f 100%) !important;
   border-color: #6e3a05 !important;
   box-shadow:
     0 1px 0 rgba(255,240,200,0.25) inset,
     0 2px 5px rgba(60,30,0,0.35) inset,
-    1px 1px 0 rgba(86,52,10,0.06),
-    0 2px 6px -2px rgba(86,52,10,0.20) !important;
+    1px 1px 0 rgba(15,23,42,0.06),
+    0 2px 6px -2px rgba(15,23,42,0.20) !important;
   transform: translateY(1px) !important;
 }
 :root:not([data-theme="dark"]) body .ui-button-default:active::before,
@@ -3455,16 +3455,16 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
   border: 1px solid #d4c9b5 !important;
   border-radius: 999px !important;
   background: #ece6da !important;
-  box-shadow: 1px 2px 2px rgba(86,52,10,0.08) inset, 0 1px 1px rgba(255,255,255,0.6) !important;
+  box-shadow: 1px 2px 2px rgba(15,23,42,0.08) inset, 0 1px 1px rgba(255,255,255,0.6) !important;
   transition: background 600ms cubic-bezier(0.32,0.72,0,1), box-shadow 600ms cubic-bezier(0.32,0.72,0,1), border-color 600ms cubic-bezier(0.32,0.72,0,1) !important;
   position: relative !important;
   overflow: visible !important;
 }
 /* 墨水洇开：on 时 track 底色从中心慢慢扩散成暖棕墨 */
 :root:not([data-theme="dark"]) .ui-switch.on {
-  background: radial-gradient(circle at 50% 50%, #c8842a 0%, #b45309 55%, #a04a08 100%) !important;
+  background: radial-gradient(circle at 50% 50%, #5b8def 0%, #2656c9 55%, #1e46ad 100%) !important;
   border-color: #8a4a06 !important;
-  box-shadow: 0 1px 2px rgba(86,52,10,0.18) inset, 0 -1px 1px rgba(255,240,200,0.25) inset !important;
+  box-shadow: 0 1px 2px rgba(15,23,42,0.18) inset, 0 -1px 1px rgba(255,240,200,0.25) inset !important;
 }
 /* 滑块：黄铜圆片带镜面高光点 */
 :root:not([data-theme="dark"]) .ui-switch span {
@@ -3473,7 +3473,7 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
   height: 14px !important;
   background: linear-gradient(180deg, #eef0f4 0%, #ddd4c2 100%) !important;
   border-radius: 50% !important;
-  box-shadow: 0 1px 3px rgba(86,52,10,0.18), 0 0 0 0.5px rgba(180,83,9,0.12) !important;
+  box-shadow: 0 1px 3px rgba(15,23,42,0.18), 0 0 0 0.5px rgba(38,86,201,0.12) !important;
   transition: transform 450ms cubic-bezier(0.16,1,0.3,1) !important;
   position: relative !important;
 }
@@ -3490,8 +3490,8 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
 }
 /* on 状态滑块：变成黄铜色（仪器拨杆被推到黄铜端） */
 :root:not([data-theme="dark"]) .ui-switch.on span {
-  background: linear-gradient(180deg, #e8c47a 0%, #c8842a 100%) !important;
-  box-shadow: 0 1px 2px rgba(86,52,10,0.20), 0 0 0 0.5px rgba(140,75,6,0.18) !important;
+  background: linear-gradient(180deg, #9dbaf5 0%, #5b8def 100%) !important;
+  box-shadow: 0 1px 2px rgba(15,23,42,0.20), 0 0 0 0.5px rgba(140,75,6,0.18) !important;
   transform: translateX(13px) !important;
 }
 :root:not([data-theme="dark"]) .ui-switch.on span::after {
@@ -3503,65 +3503,84 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
    原生件 → 纸纹与光束 → 颜色纪律 → 图表与空态）
    ============================================================ */
 
-/* ---- 0. 令牌重声明：蓝色泄漏清零（昼内不引蓝） ---- */
+/**
+ * 0. 令牌重声明（2026-11-16 配色重做：由琥珀改回蓝）
+ *
+ * ⚠️ **这才是「屎黄」的真正根因**，前后三轮都没找对地方。
+ *
+ * 原内容是一段「蓝色泄漏清零（昼内不引蓝）」的设计决定 —— 把 --green 与
+ * 全部 accent/business/focus 令牌用 `!important` 强制改成琥珀 `#2656c9`
+ * （= rgb(180,83,9)），并把 --accent-line 改成暖沙 `#e3d5bd`。
+ *
+ * 为什么前几轮改什么都没用：
+ * - 改 `--paper`/`--surface`/`--ink` → 那只管底色和文字，强调色仍被这条盖住；
+ * - 改 `body::after` 光束 → 那只是背景的黄色叠加；
+ * - 清 `--amber-*` 的使用点 → 这条把 `--green` 本身也变成了琥珀，
+ *   所有 `var(--green)` / `var(--dsw-alias-accent-primary)` 跟着变黄。
+ * 而且它带 `!important` + `:root:not([data-theme="dark"])` 的高权重，
+ * 任何普通声明都盖不动它。用 CSSOM 逐条搜 `rgb(180,83,9)` 才定位到。
+ *
+ * 现在改回蓝：主强调 `#2656c9`，与暗色主题的青色主调、以及卡片/线条的
+ * 中性灰同一体系。`--accent-soft/line` 用淡蓝，不再带暖沙。
+ */
 :root:not([data-theme="dark"]) {
-  --green: #b45309 !important;
-  --accent-soft: #eef0f4 !important;
-  --accent-line: #e3d5bd !important;
-  --accent-hover: #9a4708 !important;
-  --accent-glow: rgba(180,83,9,0.14) !important;
-  --focus-ring: #b45309 !important;
-  --focus-halo: rgba(180,83,9,0.16) !important;
-  --dsw-alias-state-business-primary: #b45309 !important;
-  --dsw-alias-accent-primary: #b45309 !important;
-  --dsw-alias-accent-secondary: #eef0f4 !important;
+  --green: #2656c9 !important;
+  --accent-soft: #eef2fd !important;
+  --accent-line: #ccd8f2 !important;
+  --accent-hover: #1e46ad !important;
+  --accent-glow: rgba(38,86,201,0.14) !important;
+  --focus-ring: #2656c9 !important;
+  --focus-halo: rgba(38,86,201,0.16) !important;
+  --dsw-alias-state-business-primary: #2656c9 !important;
+  --dsw-alias-accent-primary: #2656c9 !important;
+  --dsw-alias-accent-secondary: #eef2fd !important;
 }
-:root:not([data-theme="dark"]) ::selection { background: rgba(180,83,9,0.20) !important; color: #1c1917 !important; }
-:root:not([data-theme="dark"]) .console-mark { border-color: rgba(180,83,9,0.24) !important; box-shadow: 0 1px 2px rgba(86,52,10,0.10), 0 8px 18px -12px rgba(180,83,9,0.40) !important; }
-:root:not([data-theme="dark"]) .console-brand:hover .console-mark { border-color: rgba(180,83,9,0.38) !important; box-shadow: 0 2px 5px rgba(86,52,10,0.12), 0 12px 22px -14px rgba(180,83,9,0.48) !important; }
-:root:not([data-theme="dark"]) .console-nav-item:hover { background: linear-gradient(90deg, rgba(180,83,9,0.08), rgba(180,83,9,0.02)) !important; }
-:root:not([data-theme="dark"]) .console-nav-item.selected { background: linear-gradient(90deg, rgba(180,83,9,0.13), rgba(180,83,9,0.04)) !important; box-shadow: inset 0 0 0 1px rgba(180,83,9,0.16), 0 1px 2px rgba(86,52,10,0.06) !important; }
-:root:not([data-theme="dark"]) .console-nav-item.selected svg { color: #b45309 !important; }
-:root:not([data-theme="dark"]) .count-badge { background: #f0e6d4 !important; color: #9a4708 !important; box-shadow: inset 0 0 0 1px rgba(180,83,9,0.12) !important; }
-:root:not([data-theme="dark"]) .login-shell { background: radial-gradient(880px 420px at 50% 28%, rgba(180,83,9,0.06), transparent 64%), var(--paper) !important; }
-:root:not([data-theme="dark"]) .login-card { box-shadow: 0 1px 2px rgba(86,52,10,0.05), 0 14px 44px -14px rgba(86,52,10,0.18), 0 40px 80px -60px rgba(180,83,9,0.30), inset 0 1px 0 rgba(255,255,255,0.85) !important; }
-:root:not([data-theme="dark"]) .login-card:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 1px 2px rgba(86,52,10,0.06), 0 22px 56px -16px rgba(86,52,10,0.22), 0 44px 88px -60px rgba(180,83,9,0.38) !important; }
-:root:not([data-theme="dark"]) .login-card-glow { background: linear-gradient(90deg, transparent, rgba(180,83,9,0.4), transparent) !important; }
-:root:not([data-theme="dark"]) .login-card input:focus-visible { box-shadow: 0 0 0 3px var(--accent-glow), 0 0 18px -6px rgba(180,83,9,0.35) !important; }
-:root:not([data-theme="dark"]) .login-card:focus-within .brand-mark span { color: #b45309 !important; filter: drop-shadow(0 0 6px rgba(180,83,9,0.45)) !important; }
-:root:not([data-theme="dark"]) .loading-screen { background: radial-gradient(920px 460px at 50% 22%, rgba(180,83,9,0.07), transparent 62%), radial-gradient(700px 420px at 88% 96%, rgba(30,138,99,0.04), transparent 66%), linear-gradient(180deg, #fdfbf7, var(--paper) 46%, #f7f4ee) !important; }
-:root:not([data-theme="dark"]) .loading-bar { background: rgba(180,83,9,0.12) !important; }
-:root:not([data-theme="dark"]) .loading-bar-fill { background: #b45309 !important; }
-:root:not([data-theme="dark"]) .ui-spinner { border-color: rgba(180,83,9,0.2) !important; }
-:root:not([data-theme="dark"]) .workspace-avatar { background: linear-gradient(180deg, #ffffff, #f5ede0) !important; box-shadow: inset 0 0 0 1px rgba(180,83,9,0.16), 0 1px 2px rgba(86,52,10,0.08) !important; }
-:root:not([data-theme="dark"]) .workspace-switch:hover .workspace-avatar { box-shadow: inset 0 0 0 1px rgba(180,83,9,0.26), 0 4px 10px -4px rgba(180,83,9,0.40) !important; }
-:root:not([data-theme="dark"]) .theme-toggle:hover { border-color: var(--accent-line) !important; color: #b45309 !important; box-shadow: inset 0 1px 0 #ffffff, 0 3px 8px -3px rgba(86,52,10,0.16), 0 0 0 3px rgba(180,83,9,0.06) !important; }
+:root:not([data-theme="dark"]) ::selection { background: rgba(38,86,201,0.20) !important; color: #1c1917 !important; }
+:root:not([data-theme="dark"]) .console-mark { border-color: rgba(38,86,201,0.24) !important; box-shadow: 0 1px 2px rgba(15,23,42,0.10), 0 8px 18px -12px rgba(38,86,201,0.40) !important; }
+:root:not([data-theme="dark"]) .console-brand:hover .console-mark { border-color: rgba(38,86,201,0.38) !important; box-shadow: 0 2px 5px rgba(15,23,42,0.12), 0 12px 22px -14px rgba(38,86,201,0.48) !important; }
+:root:not([data-theme="dark"]) .console-nav-item:hover { background: linear-gradient(90deg, rgba(38,86,201,0.08), rgba(38,86,201,0.02)) !important; }
+:root:not([data-theme="dark"]) .console-nav-item.selected { background: linear-gradient(90deg, rgba(38,86,201,0.13), rgba(38,86,201,0.04)) !important; box-shadow: inset 0 0 0 1px rgba(38,86,201,0.16), 0 1px 2px rgba(15,23,42,0.06) !important; }
+:root:not([data-theme="dark"]) .console-nav-item.selected svg { color: #2656c9 !important; }
+:root:not([data-theme="dark"]) .count-badge { background: #e8eefc !important; color: #1e46ad !important; box-shadow: inset 0 0 0 1px rgba(38,86,201,0.12) !important; }
+:root:not([data-theme="dark"]) .login-shell { background: radial-gradient(880px 420px at 50% 28%, rgba(38,86,201,0.06), transparent 64%), var(--paper) !important; }
+:root:not([data-theme="dark"]) .login-card { box-shadow: 0 1px 2px rgba(15,23,42,0.05), 0 14px 44px -14px rgba(15,23,42,0.18), 0 40px 80px -60px rgba(38,86,201,0.30), inset 0 1px 0 rgba(255,255,255,0.85) !important; }
+:root:not([data-theme="dark"]) .login-card:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 1px 2px rgba(15,23,42,0.06), 0 22px 56px -16px rgba(15,23,42,0.22), 0 44px 88px -60px rgba(38,86,201,0.38) !important; }
+:root:not([data-theme="dark"]) .login-card-glow { background: linear-gradient(90deg, transparent, rgba(38,86,201,0.4), transparent) !important; }
+:root:not([data-theme="dark"]) .login-card input:focus-visible { box-shadow: 0 0 0 3px var(--accent-glow), 0 0 18px -6px rgba(38,86,201,0.35) !important; }
+:root:not([data-theme="dark"]) .login-card:focus-within .brand-mark span { color: #2656c9 !important; filter: drop-shadow(0 0 6px rgba(38,86,201,0.45)) !important; }
+:root:not([data-theme="dark"]) .loading-screen { background: radial-gradient(920px 460px at 50% 22%, rgba(38,86,201,0.07), transparent 62%), radial-gradient(700px 420px at 88% 96%, rgba(30,138,99,0.04), transparent 66%), linear-gradient(180deg, #fdfbf7, var(--paper) 46%, #f7f4ee) !important; }
+:root:not([data-theme="dark"]) .loading-bar { background: rgba(38,86,201,0.12) !important; }
+:root:not([data-theme="dark"]) .loading-bar-fill { background: #2656c9 !important; }
+:root:not([data-theme="dark"]) .ui-spinner { border-color: rgba(38,86,201,0.2) !important; }
+:root:not([data-theme="dark"]) .workspace-avatar { background: linear-gradient(180deg, #ffffff, #f5ede0) !important; box-shadow: inset 0 0 0 1px rgba(38,86,201,0.16), 0 1px 2px rgba(15,23,42,0.08) !important; }
+:root:not([data-theme="dark"]) .workspace-switch:hover .workspace-avatar { box-shadow: inset 0 0 0 1px rgba(38,86,201,0.26), 0 4px 10px -4px rgba(38,86,201,0.40) !important; }
+:root:not([data-theme="dark"]) .theme-toggle:hover { border-color: var(--accent-line) !important; color: #2656c9 !important; box-shadow: inset 0 1px 0 #ffffff, 0 3px 8px -3px rgba(15,23,42,0.16), 0 0 0 3px rgba(38,86,201,0.06) !important; }
 :root:not([data-theme="dark"]) .quick-endpoint code { color: #8a5206 !important; }
-:root:not([data-theme="dark"]) .quick-icon { background: #f5ede0 !important; color: #b45309 !important; }
-:root:not([data-theme="dark"]) .detail-provider-link.active { background: #f5ede0 !important; color: #b45309 !important; }
-:root:not([data-theme="dark"]) .text-button { color: #b45309 !important; }
-:root:not([data-theme="dark"]) .card-foot button { color: #b45309 !important; }
-:root:not([data-theme="dark"]) .card-foot button:hover { color: #9a4708 !important; }
-:root:not([data-theme="dark"]) input:focus-visible, :root:not([data-theme="dark"]) select:focus-visible, :root:not([data-theme="dark"]) textarea:focus-visible { border-color: #b45309 !important; box-shadow: 0 0 0 3px rgba(180,83,9,0.14), 0 0 14px -6px rgba(180,83,9,0.35) !important; }
+:root:not([data-theme="dark"]) .quick-icon { background: #f5ede0 !important; color: #2656c9 !important; }
+:root:not([data-theme="dark"]) .detail-provider-link.active { background: #f5ede0 !important; color: #2656c9 !important; }
+:root:not([data-theme="dark"]) .text-button { color: #2656c9 !important; }
+:root:not([data-theme="dark"]) .card-foot button { color: #2656c9 !important; }
+:root:not([data-theme="dark"]) .card-foot button:hover { color: #1e46ad !important; }
+:root:not([data-theme="dark"]) input:focus-visible, :root:not([data-theme="dark"]) select:focus-visible, :root:not([data-theme="dark"]) textarea:focus-visible { border-color: #2656c9 !important; box-shadow: 0 0 0 3px rgba(38,86,201,0.14), 0 0 14px -6px rgba(38,86,201,0.35) !important; }
 :root:not([data-theme="dark"]) input, :root:not([data-theme="dark"]) textarea { caret-color: #7a4a12 !important; }
 :root:not([data-theme="dark"]) input::placeholder, :root:not([data-theme="dark"]) textarea::placeholder { color: #9c9285 !important; }
 :root:not([data-theme="dark"]) .ui-input:hover:not(:disabled) { border-color: #cbbba0 !important; }
-:root:not([data-theme="dark"]) .ui-input:focus-visible { border-color: #b45309 !important; box-shadow: 0 0 0 3px rgba(180,83,9,0.14), 0 0 14px -6px rgba(180,83,9,0.35) !important; }
-:root:not([data-theme="dark"]) .ui-badge-blue { background: #f5ede0 !important; color: #b45309 !important; border-color: #e3d5bd !important; }
-:root:not([data-theme="dark"]) .ui-badge-blue .ui-badge-dot { box-shadow: 0 0 0 2px rgba(180,83,9,0.16) !important; }
-:root:not([data-theme="dark"]) .ui-switch.on { background: radial-gradient(circle at 50% 50%, #c8842a, #b45309 55%, #a04a08) !important; border-color: #8a4a06 !important; }
-:root:not([data-theme="dark"]) .dashboard-chart-bar { background: linear-gradient(180deg, #c8842a, #b45309) !important; box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), inset 0 0 0 0.5px rgba(120,60,0,0.20), 0 1px 2px rgba(86,52,10,0.10) !important; }
+:root:not([data-theme="dark"]) .ui-input:focus-visible { border-color: #2656c9 !important; box-shadow: 0 0 0 3px rgba(38,86,201,0.14), 0 0 14px -6px rgba(38,86,201,0.35) !important; }
+:root:not([data-theme="dark"]) .ui-badge-blue { background: #f5ede0 !important; color: #2656c9 !important; border-color: #e3d5bd !important; }
+:root:not([data-theme="dark"]) .ui-badge-blue .ui-badge-dot { box-shadow: 0 0 0 2px rgba(38,86,201,0.16) !important; }
+:root:not([data-theme="dark"]) .ui-switch.on { background: radial-gradient(circle at 50% 50%, #5b8def, #2656c9 55%, #1e46ad) !important; border-color: #8a4a06 !important; }
+:root:not([data-theme="dark"]) .dashboard-chart-bar { background: linear-gradient(180deg, #5b8def, #2656c9) !important; box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), inset 0 0 0 0.5px rgba(120,60,0,0.20), 0 1px 2px rgba(15,23,42,0.10) !important; }
 :root:not([data-theme="dark"]) .dashboard-chart-bar.zero { background: #ece5d8 !important; box-shadow: none !important; }
-:root:not([data-theme="dark"]) .dashboard-chart-column:hover .dashboard-chart-bar:not(.zero) { background: linear-gradient(180deg, #d1912e, #b85a09) !important; box-shadow: inset 0 1px 0 rgba(255,255,255,0.30), inset 0 0 0 0.5px rgba(120,60,0,0.22), 0 6px 14px -8px rgba(180,83,9,0.45) !important; }
+:root:not([data-theme="dark"]) .dashboard-chart-column:hover .dashboard-chart-bar:not(.zero) { background: linear-gradient(180deg, #d1912e, #b85a09) !important; box-shadow: inset 0 1px 0 rgba(255,255,255,0.30), inset 0 0 0 0.5px rgba(120,60,0,0.22), 0 6px 14px -8px rgba(38,86,201,0.45) !important; }
 :root:not([data-theme="dark"]) .chart-empty { background: rgba(250,247,242,0.9) !important; }
 :root:not([data-theme="dark"]) .chart-empty span, :root:not([data-theme="dark"]) .chart-empty small { color: #8a8274 !important; }
 :root:not([data-theme="dark"]) .empty-state h3 { color: #1c1917 !important; }
-:root:not([data-theme="dark"]) .empty-state svg { color: #b45309 !important; opacity: 0.35 !important; }
-:root:not([data-theme="dark"]) .channel-empty svg { color: #b45309 !important; opacity: 0.30 !important; }
+:root:not([data-theme="dark"]) .empty-state svg { color: #2656c9 !important; opacity: 0.35 !important; }
+:root:not([data-theme="dark"]) .channel-empty svg { color: #2656c9 !important; opacity: 0.30 !important; }
 :root:not([data-theme="dark"]) .channel-empty p { color: #6b7280 !important; }
 
 /* ---- 1. 徽章 · 分割线 · 状态点（黄铜胶囊 + 虚线分隔） ---- */
-:root:not([data-theme="dark"]) .ui-badge { border-radius: 999px !important; padding: 3px 9px !important; font-size: 10px !important; letter-spacing: 0.04em !important; background: #f5ede0 !important; color: #9a4708 !important; border: 1px solid #e3d5bd !important; }
+:root:not([data-theme="dark"]) .ui-badge { border-radius: 999px !important; padding: 3px 9px !important; font-size: 10px !important; letter-spacing: 0.04em !important; background: #f5ede0 !important; color: #1e46ad !important; border: 1px solid #e3d5bd !important; }
 :root:not([data-theme="dark"]) .ui-badge-success { background: #eff5f0 !important; color: #177552 !important; border-color: #d5e2d9 !important; }
 :root:not([data-theme="dark"]) .ui-badge-warning { background: #fbf6ea !important; color: #8a6215 !important; border-color: #eadfc6 !important; }
 :root:not([data-theme="dark"]) .ui-badge-dot { width: 5px !important; height: 5px !important; border-radius: 50% !important; }
@@ -3569,14 +3588,14 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
 :root:not([data-theme="dark"]) .dashboard-heading, :root:not([data-theme="dark"]) .page-heading { border-bottom: 1px dashed #d8cdb9 !important; padding-bottom: 10px !important; }
 
 /* ---- 2. 输入框与聚焦（墨环） ---- */
-:root:not([data-theme="dark"]) input, :root:not([data-theme="dark"]) textarea, :root:not([data-theme="dark"]) select, :root:not([data-theme="dark"]) .ui-input { background: #fdfcf9 !important; border: 1px solid #ddd3c2 !important; border-radius: 6px !important; box-shadow: inset 0 1px 2px rgba(86,52,10,0.04) !important; transition: border-color 280ms cubic-bezier(0.32,0.72,0,1), box-shadow 280ms cubic-bezier(0.32,0.72,0,1) !important; }
-:root:not([data-theme="dark"]) .channel-search input:focus { border-color: #b45309 !important; box-shadow: 0 0 0 3px rgba(180,83,9,0.14), 0 0 14px -6px rgba(180,83,9,0.35) !important; }
+:root:not([data-theme="dark"]) input, :root:not([data-theme="dark"]) textarea, :root:not([data-theme="dark"]) select, :root:not([data-theme="dark"]) .ui-input { background: #fdfcf9 !important; border: 1px solid #ddd3c2 !important; border-radius: 6px !important; box-shadow: inset 0 1px 2px rgba(15,23,42,0.04) !important; transition: border-color 280ms cubic-bezier(0.32,0.72,0,1), box-shadow 280ms cubic-bezier(0.32,0.72,0,1) !important; }
+:root:not([data-theme="dark"]) .channel-search input:focus { border-color: #2656c9 !important; box-shadow: 0 0 0 3px rgba(38,86,201,0.14), 0 0 14px -6px rgba(38,86,201,0.35) !important; }
 :root:not([data-theme="dark"]) .channel-search input:hover:not(:focus) { border-color: #cbbba0 !important; }
 
 /* ---- 3. 原生件（滚动条 / selection / caret / focus ring） ---- */
 :root:not([data-theme="dark"]) * { scrollbar-color: rgba(140,110,70,0.28) transparent !important; }
 :root:not([data-theme="dark"]) *:hover { scrollbar-color: rgba(140,110,70,0.42) transparent !important; }
-:root:not([data-theme="dark"]) button:focus-visible, :root:not([data-theme="dark"]) a:focus-visible, :root:not([data-theme="dark"]) input:focus-visible, :root:not([data-theme="dark"]) select:focus-visible, :root:not([data-theme="dark"]) textarea:focus-visible, :root:not([data-theme="dark"]) [tabindex]:focus-visible { outline: 2px solid #b45309 !important; outline-offset: 2px !important; }
+:root:not([data-theme="dark"]) button:focus-visible, :root:not([data-theme="dark"]) a:focus-visible, :root:not([data-theme="dark"]) input:focus-visible, :root:not([data-theme="dark"]) select:focus-visible, :root:not([data-theme="dark"]) textarea:focus-visible, :root:not([data-theme="dark"]) [tabindex]:focus-visible { outline: 2px solid #2656c9 !important; outline-offset: 2px !important; }
 
 /* ---- 4. 纸纹与光束 ---- */
 :root:not([data-theme="dark"]) .ui-card::before {
@@ -3638,14 +3657,14 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
    ============================================================ */
 
 /* P1-6 ::selection 兜底（黄铜，拍基础层 2810 蓝） */
-:root:not([data-theme="dark"]) ::selection { background: rgba(180,83,9,0.20) !important; color: #1c1917 !important; }
+:root:not([data-theme="dark"]) ::selection { background: rgba(38,86,201,0.20) !important; color: #1c1917 !important; }
 
 /* P0-1 hover 蓝辉光清零 */
-:root:not([data-theme="dark"]) .ui-switch.on:hover:not(:disabled) { box-shadow: inset 0 1px 0 rgba(255,255,255,0.30), inset 0 0 0 1px rgba(140,75,6,0.55), 0 4px 12px -6px rgba(180,83,9,0.50) !important; }
+:root:not([data-theme="dark"]) .ui-switch.on:hover:not(:disabled) { box-shadow: inset 0 1px 0 rgba(255,255,255,0.30), inset 0 0 0 1px rgba(140,75,6,0.55), 0 4px 12px -6px rgba(38,86,201,0.50) !important; }
 :root:not([data-theme="dark"]) .ui-switch.on { box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), inset 0 0 0 1px rgba(140,75,6,0.50) !important; }
-:root:not([data-theme="dark"]) .quick-endpoint:hover { border-color: var(--accent-line) !important; box-shadow: inset 0 1px 2px rgba(86,52,10,0.05), 0 0 0 3px rgba(180,83,9,0.06) !important; }
-:root:not([data-theme="dark"]) .source-row:hover { background: linear-gradient(90deg, rgba(180,83,9,0.055), rgba(180,83,9,0)) !important; }
-:root:not([data-theme="dark"]) .quick-icon { box-shadow: inset 0 0 0 1px rgba(180,83,9,0.12), 0 1px 2px rgba(86,52,10,0.06) !important; }
+:root:not([data-theme="dark"]) .quick-endpoint:hover { border-color: var(--accent-line) !important; box-shadow: inset 0 1px 2px rgba(15,23,42,0.05), 0 0 0 3px rgba(38,86,201,0.06) !important; }
+:root:not([data-theme="dark"]) .source-row:hover { background: linear-gradient(90deg, rgba(38,86,201,0.055), rgba(38,86,201,0)) !important; }
+:root:not([data-theme="dark"]) .quick-icon { box-shadow: inset 0 0 0 1px rgba(38,86,201,0.12), 0 1px 2px rgba(15,23,42,0.06) !important; }
 
 /* P0-2 形状统一 */
 :root:not([data-theme="dark"]) .ui-button,
@@ -3659,7 +3678,7 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
 :root:not([data-theme="dark"]) .ui-card { border-radius: 8px !important; }
 :root:not([data-theme="dark"]) .ui-badge,
 :root:not([data-theme="dark"]) .count-badge { border-radius: 999px !important; }
-:root:not([data-theme="dark"]) .ui-badge-blue .ui-badge-dot { background: #b45309 !important; box-shadow: 0 0 0 2px rgba(180,83,9,0.16) !important; }
+:root:not([data-theme="dark"]) .ui-badge-blue .ui-badge-dot { background: #2656c9 !important; box-shadow: 0 0 0 2px rgba(38,86,201,0.16) !important; }
 
 /* P0-3 active 全变体：按进纸里 */
 :root:not([data-theme="dark"]) .ui-button:active,
@@ -3694,7 +3713,7 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
   height: 30px !important;
   margin: -15px 0 0 -15px !important;
   border-radius: 50% !important;
-  background: radial-gradient(circle, rgba(180,83,9,0.40) 0%, transparent 68%) !important;
+  background: radial-gradient(circle, rgba(38,86,201,0.40) 0%, transparent 68%) !important;
   transform: scale(0.30) !important;
   animation: lt5-ink-spread 520ms cubic-bezier(0.22,0.61,0.36,1) both !important;
   pointer-events: none !important;
@@ -5081,7 +5100,7 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
 :root:not([data-theme="dark"]) .console-breadcrumb,
 :root:not([data-theme="dark"]) .console-topbar-status,
 :root:not([data-theme="dark"]) .workspace-switch small {
-  color: #7d7668 !important;            /* 次级信息统一暖调 */
+  color: #6b7280 !important;            /* 次级信息统一暖调 */
 }
 
 /* ③ 状态徽章分色：成功=绿 / 警告=琥珀 / 危险=红 / 信息=黄铜，别全一个橙 */
@@ -5090,30 +5109,30 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
 :root:not([data-theme="dark"]) .ui-badge-danger,
 :root:not([data-theme="dark"]) .ui-badge-error   { background: #fdf5f5 !important; color: #9c3343 !important; border-color: #f0d5d5 !important; }
 :root:not([data-theme="dark"]) .ui-badge-blue,
-:root:not([data-theme="dark"]) .ui-badge-info    { background: #f3efe7 !important; color: #8a4b06 !important; border-color: #eedfc6 !important; }
+:root:not([data-theme="dark"]) .ui-badge-info    { background: #f3efe7 !important; color: #1e46ad !important; border-color: #eedfc6 !important; }
 /* ==== V5 DAY · 流光岁月打磨 END ==== */
 /* ---- V5 DAY 补：侧边栏选中态 & 黄铜按钮（收现代 SaaS 味，贴纸张/黄铜） ---- */
 /* ⑥ 侧边栏选中：圆角收敛 + 左侧一道黄铜细线（页签折角感），不再是大圆角块 */
 :root:not([data-theme="dark"]) .console-nav-item { border-radius: 5px !important; }
 :root:not([data-theme="dark"]) .console-nav-item.selected {
   border-radius: 5px !important;
-  background: linear-gradient(90deg, rgba(180,83,9,0.10), rgba(180,83,9,0.02)) !important;
-  box-shadow: inset 2px 0 0 #b45309, inset 0 0 0 1px rgba(180,83,9,0.10) !important;
-  color: #8a4b06 !important;
+  background: linear-gradient(90deg, rgba(38,86,201,0.10), rgba(38,86,201,0.02)) !important;
+  box-shadow: inset 2px 0 0 #2656c9, inset 0 0 0 1px rgba(38,86,201,0.10) !important;
+  color: #1e46ad !important;
 }
 
 /* ⑦ 黄铜主键：压哑光、减甜度——细刻边 + 几乎无大软阴影，像黄铜铭牌 */
 :root:not([data-theme="dark"]) .ui-button-default,
 :root:not([data-theme="dark"]) .primary {
   background: linear-gradient(180deg, #b57309, #9a5c06) !important;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -1px 0 rgba(0,0,0,0.12), 0 1px 2px rgba(86,52,10,0.14) !important;
-  border: 1px solid #8a4b06 !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -1px 0 rgba(0,0,0,0.12), 0 1px 2px rgba(15,23,42,0.14) !important;
+  border: 1px solid #1e46ad !important;
 }
 :root:not([data-theme="dark"]) .ui-button-default:hover,
 :root:not([data-theme="dark"]) .primary:hover {
   background: linear-gradient(180deg, #c07f0c, #a36307) !important;
   transform: translateY(-1px) !important;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.28), inset 0 -1px 0 rgba(0,0,0,0.10), 0 3px 8px -3px rgba(86,52,10,0.22) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.28), inset 0 -1px 0 rgba(0,0,0,0.10), 0 3px 8px -3px rgba(15,23,42,0.22) !important;
 }
 :root:not([data-theme="dark"]) .ui-button-default:active,
 :root:not([data-theme="dark"]) .primary:active {
@@ -5179,8 +5198,8 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
 :root:not([data-theme="dark"]) .chart-area,
 :root:not([data-theme="dark"]) .dashboard-chart {
   background-image:
-    linear-gradient(to right, rgba(138,75,6,0.05) 1px, transparent 1px),
-    linear-gradient(to top, rgba(138,75,6,0.06) 1px, transparent 1px) !important;
+    linear-gradient(to right, rgba(38,86,201,0.05) 1px, transparent 1px),
+    linear-gradient(to top, rgba(38,86,201,0.06) 1px, transparent 1px) !important;
   background-size: 48px 32px, 100% 32px !important;
 }
 /* ⑤ "0 Token"下那条断掉的虚线：藏掉意图不明的装饰 */
@@ -5219,17 +5238,17 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
 /* 图表区：加淡黄铜坐标网格，0 柱子轨道做出"刻度槽"感 */
 :root:not([data-theme="dark"]) .usage-trend-chart {
   background-image:
-    linear-gradient(to top, rgba(138,75,6,0.07) 1px, transparent 1px) !important;
+    linear-gradient(to top, rgba(38,86,201,0.07) 1px, transparent 1px) !important;
   background-size: 100% 25% !important;
   border-bottom: 1px solid #dfe2e8 !important;
 }
 /* 0 数据柱子的轨道：淡黄铜刻度槽，看得见但克制 */
 :root:not([data-theme="dark"]) .usage-day-track {
-  background: linear-gradient(180deg, rgba(138,75,6,0.045), rgba(138,75,6,0.02)) !important;
-  border: 1px solid rgba(138,75,6,0.08) !important;
+  background: linear-gradient(180deg, rgba(38,86,201,0.045), rgba(38,86,201,0.02)) !important;
+  border: 1px solid rgba(38,86,201,0.08) !important;
   border-radius: 3px !important;
 }
-:root:not([data-theme="dark"]) .usage-day-bar.zero { background: rgba(138,75,6,0.10) !important; min-height: 3px !important; border-radius: 2px !important; }
+:root:not([data-theme="dark"]) .usage-day-bar.zero { background: rgba(38,86,201,0.10) !important; min-height: 3px !important; border-radius: 2px !important; }
 /* ==== 修复④⑤ END ==== */
 /* ⑦ 页面内容少时撑满视口：页脚自然落底，不再浮在中间 */
 :root:not([data-theme="dark"]) .app-shell main {

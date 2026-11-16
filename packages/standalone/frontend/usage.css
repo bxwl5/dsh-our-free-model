@@ -27,14 +27,14 @@
   --us-warning-border: #e9ddc0;
   --us-error: #9c3343;
   --us-error-soft: #fdf5f5;
-  --us-shadow-card: 0 1px 2px rgba(72, 58, 42, 0.05), 0 0 1px rgba(72, 58, 42, 0.05);
-  --us-shadow-card-hover: 0 2px 4px -1px rgba(72, 58, 42, 0.05), 0 10px 28px -10px rgba(72, 58, 42, 0.12), 0 0 1px rgba(72, 58, 42, 0.05);
-  --us-shadow-metric-hover: 0 10px 26px -8px rgba(72, 58, 42, 0.16), 0 3px 10px -3px rgba(72, 58, 42, 0.08);
+  --us-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05), 0 0 1px rgba(15, 23, 42, 0.05);
+  --us-shadow-card-hover: 0 2px 4px -1px rgba(15, 23, 42, 0.05), 0 10px 28px -10px rgba(15, 23, 42, 0.12), 0 0 1px rgba(15, 23, 42, 0.05);
+  --us-shadow-metric-hover: 0 10px 26px -8px rgba(15, 23, 42, 0.16), 0 3px 10px -3px rgba(15, 23, 42, 0.08);
   --us-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --us-duration-fast: 120ms;
   --us-duration-normal: 220ms;
   --us-duration-slow: 380ms;
-  --us-grid-line: rgba(86, 52, 10, 0.07);
+  --us-grid-line: rgba(15, 23, 42, 0.07);
 }
 
 /* ---- 夜主题变量 ---- */
@@ -507,7 +507,7 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34), 0 6px 16px -6px color-mix(in srgb, var(--dsw-alias-accent-primary, #2656c9) 24%, transparent);
 }
 .usage-day:hover .usage-day-bar:not(.zero) {
-  background: linear-gradient(180deg, #ffd89a 0%, #e9a83f 42%, #b45309 100%);
+  background: linear-gradient(180deg, #ffd89a 0%, #e9a83f 42%, #2656c9 100%);
 }
 .usage-day span {
   font-variant-numeric: tabular-nums;
@@ -783,7 +783,7 @@
 }
 :root:not([data-theme="dark"]) .usage-day-bar.zero { background: var(--us-line-strong); box-shadow: none; }
 :root:not([data-theme="dark"]) .usage-day:hover .usage-day-bar:not(.zero) {
-  background: linear-gradient(180deg, #ffd89a 0%, #e9a83f 42%, #b45309 100%);
+  background: linear-gradient(180deg, #ffd89a 0%, #e9a83f 42%, #2656c9 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34), 0 6px 16px -6px color-mix(in srgb, var(--dsw-alias-accent-primary, #2656c9) 24%, transparent);
 }
 :root:not([data-theme="dark"]) .ov-chart .dashboard-chart-bar {
@@ -1401,7 +1401,7 @@
   font-variant-numeric: tabular-nums;
   font-weight: 650;
   letter-spacing: 0.005em;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.78), 0 -1px 0 rgba(var(--warm-shadow, 86, 52, 10), 0.16);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.78), 0 -1px 0 rgba(var(--warm-shadow, 15, 23, 42), 0.16);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-window-total strong {
   font-size: 32px;
@@ -1446,9 +1446,9 @@
 :root:not([data-theme="dark"]) .usage-browser .ov-metric:hover {
   transform: translateY(-3px);
   box-shadow:
-    2px 5px 0 rgba(var(--warm-shadow, 86, 52, 10), 0.07),
-    0 16px 32px -16px rgba(var(--warm-shadow, 86, 52, 10), 0.34),
-    inset 0 0 0 1px rgba(var(--warm-shadow, 86, 52, 10), 0.04);
+    2px 5px 0 rgba(var(--warm-shadow, 15, 23, 42), 0.07),
+    0 16px 32px -16px rgba(var(--warm-shadow, 15, 23, 42), 0.34),
+    inset 0 0 0 1px rgba(var(--warm-shadow, 15, 23, 42), 0.04);
 }
 
 /* --- 3. 图表柱：顶端最亮的暖渐变；hover 整柱亮起，像光移过来 --- */
@@ -1459,14 +1459,14 @@
     linear-gradient(180deg, rgba(255, 255, 255, 0.62) 0%, rgba(255, 255, 255, 0.12) 34%, rgba(255, 255, 255, 0) 58%),
     linear-gradient(180deg, #f0bb63 0%, #d98b2b 48%, #9c5a10 100%);
   border-radius: 6px 6px 0 0;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 2px 0 rgba(var(--warm-shadow, 86, 52, 10), 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 2px 0 rgba(var(--warm-shadow, 15, 23, 42), 0.08);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-day-bar.zero,
 :root:not([data-theme="dark"]) .ov-chart .dashboard-chart-bar.zero {
   background-color: #e8e1d4;
   background-image: linear-gradient(180deg, #efe8db, #e6dccb);
   border-radius: 6px 6px 0 0;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.70), inset 0 0 0 1px rgba(var(--warm-shadow, 86, 52, 10), 0.05);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.70), inset 0 0 0 1px rgba(var(--warm-shadow, 15, 23, 42), 0.05);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-day:hover .usage-day-bar:not(.zero),
 :root:not([data-theme="dark"]) .usage-browser .usage-day:focus .usage-day-bar:not(.zero),
@@ -1476,14 +1476,14 @@
   transform-origin: bottom;
   background-image:
     linear-gradient(180deg, rgba(255, 255, 255, 0.74) 0%, rgba(255, 255, 255, 0.20) 38%, rgba(255, 255, 255, 0) 62%),
-    linear-gradient(180deg, #ffd89a 0%, #e9a83f 42%, #b45309 100%);
+    linear-gradient(180deg, #ffd89a 0%, #e9a83f 42%, #2656c9 100%);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.82),
-    0 7px 18px -8px rgba(var(--warm-shadow, 86, 52, 10), 0.40),
-    0 0 0 1px rgba(var(--warm-shadow, 86, 52, 10), 0.05);
+    0 7px 18px -8px rgba(var(--warm-shadow, 15, 23, 42), 0.40),
+    0 0 0 1px rgba(var(--warm-shadow, 15, 23, 42), 0.05);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-day-track {
-  background-image: repeating-linear-gradient(to top, rgba(86, 52, 10, 0.07) 0 1px, transparent 1px 25%);
+  background-image: repeating-linear-gradient(to top, rgba(15, 23, 42, 0.07) 0 1px, transparent 1px 25%);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-day span {
   color: #8b93a1;
@@ -1548,7 +1548,7 @@
   background: var(--accent-soft, #edf1fb);
   color: var(--dsw-alias-accent-primary, #1e46ad);
   border-color: var(--accent-line, #c9d6f2);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.70), 1px 2px 0 rgba(var(--warm-shadow, 86, 52, 10), 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.70), 1px 2px 0 rgba(var(--warm-shadow, 15, 23, 42), 0.06);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-empty > svg {
   border-radius: 999px;
@@ -1574,7 +1574,7 @@
   background: var(--accent-soft, #edf1fb);
   border-color: var(--accent-line, #c9d6f2);
   border-radius: 8px;
-  box-shadow: 1px 3px 0 rgba(var(--warm-shadow, 86, 52, 10), 0.06);
+  box-shadow: 1px 3px 0 rgba(var(--warm-shadow, 15, 23, 42), 0.06);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-feedback::after,
 :root:not([data-theme="dark"]) .copy-feedback::after {

@@ -1569,7 +1569,7 @@ window.__ModuleLoader__.load({
 .ofm_acctname{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px}
 .ofm_acctmeta{font-size:10.5px;color:var(--dsw-alias-label-tertiary);white-space:nowrap}
 /* 账号行的限流角标（2026-11-05 轮询透明度）：一眼看出「为什么一直同一号」。 */
-.ofm_acctlimit{color:var(--dsw-alias-state-warn,#b45309)}
+.ofm_acctlimit{color:var(--dsw-alias-state-warn,#8a6215)}
 .ofm_balanceerror{flex-basis:100%;overflow-wrap:anywhere;color:var(--dsw-alias-state-error-primary);font-size:11px}
 .ofm_acctacts{margin-left:auto;display:flex;gap:5px;flex-wrap:wrap}
 .ofm_modellist{display:flex;flex-direction:column;gap:4px;max-height:238px;overflow:auto;padding-right:2px}
