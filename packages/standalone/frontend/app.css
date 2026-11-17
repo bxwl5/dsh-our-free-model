@@ -110,7 +110,17 @@ body::after {
 }
 .sidebar, .topbar, main, .app-shell > * { position: relative; z-index: 1; }
 * { box-sizing: border-box; letter-spacing: 0; }
-body { margin: 0; font-size: 14px; line-height: 1.65; -webkit-font-smoothing: antialiased; }
+/**
+ * 全局行高 1.65 → 1.45（2026-11-17 用户：「全部页面都需要紧凑一点」）。
+ *
+ * 这是**最高杠杆**的一处：1.65 意味着每行文字比字号多占 65% 高度，而正常
+ * 界面文字行高在 1.4–1.5。它作用在 body 上，于是全站每个文本行都被抬高 ——
+ * 审计实测：模型清单行、渠道卡、接入卡、设置字段行**全都**带着 1.65。
+ *
+ * 降到 1.45 后文字仍然舒展（中文在 1.4+ 不会拥挤），但每行省下约 12%。
+ * 概览页的长段落有自己更松的独立行高（`.quick-connect p` 等），不受影响。
+ */
+body { margin: 0; font-size: 14px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
 [hidden] { display: none !important; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
@@ -177,7 +187,18 @@ main { flex: 1; min-width: 0; }
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--ofm-radius-md);
-  padding: 20px;
+  /**
+   * 卡片内边距 20 → 14（2026-11-17 用户：「全部页面都需要紧凑一点」）。
+   *
+   * 20px 是这套卡片最早的取值，当时页面内容少、留白显得高级。现在每页都塞满
+   * 了卡片（渠道页 15 张 `provider-card`、接入页 4 张 `connection-card`），
+   * 20px 四周留白叠加起来让每一屏少显示近一张卡片。14px 仍然有呼吸感，
+   * 但把纵向空间还给了内容。
+   *
+   * 概览页不受影响：它的卡片有独立的 `.dashboard-metric` 规则（如需更松，
+   * 由那条单独控制，全局默认不应为某一页牺牲其它页）。
+   */
+  padding: 14px;
   min-width: 0;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), 0 1px 2px rgba(15,23,42,0.06), 0 4px 16px -8px rgba(15,23,42,0.14);
   position: relative;
@@ -247,7 +268,7 @@ main { flex: 1; min-width: 0; }
 .failure-list { padding: 12px 0; }
 .failure-list > div { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; padding: 4px 0; overflow-wrap: anywhere; }
 .failure-list small { font-size: 10px; }
-.channel-summary-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 28px; padding: 20px 0; border-bottom: 1px solid var(--line); margin-bottom: 22px; }
+.channel-summary-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 28px; padding: 12px 0; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
 .channel-summary-strip > div { display: flex; align-items: center; gap: 8px; color: var(--dsw-alias-label-secondary); font-size: 12px; }
 .channel-summary-strip strong { color: var(--ink); font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .channel-summary-strip strong small { font-size: 12px; font-weight: 400; }
@@ -264,17 +285,17 @@ main { flex: 1; min-width: 0; }
 .channel-filters button { border: 0; background: transparent; padding: 6px 10px; border-radius: 4px; font-size: 11px; color: var(--dsw-alias-label-secondary); transition: background 150ms var(--ease-out-expo), color 150ms var(--ease-out-expo); }
 .channel-filters button[aria-pressed=true] { background: var(--surface); color: var(--ink-soft); box-shadow: 0 1px 3px rgba(15,23,42,0.08); }
 .channel-filters button span { margin-left: 4px; font-size: 10px; }
-.channel-results-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; font-size: 10px; color: var(--dsw-alias-label-tertiary); margin: 17px 0 12px; }
+.channel-results-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; font-size: 10px; color: var(--dsw-alias-label-tertiary); margin: 10px 0 8px; }
 .channel-results-meta span { display: flex; align-items: center; gap: 4px; }
 .provider-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-.provider-card { display: flex; flex-direction: column; padding: 19px; transition: transform 200ms var(--ease-out-expo), box-shadow 200ms var(--ease-out-expo); }
+.provider-card { display: flex; flex-direction: column; padding: 13px; transition: transform 200ms var(--ease-out-expo), box-shadow 200ms var(--ease-out-expo); }
 .provider-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
-.provider-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.provider-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .provider-logo { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 8px; font-size: 13px; font-weight: 700; box-shadow: var(--shadow-sm); }
 .provider-card h2 { font-size: 14px; overflow-wrap: anywhere; }
-.provider-org { font-size: 10px; color: var(--dsw-alias-label-tertiary); margin: 2px 0 11px; }
-.provider-description { font-size: 11px; line-height: 1.7; min-height: 38px; margin-bottom: 14px; overflow-wrap: anywhere; }
-.provider-counts { display: flex; gap: 22px; padding: 12px 0; margin-top: auto; border-top: 1px solid var(--line-soft); color: var(--ink-faint); font-size: 11px; }
+.provider-org { font-size: 10px; color: var(--dsw-alias-label-tertiary); margin: 1px 0 6px; }
+.provider-description { font-size: 11px; line-height: 1.45; min-height: 0; margin-bottom: 6px; overflow-wrap: anywhere; }
+.provider-counts { display: flex; gap: 16px; padding: 6px 0; margin-top: auto; border-top: 1px solid var(--line-soft); color: var(--ink-faint); font-size: 11px; }
 .provider-counts strong { color: var(--ink-soft); margin-left: 4px; font-weight: 500; }
 .provider-manage { width: 100%; justify-content: space-between; font-size: 11px; min-height: 33px; }
 .channel-empty { text-align: center; padding: 45px 20px; margin-top: 16px; }
@@ -333,7 +354,8 @@ footer span { padding: 0 6px; }
 .text-button { color: var(--green); font-size: 12px; background: none; border: 0; padding: 0; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .muted, .footnote { color: var(--muted); font-size: 12px; }
-.footnote { margin-top: 20px; }
+/* 说明文字的上边距收紧：接入页三处 footnote 各占 20px，叠起来就是 60px。 */
+.footnote { margin-top: 10px; }
 .panel { padding: 20px 0; border-bottom: 1px solid var(--line); margin-bottom: 16px; min-width: 0; }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
 /**
@@ -358,7 +380,7 @@ table { width: 100%; border-collapse: collapse; font-size: 12px; }
  * 数字列失去「按位对齐」的右对齐观感，但换来整张表可读；
  * `font-variant-numeric: tabular-nums` 已保证数字等宽，左对齐也不歪。
  */
-th, td { text-align: left; padding: 12px; border-bottom: 1px solid var(--line-soft); }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line-soft); }
 th { color: var(--dsw-alias-label-tertiary); font-weight: 500; }
 th:first-child, td:first-child { text-align: left; overflow-wrap: anywhere; }
 
@@ -386,21 +408,30 @@ th:first-child, td:first-child { text-align: left; overflow-wrap: anywhere; }
 .ofm_root .ofm_table td:not(:first-child):not(:last-child) { min-width: 76px; }
 /* 数字等宽，左对齐后各位也不会跳动 */
 .ofm_root .ofm_table td { font-variant-numeric: tabular-nums; }
-.field-label { display: block; font-size: 12px; color: var(--dsw-alias-label-secondary); margin: 18px 0 8px; }
+/* 字段标签上边距 18 → 10：卡片里通常有 2–3 个字段，省下的是一整行高度。 */
+.field-label { display: block; font-size: 12px; color: var(--dsw-alias-label-secondary); margin: 10px 0 6px; }
 .copy-field { display: flex; flex-wrap: wrap; gap: 8px; }
 .copy-field input { flex: 1; font-family: Consolas, monospace; }
 /* API 接入页：与设置页同一条规则（2026-11-16）。原 900px 左对齐，右侧留死白，
    用户：「api接入和服务设置页面右边都空了」。改为铺满，理由见 settings.css 1.1。 */
 .connection-browser { max-width: none; }
-.connection-card { margin-bottom: 20px; }
+.connection-card { margin-bottom: 14px; }
 .connection-card-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; color: var(--dsw-alias-label-secondary); }
 .connection-card-heading > div { flex: 1; min-width: 0; }
-.connection-card-heading h2 { color: var(--ink); }
-.connection-card-heading p { margin-top: 4px; font-size: 11px; }
+/**
+ * 卡片标题行（2026-11-17 紧凑化）。
+ *
+ * `h2` 与下方说明各占一行、各自带浏览器默认行高，合计 43px；每张卡片都带
+ * 这一块，四张卡片就是 172px。收紧 h2/p 的 line-height 与 p 的上边距，
+ * 标题行落到 34px 左右，且不改变可读性（正文仍是 12px）。
+ */
+.connection-card-heading h2 { color: var(--ink); line-height: 1.35; margin: 0; }
+.connection-card-heading p { margin: 1px 0 0; line-height: 1.4; }
+.connection-card-heading > div > p { font-size: 11.5px; }
 .connection-feedback, .connection-error { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; font-size: 12px; }
 .connection-feedback { color: var(--success-ink); }
 .connection-error { color: var(--danger); }
-.connection-example { margin-top: 16px; }
+.connection-example { margin-top: 10px; }
 .connection-danger { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .connection-danger p { margin-top: 4px; font-size: 12px; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #eef0f4; border-radius: 6px; padding: 20px; font-size: 12px; margin-top: 12px; }
@@ -453,7 +484,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #eef0f4; borde
   .dashboard-metrics { gap: 10px; }
   .dashboard-metric strong { font-size: 25px; font-variant-numeric: tabular-nums; }
   .dashboard-metric p { font-size: 10px; overflow-wrap: anywhere; }
-  .ui-card { padding: 17px; border-radius: 6px; }
+  .ui-card { padding: 13px; border-radius: 6px; }
   .source-row { gap: 8px; }
   .source-row .ui-badge { font-size: 10px; padding: 2px 4px; }
   .source-row small { font-size: 10px; }
@@ -469,7 +500,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #eef0f4; borde
 }
 @media (max-width: 430px) {
   .provider-grid { grid-template-columns: minmax(0, 1fr); }
-  .provider-card { padding: 20px; }
+  .provider-card { padding: 13px; }
   .provider-description { min-height: 0; }
   .source-row > .ui-badge { margin-left: auto; }
   .source-row > svg { display: none; }
@@ -1735,7 +1766,7 @@ input::placeholder, textarea::placeholder { color: #81858c; opacity: 1; }
 :root:not([data-theme="dark"]) h3 { letter-spacing: -0.004em; }
 :root:not([data-theme="dark"]) p { text-wrap: pretty; }
 :root:not([data-theme="dark"]) .usage-total { font-variant-numeric: tabular-nums; }
-:root:not([data-theme="dark"]) .page { padding: 32px 36px; }:root:not([data-theme="dark"]) .dashboard-heading{ margin-bottom: 28px; }
+:root:not([data-theme="dark"]) .page { padding: 26px 30px; }/* 标题块下边距 28 → 16：每页顶部都有一块，28px 白占了近一行高度。 */:root:not([data-theme="dark"]) .dashboard-heading{ margin-bottom: 16px; }
 @media (max-width: 700px) {
   :root:not([data-theme="dark"]) h1 { font-size: 24px; }
   :root:not([data-theme="dark"]) .page { padding: 24px 18px; }
@@ -4097,7 +4128,7 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
 [data-theme="dark"] .cx-icon {
   border-radius: 0 !important;
   clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px) !important;
-}
+ width: 26px; height: 26px; }
 /* 21. API 接入页 cx-field：1px → 对角切 8px */
 [data-theme="dark"] .cx-field {
   border-radius: 0 !important;

@@ -82,7 +82,7 @@
 /* ---- 顶部摘要条 ---- */
 .model-summary {
   display: flex; flex-wrap: wrap; align-items: center; gap: 10px 25px;
-  padding: 0 0 21px; margin-bottom: 22px;
+  padding: 0 0 10px; margin-bottom: 14px;
   border-bottom: 1px solid var(--md-line);
   color: var(--md-ink-tertiary); font-size: 12px;
 }

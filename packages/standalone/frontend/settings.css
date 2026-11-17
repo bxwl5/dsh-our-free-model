@@ -85,7 +85,9 @@
 .connection-error > svg { margin-top: 2px; }
 
 /* 卡片标题图标底块 */
-.cx-icon { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; background: var(--accent-soft); color: var(--dsw-alias-accent-primary); border-radius: 8px; }
+/* 卡片标题图标 32 → 26（2026-11-17 全局紧凑）：每张卡片都带一个，
+   32px 一方块把标题行撑到 43px，缩小后标题行跟着落到 37px。 */
+.cx-icon { display: grid; place-items: center; width: 26px; height: 26px; flex-shrink: 0; background: var(--accent-soft); color: var(--dsw-alias-accent-primary); border-radius: 8px; }
 .cx-icon-danger { background: var(--danger-soft); color: var(--danger); }
 
 /* 凭证字段：密码箱质感（等宽字体 + 内敛底槽） */
@@ -105,9 +107,9 @@
 
 /* 快速开始：迷你终端（昼主题也是深色代码块） */
 .cx-code {
-  position: relative; margin-top: 16px; padding: 15px 16px 15px 42px;
+  position: relative; margin-top: 16px; padding: 10px 16px 15px 42px;
   background: #0f1115; color: #e1e5ee; border: 1px solid #61666b; border-radius: 8px;
-  font-family: Consolas, "SFMono-Regular", monospace; font-size: 12px; line-height: 1.75;
+  font-family: Consolas, "SFMono-Regular", monospace; font-size: 12px; line-height: 1.5;
   overflow-x: auto; white-space: pre; overflow-wrap: normal;
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.32), 0 1px 2px rgba(15, 23, 42, 0.08);
 }
@@ -454,7 +456,7 @@ label.settings-field { cursor: pointer; }
 [data-theme="dark"] .settings-footer > span.settings-status-saved { color: var(--dsw-alias-state-success-primary); }
 
 /* 1.8 提示条与保存失败：长文案兜底 */
-.settings-note { line-height: 1.65; overflow-wrap: anywhere; }
+.settings-note { line-height: 1.45; overflow-wrap: anywhere; }
 .settings-save-error { line-height: 1.6; text-wrap: pretty; overflow-wrap: anywhere; }
 .settings-save-error > span { min-width: 0; }
 .settings-save-error > svg { margin-top: 2px; }
@@ -499,11 +501,13 @@ label.settings-field { cursor: pointer; }
 .connection-feedback > svg { flex-shrink: 0; margin-top: 2px; }
 
 /* 2.6 字段标签与复制行：两组凭据之间的关系更清楚 */
-.field-label { font-weight: 550; letter-spacing: 0.01em; margin: 20px 0 8px; overflow-wrap: anywhere; }
+/* 这条覆盖 app.css 的 10/6 —— 接入页字段标签实测纵向 margin 达 30px。收成 8/4。 */
+.field-label { font-weight: 550; letter-spacing: 0.01em; margin: 8px 0 4px; overflow-wrap: anywhere; }
 .copy-field { align-items: stretch; }
 .copy-field > .ui-button { flex-shrink: 0; }
-.copy-field + .field-label { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
-.footnote { line-height: 1.65; text-wrap: pretty; overflow-wrap: anywhere; }
+/* 分隔线本身已给出视觉呼吸，无需再叠 20px 上内边距。 */
+.copy-field + .field-label { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.footnote { line-height: 1.45; text-wrap: pretty; overflow-wrap: anywhere; }
 
 /* ==========================================================================
    3. 渠道管理（ch-* / provider-* / detail-*）

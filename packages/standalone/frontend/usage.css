@@ -238,7 +238,7 @@
 }
 
 /* ---- 窗口总量 ---- */
-.usage-window-total { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin: 18px 0 14px; }
+.usage-window-total { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin: 10px 0 8px; }
 .usage-window-total strong {
   font-size: 28px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.15;
   color: var(--us-ink); letter-spacing: -0.01em;
@@ -321,7 +321,7 @@
   border-bottom: 1px solid var(--us-line);
   position: sticky; top: 0; z-index: 5;
 }
-.usage-model-table th, .usage-model-table td { padding: 13px 10px; }
+.usage-model-table th, .usage-model-table td { padding: 8px 10px; }
 .usage-model-table th:first-child { width: 25%; }
 .usage-model-table td:first-child { min-width: 200px; max-width: 300px; }
 .usage-model-table td:first-child strong { display: block; font-weight: 550; font-size: 12px; color: var(--us-ink); }
@@ -345,7 +345,7 @@
 
 /* ---- 空态 ---- */
 .usage-empty {
-  padding: 46px 20px 50px; text-align: center;
+  padding: 24px 20px 26px; text-align: center;
   border-top: 1px solid var(--us-line);
 }
 .usage-empty > svg { color: var(--us-ink-muted); margin: 0 auto 12px; opacity: 0.6; }
@@ -378,7 +378,7 @@
 }
 @media (max-width: 700px) {
   .usage-metrics { gap: 10px; }
-  .usage-metrics .dashboard-metric { padding: 16px 13px; }
+  .usage-metrics .dashboard-metric { padding: 12px 13px; }
   .usage-metrics .dashboard-metric strong { font-size: 25px; }
   .usage-metrics .dashboard-metric p { font-size: 10px; }
   .usage-metrics .dashboard-metric svg { width: 15px; }
@@ -901,7 +901,7 @@
 
 /* ---------- 9. 响应式细部 ---------- */
 @media (max-width: 700px) {
-  .usage-model-table th, .usage-model-table td { padding: 11px 9px; }
+  .usage-model-table th, .usage-model-table td { padding: 7px 9px; }
   .usage-window-total { margin: 16px 0 12px; }
   .usage-window-total strong { font-size: 25px; }
   .usage-day-track { height: 138px; }
@@ -1683,3 +1683,8 @@
 }
 
 /* ==== V5 NIGHT · usage 补丁 END ==== */
+
+/* 指标卡内部：数字的 12px 上边距与 33px 行高是这张卡片 132px 的主因。 */
+.usage-metrics .dashboard-metric > strong { margin-top: 6px; margin-bottom: 1px; }
+.usage-metrics .dashboard-metric > p { margin-top: 3px; }
+.usage-metrics .dashboard-metric > div { line-height: 1.3; }
