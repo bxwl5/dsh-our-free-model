@@ -247,8 +247,10 @@ export function isUsableZcodeCredential(value: unknown): value is ZcodeCredentia
  * `{user_id, token_version, sub, iat}`）。真失效时上游回 401/1002，
  * 由适配器归为 AUTH 并提示用户重新登录 —— 不做本地猜测。
  *
- * 保留该函数是为了让适配器无条件调用（与其它 provider 同形），
- * 而不是到处写 `provider === 'zcode'` 的特例。
+ * ⚠️ 注释更正（2026-11-18 审查）：原文称「适配器无条件调用」，实际
+ * `grep` 全仓**无任何调用方** —— zcode 的过期判定在 adapter 内按
+ * HTTP 状态与业务码完成，不走这里。保留函数体（恒 false）仅为兼容
+ * 形状；若确认无外部依赖可删。
  */
 export function isZcodeExpired(_credential: ZcodeCredential): boolean {
   return false
