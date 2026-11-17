@@ -134,7 +134,6 @@
 .ch-metric-value { font-size: 19px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1.25; }
 .ch-metric-value small { font-size: 12px; font-weight: 400; color: var(--dsw-alias-label-tertiary); }
 .ch-skeleton { display: inline-block; width: 26px; height: 14px; border-radius: 4px; background: #f1f3f5; animation: settingsPulse 1.4s ease-in-out infinite; }
-.ch-skeleton-sm { width: 18px; height: 11px; }
 .channel-summary-strip .checkin-control { gap: 8px; padding: 9px 13px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
 /* 账号轮询开关（2026-11-17）：与签到药丸同款 —— 状态点 + 文字 + 开关。 */
 .channel-summary-strip .account-strategy-control { gap: 8px; padding: 9px 13px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 11px; }
