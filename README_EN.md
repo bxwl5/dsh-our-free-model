@@ -64,15 +64,21 @@ docker run -d --name ofm \
   --lan --lan-port 9981 --lan-panel
 ```
 
-Then open `http://<host-ip>:9981/` (use whatever port you passed). This combination gives
-you one credential:
+Then open `http://<host-ip>:9981/` (use whatever port you passed). This combination involves
+two credentials — one you set, one generated for you:
 
-| Credential | Purpose |
-|---|---|
-| **Dashboard password** (`OFM_PASSWORD`) | Sign in to the dashboard and change settings. **Leave it unset and there is no auth at all** — anyone can get in |
+| Credential | Where it comes from | Purpose |
+|---|---|---|
+| **Dashboard password** (`OFM_PASSWORD`) | You set it at launch | Sign in to the dashboard and change settings. **Leave it unset and there is no auth at all** — anyone can get in |
+| **LAN Key** | **Generated automatically**; you never set it | Lets LAN clients call `/v1`; copy it from the **API access** page in the dashboard |
 
 ⚠️ With a password set, the dashboard requires you to sign in before reaching the console;
 clicking **Log out** returns you to the password prompt.
+
+⚠️ The two credentials **never overlap**: the LAN Key can call models but cannot enter the
+dashboard; the dashboard password can change settings but cannot call models. The local API
+key (`forwardKey`) can no longer sign in to the dashboard either — the management plane and
+the inference plane are separate.
 
 
 ## Channels
