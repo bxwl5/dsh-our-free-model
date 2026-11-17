@@ -1,4 +1,4 @@
-export type Page = 'overview' | 'models' | 'usage' | 'channels' | 'settings' | 'connection'
+export type Page = 'overview' | 'models' | 'usage' | 'channels' | 'routing' | 'settings' | 'connection'
 export interface Model {
   id: string
   name: string
@@ -102,6 +102,10 @@ export interface Host {
   copy(value: string): Promise<void>
   getApiKey(): Promise<string>
   rotateKey(): Promise<string>
+  /** 读取路由链（降级/轮询）。返回值含 `members`（当前可解析）与 `missing`。 */
+  getCombos(): Promise<RoutingChain[]>
+  /** 整表替换路由链；服务端会归一化非法项。 */
+  saveCombos(combos: RoutingChain[]): Promise<RoutingChain[]>
   /** 取 LAN 中继用的密钥（与本机 `forwardKey` 是两套，见 `LanState` 注释）。 */
   getLanKey(): Promise<string>
   /** 轮换 LAN 密钥（只影响中继，不动本机密钥）。 */
@@ -111,4 +115,25 @@ export interface Host {
   testModel(model: string, signal: AbortSignal): Promise<ModelTestResult>
   refreshModels(probe: boolean, signal: AbortSignal): Promise<void>
   saveSettings(settings: Partial<ServiceSettings>): Promise<ServiceSettings>
+}
+
+/**
+ * 一条路由链（`combo`）—— 一个虚拟模型名背后是一串真实模型。
+ *
+ * 字段与 `src/combos.js` 的 `normalizeCombos` 输出一致；`members` / `missing`
+ * 由服务端在读取时按**当前目录**算出来，不参与保存。
+ */
+export interface RoutingChain {
+  id: string
+  name: string
+  /** 链上成员，按尝试顺序。 */
+  models: string[]
+  strategy: 'fallback' | 'round-robin'
+  /** 轮询时同一成员连任几回合。 */
+  stickyLimit: number
+  enabled: boolean
+  /** 当前目录里能解析到的成员（只读，服务端算）。 */
+  members?: string[]
+  /** 配置里写了、但当前目录查不到的成员 —— 链的断点（只读）。 */
+  missing?: string[]
 }
