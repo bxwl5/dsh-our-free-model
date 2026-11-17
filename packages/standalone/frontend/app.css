@@ -2889,6 +2889,15 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
   position: relative !important;
   overflow: hidden !important;
 }
+/**
+ * 路由编辑器**豁免裁切**（2026-11-18）：编辑器内容跨视口（成员选择器
+ * 自带滚动容器），hidden 会把超出视口的部分连同滚动条一起裁掉。
+ * ⚠️ 必须写在精修块**之后**（同 !important 后者胜）——上一版写在
+ * routing.css 里（加载顺序在前），被本块覆盖，豁免无效（CDP 实测）。
+ */
+:root:not([data-theme="dark"]) .routing-editor.ui-card {
+  overflow: visible !important;
+}
 /* 纸纹：fixed 定位伪元素叠加极细噪点 */
 :root:not([data-theme="dark"]) .ui-card::before {
   content: "" !important;
