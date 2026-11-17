@@ -135,7 +135,19 @@
 .routing-chain-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
 /* 编辑器卡片内边距（`.ui-card` 默认 20px，这里压到 15px 提升密度） */
-.routing-editor.ui-card { padding: 15px 18px; }
+/**
+ * 编辑器卡片**不裁切**（2026-11-18 用户手机截图：「显示异常，没有滚动条」）。
+ *
+ * `.ui-card` 基础规则带 `overflow: hidden`（为卡片圆角裁背景）。编辑器里的
+ * 成员选择器有自己的滚动容器（`.routing-pick-list` max-height + auto），
+ * 但**卡片自身**在窄屏下高度会超过视口 —— hidden 把超出视口的部分连
+ * 列表的下半段和它的滚动条一起裁掉，用户滚不到（CDP 实测窄屏 540px：
+ * 截断祖先 = ui-card.routing-card / overflow: hidden）。
+ *
+ * 编辑器打开时内容多（字段 + 成员列表 + 选择器），交给页面正常撑开，
+ * 让页面滚动而不是卡片裁切。
+ */
+.routing-editor.ui-card { padding: 15px 18px; overflow: visible; }
 .routing-editor .connection-card-heading { margin-bottom: 10px; }
 /* 字段里的 label 与输入框靠得更近，整行少占约 8px */
 .routing-fields .field-label { font-size: 11px; }
