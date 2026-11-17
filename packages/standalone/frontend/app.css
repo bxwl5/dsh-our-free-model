@@ -343,9 +343,56 @@ footer span { padding: 0 6px; }
 .small-tag { font-size: 11px; color: #677485; }
 .table-scroll { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
-th, td { text-align: right; padding: 12px; border-bottom: 1px solid var(--line-soft); }
+/**
+ * 表格对齐（2026-11-17 修正，用户三次截图反馈「上下没对齐」）。
+ *
+ * ## 根因
+ * 原本写的是 `th, td { text-align: right }` + `first-child { left }`：
+ * 数据右对齐、首列左对齐。而渠道页的表格来自插件前端（`.ofm_table`），
+ * 那边 `.ofm_table th { text-align: left }` 把**表头**改成了左对齐，
+ * `.ofm_table td` 却没有声明 → 落到这里的 `right`。
+ *
+ * 结果：同一列里「表头靠左、数字靠右」，每一列上下都错开一格。
+ * CDP 实测确认：
+ * ```
+ * 账号   th=left  td=right
+ * 渠道   th=left  td=right
+ * …每一列都是 left / right
+ * ```
+ *
+ * ## 现在
+ * 统一左对齐 —— 表头与数据同一起点，纵向自然成列。
+ * 数字列失去「按位对齐」的右对齐观感，但换来整张表可读；
+ * `font-variant-numeric: tabular-nums` 已保证数字等宽，左对齐也不歪。
+ */
+th, td { text-align: left; padding: 12px; border-bottom: 1px solid var(--line-soft); }
 th { color: var(--dsw-alias-label-tertiary); font-weight: 500; }
 th:first-child, td:first-child { text-align: left; overflow-wrap: anywhere; }
+
+/**
+ * 渠道页表格的列宽（2026-11-17）。
+ *
+ * 实测原始列宽（`.ofm_table`，`table-layout: auto`）：
+ * ```
+ * 216 | 107 | 82 | 106 | 99 | 88 | 65 | 94 | 336     ← 首列与末列吃掉太多，中间数字列被挤
+ * ```
+ * 首列「账号」216px 偏宽（内容如 `officeace-919a9203` 只需 ~170），
+ * 末列「调用的模型分布」336px 太宽；而「思考」「请求数」这类只剩 65–82px。
+ *
+ * 现在给各列一个**下限**而不是硬定宽 —— `auto` 布局仍会按内容伸缩，
+ * 但不会把数字列压到看不清：
+ * - 首列（账号/模型）：`min-width: 190px`
+ * - 中间数字列：`min-width: 76px`
+ * - 末列（模型分布/用量占比）：不设限，让它吃掉剩余空间
+ */
+.ofm_root .ofm_table th,
+.ofm_root .ofm_table td { text-align: left; }
+.ofm_root .ofm_table th:first-child,
+.ofm_root .ofm_table td:first-child { min-width: 190px; }
+.ofm_root .ofm_table th:not(:first-child):not(:last-child),
+.ofm_root .ofm_table td:not(:first-child):not(:last-child) { min-width: 76px; }
+/* 数字等宽，左对齐后各位也不会跳动 */
+.ofm_root .ofm_table td { font-variant-numeric: tabular-nums; }
 .empty-state { padding: 48px 24px; text-align: center; grid-column: 1 / -1; color: var(--ink-faint); }
 .empty-state svg { width: 48px; height: 48px; margin-bottom: 16px; opacity: 0.6; }
 .empty-state h3 { font-size: 15px; font-weight: 600; color: var(--ink); margin-bottom: 6px; }
