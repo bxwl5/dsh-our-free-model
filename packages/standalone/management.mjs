@@ -6,7 +6,7 @@ import { generateKey } from '../../src/forward.js'
 import { structuralRejection } from '../../src/trust.js'
 import { openLoginTerminal } from './login-terminal.mjs'
 import { publicModelVisibility, validateModelVisibility, isModelHidden } from '../../src/store.js'
-import { normalizeCombos, buildComboCatalog } from '../../src/combos.js'
+import { normalizeCombos, buildComboCatalog, isComboEntry } from '../../src/combos.js'
 
 const PREFIX = '/api/management'
 const BOOTSTRAP_MS = 10 * 60_000
@@ -296,42 +296,92 @@ export function createManagement({ stores, runtime, channels, info, onSettingsCh
       persist(patch)
       await onSettingsChanged()
       json(res, 200, { settings: managementSettings(stores.settings.get()), lan: info().lan })
+    }
     /**
-     * `GET /combos` —— 当前路由链（归一后）与每条链「现在解析到哪些成员」。
+     * 路由（降级链）—— 结构与插件端 `index.js` 的 `combos.list` / `save` / `preview`
+     * 一一对应（2026-11-17 用户要求「把插件端功能全部读一遍再改」「轮询可以添加
+     * 渠道的成员等等」）。
      *
-     * 为什么带 members：目录会变（渠道掉线、模型下架），存储里的链可能指向
-     * 已经消失的模型。把「配置」与「实际能走到的成员」分开显示，
-     * 用户才看得出「这条链现在只剩一个成员」而不是以为它还在三路冗余。
+     * ## 三个端点，为什么不是一个
+     * - `GET  /combos`          —— 链路 + **候选模型** + **解析结果(usable)**
+     * - `POST /combos`          —— 整表替换，回写 `usable`
+     * - `POST /combos/preview`  —— 编辑器里「链路能力交集」的实时预览
+     *
+     * 预览必须单独一条：它算的是**还没保存**的草稿链，不能借道 GET。
      */
-    } else if (method === 'GET' && pathname === `${PREFIX}/combos`) {
-      const configured = normalizeCombos(stores.settings.get().combos)
-      const catalogNow = runtime.catalog
-      const rows = configured.map(combo => {
-        const virtual = buildComboCatalog([combo], catalogNow)[0]
-        const configuredIds = combo.models
-        const liveIds = virtual?.combo ?? []
-        return {
-          ...combo,
-          members: liveIds,
-          /** 配置里写了、但当前目录查不到的成员 —— 链的断点。 */
-          missing: configuredIds.filter(id => !liveIds.includes(id)),
-        }
+    const comboModels = () => {
+      /**
+       * 候选 = 本服务的全部真实模型，排除链路自身（**链路不能嵌套**：
+       * `buildComboCatalog` 建索引时就跳过 combo 行，嵌套只会变成死成员）。
+       *
+       * ⚠️ 与插件端同步的一条规则：推理总开关关闭（`settings.enabled === false`）
+       * 时，免费车道与 Kilo 的模型实际不可用（adapter 会拦），候选里再列出来
+       * 只会误导 —— 排除「无 channel 字段（免费车道）」与 `channel === 'kilo'`
+       * 两类行。渠道模型不受该开关影响。
+       *
+       * `provider` 是分组的键：同名 GLM-5.3 会来自好几家，平铺成一列时用户
+       * 无从分辨，必须按供应商分组展示。
+       */
+      const enabled = stores.settings.get().enabled !== false
+      return runtime.catalog
+        .filter(entry => !isComboEntry(entry))
+        .filter(entry => enabled || (entry.channel !== undefined && entry.channel !== 'kilo'))
+        .map(entry => ({
+          id: entry.id,
+          name: entry.name ?? entry.id,
+          channel: entry.channel ?? 'free',
+          vision: entry.vision === true,
+          contextWindow: entry.contextWindow,
+          maxOutput: entry.maxOutput,
+          ...entry.provider === undefined ? {} : { provider: entry.provider },
+        }))
+    }
+    /** 链路的解析结果：`models` 是**当前目录里查得到**的成员，带能力交集。 */
+    const comboUsable = () => runtime.catalog
+      .filter(entry => isComboEntry(entry))
+      .map(entry => ({
+        id: entry.id, name: entry.name, models: entry.combo,
+        contextWindow: entry.contextWindow, maxOutput: entry.maxOutput, vision: entry.vision === true,
+      }))
+
+    if (method === 'GET' && pathname === `${PREFIX}/combos`) {
+      json(res, 200, {
+        combos: normalizeCombos(stores.settings.get().combos),
+        models: comboModels(),
+        usable: comboUsable(),
+        strategies: ['fallback', 'round-robin'],
       })
-      json(res, 200, { combos: rows })
+    } else if (method === 'POST' && pathname === `${PREFIX}/combos/preview`) {
+      const body = await readBody(req)
+      if (!Array.isArray(body.models)) throw fail(400, 'models 必须是模型 id 数组')
+      if (body.models.length > 1000) throw fail(400, '一条链最多引用 1000 个模型')
+      const rows = buildComboCatalog(normalizeCombos([{ name: 'preview', models: body.models }]), runtime.catalog)
+      const row = rows[0]
+      json(res, 200, {
+        capacity: row === undefined ? null : {
+          contextWindow: row.contextWindow, maxOutput: row.maxOutput, vision: row.vision === true,
+        },
+      })
     } else if (method === 'POST' && pathname === `${PREFIX}/combos`) {
       /**
-       * `POST /combos` —— 整表替换（不是逐条增删）。
+       * 整表替换（不是逐条 CRUD）：前端编辑器天然持有完整列表，逐条增删会引入
+       * 「删到一半失败」的中间态。**非法项由 `normalizeCombos` 归一丢弃**，
+       * 所以一次失败的编辑最多被归一，不会把设置写坏。
        *
-       * 用整表替换是有意的：前端编辑器天然就有完整列表，逐条 CRUD 会引入
-       * 「删到一半失败」的中间态。`normalizeCombos` 负责把非法项丢掉，
-       * 所以一次失败的编辑最多是被归一，而不是把设置写坏。
+       * 链长上限 1000 与 preview 对齐 —— 无上限的链会被 `completeCombo` 顺序
+       * 全走一遍，放大重试面。
        */
       const body = await readBody(req)
       if (!Array.isArray(body.combos)) throw fail(400, '请提供 combos 数组')
-      const normalized = normalizeCombos(body.combos)
-      persist({ combos: normalized })
+      for (const row of body.combos) {
+        if (row !== null && typeof row === 'object' && Array.isArray(row.models) && row.models.length > 1000) {
+          throw fail(400, '一条链最多引用 1000 个模型')
+        }
+      }
+      const rows = normalizeCombos(body.combos)
+      persist({ combos: rows })
       await onSettingsChanged?.()
-      json(res, 200, { combos: normalizeCombos(stores.settings.get().combos) })
+      json(res, 200, { combos: rows, usable: comboUsable() })
     } else if (method === 'GET' && pathname === `${PREFIX}/lan/key`) {
       json(res, 200, { key: stores.settings.get().standaloneLanKey ?? '' })
     } else if (method === 'POST' && pathname === `${PREFIX}/lan/key/rotate`) {

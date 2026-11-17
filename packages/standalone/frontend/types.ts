@@ -102,10 +102,12 @@ export interface Host {
   copy(value: string): Promise<void>
   getApiKey(): Promise<string>
   rotateKey(): Promise<string>
-  /** 读取路由链（降级/轮询）。返回值含 `members`（当前可解析）与 `missing`。 */
-  getCombos(): Promise<RoutingChain[]>
-  /** 整表替换路由链；服务端会归一化非法项。 */
-  saveCombos(combos: RoutingChain[]): Promise<RoutingChain[]>
+  /** 读取路由链：配置 + 候选模型 + 每条链的解析结果（对齐插件端 `/combos`）。 */
+  getCombos(): Promise<{ combos: RoutingChain[]; models: RoutingCandidate[]; usable: RoutingUsable[]; strategies: string[] }>
+  /** 整表替换路由链；服务端归一化非法项，并回写解析结果。 */
+  saveCombos(combos: RoutingChain[]): Promise<{ combos: RoutingChain[]; usable: RoutingUsable[] }>
+  /** 草稿链的能力交集预览（未保存的链也能算）。 */
+  previewCombo(models: string[]): Promise<{ contextWindow?: number; maxOutput?: number; vision?: boolean } | null>
   /** 取 LAN 中继用的密钥（与本机 `forwardKey` 是两套，见 `LanState` 注释）。 */
   getLanKey(): Promise<string>
   /** 轮换 LAN 密钥（只影响中继，不动本机密钥）。 */
@@ -132,8 +134,27 @@ export interface RoutingChain {
   /** 轮询时同一成员连任几回合。 */
   stickyLimit: number
   enabled: boolean
-  /** 当前目录里能解析到的成员（只读，服务端算）。 */
-  members?: string[]
-  /** 配置里写了、但当前目录查不到的成员 —— 链的断点（只读）。 */
-  missing?: string[]
+}
+
+/** 成员候选：本服务的真实模型（排除链路自身，链路不能嵌套）。 */
+export interface RoutingCandidate {
+  id: string
+  name: string
+  /** 车道：`free` / `kilo` / `channel:<provider>`。 */
+  channel: string
+  /** 分组键 —— 同名模型会来自不同供应商，平铺无法分辨。 */
+  provider?: string
+  vision?: boolean
+  contextWindow?: number
+  maxOutput?: number
+}
+
+/** 一条链的解析结果：`models` 是当前目录里查得到的成员，附能力交集。 */
+export interface RoutingUsable {
+  id: string
+  name: string
+  models: string[]
+  contextWindow?: number
+  maxOutput?: number
+  vision?: boolean
 }

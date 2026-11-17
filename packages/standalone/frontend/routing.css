@@ -1,55 +1,72 @@
 /**
- * 路由页（降级链）。
- *
- * 只做「列表 + 编辑器」需要的那几个块；视觉语言与 API 接入页一致
- * （`.cx-icon` / `.connection-card-heading` / `.field-label` 都是复用的），
- * 这样两页放在一起不会像两个产品。
+ * 路由页（降级链）—— 对齐插件端 `ofm_*` 那一套的观感，
+ * 但落到独立版的中性色板（`--line` / `--hover` / `--surface` / `--paper`）。
  */
 
 .routing-browser { display: flex; flex-direction: column; gap: 18px; }
 .routing-card { padding: 20px 22px; }
-.routing-card + .routing-card { margin-top: 0; }
 
-/* 编辑器里「策略 + 粘滞」并排；窄屏堆叠 */
-.routing-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin-top: 14px; }
-@media (max-width: 720px) { .routing-row { grid-template-columns: minmax(0, 1fr); } }
+/* ── 编辑器字段 ─────────────────────────────────────── */
+.routing-field { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.routing-field > .footnote { margin: 0; }
+.routing-num { width: 96px; }
 
-/* ── 成员列表（编辑器内，有序） ─────────────────────────── */
+/* 策略分段控件：两个按钮，激活态用主色 —— 比 select 更「一眼看出现在是哪个」 */
+.routing-seg { display: inline-flex; gap: 0; border: 1px solid var(--line); border-radius: var(--ofm-radius-sm); overflow: hidden; }
+.routing-seg-btn {
+  padding: 8px 16px; border: 0; background: var(--surface); color: var(--ink-soft);
+  font-size: 12px; cursor: pointer; transition: background 160ms var(--ease-out-expo), color 160ms var(--ease-out-expo);
+}
+.routing-seg-btn + .routing-seg-btn { border-left: 1px solid var(--line); }
+.routing-seg-btn:hover:not(:disabled) { background: var(--hover); }
+.routing-seg-btn.is-active { background: var(--green); color: #fff; }
+.routing-seg-btn:disabled { cursor: not-allowed; opacity: 0.6; }
+
+/* 启用开关（与渠道页的 ui-switch 同款药丸内联样式） */
+.routing-toggle { display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 12px; color: var(--ink-soft); cursor: pointer; }
+.routing-toggle input { width: 16px; height: 16px; accent-color: var(--green); cursor: pointer; }
+
+/* ── 成员列表 ───────────────────────────────────────── */
+.routing-members-head { display: flex; align-items: baseline; gap: 10px; margin-top: 18px; }
+.routing-members-head > .footnote { margin: 0; }
 .routing-members { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .routing-member {
-  display: flex; align-items: center; gap: 10px;
-  padding: 9px 12px; border: 1px solid var(--line); border-radius: var(--ofm-radius-sm);
-  background: var(--surface);
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+  border: 1px solid var(--line); border-radius: var(--ofm-radius-sm); background: var(--surface);
+  cursor: grab; transition: border-color 160ms var(--ease-out-expo), background 160ms var(--ease-out-expo);
 }
-/* 序号：告诉用户「这就是尝试顺序」，不做装饰 */
+.routing-member:active { cursor: grabbing; }
+.routing-member:hover { border-color: var(--dsw-alias-border-l2); }
 .routing-order {
   flex: none; display: inline-flex; align-items: center; justify-content: center;
-  width: 20px; height: 20px; border-radius: 999px;
-  background: var(--hover); color: var(--muted);
-  font-size: 11px; font-variant-numeric: tabular-nums;
+  width: 20px; height: 20px; border-radius: 999px; background: var(--hover);
+  color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums;
 }
-.routing-member-name { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
-.routing-member-name code {
-  font-size: 11px; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-/* 缺失成员：整行降饱和 + 左侧警示条，一眼看出「这条链现在少人」 */
+.routing-member-name { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; flex-wrap: wrap; }
+.routing-member-name code { font-size: 11px; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .routing-member-name.is-missing code { color: var(--danger-ink); }
 .routing-member-actions { flex: none; display: inline-flex; gap: 2px; }
 
-.routing-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; justify-content: flex-end; }
-.routing-actions > .ui-button:last-child { margin-left: auto; }
-@media (max-width: 720px) { .routing-actions { justify-content: stretch; } .routing-actions > * { flex: 1 1 auto; } }
+/* ── 能力交集 ───────────────────────────────────────── */
+.routing-capacity { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.routing-capacity-label { font-size: 11px; color: var(--ink-faint); }
 
-/* ── 成员选择器 ───────────────────────────────────────── */
-.routing-picker {
-  margin-top: 14px; padding: 14px; border: 1px solid var(--line);
-  border-radius: var(--ofm-radius-sm); background: var(--paper);
+/* ── 选择器 ─────────────────────────────────────────── */
+.routing-picker { margin-top: 16px; padding: 14px; border: 1px solid var(--line); border-radius: var(--ofm-radius-sm); background: var(--paper); }
+.routing-picker-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.routing-picker-filters { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.routing-picker-filters > .ui-input { flex: 1 1 200px; }
+.routing-provider { flex: 0 0 180px; }
+.routing-pick-list { margin-top: 12px; max-height: 380px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.routing-pickgroup { border: 1px solid var(--line); border-radius: var(--ofm-radius-xs); overflow: hidden; background: var(--surface); }
+.routing-pickgrouphead {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px; border: 0; background: var(--surface); color: var(--ink-soft);
+  font-size: 12px; text-align: left; cursor: pointer;
 }
-.routing-pick-list {
-  list-style: none; margin: 10px 0 0; padding: 0;
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px;
-  max-height: 340px; overflow-y: auto;
-}
+.routing-pickgrouphead:hover { background: var(--hover); }
+.routing-pickgrouptitle { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.routing-pickgroupbody { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px; padding: 0 10px 10px; }
 .routing-pick {
   width: 100%; display: flex; align-items: center; gap: 10px; justify-content: space-between;
   padding: 8px 11px; border: 1px solid var(--line); border-radius: var(--ofm-radius-xs);
@@ -59,11 +76,14 @@
 .routing-pick:hover:not(:disabled) { border-color: var(--dsw-alias-border-l2); background: var(--hover); }
 .routing-pick.is-picked { border-color: var(--green); background: var(--accent-soft); }
 .routing-pick:disabled { cursor: not-allowed; opacity: 0.55; }
-.routing-pick-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.routing-pick-name code { font-size: 11px; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.routing-pick-side { flex: none; display: inline-flex; gap: 6px; }
+.routing-pick b { font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.routing-pickcheck { flex: none; color: var(--green); font-size: 12px; }
 
-/* ── 已存链路 ─────────────────────────────────────────── */
+/* ── 底部按钮 ───────────────────────────────────────── */
+.routing-actions { display: flex; gap: 10px; margin-top: 16px; }
+.routing-foot { display: flex; align-items: center; gap: 14px; margin-top: 18px; }
+
+/* ── 已存链路卡片 ───────────────────────────────────── */
 .routing-chain-list { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .routing-chain {
   padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--ofm-radius-sm);
@@ -74,14 +94,7 @@
 .routing-chain-head strong { font-size: 14px; color: var(--ink); }
 .routing-chain-head code { font-size: 11px; color: var(--ink-faint); }
 .routing-chain-badges { display: inline-flex; gap: 6px; flex-wrap: wrap; flex: none; }
-
-/* 链路走向：用等宽 + 箭头，读起来像一条链而不是一段话 */
-.routing-chain-flow {
-  margin: 0; font-size: 11.5px; line-height: 1.7; color: var(--ink-soft);
-  word-break: break-word; font-variant-numeric: tabular-nums;
-}
-.routing-chain-missing {
-  margin: 0; display: flex; align-items: center; gap: 6px;
-  font-size: 11.5px; color: var(--danger-ink);
-}
+.routing-chain-flow { margin: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.routing-chain-label { font-size: 11px; color: var(--ink-faint); }
+.routing-chain-missing { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--danger-ink); }
 .routing-chain-actions { display: flex; gap: 8px; justify-content: flex-end; }
