@@ -118,25 +118,36 @@ export function createManagement({ stores, runtime, channels, info, onSettingsCh
     for (const [id, until] of sessions) if (until <= Date.now()) sessions.delete(id)
   }
   /**
-   * 固定面板令牌（环境变量 `OFM_PANEL_TOKEN`，2026-11-16 用户要求）。
+   * 面板**密码**（环境变量 `OFM_PASSWORD`，2026-11-17 用户要求）。
    *
-   * 为什么需要：一次性 bootstrap 链接在 Docker / 手机 / 电视这类设备上太难用
-   * —— 得先去 `docker logs` 里捞、10 分钟过期、用掉即焚。用户原话：
-   *   「我需要不带token或者token在环境变量里面设置，指的是登录面板」
+   * ## 语义（用户原话）
+   * 「把 api key 登录变成环境变量里面的 ofm_password 登录，127.0.0.1 和局域网都是，
+   *  如果不设置，直接不需要认证，点退出后认证界面只有登录，没有输入密码，
+   *  如果设置了，需要输入密码才能登录」「OFM_PANEL_TOKEN 改为 OFM_PASSWORD」
    *
-   * 设了这个变量之后：
-   * - 面板登录页的令牌框输入它即可（**不过期**，重启容器仍是同一个）；
-   * - 也可以直接 `Authorization: Bearer <它>` 调管理 API（脚本/自动化用）。
+   * 于是有两条互斥的形态：
    *
-   * ⚠️ 它只解锁**面板**，不解锁推理：`/v1/*` 仍然只认 LAN key（用户明确
-   *   要求「api 局域网使用 key 还是需要的」）。
-   * ⚠️ 空值 / 纯空白视为未设置。
+   * | `OFM_PASSWORD` | 行为 |
+   * |---|---|
+   * | 未设置 / 空 | **完全免认证** —— 回环与局域网一律直接进控制台；     * |               | 登录页只剩一个「登录」按钮（没有密码框） |
+   * | 已设置 | 登录页输密码；`/v1/*` 推理**不受影响**，仍只认 LAN key |
+   *
+   * ## 为什么不再接受 API Key 登录
+   * 此前 `forwardKey` 同时是「推理凭据」和「管理面凭据」，一个泄露两边全开。
+   * 改成密码后两套凭据彻底分离：密码只解锁管理面，API Key 只调推理。
+   *
+   * ⚠️ 只有**空值 / 纯空白**才算未设置 —— 别的都当成真实密码（哪怕很短），
+   *   不做长度校验：容器里 `-e OFM_PASSWORD=x` 也应当按用户本意生效。
    */
-  const panelToken = String(process.env.OFM_PANEL_TOKEN ?? '').trim()
+  const panelPassword = String(process.env.OFM_PASSWORD ?? '').trim()
+  /** 登录页是否需要密码框。同时用于 `/auth` 这个**免认证**接口。 */
+  const passwordRequired = () => panelPassword !== ''
   const authenticated = req => {
+    // 未设密码 = 不认证任何人，也放行所有人（用户明确要求「直接不需要认证」）。
+    if (!passwordRequired()) return true
     const bearer = /^Bearer (.+)$/i.exec(String(req.headers.authorization ?? ''))?.[1]
-    if (matches(bearer, stores.settings.get().forwardKey)) return true
-    if (panelToken !== '' && matches(bearer, panelToken)) return true
+    // 脚本 / 自动化可以用密码当 Bearer 调管理 API。
+    if (matches(bearer, panelPassword)) return true
     pruneSessions()
     return sessions.has(cookie(req))
   }
@@ -195,13 +206,33 @@ export function createManagement({ stores, runtime, channels, info, onSettingsCh
       } finally { terminalOpening = false }
       return
     }
+    /**
+     * `GET /auth` —— **免认证**，只回答「这个面板要不要密码」。
+     *
+     * 为什么需要单独一条：登录页渲染时还没有任何会话，拿不到 summary；
+     * 而表单要不要显示密码框完全取决于 `OFM_PASSWORD` 是否设置。
+     * 把这条放在 `authenticated()` 之前是有意的 —— 它不泄露任何秘密，
+     * 只暴露一个布尔值（攻击者本来也能从前端行为看出来）。
+     */
+    if (method === 'GET' && pathname === `${PREFIX}/auth`) {
+      json(res, 200, { required: passwordRequired() })
+      return
+    }
     if (method === 'POST' && pathname === `${PREFIX}/session`) {
       const body = await readBody(req)
       const validBootstrap = bootstrap !== null && bootstrap.until > Date.now() && matches(body.bootstrapToken, bootstrap.token)
-      // 固定令牌（OFM_PANEL_TOKEN）与一次性 bootstrap 并列：前者可反复使用、不过期。
-      const validPanelToken = panelToken !== '' && (matches(body.bootstrapToken, panelToken) || matches(body.key, panelToken))
-      if (!validBootstrap && !validPanelToken && !matches(body.key, stores.settings.get().forwardKey)) {
-        throw fail(401, '登录链接已失效或 API Key 不正确')
+      /**
+       * 三种进入方式，按用户 2026-11-17 的要求收敛为**密码优先**：
+       * 1. 未设 `OFM_PASSWORD` → 直接放行（登录页只有一个「登录」按钮，`body.password` 为空）
+       * 2. 设了 → 校验 `body.password`（同时容忍 `body.key`，便于既有脚本与
+       *    `#login=` 一次性链接复用同一入口）
+       * 3. 一次性 bootstrap 链接（本机 CLI 打印）继续有效，不受密码影响
+       */
+      const passwordOk = !passwordRequired()
+        || matches(body.password, panelPassword)
+        || matches(body.key, panelPassword)
+      if (!validBootstrap && !passwordOk) {
+        throw fail(401, passwordRequired() ? '密码不正确' : '登录链接已失效')
       }
       pruneSessions()
       if (sessions.size >= 64) throw fail(429, '管理会话过多，请稍后重试')

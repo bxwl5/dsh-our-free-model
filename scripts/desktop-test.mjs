@@ -22,7 +22,13 @@ function launch({ port = 0, directory = dataDir, endInput = false } = {}) {
   const node = path.join(scratch, process.platform === 'win32' ? 'node.exe' : 'node')
   const child = spawn(node, ['--import', pathToFileURL(preload).href,
     path.join(serviceRoot, 'packages/desktop/service-host.mjs'), '--port', String(port), '--no-refresh', '--data-dir', directory],
-  { cwd: scratch, env: { ...process.env, PATH: '', NODE_PATH: '', NODE_OPTIONS: '' }, stdio: ['pipe', 'pipe', 'pipe'] })
+  /**
+   * 面板密码（2026-11-17：管理面凭据由 API Key 改为 `OFM_PASSWORD`）。
+   *
+   * 必须设 —— 不设密码时服务端**完全免认证**，下面「一次性 token 用掉后
+   * 再兑换应 401」这条就无从成立（免认证时 `/session` 不看凭据）。
+   */
+  { cwd: scratch, env: { ...process.env, PATH: '', NODE_PATH: '', NODE_OPTIONS: '', OFM_PASSWORD: 'fixture-desktop-password-6b2f' }, stdio: ['pipe', 'pipe', 'pipe'] })
   children.add(child)
   const exit = once(child, 'exit')
   let ready, error = ''

@@ -198,11 +198,11 @@ export async function startStandalone({
             /**
              * 是否**免登录直通**面板（中继注入本机 key）。
              *
-             * 用户设了固定面板令牌（`OFM_PANEL_TOKEN`）时**不直通** —— 那种
+             * 用户设了面板密码（`OFM_PASSWORD`）时**不直通** —— 那种
              * 情况下让他输入令牌，安全边界更清楚；没设就直通，打开即用。
              * 用户原话：「我需要不带token或者token在环境变量里面设置」。
              */
-            panelOpen: String(process.env.OFM_PANEL_TOKEN ?? '').trim() === '',
+            panelOpen: String(process.env.OFM_PASSWORD ?? '').trim() === '',
           }),
           log: message => logger.warn?.(`our-free-model standalone LAN: ${message}`),
         })

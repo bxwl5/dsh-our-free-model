@@ -61,6 +61,15 @@ const check = async (name, run) => {
   catch (error) { failures++; console.log(`FAIL ${name}: ${error.stack}`) }
 }
 const getKey = () => JSON.parse(fs.readFileSync(service.keyFile, 'utf8')).forwardKey
+/**
+ * 面板密码（2026-11-17 起认证方式由 API Key 改为 `OFM_PASSWORD`）。
+ *
+ * ⚠️ 必须**显式设置**：不设密码时服务端是**完全免认证**的（用户明确要求
+ *   「如果不设置，直接不需要认证」），那样下面所有「未登录应 401」的安全
+ *   边界都无从验证。设了密码才能测出鉴权确实生效。
+ */
+const PANEL_PASSWORD = 'fixture-management-password-9f2c'
+process.env.OFM_PASSWORD = PANEL_PASSWORD
 const request = async (route, { body, cookie: cookieValue = cookie, headers = {}, method } = {}) => {
   if (headers.host) {
     // fetch 会自行设置 Host；用真实 HTTP 请求验证恶意 Host，不误测客户端归一化。
@@ -154,7 +163,7 @@ try {
     assert.equal((await request('/api/management/session', { cookie: '', body: { bootstrapToken: 'wrong' } })).status, 401)
     cookie = await login({ bootstrapToken })
     assert.equal((await request('/api/management/session', { cookie: '', body: { bootstrapToken } })).status, 401)
-    const secondCookie = await login({ key })
+    const secondCookie = await login({ password: PANEL_PASSWORD })
     assert.notEqual(cookie, secondCookie)
   })
   await check('摘要与统计不泄露密钥，管理会话不能调用推理接口', async () => {
@@ -169,7 +178,10 @@ try {
     assert.equal(stats.requests, 0)
     assert.ok(!JSON.stringify(stats).includes(key))
     assert.equal((await request('/v1/models')).status, 401)
-    assert.equal((await request('/api/management/summary', { cookie: '', headers: { authorization: `Bearer ${key}` } })).status, 200)
+    // 管理面凭据 = 面板密码（2026-11-17 起 API Key 不再解锁管理面）。
+    assert.equal((await request('/api/management/summary', { cookie: '', headers: { authorization: `Bearer ${PANEL_PASSWORD}` } })).status, 200)
+    // 反向：本机 API Key 当 Bearer 必须被管理面拒绝 —— 推理/管理两套凭据彻底分离。
+    assert.equal((await request('/api/management/summary', { cookie: '', headers: { authorization: `Bearer ${key}` } })).status, 401)
   })
   await check('同源防护覆盖登录、读取和写入，拒绝伪造 Host 及插件来源', async () => {
     for (const headers of [
@@ -182,7 +194,7 @@ try {
     ]) {
       assert.equal((await request('/api/management/summary', { headers })).status, 403, JSON.stringify(headers))
       assert.equal((await request('/api/management/settings', { headers, body: { enabled: false } })).status, 403)
-      assert.equal((await request('/api/management/session', { headers, body: { key } })).status, 403)
+      assert.equal((await request('/api/management/session', { headers, body: { password: PANEL_PASSWORD } })).status, 403)
     }
     const response = await request('/api/management/settings', { body: {}, headers: { origin: service.url, referer: `${service.url}/` } })
     assert.equal(response.status, 200)
@@ -313,7 +325,7 @@ try {
     for (const [name, value] of Object.entries(hiddenSettings)) assert.deepEqual(stored[name], value)
   })
   await check('轮换要求确认，旧密钥与其他会话失效，当前管理会话保留', async () => {
-    const other = await login({ key })
+    const other = await login({ password: PANEL_PASSWORD })
     assert.equal((await request('/api/management/key/rotate', { body: {} })).status, 400)
     const rotated = await request('/api/management/key/rotate', { body: { confirm: true } })
     assert.equal(rotated.status, 200)
@@ -324,7 +336,7 @@ try {
     assert.equal((await request('/api/management/summary')).status, 200)
     assert.equal((await request('/v1/models', { headers: { authorization: `Bearer ${key}` } })).status, 401)
     assert.equal((await request('/v1/models', { headers: { authorization: `Bearer ${nextKey}` } })).status, 200)
-    assert.equal((await request('/api/management/session', { cookie: '', body: { key } })).status, 401)
+    assert.equal((await request('/api/management/session', { cookie: '', body: { password: 'wrong-password' } })).status, 401)
     key = nextKey
   })
   await check('会话到期和登出后不能读管理数据', async () => {
@@ -334,12 +346,12 @@ try {
       Date.now = () => started + 8 * 60 * 60_000 + 1000
       assert.equal((await request('/api/management/summary')).status, 401)
     } finally { Date.now = nativeNow }
-    cookie = await login({ key })
+    cookie = await login({ password: PANEL_PASSWORD })
     const response = await request('/api/management/logout', { body: {} })
     assert.equal(response.status, 200)
     assert.match(response.headers.get('set-cookie'), /Max-Age=0/)
     assert.equal((await request('/api/management/summary')).status, 401)
-    cookie = await login({ key })
+    cookie = await login({ password: PANEL_PASSWORD })
   })
   await check('重启保留设置与密钥但清除会话，新的登录链接独立生成', async () => {
     const oldUrl = service.managementUrl
@@ -361,7 +373,7 @@ try {
       Date.now = () => started + 10 * 60_000 + 1000
       assert.equal((await request('/api/management/session', { cookie: '', body: { bootstrapToken: token } })).status, 401)
     } finally { Date.now = nativeNow }
-    cookie = await login({ key })
+    cookie = await login({ password: PANEL_PASSWORD })
     const visible = await (await request('/v1/models', { headers: { authorization: `Bearer ${key}` } })).json()
     assert.equal(visible.data.some(row => row.id === model), false)
     assert.equal((await request('/api/management/settings', { body: { hiddenModelIds: [] } })).status, 200)
@@ -383,7 +395,7 @@ try {
       await service.close()
       service = await startStandalone({ dataDir, refresh: true, logger: { warn() {} } })
       await service.ready
-      cookie = await login({ key })
+      cookie = await login({ password: PANEL_PASSWORD })
       assert.equal(scheduled.delay, 5 * 60_000)
       const oldHandle = scheduled.handle
       assert.equal((await request('/api/management/settings', { body: { probeIntervalMinutes: 12, standaloneProbe: false } })).status, 200)

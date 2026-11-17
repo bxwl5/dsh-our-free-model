@@ -40,6 +40,14 @@ process.env.OUR_FREE_MODEL_BASE = upstreamUrl
 process.env.OUR_FREE_MODEL_KILO_BASE = upstreamUrl
 const { startLanRelay } = await import('../src/forward.js')
 const { startStandalone } = await import('../packages/standalone/service.mjs')
+/**
+ * 面板密码（2026-11-17：认证方式由 API Key 改为 `OFM_PASSWORD`）。
+ *
+ * 必须显式设置 —— 不设密码时服务端完全免认证，本文件所有「未登录应 401」的
+ * 断言都会失去意义。
+ */
+const PANEL_PASSWORD = 'fixture-lan-password-4a7e'
+process.env.OFM_PASSWORD = PANEL_PASSWORD
 const relayStarts = []
 const startRelay = async ({ config, ...options }) => {
   assert.equal(config().host, '0.0.0.0')
@@ -74,7 +82,12 @@ const request = async (base, route, { body, key, headers = {}, method } = {}) =>
   try { value = JSON.parse(text) } catch { value = text }
   return { status: response.status, value, headers: response.headers, text }
 }
-const management = (route, options = {}) => request(service.url, `/api/management${route}`, { key: localKey, ...options })
+/**
+ * 管理面请求默认带**面板密码**（2026-11-17 起 API Key 不再解锁管理面）。
+ *
+ * 传 `key: ''` 的调用点表示「故意不带凭据」，用于验证 401 边界。
+ */
+const management = (route, options = {}) => request(service.url, `/api/management${route}`, { key: PANEL_PASSWORD, ...options })
 const settings = async patch => {
   const response = await management('/settings', { body: patch })
   assert.equal(response.status, 200, response.text)
@@ -126,7 +139,7 @@ try {
     assert.equal(summary.value.settings.standaloneLanPort, 0)
     assert.equal(summary.value.capabilities.lan, true)
     assert.equal((await management('/lan/key')).value.key, '')
-    const login = await management('/session', { key: '', body: { key: localKey } })
+    const login = await management('/session', { key: '', body: { password: PANEL_PASSWORD } })
     assert.equal(login.status, 200)
     cookie = login.headers.get('set-cookie').split(';')[0]
   })
@@ -176,7 +189,7 @@ try {
     assert.equal((await lanRequest('/health', { key: '' })).status, 401)
     assert.equal((await lanRequest('/v1/models', { key: '', headers: { 'x-api-key': lanKey } })).status, 200)
     assert.equal((await management('/summary', { key: lanKey })).status, 401)
-    assert.equal((await management('/session', { key: '', body: { key: lanKey } })).status, 401)
+    assert.equal((await management('/session', { key: '', body: { password: lanKey } })).status, 401, 'LAN key 不该能登录管理面')
   })
   await check('relay rejects UI, health, assets and every management path even with management credentials', async () => {
     for (const route of [
@@ -413,7 +426,7 @@ try {
       await ipv6.ready
       assert.match(ipv6.url, /^http:\/\/\[::1\]:/)
       const saved = JSON.parse(fs.readFileSync(ipv6.keyFile, 'utf8'))
-      assert.equal((await request(ipv6.url, '/api/management/summary', { key: saved.forwardKey })).status, 200)
+      assert.equal((await request(ipv6.url, '/api/management/summary', { key: PANEL_PASSWORD })).status, 200)
       const relay = relayStarts[startCount]
       assert.ok(relay)
       assert.equal((await request(`http://127.0.0.1:${ipv6.lan.port}`, '/v1/models', { key: saved.standaloneLanKey })).status, 200)
@@ -460,8 +473,15 @@ try {
       })
       await isolated.ready
       const saved = JSON.parse(fs.readFileSync(isolated.keyFile, 'utf8'))
+      /**
+       * 管理面凭据必须是**面板密码**。
+       *
+       * ⚠️ 这里原来传 `saved.forwardKey`：在新的认证语义下会得到 401，
+       * 于是 `startRelay` 永不触发 ⇒ 下面 `await starting` **永久挂起**
+       * （表现为整个套件 60 秒超时被杀，而所有已打印的检查都是 ok）。
+       */
       pending = request(isolated.url, '/api/management/settings', {
-        key: saved.forwardKey, body: { standaloneLanEnabled: true },
+        key: PANEL_PASSWORD, body: { standaloneLanEnabled: true },
       }).catch(() => undefined)
       await starting
       const closed = isolated.close()

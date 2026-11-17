@@ -69,39 +69,39 @@ const check = async (name, run) => {
 
 const base = { port: 0, refresh: false, logger: { warn() {} }, startRelay }
 
-// ── ⓪ 固定令牌档：设了 OFM_PANEL_TOKEN 就不直通，要求输入令牌 ──
+// ── ⓪ 密码档：设了 OFM_PASSWORD 就不直通，要求输入密码 ──
 {
   const dataDir = path.join(scratch, 'fixed-token')
-  process.env.OFM_PANEL_TOKEN = 'fixture-panel-token-0123456789'
+  process.env.OFM_PASSWORD = 'fixture-panel-password-0123456789'
   const service = await startStandalone({
     ...base, dataDir, lanEnabled: true, lanPanel: true, lanPort: 0,
   })
   try {
     await service.ready
     const url = `http://127.0.0.1:${service.lan.port}`
-    await check('⓪ 设了 OFM_PANEL_TOKEN：不直通，干净请求 401', async () => {
+    await check('⓪ 设了 OFM_PASSWORD：不直通，干净请求 401', async () => {
       const response = await request(url, '/api/management/summary')
-      assert.equal(response.status, 401, '有固定令牌时不该直通')
+      assert.equal(response.status, 401, '设了密码时不该直通')
     })
-    await check('⓪ 固定令牌可换 Cookie（不过期、可重复用）', async () => {
-      const first = await request(url, '/api/management/session', { body: { bootstrapToken: 'fixture-panel-token-0123456789' } })
+    await check('⓪ 密码可换 Cookie（可重复登录）', async () => {
+      const first = await request(url, '/api/management/session', { body: { password: 'fixture-panel-password-0123456789' } })
       assert.equal(first.status, 200, first.text.slice(0, 120))
-      const second = await request(url, '/api/management/session', { body: { bootstrapToken: 'fixture-panel-token-0123456789' } })
-      assert.equal(second.status, 200, '固定令牌必须可重复使用（与一次性 bootstrap 的区别）')
+      const second = await request(url, '/api/management/session', { body: { password: 'fixture-panel-password-0123456789' } })
+      assert.equal(second.status, 200, '密码必须可重复登录（与一次性 bootstrap 的区别）')
       const cookie = first.headers.get('set-cookie').split(';')[0]
       const summary = await request(url, '/api/management/summary', { headers: { cookie } })
       assert.equal(summary.status, 200)
     })
-    await check('⓪ 固定令牌不解锁推理：/v1/models 仍要 LAN key', async () => {
+    await check('⓪ 面板密码不解锁推理：/v1/models 仍要 LAN key', async () => {
       const saved = JSON.parse(fs.readFileSync(service.keyFile, 'utf8'))
-      const viaPanelToken = await request(url, '/v1/models', { key: 'fixture-panel-token-0123456789' })
-      assert.equal(viaPanelToken.status, 401, '面板令牌不该能调模型')
+      const viaPanelToken = await request(url, '/v1/models', { key: 'fixture-panel-password-0123456789' })
+      assert.equal(viaPanelToken.status, 401, '面板密码不该能调模型')
       const viaLanKey = await request(url, '/v1/models', { key: saved.standaloneLanKey })
       assert.equal(viaLanKey.status, 200, 'LAN key 仍应可用')
     })
   } finally {
     await service.close()
-    delete process.env.OFM_PANEL_TOKEN
+    delete process.env.OFM_PASSWORD
   }
 }
 
@@ -160,14 +160,20 @@ const base = { port: 0, refresh: false, logger: { warn() {} }, startRelay }
       }
     })
 
-    await check('④ 开启后：显式带错 key 仍被面板拒绝（注入只补空缺，不覆盖）', async () => {
-      // 中继只在 `Authorization` **缺失**时补本机 key；浏览器带上了就不会被替换。
-      // 所以显式带一个错 key → 面板自己判 401，证明注入不是「无脑放行」。
+    await check('④ 未设 OFM_PASSWORD：面板完全不认证，带任意 Authorization 也放行', async () => {
+      /**
+       * 2026-11-17 语义变更。此前 panelOpen 只表示「中继替空缺的 Authorization
+       * 补本机 key」，面板自己仍要认证，所以带错 key 会 401。
+       *
+       * 现在 `OFM_PASSWORD` 未设置 = **完全不认证**（用户原话「如果不设置，
+       * 直接不需要认证」）⇒ 带什么 key 都直接 200。鉴权边界的验证已移到
+       * ⓪ 档（设了密码那一档）。
+       */
       const response = await request(url, '/api/management/summary', { key: 'ofm-deliberately-wrong' })
-      assert.equal(response.status, 401, '错 key 应被面板拒绝')
+      assert.equal(response.status, 200, '未设密码时不该判 401')
     })
 
-    await check('⑤ 开启后：一次性 bootstrap token 链路仍可用（向后兼容）', async () => {
+    await check('⑤ 未设密码：/session 无需凭据即可建立会话（bootstrap 非必需）', async () => {
       // 一次性 token 只能从**本机**取得（`#login=` 片段 / 本机日志）。
       // 这里从 service.managementUrl 取，等价于用户在本机日志里看到的那条。
       const token = new URL(service.managementUrl).hash.replace(/^#login=/, '')
@@ -180,9 +186,13 @@ const base = { port: 0, refresh: false, logger: { warn() {} }, startRelay }
       const summary = await request(url, '/api/management/summary', { headers: { cookie: cookiePair } })
       assert.equal(summary.status, 200, `带 Cookie 读 summary 应 200，实际 ${summary.status}`)
       assert.equal(summary.value.product, 'our-free-model-standalone', 'summary 应来自真面板')
-      // 一次性语义：同一个 token 再换一次必须失败
+      /**
+       * ⚠️ 这里**不再**断言「token 一用即焚」：免认证形态下 `/session` 不校验
+       * 任何凭据就直接下发 Cookie，token 根本不被消费。一次性语义只在设置了
+       * `OFM_PASSWORD` 的部署里才可观察（见 ⓪ 档与 standalone-management 测试）。
+       */
       const replay = await request(url, '/api/management/session', { body: { bootstrapToken: token } })
-      assert.equal(replay.status, 401, 'bootstrap token 必须一用即焚')
+      assert.equal(replay.status, 200, '免认证时 /session 始终可用')
     })
 
     await check('⑥ 开启后：推理路径仍只认 LAN key（不因开面板而放宽）', async () => {
@@ -223,10 +233,11 @@ const base = { port: 0, refresh: false, logger: { warn() {} }, startRelay }
       assert.match(service.bootstrapFragment, /^(#login=.{20,})?$/)
     })
 
-    await check('⑥ 中继不注入本机 key：面板请求带不回推理权限', async () => {
-      // 面板路径不带 hop 标记、不替换 Authorization；用错误 key 打面板依旧 401
-      const response = await request(url, '/api/management/summary', { key: 'ofm-not-a-real-key' })
-      assert.equal(response.status, 401)
+    await check('⑥ 未设密码：面板放行，但推理路径仍只认 LAN key（两条链路不混淆）', async () => {
+      // 管理面免认证，不代表推理面放宽 —— `/v1/*` 依旧要 LAN key。
+      assert.equal((await request(url, '/api/management/summary', { key: 'ofm-not-a-real-key' })).status, 200)
+      assert.equal((await request(url, '/v1/models')).status, 401, '推理缺 key 必须 401')
+      assert.equal((await request(url, '/v1/models', { key: 'ofm-not-a-real-key' })).status, 401, '错 key 也不许调模型')
     })
   } finally { await service.close() }
 }

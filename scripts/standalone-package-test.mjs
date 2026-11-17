@@ -5,6 +5,8 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import http from 'node:http'
 import { spawn, execFileSync } from 'node:child_process'
+/** 面板密码（2026-11-17 起管理面凭据）。必须显式设置，否则服务端完全免认证。 */
+const PACKAGE_PASSWORD = 'fixture-package-password-3d91'
 import { once } from 'node:events'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
@@ -25,7 +27,11 @@ if (args.length === 1 && args[0] === '--sources-only') {
       fs.copyFileSync(source, target)
     }
     fs.writeFileSync(path.join(scratch, 'package.json'), '{"private":true,"type":"module"}\n')
-    const env = { ...process.env, PATH: '', NODE_OPTIONS: '', NODE_PATH: '' }
+    /**
+ * 子进程要继承面板密码（2026-11-17：认证方式由 API Key 改为 `OFM_PASSWORD`）。
+ * 不设密码时服务端完全免认证，下面「无凭据应 401」的断言会失效。
+ */
+    const env = { ...process.env, PATH: '', NODE_OPTIONS: '', NODE_PATH: '', OFM_PASSWORD: PACKAGE_PASSWORD }
     const cli = path.join(scratch, 'packages/standalone/cli.mjs')
     assert.match(execFileSync(process.execPath, [cli, '--help'], {
       cwd: os.tmpdir(), env, encoding: 'utf8', timeout: 15000,
@@ -37,6 +43,7 @@ if (args.length === 1 && args[0] === '--sources-only') {
       import assert from 'node:assert/strict'
       import fs from 'node:fs'
       import { startStandalone } from ${JSON.stringify(serviceUrl)}
+      const PANEL_PASSWORD = ${JSON.stringify(PACKAGE_PASSWORD)}
       const original = globalThis.fetch
       globalThis.fetch = (input, init) => {
         const url = new URL(input instanceof Request ? input.url : String(input))
@@ -58,7 +65,8 @@ if (args.length === 1 && args[0] === '--sources-only') {
           assert.ok((await response.text()).length > 0, endpoint)
         }
         assert.equal((await fetch(service.url + '/api/management/summary')).status, 401)
-        const response = await fetch(service.url + '/api/management/summary', { headers: { authorization: 'Bearer ' + key } })
+        // 管理面凭据 = 面板密码；forwardKey 只用于推理，不再解锁管理面。
+        const response = await fetch(service.url + '/api/management/summary', { headers: { authorization: 'Bearer ' + PANEL_PASSWORD } })
         assert.equal(response.status, 200)
         assert.equal((await response.json()).channels.state, 'ready')
         await service.close()
@@ -239,7 +247,8 @@ try {
     assert.ok(!fs.existsSync(path.join(root, 'settings.json')))
   })
   const key = JSON.parse(fs.readFileSync(path.join(dataDir, 'settings.json'), 'utf8')).forwardKey
-  const authorization = { authorization: `Bearer ${key}` }
+  // 管理面用面板密码；`key` 只用于推理（两套凭据分离）。
+  const authorization = { authorization: `Bearer ${PACKAGE_PASSWORD}` }
   await check('all page assets load locally; unauthenticated model and management access fails', async () => {
     const assets = JSON.parse(fs.readFileSync(path.join(root, 'packages/standalone/web/assets.json'), 'utf8'))
     for (const file of ['/', ...assets.map(name => `/assets/${name}`)]) {

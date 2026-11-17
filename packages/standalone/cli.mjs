@@ -62,16 +62,16 @@ async function main() {
        *   账号、看凭据）。`--lan-panel` 是显式取舍，默认关。
        */
       const panelUrls = service.lan.addresses.map(address => `http://${address}:${service.lan.port}/`)
-      const fixedToken = String(process.env.OFM_PANEL_TOKEN ?? '').trim() !== ''
-      process.stdout.write(fixedToken
-        ? '\nLAN 面板（登录令牌 = 环境变量 OFM_PANEL_TOKEN）：\n'
-        : '\nLAN 面板（直接访问，无需令牌）：\n')
+      const passwordSet = String(process.env.OFM_PASSWORD ?? '').trim() !== ''
+      process.stdout.write(passwordSet
+        ? '\nLAN 面板（登录密码 = 环境变量 OFM_PASSWORD）：\n'
+        : '\nLAN 面板（直接访问，无需密码）：\n')
       for (const url of panelUrls.length > 0 ? panelUrls : [`http://<本机IP>:${service.lan.port}/`]) {
         process.stdout.write(`  ${url}\n`)
       }
-      process.stdout.write(fixedToken
-        ? '  在面板登录页的「登录令牌」框输入 OFM_PANEL_TOKEN 的值即可（不过期）。\n'
-        : '  ⚠️ 同网段设备均可打开并修改面板；想加一道门就设 OFM_PANEL_TOKEN。\n')
+      process.stdout.write(passwordSet
+        ? '  在面板登录页输入 OFM_PASSWORD 的值即可。\n'
+        : '  ⚠️ 同网段设备均可打开并修改面板；想加一道门就设 OFM_PASSWORD。\n')
     }
   } else if (service.lan.error) process.stderr.write(`${service.lan.error}\n`)
 }

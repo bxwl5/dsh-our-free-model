@@ -1224,6 +1224,38 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #eef0f4; borde
 [data-theme="dark"] .ofm_tag { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.05); color: var(--dsw-alias-label-secondary); }
 [data-theme="dark"] .ofm_note { color: var(--dsw-alias-label-tertiary); }
 [data-theme="dark"] .ofm_sec_title { color: var(--ink); }
+/**
+ * 渠道用量页的表格容器补卡片外观（2026-11-17，用户截图反馈「表格没对齐」）。
+ *
+ * ## 实际原因不是几何错位
+ * CDP 实测（1920 视口，NAS 线上）：
+ * ```
+ * 指标卡   x=385  right=649   （单张，带 ofm_kpi ofm_glass）
+ * 表格     x=385  right=1753  （ofm_tablewrap，直接铺在 ofm_root 上）
+ * ofm_root x=385  right=1753
+ * ```
+ * 左边界、容器都一致 —— 错位感来自**视觉层级**：指标卡有
+ * `border-radius:16px` + 边框 + 底色（`.ofm_kpi`），而 `.ofm_sec` /
+ * `.ofm_tablewrap` 一条样式都没有，是贴在容器上的裸表格。
+ * 于是一排「有边的卡片」下面跟着一条「没边的长表格」，看起来就像表格
+ * 溢出了右边。
+ *
+ * ## 做法
+ * 给承载表格的 `.ofm_sec` 套上与 `.ofm_kpi` 同源的卡片外观：
+ * 圆角、边框、底色、内边距。这样它和上方指标卡在视觉上是同一族。
+ *
+ * ⚠️ 用 `.ofm_root .ofm_sec` 限域，避免影响插件端（那边由宿主主题管）。
+ */
+.ofm_root .ofm_sec {
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-3) 78%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+/* 表格自带分栏线，卡片内边距已给足呼吸感，去掉 wrap 的额外左右贴边 */
+.ofm_root .ofm_tablewrap { border-radius: 10px; }
+
 [data-theme="dark"] .ofm_sec_hint { color: var(--dsw-alias-label-tertiary); }
 [data-theme="dark"] .ofm_sechead { border-bottom-color: rgba(255, 255, 255, 0.05); }
 [data-theme="dark"] .ofm_seg { background: #0d0f14; border-color: rgba(255, 255, 255, 0.045); }
