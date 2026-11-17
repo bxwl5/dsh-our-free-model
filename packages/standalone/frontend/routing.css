@@ -155,8 +155,11 @@
 [data-theme="dark"] .routing-browser {
   --surface: #141622;
   --hover: rgba(255, 255, 255, 0.045);
-  --ink-soft: #b7c0d0;
-  --ink-faint: #7f8b99;
+  /* ⚠️ 文字亮度必须显著高于底色（实测底 ~16 时，#b7c0d0 的 101 仍偏灰暗，
+     读起来费劲）。主文字用近白，次级用亮灰蓝——对齐 app.css 暗色的
+     --ink（#dfe6e9）/ --muted（#8d99a5）亮度档。 */
+  --ink-soft: #dfe6e9;
+  --ink-faint: #9aa5b5;
   --line: rgba(255, 255, 255, 0.10);
 }
 /* 选择器卡片与组头：底色改暗、文字提亮 */
