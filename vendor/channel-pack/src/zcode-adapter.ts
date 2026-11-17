@@ -178,6 +178,74 @@ function positiveMaxTokens(value: unknown): number | undefined {
  * 它治的正是 IKJOVB 那个死循环的**后半段**：上游偶发变慢时，重试若仍用同一
  * 阈值，会「次次都被同一道线打死」；逐次放宽给上游喘息空间。
  */
+/**
+ * 本机并发闸门（2026-11-17 对齐 magpie zcode 0.1.68）。
+ *
+ * ## 为什么需要
+ * 上游对**同一个本机地址**有并发上限（Start Plan 实测 6）。此前我们的做法
+ * 是**被动**的：撞上 `3009 并发限流` 之后退避重发（`concurrencyRetryMax`）——
+ * 也就是说，机器越快、并发越大，越是反复撞墙再重试，白白消耗设备信誉。
+ *
+ * 现在改成**主动预防**：本进程同时最多 6 个在途请求，多出来的排队等名额。
+ * 这不是限速，而是「不要自己撞自己的墙」。
+ *
+ * ## 为什么闸门放在 `stream()` 而不是更内层
+ * 一个请求从发出到 SSE 读完才算真正结束，`stream()` 正好包住这整段。
+ * 放在 HTTP 发信处会让流式响应**提前放行名额**，闸门形同虚设。
+ *
+ * ⚠️ 名额必须在 `finally` 里还：抛出、被 abort、客户端断开都要还，
+ * 否则几次异常之后闸门就永久堵死（VPS 上表现为「所有请求排队到超时」）。
+ * ⚠️ 等待名额期间也要响应调用方的 abort，不能死等。
+ */
+function resolveMaxConcurrency(): number {
+  const raw = process.env.DSH_ZCODE_MAX_CONCURRENCY
+  if (raw === undefined || raw.length === 0) return 6
+  const parsed = Number.parseInt(raw, 10)
+  // 0 / 负数表示关闭闸门（不限并发）—— 用显式判据，别用 `||`：0 是 falsy。
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 6
+}
+
+const ZCODE_MAX_CONCURRENCY = resolveMaxConcurrency()
+let zcodeActiveRequests = 0
+const zcodeSlotWaiters: Array<() => void> = []
+
+/** 取一个并发名额；`signal` 中止时抛出而不是继续等。 */
+async function acquireZcodeSlot(signal?: AbortSignal): Promise<void> {
+  if (ZCODE_MAX_CONCURRENCY === 0) return
+  if (zcodeActiveRequests < ZCODE_MAX_CONCURRENCY) {
+    zcodeActiveRequests++
+    return
+  }
+  await new Promise<void>((resolve, reject) => {
+    let settled = false
+    const grant = (): void => {
+      if (settled) return
+      settled = true
+      signal?.removeEventListener('abort', onAbort)
+      zcodeActiveRequests++
+      resolve()
+    }
+    const onAbort = (): void => {
+      if (settled) return
+      settled = true
+      const at = zcodeSlotWaiters.indexOf(grant)
+      if (at >= 0) zcodeSlotWaiters.splice(at, 1)
+      reject(Object.assign(new Error('zcode: 等待并发名额期间请求已取消'), { name: 'AbortError' }))
+    }
+    if (signal?.aborted === true) { onAbort(); return }
+    signal?.addEventListener('abort', onAbort, { once: true })
+    zcodeSlotWaiters.push(grant)
+  })
+}
+
+/** 归还名额，并唤醒一个等待者。 */
+function releaseZcodeSlot(): void {
+  if (ZCODE_MAX_CONCURRENCY === 0) return
+  zcodeActiveRequests = Math.max(0, zcodeActiveRequests - 1)
+  const next = zcodeSlotWaiters.shift()
+  if (next !== undefined) next()
+}
+
 const ZCODE_STREAM_IDLE_RETRY_STEP_MS = 30_000
 
 /**
@@ -883,11 +951,19 @@ export class ZcodeAdapter extends LlmAdapter {
     // 把调用方的 signal（harness 的用户中断）串进来，作用于**整轮**。
     const onAbort = (): void => controller.abort()
     options.signal?.addEventListener('abort', onAbort, { once: true })
+    /**
+     * 并发名额：**先取后发**（见上面的 `acquireZcodeSlot`）。
+     *
+     * ⚠️ 取值放在 `try` 之外会泄漏 —— 取到名额后 `streamScoped` 抛出时
+     * 没有 finally 可还。所以这里先取，再进 try/finally 覆盖整个流。
+     */
+    await acquireZcodeSlot(controller.signal)
     try {
       yield* this.streamScoped(options, controller, timeoutMs)
     } finally {
       clearTimeout(timer)
       options.signal?.removeEventListener('abort', onAbort)
+      releaseZcodeSlot()
     }
   }
 

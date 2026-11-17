@@ -172,6 +172,30 @@ function resolveQueueTimeoutMs(): number {
 }
 
 /**
+ * 排队**位置停滞**判定阈值（毫秒），2026-11-17 对齐 magpie qoder 0.2.71。
+ *
+ * ## 与总超时的区别
+ * `DSH_QODER_QUEUE_TIMEOUT_MS`（默认 30 分钟）管的是「总共等多久」。
+ * 但队列有两种坏法：
+ * - **慢慢前进**：位置一直在降，只是久 —— 值得等，总超时负责兜底；
+ * - **一动不动**：位置 5 分钟没变，说明上游那一侧卡死了（调度器挂了、
+ *   服务没在消费队列），再等 25 分钟也不会有结果。
+ *
+ * 后者是我们此前完全没覆盖的场景：客户端只会一直等到 30 分钟总超时，
+ * 而这段时间里它**占据着一个渠道槽位**，别的请求也没法用它。
+ * magpie 的结论是「队列 5 分钟没动就以 503 结束」—— 让调用方快速失败、
+ * 换渠道，而不是陪着一个卡死的队列耗半小时。
+ *
+ * ⚠️ 用 `undefined` 判据而非 `|| 默认值`：`0` 是合法配置（关闭检测）。
+ */
+function resolveQueueStallMs(): number {
+  const raw = process.env.DSH_QODER_QUEUE_STALL_MS
+  if (raw === undefined || raw.length === 0) return 5 * 60_000
+  const parsed = Number.parseInt(raw, 10)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 5 * 60_000
+}
+
+/**
  * 读 `AbortSignal.aborted`（**刻意做成函数**）。
  *
  * 为什么不能内联 `signal?.aborted === true`：TS 会在 `await` 之前的一次
@@ -1098,6 +1122,13 @@ export class QoderAdapter extends LlmAdapter {
     const queueDeadline = Date.now() + resolveQueueTimeoutMs()
     let queueAttempts = 0
     /**
+     * 排队位置停滞跟踪（**每请求独立**，不跨请求共享）。
+     *
+     * `position` 是上一次看到的 `queueCount`；`since` 是它最后一次**变化**的
+     * 时刻。位置一变就重置计时 —— 慢慢前进的队列不会被误判成卡死。
+     */
+    const queueStall = { position: undefined as number | undefined, since: Date.now() }
+    /**
      * ⚠️ **总轮次**硬上限（2026-11-04 审查 P2-3）。
      *
      * `queueDeadline` 只约束「排队等待」，而这条 `for (;;)` 里还有**别的**
@@ -1159,7 +1190,7 @@ export class QoderAdapter extends LlmAdapter {
         const queueInfo = parseQoderQueueError(errorText)
 
         if (queueInfo !== undefined) {
-          await this.waitForQueue(queueInfo, ++queueAttempts, queueDeadline, options)
+          await this.waitForQueue(queueInfo, ++queueAttempts, queueDeadline, options, queueStall)
           continue
         }
 
@@ -1230,6 +1261,7 @@ export class QoderAdapter extends LlmAdapter {
               ++queueAttempts,
               queueDeadline,
               options,
+              queueStall,
             )
             queued = true
             break
@@ -1326,6 +1358,7 @@ export class QoderAdapter extends LlmAdapter {
     attempts: number,
     deadline: number,
     options: GenerateOptions,
+    stall: { position: number | undefined; since: number },
   ): Promise<void> {
     // ⚠️ **先判时间、再判次数**：时间上限是硬约束（用户可调），次数上限只是
     // 防御性兜底。反过来写会让「180 次空转」在绝大多数情况下先生效，
@@ -1345,6 +1378,27 @@ export class QoderAdapter extends LlmAdapter {
     }
     if (options.signal?.aborted === true) {
       throw new LlmError('qoder: 排队等待期间请求已取消', 'QUEUE')
+    }
+    /**
+     * 位置停滞检测（见 {@link resolveQueueStallMs}）。
+     *
+     * ⚠️ 只在服务端**给出了** `queueCount` 时才判：拿不到位置时无从判断
+     * 「有没有动」，此时按「没停滞」处理 —— 宁可让总超时兜底，也不要把
+     * 「看不到位置」误判成「卡死」，那会平白掐掉正常的排队。
+     */
+    const stallLimitMs = resolveQueueStallMs()
+    const position = queueInfo?.queueCount
+    if (position !== undefined && stallLimitMs > 0) {
+      if (stall.position !== position) {
+        stall.position = position
+        stall.since = Date.now()
+      } else if (Date.now() - stall.since >= stallLimitMs) {
+        throw new LlmError(
+          `qoder: 排队位置 ${position} 已停滞 ${Math.round(stallLimitMs / 60_000)} 分钟，判定上游队列卡死`,
+          'SERVER',
+          { status: 503 },
+        )
+      }
     }
     const waitMs = qoderQueueDelayMs(queueInfo)
     // ⚠️ 拿不到服务端延迟时**不忙等**：用保守的短退避，避免瞬间烧掉机会

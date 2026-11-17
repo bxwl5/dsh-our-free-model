@@ -93,6 +93,7 @@ const suites = [
   ['standalone', 'standalone-test.mjs', []],
   ['desktop', 'desktop-test.mjs', []],
   ['standalone-page-lifecycle', 'standalone-page-lifecycle-test.mjs', []],
+  ['upstream-parity', 'upstream-parity-test.mjs', []],
   ['standalone-combo', 'standalone-combo-test.mjs', []],
   ['standalone-management', 'standalone-management-test.mjs', []],
   ['standalone-lan', 'standalone-lan-test.mjs', []],

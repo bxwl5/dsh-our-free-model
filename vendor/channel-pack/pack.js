@@ -41208,6 +41208,12 @@ function resolveQueueTimeoutMs() {
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 30 * 6e4;
 }
+function resolveQueueStallMs() {
+  const raw = process.env.DSH_QODER_QUEUE_STALL_MS;
+  if (raw === void 0 || raw.length === 0) return 5 * 6e4;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 5 * 6e4;
+}
 function isAborted(signal) {
   return signal?.aborted === true;
 }
@@ -41746,6 +41752,7 @@ var QoderAdapter = class extends LlmAdapter3 {
     };
     const queueDeadline = Date.now() + resolveQueueTimeoutMs();
     let queueAttempts = 0;
+    const queueStall = { position: void 0, since: Date.now() };
     const QODER_MAX_ATTEMPTS = 20;
     let totalAttempts = 0;
     let authRefreshed = false;
@@ -41768,7 +41775,7 @@ var QoderAdapter = class extends LlmAdapter3 {
         const errorText = await response.text().catch(() => "");
         const queueInfo = parseQoderQueueError(errorText);
         if (queueInfo !== void 0) {
-          await this.waitForQueue(queueInfo, ++queueAttempts, queueDeadline, options);
+          await this.waitForQueue(queueInfo, ++queueAttempts, queueDeadline, options, queueStall);
           continue;
         }
         if (isBillingBusinessCode(response.status) || looksLikeBillingError(errorText)) {
@@ -41823,7 +41830,8 @@ var QoderAdapter = class extends LlmAdapter3 {
               queueInfoOf(error),
               ++queueAttempts,
               queueDeadline,
-              options
+              options,
+              queueStall
             );
             queued = true;
             break;
@@ -41885,7 +41893,7 @@ var QoderAdapter = class extends LlmAdapter3 {
    *
    * 两处形态必须走同一套判据，否则会再次出现「只修了一条路径」的缺陷。
    */
-  async waitForQueue(queueInfo, attempts, deadline, options) {
+  async waitForQueue(queueInfo, attempts, deadline, options, stall) {
     if (Date.now() >= deadline) {
       throw new LlmError6("qoder: \u6392\u961F\u7B49\u5F85\u8D85\u65F6", "QUEUE");
     }
@@ -41897,6 +41905,20 @@ var QoderAdapter = class extends LlmAdapter3 {
     }
     if (options.signal?.aborted === true) {
       throw new LlmError6("qoder: \u6392\u961F\u7B49\u5F85\u671F\u95F4\u8BF7\u6C42\u5DF2\u53D6\u6D88", "QUEUE");
+    }
+    const stallLimitMs = resolveQueueStallMs();
+    const position = queueInfo?.queueCount;
+    if (position !== void 0 && stallLimitMs > 0) {
+      if (stall.position !== position) {
+        stall.position = position;
+        stall.since = Date.now();
+      } else if (Date.now() - stall.since >= stallLimitMs) {
+        throw new LlmError6(
+          `qoder: \u6392\u961F\u4F4D\u7F6E ${position} \u5DF2\u505C\u6EDE ${Math.round(stallLimitMs / 6e4)} \u5206\u949F\uFF0C\u5224\u5B9A\u4E0A\u6E38\u961F\u5217\u5361\u6B7B`,
+          "SERVER",
+          { status: 503 }
+        );
+      }
     }
     const waitMs = qoderQueueDelayMs(queueInfo);
     await this.sleep(waitMs ?? 1e3, options.signal);
@@ -42880,6 +42902,9 @@ function classifyTraeError(status, body) {
     }
     return "session-dead";
   }
+  if (status === 424 || body.includes("4245") || body.includes('"code":4245')) {
+    return "seat-unavailable";
+  }
   if (status === 429) return "soft-rate";
   if (status === 404) return "not-found";
   if (status >= 500) return "server";
@@ -42894,6 +42919,7 @@ function recordsTraeRateLimit(kind) {
 }
 function classifyTraeStreamCode(code) {
   if (code === 4008) return "quota-exceeded";
+  if (code === 4245) return "seat-unavailable";
   if (code === 4011) return "soft-rate";
   if (code === 1005) return "hard-plan";
   return "none";
@@ -57185,6 +57211,51 @@ function fallbackToRemote3(model) {
 function positiveMaxTokens3(value) {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : void 0;
 }
+function resolveMaxConcurrency() {
+  const raw = process.env.DSH_ZCODE_MAX_CONCURRENCY;
+  if (raw === void 0 || raw.length === 0) return 6;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 6;
+}
+var ZCODE_MAX_CONCURRENCY = resolveMaxConcurrency();
+var zcodeActiveRequests = 0;
+var zcodeSlotWaiters = [];
+async function acquireZcodeSlot(signal) {
+  if (ZCODE_MAX_CONCURRENCY === 0) return;
+  if (zcodeActiveRequests < ZCODE_MAX_CONCURRENCY) {
+    zcodeActiveRequests++;
+    return;
+  }
+  await new Promise((resolve2, reject) => {
+    let settled = false;
+    const grant = () => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      zcodeActiveRequests++;
+      resolve2();
+    };
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      const at = zcodeSlotWaiters.indexOf(grant);
+      if (at >= 0) zcodeSlotWaiters.splice(at, 1);
+      reject(Object.assign(new Error("zcode: \u7B49\u5F85\u5E76\u53D1\u540D\u989D\u671F\u95F4\u8BF7\u6C42\u5DF2\u53D6\u6D88"), { name: "AbortError" }));
+    };
+    if (signal?.aborted === true) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+    zcodeSlotWaiters.push(grant);
+  });
+}
+function releaseZcodeSlot() {
+  if (ZCODE_MAX_CONCURRENCY === 0) return;
+  zcodeActiveRequests = Math.max(0, zcodeActiveRequests - 1);
+  const next = zcodeSlotWaiters.shift();
+  if (next !== void 0) next();
+}
 var ZCODE_STREAM_IDLE_RETRY_STEP_MS = 3e4;
 function resolveStreamIdleTimeoutMs(product, retryNumber = 0) {
   const raw = Number(process.env.DSH_ZCODE_SSE_IDLE_TIMEOUT_MS);
@@ -57580,11 +57651,13 @@ var ZcodeAdapter = class extends LlmAdapter11 {
     timer.unref?.();
     const onAbort = () => controller.abort();
     options.signal?.addEventListener("abort", onAbort, { once: true });
+    await acquireZcodeSlot(controller.signal);
     try {
       yield* this.streamScoped(options, controller, timeoutMs);
     } finally {
       clearTimeout(timer);
       options.signal?.removeEventListener("abort", onAbort);
+      releaseZcodeSlot();
     }
   }
   /**

@@ -31,6 +31,20 @@ export type TraeErrorKind =
   | 'session-dead'
   /** 配额超限（4008：ide_credits 耗尽）→ 等每日重置或签到。 */
   | 'quota-exceeded'
+  /**
+   * 企业席位不可用（`4245`，2026-11-17 对齐 magpie trae 0.2.40）。
+   *
+   * ## 与其它类别不同的地方
+   * 这不是「账号坏了」也不是「额度用完了」——账号本身是好的，只是当前
+   * **没有可用的企业席位**（席位池空了，或者这一发被分到了没席位的池）。
+   * magpie 的做法是「标记席位、交给网关」：换号可以（另一个账号可能有席位），
+   * 但**不该给账号记长冷却**，否则一个只是暂时没席位的账号会被拉黑十几小时。
+   *
+   * ⚠️ 此前我们这个码完全没处理 —— 会落到末尾的 `client`（4xx），于是
+   * 既不做区别对待、也不在任何日志里露出「席位」二字，排查时只能看到
+   * 一句泛泛的客户端错误。
+   */
+  | 'seat-unavailable'
   /** 404 → 短冷却且不累计 errCount。 */
   | 'not-found'
   /** 5xx 上游故障。 */
@@ -110,6 +124,17 @@ export function classifyTraeError(status: number, body: string): TraeErrorKind {
     return 'session-dead'
   }
 
+  /**
+   * 4.5 企业席位不可用（4245）
+   *
+   * ⚠️ **必须排在下面的 `>= 400 → client` 之前**：否则这个码会被吞进
+   * `client` 类别，上层既看不到「席位」这个语义，也没法对它做区别对待。
+   * 与 4008 / 4011 同理：更具体的分类必须优先命中。
+   */
+  if (status === 424 || body.includes('4245') || body.includes('"code":4245')) {
+    return 'seat-unavailable'
+  }
+
   // 5. 429 软限流
   if (status === 429) return 'soft-rate'
 
@@ -144,6 +169,10 @@ export function shouldRotateTraeAccount(kind: TraeErrorKind): boolean {
  * - `quota-exceeded`：配额超限（长冷却）
  *
  * `session-dead` 与 `server` / `client` 不记限流标记——它们不是限流。
+ *
+ * ⚠️ `seat-unavailable` **也不记**（2026-11-17）：账号本身没坏，只是一时
+ * 没有企业席位。给它记冷却会让一个好账号被拉黑到冷却结束，而席位可能
+ * 几十秒后就空出来了。换号由 `shouldRotateTraeAccount` 负责，冷却不参与。
  */
 export function recordsTraeRateLimit(kind: TraeErrorKind): boolean {
   return kind === 'hard-plan' || kind === 'soft-rate' || kind === 'not-found' || kind === 'quota-exceeded'
@@ -166,6 +195,7 @@ export function recordsTraeRateLimit(kind: TraeErrorKind): boolean {
 export function classifyTraeStreamCode(code: number): TraeErrorKind {
   // 与 QUOTA_EXCEEDED_MARKERS / 4011 判据保持同一批码值。
   if (code === 4008) return 'quota-exceeded'
+  if (code === 4245) return 'seat-unavailable'
   if (code === 4011) return 'soft-rate'
   if (code === 1005) return 'hard-plan'
   return 'none'
