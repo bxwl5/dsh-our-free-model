@@ -8,23 +8,23 @@
   --us-surface: #ffffff;
   --us-surface-raised: #f7f3eb;
   --us-surface-sunken: #f5f1e8;
-  --us-line: #e5e7eb;
+  --us-line: #e1e5ee;
   --us-line-soft: #ece6db;
   --us-line-strong: #d6dae1;
-  --us-ink: #14161a;
-  --us-ink-secondary: #4b5563;
-  --us-ink-tertiary: #6b7280;
+  --us-ink: #0f1115;
+  --us-ink-secondary: #61666b;
+  --us-ink-tertiary: #61666b;
   --us-ink-muted: #7c8593;
-  --us-accent: var(--dsw-alias-accent-primary, #5f5fff);
-  --us-accent-soft: var(--accent-soft, #f0f2ff);
-  --us-accent-border: var(--accent-line, #bfccff);
+  --us-accent: var(--dsw-alias-accent-primary, #4176e6);
+  --us-accent-soft: var(--accent-soft, #edf3fe);
+  --us-accent-border: var(--accent-line, #d3e2ff);
   --us-accent-strong: #8a4b06;
   --us-success: #177552;
   --us-success-soft: #eff7f2;
   --us-success-border: #cfe6da;
   --us-warning: #8a6215;
-  --us-warning-soft: #f7f8fa;
-  --us-warning-border: #e0e4ea;
+  --us-warning-soft: #fafbfc;
+  --us-warning-border: #e1e5ee;
   --us-error: #9c3343;
   --us-error-soft: #fdf5f5;
   --us-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05), 0 0 1px rgba(15, 23, 42, 0.05);
@@ -82,10 +82,10 @@
 }
 
 /* 昼主题：纸面上的彩色印章 */
-:root .ov-metric:nth-child(1) .ov-metric-icon { background: var(--accent-soft, #f0f2ff); color: var(--dsw-alias-accent-primary, #5f5fff); }
+:root .ov-metric:nth-child(1) .ov-metric-icon { background: var(--accent-soft, #edf3fe); color: var(--dsw-alias-accent-primary, #4176e6); }
 :root .ov-metric:nth-child(2) .ov-metric-icon { background: #eff7f2; color: #177552; }
-:root .ov-metric:nth-child(3) .ov-metric-icon { background: #f7f8fa; color: #8a6215; }
-:root .ov-metric:nth-child(4) .ov-metric-icon { background: #f7f0f5; color: #875a7d; }
+:root .ov-metric:nth-child(3) .ov-metric-icon { background: #fafbfc; color: #8a6215; }
+:root .ov-metric:nth-child(4) .ov-metric-icon { background: #f6f4fa; color: #875a7d; }
 :root .ov-metric:nth-child(5) .ov-metric-icon { background: #fdf5f5; color: #9c3343; }
 :root .ov-metric:nth-child(6) .ov-metric-icon { background: #eaf5f6; color: #0f7285; }
 
@@ -128,7 +128,7 @@
 }
 .ov-chart .dashboard-chart-column:hover .dashboard-chart-bar {
   transform: scaleY(1.02);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--dsw-alias-accent-primary, #5f5fff) 16%, transparent);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--dsw-alias-accent-primary, #4176e6) 16%, transparent);
 }
 [data-theme="dark"] .ov-chart .dashboard-chart-column:hover .dashboard-chart-bar {
   box-shadow: 0 0 12px color-mix(in srgb, var(--cp-cyan, #00d0c0) 24%, transparent);
@@ -146,7 +146,7 @@
   width: 40px; height: 40px; display: grid; place-items: center;
   border-radius: 10px; margin-bottom: 12px;
 }
-:root .ov-quick-icon { background: var(--accent-soft, #f0f2ff); color: var(--dsw-alias-accent-primary, #5f5fff); }
+:root .ov-quick-icon { background: var(--accent-soft, #edf3fe); color: var(--dsw-alias-accent-primary, #4176e6); }
 [data-theme="dark"] .ov-quick-icon { background: var(--cp-cyan-soft, rgba(0, 208, 192, 0.12)); color: var(--cp-cyan, #00d0c0); box-shadow: 0 0 10px color-mix(in srgb, var(--cp-cyan, #00d0c0) 10%, transparent); }
 
 .ov-endpoint {
@@ -269,7 +269,7 @@
 .usage-day:hover .usage-day-bar, .usage-day:focus .usage-day-bar {
   background: var(--us-accent-strong);
   transform: scaleY(1.02);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--dsw-alias-accent-primary, #5f5fff) 16%, transparent);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--dsw-alias-accent-primary, #4176e6) 16%, transparent);
 }
 [data-theme="dark"] .usage-day:hover .usage-day-bar {
   box-shadow: 0 0 12px color-mix(in srgb, var(--cp-cyan, #00d0c0) 24%, transparent);
@@ -418,10 +418,10 @@
     0 3px 10px -3px rgba(32, 35, 41, 0.08),
     0 0 0 1px inset color-mix(in srgb, var(--ov-accent) 12%, transparent);
 }
-.ov-metric:nth-child(1) { --ov-accent: var(--dsw-alias-accent-primary, #5f5fff); --ov-accent-soft: var(--accent-soft, #f0f2ff); }
+.ov-metric:nth-child(1) { --ov-accent: var(--dsw-alias-accent-primary, #4176e6); --ov-accent-soft: var(--accent-soft, #edf3fe); }
 .ov-metric:nth-child(2) { --ov-accent: #177552; --ov-accent-soft: #eff7f2; }
-.ov-metric:nth-child(3) { --ov-accent: #8a6215; --ov-accent-soft: #f7f8fa; }
-.ov-metric:nth-child(4) { --ov-accent: #875a7d; --ov-accent-soft: #f7f0f5; }
+.ov-metric:nth-child(3) { --ov-accent: #8a6215; --ov-accent-soft: #fafbfc; }
+.ov-metric:nth-child(4) { --ov-accent: #875a7d; --ov-accent-soft: #f6f4fa; }
 .ov-metric:nth-child(5) { --ov-accent: #9c3343; --ov-accent-soft: #fdf5f5; }
 .ov-metric:nth-child(6) { --ov-accent: #0f7285; --ov-accent-soft: #eaf5f6; }
 
@@ -504,10 +504,10 @@
 .usage-day:focus .usage-day-bar,
 .usage-day:focus-visible .usage-day-bar {
   transform: scaleY(1.025);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34), 0 6px 16px -6px color-mix(in srgb, var(--dsw-alias-accent-primary, #5f5fff) 24%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34), 0 6px 16px -6px color-mix(in srgb, var(--dsw-alias-accent-primary, #4176e6) 24%, transparent);
 }
 .usage-day:hover .usage-day-bar:not(.zero) {
-  background: linear-gradient(180deg, #ffd89a 0%, #e9a83f 42%, #5f5fff 100%);
+  background: linear-gradient(180deg, #ffd89a 0%, #e9a83f 42%, #4176e6 100%);
 }
 .usage-day span {
   font-variant-numeric: tabular-nums;
@@ -747,7 +747,7 @@
    ========================================================================== */
 
 /* ---------- 1. 浏览器表面：选区 / 插入符 / 滚动条 / 焦点 ---------- */
-.usage-browser ::selection { background: color-mix(in srgb, var(--dsw-alias-accent-primary, #5f5fff) 18%, transparent); color: var(--us-ink); }
+.usage-browser ::selection { background: color-mix(in srgb, var(--dsw-alias-accent-primary, #4176e6) 18%, transparent); color: var(--us-ink); }
 :root[data-theme="dark"] .usage-browser ::selection { background: color-mix(in srgb, var(--cp-cyan, #00d0c0) 28%, transparent); }
 .usage-browser .usage-model-search input,
 .usage-browser .usage-model-filters select { caret-color: var(--us-accent); }
@@ -783,8 +783,8 @@
 }
 :root:not([data-theme="dark"]) .usage-day-bar.zero { background: var(--us-line-strong); box-shadow: none; }
 :root:not([data-theme="dark"]) .usage-day:hover .usage-day-bar:not(.zero) {
-  background: linear-gradient(180deg, #ffd89a 0%, #e9a83f 42%, #5f5fff 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34), 0 6px 16px -6px color-mix(in srgb, var(--dsw-alias-accent-primary, #5f5fff) 24%, transparent);
+  background: linear-gradient(180deg, #ffd89a 0%, #e9a83f 42%, #4176e6 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34), 0 6px 16px -6px color-mix(in srgb, var(--dsw-alias-accent-primary, #4176e6) 24%, transparent);
 }
 :root:not([data-theme="dark"]) .ov-chart .dashboard-chart-bar {
   background: linear-gradient(180deg, #f0bb63 0%, #d98b2b 46%, #9c5a10 100%);
@@ -1397,7 +1397,7 @@
 /* --- 1. 总量：黄铜刻度质感（刻线尺 + 纸面压印） --- */
 :root:not([data-theme="dark"]) .usage-total,
 :root:not([data-theme="dark"]) .usage-browser .usage-window-total strong {
-  color: var(--dsw-alias-accent-primary, #4a4ae8);
+  color: var(--dsw-alias-accent-primary, #3459c7);
   font-variant-numeric: tabular-nums;
   font-weight: 650;
   letter-spacing: 0.005em;
@@ -1413,7 +1413,7 @@
   right: 0;
   bottom: -7px;
   height: 5px;
-  background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--dsw-alias-accent-primary, #4a4ae8) 55%, transparent) 0 1px, transparent 1px 6px);
+  background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--dsw-alias-accent-primary, #3459c7) 55%, transparent) 0 1px, transparent 1px 6px);
   opacity: 0.55;
   pointer-events: none;
 }
@@ -1423,16 +1423,16 @@
 }
 
 /* --- 2. 指标卡：暖棕定向影 + 琥珀暖印章家族 ---- */
-:root:not([data-theme="dark"]) .ov-metric:nth-child(1) { --ov-accent: var(--dsw-alias-accent-primary, #5f5fff); --ov-accent-soft: var(--accent-soft, #f0f2ff); }
-:root:not([data-theme="dark"]) .ov-metric:nth-child(2) { --ov-accent: #8a6215; --ov-accent-soft: #f7f8fa; }
-:root:not([data-theme="dark"]) .ov-metric:nth-child(3) { --ov-accent: var(--dsw-alias-accent-primary, #5f5fff); --ov-accent-soft: var(--accent-soft, #f0f2ff); }
-:root:not([data-theme="dark"]) .ov-metric:nth-child(4) { --ov-accent: #9a5b12; --ov-accent-soft: #f9f1e6; }
+:root:not([data-theme="dark"]) .ov-metric:nth-child(1) { --ov-accent: var(--dsw-alias-accent-primary, #4176e6); --ov-accent-soft: var(--accent-soft, #edf3fe); }
+:root:not([data-theme="dark"]) .ov-metric:nth-child(2) { --ov-accent: #8a6215; --ov-accent-soft: #fafbfc; }
+:root:not([data-theme="dark"]) .ov-metric:nth-child(3) { --ov-accent: var(--dsw-alias-accent-primary, #4176e6); --ov-accent-soft: var(--accent-soft, #edf3fe); }
+:root:not([data-theme="dark"]) .ov-metric:nth-child(4) { --ov-accent: #9a5b12; --ov-accent-soft: #fdf9f0; }
 :root:not([data-theme="dark"]) .ov-metric:nth-child(5) { --ov-accent: #9c3343; --ov-accent-soft: #fdf5f5; }
 :root:not([data-theme="dark"]) .ov-metric:nth-child(6) { --ov-accent: #6f6a1e; --ov-accent-soft: #f6f4e5; }
-:root:not([data-theme="dark"]) .ov-metric:nth-child(1) .ov-metric-icon { background: var(--accent-soft, #f0f2ff); color: var(--dsw-alias-accent-primary, #5f5fff); }
-:root:not([data-theme="dark"]) .ov-metric:nth-child(2) .ov-metric-icon { background: #f7f8fa; color: #8a6215; }
-:root:not([data-theme="dark"]) .ov-metric:nth-child(3) .ov-metric-icon { background: var(--accent-soft, #f0f2ff); color: var(--dsw-alias-accent-primary, #5f5fff); }
-:root:not([data-theme="dark"]) .ov-metric:nth-child(4) .ov-metric-icon { background: #f9f1e6; color: #9a5b12; }
+:root:not([data-theme="dark"]) .ov-metric:nth-child(1) .ov-metric-icon { background: var(--accent-soft, #edf3fe); color: var(--dsw-alias-accent-primary, #4176e6); }
+:root:not([data-theme="dark"]) .ov-metric:nth-child(2) .ov-metric-icon { background: #fafbfc; color: #8a6215; }
+:root:not([data-theme="dark"]) .ov-metric:nth-child(3) .ov-metric-icon { background: var(--accent-soft, #edf3fe); color: var(--dsw-alias-accent-primary, #4176e6); }
+:root:not([data-theme="dark"]) .ov-metric:nth-child(4) .ov-metric-icon { background: #fdf9f0; color: #9a5b12; }
 :root:not([data-theme="dark"]) .ov-metric:nth-child(5) .ov-metric-icon { background: #fdf5f5; color: #9c3343; }
 :root:not([data-theme="dark"]) .ov-metric:nth-child(6) .ov-metric-icon { background: #f6f4e5; color: #6f6a1e; }
 :root:not([data-theme="dark"]) .usage-browser .ov-metric strong {
@@ -1441,7 +1441,7 @@
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 :root:not([data-theme="dark"]) .usage-browser .ov-metric:hover strong {
-  color: var(--ov-accent, var(--dsw-alias-accent-primary, #5f5fff));
+  color: var(--ov-accent, var(--dsw-alias-accent-primary, #4176e6));
 }
 :root:not([data-theme="dark"]) .usage-browser .ov-metric:hover {
   transform: translateY(-3px);
@@ -1464,7 +1464,7 @@
 :root:not([data-theme="dark"]) .usage-browser .usage-day-bar.zero,
 :root:not([data-theme="dark"]) .ov-chart .dashboard-chart-bar.zero {
   background-color: #e8e1d4;
-  background-image: linear-gradient(180deg, #efe8db, #e0e4ea);
+  background-image: linear-gradient(180deg, #efe8db, #e1e5ee);
   border-radius: 6px 6px 0 0;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.70), inset 0 0 0 1px rgba(var(--warm-shadow, 15, 23, 42), 0.05);
 }
@@ -1476,7 +1476,7 @@
   transform-origin: bottom;
   background-image:
     linear-gradient(180deg, rgba(255, 255, 255, 0.74) 0%, rgba(255, 255, 255, 0.20) 38%, rgba(255, 255, 255, 0) 62%),
-    linear-gradient(180deg, #ffd89a 0%, #e9a83f 42%, #5f5fff 100%);
+    linear-gradient(180deg, #ffd89a 0%, #e9a83f 42%, #4176e6 100%);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.82),
     0 7px 18px -8px rgba(var(--warm-shadow, 15, 23, 42), 0.40),
@@ -1486,30 +1486,30 @@
   background-image: repeating-linear-gradient(to top, rgba(15, 23, 42, 0.07) 0 1px, transparent 1px 25%);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-day span {
-  color: #8b93a1;
+  color: #81858c;
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-day:hover span,
 :root:not([data-theme="dark"]) .usage-browser .usage-day:focus span,
 :root:not([data-theme="dark"]) .usage-browser .usage-day:focus-visible span {
-  color: var(--dsw-alias-accent-primary, #4a4ae8);
+  color: var(--dsw-alias-accent-primary, #3459c7);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-trend-chart {
-  border-bottom-color: var(--accent-line, #bfccff);
+  border-bottom-color: var(--accent-line, #d3e2ff);
 }
 
 /* --- 4. 表格：纸张表头高光 + 琥珀数据刻度 --- */
 :root:not([data-theme="dark"]) .usage-browser .usage-model-table th {
-  color: var(--us-ink-secondary, #4b5563);
+  color: var(--us-ink-secondary, #61666b);
   background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0));
-  border-bottom-color: var(--accent-line, #bfccff);
+  border-bottom-color: var(--accent-line, #d3e2ff);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.80);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-model-table td:not(:first-child) {
   font-variant-numeric: tabular-nums;
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-model-table tbody tr:hover td {
-  background-color: var(--accent-soft, #f0f2ff);
-  background-image: linear-gradient(90deg, color-mix(in srgb, var(--dsw-alias-accent-primary, #5f5fff) 7%, transparent), transparent 50%);
+  background-color: var(--accent-soft, #edf3fe);
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--dsw-alias-accent-primary, #4176e6) 7%, transparent), transparent 50%);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-model-table tbody tr td:first-child::before {
   content: "";
@@ -1518,7 +1518,7 @@
   top: 0;
   bottom: 0;
   width: 2px;
-  background: linear-gradient(180deg, transparent, var(--dsw-alias-accent-primary, #5f5fff) 18%, var(--dsw-alias-accent-primary, #5f5fff) 82%, transparent);
+  background: linear-gradient(180deg, transparent, var(--dsw-alias-accent-primary, #4176e6) 18%, var(--dsw-alias-accent-primary, #4176e6) 82%, transparent);
   opacity: 0;
   transform: scaleY(0.4);
   transform-origin: center;
@@ -1535,34 +1535,34 @@
 :root:not([data-theme="dark"]) .usage-browser .usage-model-search input,
 :root:not([data-theme="dark"]) .usage-browser .usage-model-filters select {
   border-radius: 8px;
-  border-color: var(--accent-line, #bfccff);
+  border-color: var(--accent-line, #d3e2ff);
   background-color: var(--us-surface, #ffffff);
-  caret-color: var(--dsw-alias-accent-primary, #4a4ae8);
+  caret-color: var(--dsw-alias-accent-primary, #3459c7);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-model-search input:focus,
 :root:not([data-theme="dark"]) .usage-browser .usage-model-filters select:focus {
-  border-color: var(--dsw-alias-accent-primary, #5f5fff);
-  box-shadow: 0 0 0 3px var(--accent-glow, rgba(95, 95, 255, 0.13)), inset 0 0 0 1px var(--accent-line, #bfccff);
+  border-color: var(--dsw-alias-accent-primary, #4176e6);
+  box-shadow: 0 0 0 3px var(--accent-glow, rgba(65, 118, 230, 0.13)), inset 0 0 0 1px var(--accent-line, #d3e2ff);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-trend .channel-filters button[aria-pressed="true"] {
-  background: var(--accent-soft, #f0f2ff);
-  color: var(--dsw-alias-accent-primary, #4a4ae8);
-  border-color: var(--accent-line, #bfccff);
+  background: var(--accent-soft, #edf3fe);
+  color: var(--dsw-alias-accent-primary, #3459c7);
+  border-color: var(--accent-line, #d3e2ff);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.70), 1px 2px 0 rgba(var(--warm-shadow, 15, 23, 42), 0.06);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-empty > svg {
   border-radius: 999px;
-  border-color: var(--accent-line, #bfccff);
-  background: var(--accent-soft, #f0f2ff);
-  color: var(--dsw-alias-accent-primary, #5f5fff);
+  border-color: var(--accent-line, #d3e2ff);
+  background: var(--accent-soft, #edf3fe);
+  color: var(--dsw-alias-accent-primary, #4176e6);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-window-empty {
   border-radius: 8px;
-  border-color: var(--accent-line, #bfccff);
-  background: var(--accent-soft, #f0f2ff);
+  border-color: var(--accent-line, #d3e2ff);
+  background: var(--accent-soft, #edf3fe);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-pagination > span[data-testid="usage-model-count"] {
-  color: var(--dsw-alias-accent-primary, #4a4ae8);
+  color: var(--dsw-alias-accent-primary, #3459c7);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-pagination .ui-button {
   border-radius: 6px;
@@ -1570,9 +1570,9 @@
 
 /* --- 6. 反馈：琥珀墨洇开（us-ink-spread） --- */
 :root:not([data-theme="dark"]) .usage-browser .usage-feedback {
-  color: var(--dsw-alias-accent-primary, #4a4ae8);
-  background: var(--accent-soft, #f0f2ff);
-  border-color: var(--accent-line, #bfccff);
+  color: var(--dsw-alias-accent-primary, #3459c7);
+  background: var(--accent-soft, #edf3fe);
+  border-color: var(--accent-line, #d3e2ff);
   border-radius: 8px;
   box-shadow: 1px 3px 0 rgba(var(--warm-shadow, 15, 23, 42), 0.06);
 }
@@ -1586,24 +1586,24 @@
   height: 34px;
   margin: -17px 0 0 -17px;
   border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--dsw-alias-accent-primary, #5f5fff) 40%, transparent) 0%, transparent 68%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--dsw-alias-accent-primary, #4176e6) 40%, transparent) 0%, transparent 68%);
   opacity: 0;
   transform: scale(0.28);
   animation: us-ink-spread 520ms var(--us-ease-out, ease-out) both;
   pointer-events: none;
 }
 :root:not([data-theme="dark"]) .ov-copied {
-  box-shadow: 0 0 0 3px var(--accent-glow, rgba(95, 95, 255, 0.13));
+  box-shadow: 0 0 0 3px var(--accent-glow, rgba(65, 118, 230, 0.13));
 }
 
 /* --- 7. 页面特有容器：selection / caret / 滚动条 --- */
 :root:not([data-theme="dark"]) .usage-browser ::selection {
-  background: color-mix(in srgb, var(--dsw-alias-accent-primary, #5f5fff) 26%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-accent-primary, #4176e6) 26%, transparent);
   color: #3a2a12;
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-model-search input,
 :root:not([data-theme="dark"]) .usage-browser .usage-model-filters select {
-  caret-color: var(--dsw-alias-accent-primary, #4a4ae8);
+  caret-color: var(--dsw-alias-accent-primary, #3459c7);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-trend-scroll,
 :root:not([data-theme="dark"]) .usage-browser .usage-model-scroll {

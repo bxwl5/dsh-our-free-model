@@ -18,9 +18,9 @@
 .settings-field > span, .settings-field > label { min-width: 0; }
 .settings-field strong { display: block; font-size: 13px; font-weight: 550; }
 .settings-field small { display: block; font-size: 12px; line-height: 1.7; color: var(--muted); margin-top: 4px; }
-.settings-toggle { appearance: none; width: 40px; height: 23px; flex-shrink: 0; border: 1px solid var(--accent-line); border-radius: 999px; background: linear-gradient(180deg, #e9ebef, #dfe2e8); position: relative; padding: 0; cursor: pointer; box-shadow: inset 0 1px 3px rgba(var(--warm-shadow), 0.14); transition: background 250ms cubic-bezier(0.16, 1, 0.3, 1), border-color 250ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 250ms cubic-bezier(0.16, 1, 0.3, 1); }
+.settings-toggle { appearance: none; width: 40px; height: 23px; flex-shrink: 0; border: 1px solid var(--accent-line); border-radius: 999px; background: linear-gradient(180deg, #ebeef2, #dfe2e8); position: relative; padding: 0; cursor: pointer; box-shadow: inset 0 1px 3px rgba(var(--warm-shadow), 0.14); transition: background 250ms cubic-bezier(0.16, 1, 0.3, 1), border-color 250ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 250ms cubic-bezier(0.16, 1, 0.3, 1); }
 .settings-toggle:after { content: ""; width: 17px; height: 17px; position: absolute; top: 2px; left: 2px; border-radius: 5px; background: linear-gradient(180deg, #f0d8a4, #cf9a3f 60%, #b5761f); box-shadow: 0 1px 2px rgba(var(--warm-shadow), 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.72), inset 0 -1px 0 rgba(120, 74, 12, 0.28); transform-origin: left center; transition: transform 250ms cubic-bezier(0.34, 1.4, 0.64, 1); }
-.settings-toggle:hover { background: linear-gradient(180deg, #ece4d5, #e0e4ea); }
+.settings-toggle:hover { background: linear-gradient(180deg, #ece4d5, #e1e5ee); }
 .settings-toggle:checked { background: linear-gradient(180deg, #d9a24a, #b5761f); border-color: #9c6216; box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.32), 0 1px 0 rgba(255, 255, 255, 0.55); }
 .settings-toggle:checked:after { transform: translateX(17px); }
 .settings-toggle:active:after { transform: scaleX(1.12); }
@@ -360,13 +360,13 @@
 
 /* ---------- 0. 精修令牌：昼夜成对（本文件私有，不改写 app.css 令牌） ---------- */
 :root:not([data-theme="dark"]) {
-  --ofm-hair: #e9ebef;            /* 卡片内发丝分隔线 */
+  --ofm-hair: #ebeef2;            /* 卡片内发丝分隔线 */
   --ofm-sheen: rgba(255, 255, 255, 0.85);
   --ofm-hover-wash: rgba(15, 23, 42, 0.035);
   --ofm-field-bg: #ffffff;        /* 纸白输入底槽 */
   --ofm-field-line: var(--accent-line);
-  --ofm-field-line-hover: #bfccff;
-  --ofm-sunk: #f4f5f7;            /* 凹陷面：只读 / 禁用 */
+  --ofm-field-line-hover: #d3e2ff;
+  --ofm-sunk: #f1f3f5;            /* 凹陷面：只读 / 禁用 */
   --ofm-track-ring: rgba(var(--warm-shadow), 0.12);
   --ofm-code-thumb: rgba(217, 119, 6, 0.35);
   --ofm-danger-card-top: rgba(166, 58, 46, 0.30);
@@ -473,7 +473,7 @@ label.settings-field { cursor: pointer; }
 .cx-field:focus-within > svg { color: var(--dsw-alias-accent-primary); }
 .cx-field input { padding: 8px 0; line-height: 1.44; }
 .copy-field .cx-field input { background: transparent; border-radius: 0; }
-.cx-revealed { box-shadow: inset 0 0 0 1px rgba(95, 95, 255, 0.06); }
+.cx-revealed { box-shadow: inset 0 0 0 1px rgba(65, 118, 230, 0.06); }
 [data-theme="dark"] .cx-field:focus-within > svg { color: var(--cp-cyan); }
 [data-theme="dark"] .cx-revealed { box-shadow: inset 0 0 0 1px var(--cp-cyan-line); }
 
@@ -596,7 +596,7 @@ label.settings-field { cursor: pointer; }
 
 /* ---------- 0. 彩蛋令牌（本层私有，昼夜成对） ---------- */
 :root:not([data-theme="dark"]) {
-  --set-ring-blue: rgba(95, 95, 255, 0.14);
+  --set-ring-blue: rgba(65, 118, 230, 0.14);
   --set-ring-green: rgba(30, 138, 99, 0.20);
   --set-code-glow: rgba(91, 141, 239, 0.14);
   --set-code-line: rgba(91, 141, 239, 0.38);
@@ -736,7 +736,7 @@ label.settings-field { cursor: pointer; }
 :root:not([data-theme="dark"]) {
   --set-ring-blue: var(--accent-glow);
   --set-code-glow: rgba(217, 119, 6, 0.14);
-  --set-code-line: rgba(95, 95, 255, 0.30);
+  --set-code-line: rgba(65, 118, 230, 0.30);
 }
 [data-theme="dark"] {
   --set-ring-blue: var(--cp-glow);
@@ -781,7 +781,7 @@ label.settings-field { cursor: pointer; }
 :root:not([data-theme="dark"]) .settings-browser .settings-number input {
   background: #ffffff; border-color: var(--accent-line); color: var(--ink); caret-color: var(--dsw-alias-accent-primary);
 }
-:root:not([data-theme="dark"]) .settings-browser .settings-number input:hover:not(:disabled) { border-color: #bfccff; }
+:root:not([data-theme="dark"]) .settings-browser .settings-number input:hover:not(:disabled) { border-color: #d3e2ff; }
 :root:not([data-theme="dark"]) .settings-browser .settings-number input:focus,
 :root:not([data-theme="dark"]) .settings-browser .settings-number input:focus-visible {
   outline: none; border-color: var(--dsw-alias-accent-primary); background: #ffffff;
@@ -797,7 +797,7 @@ label.settings-field { cursor: pointer; }
   border-color: var(--cp-red); box-shadow: 0 0 0 3px var(--cp-red-soft);
 }
 :root:not([data-theme="dark"]) .connection-browser .cx-field { background: #ffffff; border-color: var(--accent-line); }
-:root:not([data-theme="dark"]) .connection-browser .cx-field:hover { border-color: #bfccff; }
+:root:not([data-theme="dark"]) .connection-browser .cx-field:hover { border-color: #d3e2ff; }
 :root:not([data-theme="dark"]) .connection-browser .cx-field:focus-within {
   border-color: var(--dsw-alias-accent-primary); background: #ffffff; box-shadow: 0 0 0 3px var(--accent-glow);
 }
@@ -862,9 +862,9 @@ label.settings-field { cursor: pointer; }
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.30), 0 1px 2px rgba(var(--warm-shadow), 0.18);
 }
 :root:not([data-theme="dark"]) .settings-footer .settings-actions .ui-button-default[type="submit"]:hover:not(:disabled) {
-  background: linear-gradient(180deg, #8b8bff 0%, #c98d2e 100%);
+  background: linear-gradient(180deg, #7aaaff 0%, #c98d2e 100%);
   border-color: rgba(138, 85, 18, 0.78); color: #fffdf7;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34), 0 7px 18px -8px rgba(95, 95, 255, 0.34), 1px 3px 0 rgba(var(--warm-shadow), 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34), 0 7px 18px -8px rgba(65, 118, 230, 0.34), 1px 3px 0 rgba(var(--warm-shadow), 0.12);
 }
 :root:not([data-theme="dark"]) .settings-footer .settings-actions .ui-button-default[type="submit"]:active:not(:disabled) {
   background: linear-gradient(180deg, #b5761f 0%, #a96c17 100%);
@@ -916,7 +916,7 @@ label.settings-field { cursor: pointer; }
 /* ---------- 6. 昼开关 hover：把彩蛋层的蓝环换成琥珀环（彩蛋层本体未动） ---------- */
 @media (hover: hover) {
   :root:not([data-theme="dark"]) .settings-browser .settings-fieldset .settings-toggle:hover:not(:disabled):not(:checked) {
-    background: linear-gradient(180deg, #ece4d5, #e0e4ea);
+    background: linear-gradient(180deg, #ece4d5, #e1e5ee);
     box-shadow: inset 0 1px 3px rgba(var(--warm-shadow), 0.14), 0 0 0 3px var(--accent-glow);
   }
   :root:not([data-theme="dark"]) .settings-browser .settings-fieldset .settings-toggle:checked:hover:not(:disabled) {
