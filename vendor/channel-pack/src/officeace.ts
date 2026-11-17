@@ -754,6 +754,28 @@ export interface OfficeAceTokenRate {
 const TOKEN_RATES_TTL_MS = 20 * 60 * 1000
 
 /**
+ * 倍率首次读取的重试（2026-11-17 对齐 magpie codearts/officeace 的「首次 rates 重试」）。
+ *
+ * ## 为什么需要
+ * `fetchTokenRates` 原来**只尝试一次**：网络抖动、网关刚签发令牌还没就绪、
+ * 上游偶发 5xx —— 任何一次瞬时失败都会让本次目录加载**完全没有倍率**，
+ * 而目录不是每秒钟都重建的，用户可能在相当长一段时间里看到
+ * 「glm-5.3」而不是「glm-5.3 · x0.79」，还查不出原因。
+ *
+ * 倍率只是展示信息，但**「首屏没有倍率」和「这个模型没有倍率」看起来一样**，
+ * 所以一次瞬时失败会被误读成后者。上游这种失败通常是秒级的，重试一两次就够。
+ *
+ * ⚠️ 只对**瞬时**失败重试：网络异常 / 5xx / 429。
+ *   `401` `403` `404` 是确定性结论（凭据无效、端点不存在），重试没有意义，
+ *   只会白打上游。返回 200 但解析出空表也不重试 —— 那是上游的真实答案。
+ */
+const TOKEN_RATES_ATTEMPTS = 3
+/** 重试退避（线性）：第 1 次失败后等 300ms，第 2 次后等 600ms。 */
+const TOKEN_RATES_RETRY_BASE_MS = 300
+/** 该状态码值得重试（瞬时故障），其余 4xx 是确定性结论。 */
+const retryableRateStatus = (status: number): boolean => status === 429 || status >= 500
+
+/**
  * 倍率缓存 —— **按凭据隔离**（2026-11-04 审查 P1-6）。
  *
  * ## 为什么必须带凭据维度
@@ -800,12 +822,33 @@ export async function fetchTokenRates(
     return previous
   }
 
-  let response: Response
-  try {
-    response = await v11SignedGet(fetcher, `${resolveSubscriptionGateway(credential)}/v1/model-token-rates`, credential, '/v1/model-token-rates', options)
-  } catch {
-    return keepStale()
+  let response: Response | undefined
+  const url = `${resolveSubscriptionGateway(credential)}/v1/model-token-rates`
+  for (let attempt = 0; attempt < TOKEN_RATES_ATTEMPTS; attempt++) {
+    try {
+      response = await v11SignedGet(fetcher, url, credential, '/v1/model-token-rates', options)
+    } catch {
+      // 网络层异常（DNS / 连不上 / 超时）：典型瞬时故障，值得重试。
+      response = undefined
+    }
+    if (response !== undefined && (response.ok || !retryableRateStatus(response.status))) break
+    // 还有下一次机会：退避后重试。最后一次失败直接落到 keepStale。
+    if (attempt + 1 < TOKEN_RATES_ATTEMPTS) {
+      /**
+       * ⚠️ **不要 `unref()` 这个计时器**。
+       *
+       * 退避期间若事件循环里没有别的事可做（例如目录加载是唯一的待办），
+       * unref 过的计时器不会阻止进程退出 —— 表现为「重试那一步永远不返回」，
+       * 单测里就是 `Detected unsettled top-level await`（实测踩到）。
+       * 300/600ms 的计时器本身没有任何持有资源的风险，让它正常挂住即可。
+       */
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, TOKEN_RATES_RETRY_BASE_MS * (attempt + 1))
+      })
+      if (options.signal?.aborted === true) break
+    }
   }
+  if (response === undefined) return keepStale()
   if (!response.ok) return keepStale()
 
   let body: unknown

@@ -28962,11 +28962,22 @@ async function fetchTokenRates(fetcher, credential, options = {}) {
     return previous;
   };
   let response;
-  try {
-    response = await v11SignedGet(fetcher, `${resolveSubscriptionGateway(credential)}/v1/model-token-rates`, credential, "/v1/model-token-rates", options);
-  } catch {
-    return keepStale();
+  const url = `${resolveSubscriptionGateway(credential)}/v1/model-token-rates`;
+  for (let attempt = 0; attempt < TOKEN_RATES_ATTEMPTS; attempt++) {
+    try {
+      response = await v11SignedGet(fetcher, url, credential, "/v1/model-token-rates", options);
+    } catch {
+      response = void 0;
+    }
+    if (response !== void 0 && (response.ok || !retryableRateStatus(response.status))) break;
+    if (attempt + 1 < TOKEN_RATES_ATTEMPTS) {
+      await new Promise((resolve2) => {
+        setTimeout(resolve2, TOKEN_RATES_RETRY_BASE_MS * (attempt + 1));
+      });
+      if (options.signal?.aborted === true) break;
+    }
   }
+  if (response === void 0) return keepStale();
   if (!response.ok) return keepStale();
   let body;
   try {
@@ -29170,13 +29181,16 @@ async function validatePermission(fetcher, product, credential, signal) {
     ...appSecret === void 0 ? {} : { appSecret }
   };
 }
-var TOKEN_RATES_TTL_MS, tokenRatesCache;
+var TOKEN_RATES_TTL_MS, TOKEN_RATES_ATTEMPTS, TOKEN_RATES_RETRY_BASE_MS, retryableRateStatus, tokenRatesCache;
 var init_officeace = __esm({
   "vendor/channel-pack/src/officeace.ts"() {
     "use strict";
     init_officeace_product();
     init_officeace_dpop();
     TOKEN_RATES_TTL_MS = 20 * 60 * 1e3;
+    TOKEN_RATES_ATTEMPTS = 3;
+    TOKEN_RATES_RETRY_BASE_MS = 300;
+    retryableRateStatus = (status) => status === 429 || status >= 500;
     tokenRatesCache = /* @__PURE__ */ new Map();
   }
 });
