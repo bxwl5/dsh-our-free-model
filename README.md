@@ -29,14 +29,12 @@
 ```
 https://github.com/bxwl5/dsh-our-free-model
 ```
-> 打开DSH设置的添加插件，输入仓库地址
+
+> 打开 DSH 设置的「添加插件」，输入上面的仓库地址
 
 可以直接这样对 AI 说：
 
 > 帮我安装这个插件：https://github.com/bxwl5/dsh-our-free-model
-
-手工安装：把仓库 tarball 放进 profile 的 `vendor/`，依赖写
-`"dsh-our-free-model": "file:./vendor/dsh-our-free-model-2.5.7-priv.2.tgz"`，再追加到 `dsh.profile.bundles`。
 
 > npm 上的同名包不是本仓库发布的，请勿从 npm 安装。
 
@@ -47,7 +45,9 @@ https://github.com/bxwl5/dsh-our-free-model
 ## Docker（独立服务）
 
 也可以**完全不用 DSH**，直接把独立版跑在容器里。镜像由 GitHub Actions 构建并推送到
-GHCR，多架构 `linux/amd64` + `linux/arm64`：
+GHCR，多架构 `linux/amd64` + `linux/arm64`。
+
+### 只给本机用
 
 ```bash
 docker run -d --name ofm \
@@ -57,8 +57,51 @@ docker run -d --name ofm \
   --restart unless-stopped \
   ghcr.io/bxwl5/dsh-our-free-model:latest
 
-docker logs ofm | head -5     # 拿一次性的面板登录链接
+docker logs ofm | head -5     # 一次性登录链接（10 分钟内有效）
 ```
+
+主服务只绑 `127.0.0.1:18900`，容器外访问不到 —— 要在本机浏览器打开就得用上面那条
+链接，或者建一条 SSH 隧道。
+
+### 给局域网用（推荐）
+
+容器部署的价值就是让手机 / 平板 / 另一台电脑也能用，所以要显式开中继：
+
+```bash
+docker run -d --name ofm \
+  --network host \
+  -v ofm-data:/data \
+  -e TZ=Asia/Shanghai \
+  -e OFM_PASSWORD=换成你自己的密码 \
+  --restart unless-stopped \
+  ghcr.io/bxwl5/dsh-our-free-model:latest \
+  --lan --lan-port 9981 --lan-panel
+```
+
+打开 `http://<宿主机IP>:9981/` 即可（端口按你写的来）。这套组合给出两组凭据：
+
+| 凭据 | 用途 |
+|---|---|
+| **面板密码**（`OFM_PASSWORD`） | 登录面板改配置。**不设就完全免认证**，谁都能进 |
+| **LAN Key** | 局域网客户端调 `/v1` 用，面板「API 接入」页可直接复制 |
+
+⚠️ 两套凭据**互不越权**：LAN Key 能调模型但进不了面板；面板密码能改配置但调不了模型。
+本机 API Key（`forwardKey`）也不能登录面板 —— 管理面与推理面是分开的。
+
+⚠️ 设了密码后，**连 `127.0.0.1` 也要输密码**（两端一致）；点「退出」回到密码框。
+不设密码时点「退出」，认证页只有一个「登录」按钮、没有密码框，点一下就回控制台。
+
+### 面板里的路由链
+
+`--lan-panel` 打开后，左侧「**路由**」页可以把多个模型串成降级链
+（顺序降级 / 轮询），对外暴露成一个虚拟模型 ID。调用方只看到链名，
+链内部前一个失败就换下一个 —— 用来兜住额度墙、地区拒绝、凭据过期这类
+「这一路死了但别的路还活着」的情况。
+
+### 更多
+
+端口表、OAuth 回调、数据迁移、已知限制这些细节见
+[docs/docker.md](docs/docker.md)。
 
 ## 渠道
 
