@@ -62,26 +62,33 @@ LAN 面板（直接访问，无需令牌）：
   http://192.168.2.6:18901/
 ```
 
-### 面板中继的两种鉴权模式
+### 面板密码：两种形态
 
-`--lan-panel` 开了之后，面板能不能直接进取决于环境变量 `OFM_PANEL_TOKEN`：
+面板的登录方式由环境变量 **`OFM_PASSWORD`** 决定（2026-11-17 起取代原来的
+`OFM_PANEL_TOKEN` —— 以前用「API Key / 固定令牌」登录，现在统一成密码）：
 
-| | **不设** `OFM_PANEL_TOKEN` | **设了** `OFM_PANEL_TOKEN` |
+| | **不设** `OFM_PASSWORD` | **设了** `OFM_PASSWORD` |
 |---|---|---|
-| 面板 | 打开即用，**不需要令牌** | 需在登录页输入该令牌 |
-| 令牌有效期 | — | **不过期**，重启容器仍是同一个 |
+| 面板 | **完全免认证**，打开即进 | 登录页输密码 |
+| 回环 `127.0.0.1` | 同样免认证 | **同样要密码**（两端一致） |
+| 点「退出」后 | 认证页只有一个「登录」按钮，**没有密码框** | 回到密码框 |
+| 密码有效期 | — | **不过期**，重启容器仍是同一个 |
 | 推理 `/v1/*` | 只认 LAN Key | 只认 LAN Key |
 
 ```bash
 # 模式 B：加一道门
-docker run … -e OFM_PANEL_TOKEN=你的密码 … --lan --lan-port 18901 --lan-panel
+docker run … -e OFM_PASSWORD=你的密码 … --lan --lan-port 18901 --lan-panel
 ```
 
 ⚠️ **模式 A 意味着同网段任何设备都能打开并修改面板**（改设置、增删账号、看凭据）。
 家用网络通常没问题，公共网络请用模式 B。不开 `--lan-panel` 时面板仍只在回环。
 
-⚠️ **面板令牌与 LAN Key 是两套凭据，互不越权**：LAN Key 能调模型但进不了面板；
-面板令牌能改配置但调不了模型。
+⚠️ **密码与 LAN Key 是两套凭据，互不越权**：LAN Key 能调模型但进不了面板；
+密码能改配置但调不了模型。**本机 API Key（`forwardKey`）也不再能登录面板** ——
+管理面与推理面彻底分离，一个泄露不会两边全开。
+
+面板前端靠一个**免认证**的 `GET /api/management/auth` 判断要不要显示密码框
+（它只回 `{required: boolean}`，不泄露任何秘密）。
 
 改端口时要同时改健康检查用的环境变量，否则容器会一直不 healthy：
 
@@ -126,7 +133,7 @@ docker run … ghcr.io/bxwl5/dsh-our-free-model:latest \
 ```
 
 局域网设备直接开 `http://<宿主机IP>:18901/`，无需任何隧道。鉴权模式见上文
-「面板中继的两种鉴权模式」——不设 `OFM_PANEL_TOKEN` 就是打开即用。
+「面板密码：两种形态」——不设 `OFM_PASSWORD` 就是打开即用。
 
 ### 2. SSH 隧道（不想暴露面板时）
 
@@ -142,6 +149,45 @@ ssh -L 18900:127.0.0.1:18900 用户名@NAS地址
 `--lan --lan-port 18901` 不带 `--lan-panel`：中继只转发
 `/v1/models`、`/v1/chat/completions`、`/v1/responses`、`/v1/messages`、
 `/v1/messages/count_tokens`，管理面一律 404。
+
+## 路由链（降级 / 轮询）
+
+面板左侧「**路由**」页可以把多个模型串成一条链，对外暴露成一个虚拟模型 ID
+（`combo:<slug>`）。调用方只看到链名，链内部按顺序尝试，**前一个失败就换下一个**。
+
+两种策略：
+
+| 策略 | 行为 | 适合 |
+|---|---|---|
+| **顺序降级** | 每回合都从链头开始 | 质量阶梯（先试最好的） |
+| **轮询** | 按「粘滞次数」轮流换起点 | 等价模型之间分摊额度 |
+
+它解决的不是负载均衡，而是「这一路死了但别的路还活着」——额度墙、地区拒绝、
+凭据过期、5xx 全都表现为「本轮死了」，而机器上另外几条车道可能完全空闲。
+
+要点：
+
+- **成员按顺序保存**，界面里可拖拽排序；顺序就是尝试顺序
+- **链不能嵌套**（候选列表里不会出现别的链）
+- **缺失成员不删除**：引用当前不可用模型的链会原样保留，车道恢复后自己回来
+- **能力取交集**：链承诺的上下文 / 最长输出 / 视觉不超过最弱的那个成员
+- 链本身的增删改需要**管理面登录**（见上文「面板密码」）
+
+接口（都在管理面下，需登录）：
+
+```
+GET  /api/management/combos           链路 + 候选模型 + 每条链的解析结果
+POST /api/management/combos           整表替换
+POST /api/management/combos/preview   草稿链的能力交集预览
+```
+
+客户端只要把 `model` 填成链的 ID 即可，与调普通模型没有区别：
+
+```bash
+curl http://192.168.2.6:18901/v1/chat/completions \
+  -H "Authorization: Bearer $LAN_KEY" -H "Content-Type: application/json" \
+  -d '{"model":"combo:主力线路","messages":[{"role":"user","content":"你好"}]}'
+```
 
 ## 在局域网设备上添加账号（OAuth 回调）
 
@@ -245,7 +291,7 @@ docker rm -f ofm && docker run -d …            # 数据在卷里，不受影�
 - **只能用 host 网络**。主服务只绑回环，bridge 网络下宿主机访问不到。
   要给局域网用请走 `--lan` / `--lan-panel`，那是有独立鉴权的中继，不是改绑定地址。
 - **`--lan-panel` 不做来源 IP 白名单**。开了之后同网段任何设备都能访问面板；
-  需要限制就配 `OFM_PANEL_TOKEN`，或在前面挡一层反代做 IP 过滤。
+  需要限制就配 `OFM_PASSWORD`，或在前面挡一层反代做 IP 过滤。
 - 镜像基于 `node:22-alpine`（musl）。纯 JS 应用理论上没问题；若遇到奇怪的
   TLS/DNS 行为，把 `Dockerfile` 第一行换成 `node:22-bookworm-slim` 并把
   `apk add` 改成 `apt-get install -y --no-install-recommends` 即可。

@@ -12,44 +12,22 @@
  */
 import assert from 'node:assert/strict'
 /**
- * 先用 esbuild 把**源码**打平，再导入。
+ * 从**构建产物** `vendor/channel-pack/testkit.js` 导入内部函数。
  *
- * ## 为什么不直接 `import '../vendor/channel-pack/src/trae-errors.ts'`
- * 那些 `.ts` 内部是 ESM 写法（`import ... from './officeace-product.js'` ——
- * 带 `.js` 后缀指向将被编译的 `.ts`）。Node 直接吃 `.ts` 时会把 `./xxx.js`
- * 当成真实文件去找，仓库里只有 `.ts`，于是 `ERR_MODULE_NOT_FOUND`。
+ * ## 为什么不是在运行期打包源码
+ * 第一版让本文件在运行时调 esbuild 打包 `.ts`：本机可行（Node 24 能直接
+ * 吃 `.ts`），但 CI 的 `offline` job 只跑 `npm install --ignore-scripts`
+ * —— esbuild 的二进制没装，用例直接
+ * `ERR_MODULE_NOT_FOUND: .../node_modules/esbuild/lib/main.js` 挂掉。
  *
- * ## 为什么不从 `pack.js` 导入
- * 构建产物只导出**插件对外表面**（`apply` / `inject` / `createDirectFetch` …），
- * `fetchTokenRates` 这类内部函数在 bundle 里被 `__export` 到内层命名空间，
- * 顶层拿不到（实测：`classifyTraeError is not a function`）。
- *
- * 所以这里就地打一次包：测的是**真实源码**，又不依赖构建产物的导出面。
- * esbuild 用仓库里已有的二进制，不联网。
+ * 现在改为构建期产出（见 `scripts/build-channel-pack.mjs` 的 testkit 段），
+ * 运行期零依赖。`testkit.js` 不在 `package.json` 的 `files` 里，
+ * 所以它是仓库内测试资产、不进发布包。
  */
-const fsPromises = await import('node:fs/promises')
-const osModule = await import('node:os')
-const pathModule = await import('node:path')
-const urlModule = await import('node:url')
-const esbuild = await import('../packages/standalone/node_modules/esbuild/lib/main.js')
-const bundleDir = await fsPromises.mkdtemp(`${osModule.tmpdir()}/ofm-parity-`)
-const bundled = `${bundleDir}/parity.mjs`
-await esbuild.default.build({
-  stdin: {
-    contents: [
-      "export * from './trae-errors.ts'",
-      "export { fetchTokenRates, resetOfficeAceTokenRatesCache } from './officeace.ts'",
-    ].join('\n'),
-    resolveDir: pathModule.dirname(urlModule.fileURLToPath(new URL('../vendor/channel-pack/src/trae-errors.ts', import.meta.url))),
-    loader: 'ts',
-  },
-  bundle: true, platform: 'node', format: 'esm', outfile: bundled,
-  logLevel: 'silent',
-})
 const {
   classifyTraeError, classifyTraeStreamCode, recordsTraeRateLimit, shouldRotateTraeAccount,
   fetchTokenRates, resetOfficeAceTokenRatesCache,
-} = await import(bundled)
+} = await import('../vendor/channel-pack/testkit.js')
 
 let checks = 0
 const check = async (name, run) => {
