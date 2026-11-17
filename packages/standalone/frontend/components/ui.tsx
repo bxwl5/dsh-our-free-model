@@ -41,15 +41,6 @@ export function Spinner({ className, ...props }: React.HTMLAttributes<HTMLSpanEl
 }
 
 /** 纯 CSS 提示：把文字放到 tip，悬停/聚焦可见。不引入定位依赖。 */
-export function Tooltip({ className, tip, children, ...props }:
-  React.HTMLAttributes<HTMLSpanElement> & { tip: string }) {
-  return <span className={cn('ui-tooltip', className)} data-tip={tip} {...props}>{children}</span>
-}
-
-export function Kbd({ className, ...props }: React.HTMLAttributes<HTMLElement>) {
-  return <kbd className={cn('ui-kbd', className)} {...props} />
-}
-
 /** 受控小开关：class 契约与既有 .ui-switch 完全一致（on 表示开启）。 */
 export function Switch({ className, checked = false, onCheckedChange, disabled, ...props }:
   Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onChange'> & { checked?: boolean; onCheckedChange?: (next: boolean) => void }) {

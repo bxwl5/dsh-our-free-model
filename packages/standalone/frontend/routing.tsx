@@ -54,7 +54,7 @@ function ChainCapacity({ capacity }: { capacity?: { contextWindow?: number; maxO
   </div>
 }
 
-export function Routing({ summary, host, active }: { summary: Summary; host: Host; active: boolean }) {
+export function Routing({ host, active }: { host: Host; active: boolean }) {
   const [chains, setChains] = useState<RoutingChain[] | undefined>(undefined)
   const [candidates, setCandidates] = useState<RoutingCandidate[]>([])
   const [usable, setUsable] = useState<RoutingUsable[]>([])

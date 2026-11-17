@@ -660,25 +660,21 @@ export async function startLanRelay({ config, log = () => {}, onTrace = () => {}
       // sees the key that belongs to this machine.
       headers.authorization = `Bearer ${settings.localKey}`
       headers[RELAY_HOP_HEADER] = '1'
-    } else if (settings.panelOpen === true && headers.authorization === undefined) {
-      /**
-       * 面板**免登录直通**（2026-11-16 用户要求）。
-       *
-       * 用户原话：「为啥还需要带token访问啊？我要直接可以访问」——
-       * 一次性令牌那套在手机/电视这类设备上没法用（复制粘贴都费劲）。
-       *
-       * 做法：中继替该请求注入本机 key（`localKey`）。面板的
-       * `authenticated()` 认 `Bearer <forwardKey>`，于是打开即用。
-       *
-       * ⚠️ 只有 `panelOpen === true` 时才注入 —— 用户在 `OFM_PANEL_TOKEN`
-       *   里设了固定令牌时**不注入**，改由面板要求输入那个令牌（更安全的一档）。
-       *   两个开关互斥，语义由调用方（service.mjs）决定好再传进来。
-       * ⚠️ 免登录直通意味着**同网段任何设备都能改面板**（设置/账号/凭据）。
-       *   这是 `--lan-panel` 的显式取舍，默认关。
-       * ⚠️ 只补空缺：`Authorization` 已存在时不覆盖（带 Cookie 的浏览器不受影响）。
-       */
-      headers.authorization = `Bearer ${settings.localKey}`
     }
+    /**
+     * 面板免登录（2026-11-17 密码认证后简化）。
+     *
+     * 旧版这里有一支「panelOpen 时注入 `Bearer <localKey>`」的分支——
+     * 当时面板的 `authenticated()` 认 forwardKey，注入有效。改为密码认证后：
+     * - `panelOpen === true` ⇔ 未设 `OFM_PASSWORD` ⇔ `authenticated()` 直接放行，
+     *   注入的头是 no-op；
+     * - 设了密码 ⇔ `panelOpen === false`，这支分支本来就不进。
+     * 两个方向都不会再被执行，故删除（审查 低-2：注释还声称面板认
+     * forwardKey，与事实相反）。
+     *
+     * 「--lan-panel 免登录意味着同网段任何设备都能改面板」的取舍不变——
+     * 它现在由 `authenticated()` 的免密码分支实现，不再靠注入。
+     */
     // 面板请求的 Cookie / Set-Cookie 原样透传 —— session 仍由面板自己管。
     delete headers[REQUEST_ID_HEADER]
     if (trace.requestId !== undefined) headers[REQUEST_ID_HEADER] = trace.requestId

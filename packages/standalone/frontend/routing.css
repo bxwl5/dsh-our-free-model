@@ -79,12 +79,25 @@
 .routing-picker-filters { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
 .routing-picker-filters > .ui-input { flex: 1 1 200px; }
 .routing-provider { flex: 0 0 180px; }
-.routing-pick-list { margin-top: 10px; max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
+/**
+ * 成员选择列表（2026-11-18 修复「模型列表显示不全」）。
+ *
+ * 原值 `max-height: 320px` 的结构性问题：多供应商部署（NAS 实测 10 组、
+ * 19 个模型）里，**组头本身就要吃掉 ~314px**——还没轮到任何模型行，
+ * 320px 已经用完；且组头是折叠开关，用户必须逐组点开才能看到成员。
+ * CDP 实测：全展开后 19 行挤在 320px 里「可见 18 / 总 19」，最后一行
+ * 被容器裁掉而 `scrollHeight === clientHeight`（溢出行不可滚动到达）。
+ *
+ * 改法：max-height 提到 520px 并保留滚动；组头行加 `position: sticky`，
+ * 折叠/展开状态下组头始终可点，滚动时也知道当前在哪个供应商。
+ */
+.routing-pick-list { margin-top: 10px; max-height: 520px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
 .routing-pickgroup { border: 1px solid var(--line); border-radius: var(--ofm-radius-xs); overflow: hidden; background: var(--surface); }
 .routing-pickgrouphead {
   width: 100%; display: flex; align-items: center; gap: 8px;
   padding: 7px 11px; border: 0; background: var(--surface); color: var(--ink-soft);
   font-size: 12px; text-align: left; cursor: pointer;
+  position: sticky; top: 0; z-index: 1;
 }
 .routing-pickgrouphead:hover { background: var(--hover); }
 .routing-pickgrouptitle { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -128,3 +141,37 @@
 .routing-fields .field-label { font-size: 11px; }
 .routing-fields .ui-input { min-height: 32px; }
 .routing-toggle { height: 32px; }
+
+/* ══ 夜间模式（2026-11-18）══════════════════════════════════════════════
+ *
+ * 根因：本文件用的 var(--surface)/var(--hover)/var(--ink-soft)/var(--ink-faint)
+ * **只在浅色 :root 定义过一次**，[data-theme="dark"] 段没有重定义——暗色下
+ * 这些值仍是白底深字，叠在 --paper:#0a0b10 的页面底上就是「完全看不清」。
+ *
+ * app.css 的暗色块重定义过 --dsw-alias-bg-layer-*/border-l*（#101119 系），
+ * 本页暗色直接对齐那套；不重定义全局变量（那会影响所有未适配暗色的页面，
+ * 风险太大），只在本页作用域内覆写。
+ */
+[data-theme="dark"] .routing-browser {
+  --surface: #141622;
+  --hover: rgba(255, 255, 255, 0.045);
+  --ink-soft: #b7c0d0;
+  --ink-faint: #7f8b99;
+  --line: rgba(255, 255, 255, 0.10);
+}
+/* 选择器卡片与组头：底色改暗、文字提亮 */
+[data-theme="dark"] .routing-pickgroup,
+[data-theme="dark"] .routing-pick,
+[data-theme="dark"] .routing-pickgrouphead { background: var(--dsw-alias-bg-layer-2); color: var(--ink-soft); }
+[data-theme="dark"] .routing-pick:hover:not(:disabled),
+[data-theme="dark"] .routing-pickgrouphead:hover { background: rgba(255, 255, 255, 0.05); }
+[data-theme="dark"] .routing-pick.is-picked { border-color: var(--green); background: rgba(0, 208, 192, 0.10); }
+[data-theme="dark"] .routing-pick b { color: var(--dfe6e9, #dfe6e9); }
+[data-theme="dark"] .routing-pickcheck { color: var(--green); }
+/* 编辑器与已存链路卡片、成员行：白底改暗 */
+[data-theme="dark"] .routing-card,
+[data-theme="dark"] .routing-member,
+[data-theme="dark"] .routing-picker { background: var(--dsw-alias-bg-layer-2); border-color: rgba(255, 255, 255, 0.10); }
+[data-theme="dark"] .routing-seg-btn { background: var(--dsw-alias-bg-layer-2); color: var(--ink-soft); }
+[data-theme="dark"] .routing-seg-btn.is-active { background: var(--green); color: #0a0b10; }
+[data-theme="dark"] .routing-order { background: rgba(255, 255, 255, 0.06); color: var(--muted); }

@@ -1115,7 +1115,14 @@ function wireOf(entry) {
  * exists to survive. Text commits only when it carries visible content, the
  * same bar `sawAnswer` uses, so whitespace noise cannot pin a chain either.
  */
-function commitsAnswer(chunk) {
+/**
+ * 「这个 chunk 是否已构成不可撤回的作答」。
+ *
+ * ⚠️ **导出**供独立版的 combo 分发复用（packages/standalone/service.mjs）——
+ * 「失败能否降级」的判据必须与插件端 runCombo 一字不差，两份手写实现
+ * 必然漂移（实测漂移过：usage 被误当提交、空白 text-delta 被误当提交）。
+ */
+export function commitsAnswer(chunk) {
   if (chunk === null || typeof chunk !== 'object') return false
   if (chunk.type === 'text-delta') return typeof chunk.text === 'string' && chunk.text.trim() !== ''
   if (chunk.type === 'tool-call-delta') return true

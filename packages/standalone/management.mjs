@@ -134,7 +134,7 @@ export function createManagement({ stores, runtime, channels, info, onSettingsCh
    * ## 语义（用户原话）
    * 「把 api key 登录变成环境变量里面的 ofm_password 登录，127.0.0.1 和局域网都是，
    *  如果不设置，直接不需要认证，点退出后认证界面只有登录，没有输入密码，
-   *  如果设置了，需要输入密码才能登录」「OFM_PANEL_TOKEN 改为 OFM_PASSWORD」
+   *  如果设置了，需要输入密码才能登录」面板令牌已更名为 OFM_PASSWORD
    *
    * 于是有两条互斥的形态：
    *

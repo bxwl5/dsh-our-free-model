@@ -150,18 +150,7 @@
 
 /* 供应商卡片：logo 质感 / 计数 tabular-nums / 悬停按钮显现 */
 .provider-grid { animation: settingsIn 320ms cubic-bezier(0.16, 1, 0.3, 1); }
-.provider-logo { border-radius: 10px; font-size: 12px; letter-spacing: 0.02em; box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.07); }
-.provider-card .status-dot { animation: none; }
-.provider-counts strong { font-variant-numeric: tabular-nums; font-weight: 600; }
-.provider-manage svg { opacity: 0; transform: translateX(-4px); transition: opacity 180ms cubic-bezier(0.16, 1, 0.3, 1), transform 180ms cubic-bezier(0.16, 1, 0.3, 1); }
-.provider-card:hover .provider-manage svg, .provider-manage:focus-visible svg { opacity: 1; transform: none; }
-.provider-card:focus-within { border-color: var(--accent-line); }
 
-/* 详情：侧边选中态左侧竖条 + 安全提示条 */
-.detail-provider-link { border-left: 2px solid transparent; border-radius: 0 6px 6px 0; padding-left: 10px; }
-.detail-provider-link.active { border-left-color: var(--dsw-alias-accent-primary); font-weight: 550; }
-.detail-security-note { padding: 11px 13px; background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: 8px; }
-.detail-security-note > svg { flex-shrink: 0; margin-top: 2px; color: var(--dsw-alias-accent-primary); }
 
 /* 空态 */
 .channel-empty { animation: settingsIn 300ms cubic-bezier(0.16, 1, 0.3, 1); }
@@ -221,8 +210,7 @@
   .settings-browser, .connection-browser, .provider-grid, .channel-empty,
   .settings-save-error, .settings-note, .settings-field-error,
   .connection-feedback, .connection-error, .cx-revealed,
-  .ofm_root .ofm_modal, .ofm_root .ofm_toast { animation: none !important; }
-  .settings-toggle, .settings-toggle:after, .provider-manage svg, .ofm_root .ofm_seg button { transition: none !important; }
+  .ofm_root .ofm_modal, .ofm_root .ofm_toast { animation: none !important; }.settings-toggle, .settings-toggle:after, .ofm_root .ofm_seg button{ transition: none !important; }
   .ch-skeleton, .settings-status-saving .settings-status-dot { animation: none !important; }
 }
 
@@ -242,8 +230,6 @@
 :root:not([data-theme="dark"]) .cx-icon { border-radius: 10px; }
 :root:not([data-theme="dark"]) .cx-field { border-radius: 10px; }
 :root:not([data-theme="dark"]) .cx-code { border-radius: 10px; }
-:root:not([data-theme="dark"]) .detail-provider-link { border-radius: 0 8px 8px 0; }
-:root:not([data-theme="dark"]) .detail-security-note { border-radius: 10px; }
 :root:not([data-theme="dark"]) .ch-metric-icon { border-radius: 10px; }
 :root:not([data-theme="dark"]) .ofm_root .ofm_btn { min-height: 32px; border-radius: 10px; }
 :root:not([data-theme="dark"]) .ofm_root .ofm_hero { border-radius: 12px; }
@@ -258,19 +244,8 @@
 :root:not([data-theme="dark"]) .ofm_root .ofm_ann,
 :root:not([data-theme="dark"]) .ofm_root .ofm_newsitem,
 :root:not([data-theme="dark"]) .ofm_root .ofm_stat { border-radius: 12px; }
-
 /* ---------- 溢出兜底：超长文本/ID 允许任意断行 ---------- */
-:root:not([data-theme="dark"]) .settings-field strong,
-:root:not([data-theme="dark"]) .settings-field small,
-:root:not([data-theme="dark"]) .settings-footer > span,
-:root:not([data-theme="dark"]) .connection-card-heading h2,
-:root:not([data-theme="dark"]) .ch-metric-value,
-:root:not([data-theme="dark"]) .ch-metric-label,
-:root:not([data-theme="dark"]) .detail-provider-link,
-:root:not([data-theme="dark"]) .ofm_root .ofm_acctname,
-:root:not([data-theme="dark"]) .ofm_root .ofm_chanid,
-:root:not([data-theme="dark"]) .ofm_root .ofm_chanid b { overflow-wrap: anywhere; }
-:root:not([data-theme="dark"]) .detail-provider-link { min-width: 0; }
+:root:not([data-theme="dark"]) .settings-field strong, :root:not([data-theme="dark"]) .settings-field small, :root:not([data-theme="dark"]) .settings-footer > span, :root:not([data-theme="dark"]) .connection-card-heading h2, :root:not([data-theme="dark"]) .ch-metric-value, :root:not([data-theme="dark"]) .ch-metric-label, :root:not([data-theme="dark"]) .ofm_root .ofm_acctname, :root:not([data-theme="dark"]) .ofm_root .ofm_chanid, :root:not([data-theme="dark"]) .ofm_root .ofm_chanid b{ overflow-wrap: anywhere; }
 
 /* ==========================================================================
    7. 深色主题（夜）—— 深海仪器：设置页更像仪器控制面板
@@ -330,11 +305,6 @@
 [data-theme="dark"] .channel-filters button { background: transparent; border-color: transparent; }
 [data-theme="dark"] .channel-filters button span { background: rgba(255, 255, 255, 0.07); color: var(--dsw-alias-label-secondary); }
 [data-theme="dark"] .channel-filters button[aria-pressed=true] span { background: var(--cp-cyan-soft); color: var(--cp-cyan); }
-[data-theme="dark"] .provider-logo { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.04); }
-[data-theme="dark"] .provider-card:focus-within { border-color: var(--cp-cyan-line); }
-[data-theme="dark"] .detail-provider-link.active { border-left-color: var(--cp-cyan); }
-[data-theme="dark"] .detail-security-note { background: rgba(0, 208, 192, 0.05); border-color: var(--cp-cyan-line); color: var(--dsw-alias-label-secondary); }
-[data-theme="dark"] .detail-security-note > svg { color: var(--cp-cyan); }
 [data-theme="dark"] .channel-empty h2 { color: var(--dsw-alias-label-secondary); }
 
 /* ---------- 内嵌组件深色对齐 ---------- */
@@ -521,16 +491,7 @@ label.settings-field { cursor: pointer; }
 .ch-metric-value { letter-spacing: -0.01em; }
 .ch-skeleton { vertical-align: middle; }
 
-/* 3.2 供应商卡片：logo 浮雕 + 触屏设备也能看到「管理渠道」箭头 */
-.provider-logo { letter-spacing: 0.02em; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35); }
-.provider-manage { font-weight: 550; }
-@media (hover: none) {
-  .provider-manage svg { opacity: 1; transform: none; }
-}
-[data-theme="dark"] .provider-logo { text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35); }
 
-/* 3.3 详情侧栏：选中竖条收到 1px，配合已有底色与字重表达选中 */
-.detail-provider-link { border-left-width: 1px; border-radius: 0 8px 8px 0; min-width: 0; }
 
 /* ==========================================================================
    4. EAC 内嵌（ofm_*）—— 与独立控制台同一控件刻度
@@ -562,24 +523,14 @@ label.settings-field { cursor: pointer; }
 .ofm_root .ofm_chanstate { border-radius: 6px; background: var(--dsw-alias-bg-layer-2); box-shadow: inset 0 0 0 1px var(--dsw-alias-border-l1); }
 [data-theme="dark"] .ofm_root .ofm_chanstate { background: var(--cp-cyan-soft); color: var(--dsw-alias-label-secondary); box-shadow: inset 0 0 0 1px var(--cp-cyan-line); }
 
-/* ==========================================================================
-   5. 圆角刻度：夜主题与昼主题同刻度（把昼主题已定的值原样镜像，不加新数值）
-   ========================================================================== */
-.provider-logo { border-radius: 12px; }
-.settings-card-heading > svg, .cx-icon, .cx-icon-danger, .ch-metric-icon { border-radius: 10px; }
-.settings-number input, .settings-note, .settings-save-error,
-.connection-feedback, .connection-error, .cx-field, .detail-security-note { border-radius: 10px; }
+.settings-card-heading > svg, .cx-icon, .cx-icon-danger, .ch-metric-icon { border-radius: 10px; }.settings-number input, .settings-note, .settings-save-error, .connection-feedback, .connection-error, .cx-field{ border-radius: 10px; }
 .cx-code { border-radius: 10px; }
-.detail-provider-link { border-radius: 0 8px 8px 0; }
 
 /* ==========================================================================
    6. 对比度底线：昼主题实测低于 4.5:1 的次要文字（夜主题已有自己的规则）
    ========================================================================== */
 :root:not([data-theme="dark"]) .settings-number .settings-hint { color: var(--muted); }
 :root:not([data-theme="dark"]) .ch-metric-label { color: var(--muted); }
-:root:not([data-theme="dark"]) .provider-counts { color: var(--dsw-alias-label-secondary); }
-:root:not([data-theme="dark"]) .provider-detail-top { color: var(--muted); }
-:root:not([data-theme="dark"]) .detail-security-note { color: var(--dsw-alias-label-secondary); }
 
 /* ==========================================================================
    7. 响应式补丁与动效降级
@@ -937,20 +888,8 @@ label.settings-field { cursor: pointer; }
     box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.42), 0 0 0 3px var(--cp-glow);
   }
 }
-
 /* ---------- 7. 夜=直角刻度（只收本文件负责的小控件；卡片切角由 app.css 负责） ---------- */
-[data-theme="dark"] .settings-card-heading > svg,
-[data-theme="dark"] .cx-icon,
-[data-theme="dark"] .ch-metric-icon,
-[data-theme="dark"] .provider-logo,
-[data-theme="dark"] .settings-number input,
-[data-theme="dark"] .cx-field,
-[data-theme="dark"] .cx-code,
-[data-theme="dark"] .settings-note,
-[data-theme="dark"] .settings-save-error,
-[data-theme="dark"] .connection-feedback,
-[data-theme="dark"] .connection-error,
-[data-theme="dark"] .detail-security-note { border-radius: 1px; }
+[data-theme="dark"] .settings-card-heading > svg, [data-theme="dark"] .cx-icon, [data-theme="dark"] .ch-metric-icon, [data-theme="dark"] .settings-number input, [data-theme="dark"] .cx-field, [data-theme="dark"] .cx-code, [data-theme="dark"] .settings-note, [data-theme="dark"] .settings-save-error, [data-theme="dark"] .connection-feedback, [data-theme="dark"] .connection-error{ border-radius: 1px; }
 
 /* ---------- 8. 动效降级 ---------- */
 @media (prefers-reduced-motion: reduce) {

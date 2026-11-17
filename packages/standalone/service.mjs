@@ -7,6 +7,7 @@ import { createModelRuntime, createRuntimeStores } from '../../src/core/runtime.
 import { generateKey, rankLanAddresses, startForwardServer, startLanRelay } from '../../src/forward.js'
 import { isLoopbackHost } from '../../src/trust.js'
 import { isModelHidden } from '../../src/store.js'
+import { commitsAnswer } from '../../src/adapter.js'
 import { createManagement } from './management.mjs'
 import { createChannelRuntime } from './channels/runtime.mjs'
 import {
@@ -216,7 +217,6 @@ export async function startStandalone({
              * 情况下让他输入令牌，安全边界更清楚；没设就直通，打开即用。
              * 用户原话：「我需要不带token或者token在环境变量里面设置」。
              */
-            panelOpen: String(process.env.OFM_PASSWORD ?? '').trim() === '',
           }),
           log: message => logger.warn?.(`our-free-model standalone LAN: ${message}`),
         })
@@ -338,8 +338,15 @@ export async function startStandalone({
         const held = []
         const sink = chunk => {
           if (committed) { handler?.(chunk); return }
-          const kind = chunk?.type ?? chunk?.kind
-          if (kind === 'text-delta' || kind === 'tool-call-delta' || kind === 'usage') {
+          /**
+           * 提交判据与插件端 `runCombo` **同一份**（`commitsAnswer`，已导出）：
+           * text-delta 要求非空白、tool-call-delta 恒提交、block-end 按
+           * block 类型区分（reasoning 不提交）。usage **不算**提交 ——
+           * 「先发 usage 再报错」的成员必须还能降级；空白的 text-delta
+           * （如只有换行）也不能钉死一条本可降级的链。
+           * （第一版手写判据把 usage 算提交、空白也提交，与插件端漂移。）
+           */
+          if (commitsAnswer(chunk)) {
             committed = true
             for (const row of held) handler?.(row)
             held.length = 0
@@ -369,8 +376,19 @@ export async function startStandalone({
         } catch (error) {
           thrown = error
         }
-        const failed = thrown !== undefined || result?.error !== undefined || result?.failure !== undefined
-        if (failed) {
+        /**
+         * ⚠️ **committed 之后绝不换人**（2026-11-18 审查 高-1）。
+         *
+         * 已提交 = 客户端已经收到了这个成员的正文（held 已放行、后续 chunk
+         * 直通）。此刻如果 complete 返回失败（流尾迟到 error finish ——
+         * completion.js 会把它折进 outcome.failure），再 continue 换下一个
+         * 成员就是**二次作答**：两个模型的正文拼进同一回合，SSE 客户端还会
+         * 再收到一条错误帧；非流式路径正文被吞但 token 已计费。
+         *
+         * 插件端 `runCombo`（adapter.js:317-335）同一语义：committed 后
+         * 无条件按成功返回。迟到的失败如实放在 result 里交给上层。
+         */
+        if (!committed && (thrown !== undefined || result?.error !== undefined || result?.failure !== undefined)) {
           lastFailure = thrown !== undefined
             ? (thrown instanceof Error ? thrown : new Error(String(thrown)))
             : (result.failure ?? { message: result.error })
@@ -423,7 +441,18 @@ export async function startStandalone({
        * `/v1/models`。combo 成员一律按**全量**解析，可见性只在广播时生效。
        */
       state: () => {
-        const real = core.catalog.filter(row => !isComboEntry(row))
+        /**
+         * 管理面口径：**core 全量 + 渠道全量**，再拼 combo 行。
+         *
+         * ⚠️ 渠道行必须来自 `channels.publicModelRows()`（2026-11-18 审查 中-1）：
+         * 之前这里漏了它，面板模型页只剩免费模型 —— 渠道筛选、计数、
+         * overview 的「免费账号渠道」数全部归零。管理面不做可见性过滤，
+         * `hiddenByUser` 由 `summary()` 逐行现算，保留行不会丢取消隐藏能力。
+         */
+        const real = [
+          ...core.catalog.filter(row => !isComboEntry(row)),
+          ...channels.publicModelRows(),
+        ]
         return { ...core.state(), catalog: [...real, ...buildComboCatalog(combos(), real)] }
       },
       publicModelRows: () => {

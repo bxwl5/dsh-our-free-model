@@ -18,6 +18,9 @@ function classifyTraeError(status, body) {
       return "hard-plan";
     }
   }
+  if (body.includes("4245") || body.includes('"code":4245')) {
+    return "seat-unavailable";
+  }
   for (const marker of QUOTA_EXCEEDED_MARKERS) {
     if (body.includes(marker)) return "quota-exceeded";
   }
@@ -30,9 +33,7 @@ function classifyTraeError(status, body) {
     }
     return "session-dead";
   }
-  if (status === 424 || body.includes("4245") || body.includes('"code":4245')) {
-    return "seat-unavailable";
-  }
+  if (status === 424) return "seat-unavailable";
   if (status === 429) return "soft-rate";
   if (status === 404) return "not-found";
   if (status >= 500) return "server";

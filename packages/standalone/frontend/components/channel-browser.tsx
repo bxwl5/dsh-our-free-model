@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { CircleAlert, Network, Search, ShieldCheck, SlidersHorizontal } from 'lucide-react'
 import { providers } from 'ofm-provider-list'
 import { shared } from 'ofm-shared-client'
-import { Badge, Button, Card, Input } from './ui'
+import { Button, Card, Input } from './ui'
 import type { Summary } from '../types'
 
 interface Status { closed?: boolean; accounts?: { total: number; enabled: number }; models?: { total: number; disabled: number } }

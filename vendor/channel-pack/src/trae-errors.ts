@@ -101,6 +101,17 @@ export function classifyTraeError(status: number, body: string): TraeErrorKind {
     }
   }
 
+  // 1.5 企业席位不可用（4245）—— **必须排在 4008 / 4011 之前**（2026-11-18 审查 中-3）。
+  //
+  // 既有注释记录的真实场景（105-108 行）：「两者可能同时出现在一个响应体里
+  // （网关把多个错误码拼在 msg 中）」。同一条原则适用于 4245：若响应体同时
+  // 含 4245 与 4008/4011，先命中的更具体类别才有意义 —— 席位问题被吞进
+  // quota/soft-rate 的话，`recordsTraeRateLimit` 会给「账号本身没坏」的账号
+  // 记冷却，正是新类别注释明确要避免的行为。
+  if (body.includes('4245') || body.includes('"code":4245')) {
+    return 'seat-unavailable'
+  }
+
   // 2. 配额超限（4008，ide_credits 耗尽）
   //
   // ⚠️ **必须排在 4011 之前**：两者可能同时出现在一个响应体里（网关把多个
@@ -124,16 +135,8 @@ export function classifyTraeError(status: number, body: string): TraeErrorKind {
     return 'session-dead'
   }
 
-  /**
-   * 4.5 企业席位不可用（4245）
-   *
-   * ⚠️ **必须排在下面的 `>= 400 → client` 之前**：否则这个码会被吞进
-   * `client` 类别，上层既看不到「席位」这个语义，也没法对它做区别对待。
-   * 与 4008 / 4011 同理：更具体的分类必须优先命中。
-   */
-  if (status === 424 || body.includes('4245') || body.includes('"code":4245')) {
-    return 'seat-unavailable'
-  }
+  // 4.5 企业席位不可用（HTTP 424）：响应体判据（上面 2.5 步）之外的纯状态码路径。
+  if (status === 424) return 'seat-unavailable'
 
   // 5. 429 软限流
   if (status === 429) return 'soft-rate'
