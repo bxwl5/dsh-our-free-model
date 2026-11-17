@@ -41100,7 +41100,21 @@ function qoderProductById(id) {
 
 // vendor/channel-pack/src/qoder-cosy.ts
 import { createCipheriv, createHash as createHash3, randomBytes as randomBytes3, randomUUID as randomUUID2 } from "node:crypto";
-var QODER_COSY_VERSION = "1.1.38";
+var QODER_COSY_VERSION = "1.1.69";
+var QODER_QWENWORK_VERSION = "1.2.1";
+var QODER_QWENWORK_RELEASE = "1.2.1-26092107";
+function qwenworkClientHeaders(now = Date.now()) {
+  return {
+    "User-Agent": `qoderwork/${QODER_QWENWORK_VERSION}`,
+    "X-Request-Id": randomUUID2(),
+    "X-QwenWork-Version": QODER_QWENWORK_VERSION,
+    "X-QwenWork-Release-Version": QODER_QWENWORK_RELEASE,
+    "X-QwenWork-Build": QODER_QWENWORK_RELEASE.split("-")[1] ?? "",
+    "X-QwenWork-Platform": process.platform,
+    "X-QwenWork-Arch": process.arch,
+    "X-QwenWork-Channel": "stable"
+  };
+}
 var CLIENT_TYPE = "5";
 var DATA_POLICY = "disagree";
 var LOGIN_VERSION = "v2";
@@ -49207,7 +49221,20 @@ var QoderAuth = class extends Service4 {
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
-          "User-Agent": `${this.product.userAgentPrefix}/1.0.0`
+          /**
+           * ⚠️ 必需整套 QwenWork 客户端头（2026-11-17）。
+           *
+           * 此前这里只有 `User-Agent: <prefix>/1.0.0` —— 一个**编造的版本号**，
+           * 而且缺了其余指纹头。magpie 的注释记录了后果：
+           *
+           * > Without them every such call went out as no client at all.
+           *
+           * 续期是最容易观察到这一点的链路（`auth.refresh` 401 在本机日志里
+           * 反复出现）。`qwenworkClientHeaders()` 给出官方客户端的整套头
+           * （UA `qoderwork/1.2.1` + `X-QwenWork-Version` / `Release-Version` /
+           * `Build` / `Platform` / `Arch` / `Channel`）。
+           */
+          ...qwenworkClientHeaders()
         },
         body: JSON.stringify(qoderRefreshBody(credential)),
         signal: AbortSignal.timeout(QODER_REQUEST_TIMEOUT_MS)
@@ -59145,8 +59172,17 @@ async function requestEnvelope(url, credential, init, fetcher) {
     };
   }
 }
+var MINIMAX_DESKTOP_VERSION = "0.6.12";
+var MINIMAX_CHECKIN_CLIENT_QUERY = {
+  device_platform: "web",
+  is_desktop: "1",
+  desktop_version: MINIMAX_DESKTOP_VERSION
+};
 function withTimezone(base, path2, timezoneId) {
   const url = new URL(`${base}${path2}`);
+  for (const [key, value] of Object.entries(MINIMAX_CHECKIN_CLIENT_QUERY)) {
+    url.searchParams.set(key, value);
+  }
   url.searchParams.set("timezone_id", timezoneId);
   return url.toString();
 }

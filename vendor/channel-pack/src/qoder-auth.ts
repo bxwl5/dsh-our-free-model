@@ -14,6 +14,7 @@
  *    持久化并原样回传（见 `qoderRefreshBody`）。
  */
 
+import { qwenworkClientHeaders } from './qoder-cosy.js'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialRef } from '@deepseek-ai/dsh-credentials'
 import {
@@ -400,7 +401,20 @@ export class QoderAuth extends Service {
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
-          'User-Agent': `${this.product.userAgentPrefix}/1.0.0`,
+          /**
+           * ⚠️ 必需整套 QwenWork 客户端头（2026-11-17）。
+           *
+           * 此前这里只有 `User-Agent: <prefix>/1.0.0` —— 一个**编造的版本号**，
+           * 而且缺了其余指纹头。magpie 的注释记录了后果：
+           *
+           * > Without them every such call went out as no client at all.
+           *
+           * 续期是最容易观察到这一点的链路（`auth.refresh` 401 在本机日志里
+           * 反复出现）。`qwenworkClientHeaders()` 给出官方客户端的整套头
+           * （UA `qoderwork/1.2.1` + `X-QwenWork-Version` / `Release-Version` /
+           * `Build` / `Platform` / `Arch` / `Channel`）。
+           */
+          ...qwenworkClientHeaders(),
         },
         body: JSON.stringify(qoderRefreshBody(credential)),
         signal: AbortSignal.timeout(QODER_REQUEST_TIMEOUT_MS),

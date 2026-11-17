@@ -343,13 +343,38 @@ async function requestEnvelope(
   }
 }
 
-/** 构造带 `timezone_id` 的 URL。 */
+/**
+ * MiniMax Code 客户端版本（2026-11-17 新增，对齐 magpie
+ * `opencode-minimax-auth` 0.2.9 的 `CHECKIN_QUERY.desktop_version`）。
+ *
+ * ## 为什么签到要带它
+ * 签到接口按「客户端形态」结算 —— magpie 的 `CHECKIN_QUERY` 是
+ * `{device_platform:'web', is_desktop:'1', desktop_version:'0.6.12'}`，
+ * 标明「这是桌面版 0.6.12 在签到」。此前我们只发 `timezone_id`，
+ * 等于以「不带客户端身份」的形态调用。
+ *
+ * ⚠️ 它**只用于签到链路**，推理链路不需要（我们的推理头只有
+ * Authorization / Content-Type / Accept，实测 200）。
+ */
+export const MINIMAX_DESKTOP_VERSION = '0.6.12'
+
+/** 签到链路的固定客户端形态 query（`timezone_id` 另行追加）。 */
+const MINIMAX_CHECKIN_CLIENT_QUERY: Readonly<Record<string, string>> = {
+  device_platform: 'web',
+  is_desktop: '1',
+  desktop_version: MINIMAX_DESKTOP_VERSION,
+}
+
+/** 构造带 `timezone_id` 与客户端形态的 URL。 */
 function withTimezone(
   base: string,
   path: string,
   timezoneId: string,
 ): string {
   const url = new URL(`${base}${path}`)
+  for (const [key, value] of Object.entries(MINIMAX_CHECKIN_CLIENT_QUERY)) {
+    url.searchParams.set(key, value)
+  }
   url.searchParams.set('timezone_id', timezoneId)
   return url.toString()
 }

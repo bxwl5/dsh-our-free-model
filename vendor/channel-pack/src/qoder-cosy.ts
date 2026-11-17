@@ -34,7 +34,68 @@
 import { createCipheriv, createHash, randomBytes, randomUUID } from 'node:crypto'
 
 /** 网关 COSY 协议版本（客户端内置常量）。 */
-export const QODER_COSY_VERSION = '1.1.38'
+/**
+ * CoSy 协议版本（2026-11-17：1.1.38 → **1.1.69**）。
+ *
+ * 这个值进签名 payload（`{version,requestId,info,cosyVersion,ideVersion}`），
+ * 对端按它判断客户端协议代次。
+ *
+ * ## 取值依据（magpie `opencode-qoder-auth` 0.2.71 的 `COSY_VERSION`）
+ * 它取自 **Qoder 桌面 app 0.4.8（build 79743374）的 transport 配置**。
+ * magpie 注释里特别强调：
+ *
+ * > the worker runtime bundled in the app … the CLI's channel publishes a
+ * > different, later number that no desktop build runs. **Raise it when the
+ * > app moves, not when the CLI does.**
+ *
+ * ⚠️ 所以别拿别的渠道的数字套过来：
+ * - `1.1.59` 是 **QwenWork** 那条产品线的 `cosyVersion`（另一个客户端）；
+ * - `2.5.18` 是 **Lingma** 的；
+ * - Qoder 自己的 CLI 版本（1.1.77）**不是**这个值 —— 桌面端并不跑 CLI 那个号。
+ */
+export const QODER_COSY_VERSION = '1.1.69'
+
+/**
+ * QwenWork 桌面客户端版本（magpie `QWENWORK_APP.version`）。
+ *
+ * ⚠️ 与 {@link QODER_COSY_VERSION} **不是一回事**：`cosyVersion` 是协议代次，
+ * 这个是桌面客户端的发布版本。magpie 注释记录：QwenWork 自己的客户端
+ * （`QwenWorkCN.app 1.2.1`）在每一个**非对话**网关调用上都会带
+ * `User-Agent: qoderwork/<这它>` + 一组 `X-QwenWork-*` 头，
+ * 缺了它们「每次调用都像不是客户端发的」。
+ */
+export const QODER_QWENWORK_VERSION = '1.2.1'
+/**
+ * **QwenWork** 产品线的 cosy 版本（`1.1.59`）。
+ *
+ * ⚠️ 与 {@link QODER_COSY_VERSION}（1.1.69）是**不同产品线**的值，别互换：
+ * 本仓库目前只实现 Qoder 国际版 / Qoder CN，没有 QwenWork 站点，
+ * 这里保留常量只为记录来源、防止有人再把它错当成 Qoder 的值。
+ */
+export const QWENWORK_COSY_VERSION = '1.1.59'
+/** 同一次发布的构建号（magpie `QWENWORK_APP.release` = `1.2.1-26092107`）。 */
+export const QODER_QWENWORK_RELEASE = '1.2.1-26092107'
+
+/**
+ * QwenWork 客户端头（**用于非对话网关调用**：续期、账户上下文、设备令牌）。
+ *
+ * 这些头**不进签名**，纯粹是「以官方客户端身份发请求」的指纹。对话链路走
+ * `buildCosyHeaders()` 的签名头，两者不要混。
+ *
+ * ⚠️ `X-Request-Id` 每次请求都不同（magpie 也是 `randomUUID()`）。
+ */
+export function qwenworkClientHeaders(now: number = Date.now()): Record<string, string> {
+  return {
+    'User-Agent': `qoderwork/${QODER_QWENWORK_VERSION}`,
+    'X-Request-Id': randomUUID(),
+    'X-QwenWork-Version': QODER_QWENWORK_VERSION,
+    'X-QwenWork-Release-Version': QODER_QWENWORK_RELEASE,
+    'X-QwenWork-Build': QODER_QWENWORK_RELEASE.split('-')[1] ?? '',
+    'X-QwenWork-Platform': process.platform,
+    'X-QwenWork-Arch': process.arch,
+    'X-QwenWork-Channel': 'stable',
+  }
+}
 /** 客户端类型（桌面端）。 */
 const CLIENT_TYPE = '5'
 /** 数据策略（与客户端一致）。 */
