@@ -471,8 +471,18 @@
 .ov-chart .dashboard-chart-bar {
   transform-origin: bottom center;
 }
+/**
+ * 用量趋势柱（2026-11-17）。
+ *
+ * 原渐变 `#f0bb63 → #d98b2b → #9c5a10` 是「黄铜」时期留下的琥珀柱 ——
+ * 用户报「用量统计的柱状图」发黄。零值柱走 `.zero` 分支（`--us-line-strong`，
+ * 早就是蓝的），所以只有**有数据**的柱发黄，视觉上更突兀。
+ *
+ * 现在与概览页的图表柱同一套 DSH 蓝阶：`#7aaaff → #4176e6`，
+ * 顶部略亮给出体积感，底部沉到 `#3459c7`。
+ */
 .usage-day-bar {
-  background: linear-gradient(180deg, #f0bb63 0%, #d98b2b 46%, #9c5a10 100%);
+  background: linear-gradient(180deg, #7aaaff 0%, #4176e6 46%, #3459c7 100%);
   min-height: 3px;
 }
 .usage-day-bar:not(.zero),
@@ -778,7 +788,7 @@
 .usage-day-track { background-image: repeating-linear-gradient(to top, var(--us-grid-line) 0 1px, transparent 1px 25%); }
 .usage-day-bar, .ov-chart .dashboard-chart-bar { border-radius: 5px 5px 0 0; }
 :root:not([data-theme="dark"]) .usage-day-bar {
-  background: linear-gradient(180deg, #f0bb63 0%, #d98b2b 46%, #9c5a10 100%);
+  background: linear-gradient(180deg, #7aaaff 0%, #4176e6 46%, #3459c7 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 :root:not([data-theme="dark"]) .usage-day-bar.zero { background: var(--us-line-strong); box-shadow: none; }
@@ -787,7 +797,7 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34), 0 6px 16px -6px color-mix(in srgb, var(--dsw-alias-accent-primary, #4176e6) 24%, transparent);
 }
 :root:not([data-theme="dark"]) .ov-chart .dashboard-chart-bar {
-  background: linear-gradient(180deg, #f0bb63 0%, #d98b2b 46%, #9c5a10 100%);
+  background: linear-gradient(180deg, #7aaaff 0%, #4176e6 46%, #3459c7 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 :root:not([data-theme="dark"]) .ov-chart .dashboard-chart-bar.zero { background: var(--us-line-strong); box-shadow: none; }
@@ -1454,16 +1464,16 @@
 /* --- 3. 图表柱：顶端最亮的暖渐变；hover 整柱亮起，像光移过来 --- */
 :root:not([data-theme="dark"]) .usage-browser .usage-day-bar,
 :root:not([data-theme="dark"]) .ov-chart .dashboard-chart-bar {
-  background-color: #d98b2b;
+  background-color: #4176e6;
   background-image:
     linear-gradient(180deg, rgba(255, 255, 255, 0.62) 0%, rgba(255, 255, 255, 0.12) 34%, rgba(255, 255, 255, 0) 58%),
-    linear-gradient(180deg, #f0bb63 0%, #d98b2b 48%, #9c5a10 100%);
+    linear-gradient(180deg, #7aaaff 0%, #4176e6 48%, #3459c7 100%);
   border-radius: 6px 6px 0 0;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 2px 0 rgba(var(--warm-shadow, 15, 23, 42), 0.08);
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-day-bar.zero,
 :root:not([data-theme="dark"]) .ov-chart .dashboard-chart-bar.zero {
-  background-color: #e8e1d4;
+  background-color: #e1e5ee;
   background-image: linear-gradient(180deg, #efe8db, #e1e5ee);
   border-radius: 6px 6px 0 0;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.70), inset 0 0 0 1px rgba(var(--warm-shadow, 15, 23, 42), 0.05);
