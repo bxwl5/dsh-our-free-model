@@ -329,8 +329,8 @@
     },
     {
       "path": "vendor/channel-pack/pack.js",
-      "size": 3119782,
-      "sha256": "4dc852f68a7f042eaf71f8486a0b2f96c88a1164abe5cdf43e62199d1f08ce6e"
+      "size": 3120458,
+      "sha256": "c81ef6a87240b928e80c77005c52ef017377b2cf07d9d4d6abed6020b0b10583"
     },
     {
       "path": "vendor/channel-pack/qoder-auth-wasm.wasm",
