@@ -153,7 +153,7 @@ main { flex: 1; min-width: 0; }
 .console-sidebar-footer small { margin-left: 4px; font-size: 11px; }
 .status-dot { display: inline-block; flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--success); animation: status-pulse 2s ease-in-out infinite; }
 @keyframes status-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-.status-dot.paused { background: #c08a1e; }
+.status-dot.paused { background: #adb2b8; }
 .topbar { height: 60px; padding: 0 32px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: var(--surface); gap: 14px; }
 .console-breadcrumb, .console-topbar-status { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--dsw-alias-label-tertiary); }
 .console-breadcrumb strong { font-weight: 500; color: var(--ink-soft); }
@@ -255,7 +255,7 @@ main { flex: 1; min-width: 0; }
 .channel-summary-strip strong { color: var(--ink); font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .channel-summary-strip strong small { font-size: 12px; font-weight: 400; }
 .channel-summary-strip .checkin-control { margin-left: auto; font-size: 11px; }
-.ui-switch { width: 33px; height: 20px; padding: 4px; border: 0; border-radius: 12px; background: #d6cfc2; transition: background 200ms var(--ease-out-expo); }
+.ui-switch { width: 33px; height: 20px; padding: 4px; border: 0; border-radius: 12px; background: #d3d7de; transition: background 200ms var(--ease-out-expo); }
 .ui-switch span { display: block; width: 14px; height: 14px; background: #fff; border-radius: 50%; transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 1px 2px rgba(15,23,42,0.12); }
 .ui-switch.on { background: var(--green); }
 .ui-switch.on span { transform: translateX(13px); }
@@ -623,7 +623,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #eef0f4; borde
   background: var(--muted); border-radius: 1px; box-shadow: none;
 }
 [data-theme="dark"] .ui-switch.on > span { background: var(--cp-cyan); box-shadow: 0 0 6px var(--cp-glow); }
-:root:not([data-theme="dark"]) .ui-switch.on { background: #d18a2e; border-color: #b5761f; }
+:root:not([data-theme="dark"]) .ui-switch.on { background: #4176e6; border-color: #3459c7; }
 /* ---------- 8. 侧边栏：夜=终端控制台面板 / 昼=纸面书脊 ---------- */
 [data-theme="dark"] .sidebar {
   background: linear-gradient(180deg, rgba(16,17,25,0.85), rgba(11,12,18,0.92));
@@ -2486,7 +2486,7 @@ code, pre, kbd { font-family: var(--mono-font); }
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 :root:not([data-theme="dark"]) .dashboard-chart-bar.zero {
-  background: linear-gradient(180deg, #efe9de, #e8e1d4);
+  background: linear-gradient(180deg, #ebeef2, #e1e5ee);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), inset 0 0 0 1px rgba(15, 23, 42, 0.05);
 }
 :root:not([data-theme="dark"]) .dashboard-chart-column:hover .dashboard-chart-bar {
@@ -2917,9 +2917,9 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
 /* ---------- 昼 · 主按钮：黄铜主键（世界观：昼=纸+黄铜，不是品牌蓝） ---------- */
 :root:not([data-theme="dark"]) body .ui-button-default,
 :root:not([data-theme="dark"]) body .primary {
-  background: linear-gradient(180deg, #d18a2e, #b5761f);
+  background: linear-gradient(180deg, #4176e6, #3459c7);
   color: #fffdf6;
-  border: 1px solid #a06a18;
+  border: 1px solid #2c4aa8;
   box-shadow: 1px 2px 0 rgba(var(--warm-shadow), 0.14), 0 6px 16px -8px rgba(var(--warm-shadow), 0.4);
 }
 :root:not([data-theme="dark"]) body .ui-button-default:hover,
@@ -2931,7 +2931,7 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
 }
 :root:not([data-theme="dark"]) body .ui-button-default:active,
 :root:not([data-theme="dark"]) body .primary:active {
-  background: linear-gradient(180deg, #b5761f, #a06a18);
+  background: linear-gradient(180deg, #3459c7, #2c4aa8);
   box-shadow: inset 0 2px 4px rgba(var(--warm-shadow), 0.28);
   transform: translateY(0);
 }
@@ -3100,9 +3100,9 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
   width: 33px !important;
   height: 20px !important;
   padding: 3px !important;
-  border: 1px solid #d4c9b5 !important;
+  border: 1px solid #d6dae1 !important;
   border-radius: 999px !important;
-  background: #ece6da !important;
+  background: #ebeef2 !important;
   box-shadow: 1px 2px 2px rgba(15,23,42,0.08) inset, 0 1px 1px rgba(255,255,255,0.6) !important;
   transition: background 600ms cubic-bezier(0.32,0.72,0,1), box-shadow 600ms cubic-bezier(0.32,0.72,0,1), border-color 600ms cubic-bezier(0.32,0.72,0,1) !important;
   position: relative !important;
@@ -3139,7 +3139,7 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
 /* on 状态滑块：变成黄铜色（仪器拨杆被推到黄铜端） */
 :root:not([data-theme="dark"]) .ui-switch.on span {
   background: linear-gradient(180deg, #d3e2ff 0%, #7aaaff 100%) !important;
-  box-shadow: 0 1px 2px rgba(15,23,42,0.20), 0 0 0 0.5px rgba(140,75,6,0.18) !important;
+  box-shadow: 0 1px 2px rgba(15,23,42,0.20), 0 0 0 0.5px rgba(65,118,230,0.18) !important;
   transform: translateX(13px) !important;
 }
 :root:not([data-theme="dark"]) .ui-switch.on span::after {
@@ -3286,8 +3286,8 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
 /* P1-6 ::selection 兜底（黄铜，拍基础层 2810 蓝） */
 :root:not([data-theme="dark"]) ::selection { background: rgba(65,118,230,0.20) !important; color: #1c1917 !important; }
 /* P0-1 hover 蓝辉光清零 */
-:root:not([data-theme="dark"]) .ui-switch.on:hover:not(:disabled) { box-shadow: inset 0 1px 0 rgba(255,255,255,0.30), inset 0 0 0 1px rgba(140,75,6,0.55), 0 4px 12px -6px rgba(65,118,230,0.50) !important; }
-:root:not([data-theme="dark"]) .ui-switch.on { box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), inset 0 0 0 1px rgba(140,75,6,0.50) !important; }
+:root:not([data-theme="dark"]) .ui-switch.on:hover:not(:disabled) { box-shadow: inset 0 1px 0 rgba(255,255,255,0.30), inset 0 0 0 1px rgba(65,118,230,0.55), 0 4px 12px -6px rgba(65,118,230,0.50) !important; }
+:root:not([data-theme="dark"]) .ui-switch.on { box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), inset 0 0 0 1px rgba(65,118,230,0.50) !important; }
 :root:not([data-theme="dark"]) .quick-endpoint:hover { border-color: var(--accent-line) !important; box-shadow: inset 0 1px 2px rgba(15,23,42,0.05), 0 0 0 3px rgba(65,118,230,0.06) !important; }
 :root:not([data-theme="dark"]) .source-row:hover { background: linear-gradient(90deg, rgba(65,118,230,0.055), rgba(65,118,230,0)) !important; }
 :root:not([data-theme="dark"]) .quick-icon { box-shadow: inset 0 0 0 1px rgba(65,118,230,0.12), 0 1px 2px rgba(15,23,42,0.06) !important; }

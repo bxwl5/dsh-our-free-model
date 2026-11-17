@@ -96,8 +96,22 @@ export function ChannelBrowser({ rpc, summary }: { rpc: Rpc; summary: Summary & 
               .catch(failure => { if (mounted.current) setError(failure.message) }).finally(() => { if (mounted.current) setBusy(false) })
           }}><span /></button>
       </div>
+      {/**
+        * 账号轮询开关（2026-11-17 重构）。
+        *
+        * 用户要求：「把右边直接改为和左边样式一样的」「不需要多余的文字」。
+        *
+        * 之前这里是一个**未加样式**的裸 flex 块，塞了四样东西：
+        * 「账号轮询」+ 小字「渠道内多账号，全局生效」+ 可编辑的次数输入框 + 一段 hint。
+        * 视觉上和左边的签到药丸完全不同，还允许改「每个账号连续 N 次」。
+        *
+        * 现在：与 `.checkin-control` 同款药丸 —— 状态点 + 单行文字 + 开关，
+        * **没有**小字、没有输入框、没有 hint。次数由 `DEFAULT_ACCOUNT_STICKY_LIMIT`
+        * 固定（用户此前已说过「轮询次数固定 10 不再支持修改」），拨开关时原样回传。
+        */}
       {strategy && (strategy.usableProviders ?? 0) > 0 ? <div className="account-strategy-control">
-        <span className="strategy-label">账号轮询<small>渠道内多账号，全局生效</small></span>
+        <span className="status-dot" />
+        <span>账号轮询</span>
         <button type="button" role="switch" aria-label="账号轮询" aria-checked={strategy.strategy === 'round-robin'}
           className={`ui-switch ${strategy.strategy === 'round-robin' ? 'on' : ''}`} disabled={busy} onClick={() => {
             const next = strategy.strategy === 'round-robin' ? 'sequential' : 'round-robin'
@@ -106,22 +120,6 @@ export function ChannelBrowser({ rpc, summary }: { rpc: Rpc; summary: Summary & 
               .then(() => rpc('account.getStrategy', {})).then(value => { if (mounted.current) setStrategy(value) })
               .catch(failure => { if (mounted.current) setError(failure.message) }).finally(() => { if (mounted.current) setBusy(false) })
           }}><span /></button>
-        <label className="strategy-count">每个账号连续
-          <Input type="number" min={1} max={1000} aria-label="轮询时每个账号连续使用次数"
-            value={String(strategy.stickyLimit)} disabled={busy || strategy.strategy !== 'round-robin'}
-            onChange={event => setStrategy({ ...strategy, stickyLimit: Number(event.target.value) || 1 })}
-            onBlur={event => {
-              setBusy(true)
-              void rpc('account.setStrategy', { strategy: 'round-robin', stickyLimit: Number(event.target.value) || 1 })
-                .then(() => rpc('account.getStrategy', {})).then(value => { if (mounted.current) setStrategy(value) })
-                .catch(failure => { if (mounted.current) setError(failure.message) }).finally(() => { if (mounted.current) setBusy(false) })
-            }} />
-          次后切换</label>
-        <span className="strategy-hint">
-          {strategy.strategy === 'round-robin'
-            ? `全部渠道生效：${strategy.usableProviders} 个多渠道轮流使用账号`
-            : `全部渠道生效：每个渠道始终用排在最前的账号（${strategy.usableProviders} 个多渠道受影响）`}
-        </span>
       </div> : null}
     </div>
     {error && <div className="channel-error" role="alert"><CircleAlert size={16} /><span>{error}</span><Button variant="ghost" onClick={() => { void reload() }}>重试</Button></div>}
