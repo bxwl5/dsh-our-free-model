@@ -6,6 +6,7 @@ import { generateKey } from '../../src/forward.js'
 import { structuralRejection } from '../../src/trust.js'
 import { openLoginTerminal } from './login-terminal.mjs'
 import { publicModelVisibility, validateModelVisibility, isModelHidden } from '../../src/store.js'
+import { normalizeCombos, buildComboCatalog } from '../../src/combos.js'
 
 const PREFIX = '/api/management'
 const BOOTSTRAP_MS = 10 * 60_000
@@ -61,6 +62,15 @@ function validateSettings(patch) {
     } else if (Object.hasOwn(numbers, key)) {
       const [min, max] = numbers[key]
       if (!Number.isInteger(value) || value < min || value > max) throw fail(400, `${key} 必须是 ${min} 到 ${max} 的整数`)
+    } else if (key === 'combos') {
+      /**
+       * 路由链（2026-11-17，对齐插件版 `src/combos.js`）。
+       *
+       * 只校验「是不是数组」，逐项归一交给 `normalizeCombos` —— 它已经处理了
+       * 非对象项、重复 id、空 models、未知 strategy、非法 stickyLimit。
+       * 在这里重复实现一遍校验只会让两处规则分叉。
+       */
+      if (!Array.isArray(value)) throw fail(400, 'combos 必须是数组')
     } else throw fail(400, `不支持的设置字段：${key}`)
     result[key] = value
   }
@@ -78,6 +88,7 @@ export function managementSettings(value) {
     standaloneLanPort: value.standaloneLanPort ?? 0,
     probeIntervalMinutes: value.probeIntervalMinutes ?? 15,
     defaultMaxTokens: value.defaultMaxTokens ?? 32768,
+    combos: Array.isArray(value.combos) ? value.combos : [],
   }
 }
 
@@ -285,6 +296,42 @@ export function createManagement({ stores, runtime, channels, info, onSettingsCh
       persist(patch)
       await onSettingsChanged()
       json(res, 200, { settings: managementSettings(stores.settings.get()), lan: info().lan })
+    /**
+     * `GET /combos` —— 当前路由链（归一后）与每条链「现在解析到哪些成员」。
+     *
+     * 为什么带 members：目录会变（渠道掉线、模型下架），存储里的链可能指向
+     * 已经消失的模型。把「配置」与「实际能走到的成员」分开显示，
+     * 用户才看得出「这条链现在只剩一个成员」而不是以为它还在三路冗余。
+     */
+    } else if (method === 'GET' && pathname === `${PREFIX}/combos`) {
+      const configured = normalizeCombos(stores.settings.get().combos)
+      const catalogNow = runtime.catalog
+      const rows = configured.map(combo => {
+        const virtual = buildComboCatalog([combo], catalogNow)[0]
+        const configuredIds = combo.models
+        const liveIds = virtual?.combo ?? []
+        return {
+          ...combo,
+          members: liveIds,
+          /** 配置里写了、但当前目录查不到的成员 —— 链的断点。 */
+          missing: configuredIds.filter(id => !liveIds.includes(id)),
+        }
+      })
+      json(res, 200, { combos: rows })
+    } else if (method === 'POST' && pathname === `${PREFIX}/combos`) {
+      /**
+       * `POST /combos` —— 整表替换（不是逐条增删）。
+       *
+       * 用整表替换是有意的：前端编辑器天然就有完整列表，逐条 CRUD 会引入
+       * 「删到一半失败」的中间态。`normalizeCombos` 负责把非法项丢掉，
+       * 所以一次失败的编辑最多是被归一，而不是把设置写坏。
+       */
+      const body = await readBody(req)
+      if (!Array.isArray(body.combos)) throw fail(400, '请提供 combos 数组')
+      const normalized = normalizeCombos(body.combos)
+      persist({ combos: normalized })
+      await onSettingsChanged?.()
+      json(res, 200, { combos: normalizeCombos(stores.settings.get().combos) })
     } else if (method === 'GET' && pathname === `${PREFIX}/lan/key`) {
       json(res, 200, { key: stores.settings.get().standaloneLanKey ?? '' })
     } else if (method === 'POST' && pathname === `${PREFIX}/lan/key/rotate`) {

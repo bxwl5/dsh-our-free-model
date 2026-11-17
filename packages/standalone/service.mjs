@@ -6,8 +6,13 @@ import crypto from 'node:crypto'
 import { createModelRuntime, createRuntimeStores } from '../../src/core/runtime.js'
 import { generateKey, rankLanAddresses, startForwardServer, startLanRelay } from '../../src/forward.js'
 import { isLoopbackHost } from '../../src/trust.js'
+import { isModelHidden } from '../../src/store.js'
 import { createManagement } from './management.mjs'
 import { createChannelRuntime } from './channels/runtime.mjs'
+import {
+  COMBO_CHANNEL, isComboEntry, normalizeCombos, buildComboCatalog,
+  comboChain, noteComboServed, pruneRotation,
+} from '../../src/combos.js'
 
 const PRODUCT = 'our-free-model-standalone'
 const VERSION = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version
@@ -183,7 +188,16 @@ export async function startStandalone({
               enabled: !stopped && stores.settings.get().enabled !== false,
               key: stores.settings.get().forwardKey,
             }),
-            complete: runtime.complete, modelRows: runtime.publicModelRows,
+            /**
+             * ⚠️ 必须**延迟读取** `runtime.complete`，不能在这里按值捕获。
+             *
+             * 这个 relay 在 `runtime` 被 combo 包装**之前**就启动了；按值捕获
+             * 拿到的是包装前的 `core.complete`，于是 combo 请求会绕过
+             * `completeCombo` 直接交给 core 的 `runCombo`——那份只查 core 自己的
+             * catalog，看不到渠道模型，成员就永远「缺失」。
+             */
+            complete: (request, onChunk) => runtime.complete(request, onChunk),
+            modelRows: () => runtime.publicModelRows(),
           })
         }
         const targetPort = relayTarget?.port ?? listener.port
@@ -249,14 +263,158 @@ export async function startStandalone({
     })
     channels = await createChannelRuntime({ dataDir, logger, stats: stores.stats })
     const core = runtime
+    /**
+     * 两个 runtime 的**真实**模型行（core 免费模型 + channels 渠道模型）。
+     *
+     * ## 为什么要把 core 的 combo 行剔掉
+     * `src/core/runtime.js` 自己也调 `buildComboCatalog` —— 但它只看 core 的
+     * catalog，**看不到 standalone 的渠道模型**。如果两层的 combo 行都留下：
+     * ① 同一条链在 `/v1/models` 里出现两次；
+     * ② 引用渠道模型的链会被 core 判成「成员缺失」而缩水。
+     *
+     * 所以这里剔除 core 的 combo 行，由下面统一按**合并后的真实目录**重建一次。
+     */
+    const realCatalog = () => [
+      /**
+       * ⚠️ 用 `core.publicModelRows()`（已按可见性/可路由过滤）而**不是**
+       * `core.catalog`（全量）。
+       *
+       * `publicModelRows` 会经 `routableModelIds()` 剔除 `hiddenModelIds` 与
+       * `hideFreeModels` 命中的模型；而 combo 的链成员是在这里解析的。
+       * 若用全量 catalog，一个被用户隐藏的模型会**通过 combo 重新出现在
+       * `/v1/models`** —— 隐藏对它失效（实测踩过：隐藏 mimo 后清单里仍有它）。
+       */
+      ...core.publicModelRows()
+        .map(row => {
+          const full = core.catalog.find(c => c.id === row.id)
+          return full === undefined ? row : { ...full, ...row }
+        })
+        .filter(row => !isComboEntry(row)),
+      ...channels.publicModelRows()
+        .filter(row => !isModelHidden(row, stores.settings.get()))
+        .map(row => ({ ...row, contextWindow: row.context_window, maxOutput: row.max_tokens })),
+    ]
+    /** 归一后的路由链（每次读设置，保存后立即生效）。 */
+    const combos = () => {
+      const value = normalizeCombos(settings.get().combos)
+      pruneRotation(value)
+      return value
+    }
+    /** 按模型名找 combo 定义；不是 combo 返回 undefined。 */
+    const comboEntryFor = modelId => {
+      if (typeof modelId !== 'string' || !modelId.startsWith('combo:')) return undefined
+      const entry = buildComboCatalog(combos(), realCatalog()).find(row => row.id === modelId)
+      return entry === undefined ? undefined : { ...entry, models: entry.combo }
+    }
+    /**
+     * 走一条 combo 链：按 `comboChain` 给出的顺序逐个尝试，第一个产出内容的赢。
+     *
+     * ## 两条必须同时成立的策略（用户 2026-11-17 明确要求）
+     * - **降级**：前面的成员失败就换下一个。失败在这里**不会抛异常** ——
+     *   `core.complete` / `channels.complete` 是「返回 outcome，失败写进
+     *   `outcome.error` 与 `outcome.failure`」的契约。所以必须检查返回值，
+     *   否则会把一次失败当成成功直接 return（实测踩过：只试了第一个成员）。
+     * - **轮询**：从哪开始由 `comboChain` 决定（`fallback` 恒走链头；
+     *   `round-robin` 按 sticky 名额轮转），作答成功后 `advanceComboCursor` 挪游标。
+     *
+     * ## 为什么要缓冲 chunk
+     * 失败成员的 `finish` 块（`reason.kind === 'error'`）也会经过 `onChunk`。
+     * 如果直接转发，客户端已经收到「错误」或半截内容，再换下一个成员就是
+     * 「一回合里两次作答」——上游计费与客户端语义都乱。
+     *
+     * 因此：首块**内容**（`text-delta` / `tool-call-delta` / `usage`）到达之前
+     * 全部暂存，到达即视为该成员成功并立刻放行（流式延迟只多第一块），
+     * 若先等来 `finish` 且带失败则整批丢弃、换下一个成员。
+     */
+    const completeCombo = async (entry, request, onChunk) => {
+      const catalogNow = realCatalog()
+      const chain = comboChain(entry, catalogNow)
+      if (chain.length === 0) throw new Error(`路由链 ${entry.id} 没有可用的成员模型`)
+      const handler = typeof onChunk === 'function' ? onChunk : undefined
+      let lastFailure
+      for (const member of chain) {
+        if (stopped) throw new Error('服务已停止')
+        let committed = false
+        const held = []
+        const sink = chunk => {
+          if (committed) { handler?.(chunk); return }
+          const kind = chunk?.type ?? chunk?.kind
+          if (kind === 'text-delta' || kind === 'tool-call-delta' || kind === 'usage') {
+            committed = true
+            for (const row of held) handler?.(row)
+            held.length = 0
+            handler?.(chunk)
+            return
+          }
+          held.push(chunk)
+        }
+        const result = await (channels.handles(member.id)
+          ? channels.complete({ ...request, model: member.id }, sink)
+          : core.complete({ ...request, model: member.id }, sink))
+        const failed = result?.error !== undefined || result?.failure !== undefined
+        if (failed) {
+          lastFailure = result?.failure ?? { message: result?.error ?? '未知失败' }
+          logger?.warn?.(`[standalone] 路由链 ${entry.id} 的成员 ${member.id} 失败，换下一个：${lastFailure.message ?? lastFailure}`)
+          continue
+        }
+        // 成功但没来过内容块（空回复）：此时 held 里还有 finish，补发出去。
+        if (!committed) for (const row of held) handler?.(row)
+        noteComboServed(entry.id, member.id)
+        /**
+         * ⚠️ **不要**在这里调 `advanceComboCursor`。
+         *
+         * `combos.js` 的注释写明：生产路径已不调用它 —— 轮询游标的推进**在
+         * `comboChain` 内部**按 `stickyLimit` 名额完成（每调一次就消耗一个
+         * 名额，满额前移）。再在作答后手动前移会造成「双倍推进」：
+         * stickyLimit=1 时实际变成 2 回合轮一次。
+         */
+        return result
+      }
+      throw new Error(`路由链 ${entry.id} 全部成员失败：${lastFailure?.message ?? '未知原因'}`)
+    }
+
     runtime = {
       ...core,
       get egress() { return core.egress },
       get gatewayLatency() { return core.gatewayLatency },
-      get catalog() { return [...core.catalog, ...channels.publicModelRows().map(row => ({ ...row, contextWindow: row.context_window, maxOutput: row.max_tokens }))] },
-      state: () => ({ ...core.state(), catalog: [...core.catalog, ...channels.publicModelRows()] }),
-      publicModelRows: () => [...core.publicModelRows(), ...channels.publicModelRows()],
-      complete: (request, onChunk) => channels.handles(request.model) ? channels.complete(request, onChunk) : core.complete(request, onChunk),
+      /**
+       * 路由链（combo）—— 对齐插件版 `src/combos.js`（2026-11-17）。
+       *
+       * 插件里一套 combo 是「一个模型名背后一串真实模型」：按 `strategy` 决定
+       * 从链头还是轮转位置开始，逐个尝试，第一个产出内容的赢。独立版此前
+       * **没有接** `combos.js`（business.mjs 里只有一句提到它的注释），
+       * 所以面板选不到 combo 模型。
+       *
+       * 这里是唯一的接线点：`catalog` 暴露虚拟行，`complete` 负责走链。
+       */
+      get catalog() {
+        const real = realCatalog()
+        return [...real, ...buildComboCatalog(combos(), real)]
+      },
+      /**
+       * `state()` 是**管理面**的口径 —— 必须保留被隐藏的模型。
+       *
+       * 面板要显示「这个模型被隐藏了」以及它的历史调用量，靠的就是这里
+       * 有 `hiddenByUser` / `hiddenByGroup` 两列（`management.mjs` 的
+       * `summary()` 会再算一遍）。如果这里也按可见性过滤，被隐藏的行会从
+       * 管理清单里**消失**，用户就再也取消不了隐藏。
+       *
+       * 所以：`catalog`（全量）用于 state，`publicModelRows`（过滤后）用于
+       * `/v1/models`。combo 成员一律按**全量**解析，可见性只在广播时生效。
+       */
+      state: () => {
+        const real = core.catalog.filter(row => !isComboEntry(row))
+        return { ...core.state(), catalog: [...real, ...buildComboCatalog(combos(), real)] }
+      },
+      publicModelRows: () => {
+        const real = realCatalog()
+        return [...real, ...buildComboCatalog(combos(), real)]
+      },
+      complete: (request, onChunk) => {
+        const entry = comboEntryFor(request.model)
+        if (entry !== undefined) return completeCombo(entry, request, onChunk)
+        return channels.handles(request.model) ? channels.complete(request, onChunk) : core.complete(request, onChunk)
+      },
       async refreshCatalog(options) {
         if (stopped) return
         await Promise.all([core.refreshCatalog(options), channels.refresh().catch(error => { if (!stopped) throw error })])
@@ -279,8 +437,9 @@ export async function startStandalone({
     })
     listener = await startForwardServer({
       config: () => ({ host, port: requestedPort, enabled: settings.get().enabled !== false, key: settings.get().forwardKey }),
-      complete: runtime.complete,
-      modelRows: runtime.publicModelRows,
+      // 同上：延迟读取，确保拿到 combo 包装后的 complete。
+      complete: (request, onChunk) => runtime.complete(request, onChunk),
+      modelRows: () => runtime.publicModelRows(),
       health: () => ({
         ok: true, service: PRODUCT, product: 'standalone', version: VERSION,
         capabilities: { anonymous: true, kilo: true, accountChannels: true, webUi: true },
