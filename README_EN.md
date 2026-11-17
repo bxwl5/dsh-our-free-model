@@ -37,9 +37,6 @@ You can just say:
 
 > Install this plugin for me: https://github.com/bxwl5/dsh-our-free-model
 
-Manual install: drop the repository tarball into the profile's `vendor/`, set the dependency to
-`"dsh-our-free-model": "file:./vendor/dsh-our-free-model-2.5.7-priv.2.tgz"`, then append it to `dsh.profile.bundles`.
-
 > The same-named package on npm is **not** published by this repository — do not install from npm.
 
 ## Usage
@@ -49,18 +46,34 @@ After restarting, the composer's model picker gains an **Our Free Model** group.
 ## Docker (standalone service)
 
 You can skip DSH entirely and run the standalone build in a container. The image is
-built by GitHub Actions and pushed to GHCR for both `linux/amd64` and `linux/arm64`:
+built by GitHub Actions and pushed to GHCR for both `linux/amd64` and `linux/arm64`.
+
+### For LAN use / local use
+
+The whole point of a container is letting your phone, tablet, or another computer use it,
+so switch the relay on explicitly:
 
 ```bash
 docker run -d --name ofm \
   --network host \
   -v ofm-data:/data \
   -e TZ=Asia/Shanghai \
+  -e OFM_PASSWORD=pick-your-own-password \
   --restart unless-stopped \
-  ghcr.io/bxwl5/dsh-our-free-model:latest
-
-docker logs ofm | head -5     # one-time dashboard login link
+  ghcr.io/bxwl5/dsh-our-free-model:latest \
+  --lan --lan-port 9981 --lan-panel
 ```
+
+Then open `http://<host-ip>:9981/` (use whatever port you passed). This combination gives
+you one credential:
+
+| Credential | Purpose |
+|---|---|
+| **Dashboard password** (`OFM_PASSWORD`) | Sign in to the dashboard and change settings. **Leave it unset and there is no auth at all** — anyone can get in |
+
+⚠️ With a password set, the dashboard requires you to sign in before reaching the console;
+clicking **Log out** returns you to the password prompt.
+
 
 ## Channels
 
