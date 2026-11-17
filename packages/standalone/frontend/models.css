@@ -174,7 +174,17 @@
 .model-table-header, .model-table-row {
   display: grid;
   grid-template-columns: minmax(160px, 2.3fr) minmax(115px, 1.25fr) minmax(105px, 1fr) minmax(100px, 1fr) 158px;
-  gap: 20px; padding: 16px; align-items: center;
+  /**
+   * 行高压缩（2026-11-17 用户：模型清单卡片太高，要更紧凑）。
+   *
+   * 原来 `padding: 16px` + `min-height: 96px` + `gap: 20px` —— 一行 96px，
+   * 一屏只看得到 6 行。模型清单是**扫描型**界面（找某个 id、看哪个可用），
+   * 不是阅读型，行高应该服从「一屏尽可能多」。
+   *
+   * 改成 10px 纵向内边距 + 64px 下限，配合下面 .model-table-row 的调整，
+   * 一行约 64px，同屏可见行数提升约 50%。
+   */
+  gap: 16px; padding: 10px 14px; align-items: center;
 }
 .model-table-header {
   background: var(--md-surface-raised); color: var(--md-ink-tertiary);
@@ -184,7 +194,7 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 /* 滚动区常驻 6px 滚动条槽，表头补等宽内边距，五列才与数据行严格对齐。 */
-.model-table-header { padding-right: calc(16px + 6px); }
+.model-table-header { padding-right: calc(14px + 6px); }
 .model-table-header > span:last-child { text-align: right; }
 
 /* ---- 滚动区 ---- */
@@ -204,7 +214,7 @@
 .model-table-row {
   position: absolute; top: 0; left: 0; width: 100%;
   border-bottom: 1px solid var(--md-line-soft);
-  font-size: 13px; min-height: 96px;
+  font-size: 12.5px; min-height: 64px;
   font-variant-numeric: tabular-nums;
   transition: background-color var(--md-duration-normal) var(--md-ease-out);
 }
@@ -368,7 +378,7 @@
   .model-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .model-filters > select:last-child { grid-column: 1 / -1; }
   .model-table-header { display: none; }
-  .model-table-row { grid-template-columns: minmax(0, 1fr) auto; gap: 10px 12px; padding: 16px 12px; }
+  .model-table-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; padding: 10px 12px; }
   .model-table-row .model-identity { grid-column: 1 / -1; }
   .model-table-row .model-source { grid-column: 1; grid-row: 2; }
   .model-table-row .model-state { grid-column: 2; grid-row: 2; align-items: flex-end; }

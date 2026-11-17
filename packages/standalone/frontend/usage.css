@@ -196,7 +196,7 @@
 /* 空态运行检查 */
 .ov-runtime-empty {
   display: flex; align-items: center; gap: 8px;
-  padding: 20px 0; color: var(--us-success);
+  padding: 12px 0; color: var(--us-success);
 }
 .ov-runtime-empty svg { flex-shrink: 0; }
 .ov-runtime-empty span { color: var(--us-ink-tertiary); }
@@ -281,7 +281,7 @@
 
 /* ---- 按模型统计面板 ---- */
 .usage-model-filters {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 16px 0;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 11px 0;
 }
 .usage-model-search { position: relative; min-width: 0; flex: 1; }
 .usage-model-search > svg {

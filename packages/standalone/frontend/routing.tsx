@@ -232,33 +232,42 @@ function ChainEditor({ chain, candidates, busy, host, onSave, onCancel }: {
       <h2>{chain.id === '' ? '新建链路' : '编辑链路'}</h2>
       <p>成员顺序即尝试顺序；{strategy === 'round-robin' ? '轮询会按粘滞次数轮换起点。' : '顺序降级每回合都从链头开始。'}</p></div></div>
 
-    <div className="routing-field">
-      <label className="field-label" htmlFor="routing-name">名称</label>
-      <Input id="routing-name" value={name} placeholder="例如：主力线路" disabled={busy}
-        onChange={event => setName(event.target.value)} />
-    </div>
-
-    <div className="routing-field">
-      <span className="field-label">策略</span>
-      <div className="routing-seg" role="group">
-        {([['fallback', '顺序降级'], ['round-robin', '轮询']] as const).map(([value, label]) =>
-          <button key={value} type="button" disabled={busy} aria-pressed={strategy === value}
-            className={`routing-seg-btn${strategy === value ? ' is-active' : ''}`}
-            onClick={() => { if (!busy) setStrategy(value) }}>{label}</button>)}
+    {/**
+      * 名称 / 策略 / 粘滞 / 启用 —— **排在同一行**（2026-11-17 用户：
+      * 「降序和轮询两个右边空太多了，不行就放到名称右边去」）。
+      *
+      * 原来每个字段各占一行、标签在输入框上方，右半边大片留白，
+      * 四个字段白占四行高度。现在用 `flex` 横排：名称吃掉剩余宽度，
+      * 策略是分段控件、粘滞只在轮询时出现、启用是勾选。
+      */}
+    <div className="routing-fields">
+      <div className="routing-field routing-field-grow">
+        <label className="field-label" htmlFor="routing-name">名称</label>
+        <Input id="routing-name" value={name} placeholder="例如：主力线路" disabled={busy}
+          onChange={event => setName(event.target.value)} />
       </div>
+
+      <div className="routing-field">
+        <span className="field-label">策略</span>
+        <div className="routing-seg" role="group">
+          {([['fallback', '顺序降级'], ['round-robin', '轮询']] as const).map(([value, label]) =>
+            <button key={value} type="button" disabled={busy} aria-pressed={strategy === value}
+              className={`routing-seg-btn${strategy === value ? ' is-active' : ''}`}
+              onClick={() => { if (!busy) setStrategy(value) }}>{label}</button>)}
+        </div>
+      </div>
+
+      {strategy === 'round-robin' && <div className="routing-field routing-field-num">
+        <label className="field-label" htmlFor="routing-sticky">粘滞次数</label>
+        <Input id="routing-sticky" type="number" min={1} max={100} className="routing-num" disabled={busy}
+          value={stickyLimit} onChange={event => setStickyLimit(event.target.value)} />
+      </div>}
+
+      <label className="routing-toggle">
+        <input type="checkbox" checked={enabled} disabled={busy} onChange={() => setEnabled(value => !value)} />
+        <span>启用</span>
+      </label>
     </div>
-
-    {strategy === 'round-robin' && <div className="routing-field">
-      <label className="field-label" htmlFor="routing-sticky">轮询粘滞次数</label>
-      <Input id="routing-sticky" type="number" min={1} max={100} className="routing-num" disabled={busy}
-        value={stickyLimit} onChange={event => setStickyLimit(event.target.value)} />
-      <p className="footnote">轮询时同一个模型连续用多少次再换下一个。</p>
-    </div>}
-
-    <label className="routing-toggle">
-      <input type="checkbox" checked={enabled} disabled={busy} onChange={() => setEnabled(value => !value)} />
-      <span>启用</span>
-    </label>
 
     <div className="routing-members-head">
       <span className="field-label">成员（按顺序）</span>

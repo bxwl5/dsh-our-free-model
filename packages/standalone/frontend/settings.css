@@ -13,7 +13,8 @@
 .settings-card-heading > svg { color: var(--dsw-alias-accent-primary); flex-shrink: 0; }
 .settings-card-heading h2 { font-size: 15px; }
 .settings-card-heading p { font-size: 12px; margin-top: 4px; }
-.settings-field { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 20px 0; border-bottom: 1px solid var(--line); }
+/* 行高压缩（2026-11-17 用户：其他界面也普遍偏松）。20px → 12px 纵向内边距。 */
+.settings-field { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .settings-field:last-child { border-bottom: 0; padding-bottom: 0; }
 .settings-field > span, .settings-field > label { min-width: 0; }
 .settings-field strong { display: block; font-size: 13px; font-weight: 550; }
@@ -183,7 +184,7 @@
 .ofm_root .ofm_seg button[aria-selected=true] { font-weight: 600; }
 
 /* 供应商与数据管理面板 */
-.ofm_root .ofm_hero { border: 1px solid var(--line); padding: 19px 21px; }
+.ofm_root .ofm_hero { border: 1px solid var(--line); padding: 14px 18px; }
 .ofm_root .ofm_hero h3 { font-size: 14px; font-weight: 600; color: var(--ink); margin: 0 0 4px; }
 .ofm_root .ofm_hero:hover { transform: none; box-shadow: var(--shadow-sm); }
 .ofm_root .ofm_row { align-items: center; padding: 6px 0; border-top: 1px solid rgba(173,178,184,0.10); }
