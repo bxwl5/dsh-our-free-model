@@ -91,8 +91,23 @@
  * 改法：max-height 提到 520px 并保留滚动；组头行加 `position: sticky`，
  * 折叠/展开状态下组头始终可点，滚动时也知道当前在哪个供应商。
  */
-.routing-pick-list { margin-top: 10px; max-height: 520px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
-.routing-pickgroup { border: 1px solid var(--line); border-radius: var(--ofm-radius-xs); overflow: hidden; background: var(--surface); }
+.routing-pick-list { margin-top: 10px; max-height: min(520px, 62vh); overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
+/**
+ * ⚠️ 组框必须禁止 flex 收缩（2026-11-18 审查实测：滚动锁死的真正根因）。
+ *
+ * 列表是 flex column + max-height；子项 .routing-pickgroup 默认
+ * `flex-shrink:1`，内容超高时**组被压缩而不是溢出**，再被组自身的
+ * overflow hidden 静默裁掉 —— 父容器永远看不到溢出，**滚动条根本不出现**，
+ * 被裁的行不可滚达（40 行/3 组实测 22/40 可见、scrollTopMax=0）。
+ * 加 flex-shrink:0 后溢出回到父容器：实测 scrollHeight 520→1734、可滚。
+ */
+.routing-pick-list > .routing-pickgroup { flex-shrink: 0; }
+/**
+ * overflow 用 clip 而非 hidden（2026-11-18 审查）：hidden 会让本组框成为
+ * 子项 sticky 的包含块，组头的 position:sticky 只在（被压缩的）组框内生效；
+ * clip 同样裁圆角内容但不构成 sticky 参照，组头能钉到列表视口顶（实测）。
+ */
+.routing-pickgroup { border: 1px solid var(--line); border-radius: var(--ofm-radius-xs); overflow: clip; background: var(--surface); }
 .routing-pickgrouphead {
   width: 100%; display: flex; align-items: center; gap: 8px;
   padding: 7px 11px; border: 0; background: var(--surface); color: var(--ink-soft);
@@ -160,9 +175,13 @@
  * **只在浅色 :root 定义过一次**，[data-theme="dark"] 段没有重定义——暗色下
  * 这些值仍是白底深字，叠在 --paper:#0a0b10 的页面底上就是「完全看不清」。
  *
- * app.css 的暗色块重定义过 --dsw-alias-bg-layer-*/border-l*（#101119 系），
+ * app.css 的暗色块重定义过 bg-layer-1/2/3 与 border-l1/l2（#101119 系），
  * 本页暗色直接对齐那套；不重定义全局变量（那会影响所有未适配暗色的页面，
  * 风险太大），只在本页作用域内覆写。
+ *
+ * ⚠️ 本文件任何注释都不得出现「星号+斜杠」序列——那会把块注释提前闭合，
+ * 其后的规则整条被浏览器丢弃（2026-11-18 实测踩坑：变量覆写整条失效，
+ * 表现为「底色变暗了、文字没变亮」）。
  */
 [data-theme="dark"] .routing-browser {
   --surface: #141622;
@@ -181,7 +200,7 @@
 [data-theme="dark"] .routing-pick:hover:not(:disabled),
 [data-theme="dark"] .routing-pickgrouphead:hover { background: rgba(255, 255, 255, 0.05); }
 [data-theme="dark"] .routing-pick.is-picked { border-color: var(--green); background: rgba(0, 208, 192, 0.10); }
-[data-theme="dark"] .routing-pick b { color: var(--dfe6e9, #dfe6e9); }
+[data-theme="dark"] .routing-pick b { color: #dfe6e9; }
 [data-theme="dark"] .routing-pickcheck { color: var(--green); }
 /* 编辑器与已存链路卡片、成员行：白底改暗 */
 [data-theme="dark"] .routing-card,
