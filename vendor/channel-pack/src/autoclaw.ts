@@ -57,8 +57,19 @@ export function isCredentialExpired(credential: AutoClawCredential, nowMs: numbe
 /**
  * 桌面端版本（上游 `DESKTOP_APP_VERSION`；userapi 域另有
  * `AUTOCLAW_USERAPI_VERSION`，两个域各按各的门控，别混）。
+ *
+ * ## 2026-11-17：1.18.5 → 2.2.0（对齐 magpie opencode-autoclaw-auth 0.2.24）
+ *
+ * 上游按 `X-Version` 决定「按哪一档客户端对待」。magpie 实测（五个账号）：
+ * 只有 **`AutoClaw20` 渠道 + `2.2.0`** 这套指纹才被判为「官方桌面端」并记录
+ * `autoclaw_user_active` —— 用旧版号或极简头时接口虽然回 `code=0`，但
+ * **签到奖励不发**（国际「Weekly Perks」/ 国内「用户登录奖励」都拿不到）。
+ *
+ * ⚠️ 版本号与 `X-Channel` 是**一套**的，别只改一个：magpie 的奖励链路用
+ * `X-Channel: AutoClaw20`。本仓库目前仍发 `official`（模型目录/对话链路沿用），
+ * 若要拿签到奖励需连同渠道一起改，见 `autoclaw-sms.ts` 的签到头。
  */
-const AUTOCLAW_DESKTOP_VERSION = '1.18.5'
+const AUTOCLAW_DESKTOP_VERSION = '2.2.0'
 
 /**
  * 平台标识（上游 `platform_tm`）。

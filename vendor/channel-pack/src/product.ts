@@ -67,8 +67,25 @@ export interface BuddyUserAgentRule {
  * 虽在国际版池中也可见，但仍沿用国内客户端形态（`WorkBuddy/<ver> WorkBuddy/...`），
  * 与 realm 无关。
  */
-const WORKBUDDY_UA_INTL = 'WorkBuddy/5.5.2 WorkBuddy AI/5.5.2 CLI/5.5.2'
-const WORKBUDDY_UA_CN = 'WorkBuddy/5.5.2 WorkBuddy/5.5.2 CLI/5.5.2'
+/**
+ * 客户端版本（2026-11-17：5.5.2 → **5.9.3**，CLI 5.5.2 → **2.165.0**）。
+ *
+ * 对齐 magpie `opencode-workbuddy-auth` 0.2.36 的两个站点配置 ——
+ * **国内版与国际版版本号相同**，只有 `appName` 段不同：
+ *
+ * | 站点 | endpoint | app | cli | UA 第二段 |
+ * |---|---|---|---|---|
+ * | 国内 WorkBuddy | `copilot.tencent.com` | 5.9.3 | 2.165.0 | `WorkBuddy` |
+ * | 国际 WorkBuddy AI | `www.workbuddy.ai` | 5.9.3 | 2.165.0 | `WorkBuddy AI` |
+ *
+ * 上游读的是 WorkBuddy 5.9.3.42398134 这个构建（magpie 从更新源取的当前版本）。
+ * 我方旧值 5.5.2 落后两个小版本，且 CLI 段（5.5.2）与真实 CLI（2.165.0）
+ * **完全不是一条版本线** —— 桌面端自带 CLI 的版本号是 2.x 系列。
+ */
+const WORKBUDDY_APP_VERSION = '5.9.3'
+const WORKBUDDY_CLI_VERSION = '2.165.0'
+const WORKBUDDY_UA_INTL = `WorkBuddy/${WORKBUDDY_APP_VERSION} WorkBuddy AI/${WORKBUDDY_APP_VERSION} CLI/${WORKBUDDY_CLI_VERSION}`
+const WORKBUDDY_UA_CN = `WorkBuddy/${WORKBUDDY_APP_VERSION} WorkBuddy/${WORKBUDDY_APP_VERSION} CLI/${WORKBUDDY_CLI_VERSION}`
 
 /** 一个 CodeBuddy 系产品的全部差异配置。 */
 export interface BuddyProduct {
@@ -399,11 +416,12 @@ export const WORKBUDDY: BuddyProduct = {
     { match: 'minimax-', ua: WORKBUDDY_UA_CN },
   ],
   attributionName: 'WorkBuddy',
-  clientVersion: '5.5.2',
-  cliVersion: '5.5.2',
+  // 与 UA 同源：app 5.9.3 / cli 2.165.0（见上面的版本注记）。
+  clientVersion: WORKBUDDY_APP_VERSION,
+  cliVersion: WORKBUDDY_CLI_VERSION,
   defaultCredentialRef: 'WORKBUDDY_ACCESS_TOKEN',
   appendSessionParams: true,
-  pluginVersion: '5.5.2',
+  pluginVersion: WORKBUDDY_APP_VERSION,
   fallbackModels: WORKBUDDY_FALLBACK_MODELS,
 }
 

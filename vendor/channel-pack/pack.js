@@ -29654,7 +29654,7 @@ var init_autoclaw_sms = __esm({
     PHONE_RE = /^1[3-9]\d{9}$/;
     stripBearer = (value) => typeof value === "string" ? value.replace(/^Bearer\s+/i, "").trim() : "";
     AUTOCLAW_REFRESH_PATHS = ["/userapi/v1/refresh", "/userapi/v1/agent-refresh"];
-    AUTOCLAW_USERAPI_VERSION = "1.18.5";
+    AUTOCLAW_USERAPI_VERSION = "2.2.0";
     AUTOCLAW_TASK_COMPLETE_PATH = "/autoclaw-proxy/proxy/autoclaw-task-complete";
     AUTOCLAW_DAILY_SIGNIN_TASK = "daily_signin";
     AUTOCLAW_EXTRA_TASKS = ["daily_inspiration_center"];
@@ -38542,8 +38542,10 @@ function parseModelMeta(record) {
 }
 
 // vendor/channel-pack/src/product.ts
-var WORKBUDDY_UA_INTL = "WorkBuddy/5.5.2 WorkBuddy AI/5.5.2 CLI/5.5.2";
-var WORKBUDDY_UA_CN = "WorkBuddy/5.5.2 WorkBuddy/5.5.2 CLI/5.5.2";
+var WORKBUDDY_APP_VERSION = "5.9.3";
+var WORKBUDDY_CLI_VERSION = "2.165.0";
+var WORKBUDDY_UA_INTL = `WorkBuddy/${WORKBUDDY_APP_VERSION} WorkBuddy AI/${WORKBUDDY_APP_VERSION} CLI/${WORKBUDDY_CLI_VERSION}`;
+var WORKBUDDY_UA_CN = `WorkBuddy/${WORKBUDDY_APP_VERSION} WorkBuddy/${WORKBUDDY_APP_VERSION} CLI/${WORKBUDDY_CLI_VERSION}`;
 var CODEBUDDY_FALLBACK_MODELS = [
   {
     id: "hy4-preview",
@@ -38881,11 +38883,12 @@ var WORKBUDDY = {
     { match: "minimax-", ua: WORKBUDDY_UA_CN }
   ],
   attributionName: "WorkBuddy",
-  clientVersion: "5.5.2",
-  cliVersion: "5.5.2",
+  // 与 UA 同源：app 5.9.3 / cli 2.165.0（见上面的版本注记）。
+  clientVersion: WORKBUDDY_APP_VERSION,
+  cliVersion: WORKBUDDY_CLI_VERSION,
   defaultCredentialRef: "WORKBUDDY_ACCESS_TOKEN",
   appendSessionParams: true,
-  pluginVersion: "5.5.2",
+  pluginVersion: WORKBUDDY_APP_VERSION,
   fallbackModels: WORKBUDDY_FALLBACK_MODELS
 };
 var ALL_PRODUCTS = [CODEBUDDY, WORKBUDDY];
@@ -42201,8 +42204,25 @@ var TRAE = {
   consoleHost: TRAE_CONSOLE_HOST,
   clientId: "en1oxy7wnw8j9n",
   appId: "6eefa01c-1036-4c7e-9ca5-d891f63bfcd8",
-  ideVersion: "0.1.52",
-  ideVersionCode: "20260811",
+  /**
+   * IDE / 客户端版本（2026-11-17：0.1.52 → **0.1.69**，对齐 magpie
+   * `opencode-trae-auth` 0.2.40）。
+   *
+   * ## 为什么必须升
+   * 上游**按客户端版本决定给不给新模型** —— magpie 的注释写得很明确：
+   * 「Trae offers a model only to clients new enough for it, and an April IDE
+   * was offered no `deepseek-v4.1-flash`」。也就是说 0.1.52（4 月那个 IDE）
+   * 在模型宿主眼里太旧，新模型根本不会下发到我们的清单里。
+   *
+   * 这个值同时进 `X-Ide-Version` 与 `X-Ide-Version-Code`，magpie 那边的对应
+   * 值是 `clientVersion 0.1.69` / `clientVersionCode 20260917`。
+   *
+   * ⚠️ `pluginVersion` 已经是 `2.3.62834`（与 magpie 最新值一致），**不用改** ——
+   * IDE 版本与插件版本是两条独立版本线。
+   */
+  ideVersion: "0.1.69",
+  /** 与 ideVersion 0.1.69 配对（magpie 的 clientVersionCode）。 */
+  ideVersionCode: "20260917",
   deviceBrand: "Apple",
   osVersion: "macOS 15.7.4",
   function: "solo_work_lite",
@@ -46242,7 +46262,7 @@ function isCredentialUsable3(credential) {
   const token = credential.access_token;
   return typeof token === "string" && token !== "" && token === token.trim();
 }
-var AUTOCLAW_DESKTOP_VERSION = "1.18.5";
+var AUTOCLAW_DESKTOP_VERSION = "2.2.0";
 var autoclawPlatformTm = () => {
   if (process.platform === "darwin") return "mac";
   return "win";

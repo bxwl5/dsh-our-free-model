@@ -320,8 +320,25 @@ export const TRAE: TraeProduct = {
   consoleHost: TRAE_CONSOLE_HOST,
   clientId: 'en1oxy7wnw8j9n',
   appId: '6eefa01c-1036-4c7e-9ca5-d891f63bfcd8',
-  ideVersion: '0.1.52',
-  ideVersionCode: '20260811',
+  /**
+   * IDE / 客户端版本（2026-11-17：0.1.52 → **0.1.69**，对齐 magpie
+   * `opencode-trae-auth` 0.2.40）。
+   *
+   * ## 为什么必须升
+   * 上游**按客户端版本决定给不给新模型** —— magpie 的注释写得很明确：
+   * 「Trae offers a model only to clients new enough for it, and an April IDE
+   * was offered no `deepseek-v4.1-flash`」。也就是说 0.1.52（4 月那个 IDE）
+   * 在模型宿主眼里太旧，新模型根本不会下发到我们的清单里。
+   *
+   * 这个值同时进 `X-Ide-Version` 与 `X-Ide-Version-Code`，magpie 那边的对应
+   * 值是 `clientVersion 0.1.69` / `clientVersionCode 20260917`。
+   *
+   * ⚠️ `pluginVersion` 已经是 `2.3.62834`（与 magpie 最新值一致），**不用改** ——
+   * IDE 版本与插件版本是两条独立版本线。
+   */
+  ideVersion: '0.1.69',
+  /** 与 ideVersion 0.1.69 配对（magpie 的 clientVersionCode）。 */
+  ideVersionCode: '20260917',
   deviceBrand: 'Apple',
   osVersion: 'macOS 15.7.4',
   function: 'solo_work_lite',

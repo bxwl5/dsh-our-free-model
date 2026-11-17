@@ -336,8 +336,23 @@ export async function loginAutoclawWithCode(options: {
 // ⚠ 这套头与 `autoclawAuthHeaders()`（SMS 登录用）**不是同一套** —— 后者是
 // 登录/续期专用的精简版，别合并。
 
-/** 客户端版本（userapi 域的版本门控；上游 `CLIENT_VERSION`）。 */
-export const AUTOCLAW_USERAPI_VERSION = '1.18.5'
+/**
+ * 客户端版本（userapi 域的版本门控；上游 `CLIENT_VERSION`）。
+ *
+ * ## 2026-11-17：1.18.5 → 2.2.0（对齐 magpie opencode-autoclaw-auth 0.2.24）
+ *
+ * 同一个头控制两件事：**模型目录档位** 与 **签到奖励资格**。
+ *
+ * | 值 | 模型目录 | 签到奖励 |
+ * |---|---|---|
+ * | `1.18.5`（旧） | 4 个（含 `zai_glm-5.3-flash`） | ❌ 不发 |
+ * | `2.2.0` | magpie 实测按官方桌面端下发 | ✅ 到账 |
+ *
+ * ⚠️ 奖励另需 `X-Channel: AutoClaw20`（magpie 真机对照：`X-Channel: official`
+ * 即使 `code=0` 也不发奖励）。本文件目前仍发 `official` —— 也就是说
+ * **只改版本号还不足以拿到签到奖励**，下一步需要单独改渠道并真实签到验证。
+ */
+export const AUTOCLAW_USERAPI_VERSION = '2.2.0'
 
 /** 任务完成端点（`/autoclaw-proxy/proxy/autoclaw-task-complete`）。 */
 export const AUTOCLAW_TASK_COMPLETE_PATH = '/autoclaw-proxy/proxy/autoclaw-task-complete'
