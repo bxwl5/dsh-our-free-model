@@ -6,10 +6,10 @@
 /* ---- 昼主题变量 ---- */
 :root {
   --us-surface: #ffffff;
-  --us-surface-raised: #f7f3eb;
-  --us-surface-sunken: #f5f1e8;
+  --us-surface-raised: #f1f3f5;
+  --us-surface-sunken: #f1f3f5;
   --us-line: #e1e5ee;
-  --us-line-soft: #ece6db;
+  --us-line-soft: #ebeef2;
   --us-line-strong: #d6dae1;
   --us-ink: #0f1115;
   --us-ink-secondary: #61666b;
@@ -18,11 +18,11 @@
   --us-accent: var(--dsw-alias-accent-primary, #4176e6);
   --us-accent-soft: var(--accent-soft, #edf3fe);
   --us-accent-border: var(--accent-line, #d3e2ff);
-  --us-accent-strong: #8a4b06;
+  --us-accent-strong: #2c4aa8;
   --us-success: #177552;
   --us-success-soft: #eff7f2;
   --us-success-border: #cfe6da;
-  --us-warning: #8a6215;
+  --us-warning: #61666b;
   --us-warning-soft: #fafbfc;
   --us-warning-border: #e1e5ee;
   --us-error: #9c3343;
@@ -56,9 +56,9 @@
   --us-success: #58ddb0;
   --us-success-soft: rgba(88, 221, 176, 0.1);
   --us-success-border: rgba(88, 221, 176, 0.22);
-  --us-warning: #f4b46f;
-  --us-warning-soft: rgba(242, 166, 90, 0.1);
-  --us-warning-border: rgba(242, 166, 90, 0.26);
+  --us-warning: #d3d7de;
+  --us-warning-soft: rgba(211,215,222,0.1);
+  --us-warning-border: rgba(211,215,222,0.26);
   --us-error: #ef8585;
   --us-error-soft: rgba(227, 106, 106, 0.1);
   --us-shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 1px 2px rgba(0, 0, 0, 0.38);
@@ -84,7 +84,7 @@
 /* 昼主题：纸面上的彩色印章 */
 :root .ov-metric:nth-child(1) .ov-metric-icon { background: var(--accent-soft, #edf3fe); color: var(--dsw-alias-accent-primary, #4176e6); }
 :root .ov-metric:nth-child(2) .ov-metric-icon { background: #eff7f2; color: #177552; }
-:root .ov-metric:nth-child(3) .ov-metric-icon { background: #fafbfc; color: #8a6215; }
+:root .ov-metric:nth-child(3) .ov-metric-icon { background: #fafbfc; color: #2c4aa8; }
 :root .ov-metric:nth-child(4) .ov-metric-icon { background: #f6f4fa; color: #875a7d; }
 :root .ov-metric:nth-child(5) .ov-metric-icon { background: #fdf5f5; color: #9c3343; }
 :root .ov-metric:nth-child(6) .ov-metric-icon { background: #eaf5f6; color: #0f7285; }
@@ -92,7 +92,7 @@
 /* 夜主题：仪器上的指示灯 */
 [data-theme="dark"] .ov-metric:nth-child(1) .ov-metric-icon { background: var(--cp-cyan-soft, rgba(0, 208, 192, 0.12)); color: var(--cp-cyan, #00d0c0); box-shadow: 0 0 8px color-mix(in srgb, var(--cp-cyan, #00d0c0) 10%, transparent); }
 [data-theme="dark"] .ov-metric:nth-child(2) .ov-metric-icon { background: rgba(88, 221, 176, 0.11); color: #58ddb0; box-shadow: 0 0 8px rgba(88, 221, 176, 0.06); }
-[data-theme="dark"] .ov-metric:nth-child(3) .ov-metric-icon { background: rgba(242, 166, 90, 0.11); color: #f4b46f; box-shadow: 0 0 8px rgba(242, 166, 90, 0.06); }
+[data-theme="dark"] .ov-metric:nth-child(3) .ov-metric-icon { background: rgba(122,170,255,0.11); color: #7aaaff; box-shadow: 0 0 8px rgba(122,170,255,0.06); }
 [data-theme="dark"] .ov-metric:nth-child(4) .ov-metric-icon { background: rgba(155, 91, 137, 0.12); color: #c88bbd; box-shadow: 0 0 8px rgba(155, 91, 137, 0.06); }
 [data-theme="dark"] .ov-metric:nth-child(5) .ov-metric-icon { background: rgba(227, 106, 106, 0.11); color: #ef8585; box-shadow: 0 0 8px rgba(227, 106, 106, 0.06); }
 [data-theme="dark"] .ov-metric:nth-child(6) .ov-metric-icon { background: rgba(76, 196, 224, 0.11); color: #4cc4e0; box-shadow: 0 0 8px rgba(76, 196, 224, 0.06); }
@@ -420,7 +420,7 @@
 }
 .ov-metric:nth-child(1) { --ov-accent: var(--dsw-alias-accent-primary, #4176e6); --ov-accent-soft: var(--accent-soft, #edf3fe); }
 .ov-metric:nth-child(2) { --ov-accent: #177552; --ov-accent-soft: #eff7f2; }
-.ov-metric:nth-child(3) { --ov-accent: #8a6215; --ov-accent-soft: #fafbfc; }
+.ov-metric:nth-child(3) { --ov-accent: #2c4aa8; --ov-accent-soft: #fafbfc; }
 .ov-metric:nth-child(4) { --ov-accent: #875a7d; --ov-accent-soft: #f6f4fa; }
 .ov-metric:nth-child(5) { --ov-accent: #9c3343; --ov-accent-soft: #fdf5f5; }
 .ov-metric:nth-child(6) { --ov-accent: #0f7285; --ov-accent-soft: #eaf5f6; }
@@ -644,7 +644,7 @@
 }
 [data-theme="dark"] .ov-metric:nth-child(1) { --ov-accent: var(--cp-cyan, #00d0c0); --ov-accent-soft: var(--cp-cyan-soft, rgba(0, 208, 192, 0.14)); }
 [data-theme="dark"] .ov-metric:nth-child(2) { --ov-accent: #58ddb0; --ov-accent-soft: rgba(88, 221, 176, 0.11); }
-[data-theme="dark"] .ov-metric:nth-child(3) { --ov-accent: #f4b46f; --ov-accent-soft: rgba(242, 166, 90, 0.11); }
+[data-theme="dark"] .ov-metric:nth-child(3) { --ov-accent: #7aaaff; --ov-accent-soft: rgba(122,170,255,0.11); }
 [data-theme="dark"] .ov-metric:nth-child(4) { --ov-accent: #c88bbd; --ov-accent-soft: rgba(155, 91, 137, 0.14); }
 [data-theme="dark"] .ov-metric:nth-child(5) { --ov-accent: #ef8585; --ov-accent-soft: rgba(227, 106, 106, 0.11); }
 [data-theme="dark"] .ov-metric:nth-child(6) { --ov-accent: #4cc4e0; --ov-accent-soft: rgba(76, 196, 224, 0.11); }
@@ -1128,11 +1128,11 @@
 :root[data-theme="dark"] .usage-browser .usage-window-total strong {
   font-family: Consolas, "Cascadia Mono", "SF Mono", "JetBrains Mono", monospace;
   font-variant-numeric: tabular-nums;
-  color: var(--cp-amber, #e8a33d);
+  color: var(--cp-amber, #4176e6);
   letter-spacing: 0.02em;
   text-shadow:
-    0 0 12px color-mix(in srgb, var(--cp-amber, #e8a33d) 34%, transparent),
-    0 0 2px color-mix(in srgb, var(--cp-amber, #e8a33d) 55%, transparent);
+    0 0 12px color-mix(in srgb, var(--cp-amber, #4176e6) 34%, transparent),
+    0 0 2px color-mix(in srgb, var(--cp-amber, #4176e6) 55%, transparent);
   animation: us-glow-breathe 3.6s ease-in-out infinite;
 }
 :root[data-theme="dark"] .usage-browser .usage-window-total strong {
@@ -1157,14 +1157,14 @@
 /* --- 2. 指标卡：青主色 / 琥珀数据 / 红只留给失败；数字走 Consolas --- */
 :root[data-theme="dark"] .ov-metric:nth-child(1) { --ov-accent: var(--cp-cyan, #00d0c0); --ov-accent-soft: var(--cp-cyan-soft, rgba(0, 208, 192, 0.12)); }
 :root[data-theme="dark"] .ov-metric:nth-child(2) { --ov-accent: #63e8da; --ov-accent-soft: rgba(0, 208, 192, 0.09); }
-:root[data-theme="dark"] .ov-metric:nth-child(3) { --ov-accent: var(--cp-amber, #e8a33d); --ov-accent-soft: rgba(232, 163, 61, 0.12); }
-:root[data-theme="dark"] .ov-metric:nth-child(4) { --ov-accent: #f0b75e; --ov-accent-soft: rgba(232, 163, 61, 0.10); }
+:root[data-theme="dark"] .ov-metric:nth-child(3) { --ov-accent: var(--cp-amber, #4176e6); --ov-accent-soft: rgba(65,118,230,0.12); }
+:root[data-theme="dark"] .ov-metric:nth-child(4) { --ov-accent: #7aaaff; --ov-accent-soft: rgba(65,118,230,0.10); }
 :root[data-theme="dark"] .ov-metric:nth-child(5) { --ov-accent: var(--cp-red, #e94542); --ov-accent-soft: var(--cp-red-soft, rgba(233, 69, 66, 0.13)); }
 :root[data-theme="dark"] .ov-metric:nth-child(6) { --ov-accent: var(--cp-cyan, #00d0c0); --ov-accent-soft: rgba(0, 208, 192, 0.08); }
 :root[data-theme="dark"] .ov-metric:nth-child(1) .ov-metric-icon { background: var(--cp-cyan-soft, rgba(0, 208, 192, 0.12)); color: var(--cp-cyan, #00d0c0); box-shadow: 0 0 10px -3px var(--cp-glow, rgba(0, 208, 192, 0.16)); }
 :root[data-theme="dark"] .ov-metric:nth-child(2) .ov-metric-icon { background: rgba(0, 208, 192, 0.08); color: #63e8da; box-shadow: 0 0 8px -3px var(--cp-glow, rgba(0, 208, 192, 0.16)); }
-:root[data-theme="dark"] .ov-metric:nth-child(3) .ov-metric-icon { background: rgba(232, 163, 61, 0.12); color: var(--cp-amber, #e8a33d); box-shadow: 0 0 8px -3px rgba(232, 163, 61, 0.22); }
-:root[data-theme="dark"] .ov-metric:nth-child(4) .ov-metric-icon { background: rgba(232, 163, 61, 0.10); color: #f0b75e; box-shadow: 0 0 8px -3px rgba(232, 163, 61, 0.18); }
+:root[data-theme="dark"] .ov-metric:nth-child(3) .ov-metric-icon { background: rgba(65,118,230,0.12); color: var(--cp-amber, #4176e6); box-shadow: 0 0 8px -3px rgba(65,118,230,0.22); }
+:root[data-theme="dark"] .ov-metric:nth-child(4) .ov-metric-icon { background: rgba(65,118,230,0.10); color: #7aaaff; box-shadow: 0 0 8px -3px rgba(65,118,230,0.18); }
 :root[data-theme="dark"] .ov-metric:nth-child(5) .ov-metric-icon { background: var(--cp-red-soft, rgba(233, 69, 66, 0.13)); color: var(--cp-red, #e94542); box-shadow: 0 0 8px -3px rgba(233, 69, 66, 0.22); }
 :root[data-theme="dark"] .ov-metric:nth-child(6) .ov-metric-icon { background: rgba(0, 208, 192, 0.09); color: var(--cp-cyan, #00d0c0); box-shadow: 0 0 8px -3px var(--cp-glow, rgba(0, 208, 192, 0.16)); }
 :root[data-theme="dark"] .usage-browser .ov-metric strong,
@@ -1338,7 +1338,7 @@
   letter-spacing: 0.04em;
   text-shadow:
     1px 0 0 color-mix(in srgb, var(--cp-cyan, #00d0c0) 45%, transparent),
-    -1px 0 0 color-mix(in srgb, var(--cp-amber, #e8a33d) 45%, transparent);
+    -1px 0 0 color-mix(in srgb, var(--cp-amber, #4176e6) 45%, transparent);
   animation: us-toast-in 240ms var(--us-ease-out, ease-out) both, cp-glitch-pop 320ms steps(2, end) 40ms both;
 }
 :root[data-theme="dark"] .usage-browser .usage-feedback::before {
@@ -1360,7 +1360,7 @@
 :root[data-theme="dark"] .copy-feedback {
   text-shadow:
     1px 0 0 color-mix(in srgb, var(--cp-cyan, #00d0c0) 45%, transparent),
-    -1px 0 0 color-mix(in srgb, var(--cp-amber, #e8a33d) 45%, transparent);
+    -1px 0 0 color-mix(in srgb, var(--cp-amber, #4176e6) 45%, transparent);
 }
 :root[data-theme="dark"] .copy-feedback::after {
   content: "";
@@ -1434,19 +1434,19 @@
 
 /* --- 2. 指标卡：暖棕定向影 + 琥珀暖印章家族 ---- */
 :root:not([data-theme="dark"]) .ov-metric:nth-child(1) { --ov-accent: var(--dsw-alias-accent-primary, #4176e6); --ov-accent-soft: var(--accent-soft, #edf3fe); }
-:root:not([data-theme="dark"]) .ov-metric:nth-child(2) { --ov-accent: #8a6215; --ov-accent-soft: #fafbfc; }
+:root:not([data-theme="dark"]) .ov-metric:nth-child(2) { --ov-accent: #2c4aa8; --ov-accent-soft: #fafbfc; }
 :root:not([data-theme="dark"]) .ov-metric:nth-child(3) { --ov-accent: var(--dsw-alias-accent-primary, #4176e6); --ov-accent-soft: var(--accent-soft, #edf3fe); }
-:root:not([data-theme="dark"]) .ov-metric:nth-child(4) { --ov-accent: #9a5b12; --ov-accent-soft: #fdf9f0; }
+:root:not([data-theme="dark"]) .ov-metric:nth-child(4) { --ov-accent: #3459c7; --ov-accent-soft: #fafbfc; }
 :root:not([data-theme="dark"]) .ov-metric:nth-child(5) { --ov-accent: #9c3343; --ov-accent-soft: #fdf5f5; }
-:root:not([data-theme="dark"]) .ov-metric:nth-child(6) { --ov-accent: #6f6a1e; --ov-accent-soft: #f6f4e5; }
+:root:not([data-theme="dark"]) .ov-metric:nth-child(6) { --ov-accent: #2c4aa8; --ov-accent-soft: #f1f3f5; }
 :root:not([data-theme="dark"]) .ov-metric:nth-child(1) .ov-metric-icon { background: var(--accent-soft, #edf3fe); color: var(--dsw-alias-accent-primary, #4176e6); }
-:root:not([data-theme="dark"]) .ov-metric:nth-child(2) .ov-metric-icon { background: #fafbfc; color: #8a6215; }
+:root:not([data-theme="dark"]) .ov-metric:nth-child(2) .ov-metric-icon { background: #fafbfc; color: #2c4aa8; }
 :root:not([data-theme="dark"]) .ov-metric:nth-child(3) .ov-metric-icon { background: var(--accent-soft, #edf3fe); color: var(--dsw-alias-accent-primary, #4176e6); }
-:root:not([data-theme="dark"]) .ov-metric:nth-child(4) .ov-metric-icon { background: #fdf9f0; color: #9a5b12; }
+:root:not([data-theme="dark"]) .ov-metric:nth-child(4) .ov-metric-icon { background: #fafbfc; color: #3459c7; }
 :root:not([data-theme="dark"]) .ov-metric:nth-child(5) .ov-metric-icon { background: #fdf5f5; color: #9c3343; }
-:root:not([data-theme="dark"]) .ov-metric:nth-child(6) .ov-metric-icon { background: #f6f4e5; color: #6f6a1e; }
+:root:not([data-theme="dark"]) .ov-metric:nth-child(6) .ov-metric-icon { background: #f1f3f5; color: #2c4aa8; }
 :root:not([data-theme="dark"]) .usage-browser .ov-metric strong {
-  color: #3a2a12;
+  color: #0f1115;
   font-variant-numeric: tabular-nums;
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.72);
 }
@@ -1474,7 +1474,7 @@
 :root:not([data-theme="dark"]) .usage-browser .usage-day-bar.zero,
 :root:not([data-theme="dark"]) .ov-chart .dashboard-chart-bar.zero {
   background-color: #e1e5ee;
-  background-image: linear-gradient(180deg, #efe8db, #e1e5ee);
+  background-image: linear-gradient(180deg, #ebeef2, #e1e5ee);
   border-radius: 6px 6px 0 0;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.70), inset 0 0 0 1px rgba(var(--warm-shadow, 15, 23, 42), 0.05);
 }
@@ -1609,7 +1609,7 @@
 /* --- 7. 页面特有容器：selection / caret / 滚动条 --- */
 :root:not([data-theme="dark"]) .usage-browser ::selection {
   background: color-mix(in srgb, var(--dsw-alias-accent-primary, #4176e6) 26%, transparent);
-  color: #3a2a12;
+  color: #0f1115;
 }
 :root:not([data-theme="dark"]) .usage-browser .usage-model-search input,
 :root:not([data-theme="dark"]) .usage-browser .usage-model-filters select {

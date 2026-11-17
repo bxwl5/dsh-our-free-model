@@ -15,8 +15,8 @@
   --md-line-strong: #d6dae1;
   --md-ink: #0f1115;
   --md-ink-secondary: #61666b;
-  --md-ink-tertiary: #6b6458;
-  --md-ink-muted: #726b5f;
+  --md-ink-tertiary: #81858c;
+  --md-ink-muted: #81858c;
   --md-accent: var(--dsw-alias-accent-primary);
   --md-accent-soft: var(--accent-soft);
   --md-accent-border: var(--accent-line);
@@ -24,7 +24,7 @@
   --md-success: #177552;
   --md-success-soft: #eff7f2;
   --md-success-border: #cfe6da;
-  --md-warning: #8a6215;
+  --md-warning: #61666b;
   --md-warning-soft: #fafbfc;
   --md-warning-border: #e1e5ee;
   --md-error: #b23b4b;
@@ -62,8 +62,8 @@
   --md-success-soft: var(--cp-cyan-soft);
   --md-success-border: var(--cp-cyan-line);
   --md-warning: var(--cp-amber);
-  --md-warning-soft: rgba(232, 163, 61, 0.12);
-  --md-warning-border: rgba(232, 163, 61, 0.30);
+  --md-warning-soft: rgba(173,178,184,0.12);
+  --md-warning-border: rgba(173,178,184,0.30);
   --md-error: var(--cp-red);
   --md-error-soft: var(--cp-red-soft);
   --md-error-border: var(--cp-red-line);
@@ -191,12 +191,12 @@
 .model-scroll {
   height: clamp(320px, 60vh, 680px); overflow: auto;
   overscroll-behavior: contain; scrollbar-gutter: stable;
-  scrollbar-color: rgba(107, 100, 88, 0.34) transparent;
+  scrollbar-color: rgba(129,133,140,0.34) transparent;
 }
 .model-scroll::-webkit-scrollbar-thumb {
-  background: rgba(107, 100, 88, 0.26); border-radius: 3px;
+  background: rgba(129,133,140,0.26); border-radius: 3px;
 }
-.model-scroll::-webkit-scrollbar-thumb:hover { background: rgba(107, 100, 88, 0.42); }
+.model-scroll::-webkit-scrollbar-thumb:hover { background: rgba(129,133,140,0.42); }
 .model-scroll:focus-visible { outline: 2px solid var(--md-accent); outline-offset: -2px; }
 .model-virtual-content { position: relative; width: 100%; }
 
@@ -334,7 +334,7 @@
 /* ---- 空态 ---- */
 .model-empty {
   padding: 65px 15px; border-top: 1px solid var(--md-line); text-align: center;
-  background: radial-gradient(420px 160px at 50% 28%, rgba(217, 119, 6, 0.07), transparent 72%);
+  background: radial-gradient(420px 160px at 50% 28%, rgba(173,178,184,0.07), transparent 72%);
 }
 .model-empty > svg { display: block; margin: 0 auto 16px; color: var(--md-ink-muted); opacity: 0.6; }
 .model-empty h2 { font-size: 16px; font-weight: 600; color: var(--md-ink); }
@@ -1044,7 +1044,7 @@
 
 /* ---------- D-02 昼 · 数据黄铜：读数 / 时间戳 / 纸白输入槽 ---------- */
 :root:not([data-theme="dark"]) .model-limits > span { color: var(--dsw-alias-accent-primary); }
-:root:not([data-theme="dark"]) .model-identity code { color: #7d6b53; }
+:root:not([data-theme="dark"]) .model-identity code { color: #81858c; }
 :root:not([data-theme="dark"]) .model-filters select,
 :root:not([data-theme="dark"]) .model-search input { border-radius: 8px; }
 :root:not([data-theme="dark"]) .model-filters select:focus,
@@ -1061,8 +1061,8 @@
 }
 :root:not([data-theme="dark"]) .model-browser .model-row-actions .ui-button-ghost:hover:not(:disabled) {
   color: var(--dsw-alias-accent-primary);
-  background: radial-gradient(120% 120% at 30% 22%, #fffaf0 0%, #f9ecd6 56%, #f1ddb9 100%);
-  box-shadow: inset 0 0 0 1px var(--accent-line), 0 3px 9px -5px rgba(var(--warm-shadow), 0.45), 0 0 0 3px rgba(217, 119, 6, 0.10);
+  background: radial-gradient(120% 120% at 30% 22%, #fafbfc 0%, #f1f3f5 56%, #ebeef2 100%);
+  box-shadow: inset 0 0 0 1px var(--accent-line), 0 3px 9px -5px rgba(var(--warm-shadow), 0.45), 0 0 0 3px rgba(173,178,184,0.10);
   transform: rotate(8deg) scale(1.05);
 }
 :root:not([data-theme="dark"]) .model-browser .model-row-actions .ui-button-ghost:active:not(:disabled) {
@@ -1072,7 +1072,7 @@
 /* ---------- D-04 昼 · 测试按钮：纸面凸起，按下按进纸里 ---------- */
 :root:not([data-theme="dark"]) .model-browser .model-row-actions .ui-button-outline {
   border-radius: 8px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8f3ea 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #f1f3f5 100%);
   border-color: var(--md-line-strong);
   color: var(--md-ink-secondary);
   box-shadow: 1px 2px 0 rgba(var(--warm-shadow), 0.10), 0 3px 8px -4px rgba(var(--warm-shadow), 0.28), inset 0 1px 0 #fff;
@@ -1095,7 +1095,7 @@
   position: relative;
   color: var(--dsw-alias-accent-primary) !important;
   background: var(--accent-soft) !important;
-  box-shadow: inset 0 0 0 1px var(--accent-line), 0 6px 16px -10px rgba(217, 119, 6, 0.55);
+  box-shadow: inset 0 0 0 1px var(--accent-line), 0 6px 16px -10px rgba(173,178,184,0.55);
   animation: none;
 }
 :root:not([data-theme="dark"]) .model-row-actions .md-copy-done > svg {
@@ -1104,7 +1104,7 @@
 :root:not([data-theme="dark"]) .model-row-actions .md-copy-done::after {
   content: ""; position: absolute; inset: -4px; pointer-events: none;
   border-radius: inherit; box-shadow: none;
-  background: radial-gradient(closest-side, rgba(217, 119, 6, 0.30), rgba(217, 119, 6, 0.10) 62%, transparent 78%);
+  background: radial-gradient(closest-side, rgba(173,178,184,0.30), rgba(173,178,184,0.10) 62%, transparent 78%);
   opacity: 0;
   animation: md-ink-bloom 560ms var(--md-ease-out) both;
 }
@@ -1114,8 +1114,8 @@
   border-top: 1px solid var(--accent-line);
   background:
     repeating-linear-gradient(180deg, transparent 0 27px, rgba(var(--warm-shadow), 0.075) 27px 28px),
-    radial-gradient(420px 160px at 50% 28%, rgba(217, 119, 6, 0.07), transparent 72%),
-    #fffcf6;
+    radial-gradient(420px 160px at 50% 28%, rgba(173,178,184,0.07), transparent 72%),
+    #fafbfc;
 }
 :root:not([data-theme="dark"]) .model-empty::before {
   content: "此页尚无记录";
@@ -1125,11 +1125,11 @@
   animation: md-sheet-breathe 6.4s var(--md-ease-breathe) infinite;
 }
 :root:not([data-theme="dark"]) .model-empty h2 { color: var(--dsw-alias-accent-primary); }
-:root:not([data-theme="dark"]) .model-empty > svg { color: #c98a3c; opacity: 0.7; }
+:root:not([data-theme="dark"]) .model-empty > svg { color: #4176e6; opacity: 0.7; }
 
 /* ---------- D-07 昼 · 渠道筛选 chip：纸标签琥珀油墨 ---------- */
 :root:not([data-theme="dark"]) .model-list-toolbar .channel-filters button[aria-pressed="true"] {
-  background: linear-gradient(180deg, #ffffff, #f7efe0);
+  background: linear-gradient(180deg, #ffffff, #f1f3f5);
   color: var(--dsw-alias-accent-primary);
   box-shadow: 1px 2px 0 rgba(var(--warm-shadow), 0.10), inset 0 0 0 1px var(--accent-line);
 }
