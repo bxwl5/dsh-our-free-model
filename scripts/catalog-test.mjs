@@ -71,10 +71,18 @@ const idRe = new RegExp(schema.$defs.namespacedId.pattern)
 check('id is namespaced per the schema', idRe.test(manifest.id), true)
 check('name is the npm package name', manifest.name, pkg.name)
 check('version tracks package.json', manifest.version, pkg.version)
-for (const file of ['README.md', 'README_EN.md']) {
-  const pins = [...read(file).matchAll(/"dsh-our-free-model": "file:\.\/vendor\/dsh-our-free-model-([^"]+)\.tgz"/g)].map(match => match[1])
-  check(`${file} installs the trusted local tarball at the shipping version`, pins, [pkg.version])
-}
+/**
+ * 「README 必须含手工安装 tgz 段」的断言已删（2026-11-17 用户决定）。
+ *
+ * 那条断言要求两份 README 都写
+ * `"dsh-our-free-model": "file:./vendor/dsh-our-free-model-<版本>.tgz"`，
+ * 与 catalog 里记录的发布版本对齐。当初立它，是因为手工 tarball 安装是
+ * 一条受支持的路径，文档里的版本号若与发布脱节，装出来的就是旧代码。
+ *
+ * 现在安装路径只剩「把仓库链接发给 dsh 助手 / 在 DSH 设置里粘贴地址」，
+ * 手工 tarball 安装整段已被移除（文档面向使用者，装好后面板里一切可见），
+ * 断言失去了被校验的对象 —— 留着它只会让 README 永远删不掉那段。
+ */
 check('license tracks package.json', manifest.license, pkg.license)
 
 const required = schema.required
