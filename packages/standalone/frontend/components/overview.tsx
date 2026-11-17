@@ -79,7 +79,7 @@ export function Overview({ summary, stats, host }: Snapshot & { host: Host }) {
         </div>
         {copied && <span className="copy-feedback" role="status">地址已复制</span>}
         <div className="connect-steps"><span>管理会话：本机独立会话</span><span>推理鉴权：Bearer API Key</span><span>监听范围：仅回环地址</span></div>
-        <Button className="connect-button" onClick={() => host.navigate('connection')}>查看接入配置 <ArrowUpRight size={16} /></Button>
+        <Button variant="outline" className="connect-button" onClick={() => host.navigate('connection')}>查看接入配置 <ArrowUpRight size={16} /></Button>
         <div className="connection-footnote"><span className={`status-dot ${summary.settings.enabled ? '' : 'paused'}`} />{summary.settings.enabled ? '推理服务已启用' : '推理服务已暂停'}</div>
       </Card>
     </div>
@@ -97,7 +97,7 @@ export function Overview({ summary, stats, host }: Snapshot & { host: Host }) {
 
       <Card className="ov-failures">
         <div className="card-heading"><div><h2>运行检查</h2><p>服务与最近的失败请求</p></div>
-          <Badge tone={failures.length ? 'warning' : 'success'}>{failures.length ? '有失败记录' : '暂无失败记录'}</Badge></div>
+          <Badge tone={failures.length ? 'danger' : 'success'}>{failures.length ? '有失败记录' : '暂无失败记录'}</Badge></div>
         <div className="runtime-check"><CircleCheck size={17} /><span>渠道模块</span><strong>{summary.channels.state === 'ready' ? '已就绪' : summary.channels.state === 'failed' ? '加载失败' : '初始化中'}</strong></div>
         <div className="runtime-check"><RefreshCw size={17} /><span>模型自动刷新</span><strong>{summary.automaticRefresh ? `每 ${summary.settings.probeIntervalMinutes} 分钟` : '已暂停'}</strong></div>
         {failures.length ? <div className="failure-list ov-failure-list">{failures.map((row, index) =>

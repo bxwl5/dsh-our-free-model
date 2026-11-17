@@ -149,7 +149,7 @@ export function Models({ summary, host, active }: { summary: Summary; host: Host
         <Button variant="outline" disabled={!!operation} onClick={() => { void run('refresh') }}>
           <RefreshCw size={15} className={operation === 'refresh' ? 'spinning' : ''} />{operation === 'refresh' ? '正在刷新' : '刷新清单'}
         </Button>
-        <Button disabled={!!operation || !summary.settings.enabled} title="会向上游发送少量推理请求"
+        <Button variant="outline" disabled={!!operation || !summary.settings.enabled} title="会向上游发送少量推理请求"
           onClick={() => { void run('probe') }}>
           {operation === 'probe' ? <LoaderCircle size={15} className="spinning" /> : <CircleCheck size={15} />}
           {operation === 'probe' ? '正在探测' : '探测可用性'}
@@ -224,10 +224,10 @@ export function Models({ summary, host, active }: { summary: Summary; host: Host
               }}>
               <div role="cell" className="model-identity"><strong>{model.name}</strong><code>{model.id}</code></div>
               <div role="cell" className="model-source"><span>{channelName(model.channel)}</span><div className="model-capabilities">
-                <Badge>{model.vision ? '视觉' : '纯文本'}</Badge>{model.reasoning && <Badge tone="blue">思考</Badge>}</div></div>
+                <Badge>{model.vision ? '视觉' : '纯文本'}</Badge>{model.reasoning && <Badge>思考</Badge>}</div></div>
               <div role="cell" className="model-limits"><span title={model.contextWindow ? `${model.contextWindow} Token` : undefined}>{capacity(model.contextWindow)} <small>上下文</small></span>
                 <span title={model.maxOutput ? `${model.maxOutput} Token` : undefined}>{capacity(model.maxOutput)} <small>输出</small></span></div>
-              <div role="cell" className="model-state"><Badge tone={state === 'available' ? 'success' : failed || ['unavailable', 'throttled', 'region-blocked'].includes(state) ? 'warning' : 'neutral'}>
+              <div role="cell" className="model-state"><Badge tone={state === 'available' ? 'success' : failed || ['unavailable', 'throttled', 'region-blocked'].includes(state) ? 'danger' : 'neutral'}>
                 {availabilityName}</Badge>
                 {manual && state !== 'available' && model.detail && <small title={model.detail}
                   style={{ maxWidth: '100%', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{model.detail}</small>}
