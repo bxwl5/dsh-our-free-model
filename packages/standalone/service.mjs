@@ -348,12 +348,32 @@ export async function startStandalone({
           }
           held.push(chunk)
         }
-        const result = await (channels.handles(member.id)
-          ? channels.complete({ ...request, model: member.id }, sink)
-          : core.complete({ ...request, model: member.id }, sink))
-        const failed = result?.error !== undefined || result?.failure !== undefined
+        /**
+         * ⚠️ 失败有**两种形态**，必须都处理：
+         *
+         * | 来源 | 失败表现 |
+         * |---|---|
+         * | `core.complete`（免费模型） | 返回 `outcome.error` / `outcome.failure`（**不抛**） |
+         * | `channels.complete`（渠道模型） | **抛异常**（zcode 的额度错误就是抛出来的） |
+         *
+         * 第一版只检查返回值，于是渠道成员一抛异常就整个中断，链根本没往下走
+         * —— 实测 NAS 上「zcode 额度用尽」直接返回给用户，trae/officeace 两条
+         * 完好的渠道一次都没试。
+         */
+        let result
+        let thrown
+        try {
+          result = await (channels.handles(member.id)
+            ? channels.complete({ ...request, model: member.id }, sink)
+            : core.complete({ ...request, model: member.id }, sink))
+        } catch (error) {
+          thrown = error
+        }
+        const failed = thrown !== undefined || result?.error !== undefined || result?.failure !== undefined
         if (failed) {
-          lastFailure = result?.failure ?? { message: result?.error ?? '未知失败' }
+          lastFailure = thrown !== undefined
+            ? (thrown instanceof Error ? thrown : new Error(String(thrown)))
+            : (result.failure ?? { message: result.error })
           logger?.warn?.(`[standalone] 路由链 ${entry.id} 的成员 ${member.id} 失败，换下一个：${lastFailure.message ?? lastFailure}`)
           continue
         }

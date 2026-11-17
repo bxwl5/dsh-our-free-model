@@ -109,4 +109,55 @@ check('round-robin：一回合内每个成员只出现一次（尾接首回绕�
   assert.equal(new Set(chain.map(row => row.id)).size, chain.length, '不得重复撞同一成员')
 })
 
+/**
+ * 分发决策的最小复刻：`completeCombo` 的核心是「失败就换下一个」。
+ *
+ * 这里用一个和 service.mjs 同形的循环验证**两种失败形态**都必须被吃下：
+ * - 免费模型路径：`complete` 返回 `outcome.error`（不抛）
+ * - 渠道模型路径：`complete` **抛异常**（zcode 的额度错误就是这样）
+ *
+ * 实测踩过：第一版只检查返回值，渠道成员一抛就把整条链中断，NAS 上
+ * 「zcode 额度用尽」直接返回给用户，后面两条完好渠道一次都没试。
+ */
+const runChain = async (members, complete) => {
+  let lastFailure
+  for (const id of members) {
+    let result
+    let thrown
+    try { result = await complete(id) } catch (error) { thrown = error }
+    const failed = thrown !== undefined || result?.error !== undefined
+    if (failed) { lastFailure = thrown ?? { message: result.error }; continue }
+    return { ok: true, servedBy: id, order: members }
+  }
+  throw new Error(`全部失败：${lastFailure?.message ?? ''}`)
+}
+
+await check('降级：返回 outcome.error（免费模型路径）时换下一个', async () => {
+  const tried = []
+  const out = await runChain(['a', 'b'], async id => {
+    tried.push(id)
+    return id === 'a' ? { error: '额度用尽' } : { text: 'ok' }
+  })
+  assert.deepEqual(tried, ['a', 'b'], '失败的成员之后必须继续试')
+  assert.equal(out.servedBy, 'b', '由第二个成员作答')
+})
+
+await check('降级：抛异常的成员（渠道模型路径）也要换下一个', async () => {
+  const tried = []
+  const out = await runChain(['a', 'b'], async id => {
+    tried.push(id)
+    if (id === 'a') throw new Error('zcode: 额度已用尽')
+    return { text: 'ok' }
+  })
+  assert.deepEqual(tried, ['a', 'b'], '抛异常不得中断链')
+  assert.equal(out.servedBy, 'b')
+})
+
+await check('降级：全部失败时报最后一个成员的真实原因', async () => {
+  await assert.rejects(
+    () => runChain(['a', 'b'], async id => (id === 'a' ? { error: '第一因' } : { error: '第二因' })),
+    /第二因/, '报错文案必须是最后那个成员的原因，而不是笼统的「全部失败」',
+  )
+})
+
 console.log(`standalone-combo: ${checks} checks passed`)
