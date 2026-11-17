@@ -162,7 +162,7 @@
  * 编辑器打开时内容多（字段 + 成员列表 + 选择器），交给页面正常撑开，
  * 让页面滚动而不是卡片裁切。
  */
-.routing-editor.ui-card { padding: 15px 18px; overflow: visible; }
+.routing-editor.ui-card { padding: 15px 18px; overflow: visible !important; }
 .routing-editor .connection-card-heading { margin-bottom: 10px; }
 /* 字段里的 label 与输入框靠得更近，整行少占约 8px */
 .routing-fields .field-label { font-size: 11px; }
