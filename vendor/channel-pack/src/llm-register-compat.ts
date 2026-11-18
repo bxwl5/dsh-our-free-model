@@ -555,11 +555,8 @@ export function registerAdapterIdempotent(
    *
    * 只影响 `listModels`，`listAllModels` / `resolveModel` / `prepareCall` /
    * `stream` 全部原样（见 `merged-advertisement.ts` 的说明）。
-   *
-   * 2026-11-18 起**无条件包装**：包装后的 `listModels` 每次调用现读开关，
-   * 设置页「关闭渠道分组」热切换就不需要重注册任何适配器。
    */
-  if (typeof adapter === 'object' && adapter !== null) {
+  if (mergedAdvertisementSuppressed() && typeof adapter === 'object' && adapter !== null) {
     try {
       target = withMergedAdvertisementSuppression(target as object)
     } catch (error) {

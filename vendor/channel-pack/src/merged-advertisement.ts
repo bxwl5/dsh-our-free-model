@@ -28,12 +28,6 @@
  * 必须都保留 —— 这里用 Proxy 只拦截 `listModels`，其余键走 `Reflect.get`，
  * 下层包装原样生效。
  *
- * ## 开关是热读的（2026-11-18 改版）
- *
- * 包装**始终**接在注册漏斗上，但 `listModels` 每次被调用时才读
- * `mergedAdvertisementSuppressed()`：标志关着就透传原实现。设置页的
- * 「关闭渠道分组」因此可以在运行时来回切，不需要注销/重注册任何适配器。
- *
  * @module merged-advertisement
  */
 
@@ -75,12 +69,7 @@ export function suppressMergedAdvertisement(enabled: boolean): boolean {
   return new Proxy(adapter, {
     get(obj, prop, receiver) {
       if (prop === 'listModels') {
-        return wrapOnce(prop, () => async (...args: unknown[]): Promise<readonly unknown[]> => {
-          if (mergedAdvertisementSuppressed()) return []
-          const original = Reflect.get(obj, prop, obj)
-          if (typeof original !== 'function') return []
-          return (original as (...a: unknown[]) => unknown).apply(obj, args)
-        })
+        return wrapOnce(prop, () => async (): Promise<readonly unknown[]> => [])
       }
       const value = Reflect.get(obj, prop, receiver)
       // 方法要绑定回**原对象**：适配器的方法内部大量使用 `this.xxx`，

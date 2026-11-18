@@ -185,14 +185,13 @@ const listed = await makeAdapter({ customProviders: [group('ofm-daily', '日常'
 assert.deepEqual(listed.map(row => row.id), ['merged:glm-5.3'])
 assert.equal(listed[0].provider, 'ofm-daily', 'provider 字段要回填成这条路由')
 
-// 新语义（2026-11-18）：hideBaseGroup 收起的是渠道包的按渠道分组（pack 层广告
-// 抑制），本插件自己的路由永不受影响 —— 下面三行断言的是「不再掐合并组」。
+// 收起默认分组：只在「有分组 + 开了开关 + 是默认路由」时发生
 const hiddenBase = { customProviders: [group('ofm-daily', '日常', ['merged:glm-5.3'])], hideBaseGroup: true }
-assert.equal((await makeAdapter(hiddenBase).listModels('our-free-model')).length > 0, true, '合并路由不受 hideBaseGroup 影响')
-assert.equal(Array.isArray(await makeAdapter(hiddenBase).listModels('our-free-model-region')), true)
+assert.deepEqual(await makeAdapter(hiddenBase).listModels('our-free-model'), [])
+assert.deepEqual(await makeAdapter(hiddenBase).listModels('our-free-model-region'), [])
 assert.deepEqual((await makeAdapter(hiddenBase).listModels('ofm-daily')).map(row => [row.provider, row.id, row.name]), [['ofm-daily', 'merged:glm-5.3', 'GLM-5.3']])
 
-// 没有分组时路由照常：选择器不会空
+// 没有分组时绝不收起：否则选择器就空了
 assert.equal((await makeAdapter({ hideBaseGroup: true }).listModels('our-free-model')).length, 1)
 // 开关关着也不收起
 assert.equal((await makeAdapter({ customProviders: hiddenBase.customProviders }).listModels('our-free-model')).length, 1)
