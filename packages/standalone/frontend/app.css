@@ -3283,6 +3283,17 @@ input:disabled, select:disabled, textarea:disabled, .ui-input:disabled {
   transform: none !important;
   transition: opacity 200ms var(--ease-out-expo) !important;
 }
+/**
+ * 路由编辑器**暗色下同样豁免裁切**（2026-11-18 复测发现遗漏）。
+ *
+ * 上一版只给浅色写了豁免，漏了暗色：本条 `[data-theme="dark"] .ui-card`
+ * 带 `overflow:hidden!important` 且位于浅色豁免之后，暗色下它胜出，
+ * 编辑器又被裁掉（CDP 实测 overflow=hidden）。
+ * 必须紧跟本块之后，理由同浅色那条（同 !important 后者胜）。
+ */
+[data-theme="dark"] .routing-editor.ui-card {
+  overflow: visible !important;
+}
 [data-theme="dark"] .ui-card:hover { transform: none !important; }
 [data-theme="dark"] .ui-card:hover,
 [data-theme="dark"] .ui-card:focus-within {
