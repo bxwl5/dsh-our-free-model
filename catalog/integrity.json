@@ -54,8 +54,8 @@
     },
     {
       "path": "src/adapter.js",
-      "size": 68509,
-      "sha256": "3c06b10b8db09a70f497c8f6506e2fb03f187d1b9c9c5cc6ab8b0979bda7d1c9"
+      "size": 69610,
+      "sha256": "4399c389d95712e50ee6003716e5128b1a08631cd5027a3eb833786c21fd9a37"
     },
     {
       "path": "src/anthropic.js",
@@ -84,8 +84,8 @@
     },
     {
       "path": "src/combos.js",
-      "size": 13237,
-      "sha256": "066ebac4625343afdd7f6641ded5794d12fb88c1a4fa4908a4d2dad88863b659"
+      "size": 13527,
+      "sha256": "a2dfef88f56b26a7abc38fd0ca76b96bb8b9b48a71b3987e06b44aacd2a359e9"
     },
     {
       "path": "src/core/channel-usage.js",
