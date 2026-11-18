@@ -4,7 +4,7 @@ import { FreeModelAdapter, ROUTE_MAIN, ROUTE_REGION } from '../adapter.js'
 import { buildCatalog, buildKiloCatalog, isKiloEntry, parseListing, reviveKiloCatalog } from '../catalog.js'
 import { buildComboCatalog, isComboEntry, normalizeCombos, pruneRotation, comboLastServed } from '../combos.js'
 import { isChannelEntry, readChannelRosters, reviveChannelCatalog, mergeChannelCatalogRows, CHANNEL_PREFIX, FALLBACK_CONTEXT_WINDOW } from '../channel-catalog.js'
-import { buildMergedCatalog, filterRosterByAccount, isMergedEntry } from '../merged-catalog.js'
+import { buildMergedCatalog, filterRosterByAccount, filterRosterByProvider, isMergedEntry } from '../merged-catalog.js'
 import { JsonStore, SETTINGS_INITIAL, STATS_INITIAL, STATS_VERSION, migrateStats, pruneDays, recordTurn, recordUsage, isModelHidden, normalizeCustomProviders } from '../store.js'
 import { STATE, detectEgress, probeCatalog } from '../probe.js'
 import { CODE, UpstreamError, getJson } from '../http.js'
@@ -78,12 +78,14 @@ export function createModelRuntime({
    * 渠道包 provide 出来的两个服务面（可选）：
    *
    * - `channelPackRoster()` → 未抑制的渠道名册（合并层的输入）；
+   * - `channelPackProviderClosed(provider)` → 该渠道是否被用户整条关闭；
    * - `accountPool` → 账号池（`modelLaneHealth` 读限流台账用）。
    *
    * 两者都是可选的：缺了就只有「按渠道」的目录，合并组不出现，免费车道
    * 与链路照旧（同本插件对每个可选服务的既有取舍）。
    */
   channelPackRoster,
+  channelPackProviderClosed,
   channelPackLaneHealth,
 }) {
   let catalog = materializeCatalog(catalogStore.get().entries ?? [])
@@ -518,7 +520,28 @@ export function createModelRuntime({
         }
       }
     }
-    const entries = buildMergedCatalog(effectiveRoster)
+    const closedProviders = new Set()
+    if (typeof channelPackProviderClosed === 'function') {
+      for (const row of Array.isArray(effectiveRoster?.providers) ? effectiveRoster.providers : []) {
+        const provider = typeof row?.provider === 'string' ? row.provider : ''
+        if (provider === '') continue
+        try {
+          if (await channelPackProviderClosed(provider) === true) closedProviders.add(provider)
+        } catch {
+          // 读不出来 ≠ 已关闭：保留该渠道。
+        }
+      }
+      if (disposed) return mergedCatalog
+      if (closedProviders.size > 0) {
+        const kept = filterRosterByProvider(effectiveRoster, provider => closedProviders.has(provider))
+        if (kept.providers.length !== effectiveRoster.providers.length) {
+          logger.debug?.(`our-free-model: ${kept.dropped.join(', ')} `
+            + 'turned off in the channel manager; their models are left out of the merged group')
+          effectiveRoster = { providers: kept.providers }
+        }
+      }
+    }
+    const entries = buildMergedCatalog(effectiveRoster, closedProviders)
     if (entries.length === 0) {
       mergedCatalog = []
       return mergedCatalog

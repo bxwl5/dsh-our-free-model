@@ -252,6 +252,14 @@ let channelRosterReadAt = 0
      * 之后渠道包 ready 会触发一次目录重建（`onPackReady`），届时再取。
      */
     channelPackRoster: packService('channelPackRoster', async () => ({ providers: [] })),
+    /**
+     * 渠道是否被用户**整条关闭**（渠道管理页每一行的开关）。
+     *
+     * 合并层读的是未抑制名册（不然后者什么都看不到），所以关闭状态得单独问。
+     * 判据与渠道管理页的 `closed` 一致：那家渠道有目录、且一个不剩全停用。
+     * 渠道包没 provide（旧版本 / 未挂载）时返回 `undefined` = 未知 = 保留。
+     */
+    channelPackProviderClosed: packService('channelPackProviderClosed', async () => undefined),
     channelPackLaneHealth: packService('channelPackLaneHealth', () => undefined),
     onChannelError: (provider, error) => {
       if (provider === 'listProviders') {
@@ -292,28 +300,35 @@ let channelRosterReadAt = 0
   })
 
   /**
-   * 渠道包判死一个新模型时，立刻重建合并组（用户 2026-11-18 报障的收尾）。
+   * 渠道包动了目录时，立刻重建合并组（用户 2026-11-18 报障的收尾）。
    *
-   * 为什么是这条专属事件、不是 `llm/adapters-updated`：本插件自己也会 emit
-   * 后者，订阅它会形成「监听 → 重建 → emit → 监听」的无限递归（2026-11-04
-   * 真实事故：主线程 100%、HTTP 无响应、桌面端起不来）。渠道包为此单独发
-   * `channel-pack/dead-model-marked`，只有它 emit，我们只听 —— 无回路。
+   * 两条专属事件，各对应一类「名册形状变了」：
+   * - `channel-pack/dead-model-marked`：判死一个新模型；
+   * - `channel-pack/catalog-changed`：渠道整条开关 / 单模型开关（渠道管理页
+   *   的关闭落盘的是「全模型黑名单 + 全账号停用」，合并层读**未抑制**名册，
+   *   不重建就继续把关掉的渠道摆在候选位上）。
    *
-   * 不订阅的后果：失效模型已经不再出现在渠道的 `listModels` 里，但合并组
-   * 读的是**上一轮**名册快照，于是选择器里那些必然失败的合并行要挂到下一轮
-   * 目录轮询（默认 15 分钟）才消失。
+   * 为什么不用 `llm/adapters-updated`：本插件自己也会 emit 后者，订阅它会形成
+   * 「监听 → 重建 → emit → 监听」的无限递归（2026-11-04 真实事故：主线程
+   * 100%、HTTP 无响应、桌面端起不来）。这两条只有渠道包 emit，我们只听 ——
+   * 无回路。
+   *
+   * 不订阅的后果：合并组读的是**上一轮**名册快照，选择器里那些必然失败的
+   * 合并行要挂到下一轮目录轮询（默认 15 分钟）才消失。
    */
   let deadModelSyncTimer
-  ctx.on?.('channel-pack/dead-model-marked', () => {
+  const scheduleMergedResync = reason => {
     if (deadModelSyncTimer !== undefined) return
     deadModelSyncTimer = setTimeout(() => {
       deadModelSyncTimer = undefined
       void modelRuntime.syncAggregateCatalog?.()?.catch?.(error => {
-        logger.warn?.(`our-free-model: merged catalog resync after dead model failed (${String(error?.message ?? error)})`)
+        logger.warn?.(`our-free-model: merged catalog resync after ${reason} failed (${String(error?.message ?? error)})`)
       })
     }, 1_000)
     deadModelSyncTimer.unref?.()
-  })
+  }
+  ctx.on?.('channel-pack/dead-model-marked', () => scheduleMergedResync('dead model'))
+  ctx.on?.('channel-pack/catalog-changed', () => scheduleMergedResync('channel catalog change'))
 
 
 

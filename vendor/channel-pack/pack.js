@@ -64262,6 +64262,11 @@ function broadcastCatalogChanged(ctx) {
   } catch (error) {
     ctx.logger.warn(`[channel-pack] \u5E7F\u64AD\u6A21\u578B\u76EE\u5F55\u53D8\u66F4\u4E8B\u4EF6\u5931\u8D25\uFF1A${String(error)}`);
   }
+  try {
+    ctx.emit("channel-pack/catalog-changed");
+  } catch (error) {
+    ctx.logger.warn(`[channel-pack] \u5E7F\u64AD\u76EE\u5F55\u53D8\u66F4\u4E13\u5C5E\u4E8B\u4EF6\u5931\u8D25\uFF1A${String(error)}`);
+  }
 }
 async function fullCatalogIds(ctx, modelAdapters, provider) {
   const all = ownEntry(modelAdapters, provider)?.listAllModels();
@@ -73399,6 +73404,22 @@ function apply(ctx, config = {}) {
       if (models.length > 0) providers.push({ provider, models });
     }
     return { providers };
+  });
+  ctx.provide("channelPackProviderClosed", async (provider) => {
+    const adapter = Object.hasOwn(modelAdapters, provider) ? modelAdapters[provider] : void 0;
+    if (adapter === void 0) return void 0;
+    let catalog;
+    try {
+      catalog = adapter.listAllModels();
+    } catch {
+      return void 0;
+    }
+    if (catalog.length === 0) return false;
+    const disabled = pool.disabledModelsFor(provider);
+    for (const model of catalog) {
+      if (!disabled.has(model.id)) return false;
+    }
+    return true;
   });
   ctx.provide("channelPackLaneHealth", async (provider, modelId) => {
     return await modelLaneHealth(pool, provider, modelId);

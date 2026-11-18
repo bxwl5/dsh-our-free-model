@@ -65,6 +65,7 @@ import { configureDeadModelStore, setDeadModelListener, withDeadModelPruning } f
 declare module '@deepseek-ai/cordis' {
   interface Events {
     'channel-pack/dead-model-marked'(): void
+    'channel-pack/catalog-changed'(): void
   }
 }
 import { configureModelCatalogCache } from './model-catalog-cache.js'
@@ -2653,6 +2654,44 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
       if (models.length > 0) providers.push({ provider, models })
     }
     return { providers }
+  })
+  /**
+   * `channelPackProviderClosed` —— 这家渠道是否被用户在**渠道管理页整条关闭**。
+   *
+   * ## 为什么合并层需要单独问
+   *
+   * `channelPackRoster` 是**未抑制**名册（抑制之后 `listModels()` 恒为空，
+   * 合并层就再没有别的来源）。绕开抑制的代价是它也绕开了「用户关掉了这家」
+   * 这一层：`provider.setEnabled({enabled:false})` 落盘的是「全部模型进
+   * 黑名单 + 全部账号停用」，而名册只按账号可见性过滤，于是被关掉的渠道
+   * 依然在合并组里占着候选位，选中的那一次必然发不出去。
+   *
+   * ## 判据与渠道管理页的 `closed` 完全一致
+   *
+   * `provider.status` 的 `closed = 目录总数 > 0 且全部被停用`（见
+   * `channel-pack-rpc.ts`）。这里复用同一条判据，避免出现「设置页显示已关闭、
+   * 合并组里却还在」的分叉。**单模型关闭不算关闭**：那一步由名册按模型剔除。
+   *
+   * 目录读不出来（适配器抛错）时返回 `undefined` —— 未知一律按「保留」处理，
+   * 与 `providerCatalogVisible` 的「宁多勿少」同一条纪律。
+   */
+  ctx.provide('channelPackProviderClosed', async (provider: string): Promise<boolean | undefined> => {
+    // 只用自有键：`modelAdapters` 是普通对象，原型链上的名字（`constructor` 等）
+    // 不该被当成一家渠道。
+    const adapter = Object.hasOwn(modelAdapters, provider) ? modelAdapters[provider] : undefined
+    if (adapter === undefined) return undefined
+    let catalog: readonly { id: string }[]
+    try {
+      catalog = adapter.listAllModels()
+    } catch {
+      return undefined
+    }
+    if (catalog.length === 0) return false
+    const disabled = pool.disabledModelsFor(provider)
+    for (const model of catalog) {
+      if (!disabled.has(model.id)) return false
+    }
+    return true
   })
   /**
    * `channelPackLaneHealth` —— 单个渠道对一个模型的可用性画像。

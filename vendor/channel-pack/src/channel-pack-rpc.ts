@@ -659,6 +659,20 @@ function broadcastCatalogChanged(ctx: Context): void {
   } catch (error) {
     ctx.logger.warn(`[channel-pack] 广播模型目录变更事件失败：${String(error)}`)
   }
+  /**
+   * 专属的「渠道目录变了」事件（2026-11-18）。
+   *
+   * our-free-model 的合并目录读的是**未抑制**名册，不随 `listModels` 变化
+   * 自动重建；渠道开关（`provider.setEnabled`）、单模型开关（黑名单）都会
+   * 改变名册的形状，必须有一条它愿意听的通路。`llm/adapters-updated` 不能
+   * 复用 —— 那个插件自己也 emit，订阅会成环（2026-11-04 事故）。这条事件
+   * 只有渠道包发。
+   */
+  try {
+    ctx.emit('channel-pack/catalog-changed')
+  } catch (error) {
+    ctx.logger.warn(`[channel-pack] 广播目录变更专属事件失败：${String(error)}`)
+  }
 }
 
 /**

@@ -219,15 +219,80 @@ export function filterRosterByAccount(roster, hasAccount) {
 }
 
 /**
+ * 按「渠道是否被用户关闭」过滤名册（用户 2026-11-18：「我们聚合的模型再加个
+ * 过滤，渠道管理页用户是可以关闭的」）。
+ *
+ * ## 为什么不能复用 listModels
+ *
+ * 合并层的输入是渠道包 provide 的 `channelPackRoster` —— 一份**未抑制**的
+ * 名册。它存在的理由正是「抑制之后 listModels 恒为空，没有别的来源能知道
+ * 哪个渠道有哪些模型」，所以它必须绕开抑制。代价是它**也绕开了**用户
+ * 关掉的那一层：渠道管理页把一个渠道整条关闭时，落盘的是「该渠道全部模型
+ * 进黑名单 + 全部账号停用」两个动作，而名册这一侧只做了账号可见性判断 ——
+ * 于是被关掉的渠道依然出现在合并组里，用户选中的那条必然发不出去。
+ *
+ * 所以这里补一次显式的「关闭」判定，判据与渠道管理页的 `closed` 完全对齐
+ * （见 `channel-pack-rpc.ts` 的 `provider.status`）：
+ *
+ * ```
+ * 渠道的模型总数 > 0 且 全部被标为停用  ⇒ 该渠道被用户关闭
+ * ```
+ *
+ * ## 为什么用「全关」而不是「关了一个模型」
+ *
+ * 单模型关闭（`model.setDisabled`）由渠道包在名册里**按模型**剔过了
+ * （`disabledModelsFor` 参与构造 `models`），这里若再按模型过滤，会把
+ * 「渠道没关、只关了一个型号」误判成整个渠道消失。只有「一个不剩」才是
+ * 渠道级关闭的信号。
+ *
+ * ## 读不出来一律保留
+ *
+ * `isProviderClosed` 返回 `undefined` 表示渠道状态未知（账号池未就绪、
+ * 渠道包未挂载）。与 {@link filterRosterByAccount} 同一条纪律：宁可多显示
+ * 一条可能失败的行，也不要在冷启动那一瞬把用户的选择器清空。
+ *
+ * @param {{providers: Array<object>}} roster
+ * @param {(provider: string) => boolean | undefined} isProviderClosed
+ * @returns {{providers: Array<object>, dropped: string[]}} 过滤后的名册与被丢掉的渠道
+ */
+export function filterRosterByProvider(roster, isProviderClosed) {
+  const providers = []
+  const dropped = []
+  for (const row of Array.isArray(roster?.providers) ? roster.providers : []) {
+    const provider = typeof row?.provider === 'string' ? row.provider : ''
+    if (provider === '') continue
+    let closed
+    try {
+      closed = typeof isProviderClosed === 'function' ? isProviderClosed(provider) : undefined
+    } catch {
+      // 判据自己抛错 = 状态不明 = 保留。没人能保证某个渠道的状态查询不会
+      // 因为账号池还没加载完而抛，而这条路上的任何一次异常都会让整轮目录
+      // 重建失败 —— 宁愿多留一条可能失败的行。
+      closed = undefined
+    }
+    if (closed === true) {
+      dropped.push(provider)
+      continue
+    }
+    providers.push(row)
+  }
+  return { providers, dropped }
+}
+
+/**
  * 把各渠道名册合并成虚拟目录行。
  *
  * @param {{providers: Array<{provider: string, models: Array<{id: string, name?: string}>}>}} roster
  *   渠道包 `channelPackRoster` 的返回值（未抑制、已剔除用户黑名单）
  * @param {(provider: string, modelId: string) => object} [healthOf]
  *   可选的健康度注入点；合并层不在这里 await，排序留给下发时做
+ * @param {ReadonlySet<string>} [closedProviders]
+ *   被用户关闭的渠道集合（渠道管理页整条关掉的那几家）。这些渠道的成员
+ *   **不参与归并**：若某条合并行只剩它们，这条行直接消失；若还有别的渠道
+ *   提供同一模型，行保留、只是少了这些候选。
  * @returns {Array<object>} 按归并键排序的合并行
  */
-export function buildMergedCatalog(roster) {
+export function buildMergedCatalog(roster, closedProviders) {
   /**
    * 两个归并键：**id 键** 与 **展示名键**。
    *
@@ -244,6 +309,7 @@ export function buildMergedCatalog(roster) {
   for (const row of Array.isArray(roster?.providers) ? roster.providers : []) {
     const provider = typeof row?.provider === 'string' ? row.provider : ''
     if (provider === '') continue
+    if (closedProviders instanceof Set && closedProviders.has(provider)) continue
     for (const model of Array.isArray(row.models) ? row.models : []) {
       const rawId = typeof model?.id === 'string' ? model.id.trim() : ''
       if (rawId === '') continue

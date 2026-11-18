@@ -22,6 +22,7 @@ import {
   canonicalModelKey,
   canonicalNameKey,
   filterRosterByAccount,
+  filterRosterByProvider,
   isMergedEntry,
   mergedIdForProviderModel,
   mergedModelId,
@@ -406,5 +407,47 @@ assert.equal(noPool.freeAccounts, 0)
 // 账号池抛错 → 降级为健康，绝不把异常抛给目录重建
 const broken = await modelLaneHealth({ listAllAccounts: async () => { throw new Error('lapsed') } }, 'trae', 'glm-5.3', now)
 assert.equal(broken.hasAccount, true)
+
+/**
+ * 被用户在渠道管理页关掉的渠道不进合并组（用户 2026-11-18：「我们聚合的
+ * 模型再加个过滤，渠道管理页用户是可以关闭的」）。
+ *
+ * 渠道页的开关落盘的是「全部模型进黑名单 + 全部账号停用」，而合并层读的是
+ * **未抑制**名册 —— 若不显式过一遍关闭状态，关掉的渠道会继续占着候选位，
+ * 用户选中即失败。
+ */
+const twoLaneRoster = {
+  providers: [
+    { provider: 'codearts', models: [{ id: 'glm-5.3', name: 'GLM-5.3' }] },
+    { provider: 'buddy', models: [{ id: 'glm-5.3', name: 'GLM-5.3' }] },
+  ],
+}
+// 基线：两个渠道并成一条两候选的行
+const before = buildMergedCatalog(twoLaneRoster)
+assert.equal(before.length, 1)
+assert.equal(before[0].laneCount, 2)
+
+// 关掉 buddy：行还在，但只剩 codearts 一个候选
+const oneOff = buildMergedCatalog(twoLaneRoster, new Set(['buddy']))
+assert.equal(oneOff.length, 1)
+assert.equal(oneOff[0].laneCount, 1)
+assert.deepEqual(oneOff[0].merged.map(lane => lane.provider), ['codearts'])
+
+// 全部关掉：这条行整体消失（不能留下一条没有任何候选的空行）
+assert.equal(buildMergedCatalog(twoLaneRoster, new Set(['buddy', 'codearts'])).length, 0)
+
+// 传空集合 / 不传 = 行为不变（老调用点零改动）
+assert.equal(buildMergedCatalog(twoLaneRoster, new Set()).length, 1)
+assert.deepEqual(buildMergedCatalog(twoLaneRoster, new Set()), before)
+
+// 名册过滤：被关掉的渠道不进名册，其余原样保留
+const filtered = filterRosterByProvider(twoLaneRoster, provider => provider === 'buddy')
+assert.deepEqual(filtered.dropped, ['buddy'])
+assert.deepEqual(filtered.providers.map(row => row.provider), ['codearts'])
+
+// 判据返回 undefined（读不出来）→ 保留，冷启动不清空选择器
+assert.equal(filterRosterByProvider(twoLaneRoster, () => undefined).providers.length, 2)
+// 判据抛错也不该让整轮重建失败
+assert.doesNotThrow(() => filterRosterByProvider(twoLaneRoster, () => { throw new Error('unready') }))
 
 console.log('merged-catalog-test: ok')
