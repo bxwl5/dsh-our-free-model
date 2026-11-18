@@ -15,6 +15,8 @@
  */
 import assert from 'node:assert/strict'
 import { comboChain, advanceComboCursor, normalizeCombos, buildComboCatalog } from '../src/combos.js'
+import { advancePastMember } from '../packages/standalone/service.mjs'
+import { commitsAnswer } from '../src/adapter.js'
 
 let checks = 0
 const check = (name, run) => {
@@ -119,18 +121,43 @@ check('round-robin：一回合内每个成员只出现一次（尾接首回绕�
  * 实测踩过：第一版只检查返回值，渠道成员一抛就把整条链中断，NAS 上
  * 「zcode 额度用尽」直接返回给用户，后面两条完好渠道一次都没试。
  */
-const runChain = async (members, complete) => {
+/**
+ * 用**真实**的 `advancePastMember` 跑一条链。
+ *
+ * ⚠️ 这里原先手抄了一份等价逻辑（`const failed = ...`），注释却写着「用真实
+ * runtime 跑一遍」—— 副本与真实实现漂移过：它没有 `answered`/`delivered`
+ * 之分，因此永远不会覆盖「非流式路径必须换人」。现在直接 import 真实判据。
+ *
+ * @param {string[]} members
+ * @param {(id: string) => Promise<any>} complete  产出 `{error|failure}` 或成功的替身
+ * @param {{hasHandler?: boolean, onChunk?: (chunk: any) => void}} options
+ *   `hasHandler: false` 模拟非流式（`forward.js` 不传 onChunk 的调用）
+ * @param {(id: string, chunk: any) => void} [emit] 每个成员的 chunk 产出（用于测提交语义）
+ */
+const runChain = async (members, complete, options = {}) => {
+  const { hasHandler = true, emit } = options
   let lastFailure
   for (const id of members) {
+    let answered = false
     let result
     let thrown
-    try { result = await complete(id) } catch (error) { thrown = error }
-    const failed = thrown !== undefined || result?.error !== undefined
-    if (failed) { lastFailure = thrown ?? { message: result.error }; continue }
-    return { ok: true, servedBy: id, order: members }
+    // 让替身有机会「先产出 chunk，再失败」—— 迟到失败是这条测试的核心场景。
+    const sink = chunk => {
+      if (answered) return
+      if (commitsAnswer(chunk)) answered = true
+      emit?.(id, chunk)
+    }
+    try { result = await complete(id, sink) } catch (error) { thrown = error }
+    if (advancePastMember({ answered, hasHandler, thrown, result })) {
+      lastFailure = thrown ?? { message: result?.error ?? result?.failure?.message }
+      continue
+    }
+    return { ok: true, servedBy: id, order: members, answered }
   }
   throw new Error(`全部失败：${lastFailure?.message ?? ''}`)
 }
+
+/** chunk 判据直接用线上那份（`src/adapter.js` 的 `commitsAnswer`），不另抄替身。 */
 
 await check('降级：返回 outcome.error（免费模型路径）时换下一个', async () => {
   const tried = []
@@ -150,6 +177,54 @@ await check('降级：抛异常的成员（渠道模型路径）也要换下一�
     return { text: 'ok' }
   })
   assert.deepEqual(tried, ['a', 'b'], '抛异常不得中断链')
+  assert.equal(out.servedBy, 'b')
+})
+
+await check('提交语义：流式下已交付正文后，迟到的失败**不换人**（防二次作答）', async () => {
+  const tried = []
+  const emitted = []
+  const out = await runChain(['a', 'b'], async (id, sink) => {
+    tried.push(id)
+    // 成员 a：先发正文（= 已交付），随后失败（迟到的 error finish）
+    sink({ type: 'text-delta', text: 'a 的正文' })
+    return { error: '流尾迟到失败' }
+  }, { hasHandler: true, emit: (id, c) => emitted.push(`${id}:${c.text ?? ''}`) })
+  assert.deepEqual(tried, ['a'], '已交付后不得再试 b（否则客户端收到两份正文）')
+  assert.equal(out.servedBy, 'a', '由已交付的成员结算')
+  assert.deepEqual(emitted, ['a:a 的正文'], '正文只出现一次')
+})
+
+await check('提交语义：非流式（无 handler）下已产出正文后失败，**必须换人**', async () => {
+  const tried = []
+  const out = await runChain(['a', 'b'], async (id, sink) => {
+    tried.push(id)
+    sink({ type: 'text-delta', text: 'a 的正文' })
+    // 非流式路径：内容没写给客户端，只在 result 里
+    return id === 'a' ? { error: '额度用尽' } : { text: 'b 的完整回答' }
+  }, { hasHandler: false })
+  assert.deepEqual(tried, ['a', 'b'], '非流式未交付 → 必须继续换人，否则用户只拿到错误')
+  assert.equal(out.servedBy, 'b', '由完整作答的成员结算')
+})
+
+await check('提交语义：未提交时的失败照常换人（不能因新判据放宽）', async () => {
+  const tried = []
+  const out = await runChain(['a', 'b'], async id => {
+    tried.push(id)
+    return id === 'a' ? { error: '额度用尽' } : { text: 'ok' }
+  }, { hasHandler: true })
+  assert.deepEqual(tried, ['a', 'b'])
+  assert.equal(out.servedBy, 'b')
+})
+
+await check('提交语义：只发 usage / 空白正文不算提交（仍可换人）', async () => {
+  const tried = []
+  const out = await runChain(['a', 'b'], async (id, sink) => {
+    tried.push(id)
+    sink({ type: 'usage', usage: { inputTokens: 10 } })
+    sink({ type: 'text-delta', text: '   ' })
+    return id === 'a' ? { error: '限额' } : { text: 'ok' }
+  }, { hasHandler: true })
+  assert.deepEqual(tried, ['a', 'b'], 'usage 与空白不得钉死一条本可降级的链')
   assert.equal(out.servedBy, 'b')
 })
 

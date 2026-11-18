@@ -18,6 +18,34 @@ import {
 const PRODUCT = 'our-free-model-standalone'
 const VERSION = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version
 
+/**
+ * 路由链「能否换下一个成员」的**唯一判据**。
+ *
+ * 导出供 `scripts/standalone-combo-test.mjs` 直接测**真代码** —— 测试原先的
+ * `runChain` 是手抄的平行实现，已经与真实逻辑漂移过（它没有
+ * `answered`/`delivered` 之分，因此覆盖不到「非流式路径必须换人」这条）。
+ *
+ * ## 两层语义（2026-11-18 二次审查修正）
+ *
+ * | 概念 | 含义 |
+ * |---|---|
+ * | `answered` | 该成员**产出了**不可撤回的正文（`commitsAnswer`） |
+ * | `delivered` | 这份正文**已经写给客户端**（需要 `handler`） |
+ *
+ * 换人判定只能用 `delivered`。非流式路径（`forward.js` 的 `complete` 调用
+ * 不传 `onChunk`）里 `handler === undefined`，内容只累积在 `held` 中、
+ * 从未交付 —— 此时必须继续换下一个成员，否则客户端拿到「部分正文 + 错误」，
+ * 而上游 token 已经花掉。
+ *
+ * @param {{answered?: boolean, hasHandler?: boolean, thrown?: unknown, result?: any}} state
+ * @returns {boolean} true = 允许换下一个成员
+ */
+export function advancePastMember({ answered = false, hasHandler = false, thrown, result } = {}) {
+  const delivered = answered === true && hasHandler === true
+  const failed = thrown !== undefined || result?.error !== undefined || result?.failure !== undefined
+  return !delivered && failed
+}
+
 export function resolveStandaloneDataDir(env = process.env, home = os.homedir()) {
   const configured = typeof env.OFM_HOME === 'string' ? env.OFM_HOME.trim() : ''
   return configured === '' ? path.join(home, '.our-free-model') : path.resolve(configured)
@@ -334,10 +362,28 @@ export async function startStandalone({
       let lastFailure
       for (const member of chain) {
         if (stopped) throw new Error('服务已停止')
-        let committed = false
+        /**
+         * `committed` 的语义被拆成两层（2026-11-18 二次审查修正）：
+         *
+         * | 概念 | 含义 |
+         * |---|---|
+         * | `answered` | 该成员**产出了**不可撤回的正文（`commitsAnswer`） |
+         * | `delivered` | 这份正文**已经写给客户端**（`handler` 存在） |
+         *
+         * 换人判定只能用 `delivered`：非流式路径（`forward.js:944/1247`）
+         * 调 `complete` 时**不传 onChunk**，`handler === undefined`，
+         * 内容只累积在 `held` 里、从未交付；此时若因 `answered` 就拒绝换人，
+         * 客户端会拿到「部分正文 + 错误」——比换下一个成员重答差得多
+         * （上游 token 已花，用户却没得到可用回答）。
+         *
+         * ⚠️ 上一版把两者混成一个 `committed`，在非流式路径上是**回归**：
+         * 修复前「A 发正文后失败 → 换 B → 用户拿到 B 的完整回答」，
+         * 修复后变成「A 的部分正文配错误帧」。
+         */
+        let answered = false
         const held = []
         const sink = chunk => {
-          if (committed) { handler?.(chunk); return }
+          if (answered) { handler?.(chunk); return }
           /**
            * 提交判据与插件端 `runCombo` **同一份**（`commitsAnswer`，已导出）：
            * text-delta 要求非空白、tool-call-delta 恒提交、block-end 按
@@ -347,7 +393,7 @@ export async function startStandalone({
            * （第一版手写判据把 usage 算提交、空白也提交，与插件端漂移。）
            */
           if (commitsAnswer(chunk)) {
-            committed = true
+            answered = true
             for (const row of held) handler?.(row)
             held.length = 0
             handler?.(chunk)
@@ -388,7 +434,7 @@ export async function startStandalone({
          * 插件端 `runCombo`（adapter.js:317-335）同一语义：committed 后
          * 无条件按成功返回。迟到的失败如实放在 result 里交给上层。
          */
-        if (!committed && (thrown !== undefined || result?.error !== undefined || result?.failure !== undefined)) {
+        if (advancePastMember({ answered, hasHandler: handler !== undefined, thrown, result })) {
           lastFailure = thrown !== undefined
             ? (thrown instanceof Error ? thrown : new Error(String(thrown)))
             : (result.failure ?? { message: result.error })
@@ -396,7 +442,8 @@ export async function startStandalone({
           continue
         }
         // 成功但没来过内容块（空回复）：此时 held 里还有 finish，补发出去。
-        if (!committed) for (const row of held) handler?.(row)
+        // 非流式（handler 为 undefined）不需要补发 —— 内容由返回的 result 承载。
+        if (!answered) for (const row of held) handler?.(row)
         noteComboServed(entry.id, member.id)
         /**
          * ⚠️ **不要**在这里调 `advanceComboCursor`。
