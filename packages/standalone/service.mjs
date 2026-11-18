@@ -434,12 +434,32 @@ export async function startStandalone({
          * 插件端 `runCombo`（adapter.js:317-335）同一语义：committed 后
          * 无条件按成功返回。迟到的失败如实放在 result 里交给上层。
          */
+        /**
+         * 🔴 审计修复（2026-11-19）：**已交付后抛异常**时 `result` 是
+         * `undefined`（`thrown`/`result` 互斥）——直接 `return result` 会让
+         * 网关在流式路径读 `result.error` 抛 TypeError，真实失败原因丢失。
+         * 构造兜底 outcome，让迟到的失败如实走到上层。
+         */
+        if (thrown !== undefined && result === undefined) {
+          result = {
+            text: '', toolCalls: [], usage: undefined, truncated: false,
+            error: thrown instanceof Error ? thrown.message : String(thrown),
+            failure: { message: thrown instanceof Error ? thrown.message : String(thrown) },
+          }
+        }
         if (advancePastMember({ answered, hasHandler: handler !== undefined, thrown, result })) {
           lastFailure = thrown !== undefined
             ? (thrown instanceof Error ? thrown : new Error(String(thrown)))
             : (result.failure ?? { message: result.error })
           logger?.warn?.(`[standalone] 路由链 ${entry.id} 的成员 ${member.id} 失败，换下一个：${lastFailure.message ?? lastFailure}`)
           continue
+        }
+        if (thrown !== undefined) {
+          // 已交付（answered && hasHandler）但 complete 中途抛异常：正文已到
+          // 客户端，不能换人；错误也要如实上报 —— 上一版在这里 return undefined。
+          logger?.warn?.(`[standalone] 路由链 ${entry.id} 的成员 ${member.id} 已交付后中断：${thrown instanceof Error ? thrown.message : thrown}`)
+          noteComboServed(entry.id, member.id)
+          return result
         }
         // 成功但没来过内容块（空回复）：此时 held 里还有 finish，补发出去。
         // 非流式（handler 为 undefined）不需要补发 —— 内容由返回的 result 承载。

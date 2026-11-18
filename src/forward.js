@@ -699,6 +699,24 @@ export async function startLanRelay({ config, log = () => {}, onTrace = () => {}
       delete relayed['transfer-encoding']
       if (trace.requestId !== undefined) relayed[REQUEST_ID_HEADER] = trace.requestId
       res.writeHead(upstream.statusCode ?? 502, relayed)
+      /**
+       * 上游响应**中途**出错必须终止下游（2026-11-19 审计 🔴#2）。
+       *
+       * `pipe` 不转发错误也不结束下游：`response` 事件发出后上游 socket
+       * 闪断（ECONNRESET / 出口节点切换）发在 `upstream` 上，此前无人监听，
+       * 客户端会挂起直到它自己的读超时，同时中继侧留一对永不关闭的 socket。
+       * 销毁下游是此处唯一正确的动作 —— 头已发出，状态码无法更改。
+       */
+      upstream.once('error', error => {
+        trace.setOutcome('failed')
+        log(`lan relay upstream response failed mid-stream: ${error?.message ?? error}`)
+        res.destroy()
+      })
+      upstream.once('aborted', () => {
+        trace.setOutcome('failed')
+        log('lan relay upstream response aborted mid-stream')
+        res.destroy()
+      })
       upstream.pipe(res)
     })
     target.on('error', error => {

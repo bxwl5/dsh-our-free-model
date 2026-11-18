@@ -148,11 +148,20 @@ const runChain = async (members, complete, options = {}) => {
       emit?.(id, chunk)
     }
     try { result = await complete(id, sink) } catch (error) { thrown = error }
+    // 与生产 completeCombo 同步的兜底（审计 🔴#4）：已交付后抛异常时
+    // result 是 undefined，必须构造带 error 的 outcome 再结算。
+    if (thrown !== undefined && result === undefined) {
+      result = {
+        text: '', toolCalls: [], usage: undefined, truncated: false,
+        error: thrown instanceof Error ? thrown.message : String(thrown),
+        failure: { message: thrown instanceof Error ? thrown.message : String(thrown) },
+      }
+    }
     if (advancePastMember({ answered, hasHandler, thrown, result })) {
       lastFailure = thrown ?? { message: result?.error ?? result?.failure?.message }
       continue
     }
-    return { ok: true, servedBy: id, order: members, answered }
+    return { ok: true, servedBy: id, order: members, answered, result }
   }
   throw new Error(`全部失败：${lastFailure?.message ?? ''}`)
 }
@@ -192,6 +201,21 @@ await check('提交语义：流式下已交付正文后，迟到的失败**不�
   assert.deepEqual(tried, ['a'], '已交付后不得再试 b（否则客户端收到两份正文）')
   assert.equal(out.servedBy, 'a', '由已交付的成员结算')
   assert.deepEqual(emitted, ['a:a 的正文'], '正文只出现一次')
+})
+
+await check('提交语义：已交付后成员**抛异常** → 返回带 error 的 outcome，不得是 undefined', async () => {
+  // 审计 🔴#4：thrown 与 result 互斥，已交付路径原实现 return undefined，
+  // 网关读 result.error 抛 TypeError，真实失败原因丢失。
+  const out = await runChain(['a', 'b'], async (id, sink) => {
+    if (id === 'a') {
+      sink({ type: 'text-delta', text: 'a 的正文' })
+      throw new Error('zcode: 流中额度用尽')
+    }
+    return { text: 'b' }
+  }, { hasHandler: true })
+  assert.equal(out.servedBy, 'a', '已交付不换人')
+  assert.notEqual(out.result, undefined, '必须返回 outcome 对象')
+  assert.match(String(out.result?.error ?? out.result?.failure?.message), /额度用尽/, '真实失败原因要带出去')
 })
 
 await check('提交语义：非流式（无 handler）下已产出正文后失败，**必须换人**', async () => {

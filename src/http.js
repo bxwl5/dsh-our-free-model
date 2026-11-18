@@ -329,15 +329,42 @@ export function replayStream(head) {
  *
  * Continues on the decoder the head used, so a character split across the sniff
  * boundary still decodes.
+ *
+ * 每次读取与 deadline + 调用方 abort 同场竞技（2026-11-19 审计 🔴#3）。
+ * 原先收了 `signal` 却从未使用：上游读完嗅探头后 stall 时这个循环**无限挂起**，
+ * 调用方 abort 也取消不掉 —— `readSse`/`headRead` 都有 watchdog，唯独此处没有。
+ * deadline 语义与 readSse 一致：收到新数据即刷新（空闲超时，不是整体上限）。
  */
-async function readRemainder(head, signal) {
+async function readRemainder(head, signal, timeoutMs = 300000) {
   let text = head.text
+  let deadline = Date.now() + timeoutMs
+  const readWithWatchdog = async () => {
+    let onAbort, timer
+    const halted = new Promise((_, reject) => {
+      onAbort = () => reject(new UpstreamError('request aborted', CODE.aborted))
+      signal?.addEventListener('abort', onAbort, { once: true })
+      // ⚠️ **只 reject，不在这里 cancel**（2026-11-19 实测）：cancel 会让挂起的
+      // `read()` 以 `{done:true}` resolve，抢在本次 reject 之前赢得 race ——
+      // watchdog 静默失效，调用方拿到「正常返回的不完整 body」。
+      // 流的收尾（cancel）统一走外层 catch / 正常退出路径。
+      timer = setTimeout(() => reject(new UpstreamError('our-free-model: upstream stream idle past its deadline', CODE.timeout)), Math.max(0, deadline - Date.now()))
+    })
+    const pending = head.reader.read()
+    try {
+      return await Promise.race([pending, halted])
+    } finally {
+      signal?.removeEventListener('abort', onAbort)
+      clearTimeout(timer)
+      pending.catch(() => {})
+    }
+  }
   try {
     if (!head.done) {
       while (true) {
-        const row = await head.reader.read()
+        const row = await readWithWatchdog()
         if (row.done) break
         if (row.value !== undefined) text += head.decoder.decode(row.value, { stream: true })
+        deadline = Date.now() + timeoutMs
       }
     }
   } catch (error) {
@@ -409,7 +436,7 @@ export async function postStreamed({ path, body, session, attributionUserAgent, 
     return { status: response.status, headers: response.headers }
   }
 
-  const text = head.done ? head.text : await readRemainder(head, signal)
+  const text = head.done ? head.text : await readRemainder(head, signal, timeoutMs)
   if (shape !== 'json') {
     // Front-proxy trap (issue #63): a 200
     // body of markup is a WAF/CDN page, and replaying the identical request

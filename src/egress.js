@@ -140,6 +140,16 @@ export async function startEgressRelay({ config, dataDir, log = () => {}, onDead
   let child = null
   let managed = null
   let outlet
+  /**
+   * 数据目录**提升到模式分支之前**（2026-11-19 审计 🔴#1）。
+   *
+   * 原先 `const dir` 声明在 else（subscription）分支里，而 `close()` 定义在
+   * 函数体顶层 —— client 模式下 else 块从未执行，`close` 里的
+   * `path.join(dir, …)` 抛 `ReferenceError` 并被 `catch { /* best-effort *\/ }`
+   * 静默吞掉，R13 的「清理凭据文件」在该模式下从未生效且无声。
+   * 两种模式都指向同一目录，提升声明即可让 close 在两种模式下都拿到它。
+   */
+  const dir = path.join(dataDir, 'egress')
   if (mode === 'client') {
     const parsed = new URL(url)
     if (!CLIENT_SCHEMES.has(parsed.protocol)) {
@@ -148,7 +158,6 @@ export async function startEgressRelay({ config, dataDir, log = () => {}, onDead
     outlet = { kind: 'url', url: parsed }
   } else {
     const binary = findMihomoBinary(cfg.mihomoPath)
-    const dir = path.join(dataDir, 'egress')
     fs.mkdirSync(dir, { recursive: true })
     const mixedPort = await freePort()
     const apiPort = await freePort()

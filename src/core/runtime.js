@@ -283,7 +283,20 @@ export function createModelRuntime({
       const sharedForced = catalogRefreshForced
       const sharedProbed = catalogRefreshProbed
       const value = await shared
-      if (disposed || ((!force || sharedForced) && (!probe || sharedProbed))) return value
+      if (disposed) return value
+      /**
+       * 共享刷新满足不了本次要求时**继续等下一轮**，绝不跌出循环重跑
+       * （2026-11-19 审计 🔴#5）。原实现条件不满足时跌到 while 外再起
+       * 一轮完整 listing+kilo+channel，启动刷新 / 手动探测 / 定时轮询
+       * 撞车时同一瞬间跑两遍，白白多花上游配额（probe 段有 probeRound
+       * 幂等兜底，重复的是 listing 与渠道扫描段）。
+       * 循环条件保证：只要还有在途刷新就蹭它；没有在途时才自己起一轮。
+       */
+      if ((force && !sharedForced) || (probe && !sharedProbed)) {
+        await Promise.resolve()
+        continue
+      }
+      return value
     }
     const run = refreshCatalogOnce({ probe, force })
     catalogRefresh = run
