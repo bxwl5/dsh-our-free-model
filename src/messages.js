@@ -1,3 +1,29 @@
+// @ts-check
+/**
+ * @typedef {object} HarnessMessage
+ * @property {string} role `user` / `assistant` / `tool` / `system`
+ * @property {string|Array<object>} content 文本或块数组
+ * @property {Array<{id?: string, name?: string, arguments?: string}>} [toolCalls] 助手发起的工具调用
+ * @property {string} [toolCallId] 工具结果对应的调用 id
+ * @property {string} [name] 工具名（结果消息）
+ */
+
+/**
+ * @typedef {object} ChatMessage
+ * @property {string} role `system` / `user` / `assistant` / `tool`
+ * @property {string|Array<object>} content
+ * @property {Array<{id: string, type: string, function: {name: string, arguments: string}}>} [tool_calls]
+ * @property {string} [tool_call_id]
+ * @property {string} [name]
+ */
+
+/**
+ * @typedef {object} ToolDef
+ * @property {string} name 工具名
+ * @property {string} [description] 描述
+ * @property {object} [parameters] JSON Schema 参数
+ */
+
 /**
  * Harness message vocabulary <-> upstream wire shapes, plus the SSE readers that
  * turn provider events back into harness `StreamChunk`s.
@@ -83,6 +109,10 @@ function toolResultsOf(message) {
  * [invalid_request_error]`, which then fails every later turn in that session,
  * not just the one that broke. Repairing here covers all three wires at once.
  */
+/**
+ * @param {HarnessMessage[]} messages 投影前的完整历史
+ * @returns {HarnessMessage[]} 配对修复后的历史（孤儿调用/结果整对移除）
+ */
 export function repairToolPairing(messages) {
   const list = messages ?? []
   const answered = new Set()
@@ -155,6 +185,12 @@ function callIdOf(message) {
  * Assistant reasoning is never replayed upstream; only visible text and tool
  * calls are. Tool results are first-class `role: 'tool'` messages keyed by the
  * provider call id they answer.
+ */
+/**
+ * @param {HarnessMessage[]} messages
+ * @param {(ref: object) => string|undefined} resolveImage 图像引用 → URL
+ * @param {string[]} warnings 非致命告警的输出收集器
+ * @returns {ChatMessage[]} OpenAI Chat 线消息
  */
 export function toChatMessages(messages, resolveImage, warnings) {
   const out = []
@@ -260,6 +296,12 @@ function claudeImageBlock(url, warnings) {
 }
 
 /** Project harness messages onto the Anthropic Messages shape. */
+/**
+ * @param {HarnessMessage[]} messages
+ * @param {(ref: object) => string|undefined} resolveImage
+ * @param {string[]} warnings
+ * @returns {Array<object>} Claude Messages 线消息（content block 数组）
+ */
 export function toClaudeMessages(messages, resolveImage, warnings) {
   const out = []
   let systemText = ''
@@ -323,6 +365,12 @@ export function toClaudeMessages(messages, resolveImage, warnings) {
 }
 
 /** Project harness messages onto the OpenAI Responses input item list. */
+/**
+ * @param {HarnessMessage[]} messages
+ * @param {(ref: object) => string|undefined} resolveImage
+ * @param {string[]} warnings
+ * @returns {Array<object>} Responses 线的 input 项
+ */
 export function toResponseInput(messages, resolveImage, warnings) {
   const out = []
   const followUp = []
@@ -392,6 +440,11 @@ export function toResponseInput(messages, resolveImage, warnings) {
 }
 
 /** Harness tool schemas -> the shape each provider expects. */
+/**
+ * @param {ToolDef[]} tools Harness 工具 schema
+ * @param {string} style `chat` / `claude` / `responses` 三线形状
+ * @returns {Array<object>} 对应线的工具声明
+ */
 export function toToolDefs(tools, style) {
   const list = []
   for (const tool of tools ?? []) {

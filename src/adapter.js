@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The provider adapter.
  *
@@ -16,6 +17,70 @@
  *
  * @module src/adapter.js
  */
+
+/**
+ * @typedef {object} ModelEntry
+ * @property {string} id 模型全 id（`provider/model` 或 `combo:slug`）
+ * @property {string} name 展示名
+ * @property {string} [channel] 渠道 id；免费车道无此字段
+ * @property {boolean} [vision] 是否支持图像输入
+ * @property {boolean} [reasoning] 是否支持推理档位
+ * @property {number} [contextWindow] 上下文窗口（token）
+ * @property {number} [maxOutput] 最大输出（token）
+ * @property {object} [combo] 路由链行专有：成员与策略
+ * @property {string} [strategy] 路由策略（fallback / round-robin；combo 行专有）
+ * @property {number} [stickyLimit] round-robin 的粘滞回合数（combo 行专有）
+ */
+
+/**
+ * @typedef {object} ModelListing
+ * @property {string} provider 路由名
+ * @property {string} id 模型 id
+ * @property {string} name 展示名
+ * @property {string} description 选择器描述
+ * @property {string[]} inputModalities 输入模态（`text` / `image`）
+ */
+
+/**
+ * @typedef {object} StreamOptions
+ * @property {string} provider 路由名（ROUTE_MAIN / ROUTE_REGION）
+ * @property {string} model 模型 id
+ * @property {Array<object>} messages 投影前的块数组消息
+ * @property {string} [reasoningEffort] 推理档位
+ * @property {string} [sessionId] 会话 id（账本归属）
+ * @property {AbortSignal} [signal] 取消信号
+ * @property {number} [maxTokens] 输出上限（上游透传）
+ * @property {number} [temperature] 采样温度（上游透传）
+ * @property {string[]} [stop] 停止序列（上游透传）
+ */
+
+/**
+ * `deps.state()` 返回的快照（runtime 注入）。
+ * @typedef {object} AdapterState
+ * @property {ModelEntry[]} catalog 当前全量目录（免费 + Kilo + 渠道 + combo 虚拟行）
+ * @property {Record<string, string[]>} membership 路由名 → 可见模型 id 列表
+ * @property {{defaultMaxTokens?: number}} settings 用户设置（消费方读 defaultMaxTokens）
+ * @property {string} [attributionUserAgent] 归因 UA
+ */
+
+/**
+ * 构造依赖（runtime 装配层注入）。
+ * @typedef {object} AdapterDeps
+ * @property {() => AdapterState} state 状态快照
+ * @property {(ref: object) => string | undefined} [resolveImage] 图像引用解析
+ * @property {(record: object) => void} recordUsage 用量记账
+ * @property {(record: object) => void} [recordTurn] 回合记账（路由链诊断）
+ * @property {(message: string) => void} [warn] 告警（真问题）
+ * @property {(message: string) => void} [log] 诊断（正常信息；与 warn 语义不同，见构造器注释）
+ * @property {Function} [prepareChannelCall] 渠道调用准备（runChannel 用；装配层注入）
+ * @property {Function} [recordTurn] 回合计账（runCombo 诊断）
+ */
+
+/**
+ * 线协议流式 chunk 的判据输入（`commitsAnswer` 的消费形态）。
+ * @typedef {{type?: string, text?: string, block?: {type?: string, text?: string}, kind?: string, reason?: {kind?: string, failure?: {message?: string, code?: string}}, usage?: object}} StreamChunk
+ */
+
 
 import { applyFingerprint, baseModelId, endpointFor, mintRequestId, sessionForConversation, wireFor } from './upstream.js'
 import { toChatMessages, toClaudeMessages, toResponseInput, toToolDefs, repairToolPairing } from './messages.js'
@@ -45,14 +110,8 @@ const STYLE_FOR_WIRE = { chat: 'chat', responses: 'flat', messages: 'claude' }
 
 export class FreeModelAdapter {
   /**
-   * @param {object} dependencies
-   * @param {() => {catalog: Array<object>, membership: Record<string, string[]>, settings: object, attributionUserAgent: string}} dependencies.state
-   * @param {(ref: object) => string | undefined} [dependencies.resolveImage]
-   * @param {(record: object) => void} dependencies.recordUsage
-   * @param {(record: object) => void} [dependencies.recordTurn]
-   * @param {(message: string) => void} [dependencies.warn]
-   * @param {(message: string) => void} [dependencies.log]
-   *
+   * @param {AdapterDeps} dependencies
+             *
    * ⚠️ `log` 与 `warn` 是**两个**依赖，别把 `log` 当成 `warn` 的别名随手省掉
    * （真实缺陷，2026-11-10）：`runCombo` 每次作答都调 `this.deps.log?.(...)`
    * 记「本轮由谁作答」，而装配层（`src/core/runtime.js`）**只注入了 `warn`**、
@@ -77,8 +136,13 @@ export class FreeModelAdapter {
     this.chainCooldown = new Map()
   }
 
+  /**
+   * @param {string} provider 路由名
+   * @returns {{id: string, name: string}} 选择器展示用的路由条目
+   */
   providerInfo(provider) {
-    return { id: provider, name: ROUTE_LABELS[provider] ?? provider }
+    const labels = /** @type {Record<string, string>} */ (ROUTE_LABELS)
+    return { id: provider, name: labels[provider] ?? provider }
   }
 
   /**
@@ -123,7 +187,12 @@ export class FreeModelAdapter {
     return FALLBACK_IMAGE_PRICING
   }
 
-  /** Models this route advertises right now. */
+  /**
+   * Models this route advertises right now.
+   *
+   * @param {string} provider 路由名（ membership 表的键）
+   * @returns {Promise<ModelListing[]>} 当前对该路由可见的模型清单
+   */
   async listModels(provider) {
     const state = this.deps.state()
     const ids = new Set(state.membership[provider] ?? [])
@@ -138,6 +207,14 @@ export class FreeModelAdapter {
       }))
   }
 
+  /**
+   * 把模型 id 解析成内核可执行的调用描述（容量上限 / 推理档位）。
+   *
+   * @param {string} provider 路由名
+   * @param {string} model 模型 id（可为别名，内部按 baseModelId 归一）
+   * @returns {Promise<{provider: string, id: string, name: string, inputModalities?: string[], context: {contextWindow: number}, defaultMaxTokens: number, reasoning?: {efforts: object, defaultEffort: string}}>}
+   *   未知模型按 FALLBACK_CONTEXT_WINDOW 兜底返回（不抛错——鸭子类型契约要求可解析）
+   */
   async resolveModel(provider, model) {
     const state = this.deps.state()
     const entry = state.catalog.find(candidate => candidate.id === baseModelId(model))
@@ -150,14 +227,14 @@ export class FreeModelAdapter {
         defaultMaxTokens: 8192,
       }
     }
-    const ceiling = Math.min(entry.maxOutput, state.settings.defaultMaxTokens ?? 32768)
+    const ceiling = Math.min(entry.maxOutput ?? 32768, state.settings.defaultMaxTokens ?? 32768)
     const efforts = effortsFor(entry, undefined, state.settings.defaultMaxTokens)
     return {
       provider,
       id: entry.id,
       name: entry.name,
       inputModalities: entry.vision ? ['text', 'image'] : ['text'],
-      context: { contextWindow: entry.contextWindow },
+      context: { contextWindow: entry.contextWindow ?? FALLBACK_CONTEXT_WINDOW },
       defaultMaxTokens: ceiling,
       ...efforts === undefined ? {} : { reasoning: { efforts, defaultEffort: defaultEffortFor(entry) } },
     }
@@ -167,6 +244,12 @@ export class FreeModelAdapter {
    * Bind model metadata and the dispatch closure to one state snapshot, so a
    * catalog refresh arriving mid-turn cannot mix one generation's capacities
    * with another's endpoint table.
+   */
+  /**
+   * 绑定模型元数据与分发闭包（内核鸭子类型契约方法）。
+   * @param {string} provider 路由名
+   * @param {string} model 模型 id
+   * @returns {Promise<{model: object, stream: (options: StreamOptions) => AsyncGenerator<StreamChunk>}>}
    */
   async prepareCall(provider, model) {
     const snapshot = this.deps.state()
@@ -178,9 +261,12 @@ export class FreeModelAdapter {
   }
 
   /**
-   * @param {object} options - GenerateOptions
-   * @param {object|null} pinned - catalog row frozen by `prepareCall`, if any
-   * @param {object} [snapshot] - state generation frozen by `prepareCall`
+   * 流式生成入口（内核鸭子类型契约的三核心方法之一）。
+   *
+   * @param {StreamOptions} options - 调用描述（provider/model/messages/signal…）
+   * @param {ModelEntry|null} pinned - catalog row frozen by `prepareCall`, if any
+   * @param {AdapterState} [snapshot] - state generation frozen by `prepareCall`
+   * @returns {AsyncGenerator<StreamChunk>} 块纪律的流式输出（text-delta / tool-call-delta / block-* / usage / finish）
    */
   stream(options, pinned, snapshot = this.deps.state()) {
     const controller = new AbortController()
@@ -189,7 +275,7 @@ export class FreeModelAdapter {
     else options.signal?.addEventListener('abort', onAbort, { once: true })
     const iterator = this.runStream({ ...options, signal: controller.signal }, pinned, snapshot)
     const cleanup = () => options.signal?.removeEventListener('abort', onAbort)
-    const step = async (method, value) => {
+    /** @param {string} method @param {unknown} value @returns {Promise<any>} */    const step = async (method, value) => {
       try {
         const row = await iterator[method](value)
         if (row.done) cleanup()
@@ -215,6 +301,13 @@ export class FreeModelAdapter {
    * any other; the only difference is that its row carries a chain instead of an
    * endpoint. Resolving that here — rather than at the picker or the gateway —
    * means both callers get the failover for free.
+   */
+  /**
+   * 流式主循环：combo 链分发或单模型直答。
+   * @param {StreamOptions} options
+   * @param {ModelEntry|null} pinned
+   * @param {AdapterState} snapshot
+   * @returns {AsyncGenerator<StreamChunk>}
    */
   async * runStream(options, pinned, snapshot) {
     const modelId = baseModelId(options.model)
@@ -244,10 +337,17 @@ export class FreeModelAdapter {
    * later failure ends the turn the normal way — the single-model recovery path
    * inside `runSingle` still gets its continuation attempt first.
    */
+  /**
+   * 路由链分发（fallback 重排 / round-robin 轮转），逐候选让出 chunk。
+   * @param {StreamOptions} options
+   * @param {ModelEntry} entry combo 虚拟行
+   * @param {AdapterState} snapshot
+   * @returns {AsyncGenerator<StreamChunk>}
+   */
   async * runCombo(options, entry, snapshot) {
     const settings = snapshot.settings ?? {}
     const started = Date.now()
-    const rejectedTurn = attempts => {
+    /** @param {number} attempts @returns {void} */    const rejectedTurn = attempts => {
       this.deps.recordTurn?.({ at: started, model: entry.id, ok: false, recovered: false, attempts, origin: 'harness' })
     }
     // 2026-11-07（用户）：开关（settings.enabled）只管**免费车道**。链路成员若是
@@ -409,6 +509,11 @@ export class FreeModelAdapter {
    * 只做「稳定分组」：健康的保持原有相对顺序在前，禁期内的保持原有相对顺序在
    * 后。全员都在禁期里时不重排 —— 那样等于每回合都从队尾开始，反倒随机。
    */
+  /**
+   * 把冷却中的成员挪到队尾（fallback 策略重排；round-robin 不重排）。
+   * @param {ModelEntry[]} candidates
+   * @returns {ModelEntry[]}
+   */
   orderByCooldown(candidates) {
     if (this.chainCooldown.size === 0) return candidates
     const now = Date.now()
@@ -431,6 +536,11 @@ export class FreeModelAdapter {
    *   的 scope 文档同源）。早先的 60 秒兜底会把这条语义整个吃掉。
    * - `verdict === null`：调用方（runChannel 的 prepare 失败路径等）确实给不出
    *   分类，才按一分钟保守处理。
+   */
+  /**
+   * @param {string} id 成员 id
+   * @param {{cooldownMs?: number}|null} [verdict] verdict 决定冷却时长（见长注释）
+   * @returns {void}
    */
   markFaulty(id, verdict) {
     if (verdict !== null && verdict !== undefined) {
@@ -477,11 +587,17 @@ export class FreeModelAdapter {
    * Failures are yielded as the normal terminal `finish` chunk rather than
    * thrown, so a chain can classify them and advance like any other candidate.
    */
+  /**
+   * 渠道模型成员的流式执行（经渠道适配器）。
+   * @param {StreamOptions} options
+   * @param {ModelEntry} entry
+   * @returns {AsyncGenerator<StreamChunk>}
+   */
   async * runChannel(options, entry) {
     const settings = (this.deps.state().settings) ?? {}
     const started = Date.now()
     const target = parseChannelModelId(entry.id)
-    const fail = (message, code) => ({
+    /** @param {string} message @param {string} [code] @returns {{type: string, reason: object}} */    const fail = (message, code) => ({
       type: 'finish',
       reason: { kind: 'error', failure: { message, code } },
     })
@@ -651,6 +767,14 @@ export class FreeModelAdapter {
    * incomplete 四种 token，写成单值会让其余三种漏掉续写、直接报错）。
    * `reasonKind` 必须传调用方算好的 `reason.kind`（含 brokenToolCall 强制
    * max-tokens 的三元），不要在函数里重算。
+   */
+  /**
+   * @param {{brokenToolCall?: boolean, sawText?: boolean, sawToolCall?: boolean, answerText?: string}} outcome
+   * @param {{enabled?: boolean, [k: string]: unknown}} policy
+   * @param {number} elapsed
+   * @param {boolean} recovering
+   * @param {string} reasonKind
+   * @returns {object} 分类结论
    */
   static classifyStreamOutcomes({ outcome, policy, elapsed, recovering, reasonKind }) {
     const interrupted = canRecover(outcome, policy, elapsed)
