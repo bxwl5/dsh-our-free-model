@@ -46,7 +46,16 @@ const PING_PROMPT = 'ping'
  * @param {number} [options.timeoutMs]
  * @returns {Promise<{state:string, detail?:string, latencyMs:number, ttftMs?:number}>}
  */
-export async function probeModel(model, { attributionUserAgent, signal, timeoutMs = 45000 } = {}) {
+/**
+ * 探测请求的默认超时（2026-11-19 任务 3：45s → **5s**）。
+ *
+ * 探测只需要「第一个 delta 是否出现」这个信号，正常模型 1-2 秒内就有响应；
+ * 45 秒的上限是为真实对话设的，探测用它意味着一个挂死的上游能把整轮探测
+ * 拖到 45 秒 ×（模型数 / 并发）。真实对话的超时不受此影响。
+ */
+export const PROBE_TIMEOUT_MS = 5000
+
+export async function probeModel(model, { attributionUserAgent, signal, timeoutMs = PROBE_TIMEOUT_MS } = {}) {
   const started = Date.now()
   const session = sessionForConversation('probe:our-free-model')
   const wire = wireFor(model.id)
@@ -219,7 +228,10 @@ export async function detectEgress({ signal, timeoutMs = 8000 } = {}) {
  * periodic loop holds *whole rounds* off while a quota backoff window is open
  * (the caller's concern, see index.js) instead of truncating this one.
  */
-export async function probeCatalog(models, options = {}, onResult = () => {}, concurrency = 2) {
+/** 探测并发上限（2026-11-19 任务 3：2 → **5**，原生 Promise worker 池）。 */
+export const PROBE_CONCURRENCY = 5
+
+export async function probeCatalog(models, options = {}, onResult = () => {}, concurrency = PROBE_CONCURRENCY) {
   const results = {}
   let cursor = 0
   const workers = Array.from({ length: Math.max(1, Math.min(concurrency, models.length)) }, async () => {

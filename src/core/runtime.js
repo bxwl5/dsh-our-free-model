@@ -409,6 +409,16 @@ export function createModelRuntime({
   let probeRound = null
   let probeThrottleStreak = 0
   let probeBackoffUntil = 0
+  /**
+   * 探测结果 TTL 缓存（2026-11-19 任务 3）。
+   *
+   * `availability.results` 本来就持久化，但**没有时效门**：任何一次
+   * `refreshCatalog({probe:true})`（定时器 15 分钟一次、egress 变化、启动）
+   * 都会全量重探。TTL 门加在 `refreshAvailability` 的非 force 路径上：
+   * 10 分钟内的结果直接复用，`/reprobe`（force）绕过并重置时间戳。
+   * 持久化的 `availability.at` 就是缓存时间戳 —— 重启后照样生效，不另设存储。
+   */
+  const PROBE_CACHE_TTL_MS = 10 * 60_000
   async function runProbeRound() {
     // The absorbed channels get no per-model probes: their verdicts would be
     // spent against a different gateway than the one that serves them, and a
@@ -452,7 +462,14 @@ export function createModelRuntime({
     return results
   }
   async function refreshAvailability(force = false) {
-    if (disposed || (!force && probeBackoffUntil > Date.now())) return {}
+    if (disposed) return {}
+    if (!force && probeBackoffUntil > Date.now()) return {}
+    // TTL 缓存门：非 force 且结果足够新 → 直接复用（含 in-flight 共享）。
+    // `at` 由 runProbeRound 在每轮结束时写入，重启后从磁盘恢复，天然跨进程存活。
+    if (!force) {
+      const cachedAt = availability.get().at ?? 0
+      if (Date.now() - cachedAt < PROBE_CACHE_TTL_MS) return {}
+    }
     if (probeRound !== null) return probeRound
     const round = runProbeRound()
     probeRound = round

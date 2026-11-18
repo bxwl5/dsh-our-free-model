@@ -99,8 +99,8 @@
     },
     {
       "path": "src/core/runtime.js",
-      "size": 29190,
-      "sha256": "9ad157b88d43975c521bea23c199cbfb54cb6d1b1b8694662c23e3e2d60ac788"
+      "size": 29838,
+      "sha256": "702c4d9a5c1632430f4c22bfa343a71dd3370a5707d79a89b5c0dc85ccf65efa"
     },
     {
       "path": "src/core/stats.js",
@@ -119,8 +119,8 @@
     },
     {
       "path": "src/egress.js",
-      "size": 38039,
-      "sha256": "40c25df11e022fb5d0b272f423b9a12f9bfe7c11636c9ae2fa972eaa91465f72"
+      "size": 38591,
+      "sha256": "96f18d376c062c2f47949dff9395db362b606beea74c9d3e2074c18e926e55c0"
     },
     {
       "path": "src/failure.js",
@@ -129,13 +129,13 @@
     },
     {
       "path": "src/forward.js",
-      "size": 66794,
-      "sha256": "68b81193882a1f37325a1177e67411a9bcbaf0312079109e811bd62d46210539"
+      "size": 67670,
+      "sha256": "b6f711ad6413e68ba150592fe2e9a57b463cf3db173dd9f80a65e0f18e9f5ad3"
     },
     {
       "path": "src/http.js",
-      "size": 28556,
-      "sha256": "ab86556a1ba18b56330a914c44ce61feecdbb56c2200b5ac2f45ff65928a6d85"
+      "size": 30105,
+      "sha256": "458e8a9e7c0ac440f80f31a6de5eccd2dfdb2a534f576ead43f2f0cc7ade6886"
     },
     {
       "path": "src/image-pricing.d.ts",
