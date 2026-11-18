@@ -40,13 +40,4 @@ export function Spinner({ className, ...props }: React.HTMLAttributes<HTMLSpanEl
   return <span className={cn('ui-spinner', className)} role="status" aria-label="加载中" {...props} />
 }
 
-/** 纯 CSS 提示：把文字放到 tip，悬停/聚焦可见。不引入定位依赖。 */
-/** 受控小开关：class 契约与既有 .ui-switch 完全一致（on 表示开启）。 */
-export function Switch({ className, checked = false, onCheckedChange, disabled, ...props }:
-  Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onChange'> & { checked?: boolean; onCheckedChange?: (next: boolean) => void }) {
-  return <button type="button" role="switch" aria-checked={checked} disabled={disabled}
-    className={cn('ui-switch', checked && 'on', className)}
-    onClick={event => { props.onClick?.(event); if (!event.defaultPrevented) onCheckedChange?.(!checked) }} {...props}>
-    <span aria-hidden="true" />
-  </button>
-}
+
