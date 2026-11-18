@@ -4,7 +4,7 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { once } from 'node:events'
-import { verifyLoginLaunchers, verifyLoginTerminal } from './standalone-login-terminal-test.mjs'
+import { verifyLoginLaunchers } from './standalone-login-terminal-test.mjs'
 
 // 这些用例断言的是「免密车道 + Kilo」的目录形状（合并 / 隐藏过滤），与
 // 「未登录渠道是否可见」无关；显式关闭可见性保持期望稳定。
@@ -110,9 +110,21 @@ const login = async body => {
 
 try {
   await check('macOS 与 Windows 固定启动器安全引用路径，令牌只经 stdin 复制', verifyLoginLaunchers)
-  await check('本机取令牌入口限制来源与参数，拒绝并发且不泄露密钥或创建会话', verifyLoginTerminal)
+  // /login/terminal 已删除（决策三，2026-11-19）：端点消失本身值得钉住，
+  // 防止有人把它加回来 —— 那会是重新引入一个免鉴权的本地动作触发面。
   service = await startStandalone({ dataDir, port: 0, refresh: false, logger: { warn() {} } })
   key = getKey()
+  await check('本机取令牌端点已删除（决策三）', async () => {
+    const response = await request('/api/management/login/terminal', {
+      method: 'POST', cookie: '',
+      headers: { origin: 'http://127.0.0.1', 'sec-fetch-site': 'same-origin', 'content-type': 'application/json' },
+      body: '{}',
+    })
+    // 同源防护（403）或路由不存在（404）都算「不再可用」；
+    // 唯一不允许的是 200（端点还活着）。
+    assert.notEqual(response.status, 200, '免鉴权端点必须不复存在')
+    assert.ok(response.status < 500, '不应以 5xx 形式报内部错误')
+  })
   await check('页面资源本地提供且不包含密钥，健康接口仍兼容', async () => {
     const page = await request('/', { cookie: '' })
     assert.equal(page.status, 200)

@@ -1021,6 +1021,21 @@ export class FreeModelAdapter {
           return { advance: false, verdict: null, ...(message ? { failure: { message } } : {}) }
         }
         const verdict = classifyFailure({ status, code, message })
+        /**
+         * 4xx / region 拒绝**额外换人**是有意设计，与 `shouldAdvance` 的差异
+         * **不是漂移**（2026-11-19 用户定案：「对你来说他可能是撞，但是有轮询
+         * 次数在……我觉得这是测试」）。
+         *
+         * 算术：N 成员 × sticky L → 同一成员两次出任间隔 (N-1)×L+1 回合
+         * （5×10 → 41 回合 ≈ 6-10 分钟）。额度重置、上游抖动、egress 切换
+         * 都可能在这个窗口里恢复 —— 下次出任就是一次免费探测，恢复即自动归队。
+         * 代价只是失败回合各一次往返（多数渠道 4xx 不扣额度）+ 一条失败日志。
+         * `markFaulty` 对 cooldownMs=0 的判定（请求级失败有意不冷却）与这里
+         * 互为表里：不禁期，才轮得到"下回合再试"。
+         *
+         * `runChannel`（渠道成员，754 行）没有这个 `||`，渠道撞墙如实报给调用方
+         * —— 也是有意差异：渠道成员的失败由调用方决策，不在链里自动多撞。
+         */
         return { advance: shouldAdvance(verdict) || code === CODE.client || code === CODE.region, verdict, failure: { message } }
       }
       try {

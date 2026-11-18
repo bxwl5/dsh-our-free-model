@@ -4,8 +4,8 @@ import fs from 'node:fs'
 import { buildStats } from '../../src/core/stats.js'
 import { generateKey } from '../../src/forward.js'
 import { structuralRejection } from '../../src/trust.js'
-import { openLoginTerminal } from './login-terminal.mjs'
 import { publicModelVisibility, validateModelVisibility, isModelHidden } from '../../src/store.js'
+import { COMBO_MEMBER_LIMIT } from '../../src/combos.js'
 import { normalizeCombos, buildComboCatalog, isComboEntry } from '../../src/combos.js'
 
 const PREFIX = '/api/management'
@@ -66,11 +66,17 @@ function validateSettings(patch) {
       /**
        * 路由链（2026-11-17，对齐插件版 `src/combos.js`）。
        *
-       * 只校验「是不是数组」，逐项归一交给 `normalizeCombos` —— 它已经处理了
-       * 非对象项、重复 id、空 models、未知 strategy、非法 stickyLimit。
-       * 在这里重复实现一遍校验只会让两处规则分叉。
+       * 只校验「是不是数组」+ 单链成员上限（2026-11-19 决策二），逐项归一交给
+       * `normalizeCombos` —— 它已经处理了非对象项、重复 id、空 models、未知
+       * strategy、非法 stickyLimit。
+       * ⚠️ 上限与 `POST /combos`（357 行）**必须一致**：这里若只验数组，
+       * `POST /settings` 就成了绕过单链 ≤1000 检查的旁路（审计 🟡#35）。
+       * 常量来自 `COMBO_MEMBER_LIMIT`，两处天然对齐。
        */
       if (!Array.isArray(value)) throw fail(400, 'combos 必须是数组')
+      if (value.some(row => row !== null && typeof row === 'object' && Array.isArray(row.models) && row.models.length > COMBO_MEMBER_LIMIT)) {
+        throw fail(400, `一条链最多引用 ${COMBO_MEMBER_LIMIT} 个模型`)
+      }
     } else throw fail(400, `不支持的设置字段：${key}`)
     result[key] = value
   }
@@ -93,13 +99,13 @@ export function managementSettings(value) {
 }
 
 /** 管理读写要求鉴权；登录恢复仅允许同源页面触发固定本机动作。 */
-export function createManagement({ stores, runtime, channels, info, onSettingsChanged, loginTerminal = openLoginTerminal }) {
+export function createManagement({ stores, runtime, channels, info, onSettingsChanged }) {
+  // loginTerminal / openLoginTerminal 已随 /login/terminal 路由删除（决策三）；
+  // login-terminal.mjs 文件与测试保留为实现库，不进运行路径。
   let bootstrap = { token: crypto.randomBytes(32).toString('base64url'), until: Date.now() + BOOTSTRAP_MS }
   const sessions = new Map()
   let cookieName
   let closed = false
-  let terminalOpening = false
-  let terminalOpenedAt = null
   const loginPlatform = process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'unsupported'
   const assets = new Map([...ASSETS].map(([url, [file, type]]) => [
     url, { type, body: file === 'index.html'
@@ -198,25 +204,17 @@ export function createManagement({ stores, runtime, channels, info, onSettingsCh
 
   async function route(req, res, pathname) {
     const method = req.method ?? 'GET'
-    if (method === 'POST' && pathname === `${PREFIX}/login/terminal`) {
-      // 此入口发生在登录前，必须有浏览器的同源 Origin，拒绝跨站和无来源调用。
-      if (req.headers.origin !== new URL(`http://${req.headers.host}`).origin ||
-          req.headers['sec-fetch-site'] !== 'same-origin') {
-        throw fail(403, '请从本机登录页面点击获取令牌')
-      }
-      const body = await readBody(req)
-      if (Object.keys(body).length !== 0) throw fail(400, '获取令牌不接受路径或命令参数')
-      if (terminalOpening || (terminalOpenedAt !== null && Date.now() - terminalOpenedAt < 30_000)) {
-        throw fail(429, '已请求打开终端，请检查弹出的窗口，30 秒后可重试')
-      }
-      terminalOpening = true
-      try {
-        await loginTerminal(info().dataDir)
-        terminalOpenedAt = Date.now()
-        json(res, 200, { ok: true })
-      } finally { terminalOpening = false }
-      return
-    }
+    /**
+     * `POST /login/terminal` 已删除（2026-11-19 决策三）。
+     *
+     * 它是免鉴权端点（原在鉴权网关之前，仅靠 Origin/Sec-Fetch-Site 防护，
+     * curl 可整体伪造），且功能已死：密码迁移（OFM_PASSWORD）后
+     * `/session` 只认密码，终端助手复制的 `forwardKey` 对登录无用；
+     * 前端也已不调用（grep 零命中）。审计 🟡#33/#34 两条发现一并消解。
+     * `login-terminal.mjs` 文件与测试保留（实现干净、有覆盖），
+     * 但不再进运行路径 —— 将来要清理连同 prepare-desktop / pack-standalone
+     * 的清单项一起。
+     */
     /**
      * `GET /auth` —— **免认证**，只回答「这个面板要不要密码」。
      *
@@ -354,7 +352,7 @@ export function createManagement({ stores, runtime, channels, info, onSettingsCh
     } else if (method === 'POST' && pathname === `${PREFIX}/combos/preview`) {
       const body = await readBody(req)
       if (!Array.isArray(body.models)) throw fail(400, 'models 必须是模型 id 数组')
-      if (body.models.length > 1000) throw fail(400, '一条链最多引用 1000 个模型')
+      if (body.models.length > COMBO_MEMBER_LIMIT) throw fail(400, `一条链最多引用 ${COMBO_MEMBER_LIMIT} 个模型`)
       const rows = buildComboCatalog(normalizeCombos([{ name: 'preview', models: body.models }]), runtime.catalog)
       const row = rows[0]
       json(res, 200, {
@@ -374,7 +372,7 @@ export function createManagement({ stores, runtime, channels, info, onSettingsCh
       const body = await readBody(req)
       if (!Array.isArray(body.combos)) throw fail(400, '请提供 combos 数组')
       for (const row of body.combos) {
-        if (row !== null && typeof row === 'object' && Array.isArray(row.models) && row.models.length > 1000) {
+        if (row !== null && typeof row === 'object' && Array.isArray(row.models) && row.models.length > COMBO_MEMBER_LIMIT) {
           throw fail(400, '一条链最多引用 1000 个模型')
         }
       }

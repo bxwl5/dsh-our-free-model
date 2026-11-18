@@ -37,6 +37,13 @@ export const COMBO_CHANNEL = 'combo'
 export const COMBO_PREFIX = 'combo:'
 export const COMBO_STRATEGIES = ['fallback', 'round-robin']
 
+/**
+ * 一条链最多引用的成员模型数（2026-11-19 决策二：从 management.mjs 的两处
+ * 字面量 1000 收拢为单一事实来源）。无上限的链会被 `completeCombo` 顺序
+ * 遍历放大成对上游的串联重试面。
+ */
+export const COMBO_MEMBER_LIMIT = 1000
+
 /** Rotation cursors, keyed by combo id. In-memory on purpose (see the header). */
 const rotation = new Map()
 
