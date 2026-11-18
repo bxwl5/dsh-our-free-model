@@ -159,19 +159,12 @@ export class FreeModelAdapter {
   async listModels(provider) {
     const state = this.deps.state()
     /**
-     * 「自选分组」接管选择器之后，默认那两条路由整体收起（用户 2026-11-18）。
-     *
-     * 与合并行的抑制是同一类做法 —— 只掐**广告**，不掐路由：`resolveModel`
-     * 与 `prepareCall` 都按 catalog 里的 id 解析，不查 membership，所以已经
-     * 存着 `our-free-model` 的旧会话照样能发消息，只是选择器里不再重复列
-     * 一遍用户亲手挑过的模型。
-     *
-     * 只在用户真的建了分组时才收起：没有分组又收起默认路由，等于把选择器
-     * 清空。
+     * `hideBaseGroup`（设置页「关闭渠道分组」）不再碰这两条路由（用户
+     * 2026-11-18 纠正）：合并行就挂在 ROUTE_MAIN 上，收起它等于收起用户
+     * 自己在用的东西。渠道那 20 组的收起由渠道包的广告抑制层热控（见
+     * `index.js` 的 mergedAdvertisementActive）。
      */
     const groups = Array.isArray(state.settings?.customProviders) ? state.settings.customProviders : []
-    if (state.settings?.hideBaseGroup === true && groups.length > 0
-      && (provider === ROUTE_MAIN || provider === ROUTE_REGION)) return []
     /**
      * 关闭的分组同样只掐广告：membership 里没有它（`computeMembership` 跳过
      * `enabled:false`），`listModels` 就返回空，选择器里这一组整个消失。

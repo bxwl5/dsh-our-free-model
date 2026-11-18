@@ -103,6 +103,7 @@ import { installGlobalFetchScrub } from './content-fingerprint.js'
 import { attachDirectFetch, createDirectFetch, type SignedChannelOutlet } from './direct-fetch.js'
 import { mergedAdvertisementSuppressed, suppressMergedAdvertisement } from './merged-advertisement.js'
 export { directFetch, directLane, createDirectFetch, closeDirectFetch } from './direct-fetch.js'
+export { suppressMergedAdvertisement, mergedAdvertisementSuppressed } from './merged-advertisement.js'
 export { createChannelFetch, parseWindowsProxy, channelProxyBypassed } from './channel-fetch.js'
 import { execFile } from 'node:child_process'
 

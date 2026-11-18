@@ -179,9 +179,10 @@ export const SETTINGS_INITIAL = {
    * - `models` 是池子里的模型 id：合并行 `merged:<key>`、链路 `combo:<id>`、
    *   自由车道 id 都可以混选。
    *
-   * `hideBaseGroup`：选了自选分组之后，把默认那两条路由（免费车道 + 地域限制
-   * 车道）从选择器里藏掉，只留下自选的几条 —— 否则「自己挑干净的」这件事
-   * 等于没做。只影响广告：已保存的会话照样能用旧 id 发消息。
+   * `hideBaseGroup`：把渠道包按渠道分的 provider 分组（codearts/buddy/…）从
+   * 选择器里收起。本插件自己的路由与自选分组不受影响；合并开着时渠道分组
+   * 本来就被收起，关掉合并后这个开关仍可单独收起它们。只影响广告：已保存
+   * 的会话照样能用旧 id 发消息。
    */
   customProviders: [],
   hideBaseGroup: false,

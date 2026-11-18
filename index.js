@@ -869,6 +869,14 @@ let channelRosterReadAt = 0
    * instead of showing nothing.
    */
   let channelPack = { state: 'pending', error: '' }
+  // 热切换「关闭渠道分组」需要包模块的开关函数；挂载前为 null，设置页
+  // 此时改标志会被静默跳过（挂载时的初值已按最新设置算好）。
+  let packModule = null
+  /** 渠道广告抑制的期望态：合并开着、或用户显式关掉渠道分组，都要收起。 */
+  const mergedAdvertisementActive = () => {
+    const s = settings.get()
+    return s.merge?.enabled !== false || s.hideBaseGroup === true
+  }
   ctx.inject(['credentials', 'commands', 'llm'], scoped => {
     let stopped = false
     scoped.effect(() => () => { stopped = true }, 'our-free-model: channel pack')
@@ -879,14 +887,17 @@ let channelRosterReadAt = 0
     // release manifest stays inside its file cap.
     void import('./vendor/channel-pack/pack.js').then(pack => {
       if (stopped) return
+      packModule = pack
       const mounted = pack.apply(scoped, {
         disableOpencode: true,
         /**
-         * 「按模型合并」（用户 2026-11-18）：让各渠道的 `listModels()` 对外
-         * 静默，使选择器里那 20 个渠道分组消失，只留本插件的合并组。
-         * 关掉该项即退回「按渠道分组」的旧行为（设置页开关）。
+         * 「关闭渠道分组」（用户 2026-11-18 两次纠正后定稿）：这个标志控制
+         * 渠道包各家 provider 的 `listModels` 是否对外静默。开着合并或开着
+         * 按钮，那 20 个渠道分组就都收起；**本插件自己的两条路由不受它影响**
+         * （旧版把 hideBaseGroup 用来藏 our-free-model，连带合并行一起消失，
+         * 是要修的 bug）。POST /settings 会热推新值，无需重注册。
          */
-        mergeByModel: settings.get().merge?.enabled !== false,
+        mergeByModel: mergedAdvertisementActive(),
         outlet: { active: egressActive, fetch: egressFetch, fetchSigned: (input, init, send) => egressFetch(input, init, send) },
       })
       // 包回来的 provider 名单是「哪些 provider 属于本插件的渠道」的唯一权威：
@@ -967,6 +978,13 @@ let channelRosterReadAt = 0
     settings, stats, availability, catalog: () => modelRuntime.catalog, state, dataDir,
     hotReload: reloadFromDisk,
     onSettingsChanged: () => syncWatcher(),
+    // 热推「关闭渠道分组」：设置处理器在 createApiRoutes（模块级作用域）里，
+    // 拿不到 apply 闭包中的 packModule，回调到这里统一算期望态并翻转标志。
+    syncAdvertisementFlag: () => {
+      if (!packModule?.suppressMergedAdvertisement) return
+      const wanted = mergedAdvertisementActive()
+      if (packModule.suppressMergedAdvertisement(wanted) !== wanted) emitTopology()
+    },
     // 自选分组改的是 membership（哪条路由挂哪些模型），而路由集合就是
     // `Object.keys(membership)` —— 必须重算目录再 replace，否则新分组要等
     // 下一次 15 分钟的目录轮询才出现。
@@ -1685,6 +1703,9 @@ export function createApiRoutes(deps) {
           deps.settings.value = current
           return send(500, { error: 'could not persist settings' })
         }
+        // 热推渠道广告开关：包装层每次 listModels 现读标志（注册漏斗已无条件
+        // 包上），真正翻转时才通知宿主重建选择器目录。
+        deps.syncAdvertisementFlag?.()
         if (Object.keys(visibility).length > 0) deps.onVisibilityChanged?.()
         // 分组补丁比可见性更进一步：它改变的是**路由集合**本身（每条分组是
         // 一个 provider），所以要重算目录 → emitTopology → `registration.replace`。

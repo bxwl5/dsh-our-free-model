@@ -35620,7 +35620,12 @@ function withMergedAdvertisementSuppression(adapter) {
   return new Proxy(adapter, {
     get(obj, prop, receiver) {
       if (prop === "listModels") {
-        return wrapOnce(prop, () => async () => []);
+        return wrapOnce(prop, () => async (...args) => {
+          if (mergedAdvertisementSuppressed()) return [];
+          const original = Reflect.get(obj, prop, obj);
+          if (typeof original !== "function") return [];
+          return original.apply(obj, args);
+        });
       }
       const value = Reflect.get(obj, prop, receiver);
       if (typeof value !== "function") return value;
@@ -36153,7 +36158,7 @@ function registerAdapterIdempotent(llm, providers, adapter, warn) {
       warn?.(`[llm-register] \u5DF2\u5931\u6548\u6A21\u578B\u5254\u9664\u5305\u88C5\u5931\u8D25\uFF0C\u4F7F\u7528\u539F\u9002\u914D\u5668: ${String(error)}`);
     }
   }
-  if (mergedAdvertisementSuppressed() && typeof adapter === "object" && adapter !== null) {
+  if (typeof adapter === "object" && adapter !== null) {
     try {
       target = withMergedAdvertisementSuppression(target);
     } catch (error) {
@@ -73477,6 +73482,8 @@ export {
   inject,
   makeReadImage,
   makeReadImageRequest,
+  mergedAdvertisementSuppressed,
   name,
-  parseWindowsProxy
+  parseWindowsProxy,
+  suppressMergedAdvertisement
 };

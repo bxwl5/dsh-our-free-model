@@ -64,7 +64,7 @@ registerHooks({
   },
 })
 
-const { withMergedAdvertisementSuppression } = await import('../vendor/channel-pack/src/merged-advertisement.ts')
+const { withMergedAdvertisementSuppression, suppressMergedAdvertisement, mergedAdvertisementSuppressed } = await import('../vendor/channel-pack/src/merged-advertisement.ts')
 const { modelLaneHealth } = await import('../vendor/channel-pack/src/account-pool.ts')
 
 // ── 1. 归一化 ────────────────────────────────────────────────────────────────
@@ -325,7 +325,13 @@ const fakeAdapter = {
   providerInfo: provider => ({ id: provider, name: 'Fake' }),
 }
 const wrapped = withMergedAdvertisementSuppression(fakeAdapter)
-assert.deepEqual(await wrapped.listModels('trae'), [], 'the picker sees no models under this provider')
+// 开关是热读的：包装层永远挂着，listModels 每次现读全局标志。
+suppressMergedAdvertisement(false)
+assert.deepEqual(await wrapped.listModels('trae'), [{ id: 'glm-5.3' }], 'flag off: listModels passes through')
+suppressMergedAdvertisement(true)
+assert.deepEqual(await wrapped.listModels('trae'), [], 'flag on: the picker sees no models under this provider')
+assert.equal(mergedAdvertisementSuppressed(), true)
+suppressMergedAdvertisement(false)
 assert.deepEqual(await wrapped.listAllModels('trae'), [{ id: 'glm-5.3', name: 'GLM-5.3' }], 'the channel panel keeps its full catalog')
 assert.deepEqual(await wrapped.resolveModel('trae', 'glm-5.3'), { provider: 'trae', id: 'glm-5.3' }, 'resolution is untouched')
 assert.deepEqual(wrapped.providerInfo('trae'), { id: 'trae', name: 'Fake' }, 'identity is untouched')
