@@ -83,6 +83,30 @@ assert.deepEqual(await readChannelRosters(undefined, new Set()), { rows: [], pro
 // listProviders 抛错时安全返回
 assert.deepEqual(await readChannelRosters({ listProviders: () => { throw new Error('x') } }, new Set(['z'])), { rows: [], providers: [] })
 
+// ── 「按模型合并」抑制模式下的名册兜底（2026-11-18） ────────────────────────
+// 症状：开启合并后各渠道 listModels 恒为空（选择器因此不再按 20 个渠道分组），
+// 而它正是本插件渠道目录的唯一来源 ⇒ 目录被自己洗空（装完实测 channelRows: []），
+// 链路成员候选、路由编辑器的启用清单、合并行的容量交集一起失效。
+// 兜底只补 id/name，容量仍必须由 resolveModelInfo 给。
+const suppressed = {
+  listProviders: () => [{ id: 'accio-cn' }, { id: 'trae' }, { id: 'silent' }],
+  listModels: async () => [],
+  resolveModelInfo: async (provider, model) => provider === 'accio-cn' && model === 'glm-5.3'
+    ? { context: { contextWindow: 200000 }, defaultMaxTokens: 16000 }
+    : { context: { contextWindow: 128000 } },
+}
+const rosterFallback = new Map([
+  ['accio-cn', [{ id: 'glm-5.3', name: 'GLM-5.3' }]],
+  ['trae', [{ id: 'seed-code', name: 'Seed Code' }]],
+])
+const suppressedRows = await readChannelRosters(suppressed, new Set(['accio-cn', 'trae', 'silent']), undefined, { rosterFallback })
+assert.equal(suppressedRows.rows.length, 2, 'the unsuppressed roster restores the channel catalog')
+assert.deepEqual(suppressedRows.providers, ['accio-cn', 'trae'])
+assert.equal(suppressedRows.rows[0].contextWindow, 200000, 'capacity still comes from resolveModelInfo')
+assert.deepEqual(rosterFallback.get('trae'), [{ id: 'seed-code', name: 'Seed Code' }], 'the fallback roster objects are not mutated')
+// 没有兜底时退回旧行为（空目录），绝不凭空造行
+assert.deepEqual(await readChannelRosters(suppressed, new Set(['accio-cn']), undefined, {}), { rows: [], providers: [] })
+
 // ── 冷启动持久化 / light 读盘回退 / 合并策略（2026-11-09 报障） ──────────
 // 症状：全新安装或重启后路由里模型上下文掉回 131K，点「刷新模型列表」无效，
 // 「重新获取模型」短暂修复、重启复现。根因是渠道目录行只在进程内存里，且

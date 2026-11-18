@@ -152,6 +152,14 @@ const GONE_PATTERNS: readonly RegExp[] = [
   // ⇒ 后面**只允许**：① 结束；② 句末标点（`.` `!` `?` `;`）；③ 收尾括号/引号；
   // **不含逗号**（`…not_found, retry allowed` 里逗号后仍是另一个字段 ⇒ 不算阳性）。
   /\bmodel[_\-]not[_\-]found\b(?=\s*(?:[.!;?)}\]'"]|$))/i,
+  // ⚠️ Buddy / WorkBuddy 的**实测**形态（2026-11-18 全量测速抓到 8 条）：
+  //   `当前模型不可用，请切换模型 model [glm-4.6] service info not found`
+  // 主语带了方括号 id，`matchesGonePhrase` 的词元不跨 `[`，故另一种写法兜不住；
+  // 这里**必须**让 `model [<id>]` 与 `service info not found` 相邻出现 —— 裸的
+  // `service info not found` 可能是账号级服务发现抖动，藏 30 天代价太大。
+  // 只认 `not found`：Buddy 另一类 `Backend [...] is not supported` 刻意**不认**
+  //（`supported` 与「换套餐即恢复」同类，见文件头与 GONE_TAIL 的注释）。
+  /\bmodel\s*\[\s*[A-Za-z0-9][A-Za-z0-9._/-]{0,63}\s*\]\s*service\s+info\s+not\s+found\b/i,
 ]
 
 /**
@@ -377,6 +385,22 @@ let logger: { warn(message: string): void } | undefined
  */
 let injectedCtx: Context | undefined
 
+/**
+ * 「新增了一条失效记录」的通知口（由宿主在 {@link configureDeadModelStore}
+ * 之后用 {@link setDeadModelListener} 注册）。
+ *
+ * 用途：让宿主目录（选择器 / 合并组）在落账后**立刻**重取，而不是等下一轮
+ * 轮询 —— 否则用户还能选中刚被判死的模型。
+ */
+let onDeadModelRecorded: ((provider: string, modelId: string) => void) | undefined
+
+/** 注册失效记录的通知口（宿主侧用于广播目录变更）。 */
+export function setDeadModelListener(
+  listener?: (provider: string, modelId: string) => void,
+): void {
+  onDeadModelRecorded = listener
+}
+
 function ensureStore(): DeadModelStore {
   if (store !== undefined) return store
   // ⚠️ 传 `injectedCtx`（可能为 undefined，那时才退化到环境变量 / `~/.dsh`）。
@@ -490,6 +514,15 @@ export function recordDeadModel(provider: string, modelId: string, reason?: stri
     `[channel-pack] 模型 ${provider}/${modelId} 已被判为失效（${reason ?? 'model not found'}），`
     + '此后不再列入模型列表',
   )
+  // 通知宿主「目录变了」。不通知的后果（2026-11-18 实测）：落账后适配器的
+  // `listModels` 立刻不再返回它，但宿主选择器 / 合并组仍在**旧目录快照**上，
+  // 于是用户还能选中这个已经死掉的模型，直到下一轮目录轮询。
+  // 通知失败绝不能反噬已经落盘的记录，故整段吞掉。
+  try {
+    onDeadModelRecorded?.(provider, modelId)
+  } catch {
+    /* 通知只是加速，失败留待下一轮轮询 */
+  }
   return true
 }
 

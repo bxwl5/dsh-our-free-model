@@ -158,6 +158,33 @@ export const SETTINGS_INITIAL = {
   /** Advertisement only: retain catalog entries and historical model resolution. */
   hiddenModelIds: [],
   hideFreeModels: false,
+  /**
+   * 「按模型合并」—— 用户 2026-11-18 的需求：渠道分得太乱，同名模型合成一条，
+   * 底层按额度自动分配。
+   *
+   * - `enabled`：默认**开**。这正是本次要的行为；关掉即退回「按渠道分组」
+   *   （各渠道的 `listModels()` 恢复播报，20 个分组回来）。
+   * - `stickyTurns`：同一个模型连续多少回合留在同一个渠道上。**不是**节流，
+   *   而是 prompt 缓存的前提 —— 每回合换渠道会让缓存全 miss，长对话下这个
+   *   代价比负载均衡的收益大。轮转在健康档内进行，坏渠道仍然立即让位。
+   */
+  merge: { enabled: true, stickyTurns: 1 },
+  /**
+   * 用户自选的模型分组 —— 也就是「一个新的 provider」（用户 2026-11-18：默认
+   * 那一组太杂乱，想自己挑模型组成一条干净的分组）。
+   *
+   * 每项 `{ id, name, models }`：
+   * - `id` 是 provider 路由名，**会写进会话记录**，创建后不再变（改名不改 id，
+   *   否则旧会话找不到模型）。由客户端在创建时生成（`ofm-<base36>`）。
+   * - `models` 是池子里的模型 id：合并行 `merged:<key>`、链路 `combo:<id>`、
+   *   自由车道 id 都可以混选。
+   *
+   * `hideBaseGroup`：选了自选分组之后，把默认那两条路由（免费车道 + 地域限制
+   * 车道）从选择器里藏掉，只留下自选的几条 —— 否则「自己挑干净的」这件事
+   * 等于没做。只影响广告：已保存的会话照样能用旧 id 发消息。
+   */
+  customProviders: [],
+  hideBaseGroup: false,
   /** Minutes between background availability re-probes. */
   probeIntervalMinutes: 15,
   /** Serve the OpenAI-compatible forward listener for other local harnesses. */
@@ -243,6 +270,98 @@ export function validateModelVisibility(patch) {
       throw Object.assign(new TypeError(`${key} must be ${key === 'hiddenModelIds' ? 'an array of at most 1000 nonempty model ids (up to 300 characters each)' : 'a boolean'}`), { statusCode: 400 })
     }
     result[key] = Array.isArray(value) ? [...new Set(value)] : value
+  }
+  return result
+}
+
+/** 自选分组最多几条：超过这个数字，选择器又变成一屏分组，正是要解决的问题。 */
+export const CUSTOM_PROVIDER_LIMIT = 8
+/**
+ * provider 路由名：`ofm-` 前缀 + 小写字母数字连字符，总长 8-40。
+ *
+ * 前缀不是审美问题：`registerAdapter` 对「已被别的 fiber 占用的 provider」抛
+ * `DUPLICATE_ADAPTER`，而渠道包恰好注册了 `qoder`、`codearts`、`raccoon` 这些
+ * 名字。让自选分组的 id 天生带前缀，就再不可能撞上别人的路由 —— 用户看不出
+ * 差别（id 只在会话记录里出现），但插件不会因此整个注册不上。
+ */
+const PROVIDER_ID_PATTERN = /^ofm-[a-z0-9][a-z0-9-]{4,35}$/
+/** 本插件自己的两条路由不能被占用，否则 `registerAdapter` 直接抛 DUPLICATE_ADAPTER。 */
+const RESERVED_PROVIDER_IDS = new Set(['our-free-model', 'our-free-model-region'])
+const validProviderId = value => typeof value === 'string' && PROVIDER_ID_PATTERN.test(value) && !RESERVED_PROVIDER_IDS.has(value)
+
+/**
+ * 把存的/传进来的自选分组规整成可用的形状。
+ *
+ * 只做「能不能用」的判断，不猜用户意图：名字空的、模型列表空的、id 不合法的
+ * 整条丢掉（它们在选择器里就是一个点不开的空分组）；重复 id 只留第一条，
+ * 因为两条同 id 的分组会让 `registerAdapter` 直接失败 —— 那会让整个插件注册
+ * 不上，代价远大于丢掉一条配置。
+ *
+ * `enabled` 缺省视为 true（历史存档里没有这个字段，全部是「启用」的）。
+ *
+ * @param {unknown} value - settings.customProviders 的原始值
+ * @returns {{id: string, name: string, models: string[], enabled: boolean}[]}
+ */
+export function normalizeCustomProviders(value) {
+  if (!Array.isArray(value)) return []
+  const seen = new Set()
+  const result = []
+  for (const raw of value) {
+    if (result.length >= CUSTOM_PROVIDER_LIMIT) break
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) continue
+    const id = typeof raw.id === 'string' ? raw.id : ''
+    if (!validProviderId(id) || seen.has(id)) continue
+    const name = typeof raw.name === 'string' ? raw.name.trim().slice(0, 40) : ''
+    if (name === '') continue
+    const models = [...new Set((Array.isArray(raw.models) ? raw.models : []).filter(validHiddenModelId))]
+    if (models.length === 0) continue
+    seen.add(id)
+    result.push({ id, name, models, enabled: raw.enabled !== false })
+  }
+  return result
+}
+
+/**
+ * 校验一个设置补丁里的分组的字段形状 —— 在写盘之前，UI 拿 400 才能告诉用户
+ * 是哪一条不对，而不是默默存了个空分组。
+ *
+ * 形状不对就整批拒绝（与 `validateModelVisibility` 同口径）；内容不合用
+ * （空名字、重复 id）交给 `normalizeCustomProviders` 静默规整。
+ */
+export function validateProviderGroups(patch) {
+  if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) {
+    throw Object.assign(new TypeError('settings must be a JSON object'), { statusCode: 400 })
+  }
+  const result = {}
+  if (Object.hasOwn(patch, 'customProviders')) {
+    const value = patch.customProviders
+    if (!Array.isArray(value) || value.length > CUSTOM_PROVIDER_LIMIT) {
+      throw Object.assign(new TypeError(`customProviders must be an array of at most ${CUSTOM_PROVIDER_LIMIT} groups`), { statusCode: 400 })
+    }
+    for (const group of value) {
+      if (group === null || typeof group !== 'object' || Array.isArray(group)) {
+        throw Object.assign(new TypeError('each custom provider must be an object'), { statusCode: 400 })
+      }
+      if (typeof group.id !== 'string' || !validProviderId(group.id)) {
+        throw Object.assign(new TypeError('a custom provider id must look like "ofm-xxxxxxxx" (reserved prefix, lowercase letters, digits, dashes)'), { statusCode: 400 })
+      }
+      if (typeof group.name !== 'string' || group.name.trim() === '' || group.name.trim().length > 40) {
+        throw Object.assign(new TypeError('a custom provider name must be 1-40 characters'), { statusCode: 400 })
+      }
+      if (!Array.isArray(group.models) || group.models.some(id => !validHiddenModelId(id))) {
+        throw Object.assign(new TypeError('custom provider models must be an array of nonempty model ids'), { statusCode: 400 })
+      }
+      if (group.enabled !== undefined && typeof group.enabled !== 'boolean') {
+        throw Object.assign(new TypeError('a custom provider enabled flag must be a boolean'), { statusCode: 400 })
+      }
+    }
+    result.customProviders = normalizeCustomProviders(value)
+  }
+  if (Object.hasOwn(patch, 'hideBaseGroup')) {
+    if (typeof patch.hideBaseGroup !== 'boolean') {
+      throw Object.assign(new TypeError('hideBaseGroup must be a boolean'), { statusCode: 400 })
+    }
+    result.hideBaseGroup = patch.hideBaseGroup
   }
   return result
 }

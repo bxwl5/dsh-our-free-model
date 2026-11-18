@@ -198,12 +198,49 @@ window.__ModuleLoader__.load({
         'reload.auto': '文件变化自动热重载',
         'reload.failed': '热重载失败：{reason}',
         'nav.tab.free': '免费模型',
+        'nav.tab.groups': '模型分组',
         'nav.tab.channels': '渠道接入',
         'free.title': '免费模型',
         'free.sub': '免登录、免 Key、免配置：模型清单跟随上游刷新，可用性由这台机器实测。',
         'free.tankLabel': '免费车道可用度',
         'free.tankNote': '水位 = 当前可用模型占比（{ok}/{total}）',
         'free.tankEmpty': '尚未探测，水位按已声明模型占位。',
+        'groups.title': '模型分组',
+        'groups.sub': '从当前模型池里挑模型，组成一条只属于你的分组 —— 它就是选择器里的一个新的 provider。',
+        'groups.empty': '还没有自选分组。默认那组会把所有模型堆在一起；挑一次，选择器就干净了。',
+        'groups.new': '新建分组',
+        'groups.delete': '删除分组',
+        'groups.save': '保存分组',
+        'groups.cancel': '取消',
+        'groups.editing': '保存后生效',
+        'groups.creating': '未保存',
+        'groups.list': '我的分组',
+        'groups.namePh': '例如：日常、写代码、便宜货',
+        'groups.searchPh': '按名字过滤，例如 glm / kimi',
+        'groups.selected': '已选 {n} 个',
+        'groups.more': '+{n}',
+        'groups.all': '全选',
+        'groups.none': '清除',
+        'groups.clear': '清空已选',
+        'groups.other': '其他',
+        'groups.toggle': '启用 / 停用这个分组',
+        'groups.off': '已停用',
+        'groups.offHint': '这个分组已停用：选择器里不显示（旧会话不受影响）。点卡片编辑，点开关重新启用。',
+        'groups.noMatch': '没有匹配的模型，换个词试试。',
+        'groups.limit': '最多 {n} 个分组',
+        'groups.gcount': '分组 {n}/{max}',
+        'groups.poolCount': '{n} 个模型可选',
+        'groups.hidden': '默认分组已隐藏',
+        'groups.default': '默认分组（Our Free Model）',
+        'groups.defaultHint': '没有归进任何分组的模型全堆在这一条里 —— 选择器里那一长串就是它。',
+        'groups.hideBase': '隐藏默认分组',
+        'groups.hideBaseHint': '只影响选择器里显示什么：已经存着默认模型 id 的会话照样能发消息。',
+        'groups.hideBaseLocked': '先建一个分组，这个开关才会生效。',
+        'groups.unavailable': '当前发不出去（被隐藏或总开关关闭），保存后不会出现在分组里',
+        'groups.saved': '分组已保存',
+        'groups.deleted': '分组已删除',
+        'groups.needName': '先给分组起个名字',
+        'groups.needModels': '至少选一个模型',
         'chan.title': '渠道接入',
         'chan.sub': '登录凭据只存本机凭据库',
         'chan.pack.failed': '渠道包未挂载：{reason}（免费车道不受影响）',
@@ -710,12 +747,49 @@ window.__ModuleLoader__.load({
         'reload.auto': 'Hot-reload on file change',
         'reload.failed': 'Hot reload failed: {reason}',
         'nav.tab.free': 'Free models',
+        'nav.tab.groups': 'Groups',
         'nav.tab.channels': 'Channels',
         'free.title': 'Free models',
         'free.sub': 'No login, no key, no setup: the roster follows upstream, availability is measured from this machine.',
         'free.tankLabel': 'Free-lane availability',
         'free.tankNote': 'Water level = share of reachable models ({ok}/{total})',
         'free.tankEmpty': 'Not probed yet; the level stands at the declared roster.',
+        'groups.title': 'Model groups',
+        'groups.sub': 'Pick models from the current pool and they become a provider of your own in the picker.',
+        'groups.empty': 'No group yet. The default group piles every model together; one pick makes the picker clean.',
+        'groups.new': 'New group',
+        'groups.delete': 'Delete group',
+        'groups.save': 'Save group',
+        'groups.cancel': 'Cancel',
+        'groups.editing': 'Save to apply',
+        'groups.creating': 'Unsaved',
+        'groups.list': 'My groups',
+        'groups.namePh': 'e.g. Daily, Coding, Cheap',
+        'groups.searchPh': 'Filter by name, e.g. glm / kimi',
+        'groups.selected': '{n} selected',
+        'groups.more': '+{n}',
+        'groups.all': 'All',
+        'groups.none': 'Clear',
+        'groups.clear': 'Clear picked',
+        'groups.other': 'Other',
+        'groups.toggle': 'Enable / disable this group',
+        'groups.off': 'Disabled',
+        'groups.offHint': 'This group is disabled: hidden from the picker (existing sessions keep working). Click the card to edit, click the switch to re-enable.',
+        'groups.noMatch': 'No model matches that — try another word.',
+        'groups.limit': 'At most {n} groups',
+        'groups.gcount': 'Groups {n}/{max}',
+        'groups.poolCount': '{n} models to pick',
+        'groups.hidden': 'Default group hidden',
+        'groups.default': 'Default group (Our Free Model)',
+        'groups.defaultHint': 'Every model that is in no group piles into this one — that is the long list in the picker.',
+        'groups.hideBase': 'Hide the default group',
+        'groups.hideBaseHint': 'Advertisement only: sessions already carrying the default ids keep working.',
+        'groups.hideBaseLocked': 'Create a group first and this switch starts to apply.',
+        'groups.unavailable': 'Cannot be served right now (hidden, or the master switch is off); it will not appear in the group',
+        'groups.saved': 'Group saved',
+        'groups.deleted': 'Group deleted',
+        'groups.needName': 'Give the group a name first',
+        'groups.needModels': 'Pick at least one model',
         'chan.title': 'Channel access',
         'chan.sub': 'Credentials stay in this machine\'s credential store',
         'chan.pack.failed': 'Channel pack not mounted: {reason} (the free lane is unaffected)',
@@ -2068,6 +2142,55 @@ window.__ModuleLoader__.load({
 .ofm_snippet{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.6;padding:9px 11px;border-radius:10px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);white-space:pre;overflow:auto;max-height:230px}
 @media (max-width:600px){.ofm_duo{grid-template-columns:1fr}.ofm_pickgroupbody{grid-template-columns:1fr}.ofm_member{flex-wrap:wrap}}
 @media (prefers-reduced-motion:reduce){.ofm_rise,.ofm_page{animation:none}.ofm_pickrow,.ofm_member,.ofm_meter i,.ofm_card,.ofm_kpi,.ofm_chan{transition:none}.ofm_root .ofm_card:hover,.ofm_pickrow:hover:not(:disabled){transform:none}}
+
+/* ══ 模型分组工作台 ═══════════════════════════════════════════════════════
+   2026-11-18 第二版：设置面板的可用宽度只有 700px 出头，第一版的双栏（290 +
+   1fr）把编辑器挤成一条缝，模型胶囊一行放不下三个 —— 于是改成「分组卡网格
+   在上、编辑器整宽在下」：卡片组按 206px 自适应铺开，与插件其它页的卡片语言
+   一致；编辑器吃到整宽，胶囊一行能排五六个，选模型不必横向猜。 */
+.ofm_ggrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(206px,1fr));gap:8px}
+.ofm_gitem{position:relative;display:flex;flex-direction:column;gap:7px;min-height:78px;text-align:left;font:inherit;padding:10px 12px;border-radius:11px;border:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 88%,transparent);background:color-mix(in srgb,var(--dsw-alias-bg-layer-3) 78%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 5%),0 2px 8px rgb(0 0 0 / 5%);color:inherit;cursor:pointer;transition:border-color .16s ease,background .16s ease,transform .18s cubic-bezier(.32,.72,0,1),box-shadow .18s ease}
+.ofm_gitem:hover:not(:disabled){transform:translateY(-2px);border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 52%,var(--dsw-alias-border-l2));box-shadow:inset 0 1px 0 rgb(255 255 255 / 8%),0 12px 26px color-mix(in srgb,var(--dsw-alias-state-business-primary) 10%,transparent)}
+.ofm_gitem[aria-pressed="true"]{border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 62%,var(--dsw-alias-border-l2));background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 10%,var(--dsw-alias-bg-layer-3));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--dsw-alias-state-business-primary) 28%,transparent)}
+.ofm_gitem.off{opacity:.62}
+.ofm_gitem.off:hover{transform:none}
+.ofm_gchipmini.off{color:var(--dsw-alias-label-tertiary);border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 40%,var(--dsw-alias-border-l1));background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 7%,transparent)}
+/* 卡内启停开关：复用 .ofm_switch 的轨道配色，但小一号、不带文字 —— 卡片空间
+   只够放轨道，含义由 aria-label 与悬停提示承担。 */
+.ofm_gswitch{position:relative;flex:none;width:26px;height:15px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);box-shadow:inset 0 1px 2px rgb(0 0 0 / 8%);cursor:pointer;transition:background .18s ease,border-color .18s ease;padding:0}
+.ofm_gswitch::after{content:"";position:absolute;top:1px;left:1px;width:11px;height:11px;border-radius:50%;background:var(--dsw-alias-label-tertiary);transition:transform .18s cubic-bezier(.32,.72,0,1),background .18s ease}
+.ofm_gswitch[aria-checked="true"]{border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 55%,var(--dsw-alias-border-l2));background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 22%,var(--dsw-alias-bg-layer-1))}
+.ofm_gswitch[aria-checked="true"]::after{transform:translateX(11px);background:var(--dsw-alias-state-business-primary)}
+.ofm_gswitch:hover{border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 65%,var(--dsw-alias-border-l2))}
+.ofm_gitem.add{align-items:center;justify-content:center;gap:0;border-style:dashed;border-color:color-mix(in srgb,var(--dsw-alias-border-l2) 82%,transparent);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 46%,transparent);color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:640;box-shadow:none}
+.ofm_gitem.add:hover:not(:disabled){color:var(--dsw-alias-state-business-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 55%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 7%,transparent);transform:none}
+.ofm_gitem.add:disabled{opacity:.5;cursor:default}
+.ofm_gitemtop{display:flex;align-items:center;gap:8px;min-width:0}
+.ofm_gitemname{flex:1;min-width:0;font-size:12.5px;font-weight:660;letter-spacing:-.1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ofm_gcount{flex:none;font-size:10px;font-weight:700;line-height:1.6;min-width:18px;text-align:center;padding:0 6px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 78%,transparent);color:var(--dsw-alias-label-secondary);white-space:nowrap}
+.ofm_gitemchips{display:flex;gap:4px;flex-wrap:wrap}
+.ofm_gchipmini{max-width:118px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;line-height:1.6;padding:0 6px;border-radius:999px;background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 80%,transparent);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-tertiary)}
+.ofm_gedit{gap:9px}
+.ofm_ghead{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:wrap}
+.ofm_gid{flex:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;padding:1px 7px;border-radius:6px;border:1px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 72%,transparent);color:var(--dsw-alias-label-tertiary);white-space:nowrap}
+.ofm_gname{display:flex;align-items:center;gap:8px}
+.ofm_gname .ofm_input{flex:1 1 auto;font-size:13px;padding:7px 10px}
+.ofm_gsearch{display:flex;align-items:center;gap:7px}
+.ofm_gsearch .ofm_input{flex:1 1 auto}
+.ofm_gpicker{display:flex;flex-direction:column;gap:13px;padding:1px 2px 2px 1px}
+.ofm_gfam{display:flex;flex-direction:column;gap:6px;min-width:0}
+.ofm_gfamhead{display:flex;align-items:baseline;gap:8px}
+.ofm_gfamname{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary)}
+.ofm_gchips{display:flex;flex-wrap:wrap;gap:5px}
+.ofm_gchips .ofm_chip{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:inherit;text-align:left}
+.ofm_gchips .ofm_chip[aria-pressed="true"]{border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 56%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 15%,var(--dsw-alias-bg-layer-1));color:var(--dsw-alias-label-primary)}
+.ofm_gmini{font:inherit;font-size:10.5px;padding:1px 8px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);background:none;color:var(--dsw-alias-label-tertiary);cursor:pointer;white-space:nowrap;transition:color .16s ease,border-color .16s ease}
+.ofm_gmini:hover:not(:disabled){color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2)}
+.ofm_gmini:disabled{opacity:.45;cursor:default}
+.ofm_gfamhead .ofm_gmini{margin-left:auto}
+.ofm_gfoot{position:sticky;bottom:0;z-index:1;display:flex;align-items:center;gap:8px;padding:9px 0 1px;border-top:1px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 92%,transparent)}
+.ofm_gfootmeta{margin-right:auto;font-size:11px;color:var(--dsw-alias-label-secondary)}
+
 
 /* ── 推荐项目页：两张「去点 Star」的卡片 ─────────────────────────────────
    这一页只有一件事要促成——点开仓库、点下 Star。所以卡片比常规模型卡大一档，
@@ -5996,6 +6119,223 @@ window.__ModuleLoader__.load({
     }
 
     // ── settings page ─────────────────────────────────────────────────────────
+    /** 与 `src/store.js` 的 `CUSTOM_PROVIDER_LIMIT` 同值：按钮的先手禁用要一致。 */
+    const CUSTOM_LIMIT = 8
+
+    /**
+     * 「模型分组」页（用户 2026-11-18）：从当前模型池里挑模型，组成一条新的
+     * provider —— 默认那一组把一百多个模型堆在一起，翻起来就是一团。
+     *
+     * 这一页只改**广告**：分组决定 provider 的名字与 `listModels` 列出哪些
+     * 模型，既不动 catalog，也不动已有会话里的模型 id。
+     */
+    function ProvidersPage(props) {
+      const { t, data, apply, busy } = props
+      const settings = data.settings ?? {}
+      const groups = Array.isArray(settings.customProviders) ? settings.customProviders : []
+      const [draft, setDraft] = useState(null)
+      const [query, setQuery] = useState('')
+      const rows = useMemo(() => new Map((data.catalog ?? []).map(row => [row.id, row])), [data.catalog])
+      // 池子 = 当前真的会被播报出去的模型（`routes` 非空）。渠道行不归本插件
+      // 播报，把它们选进分组等于在自家路由下面再挂一份别人家的模型。
+      const pool = useMemo(() => (data.catalog ?? [])
+        .filter(row => Array.isArray(row.routes) && row.routes.length > 0)
+        .filter(row => {
+          const q = query.trim().toLowerCase()
+          return q === '' || String(row.name).toLowerCase().includes(q) || row.id.toLowerCase().includes(q)
+        }), [data.catalog, query])
+      // 分族只看名字最前面的**连续拉丁字母**（glm / gemini / kimi / deepseek…）。
+      // 早先按「按分隔符切出来的首段」分，会把 `Qwen3.5-Plus` 的 `.` 也当分隔符切成
+      // `qwen3`、把中文名切成「快速」「旗舰」「自动」三个各含一个模型的族 —— 族标题
+      // 比内容还多，竖着一整屏都是标题。现在只有**两个以上的模型**才配一个族标题，
+      // 剩下的（中文名、独苗）一起落进「其他」，不再一条一簇。
+      const families = useMemo(() => {
+        const map = new Map()
+        const rest = []
+        // 名字是中文的那几条（自动 / 快速 / 旗舰，qoder 的档位名）用 id 兜底：
+        // `merged:auto` 拿得到 `auto`，于是「自动」与「Auto · 低」同族，而不是被
+        // 推进「其他」里和它自己的英文兄弟分家。
+        const keyOf = row => {
+          const fromName = String(row.name ?? '').trim().toLowerCase().match(/^[a-z]+/)
+          if (fromName !== null) return fromName[0]
+          const fromId = String(row.id ?? '').replace(/^merged:/, '').toLowerCase().match(/^[a-z]+/)
+          return fromId === null ? null : fromId[0]
+        }
+        for (const row of pool) {
+          const key = keyOf(row)
+          if (key === null) { rest.push(row); continue }
+          if (!map.has(key)) map.set(key, [])
+          map.get(key).push(row)
+        }
+        const buckets = []
+        for (const [key, list] of map) {
+          if (list.length < 2) rest.push(...list)
+          else buckets.push({ key, label: key.toUpperCase(), rows: list })
+        }
+        buckets.sort((a, b) => b.rows.length - a.rows.length || a.key.localeCompare(b.key))
+        if (rest.length > 0) {
+          rest.sort((a, b) => String(a.name).localeCompare(String(b.name)))
+          buckets.push({ key: '__other', label: t('groups.other'), rows: rest })
+        }
+        return buckets
+      }, [pool, t])
+      const chosen = new Set(draft?.models ?? [])
+      const shortName = id => String(rows.get(id)?.name ?? id.replace(/^merged:/, ''))
+      const editing = draft !== null && groups.some(group => group.id === draft.id)
+      const startNew = () => { setQuery(''); setDraft({ id: `ofm-${Date.now().toString(36)}`, name: '', models: [] }) }
+      const startEdit = group => { setQuery(''); setDraft({ id: group.id, name: group.name, models: [...group.models] }) }
+      const stopEdit = () => { setQuery(''); setDraft(null) }
+      const toggle = id => setDraft(current => current === null ? current : ({
+        ...current,
+        models: current.models.includes(id) ? current.models.filter(other => other !== id) : [...current.models, id],
+      }))
+      // 整族开关：判据取「当前筛选之后这一族」，搜过再点不会顺手把看不见的
+      // 模型也选进去 —— 那正是用户事后没法发现的那类错误。
+      const toggleFamily = list => setDraft(current => {
+        if (current === null) return current
+        const ids = list.map(row => row.id)
+        const on = ids.every(id => current.models.includes(id))
+        return {
+          ...current,
+          models: on ? current.models.filter(id => !ids.includes(id)) : [...new Set([...current.models, ...ids])],
+        }
+      })
+      const save = async () => {
+        if (draft === null) return
+        const name = draft.name.trim()
+        if (name === '') return showToast({ title: t('groups.needName'), tone: 'warn' })
+        if (draft.models.length === 0) return showToast({ title: t('groups.needModels'), tone: 'warn' })
+        // 同一个 id 原地替换：改名不改 id，否则已存着这条路由的会话会失效。
+        await apply({ customProviders: [...groups.filter(group => group.id !== draft.id), { id: draft.id, name, models: draft.models }] })
+        stopEdit()
+        showToast({ title: t('groups.saved'), body: name })
+      }
+      const remove = async () => {
+        if (draft === null) return
+        const name = draft.name
+        await apply({ customProviders: groups.filter(group => group.id !== draft.id) })
+        stopEdit()
+        showToast({ title: t('groups.deleted'), body: name })
+      }
+      // 分组卡：名字 + 模型数 + 前三个模型名。点一下就把这一组载入编辑器 ——
+      // 「选哪组」和「改哪组」是同一个动作，不再有第二个按钮要记。
+      // 右上角的开关是「启用/停用」：停用 = 选择器里整组消失（路由保留，
+      // 旧会话不受影响），与「隐藏默认分组」同一条口径。
+      const toggleEnabled = group => apply({
+        customProviders: groups.map(other => other.id === group.id
+          ? { ...other, enabled: other.enabled === false }
+          : other),
+      })
+      const item = group => h('button', {
+        type: 'button', key: group.id, className: 'ofm_gitem' + (group.enabled === false ? ' off' : ''),
+        'aria-pressed': draft !== null && draft.id === group.id ? 'true' : 'false',
+        title: group.enabled === false
+          ? t('groups.offHint')
+          : group.models.map(shortName).join(' · '),
+        onClick: () => startEdit(group),
+      },
+      h('span', { className: 'ofm_gitemtop' },
+        h('span', { className: 'ofm_gitemname' }, group.name),
+        h('span', {
+          type: 'button', role: 'switch', className: 'ofm_gswitch',
+          'aria-checked': group.enabled !== false ? 'true' : 'false',
+          'aria-label': t('groups.toggle'),
+          title: t('groups.toggle'),
+          onClick: event => {
+            // 卡片本身是「点开编辑」，开关必须停下来，否则一点开关就进编辑器。
+            event.stopPropagation()
+            event.preventDefault()
+            toggleEnabled(group)
+          },
+        }),
+        h('span', { className: 'ofm_gcount' }, String(group.models.length))),
+      h('span', { className: 'ofm_gitemchips' },
+        group.enabled === false ? h('span', { className: 'ofm_gchipmini off' }, t('groups.off')) : null,
+        group.models.slice(0, 3).map(id => h('span', { className: 'ofm_gchipmini', key: id }, shortName(id))),
+        group.models.length > 3
+          ? h('span', { className: 'ofm_gchipmini' }, t('groups.more').replace('{n}', String(group.models.length - 3)))
+          : null))
+      const addCard = h('button', {
+        type: 'button', className: 'ofm_gitem add',
+        disabled: busy || draft !== null || groups.length >= CUSTOM_LIMIT,
+        onClick: startNew,
+      }, t('groups.new'))
+      const base = h('div', { className: 'ofm_panel' },
+        h('div', { className: 'ofm_paneltitle' },
+          t('groups.default'),
+          h('span', { className: 'ofm_sec_hint' }, t('groups.defaultHint'))),
+        h('div', { className: 'ofm_row' },
+          h(Switch, {
+            checked: settings.hideBaseGroup === true,
+            disabled: busy || groups.length === 0,
+            label: t('groups.hideBase'),
+            onChange: () => apply({ hideBaseGroup: settings.hideBaseGroup !== true }),
+          }),
+          h('span', { className: 'ofm_note' }, groups.length === 0 ? t('groups.hideBaseLocked') : t('groups.hideBaseHint'))))
+      const editor = draft === null ? null : h('div', { className: 'ofm_panel ofm_gedit' },
+        h('div', { className: 'ofm_ghead' },
+          h('span', { className: 'ofm_paneltitle' }, draft.name.trim() === '' ? t('groups.new') : draft.name.trim()),
+          h('span', { className: 'ofm_gid' }, draft.id),
+          h('span', { className: 'ofm_sec_hint' }, editing ? t('groups.editing') : t('groups.creating'))),
+        h('div', { className: 'ofm_gname' },
+          h('input', {
+            className: 'ofm_input', placeholder: t('groups.namePh'), value: draft.name, maxLength: 40,
+            // 读 `target` 而不是 `currentTarget`：currentTarget 只在事件派发的那一
+            // 瞬间有效，处理器一旦被重放/重复派发就是 null，读 `.value` 抛
+            // TypeError —— 设置面板里一个渲染异常就是整页白屏（2026-11-18 用户报
+            // 「修改分组名字白屏」）。
+            onInput: event => {
+              const value = event.target.value
+              setDraft(current => current === null ? current : { ...current, name: value })
+            },
+          })),
+        h('div', { className: 'ofm_gsearch' },
+          h('input', {
+            className: 'ofm_input', placeholder: t('groups.searchPh'), value: query,
+            onInput: event => setQuery(event.target.value),
+          }),
+          h('button', {
+            type: 'button', className: 'ofm_gmini', disabled: busy || draft.models.length === 0,
+            onClick: () => setDraft(current => current === null ? current : { ...current, models: [] }),
+          }, t('groups.clear'))),
+        h('div', { className: 'ofm_gpicker' },
+          families.length === 0
+            ? h('p', { className: 'ofm_note' }, t('groups.noMatch'))
+            : families.map(bucket => h('div', { className: 'ofm_gfam', key: bucket.key },
+              h('div', { className: 'ofm_gfamhead' },
+                h('span', { className: 'ofm_gfamname' }, bucket.label),
+                h('span', { className: 'ofm_note' }, String(bucket.rows.length)),
+                h('button', {
+                  type: 'button', className: 'ofm_gmini',
+                  onClick: () => toggleFamily(bucket.rows),
+                }, bucket.rows.every(row => chosen.has(row.id)) ? t('groups.none') : t('groups.all'))),
+              h('div', { className: 'ofm_gchips' }, bucket.rows.map(row => h('button', {
+                type: 'button', key: row.id, className: 'ofm_chip',
+                'aria-pressed': chosen.has(row.id) ? 'true' : 'false',
+                title: row.hiddenByUser === true || row.hiddenByGroup === true ? t('groups.unavailable') : row.id,
+                style: row.hiddenByUser === true || row.hiddenByGroup === true ? { opacity: 0.62 } : undefined,
+                onClick: () => toggle(row.id),
+              }, row.name)))))),
+        h('div', { className: 'ofm_gfoot' },
+          h('span', { className: 'ofm_gfootmeta' }, t('groups.selected').replace('{n}', String(draft.models.length))),
+          editing ? h(Button, { kind: 'ghost', disabled: busy, onClick: remove }, t('groups.delete')) : null,
+          h(Button, { kind: 'ghost', onClick: stopEdit }, t('groups.cancel')),
+          h(Button, { disabled: busy, onClick: save }, t('groups.save'))))
+      return h('div', { className: 'ofm_page' },
+        h(PageHero, { title: t('groups.title'), sub: t('groups.sub') },
+          h('div', { className: 'ofm_pills' },
+            h(Pill, { strong: true }, t('groups.gcount').replace('{n}', String(groups.length)).replace('{max}', String(CUSTOM_LIMIT))),
+            h(Pill, null, t('groups.poolCount').replace('{n}', String(pool.length))),
+            settings.hideBaseGroup === true ? h(Pill, { tone: 'ok' }, t('groups.hidden')) : null)),
+        h(Section, { title: t('groups.list'), hint: t('groups.limit').replace('{n}', String(CUSTOM_LIMIT)) },
+          h('div', { className: 'ofm_ggrid' },
+            groups.map(item),
+            groups.length >= CUSTOM_LIMIT ? null : addCard),
+          groups.length === 0 ? h('p', { className: 'ofm_note' }, t('groups.empty')) : null),
+        groups.length === 0 ? null : base,
+        editor)
+    }
+
     function SettingsPage(props) {
       const tagged = props.locale === undefined ? props.t : Object.assign(x => props.t(x), { locale: props.locale })
       const t = tagged
@@ -6103,6 +6443,7 @@ window.__ModuleLoader__.load({
 
       const tabs = [
         ['free', t('nav.tab.free'), counts.available ?? 0],
+        ['groups', t('nav.tab.groups'), (data.settings?.customProviders ?? []).length],
         ['channels', t('nav.tab.channels'), CHANNEL_PROVIDERS.length],
         ['saver', t('nav.tab.saver'), null],
         ['routing', t('nav.tab.routing'), data.catalog.filter(m => m.channel === 'combo').length],
@@ -6124,7 +6465,9 @@ window.__ModuleLoader__.load({
           }, label, num === null ? null : h('span', { className: 'ofm_tabnum' }, String(num))))),
         h('span', { className: 'ofm_navspacer' }))
 
-      const page = tab === 'channels'
+      const page = tab === 'groups'
+        ? h(ProvidersPage, { t, data, busy, apply })
+        : tab === 'channels'
         ? h(ChannelsPage, { t, ctx, summary })
           : tab === 'saver'
             ? h(SaverPage, { t })

@@ -72,6 +72,7 @@
  */
 
 import { withDeadModelPruning } from './dead-model-store.js'
+import { mergedAdvertisementSuppressed, withMergedAdvertisementSuppression } from './merged-advertisement.js'
 import { scrubGenerateOptions } from './content-fingerprint.js'
 import { FALLBACK_IMAGE_PRICING } from '../../../src/image-pricing.js'
 
@@ -542,6 +543,24 @@ export function registerAdapterIdempotent(
       target = withDeadModelPruning(providers, target)
     } catch (error) {
       warn?.(`[llm-register] 已失效模型剔除包装失败，使用原适配器: ${String(error)}`)
+    }
+  }
+  /**
+   * 「按模型合并」广告抑制（2026-11-18）。
+   *
+   * 接在**最外层**：宿主拿到的 `listModels()` 必须恒为空，选择器里那 20 个
+   * 渠道分组才会消失。放在内层同样能得到空数组，但外层依赖的是「内层已经
+   * 换了语义」这条隐式前提；接在最外层则与下层的记账/剔除实现完全解耦
+   * （同 `dead-model-store` 记录的教训：别赌哪一层被包了）。
+   *
+   * 只影响 `listModels`，`listAllModels` / `resolveModel` / `prepareCall` /
+   * `stream` 全部原样（见 `merged-advertisement.ts` 的说明）。
+   */
+  if (mergedAdvertisementSuppressed() && typeof adapter === 'object' && adapter !== null) {
+    try {
+      target = withMergedAdvertisementSuppression(target as object)
+    } catch (error) {
+      warn?.(`[llm-register] 按模型合并的广告抑制包装失败，使用原适配器: ${String(error)}`)
     }
   }
   try {

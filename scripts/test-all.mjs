@@ -137,6 +137,21 @@ const suites = [
   ['local-optimize', 'local-optimize-test.mjs', []],
   ['route', 'route-test.mjs', []],
   ['channel-catalog', 'channel-catalog-test.mjs', []],
+  // 「按模型合并」（2026-11-18 用户）：同名模型跨渠道并成一条 + 额度优先的
+  // 渠道排序。归一化必须保守（并错会静默给出错误模型），故逐条钉死。
+  ['merged-catalog', 'merged-catalog-test.mjs', []],
+  // 抑制点是否真的接到了注册漏斗上：纯函数测试证明不了「包装器被挂上去」。
+  ['merged-advertisement', 'merged-advertisement-test.mjs', []],
+  // 「模型分组」（2026-11-18 用户）：自选模型组成新 provider。失败模式是
+  // `registerAdapter` 撞上别家 provider 名（DUPLICATE_ADAPTER）把整个插件注册
+  // 搞挂，所以断言大半是「什么必须被拒」，外加广播与广告收起的边界。
+  ['custom-providers', 'custom-providers-test.mjs', []],
+  // 「方案 A」（2026-11-18 用户）：风控（3012）冷却期账号从选号中剔除，
+  // 全部冷却时回退 —— 用真实 AccountPool 直测 getAvailableAccount。
+  ['risk-block', 'risk-block-test.mjs', []],
+  // 失效模型判定器：`model [x] service info not found`（buddy 真实形态）必须认下，
+  // 而「Backend not supported / 裸 service info / 限流 / 风控」必须不认。
+  ['dead-model', 'dead-model-test.mjs', []],
   // 重启后渠道模型上下文掉回兜底值（2026-11-09 报障）：冷启动回灌、完整扫描
   // 写盘、残缺扫描不清空、light 只读不写。用真实 runtime + 真实 catalog.json。
   ['channel-catalog-persistence', 'channel-catalog-persistence-test.mjs', []],

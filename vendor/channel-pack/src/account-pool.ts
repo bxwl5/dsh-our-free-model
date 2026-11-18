@@ -1308,6 +1308,24 @@ export class AccountPool {
         const resetAt = a.modelRateLimits[modelId]
         return resetAt === undefined || resetAt === 0 || Date.now() >= resetAt
       })
+    /**
+     * ★ 风控冷却期账号从选号中剔除（用户 2026-11-18「方案 A」）。
+     *
+     * `riskBlockedUntilMs` 在冷却期内 ⇒ 不进本轮候选，**轮询/顺序两种模式一致**
+     * —— 与限流不同（轮询铁律说「轮到谁交谁」，那是因为限流撞一次只是白等
+     * 几秒），风控 3012 撞一次有**惩罚计数**：冷却中再命中会把 30 分钟升级成
+     * 24 小时。明知会升级还送上去，是把「轮询纯度」置于账号寿命之上。
+     *
+     * 回退：全部账号都在风控冷却 ⇒ 仍按原顺序交付（候选为空会让请求直接
+     * 「没有可用账号」）。这与限流 tail 的既有语义一致：宁可让上游如实报错，
+     * 也不让池层把一个 provider 整条判死。
+     */
+    const now = Date.now()
+    const riskFree = candidates.filter(a => {
+      const until = a.riskBlockedUntilMs
+      return typeof until !== 'number' || !Number.isFinite(until) || until <= now
+    })
+    if (riskFree.length > 0) candidates.splice(0, candidates.length, ...riskFree)
     if (candidates.length === 0) return null
     /**
      * 账号轮询（2026-11-04 用户要求）。
@@ -1511,8 +1529,9 @@ export class AccountPool {
    * 否则记首次的 {@link RISK_FIRST_COOLDOWN_MS}。只接受比现值**更长**的解禁时刻，
    * 与限流标记同约定 —— 冷却未完又命中只会更糟，绝不能用新值把已知的 24h 写回 30min。
    *
-   * ⚠ **不参与选号**（见 types.ts 的 `riskBlockedUntilMs` 注释）：它只服务于
-   * 「异常汇总」的红色风控徽标；真正的「别连点」由请求路径的 3012 短路守卫负责。
+   * ⚠ **参与选号**（用户 2026-11-18「方案 A」）：`getAvailableAccount` 会把
+   * 冷却期内的账号剔出候选（全部账号都在冷却时回退交付）；同时它仍服务于
+   * 「异常汇总」的红色风控徽标。
    */
   async recordAccountRisk(accountId: string, now: number = Date.now()): Promise<void> {
     const accounts = this.readAccounts()
@@ -1836,5 +1855,81 @@ export async function providerHasLoggedInAccount(
     return await accountPool.hasLoggedInAccount(provider)
   } catch {
     return true
+  }
+}
+
+/** 一个渠道对某个模型当前的**可用性画像**（合并层排序用）。 */
+export interface ModelLaneHealth {
+  /** 该渠道还有几个账号没被这个模型卡住。 */
+  readonly freeAccounts: number
+  /** 该渠道登记了几条这个模型的限流标记（0 = 一个都没卡）。 */
+  readonly limitedAccounts: number
+  /** 全部账号都被卡住时，最早的解禁时刻（毫秒）；否则 `undefined`。 */
+  readonly resetAtMs: number | undefined
+  /** 该渠道是否有已登录账号；没有就根本不该被排进候选。 */
+  readonly hasAccount: boolean
+}
+
+/**
+ * 一个渠道对一个模型的可用性画像（用户 2026-11-18 的「按额度自动分配」）。
+ *
+ * ## 只用本地硬信号
+ *
+ * 用户明确选了「只用本地硬信号」这条路：**不发任何额外网络请求**，只读账号池
+ * 里已经存在的 `modelRateLimits`。那是各适配器在**上游真的回了限流/欠费**时
+ * 写下的解禁时刻（见 `updateModelRateLimit` 的调用点），是已经付过代价拿到的
+ * 事实，不是猜的。
+ *
+ * 为什么不去主动拉余额：20 个渠道里只有少数（codearts / qoder / cline /
+ * zcode …）有余额端点，其余要么没有、要么要额外鉴权；为「排序」这点收益
+ * 去打 20 个上游，既费额度又会让冷启动变慢。余额大小这条软信号留待以后
+ * （`ModelLaneHealth` 加字段即可，排序逻辑不用改）。
+ *
+ * ## 与选号的关系
+ *
+ * 这里**不改选号**：真正的账号挑选仍由各渠道自己的 `getAvailableAccount`
+ * 负责（`sequential` 模式跳限流号、`round-robin` 模式照轮）。本函数只回答
+ * 「这一家整体还撑得住吗」，供合并层把撑得住的那家排前面。
+ */
+export async function modelLaneHealth(
+  accountPool: AccountPool | undefined,
+  provider: string,
+  modelId: string,
+  now: number = Date.now(),
+): Promise<ModelLaneHealth> {
+  if (accountPool === undefined) {
+    // 没有账号池（纯免费车道 / 测试替身）：不给任何判断，按「健康」处理，
+    // 否则合并层会把所有渠道都判成不可用、排出一个随机顺序。
+    return { freeAccounts: 0, limitedAccounts: 0, resetAtMs: undefined, hasAccount: true }
+  }
+  let accounts: readonly ProviderAccountEntry[] = []
+  try {
+    const all = await accountPool.listAllAccounts()
+    accounts = all.filter(entry => entry.provider === provider && entry.enabled)
+  } catch {
+    return { freeAccounts: 0, limitedAccounts: 0, resetAtMs: undefined, hasAccount: true }
+  }
+  if (accounts.length === 0) {
+    const loggedIn = await providerHasLoggedInAccount(accountPool, provider)
+    return { freeAccounts: 0, limitedAccounts: 0, resetAtMs: undefined, hasAccount: loggedIn }
+  }
+  let freeAccounts = 0
+  let limitedAccounts = 0
+  let earliest: number | undefined
+  for (const account of accounts) {
+    const resetAt = account.modelRateLimits?.[modelId]
+    // 与选号侧同一判据：缺标记 / 0 / 已过期都算「不受限」。
+    if (resetAt === undefined || resetAt === 0 || now >= resetAt) {
+      freeAccounts += 1
+      continue
+    }
+    limitedAccounts += 1
+    earliest = earliest === undefined ? resetAt : Math.min(earliest, resetAt)
+  }
+  return {
+    freeAccounts,
+    limitedAccounts,
+    resetAtMs: freeAccounts === 0 ? earliest : undefined,
+    hasAccount: true,
   }
 }

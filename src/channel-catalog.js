@@ -290,9 +290,19 @@ export async function readChannelRosters(llm, packProviders, onError, options = 
    * `catalog.json` 的 `channelRows`(上一次成功扫描写盘的真值),跨重启可读,
    * 正好补上这个断层。优先级:进程内(最新) > 磁盘(较旧但真实)。
    *
-   * @type {{ light?: boolean, previousRows?: readonly object[], cachedRows?: readonly object[] }}
+   * @type {{ light?: boolean, previousRows?: readonly object[], cachedRows?: readonly object[], rosterFallback?: Map<string, readonly object[]> }}
    */
   const light = options.light === true
+  /**
+   * 抑制模式（按模型合并）下的名册兜底：`provider → [{id, name}]`。
+   *
+   * 合并开启后本插件把各渠道的 `listModels()` 掐成空数组（选择器因此不再按
+   * 20 个渠道分组），而宿主 `llm.listModels()` 正是本函数**唯一**的模型来源 ——
+   * 于是本插件自己的渠道目录被自己洗空了：链路成员候选、路由编辑器的启用清单、
+   * 合并行的容量交集全部失效（2026-11-18 首次安装实测 `channelRows: []`）。
+   * 渠道包通过 `channelPackRoster` 提供了**未抑制**的同一份名册，这里当兜底用。
+   */
+  const rosterFallback = options.rosterFallback instanceof Map ? options.rosterFallback : undefined
   const previous = new Map()
   // 优先级不是简单的「谁新谁赢」:磁盘较旧但通常是真值,进程内较新但冷启动
   // 那轮常是被预算掐断后的占位符。规则:
@@ -352,7 +362,16 @@ export async function readChannelRosters(llm, packProviders, onError, options = 
     }
     try {
       const models = await llm.listModels(provider)
-      const roster = Array.isArray(models) ? models : []
+      let roster = Array.isArray(models) ? models : []
+      /**
+       * 抑制模式下空名册是**常态**，不是「这家没模型」：`listModels` 已被换成
+       * `async () => []`。这里用渠道包的未抑制名册补上，否则整张渠道目录恒为空。
+       * 复制一份再写容量，避免把兜底名册里的对象改脏。
+       */
+      if (roster.length === 0 && rosterFallback !== undefined) {
+        const fallback = rosterFallback.get(provider)
+        if (Array.isArray(fallback) && fallback.length > 0) roster = fallback.map(model => ({ ...model }))
+      }
       if (roster.length === 0) continue
       providers.push(provider)
       if (light) {

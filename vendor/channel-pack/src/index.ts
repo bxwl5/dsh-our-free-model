@@ -30,7 +30,7 @@ import { ZCODE } from './zcode-product.js'
 import { ZCODE_CAPTCHA_FALLBACK } from './zcode-captcha.js'
 import type { CarrierOutcome } from './captcha-carrier.js'
 import type { ZcodeCredential } from './zcode.js'
-import { AccountPool, allAccountsRateLimitedForModel, availableModelsForChannel } from './account-pool.js'
+import { AccountPool, allAccountsRateLimitedForModel, availableModelsForChannel, modelLaneHealth, providerCatalogVisible } from './account-pool.js'
 import { hasLegacyNamespaceRegistration, settingsOf, suppressAutoSettingsPage } from './settings-compat.js'
 import type { ImageRequestTarget } from './image-budget.js'
 import { buildRaccoonNickname, registerChannelPackRpc } from './channel-pack-rpc.js'
@@ -53,7 +53,20 @@ import { OFFICEACE } from './officeace-product.js'
 import { refreshOfficeAceCredential } from './officeace.js'
 import { refreshAutoclawCredential } from './autoclaw-sms.js'
 import { AUTOCLAW } from './autoclaw-product.js'
-import { configureDeadModelStore, withDeadModelPruning } from './dead-model-store.js'
+import { configureDeadModelStore, setDeadModelListener, withDeadModelPruning } from './dead-model-store.js'
+
+/**
+ * 本包专用的一个目录事件（`llm/adapters-updated` 之外）。
+ *
+ * 宿主侧（our-free-model）**不能**订阅 `llm/adapters-updated`：它自己也会
+ * emit 同一个事件，订阅它是 2026-11-04 那次「主线程 100%、桌面端起不来」的
+ * 无限递归事故。给它一条只有本包 emit 的通道，回路就不存在。
+ */
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    'channel-pack/dead-model-marked'(): void
+  }
+}
 import { configureModelCatalogCache } from './model-catalog-cache.js'
 import type { CodeArtsCredential, BuddyCredential } from './types.js'
 import type { QoderCredential } from './qoder.js'
@@ -87,6 +100,7 @@ import { closeAllProxyDispatchers } from './opencode-proxy.js'
 import { createChannelFetch } from './channel-fetch.js'
 import { installGlobalFetchScrub } from './content-fingerprint.js'
 import { attachDirectFetch, createDirectFetch, type SignedChannelOutlet } from './direct-fetch.js'
+import { mergedAdvertisementSuppressed, suppressMergedAdvertisement } from './merged-advertisement.js'
 export { directFetch, directLane, createDirectFetch, closeDirectFetch } from './direct-fetch.js'
 export { createChannelFetch, parseWindowsProxy, channelProxyBypassed } from './channel-fetch.js'
 import { execFile } from 'node:child_process'
@@ -300,7 +314,62 @@ export interface ChannelPackMount {
   providers: string[]
 }
 
-export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?: SignedChannelOutlet; disableGlobalFetchScrub?: boolean } = {}): ChannelPackMount {
+/**
+ * `mergeByModel` 挂载开关（2026-11-18）。
+ *
+ * 用户需求：模型选择器「按渠道分太乱」，要「按模型分，相同模型合成一个，
+ * 底层按额度自动分配」。
+ *
+ * ## 为什么抑制点必须落在 `listModels()`
+ *
+ * 宿主的模型选择器**只认一个分组维度**：`buildModelCatalog` 遍历
+ * `ctx.llm.listProviders()`，每个 provider 一组，组内是它自己
+ * `listModels()` 播报的行（见 `@deepseek-ai/dsh-api-session-controller`
+ * 的 `types/catalog.js`）。插件没有任何字段能让两组并成一组。
+ *
+ * 于是「20 个渠道分组消失、只剩一个合并组」只有一条路：让各渠道的
+ * `listModels()` 返回空数组 —— 空组的 provider 被选择器直接丢弃
+ * （`groups.filter(group => group.models.length > 0)`）。
+ *
+ * ## 为什么只动 `listModels()`
+ *
+ * 同一个适配器还有另外三个面，它们**必须保持原样**：
+ *
+ * | 面 | 影响 | 处置 |
+ * | --- | --- | --- |
+ * | `listAllModels()` | 渠道设置页的完整目录、黑名单开关、倍率 | **不动** |
+ * | `resolveModel` / `prepareCall` / `stream` | 实际下发 | **不动** |
+ * | `hasLoggedInAccount` 等池层门控 | 账号/凭据/额度 | **不动** |
+ *
+ * 关键副作用是**旧会话自动迁移**（用户 2026-11-18 选的那条）：宿主发消息前
+ * 用 `modelAvailable()` 校验选择，而它走的是 `ctx.llm.listModels(provider)`。
+ * 本开关让那里恒为空 —— 于是「渠道 id 的会话」会被判定不可用，而**合并组里
+ * 同模型的那条**可用，用户重选一次即落到合并组，不需要改写任何会话数据，
+ * 也不存在「静默把老会话指向另一个模型」的风险。
+ *
+ * `resolveModel` 仍然按原 id 解析（不受抑制影响）：显式点名渠道 id 的调用
+ * （内置网关、链路成员、脚本）照旧可用，抑制的只是**广告**。
+ *
+ * ## 名册要另外交出去
+ *
+ * 抑制之后 `listModels()` 不再是渠道名册的来源，合并层就无从知道成员。
+ * 因此这里把**未抑制**的行（来自各适配器的 `listAllModels()`，或退化到
+ * 抑制前的 `listModels()`）通过 `channelPackRoster` 一并 provide 出去，
+ * 由合并层自己按模型名归并。
+ */
+export interface ChannelPackRoster {
+  /** 每个渠道一行；`models` 是该渠道当前**启用**的模型（已应用用户黑名单）。 */
+  providers: Array<{ provider: string; models: Array<{
+    id: string
+    name?: string
+    contextWindow?: number
+    maxOutput?: number
+    vision?: boolean
+    inputModalities?: readonly string[]
+  }> }>
+}
+
+export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?: SignedChannelOutlet; disableGlobalFetchScrub?: boolean; mergeByModel?: boolean } = {}): ChannelPackMount {
   /**
    * ★ ★ **全局 fetch 指纹清洗兜底**（用户 2026-11-05：「不管怎么样，发出去的
    * 请求，一定是指纹清洗过的」）。
@@ -327,6 +396,24 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
   // （老契约没有 configure()，静默跳过）。
   suppressAutoSettingsPage(ctx)
 
+  /**
+   * 「按模型合并」开关（用户 2026-11-18）。
+   *
+   * ⚠️ **必须在这里设**（任何 `registerAdapterIdempotent` 之前）：注册漏斗
+   * 在挂载每个渠道时读一次该标志，设晚了已注册的渠道仍会照旧播报，选择器里
+   * 就会残留一半分组。
+   *
+   * ⚠️ 卸载时**只在仍属于自己**的情况下复位：热重载会先挂新实例、再卸旧实例，
+   * 盲写 `false` 会把新实例刚设好的开关关掉（同 fiber 重启竞态那类缺陷）。
+   */
+  const previousMergeFlag = suppressMergedAdvertisement(config.mergeByModel === true)
+  ctx.effect(() => () => {
+    if (mergedAdvertisementSuppressed() === (config.mergeByModel === true)) {
+      suppressMergedAdvertisement(previousMergeFlag)
+    }
+  }, 'channel-pack: merged advertisement flag')
+
+
   // provider 配置命名空间的注册**只在老契约（≤0.1.6）下执行**：
   // 那时 `settings.register` 可用，十二个 namespace 分别对应 codearts 路由、
   // CodeBuddy（buddy）、WorkBuddy（workbuddy）、LobsterAI（lobsterai）、
@@ -350,6 +437,46 @@ export function apply(ctx: Context, config: { disableOpencode?: boolean; outlet?
   // 解析。必须在任何 `registerXxxLlm` 之前调用 —— 各适配器经
   // `registerAdapterIdempotent` 注册时就会包装上剔除逻辑（见该函数注释）。
   configureDeadModelStore(ctx)
+  /**
+   * 失效模型落账后立刻广播目录变更（用户 2026-11-18 报障的收尾一环）。
+   *
+   * 落账本身已让适配器的 `listModels` 不再返回该模型，但宿主选择器与合并组
+   * 仍握在旧目录快照上 —— 用户依然能选中它、然后又吃一次必然失败的请求。
+   * 与「关闭某个模型」按钮同一条广播路径（`llm/adapters-updated`）。
+   *
+   * 合并 300ms 去抖：一次回放可能连续判死好几个模型（同一渠道的多条），
+   * 逐条广播会把目录重建刷成雪崩。
+   */
+  let deadBroadcastTimer: ReturnType<typeof setTimeout> | undefined
+  setDeadModelListener((provider, modelId) => {
+    ctx.logger?.warn?.(`[channel-pack] 失效模型已从目录移除：${provider}/${modelId}`)
+    if (deadBroadcastTimer !== undefined) return
+    deadBroadcastTimer = setTimeout(() => {
+      deadBroadcastTimer = undefined
+      try {
+        ctx.emit('llm/adapters-updated')
+      } catch (error) {
+        ctx.logger?.warn?.(`[channel-pack] 失效模型落账后的目录广播失败：${String(error)}`)
+      }
+      /**
+       * 另发一个**渠道包专有**的事件：宿主的合并组（our-free-model）不订阅
+       * `llm/adapters-updated`（它自己也会 emit 同一个，历史上因此递归把主线程
+       * 钉死过，2026-11-04 事故），所以给它一条专门的通道，让它立刻重建合并组。
+       * 事件名独立 ⇒ 不存在「自己 emit 又自己听」的回路。
+       */
+      try {
+        ctx.emit('channel-pack/dead-model-marked')
+      } catch (error) {
+        ctx.logger?.warn?.(`[channel-pack] 失效模型事件发送失败：${String(error)}`)
+      }
+    }, 300)
+    deadBroadcastTimer.unref?.()
+  })
+  ctx.effect(() => () => {
+    setDeadModelListener(undefined)
+    if (deadBroadcastTimer !== undefined) clearTimeout(deadBroadcastTimer)
+    deadBroadcastTimer = undefined
+  }, 'channel-pack: dead model catalog broadcast')
 
   // 远端模型目录快照（用户 2026-10-27 要求：「远端拉取全量覆盖兜底表，全部渠道
   // 都这样」）。注入 ctx 同样只为复用同一份 home 解析（`profileContext.home` →
@@ -2485,5 +2612,124 @@ const zcodeAdapter = registerZcodeLlm(ctx, {
   // 该服务缺席的 profile 里本功能整体不生效，不会让插件永久 pending。
   installLoopResume(ctx)
   ctx.provide('accountPool', pool)
+  /**
+   * `channelPackRoster` —— 供「按模型合并」使用的**未抑制**渠道名册。
+   *
+   * 抑制之后 `ctx.llm.listModels(provider)` 恒为空，合并层再也没有别的来源
+   * 能知道「哪个渠道有哪些模型」。这里用 `modelAdapters`（原始实例，
+   * 未经抑制包装）取全量目录，再**按用户黑名单过滤**。
+   *
+   * 为什么用 `listAllModels()` 而不是 `listModels()`：
+   *
+   * - `listAllModels()` 是同步契约（多处在不 await 的场合直接迭代），
+   *   合并层是 `async` 也好、同步也好都不会踩到「Promise 不可迭代」；
+   * - 它**不套黑名单**，所以过滤这一步留在这里做，能同时表达
+   *   「用户关掉了这个模型」与「这个渠道被整条停用」（后者看账号）。
+   *
+   * 为什么不 `await`：`apply()` 是同步的，而合并层在宿主启动早期就会问
+   * 一次。同步给出一份**可能略旧**的目录，远好过一个 pending 的 Promise
+   * 把整个 provider 组卡住；刷新由 `llm/adapters-updated` 事件驱动重建。
+   */
+  ctx.provide('channelPackRoster', async (): Promise<ChannelPackRoster> => {
+    const providers: ChannelPackRoster['providers'] = []
+    for (const [provider, adapter] of Object.entries(modelAdapters)) {
+      /**
+       * 停用的渠道不参与合并：`providerCatalogVisible` 的语义是「这家有没有
+       * 已登录账号」。合并层把成员并成一条之后，若把没有账号的渠道也并进去，
+       * 用户看到的「模型可用」就成了假的 —— 它一旦被排到第一位就发不出去。
+       */
+      if (!(await providerCatalogVisible(pool, provider))) continue
+      const disabled = pool.disabledModelsFor(provider)
+      let rows: readonly { id: string; name: string }[] = []
+      try {
+        rows = adapter.listAllModels()
+      } catch {
+        // 单个渠道目录故障不拖累整张名册（同 `readChannelRosters` 的口径）。
+        continue
+      }
+      const models = rows
+        .filter(row => typeof row?.id === 'string' && row.id !== '' && !disabled.has(row.id))
+        .map(row => ({ id: row.id, name: row.name }))
+      if (models.length > 0) providers.push({ provider, models })
+    }
+    return { providers }
+  })
+  /**
+   * `channelPackLaneHealth` —— 单个渠道对一个模型的可用性画像。
+   *
+   * 合并层的「按额度自动分配」读这里。**不发任何网络请求**：`modelLaneHealth`
+   * 只读账号池内存里的限流台账（用户 2026-11-18 明确选的「只用本地硬信号」）。
+   */
+  ctx.provide('channelPackLaneHealth', async (provider: string, modelId: string) => {
+    return await modelLaneHealth(pool, provider, modelId)
+  })
+  /**
+   * ★ 启动首轮：强制重拉远端模型目录（用户 2026-11-18 实测报障）。
+   *
+   * ## 为什么 TTL 不够（真实缺陷，2026-11-18 全量测速抓到）
+   *
+   * 快照恢复会把 `remoteModelsAt` 置为「现在」，TTL（7 天）内不会再拉远端 ——
+   * 于是**上游下架的模型会在快照里住满 7 天**：buddy 的 GLM-4.6/4.7、
+   * Hunyuan、MiniMax-M2.5 等 9 条已经回 404「service info not found」，
+   * 渠道页与合并选择器里却照常挂着，用户每次选中都是一次必败请求。
+   *
+   * 每个新进程的首分钟拉一次远端目录，成本是每渠道一个 GET —— 换来的是
+   * 「目录过期」的窗口从 7 天缩到 0。刷新走的是「重新获取模型」按钮同一条
+   * `refreshCatalog()`（强制、不看 TTL），落盘即覆盖快照，写快照的必经收口
+   * （`writeModelCatalogClosingNew`）继续负责新增默认关、旧 id 保留用户开关。
+   *
+   * ## 形态：延迟 + 串行 + 可放弃
+   *
+   * - **30 秒后才开跑**：启动风暴（凭据续期、模型发现、宿主首帧）都在前
+   *   十几秒；目录刷新不在那里争资源，也在等凭据续期把过期 token 换回来。
+   * - **串行、每渠道间隔 800ms**：14 个渠道并发打出去，慢的那家（要浏览器的
+   *   zcode、走代理的 antigravity）会把事件循环和网络一起拖住。
+   * - **只问有账号的渠道**：没登录的渠道拉了也没凭据，白一次超时。
+   * - **失败静默保留原目录**：各家 `refreshCatalog` 内部已是「拉不到返回
+   *   false」，与手动按钮同一策略 —— 网络抖一下不该让模型全没了。
+   * - **fiber 销毁即停**：热重载不留孤儿循环（`bootstrapAlive` + dispose）。
+   */
+  const CATALOG_BOOTSTRAP_DELAY_MS = 30_000
+  const CATALOG_BOOTSTRAP_GAP_MS = 800
+  let catalogBootstrapAlive = true
+  ctx.effect(() => () => { catalogBootstrapAlive = false }, 'channel-pack: catalog bootstrap')
+  const catalogBootstrapTimer = setTimeout(() => {
+    void (async () => {
+      const sources = Object.entries(modelAdapters) as Array<[
+        string, { refreshCatalog?: () => Promise<boolean> },
+      ]>
+      let attempted = 0
+      let refreshed = 0
+      for (const [provider, adapter] of sources) {
+        if (!catalogBootstrapAlive) return
+        if (typeof adapter.refreshCatalog !== 'function') continue
+        if (!(await providerCatalogVisible(pool, provider))) continue
+        attempted += 1
+        try {
+          if (await adapter.refreshCatalog()) refreshed += 1
+        } catch (error) {
+          ctx.logger?.warn?.(
+            `[channel-pack] 启动目录刷新 ${provider} 失败（保留原目录）：`
+            + `${error instanceof Error ? error.message : String(error)}`,
+          )
+        }
+        await new Promise(resolve => setTimeout(resolve, CATALOG_BOOTSTRAP_GAP_MS))
+      }
+      if (!catalogBootstrapAlive) return
+      ctx.logger?.info?.(
+        `[channel-pack] 启动目录刷新完成：${refreshed}/${attempted} 个渠道拿到新目录`,
+      )
+      // 有任何一家更新 → 广播目录变更，让宿主选择器与插件合并组重新取目录。
+      // （合并组的定时重建在下一轮目录轮询也会跟上；这里先给一次即时机会。）
+      if (refreshed > 0) {
+        try {
+          ctx.emit('llm/adapters-updated')
+        } catch (error) {
+          ctx.logger?.warn?.(`[channel-pack] 启动目录刷新广播失败：${String(error)}`)
+        }
+      }
+    })()
+  }, CATALOG_BOOTSTRAP_DELAY_MS)
+  catalogBootstrapTimer.unref?.()
   return { providers: Object.keys(modelAdapters) }
 }

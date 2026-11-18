@@ -130,6 +130,14 @@ const ERROR_RULES = Object.freeze([
   Object.freeze({ text: 'rate limit', backoff: true, kind: FAILURE_KIND.RATE_LIMIT, scope: FAILURE_SCOPE.ACCOUNT, retryable: true }),
   Object.freeze({ text: 'too many requests', backoff: true, kind: FAILURE_KIND.RATE_LIMIT, scope: FAILURE_SCOPE.ACCOUNT, retryable: true }),
   Object.freeze({ text: 'quota exceeded', backoff: true, kind: FAILURE_KIND.RATE_LIMIT, scope: FAILURE_SCOPE.ACCOUNT, retryable: true }),
+  // 日额度/配额用尽是「今天不会再好」的账号级账务拒绝，不是 30s 抖动。按
+  // transient 处理会让路由每半分钟白撞一次：2026-11-18 实测 qoder 的
+  // "Billing daily count exceeded" 把 kimi-k2.8 的首帧从 2.4s 拖到 5.6-7.9s
+  //（每次请求先吃一发失败再落到下一车道）。冷却取 30 分钟（markFaulty 同样
+  // clamp 到 30 分钟），到点会再试，跨天/充值后自然恢复入列。
+  Object.freeze({ text: 'daily count exceeded', cooldownMs: MAX_PROVIDER_COOLDOWN_MS, kind: FAILURE_KIND.BILLING, scope: FAILURE_SCOPE.ACCOUNT, retryable: false }),
+  Object.freeze({ text: 'insufficient_quota', cooldownMs: MAX_PROVIDER_COOLDOWN_MS, kind: FAILURE_KIND.BILLING, scope: FAILURE_SCOPE.ACCOUNT, retryable: false }),
+  Object.freeze({ text: 'insufficient quota', cooldownMs: MAX_PROVIDER_COOLDOWN_MS, kind: FAILURE_KIND.BILLING, scope: FAILURE_SCOPE.ACCOUNT, retryable: false }),
   // Capacity wording is provider-wide pressure, not a spent credential, so it
   // cools the provider scope. FCC folds these into OVERLOADED (retryable).
   Object.freeze({ text: 'capacity', backoff: true, kind: FAILURE_KIND.OVERLOADED, scope: FAILURE_SCOPE.PROVIDER, retryable: true }),

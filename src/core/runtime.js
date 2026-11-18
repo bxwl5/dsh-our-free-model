@@ -3,8 +3,9 @@ import path from 'node:path'
 import { FreeModelAdapter, ROUTE_MAIN, ROUTE_REGION } from '../adapter.js'
 import { buildCatalog, buildKiloCatalog, isKiloEntry, parseListing, reviveKiloCatalog } from '../catalog.js'
 import { buildComboCatalog, isComboEntry, normalizeCombos, pruneRotation, comboLastServed } from '../combos.js'
-import { isChannelEntry, readChannelRosters, reviveChannelCatalog, mergeChannelCatalogRows } from '../channel-catalog.js'
-import { JsonStore, SETTINGS_INITIAL, STATS_INITIAL, STATS_VERSION, migrateStats, pruneDays, recordTurn, recordUsage, isModelHidden } from '../store.js'
+import { isChannelEntry, readChannelRosters, reviveChannelCatalog, mergeChannelCatalogRows, CHANNEL_PREFIX, FALLBACK_CONTEXT_WINDOW } from '../channel-catalog.js'
+import { buildMergedCatalog, filterRosterByAccount, isMergedEntry } from '../merged-catalog.js'
+import { JsonStore, SETTINGS_INITIAL, STATS_INITIAL, STATS_VERSION, migrateStats, pruneDays, recordTurn, recordUsage, isModelHidden, normalizeCustomProviders } from '../store.js'
 import { STATE, detectEgress, probeCatalog } from '../probe.js'
 import { CODE, UpstreamError, getJson } from '../http.js'
 import { runModelTest, modelAvailability } from '../model-test.js'
@@ -73,6 +74,17 @@ export function createModelRuntime({
   /** 渠道包注册的 provider id 集合；只有它们算「本插件的渠道」。 */
   packProviders = new Set(),
   onChannelError,
+  /**
+   * 渠道包 provide 出来的两个服务面（可选）：
+   *
+   * - `channelPackRoster()` → 未抑制的渠道名册（合并层的输入）；
+   * - `accountPool` → 账号池（`modelLaneHealth` 读限流台账用）。
+   *
+   * 两者都是可选的：缺了就只有「按渠道」的目录，合并组不出现，免费车道
+   * 与链路照旧（同本插件对每个可选服务的既有取舍）。
+   */
+  channelPackRoster,
+  channelPackLaneHealth,
 }) {
   let catalog = materializeCatalog(catalogStore.get().entries ?? [])
   let kiloCatalog = reviveKiloCatalog(catalogStore.get().kiloRows)
@@ -91,6 +103,14 @@ export function createModelRuntime({
   let channelCatalog = reviveChannelCatalog(catalogStore.get().channelRows)
   /** 本轮取到目录的渠道 provider id（用于空状态说清原因）。 */
   let channelProviders = []
+  /**
+   * 「按模型合并」的虚拟行（用户 2026-11-18）。
+   *
+   * 由 `rebuildMergedCatalog()` 从 {@link channelPackRoster} 重建。空数组
+   * 表示本次没拿到名册（渠道包未挂载 / 未登录任何渠道），此时选择器里既不
+   * 会有渠道分组、也不会有合并组 —— 与「还没有任何渠道」的事实一致。
+   */
+  let mergedCatalog = []
   let egress = availability.get().egress ?? null
   let gatewayLatency = { ms: 0, at: 0 }
   let disposed = false
@@ -158,6 +178,18 @@ export function createModelRuntime({
     comboCatalog = buildComboCatalog(combos, merged)
     pruneRotation(combos)
     for (const entry of comboCatalog) {
+      if (seen.has(entry.id)) continue
+      seen.add(entry.id)
+      merged.push(entry)
+    }
+    /**
+     * 合并行**最后**并入（用户 2026-11-18）。
+     *
+     * 放在链路之后，是因为链路成员可以引用合并行（`merged:` id 与
+     * `channel:` / `combo:` 一样是合法成员），而 `buildComboCatalog` 只认
+     * `merged` 里已有的行 —— 排在它前面，引用合并行的链就会静默少成员。
+     */
+    for (const entry of mergedCatalog) {
       if (seen.has(entry.id)) continue
       seen.add(entry.id)
       merged.push(entry)
@@ -314,6 +346,7 @@ export function createModelRuntime({
     }
     await refreshKiloRoster()
     await refreshChannelCatalog()
+    await rebuildMergedCatalog()
     if (disposed) return catalog
     rebuildCatalog()
     if (probe) await refreshAvailability(force)
@@ -351,16 +384,47 @@ export function createModelRuntime({
    *   路由编辑器的「添加成员」走的就是这条轻量路径：它只要启用清单，
    *   不需要为了容量元数据去逐个解析（那是启动/定时轮询才需要的完整扫描）。
    */
+  /**
+   * 合并模式下的渠道名册兜底（`provider → [{id, name}]`）。
+   *
+   * 抑制之后宿主 `llm.listModels(provider)` 恒为空，而 `refreshChannelCatalog`
+   * 的唯一来源就是它 —— 本插件的渠道目录会被自己洗空（2026-11-18 实测
+   * `channelRows: []`，链路成员候选与合并行容量交集一起失效）。
+   * 渠道包用 `channelPackRoster` 提供未抑制名册（已过用户黑名单、已剔除
+   * 没有账号的渠道），这里只是转成 Map 交给 `readChannelRosters` 兜底。
+   *
+   * 任何失败都降级为 `undefined`，等于没有兜底 —— 目录退回旧行为，绝不让
+   * 一次名册读取失败拖垮整轮刷新。
+   */
+  async function rosterFallbackMap() {
+    if (typeof channelPackRoster !== 'function') return undefined
+    try {
+      const roster = await channelPackRoster()
+      const providers = Array.isArray(roster?.providers) ? roster.providers : []
+      const map = new Map()
+      for (const row of providers) {
+        const provider = typeof row?.provider === 'string' ? row.provider : ''
+        if (provider === '' || !Array.isArray(row?.models)) continue
+        const models = row.models.filter(model => typeof model?.id === 'string' && model.id !== '')
+        if (models.length > 0) map.set(provider, models)
+      }
+      return map.size > 0 ? map : undefined
+    } catch {
+      return undefined
+    }
+  }
+
   async function refreshChannelCatalog(options = {}) {
     if (disposed) return channelCatalog
     const light = options.light === true
     const cachedRows = reviveChannelCatalog(catalogStore.get().channelRows)
+    const rosterFallback = await rosterFallbackMap()
     const { rows, providers } = await readChannelRosters(llm, packProviders, (provider, error) => {
       onChannelError?.(provider, error)
       if (provider !== 'listProviders') {
         logger.warn?.(`our-free-model: channel ${provider} model list unavailable (${String(error?.message ?? error)}); skipping this round`)
       }
-    }, light ? { light: true, previousRows: channelCatalog, cachedRows } : {})
+    }, light ? { light: true, previousRows: channelCatalog, cachedRows, rosterFallback } : { rosterFallback })
     if (disposed) return channelCatalog
     if (light) {
       // light 只刷新启用清单,容量全靠回灌;它会把「本轮没扫到的 provider」的
@@ -381,8 +445,139 @@ export function createModelRuntime({
     return channelCatalog
   }
 
-  async function fetchListing() {
-    if (disposed) return { data: [] }
+  /**
+   * 重建「按模型合并」的虚拟目录（用户 2026-11-18）。
+   *
+   * ## 数据来源是渠道包，不是宿主
+   *
+   * 合并的输入必须是**未抑制**的渠道名册，而宿主侧的
+   * `ctx.llm.listModels(provider)` 恰恰被本插件抑制成空了。所以名册由渠道包
+   * 通过 `channelPackRoster` 提供（见 `vendor/channel-pack/src/index.ts` 的
+   * 同名 provide），本函数只负责把它归并、并补上排序要用的健康度。
+   *
+   * ## 健康度为什么在这里算
+   *
+   * `modelLaneHealth` 要读账号池（`accountPool` 服务），而适配器层拿不到
+   * 服务（它是纯数据 + 宿主桥）。目录行是两边都能看到的地方，也是唯一能
+   * 「算一次、用很多次」的位置：每次刷新算一遍，下发时直接读。
+   *
+   * ## 失败一律降级
+   *
+   * 名册缺席、账号池缺席、单个渠道抛错 —— 任何一种都只让合并组变少或没有，
+   * 绝不让整个目录刷新失败（免费车道与链路仍要可用）。
+   */
+  async function rebuildMergedCatalog() {
+    if (settings.get().merge?.enabled === false) {
+      mergedCatalog = []
+      return mergedCatalog
+    }
+    const rosterFn = channelPackRoster
+    if (typeof rosterFn !== 'function') {
+      mergedCatalog = []
+      return mergedCatalog
+    }
+    let roster
+    try {
+      roster = await rosterFn()
+    } catch (error) {
+      logger.warn?.(`our-free-model: the channel roster is unavailable, so there is no merged model group this round (${String(error?.message ?? error)})`)
+      mergedCatalog = []
+      return mergedCatalog
+    }
+    /**
+     * 账号过滤（用户 2026-11-18：「只要渠道注册账号的，没注册账号的不要」）。
+     *
+     * 账号是 **provider 级**的，所以先按 provider 问一次「这家登录了吗」，
+     * 没账号的整行丢掉 —— 它的模型若只在它家提供，那条合并行不该出现
+     * （选了必然失败）。问不出来（`undefined`）就保留，见
+     * `filterRosterByAccount` 的注释：冷启动那一刻不能把选择器清空。
+     */
+    const healthOf = typeof channelPackLaneHealth === 'function' ? channelPackLaneHealth : undefined
+    let effectiveRoster = roster
+    if (healthOf !== undefined) {
+      /** @type {Map<string, boolean | undefined>} */
+      const accountKnown = new Map()
+      await mapWithConcurrency(Array.isArray(roster?.providers) ? roster.providers : [], 4, async row => {
+        const provider = typeof row?.provider === 'string' ? row.provider : ''
+        const probeModel = Array.isArray(row?.models) ? row.models[0]?.id : undefined
+        if (provider === '' || typeof probeModel !== 'string') return
+        try {
+          const health = await healthOf(provider, probeModel)
+          if (health !== undefined && health !== null) accountKnown.set(provider, health.hasAccount !== false)
+        } catch {
+          // 读不出来 ≠ 没账号：交给下面的「保留」分支。
+        }
+      })
+      if (disposed) return mergedCatalog
+      effectiveRoster = filterRosterByAccount(roster, provider => accountKnown.get(provider))
+      if (accountKnown.size > 0) {
+        const dropped = [...accountKnown].filter(([, has]) => has === false).map(([provider]) => provider)
+        if (dropped.length > 0) {
+          logger.debug?.(`our-free-model: no account registered for ${dropped.join(', ')}; `
+            + 'their models are left out of the merged group')
+        }
+      }
+    }
+    const entries = buildMergedCatalog(effectiveRoster)
+    if (entries.length === 0) {
+      mergedCatalog = []
+      return mergedCatalog
+    }
+    /**
+     * 逐候选算健康度。并发上限沿用 `channel-catalog.js` 的口径：这里是
+     * 纯本地读（账号池内存 + 凭据描述），但仍不该一次拉起上百个 Promise。
+     */
+    const healthByModel = new Map()
+    await mapWithConcurrency(entries, 4, async entry => {
+      if (healthOf === undefined) return
+      const health = {}
+      await Promise.all(entry.merged.map(async lane => {
+        try {
+          health[`${lane.provider}/${lane.model}`] = await healthOf(lane.provider, lane.model)
+        } catch {
+          // 单个渠道读不出来就当作未知（`runMerged` 会按「健康」处理）。
+        }
+      }))
+      healthByModel.set(entry.id, health)
+    })
+    if (disposed) return mergedCatalog
+    const stickyTurns = normalizeStickyTurns(settings.get().merge?.stickyTurns)
+    mergedCatalog = entries.map(entry => {
+      /**
+       * 能力取成员的**交集**（与链路同一条理由）：合并行对用户承诺的窗口
+       * 必须是每个候选都能兑现的，否则被分到小窗渠道的那一轮会超限。
+       */
+      const members = entry.merged
+        .map(lane => channelCatalog.find(row => row.id === `${CHANNEL_PREFIX}${lane.provider}/${lane.model}`))
+        .filter(row => row !== undefined)
+      const vision = members.length > 0 && members.every(row => row.vision === true)
+      const contextWindow = members.length > 0
+        ? Math.min(...members.map(row => number(row.contextWindow) ?? FALLBACK_CONTEXT_WINDOW))
+        : FALLBACK_CONTEXT_WINDOW
+      const maxOutput = members.length > 0
+        ? Math.min(...members.map(row => number(row.maxOutput) ?? 32768))
+        : 32768
+      return {
+        id: entry.id,
+        name: entry.name,
+        channel: 'merged',
+        merged: entry.merged,
+        laneCount: entry.laneCount,
+        laneHealth: healthByModel.get(entry.id) ?? {},
+        stickyTurns,
+        vision,
+        reasoning: true,
+        contextWindow,
+        maxOutput,
+        // 宿主拥有自己那批 provider 的档位域；本插件不宣称知道（同渠道行）。
+        canDisableThinking: false,
+        regionSensitive: false,
+      }
+    })
+    return mergedCatalog
+  }
+
+  async function fetchListing() {    if (disposed) return { data: [] }
     const started = Date.now()
     const listing = await getJson('/inference/v1/models', {
       session: sessionForConversation('catalog:our-free-model'),
@@ -404,7 +599,7 @@ export function createModelRuntime({
     // has no endpoint of its own: probing one would send the chain's own id to
     // the free lane as a model name, spending quota to collect a verdict about
     // nothing.
-    const probeable = catalog.filter(entry => !isKiloEntry(entry) && !isComboEntry(entry) && !isChannelEntry(entry))
+    const probeable = catalog.filter(entry => !isKiloEntry(entry) && !isComboEntry(entry) && !isChannelEntry(entry) && !isMergedEntry(entry))
     const results = await probeCatalog(probeable, { attributionUserAgent, signal: lifetime.signal }, (id, result) => {
       if (disposed) return
       availability.edit(value => ({
@@ -537,9 +732,18 @@ export function createModelRuntime({
       },
     }),
     publicModelRows: () => publicModelRows(state()),
-    // A settings write that changes the chains (a combo edited) rebuilds the
-    // merged view without a listing round.
-    syncAggregateCatalog() {
+    /**
+     * 目录的「非清单轮」重建入口：链路被编辑、渠道包刚挂载、合并开关被切换
+     * 都走这里。
+     *
+     * 合并组必须是这条路径的一部分（用户 2026-11-18）：它依赖渠道包
+     * provide 的 `channelPackRoster`，而渠道包是**异步**挂载的 —— 首次
+     * `refreshCatalog` 早于它 ready，那时合并组只能为空。包 ready 之后必须
+     * 有一条轻量路径把它补上，而不是等 15 分钟的目录轮询。
+     */
+    async syncAggregateCatalog() {
+      if (disposed) return catalog
+      await rebuildMergedCatalog()
       if (disposed) return catalog
       rebuildCatalog()
       emitTopology()
@@ -563,6 +767,36 @@ function materializeCatalog(ids) {
   return rebuilt.length > 0 ? rebuilt : FALLBACK_CATALOG
 }
 
+/** 正数,否则 `undefined`(与 `catalog.js` 的同名私有函数同口径)。 */
+function number(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.trunc(value) : undefined
+}
+
+/** 合并模型的粘性回合数:取正整数,缺省 1(每回合都换起点)。 */
+function normalizeStickyTurns(value) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 1
+}
+
+/**
+ * 有并发上限的 map(保持输出顺序无关:调用方按 key 回填)。
+ *
+ * 与 `channel-catalog.js` 的同名函数同款 —— 那里是私有实现,这里需要一份
+ * 独立的(模块边界,避免为一个小工具改那边的导出面)。
+ */
+async function mapWithConcurrency(items, limit, run) {
+  const size = Math.max(1, Math.trunc(Number(limit)) || 1)
+  let cursor = 0
+  const workers = Array.from({ length: Math.min(size, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor
+      cursor += 1
+      await run(items[index])
+    }
+  })
+  await Promise.all(workers)
+}
+
 export function computeMembership(catalog, availabilitySnapshot, settings) {
   const expose = settings?.exposeRegionModels !== false
   const verdictOf = entry => modelAvailability(entry.id, availabilitySnapshot, Boolean(entry.channel)).availability
@@ -580,6 +814,17 @@ export function computeMembership(catalog, availabilitySnapshot, settings) {
     // 这**不影响**调用：`prepareCall` 与转发网关都按 catalog 里的 id 解析，
     // 链路成员照样能被拨出去（隐藏广告不等于拒绝请求）。
     if (typeof entry.channel === 'string' && entry.channel.startsWith('channel:')) continue
+    /**
+     * 合并行**要广播**（用户 2026-11-18），与上面那条渠道行的规则正好相反：
+     *
+     * 渠道行不广播，是因为它们的 provider 就是宿主自己的那一组、选择器里
+     * 已经有一份，再以本插件路由报一遍会重复。
+     *
+     * 合并行不同：`merged:` 不是任何 provider 的 id，宿主不可能从别处看到
+     * 它。它**只能**经由本插件路由出现在选择器里 —— 而它正是「一个模型一条」
+     * 的实现。所以这里必须放行，且它同样要过用户黑名单（下一行的
+     * `isModelHidden`）。
+     */
     if (isModelHidden(entry, settings)) continue
     const verdict = verdictOf(entry)
     if (verdict !== STATE.regionBlocked) main.push(entry.id)
@@ -588,5 +833,29 @@ export function computeMembership(catalog, availabilitySnapshot, settings) {
   const membership = {}
   if (main.length > 0) membership[ROUTE_MAIN] = main
   if (region.length > 0) membership[ROUTE_REGION] = region
+  /**
+   * 自选分组（用户 2026-11-18 的「配置页」）：用户自己挑的模型，每条一个
+   * provider 路由。它与上面两条规则都不一样：
+   *
+   * - 渠道行在这里**可以**出现（合并行本来就是这类行的视图，而用户也可能
+   *   直接想把某一家渠道的某个型号单独拎出来）；
+   * - 地域限制的模型也照样放行 —— 用户点名要它，插件的职责是试，而不是替他
+   *   按可用性筛掉；筛掉只该发生在「他根本没选」的时候；
+   * - 唯一仍生效的是 `isModelHidden`：它代表「这个模型现在真的发不出去」
+   *   （总开关关着、模型被用户拉黑），放进分组也只会每次失败。
+   */
+  const custom = normalizeCustomProviders(settings?.customProviders)
+  if (custom.length > 0) {
+    const known = new Set(catalog.map(entry => entry.id))
+    const rows = new Map(catalog.map(entry => [entry.id, entry]))
+    for (const provider of custom) {
+      // enabled:false 的分组不再广播模型（选择器里整组消失），但路由本身仍
+      // 注册着：旧会话里存着这条 provider 的对话不至于「模型不可用」——
+      // prepareCall 按 catalog id 解析，不走 membership。
+      if (provider.enabled === false) continue
+      const ids = provider.models.filter(id => known.has(id) && !isModelHidden(rows.get(id), settings))
+      if (ids.length > 0) membership[provider.id] = ids
+    }
+  }
   return membership
 }

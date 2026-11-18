@@ -27,7 +27,8 @@ import { createChannel } from './channel.js'
 import { recoveryPolicy, canRecover, canRecoverSilentStop, recoveryMessages, continuationMessages, checkpointFits, addUsage, createBlockTracker } from './recovery.js'
 import { isKiloEntry } from './catalog.js'
 import { isComboEntry, comboChain, noteComboServed, comboRotationSlot } from './combos.js'
-import { isChannelEntry, parseChannelModelId, FALLBACK_CONTEXT_WINDOW } from './channel-catalog.js'
+import { isMergedEntry } from './merged-catalog.js'
+import { isChannelEntry, parseChannelModelId, CHANNEL_PREFIX, FALLBACK_CONTEXT_WINDOW } from './channel-catalog.js'
 import { applyTokenSavers, saverConfig } from './token-saver/index.js'
 import { classifyFailure, describeVerdict, shouldAdvance } from './route/classify.js'
 import { FALLBACK_IMAGE_PRICING } from './image-pricing.js'
@@ -42,6 +43,30 @@ export const ROUTE_LABELS = {
 }
 
 const STYLE_FOR_WIRE = { chat: 'chat', responses: 'flat', messages: 'claude' }
+
+/**
+ * 合并模型的轮转游标（与 `combos.js` 的 `rotation` 同款：只在内存里）。
+ *
+ * 键是合并行 id，值是「当前从第几个健康渠道开始 + 这一期还剩几次名额」。
+ * 重启丢失只影响一次起始位置，不影响正确性。
+ */
+const mergedRotation = new Map()
+
+/** 合并行里一个候选渠道对应的目录 id（`channel:<provider>/<model>`）。 */
+function mergedLaneEntryId(lane) {
+  return `${CHANNEL_PREFIX}${lane.provider}/${lane.model}`
+}
+
+/**
+ * 把一个候选渠道包成 `runChannel` 认得的目录行。
+ *
+ * `runChannel` 读的是 `entry.id` 并经 `parseChannelModelId` 拆回
+ * provider/model，所以这里只需要 id 正确；其余能力字段对「交回宿主」这条
+ * 路径没有意义（真正的解析在宿主自己的适配器里）。
+ */
+function mergedLaneEntry(lane) {
+  return { id: mergedLaneEntryId(lane), channel: `${CHANNEL_PREFIX}${lane.provider}` }
+}
 
 export class FreeModelAdapter {
   /**
@@ -78,7 +103,14 @@ export class FreeModelAdapter {
   }
 
   providerInfo(provider) {
-    return { id: provider, name: ROUTE_LABELS[provider] ?? provider }
+    const settings = this.deps.state().settings ?? {}
+    const custom = (Array.isArray(settings.customProviders) ? settings.customProviders : [])
+      .find(group => group?.id === provider)
+    // 关闭的分组名字后面带「（已关闭）」：路由仍然注册（老会话还能发），但
+    // listModels 返回空、选择器里这一组不出现 —— 名字里的标记是唯一能让
+    // 宿主侧（模型设置页等）看出「这组现在是关的」的地方。
+    const label = (typeof custom?.name === 'string' && custom.name !== '' ? custom.name : undefined) ?? ROUTE_LABELS[provider] ?? provider
+    return { id: provider, name: custom?.enabled === false ? `${label}（已关闭）` : label }
   }
 
   /**
@@ -126,6 +158,27 @@ export class FreeModelAdapter {
   /** Models this route advertises right now. */
   async listModels(provider) {
     const state = this.deps.state()
+    /**
+     * 「自选分组」接管选择器之后，默认那两条路由整体收起（用户 2026-11-18）。
+     *
+     * 与合并行的抑制是同一类做法 —— 只掐**广告**，不掐路由：`resolveModel`
+     * 与 `prepareCall` 都按 catalog 里的 id 解析，不查 membership，所以已经
+     * 存着 `our-free-model` 的旧会话照样能发消息，只是选择器里不再重复列
+     * 一遍用户亲手挑过的模型。
+     *
+     * 只在用户真的建了分组时才收起：没有分组又收起默认路由，等于把选择器
+     * 清空。
+     */
+    const groups = Array.isArray(state.settings?.customProviders) ? state.settings.customProviders : []
+    if (state.settings?.hideBaseGroup === true && groups.length > 0
+      && (provider === ROUTE_MAIN || provider === ROUTE_REGION)) return []
+    /**
+     * 关闭的分组同样只掐广告：membership 里没有它（`computeMembership` 跳过
+     * `enabled:false`），`listModels` 就返回空，选择器里这一组整个消失。
+     * 路由仍注册着 —— 已保存的会话继续可用，和 hideBaseGroup 同一条口径。
+     */
+    const mine = groups.find(group => group?.id === provider)
+    if (mine !== undefined && mine.enabled === false) return []
     const ids = new Set(state.membership[provider] ?? [])
     return state.catalog
       .filter(entry => ids.has(entry.id))
@@ -219,6 +272,10 @@ export class FreeModelAdapter {
   async * runStream(options, pinned, snapshot) {
     const modelId = baseModelId(options.model)
     const entry = pinned ?? snapshot.catalog.find(candidate => candidate.id === modelId) ?? null
+    if (entry !== null && isMergedEntry(entry)) {
+      yield * this.runMerged(options, entry, snapshot)
+      return
+    }
     if (entry !== null && isComboEntry(entry)) {
       yield * this.runCombo(options, entry, snapshot)
       return
@@ -454,6 +511,192 @@ export class FreeModelAdapter {
       const now = Date.now()
       for (const [key, until] of this.chainCooldown) if (until <= now) this.chainCooldown.delete(key)
     }
+  }
+
+  /**
+   * 一条合并模型的一次回合（用户 2026-11-18「相同模型合成一个，底层按额度
+   * 自动分配」）。
+   *
+   * ## 与链路（combo）的关系：同一台机器，不同的排序依据
+   *
+   * 转移语义**完全复用** `runCombo` 那套已经验证过的规则 —— 缓冲到首个
+   * 正文 delta 才算提交、提交前失败整条丢弃、提交后失败按正常回合收尾。
+   * 差别只在候选**从哪来、怎么排**：
+   *
+   * | | 链路 combo | 合并 merged |
+   * | --- | --- | --- |
+   * | 候选 | 用户手写的名单 | 同名的全部渠道（目录自动生成） |
+   * | 次序 | 质量阶梯 / 轮询名额 | 额度健康度，再按轮转错开 |
+   *
+   * 所以这里没有另写一套 for 循环：候选算好后直接交给 `runCombo` 的同一条
+   * 路径（`entry.combo` 是它唯一读的字段）。这样两处的提交/失败/日志行为
+   * 永远一致，不会出现"链路能转移、合并不能"这类漂移。
+   *
+   * ## 排序：额度健康度优先，轮转负责打散
+   *
+   * 用户选的「只用本地硬信号」意味着这里**不发任何网络请求** ——
+   * `laneHealth` 由运行时预先按账号池的限流台账算好并放在目录行上。
+   *
+   * 排序分两档：
+   *
+   * 1. 还有空闲账号的渠道（`freeAccounts > 0`）整体排在前面；
+   * 2. 档内按**轮转游标**错开，`stickyTurns` 个回合内不动 —— 这是 prompt
+   *    缓存的前提（同一模型连续换渠道会让每一轮的缓存全 miss）。
+   *
+   * 计费倍率（扣除系数）**不参与**排序（用户 2026-11-18：「完全去掉系数影响」），
+   * 合并行的展示名里也不带任何系数。
+   *
+   * 已经全部被限流的渠道不剔除，只压到队尾：解禁时刻一到它就该重新参与，
+   * 而剔除需要有人负责把它加回来（又是一份要维护的状态）。
+   */
+  async * runMerged(options, entry, snapshot) {
+    const lanes = Array.isArray(entry.merged) ? entry.merged : []
+    if (lanes.length === 0) {
+      yield { type: 'finish', reason: { kind: 'error', failure: {
+        message: `the model "${entry.name}" has no channel available`, code: CODE.server,
+      } } }
+      return
+    }
+    /**
+     * 单渠道也走合并行（见 `merged-catalog.js`）：此时排序没有意义，
+     * 直接交给 `runChannel` —— 少一层 `runCombo` 的回合记账，日志更干净。
+     */
+    if (lanes.length === 1) {
+      const only = lanes[0]
+      yield * this.runChannel(
+        { ...options, model: mergedLaneEntryId(only) },
+        mergedLaneEntry(only),
+      )
+      return
+    }
+    const ordered = this.orderMergedLanes(entry, lanes)
+    /**
+     * 转移循环**自己写**，不借 `runCombo`。
+     *
+     * 曾经打算把排好的次序塞进 `entry.combo` 复用它 —— 那是错的：
+     * `comboChain(entry, catalog)` 会拿名单里的 id 去 **catalog** 里查行，
+     * 而渠道行在被抑制后**根本不在目录里**（这正是合并的前提）。查不到就
+     * 全被丢掉，`candidates.length === 0`，每次调用都直接以「链路没有可用
+     * 模型」失败 —— 一个静默的全面故障。
+     *
+     * 所以这里直接调 `runChannel`（它只需要 provider/model，不需要目录行），
+     * 但**提交语义与 `runCombo` 逐条对齐**：缓冲到首个正文 delta 才算提交，
+     * 提交前失败整条丢弃（用户一个字节都没看到），提交后失败按正常回合收尾。
+     */
+    const started = Date.now()
+    const tried = []
+    for (let index = 0; index < ordered.length; index += 1) {
+      const lane = ordered[index]
+      const laneEntry = mergedLaneEntry(lane)
+      let committed = false
+      let result
+      const held = []
+      const iterator = this.runChannel({ ...options, model: laneEntry.id }, laneEntry)
+      while (true) {
+        const row = await iterator.next()
+        if (row.done === true) { result = row.value; break }
+        if (committed) { yield row.value; continue }
+        held.push(row.value)
+        if (commitsAnswer(row.value)) {
+          committed = true
+          for (const chunk of held) yield chunk
+          held.length = 0
+        }
+      }
+      if (committed) {
+        // 答出来了：这个渠道的禁期立刻作废（同 runCombo 的口径）。
+        this.chainCooldown.delete(laneEntry.id)
+        this.deps.log?.(
+          `our-free-model: model "${entry.name}" served by ${laneEntry.id}`
+          + ` (lane ${index + 1}/${ordered.length}`
+          + `, sticky ${entry.stickyTurns ?? 1})`,
+        )
+        this.deps.recordTurn?.({
+          at: started, model: entry.id, ok: result?.ok === true,
+          recovered: result?.recovered === true, attempts: index + 1, origin: 'harness',
+        })
+        return
+      }
+      if (result?.advance !== true) {
+        // 不是候选的错（用户取消、或提交后已无恢复预算）：把真实结局交出去，
+        // 不要假装换一家还能救。同 runCombo 的同名分支。
+        for (const chunk of held) yield chunk
+        this.deps.recordTurn?.({
+          at: started, model: entry.id, ok: false, recovered: false, attempts: index + 1, origin: 'harness',
+        })
+        return
+      }
+      const reason = result.verdict === null || result.verdict === undefined
+        ? 'failed'
+        : describeVerdict(result.verdict)
+      const failureMessage = result?.failure?.message ?? ''
+      this.deps.warn?.(
+        `our-free-model: model "${entry.name}" lane ${laneEntry.id} failed — ${reason}`
+        + `${failureMessage ? `: ${failureMessage.slice(0, 300)}` : ''}; trying the next channel`,
+      )
+      this.markFaulty(laneEntry.id, result.verdict)
+      tried.push(`${laneEntry.id} (${reason})`)
+    }
+    this.deps.recordTurn?.({
+      at: started, model: entry.id, ok: false, recovered: false, attempts: ordered.length, origin: 'harness',
+    })
+    // 全部渠道都拒了：与 `runCombo` 的耗尽分支同码 —— 这是「这家模型此刻
+    // 谁也答不了」，重放同一条请求没有意义，让用户自己决定下一步。
+    yield { type: 'finish', reason: { kind: 'error', failure: {
+      message: `every channel serving "${entry.name}" refused this turn: ${tried.join('; ')}`,
+      code: CODE.client,
+    } } }
+  }
+
+  /**
+   * 给一条合并行的候选渠道排次序（见 `runMerged` 的说明）。
+   *
+   * 纯函数式的排序 + 一个模块级游标，和 `combos.js` 的 `rotation` 同款取舍：
+   * 游标只在内存里，重启后丢掉的只是一次起始位置。
+   */
+  orderMergedLanes(entry, lanes) {
+    const now = Date.now()
+    const healthOf = lane => {
+      const health = entry.laneHealth?.[`${lane.provider}/${lane.model}`]
+      return health ?? { freeAccounts: 1, limitedAccounts: 0, resetAtMs: undefined, hasAccount: true }
+    }
+    /**
+     * 已经全部被限流、且解禁时刻还没到的渠道压到队尾；解禁时刻已过的按健康
+     * 处理（台账里的时刻是死的，到点就该复活，不能等谁来清理）。
+     */
+    const healthy = []
+    const cooling = []
+    for (const lane of lanes) {
+      const health = healthOf(lane)
+      const cooling_down = health.freeAccounts === 0
+        && typeof health.resetAtMs === 'number' && health.resetAtMs > now
+      if (cooling_down) cooling.push({ lane, resetAtMs: health.resetAtMs })
+      else healthy.push({ lane, weight: health.freeAccounts })
+    }
+    /**
+     * 健康档内：先按空闲账号数降序（额度多的一方先上），再按轮转游标把
+     * 起点错开，最后保持原名次保证同权重时的次序稳定。
+     *
+     * ⚠️ 排序**不看计费倍率**（用户 2026-11-18：「完全去掉系数影响」）。
+     * 曾经按倍率升序排过一版，用户明确否掉了 —— 他关心的是额度够不够用，
+     * 不是这次调用扣多少积分；况且缺倍率的渠道会被迫按 1 倍猜，那个次序
+     * 本来就是半猜的。
+     */
+    healthy.sort((a, b) => b.weight - a.weight || a.lane.provider.localeCompare(b.lane.provider))
+    cooling.sort((a, b) => a.resetAtMs - b.resetAtMs)
+    const pool = healthy.map(row => row.lane)
+    const sticky = Math.max(1, Math.trunc(Number(entry.stickyTurns) || 1))
+    if (pool.length > 1) {
+      const cursor = mergedRotation.get(entry.id) ?? { index: 0, used: 0 }
+      const index = Math.min(Math.max(cursor.index, 0), pool.length - 1)
+      const rotated = [...pool.slice(index), ...pool.slice(0, index)]
+      const used = cursor.used + 1
+      mergedRotation.set(entry.id, used >= sticky
+        ? { index: (index + 1) % pool.length, used: 0 }
+        : { index, used })
+      return [...rotated, ...cooling.map(row => row.lane)]
+    }
+    return [...pool, ...cooling.map(row => row.lane)]
   }
 
   /**
