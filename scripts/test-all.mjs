@@ -62,6 +62,7 @@ const suites = [
   ['zcode-default-browser', 'zcode-default-browser-test.mjs', []],
   // 热重载按钮（首页设置）：模块/后端路由/settings 开关/前端按钮 + 202 安全降级
   ['reload-ui', 'reload-ui-test.mjs', []],
+  ['reload-rollback', 'reload-rollback-test.mjs', []],
   // 实测成功即清异常标记（2026-11-05）：成功才清、失败/空流/无账号/未注入不清、
   // 用内部 modelId、只清命中项、清风控、幂等。一处覆盖全部 20 渠道。
   ['anomaly-clearing', 'anomaly-clearing-test.mjs', []],

@@ -103,14 +103,29 @@ export function purgeCaches(internal, packageUrl) {
   return backup
 }
 
-/** Put a purge's backup back (rollback path). */
+/**
+ * Put a purge's backup back (rollback path).
+ *
+ * @returns {{failed: number, total: number}} 恢复失败的条目数与总数 ——
+ *   部分失败必须如实上报（2026-11-19 任务 6）：先前实现把每条失败静默吞掉、
+ *   调用方一律报 `restored: true`，回滚失败被伪装成成功。
+ */
 export function restoreCaches(internal, backup) {
   const cache = internal?.loadCache
+  let failed = 0
+  const total = backup.esm.size + backup.cjs.size
   for (const [key, job] of backup.esm) {
-    try { Map.prototype.set.call(cache, key, job) } catch { try { cache.set(key, job) } catch { /* best effort */ } }
+    let ok = false
+    try { Map.prototype.set.call(cache, key, job); ok = true } catch {
+      try { cache.set(key, job); ok = true } catch { /* both shapes failed */ }
+    }
+    if (!ok) failed++
   }
   const require = createRequire(import.meta.url)
-  for (const [filePath, module] of backup.cjs) require.cache[filePath] = module
+  for (const [filePath, module] of backup.cjs) {
+    try { require.cache[filePath] = module } catch { failed++ }
+  }
+  return { failed, total }
 }
 
 /**
@@ -174,14 +189,22 @@ export function selfReload(ctx, options = {}) {
         }
       }
     } catch (error) {
-      restoreCaches(internal, backup)
-      return { ok: false, error: `re-import failed, old code still running (${error?.message ?? error})`, restored: true }
+      const restore = restoreCaches(internal, backup)
+      if (restore.failed > 0) {
+        logger.error?.(`our-free-model: hot reload rollback restored ${restore.total - restore.failed}/${restore.total} cache entries — ${restore.failed} failed; stale module cache possible`)
+      }
+      return { ok: false, error: `re-import failed, old code still running (${error?.message ?? error})`, restored: restore.failed === 0 }
     }
     globalThis[Symbol.for('our-free-model.last-reload')] = { at: Date.now(), purged: backup.esm.size, busted }
 
     try {
       registry.delete(previous)
-      await Promise.all(fibers.map(({ fiber }) => fiber.await()))
+      // dispose 加超时（任务 6）：挂死的 fiber 会让 isReloading() 永久为 true，
+      // 热重载能力整体报废。超时后继续走（旧 fiber 的命运由内核接管），并如实记日志。
+      await Promise.race([
+        Promise.all(fibers.map(({ fiber }) => fiber.await())),
+        new Promise(resolve => setTimeout(resolve, 8000).unref?.()),
+      ])
     } catch (error) {
       // Old fibers are gone regardless; the new registration below is still the
       // right move — the error is logged, not propagated, to not skip it.
@@ -205,7 +228,10 @@ export function selfReload(ctx, options = {}) {
     } catch (error) {
       // The replacement failed to start. Put the old code back both on disk
       // (caller's job, via the updater's backup) and in the registry.
-      restoreCaches(internal, backup)
+      const cacheRestore = restoreCaches(internal, backup)
+      if (cacheRestore.failed > 0) {
+        logger.error?.(`our-free-model: hot reload rollback restored ${cacheRestore.total - cacheRestore.failed}/${cacheRestore.total} cache entries — ${cacheRestore.failed} failed; stale module cache possible`)
+      }
       try {
         registry.delete(replacement)
       } catch { /* may never have started */ }
@@ -220,9 +246,14 @@ export function selfReload(ctx, options = {}) {
           }
           restored.push(fresh)
         }
-        await Promise.all(restored.map(fiber => fiber.await()))
-        return { ok: false, error: `new code failed to start, previous version restored (${error?.message ?? error})`, restored: true }
+        await Promise.race([
+          Promise.all(restored.map(fiber => fiber.await())),
+          new Promise(resolve => setTimeout(resolve, 8000).unref?.()),
+        ])
+        // restored 如实：缓存条目有恢复失败的不能报成功（任务 6-B）。
+        return { ok: false, error: `new code failed to start, previous version restored (${error?.message ?? error})`, restored: cacheRestore.failed === 0 }
       } catch (restoreError) {
+        logger.error?.(`our-free-model: hot reload restore failed hard: ${restoreError?.message ?? restoreError}`)
         return { ok: false, error: `new code failed and restore failed too: ${restoreError?.message ?? restoreError}`, restored: false }
       }
     }
