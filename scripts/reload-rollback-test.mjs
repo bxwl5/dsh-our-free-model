@@ -7,9 +7,12 @@
  * 部分失败如实计数。
  */
 import assert from 'node:assert/strict'
-import { restoreCaches, purgeCaches, packageUrlOf } from '/media/kuye/128G/DSH/github工作区/临时项目/our-free-model/src/reload.js'
+import { restoreCaches, purgeCaches, packageUrlOf } from '../src/reload.js'
 
-const pkg = packageUrlOf('file:///media/kuye/128G/DSH/github工作区/临时项目/our-free-model/src/reload.js')
+// 包根 URL 从测试文件自身位置推导（scripts/ 的上一级），
+// 不写死本机绝对路径 —— 否则 CI 的 /home/runner/work/... 下必然 ERR_MODULE_NOT_FOUND。
+const reloadUrl = new URL('../src/reload.js', import.meta.url).href
+const pkg = packageUrlOf(reloadUrl)
 // 1) 正常路径：全部恢复成功
 {
   const fakeCache = new Map([[pkg + 'a.js', { job: 1 }], [pkg + 'b.js', { job: 2 }]])
