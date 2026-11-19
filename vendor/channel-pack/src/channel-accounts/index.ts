@@ -68,11 +68,14 @@ export function buildChannelAccountRegistry(
   add(nullStatusCapabilityAccount('codearts'))
   add(nullStatusCapabilityAccount('trae'))
   add(nullStatusCapabilityAccount('cline'))
-  // claim × cline / workbuddy / raccoon：纯错误守卫（workbuddy 必须早于
-  // productById 兜底，否则会用国际版凭据打国内版签到请求）
+  // claim × cline / workbuddy：纯错误守卫（workbuddy 必须早于 productById
+  // 兜底，否则会用国际版凭据打国内版签到请求）。
+  // ⚠️ raccoon 已于 2026-11-19 从此表移除：它有真实的签到实现（积分续期，
+  // 产出 `extended`），必须落到原 switch 分支 —— 这份注册表**先于** dispatch
+  // 命中，留着这条会让续期永远返回旧文案（2026-11-19 晚实测踩过：
+  // RPC 分支改了、pack.js 重建了，运行时却仍报旧文案，根因就是这里）。
   add(badRequestClaimAccount('cline', 'Cline 不支持每日签到（其后端没有签到接口）'))
   add(badRequestClaimAccount('workbuddy', 'WorkBuddy 国际版不支持每日签到（其后端没有签到接口）'))
-  add(badRequestClaimAccount('raccoon', 'Raccoon Work 不支持每日签到（积分由服务端自动发放，奖励见「新手任务」）'))
   // ── 阶段 2：balances 简单组（opencode/loomy/raccoon/minimax/qoder族/cline）──
   for (const account of makeSimpleBalanceAccounts(_io)) add(account)
   // ── 阶段 2：balances 复杂组（codearts/trae/commandcode/autoclaw/officeace/

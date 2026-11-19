@@ -110,11 +110,13 @@ for (const provider of ['codearts', 'trae', 'cline']) {
   })
 }
 
-// ── claim × cline / workbuddy / raccoon：原分支 bad-request，文案逐字 ──
+// ── claim × cline / workbuddy：原分支 bad-request，文案逐字 ──
+// ⚠️ raccoon 已于 2026-11-19 移出守卫表（有真实签到实现 = 积分续期）。
+//   下面单独钉住「守卫不得复活」，否则它会先于 dispatch 命中，
+//   续期永远返回旧文案（2026-11-19 晚实测踩过这个回归）。
 const claimMessages = {
   cline: 'Cline 不支持每日签到（其后端没有签到接口）',
   workbuddy: 'WorkBuddy 国际版不支持每日签到（其后端没有签到接口）',
-  raccoon: 'Raccoon Work 不支持每日签到（积分由服务端自动发放，奖励见「新手任务」）',
 }
 for (const [provider, message] of Object.entries(claimMessages)) {
   await check(`claim/${provider}`, async () => {
@@ -126,6 +128,12 @@ for (const [provider, message] of Object.entries(claimMessages)) {
     })
   })
 }
+await check('claim/raccoon：守卫不得复活（须落到原 switch 分支）', async () => {
+  const account = registry.get('raccoon')
+  // registry 里不再登记 raccoon 的 claim 守卫 ⇒ get 出的对象要么没有
+  // claim 方法（balances 条目仍在），要么根本没有该条目。
+  assert.ok(account?.claim === undefined, 'raccoon 的 claim 守卫必须不存在，否则续期永远返回旧文案')
+})
 
 // ── 阶段 2/3/4 全组合差分守卫（55 项，含 workbuddy/zcode 合并真值表）──
 const extra = await verifyExtraSlice({ registry, env, nullStatusAccounts, toStatusEnvelope })

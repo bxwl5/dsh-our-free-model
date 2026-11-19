@@ -83,10 +83,11 @@ import assert from 'node:assert/strict'
 const R0_STATUS = ['codearts', 'trae', 'cline']
 
 /** 阶段 1 R0：渠道不支持每日签到，bad-request 文案逐字照抄原分支。 */
+// ⚠️ raccoon 已于 2026-11-19 移出守卫表（有真实签到实现 = 积分续期），
+// 它的 claim 由原 switch 分支处理，不再出现在本注册表。
 const R0_CLAIM_MESSAGES = Object.freeze({
   cline: 'Cline 不支持每日签到（其后端没有签到接口）',
   workbuddy: 'WorkBuddy 国际版不支持每日签到（其后端没有签到接口）',
-  raccoon: 'Raccoon Work 不支持每日签到（积分由服务端自动发放，奖励见「新手任务」）',
 })
 
 /** 阶段 2-3 status 真查组（buddy/workbuddy 经 productById 白名单兜底）。 */
@@ -300,7 +301,7 @@ export async function verifyExtraSlice({ registry, env, nullStatusAccounts, toSt
     ['workbuddy',    true,  true,  true ],
     ['minimax',      true,  true,  true ],
     ['buddy',        true,  true,  true ],
-    ['raccoon',      false, true,  true ],
+    ['raccoon',      false, false, true ], // ★ 2026-11-19：claim 守卫已删（积分续期走原 switch），status 本就无
     ['qoder',        false, true,  true ],
     ['qodercn',      false, true,  true ],
     ['autoclaw',     false, true,  true ],
@@ -622,7 +623,9 @@ export async function verifyExtraSlice({ registry, env, nullStatusAccounts, toSt
 
   // 2026-11-06 全码审查修复（t3-#8）：钉死各组最低数量 —— 删组/漏登记会直接红，
   // 防止「守卫悄悄变少」。新加组合请同步上调对应下限。
-  const FLOORS = { presence: 1, r0: 6, matrix: 1, balances: 21, statusClaim: 14, absent: 16, driven: 0 }
+  // ⚠️ r0 下限 6 → 5（2026-11-19）：raccoon 的 claim 守卫已删（有真实签到
+  // 实现 = 积分续期），R0 组从 6 项降到 5 项。这是**有意减少**，不是漏登记。
+  const FLOORS = { presence: 1, r0: 5, matrix: 1, balances: 21, statusClaim: 14, absent: 16, driven: 0 }
   for (const [group, floor] of Object.entries(FLOORS)) {
     const n = group === 'driven'
       ? checks.filter((c) => c.startsWith('balances/driven')).length

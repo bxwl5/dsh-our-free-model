@@ -61657,7 +61657,6 @@ function buildChannelAccountRegistry(_io) {
   add(nullStatusCapabilityAccount("cline"));
   add(badRequestClaimAccount("cline", "Cline \u4E0D\u652F\u6301\u6BCF\u65E5\u7B7E\u5230\uFF08\u5176\u540E\u7AEF\u6CA1\u6709\u7B7E\u5230\u63A5\u53E3\uFF09"));
   add(badRequestClaimAccount("workbuddy", "WorkBuddy \u56FD\u9645\u7248\u4E0D\u652F\u6301\u6BCF\u65E5\u7B7E\u5230\uFF08\u5176\u540E\u7AEF\u6CA1\u6709\u7B7E\u5230\u63A5\u53E3\uFF09"));
-  add(badRequestClaimAccount("raccoon", "Raccoon Work \u4E0D\u652F\u6301\u6BCF\u65E5\u7B7E\u5230\uFF08\u79EF\u5206\u7531\u670D\u52A1\u7AEF\u81EA\u52A8\u53D1\u653E\uFF0C\u5956\u52B1\u89C1\u300C\u65B0\u624B\u4EFB\u52A1\u300D\uFF09"));
   for (const account of makeSimpleBalanceAccounts(_io)) add(account);
   for (const account of makeComplexBalanceAccounts(_io)) add(account);
   for (const account of makeStatusClaimAccounts(_io)) add(account);
