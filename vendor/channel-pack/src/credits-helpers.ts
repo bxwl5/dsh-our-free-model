@@ -340,6 +340,20 @@ export function computeClaimSummary(outcomes: readonly ClaimOutcome[]): RpcCredi
         summary.alreadyClaimed += 1
         if (outcome.coversToday !== false) summary.coversToday += 1
         break
+      case 'extended':
+        /**
+         * 续期（2026-11-19，仅商汤小浣熊）：**没有 `claimed`，也没有新积分**。
+         *
+         * - **不计 `claimed` / `totalCredit`**：余额一分未增，计进去会让面板
+         *   显示「今日领取 +300」，与事实不符。
+         * - **计 `coversToday`**：它确实完成了「今天这一轮」的处理，漏计会让
+         *   渠道账本停在 `pending`，于是每 30 分钟重复调一次上游（商汤的
+         *   `setting_info` 幂等，但白白多打请求）。这条与 `already-claimed`
+         *   的处理同构。
+         * - **不计 `alreadyClaimed`**：那不是「之前领过」，今天恰恰是第一次。
+         */
+        if (outcome.coversToday !== false) summary.coversToday += 1
+        break
       case 'inactive':
         summary.inactive += 1
         break

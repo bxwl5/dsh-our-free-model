@@ -33,6 +33,7 @@ import {
   type RaccoonModelMeta,
 } from './raccoon.js'
 import {
+  claimRaccoonDailyCheckin,
   claimRaccoonLoginReward,
   fetchRaccoonCreditBalance,
   fetchRaccoonOnboardingStatus,
@@ -523,6 +524,20 @@ export class RaccoonAuth extends Service {
   /** 领取一次性登录奖励。 */
   async claimLoginReward(credential: RaccoonCredential): Promise<ClaimOutcome> {
     return claimRaccoonLoginReward(this.product, credential, this.fetchImpl)
+  }
+
+  /**
+   * 每日签到 = 把当天 300 分从「当日 24:00 失效」续成 7 天有效。
+   *
+   * ⚠️ 与 `claimLoginReward` 是**两个不同的东西**，别看错：
+   * - `claimLoginReward`：桌面端首次登录一次性 +3000（`POST …/login/points/grant`）
+   * - `claimDailyCheckin`：每天把 300 分续命（`GET …/setting_info`，不产新积分）
+   *
+   * 返回 `extended`（今天首次续期，带 `expiresAt`）或 `already-claimed`
+   *（今天已续），见 `claimRaccoonDailyCheckin` 的幂等说明。
+   */
+  async claimDailyCheckin(credential: RaccoonCredential): Promise<ClaimOutcome> {
+    return claimRaccoonDailyCheckin(this.product, credential, this.fetchImpl)
   }
 
   /** 查询一次性登录奖励是否已领。 */

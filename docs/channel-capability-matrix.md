@@ -73,7 +73,7 @@
 | 6 | `trae` · TRAE | 浏览器授权（官方登录页，手机号） | ✅ | ✅ 远端 | ✅ | ✅ | ✅ 单桥 |
 | 7 | `cline` · Cline | 浏览器授权（Cline OAuth） | ✅ | ✅ 内嵌目录 + models.dev 远端补充 | ✅（单位 dollars） | ❌（无签到端点） | ✅ 双桥 |
 | 8 | `loomy` · Loomy | 本地页微信扫码；短信验证码为备用路径 | ✅ | ✅ 远端 | ✅ | ❌（一键签到已于 2026-11-06 移除） | ✅ 单桥 |
-| 9 | `raccoon` · Raccoon Work | 本地页微信扫码 + 短信双路径（不依赖官方客户端回调） | ✅ | ✅ 远端 | ✅ | ❌（每日积分由服务端自动发放；另有新手任务领取） | ✅ 双桥 |
+| 9 | `raccoon` · Raccoon Work | 本地页微信扫码 + 短信双路径（不依赖官方客户端回调） | ✅ | ✅ 远端 | ✅ | ✅ **积分续期**（不产新积分：把当日 300 分从「当日 24:00 清零」续成 7 天，产出 `extended`） | ✅ 双桥 |
 | 10 | `minimax` · MiniMax Code | OAuth 设备码 + PKCE | ✅（Anthropic Messages 协议族） | ✅ 远端 | ✅ | ✅ | ✅ 单桥 |
 | 11 | `zcode` · ZCode | 浏览器授权（官方 CLI 设备授权流 `/oauth/cli/init` → 轮询） | ✅（Anthropic Messages 协议族） | ✅ 静态白名单（远端接口保留） | ✅（单位 tokens） | ✅ | ✅ 双桥 |
 | 12 | `antigravity` · Antigravity（原 `gemini`，2026-11-01 改名） | 浏览器授权（Google OAuth，本地回调；只做 OAuth） | ✅ | ✅ 远端（`fetchAvailableModels`；claude/gpt-oss 家族放行，3.8 系分段合并，同名条目消歧） | ✅（分组配额桶：Gemini 组 + Claude·GPT 组——「Gemini」是上游 Cloud Code Assist 的实名桶前缀，非旧渠道名） | ❌（无每日签到） | ✅ 双桥 |
@@ -88,7 +88,7 @@
 | 对话 | 15（全部） | — |
 | 模型目录 | 远端目录 15 条 | 无静态兜底渠道（`orcaterm` 已删除；`antigravity` 等均接远端目录） |
 | 额度查询 | 点名集合：`codearts` `trae` `minimax` `commandcode` `autoclaw` `officeace` `antigravity` `cline` `loomy` `raccoon` `zcode` 有专用分支；`buddy` 系走 `productById()` 通用回落；`qoder` `qodercn` 无分支 |
-| 签到（claim） | **9 条**：codearts / buddy / qoder / qodercn / trae / minimax / zcode / officeace / autoclaw（loomy 签到已于 2026-11-06 移除） | 无 claim：workbuddy / cline / raccoon / antigravity / commandcode / loomy |
+| 签到（claim） | **10 条**：codearts / buddy / qoder / qodercn / trae / minimax / zcode / officeace / autoclaw / **raccoon**（2026-11-19 新增；loomy 已于 2026-11-06 移除） | 无 claim：workbuddy / cline / antigravity / commandcode / loomy |
 | 图片（双桥） | 8 条：`buddy` `workbuddy` `qoder` `qodercn` `cline` `raccoon` `antigravity` `zcode` | 单桥 3 条：`trae` `loomy` `minimax`；未接 9 条 |
 | 粘贴型登录 | 纯粘贴 0 条；卡片内嵌 1 条（`autoclaw` 短信）；`loomy` `raccoon` 仍为本地页 | — |
 
@@ -198,8 +198,12 @@
 - ⚠️ 上游扫码落地页当前仍 404：插件会探测并在面板上提示「扫码暂不可用」、默认切到短信登录；
   短信链路正常。页面恢复后无需发版（探测为 200 即自动启用）。
 - 模型目录：远端，`visible` 过滤 + 带倍率的展示名。
-- 额度：账单；**无签到端点**（每日 300 积分由服务端按日自动发放，账单里是 `daily_grant`），
-  另有「新手任务 / 桌面端登录奖励」走 `onboarding.claim`（一次性，幂等）。
+- 额度：账单。每日 300 积分由服务端 00:00 自动发放（账单 `biz_type: 'daily_grant'`），
+  **发放无端点**；但**续期有**：`GET /office/v3/setting_info` 是客户端打开时发的请求，
+  服务端借它判定「今天登录过」，把当日积分从「当日 24:00 清零」转为 7 天有效
+  （2026-11-19 实测账单：连续 7 天都是当日清零并作废，登录过的那天是 +7 天）。
+  故签到实现为积分续期，产出 `extended`（不是 `claimed` —— 余额一分未增）。
+  另有「新手任务 / 桌面端登录奖励」走 `onboarding.claim`（一次性 +3000，幂等）。
 - 图片：双桥（尤其需要：该网关按**请求体字节**设限，实测超 10MB 回 `HTTP_413`）。
 
 ### 3.9 MiniMax Code（`minimax`）

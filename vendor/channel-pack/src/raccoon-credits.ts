@@ -27,6 +27,7 @@
 import {
   RACCOON_POINTS_PREFIX,
   RACCOON_DESKTOP_PREFIX,
+  RACCOON_OFFICE_PREFIX,
   RACCOON_REQUEST_TIMEOUT_MS,
   raccoonHeaders,
   type RaccoonCredential,
@@ -255,6 +256,126 @@ export async function fetchRaccoonOnboardingStatus(
     break
   }
   return { claimed, points }
+}
+
+/**
+ * ★ 每日签到 = **把当天的 300 分从「当日 24:00 失效」续成「7 天有效」**。
+ *
+ * ## 为什么这不是普通签到
+ *
+ * 商汤的每日 300 分由服务端在 00:00 自动发放（账单 `biz_type: 'daily_grant'`），
+ * **不存在发放端点**。但那份积分默认当日 24:00 清零（账单 `expire_at` 为该日
+ * `23:59:59`），完成一次「登录态动作」后才转为 7 天有效。
+ *
+ * 实测（2026-11-19，用户提供的账单截图）：连续 7 天的 `daily_grant` 全部
+ * `有效期至当日 24:00` 并当晚作废，说明那些天都没有登录动作；而当天有一次
+ * 登录的 11-19 则显示 `有效期至 11-25 24:00`。所以「签到」在这里的产出不是
+ * 新积分，而是**把已有积分续命** —— 故返回 `extended` 而不是 `claimed`。
+ *
+ * 触发动作是 `GET /office/v3/setting_info`：那是客户端打开时发的请求，
+ * 服务端借它完成「今天登录过」的判定（参考实现 magpie 的
+ * `opencode-raccoon-auth` 也是调这一个端点，`index.mjs` 的 `performCheckIn`）。
+ *
+ * ## 幂等（对齐 codearts「不报 failed 免得进重试」的既有铁律）
+ *
+ * - 今天首次成功 → `extended`（附 `expiresAt`）
+ * - 今天已续过（账单里今天的 `daily_grant` 已是 7 天窗口）→ `already-claimed`
+ *
+ * 判据取**账单**而非本地账本：本地账本可能因换机/清数据而丢，账单是服务端事实。
+ */
+export async function claimRaccoonDailyCheckin(
+  product: RaccoonProduct,
+  credential: RaccoonCredential,
+  fetcher: typeof fetch = fetch,
+  nowMs: number = Date.now(),
+): Promise<ClaimOutcome> {
+  const today = beijingDayKey(nowMs)
+
+  // ① 先看账单：今天的 daily_grant 是否已经是 7 天窗口。
+  //    ⚠️ 读失败**不阻断**后续签到 —— 那只是判不了「是否已续」，
+  //    而 setting_info 幂等，照做一次无害（宁可多打一次也不漏签）。
+  let alreadyExtended: { expiresAt: string } | undefined
+  const bills = await requestJson(
+    `${product.apiBase}${RACCOON_POINTS_PREFIX}/bills?paging.limit=50&paging.offset=0`,
+    credential,
+    product,
+    { method: 'GET' },
+    fetcher,
+  )
+  if (bills.ok && bills.data !== undefined) {
+    const items = Array.isArray(bills.data.items) ? bills.data.items : []
+    for (const raw of items) {
+      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) continue
+      const item = raw as Record<string, unknown>
+      if (item.biz_type !== 'daily_grant') continue
+      const createdDay = String(item.created_at ?? '').slice(0, 10)
+      if (createdDay !== today) continue
+      const expireAt = typeof item.expire_at === 'string' ? item.expire_at : ''
+      // 当日清零态 = expire_at 落在**当天**（23:59:59）；超过当天即已续成多日窗口。
+      if (expireAt !== '' && expireAt.slice(0, 10) > today) alreadyExtended = { expiresAt: expireAt }
+      break
+    }
+  }
+  if (alreadyExtended !== undefined) {
+    return { kind: 'already-claimed', message: `今日已延期（有效期至 ${formatExpiry(alreadyExtended.expiresAt)}）` }
+  }
+
+  // ② 触发「今天登录过」的登录态动作。
+  const touched = await requestJson(
+    `${product.apiBase}${RACCOON_OFFICE_PREFIX}/setting_info`,
+    credential,
+    product,
+    { method: 'GET' },
+    fetcher,
+  )
+  if (!touched.ok) {
+    // 不做「已登录却报失败」的误判：业务码非 0 说明会话/风控有问题，
+    // 如实报 failed 让上层记一次真实异常（与 already-claimed 区分开）。
+    return { kind: 'failed', code: touched.code, message: touched.message || '商汤每日积分续期失败' }
+  }
+
+  // ③ 回读账单拿续期后的到期时间（写入明细，让用户看到「延到哪天」）。
+  //    ⚠️ 明细有延迟，读不到不算失败 —— 续期本身已经生效。
+  let expiresAt: string | undefined
+  const after = await requestJson(
+    `${product.apiBase}${RACCOON_POINTS_PREFIX}/bills?paging.limit=50&paging.offset=0`,
+    credential,
+    product,
+    { method: 'GET' },
+    fetcher,
+  ).catch(() => undefined)
+  if (after?.ok === true && after.data !== undefined) {
+    const items = Array.isArray(after.data.items) ? after.data.items : []
+    for (const raw of items) {
+      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) continue
+      const item = raw as Record<string, unknown>
+      if (item.biz_type !== 'daily_grant') continue
+      if (String(item.created_at ?? '').slice(0, 10) !== today) continue
+      if (typeof item.expire_at === 'string' && item.expire_at !== '') expiresAt = item.expire_at
+      break
+    }
+  }
+
+  return {
+    kind: 'extended',
+    message: expiresAt === undefined ? '积分已延期' : `积分已延期至 ${formatExpiry(expiresAt)}`,
+    ...expiresAt === undefined ? {} : { expiresAt },
+  }
+}
+
+/** 北京时区的 `YYYY-MM-DD`（服务端账单时间按 +08:00 计）。 */
+function beijingDayKey(nowMs: number): string {
+  return new Date(nowMs + 8 * 3600_000).toISOString().slice(0, 10)
+}
+
+/** `2026-11-25T23:59:59...` → `11-25 24:00`（用户截图里的写法）。 */
+function formatExpiry(iso: string): string {
+  const text = String(iso ?? '')
+  const day = text.slice(5, 10)
+  if (!/^\d{2}-\d{2}$/.test(day)) return text.slice(0, 10)
+  const time = text.slice(11, 16)
+  // 23:59:59 是「当日 24:00」的服务端表示，按用户习惯写法显示。
+  return time === '23:59' || time === '' ? `${day} 24:00` : `${day} ${time}`
 }
 
 /** 默认产品配置下的便捷包装（供 `RaccoonAuth` 调用）。 */

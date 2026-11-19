@@ -139,14 +139,19 @@ export const AUTO_CHECKIN_FILE = 'auto-checkin.json'
 const SCHEMA = 'dsh-codearts-auth/auto-checkin/v2'
 
 /**
- * 逐账号签到结果的**归一化四态**。
+ * 逐账号签到结果的**归一化五态**。
  *
  * 刻意不复用 `ClaimOutcome.kind` 的字面量：那一组是**渠道产出侧**的语义
  * （`inactive` 还带 `actionRequired`），而这里要的是**展示侧**只需要区分的
- * 四类。多一个 `skipped`：该渠道今天压根没跑（无签到接口 / 排除表摘掉），
+ * 几类。多一个 `skipped`：该渠道今天压根没跑（无签到接口 / 排除表摘掉），
  * 与「跑了但没领到」不是一回事。
+ *
+ * 多一个 `extended`（2026-11-19）：**没领到新积分，但把已有积分续期了**。
+ * 只有商汤小浣熊产出这个态 —— 它的每日 300 分是服务端自动发放，签到只
+ * 延长有效期（当日 24:00 → 7 天）。与 `claimed` 分开是因为后者会渲染
+ * 「+300」徽章，而余额一分未增。
  */
-export type AutoCheckinResultOutcome = 'claimed' | 'already-claimed' | 'failed' | 'skipped'
+export type AutoCheckinResultOutcome = 'claimed' | 'extended' | 'already-claimed' | 'failed' | 'skipped'
 
 /**
  * 一条**逐账号**签到明细（表格的一行）。
@@ -324,7 +329,14 @@ function sanitizeChannels(raw: unknown): Array<{ provider: string; text: string 
 }
 
 /** 逐账号明细的合法 `outcome`（脏值一律丢弃整行，见 `sanitizeResults`）。 */
-const RESULT_OUTCOMES: ReadonlyArray<AutoCheckinResultOutcome> = ['claimed', 'already-claimed', 'failed', 'skipped']
+/**
+ * 允许落盘并回读的 outcome 白名单。
+ *
+ * ⚠️ **新增任何 outcome 都必须同步加进这里**（`sanitizeResults` 对未知值
+ * 「丢整行」而不是回落）。漏改的表现是：当轮界面显示正常，但文档回读后
+ * 该行凭空消失 —— 2026-11-19 加 `extended` 时特意核对过这一点。
+ */
+const RESULT_OUTCOMES: ReadonlyArray<AutoCheckinResultOutcome> = ['claimed', 'extended', 'already-claimed', 'failed', 'skipped']
 
 /** 逐账号明细的条数上限（20 渠道 × 少量账号，留余量；脏数据不该撑大文档）。 */
 const MAX_RESULT_ENTRIES = 120
@@ -916,8 +928,13 @@ function emptyTotals(): RunTotals {
 }
 
 /**
- * 「不支持每日签到」的判据：`credits.claimAll` 对 cline / raccoon / workbuddy
- * 返回的**显式**错误文案（这三条分支都不发上游请求）。
+ * 「不支持每日签到」的判据：`credits.claimAll` 对 cline / workbuddy
+ * 返回的**显式**错误文案（这两条分支都不发上游请求）。
+ *
+ * ⚠️ **raccoon 已于 2026-11-19 从此表移除**：它现在有真实的续期实现
+ *（`GET /office/v3/setting_info`，把当日 300 分续成 7 天），不再返回
+ * 「不支持」文案。若某天它的凭据失效，那是真失败（该进重试），不该被
+ * 这里的「跳过」吃掉。
  *
  * ⚠️ 兜底认 `unsupported provider`：那是 `productById` 找不到产品时的文案，
  * 语义同样是「这个渠道没有可用的签到实现」，计成失败只会制造假警报。
@@ -1103,9 +1120,10 @@ export function aggregateAccountRows(
     const kind = outcome.kind
     // 每条 outcome 归一到四态；`inactive` 不算异常（今天没东西可领）。
     const mapped: AutoCheckinResultOutcome = kind === 'claimed' ? 'claimed'
-      : kind === 'already-claimed' ? 'already-claimed'
-        : kind === 'failed' ? 'failed'
-          : 'skipped'
+      : kind === 'extended' ? 'extended'
+        : kind === 'already-claimed' ? 'already-claimed'
+          : kind === 'failed' ? 'failed'
+            : 'skipped'
     const amount = kind === 'claimed' ? (Number.isFinite(outcome.credit) ? outcome.credit : 0) : 0
     const unit = kind === 'claimed' && outcome.unit === 'token' ? 'token' : 'credit'
     const message = kind === 'claimed' ? undefined
@@ -1120,8 +1138,12 @@ export function aggregateAccountRows(
       continue
     }
     // 优先级：claimed > already-claimed > failed > skipped
+    // `extended` 排在 `claimed` 之下、`already-claimed` 之上：它确实做了事
+    // （续了期），但没产出新额度，故不该盖过真正的领取成功。
     const rank = (value: AutoCheckinResultOutcome): number =>
-      value === 'claimed' ? 3 : value === 'already-claimed' ? 2 : value === 'failed' ? 1 : 0
+      value === 'claimed' ? 4
+        : value === 'extended' ? 3
+          : value === 'already-claimed' ? 2 : value === 'failed' ? 1 : 0
     if (rank(mapped) > rank(previous.outcome)) {
       byAccount.set(key, {
         ...previous,

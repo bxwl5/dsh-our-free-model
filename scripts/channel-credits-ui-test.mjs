@@ -125,8 +125,12 @@ export async function verifyChannelCreditsUi() {
     subscribe()
     return { calls, errors, cells, button, text, tree, cleanup, events }
   }
-  const claimable = new Set(['codearts', 'buddy', 'qoder', 'qodercn', 'trae', 'minimax', 'zcode'])
-  for (const provider of [...claimable, 'workbuddy', 'cline', 'raccoon', 'antigravity', 'commandcode']) {
+  // 2026-11-19：raccoon 移入 `claimable` —— 它现在有真实的签到实现
+  //（`GET /office/v3/setting_info`，把当日 300 分续成 7 天，产出 `extended`）。
+  // 此前它被列为「无签到能力」，是因为当时判定「无端点、服务端自动发放」；
+  // 发放确实无端点，但续期有 —— 不做就等于每天白丢 300 分。
+  const claimable = new Set(['codearts', 'buddy', 'qoder', 'qodercn', 'trae', 'minimax', 'zcode', 'raccoon'])
+  for (const provider of [...claimable, 'workbuddy', 'cline', 'antigravity', 'commandcode']) {
     const app = mount(provider, async () => ({ accounts: [] }))
     await settle()
     assert.equal(app.calls[0].method, 'credits.balances', `${provider} 必须查询已有后端余额能力`)

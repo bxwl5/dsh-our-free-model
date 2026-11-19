@@ -432,6 +432,11 @@ window.__ModuleLoader__.load({
         'chan.checkin.already': '今日已领',
         'chan.checkin.failed': '领取异常',
         'chan.checkin.skipped': '无可领',
+        // ★ 2026-11-19：商汤小浣熊的「签到」不产新积分，只把当天 300 分
+        //   从「当日 24:00 失效」续成 7 天。单列一组，绝不用「领取成功」
+        //   —— 那会渲染 +300 徽章，而余额一分未增。
+        'chan.checkin.extended': '积分已延期',
+        'chan.auto.summaryExtended': '，{count} 个积分已延期',
         'nav.tab.saver': '省 Token',
         'nav.tab.routing': '路由',
         'agg.enabled': '启用',
@@ -930,6 +935,8 @@ window.__ModuleLoader__.load({
         'chan.checkin.already': 'Already claimed',
         'chan.checkin.failed': 'Failed',
         'chan.checkin.skipped': 'Nothing to claim',
+        'chan.checkin.extended': 'Points extended',
+        'chan.auto.summaryExtended': ', {count} extended',
         'nav.tab.saver': 'Token savers',
         'nav.tab.routing': 'Routing',
         'agg.enabled': 'Enabled',
@@ -3228,7 +3235,11 @@ window.__ModuleLoader__.load({
       cline: { unit: 'dollars' },
       // loomy 签到已移除（2026-11-06）：只剩余额查询（credits.balances）。
       loomy: {},
-      raccoon: {},
+      // 2026-11-19：商汤的「签到」= 把当天 300 分从「当日 24:00 失效」续成
+      // 7 天（`GET /office/v3/setting_info`，不产新积分）。此前写 `{}` 是因为
+      // 当时判定「无签到端点、服务端自动发放」—— 发放确实无端点，但**续期**有，
+      // 不做就等于每天白丢 300 分（用户实测账单：连续 7 天全部当日清零）。
+      raccoon: { claim: true },
       minimax: { claim: true, status: true },
       zcode: { claim: true, unit: 'tokens' },
       antigravity: { unit: 'quota', quota: true },
@@ -4413,7 +4424,17 @@ window.__ModuleLoader__.load({
                   : null
               }
               const claimedRows = rows.filter(row => row.outcome === 'claimed')
-              const channelCount = new Set(claimedRows.map(row => row.provider)).size
+              /**
+               * ★ 2026-11-19：`extended`（商汤的「积分续期」）也要计入「签到过的
+               * 渠道数」，但**单独成句**（用户 2026-11-19 定稿的文案）：
+               *   今日 3 个渠道签到，2 个账号领取 600分，1 个积分已延期
+               *
+               * ⚠️ 渠道数取 claimed + extended 的并集：只说 claimed 的话，
+               * 「只有商汤一个渠道在续期」那天会显示成「今日 0 个渠道签到」。
+               */
+              const extendedRows = rows.filter(row => row.outcome === 'extended')
+              const activeRows = [...claimedRows, ...extendedRows]
+              const channelCount = new Set(activeRows.map(row => row.provider)).size
               // 按单位分别累加：token 与积分不能相加（见 credits.ts 的 totalByUnit 说明）。
               let credit = 0; let token = 0
               for (const row of claimedRows) {
@@ -4425,12 +4446,17 @@ window.__ModuleLoader__.load({
                 credit > 0 ? `${credit.toLocaleString()}${t('chan.unit.credit')}` : '',
                 token > 0 ? `${formatTokens(token)}token` : '',
               ].filter(Boolean).join(' ')
+              const extendedTail = extendedRows.length === 0
+                ? ''
+                : t('chan.auto.summaryExtended').replace('{count}', String(extendedRows.length))
               const text = amounts === ''
-                ? t('chan.auto.summaryNone').replace('{channels}', String(channelCount))
+                // 没有实领时：若只有续期，说「N 个渠道签到，M 个积分已延期」；
+                // 两者都没有才退回旧的「未领到积分」。
+                ? t('chan.auto.summaryNone').replace('{channels}', String(channelCount)) + extendedTail
                 : t('chan.auto.summary')
                   .replace('{channels}', String(channelCount))
                   .replace('{accounts}', String(claimedRows.length))
-                  .replace('{amounts}', amounts)
+                  .replace('{amounts}', amounts) + extendedTail
               return h('span', { className: 'ofm_note' }, text)
             })(),
             /*
@@ -4682,6 +4708,9 @@ window.__ModuleLoader__.load({
       const abnormal = results.filter(row => row.outcome === 'failed')
       // 「今日已领」既不是收益也不是异常：单独一组，避免用户以为今天白跑了。
       const already = results.filter(row => row.outcome === 'already-claimed')
+      // ★ 2026-11-19：`extended` = 没领到新积分，但把已有积分续了期（商汤）。
+      //   单独一组，且**不给金额徽章** —— 见 `chan.checkin.extended` 的注释。
+      const extended = results.filter(row => row.outcome === 'extended')
       const skipped = results.filter(row => row.outcome === 'skipped')
 
       /**
@@ -4720,6 +4749,7 @@ window.__ModuleLoader__.load({
 
       const rows = [
         ...group(claimed, t('chan.checkin.claimed'), 'claimed'),
+        ...group(extended, t('chan.checkin.extended'), 'already'),
         ...group(already, t('chan.checkin.already'), 'already'),
         ...group(abnormal, t('chan.checkin.failed'), 'failed'),
         ...group(skipped, t('chan.checkin.skipped'), 'skipped'),

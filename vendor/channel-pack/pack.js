@@ -47210,6 +47210,7 @@ import { LlmAdapter as LlmAdapter10, LlmError as LlmError14, ReasoningEffortId a
 var RACCOON_API_BASE = "https://xiaohuanxiong.com";
 var RACCOON_POINTS_PREFIX = "/api/web/points/v1";
 var RACCOON_DESKTOP_PREFIX = "/api/web/desktop/v1";
+var RACCOON_OFFICE_PREFIX = "/api/web/office/v3";
 var RACCOON_PHONE_CIPHER_SECRET = "senseraccoon2023";
 var RACCOON_REQUEST_TIMEOUT_MS = 6e4;
 var RACCOON_LOGIN_TIMEOUT_MS = 5 * 60 * 1e3;
@@ -52002,6 +52003,77 @@ async function fetchRaccoonOnboardingStatus(product, credential, fetcher = fetch
   }
   return { claimed, points };
 }
+async function claimRaccoonDailyCheckin(product, credential, fetcher = fetch, nowMs = Date.now()) {
+  const today = beijingDayKey(nowMs);
+  let alreadyExtended;
+  const bills = await requestJson(
+    `${product.apiBase}${RACCOON_POINTS_PREFIX}/bills?paging.limit=50&paging.offset=0`,
+    credential,
+    product,
+    { method: "GET" },
+    fetcher
+  );
+  if (bills.ok && bills.data !== void 0) {
+    const items = Array.isArray(bills.data.items) ? bills.data.items : [];
+    for (const raw of items) {
+      if (typeof raw !== "object" || raw === null || Array.isArray(raw)) continue;
+      const item = raw;
+      if (item.biz_type !== "daily_grant") continue;
+      const createdDay = String(item.created_at ?? "").slice(0, 10);
+      if (createdDay !== today) continue;
+      const expireAt = typeof item.expire_at === "string" ? item.expire_at : "";
+      if (expireAt !== "" && expireAt.slice(0, 10) > today) alreadyExtended = { expiresAt: expireAt };
+      break;
+    }
+  }
+  if (alreadyExtended !== void 0) {
+    return { kind: "already-claimed", message: `\u4ECA\u65E5\u5DF2\u5EF6\u671F\uFF08\u6709\u6548\u671F\u81F3 ${formatExpiry(alreadyExtended.expiresAt)}\uFF09` };
+  }
+  const touched = await requestJson(
+    `${product.apiBase}${RACCOON_OFFICE_PREFIX}/setting_info`,
+    credential,
+    product,
+    { method: "GET" },
+    fetcher
+  );
+  if (!touched.ok) {
+    return { kind: "failed", code: touched.code, message: touched.message || "\u5546\u6C64\u6BCF\u65E5\u79EF\u5206\u7EED\u671F\u5931\u8D25" };
+  }
+  let expiresAt;
+  const after = await requestJson(
+    `${product.apiBase}${RACCOON_POINTS_PREFIX}/bills?paging.limit=50&paging.offset=0`,
+    credential,
+    product,
+    { method: "GET" },
+    fetcher
+  ).catch(() => void 0);
+  if (after?.ok === true && after.data !== void 0) {
+    const items = Array.isArray(after.data.items) ? after.data.items : [];
+    for (const raw of items) {
+      if (typeof raw !== "object" || raw === null || Array.isArray(raw)) continue;
+      const item = raw;
+      if (item.biz_type !== "daily_grant") continue;
+      if (String(item.created_at ?? "").slice(0, 10) !== today) continue;
+      if (typeof item.expire_at === "string" && item.expire_at !== "") expiresAt = item.expire_at;
+      break;
+    }
+  }
+  return {
+    kind: "extended",
+    message: expiresAt === void 0 ? "\u79EF\u5206\u5DF2\u5EF6\u671F" : `\u79EF\u5206\u5DF2\u5EF6\u671F\u81F3 ${formatExpiry(expiresAt)}`,
+    ...expiresAt === void 0 ? {} : { expiresAt }
+  };
+}
+function beijingDayKey(nowMs) {
+  return new Date(nowMs + 8 * 36e5).toISOString().slice(0, 10);
+}
+function formatExpiry(iso) {
+  const text = String(iso ?? "");
+  const day2 = text.slice(5, 10);
+  if (!/^\d{2}-\d{2}$/.test(day2)) return text.slice(0, 10);
+  const time = text.slice(11, 16);
+  return time === "23:59" || time === "" ? `${day2} 24:00` : `${day2} ${time}`;
+}
 
 // vendor/channel-pack/src/raccoon-oauth.ts
 function parseEnvelope2(payload, status) {
@@ -52685,6 +52757,19 @@ var RaccoonAuth = class extends Service8 {
   /** 领取一次性登录奖励。 */
   async claimLoginReward(credential) {
     return claimRaccoonLoginReward(this.product, credential, this.fetchImpl);
+  }
+  /**
+   * 每日签到 = 把当天 300 分从「当日 24:00 失效」续成 7 天有效。
+   *
+   * ⚠️ 与 `claimLoginReward` 是**两个不同的东西**，别看错：
+   * - `claimLoginReward`：桌面端首次登录一次性 +3000（`POST …/login/points/grant`）
+   * - `claimDailyCheckin`：每天把 300 分续命（`GET …/setting_info`，不产新积分）
+   *
+   * 返回 `extended`（今天首次续期，带 `expiresAt`）或 `already-claimed`
+   *（今天已续），见 `claimRaccoonDailyCheckin` 的幂等说明。
+   */
+  async claimDailyCheckin(credential) {
+    return claimRaccoonDailyCheckin(this.product, credential, this.fetchImpl);
   }
   /** 查询一次性登录奖励是否已领。 */
   async fetchOnboardingStatus(credential) {
@@ -58829,6 +58914,9 @@ function computeClaimSummary(outcomes) {
         summary.alreadyClaimed += 1;
         if (outcome.coversToday !== false) summary.coversToday += 1;
         break;
+      case "extended":
+        if (outcome.coversToday !== false) summary.coversToday += 1;
+        break;
       case "inactive":
         summary.inactive += 1;
         break;
@@ -63574,7 +63662,7 @@ function sanitizeChannels(raw) {
   }
   return out;
 }
-var RESULT_OUTCOMES = ["claimed", "already-claimed", "failed", "skipped"];
+var RESULT_OUTCOMES = ["claimed", "extended", "already-claimed", "failed", "skipped"];
 var MAX_RESULT_ENTRIES = 120;
 function sanitizeResults(raw) {
   if (!Array.isArray(raw)) return [];
@@ -63849,7 +63937,7 @@ function aggregateAccountRows(provider, results) {
     const name2 = typeof row.nickname === "string" && row.nickname !== "" ? row.nickname : row.accountId;
     const previous = byAccount.get(key);
     const kind = outcome.kind;
-    const mapped = kind === "claimed" ? "claimed" : kind === "already-claimed" ? "already-claimed" : kind === "failed" ? "failed" : "skipped";
+    const mapped = kind === "claimed" ? "claimed" : kind === "extended" ? "extended" : kind === "already-claimed" ? "already-claimed" : kind === "failed" ? "failed" : "skipped";
     const amount = kind === "claimed" ? Number.isFinite(outcome.credit) ? outcome.credit : 0 : 0;
     const unit = kind === "claimed" && outcome.unit === "token" ? "token" : "credit";
     const message2 = kind === "claimed" ? void 0 : typeof outcome.message === "string" && outcome.message !== "" ? outcome.message : void 0;
@@ -63865,7 +63953,7 @@ function aggregateAccountRows(provider, results) {
       });
       continue;
     }
-    const rank = (value) => value === "claimed" ? 3 : value === "already-claimed" ? 2 : value === "failed" ? 1 : 0;
+    const rank = (value) => value === "claimed" ? 4 : value === "extended" ? 3 : value === "already-claimed" ? 2 : value === "failed" ? 1 : 0;
     if (rank(mapped) > rank(previous.outcome)) {
       byAccount.set(key, {
         ...previous,
@@ -65882,13 +65970,12 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           };
         }
         if (req.provider === RACCOON.id) {
-          return {
-            ok: false,
-            error: {
-              code: "bad-request",
-              message: "Raccoon Work \u4E0D\u652F\u6301\u6BCF\u65E5\u7B7E\u5230\uFF08\u79EF\u5206\u7531\u670D\u52A1\u7AEF\u81EA\u52A8\u53D1\u653E\uFF0C\u5956\u52B1\u89C1\u300C\u65B0\u624B\u4EFB\u52A1\u300D\uFF09"
-            }
-          };
+          const value2 = await collectClaimResults(accounts, void 0, {
+            resolve: (ref) => ctx.credentials.resolve(ref),
+            claim: (credential) => raccoon.claimDailyCheckin(credential),
+            warn: (msg) => ctx.logger?.warn?.(msg)
+          });
+          return { ok: true, value: value2 };
         }
         if (req.provider === MINIMAX.id) {
           const value2 = await collectClaimResults(accounts, void 0, {

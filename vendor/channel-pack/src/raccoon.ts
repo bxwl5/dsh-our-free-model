@@ -32,6 +32,15 @@ export const RACCOON_LLM_PREFIX = '/api/web/llm/v2'
 export const RACCOON_POINTS_PREFIX = '/api/web/points/v1'
 /** 桌面端端点前缀（含一次性登录奖励）。 */
 export const RACCOON_DESKTOP_PREFIX = '/api/web/desktop/v1'
+/**
+ * 办公产品端点前缀（2026-11-19）。
+ *
+ * `GET /office/v3/setting_info` 是**每日积分续期的唯一入口**：它是客户端
+ * 打开时发的请求，服务端借它判定「今天登录过」，从而把当日 300 分
+ * （默认当日 24:00 失效）转为 7 天有效。它同时也能回读 `available_points`，
+ * 供 `/points/v1/balance` 返回 403 时兜底（见 `availablePoints` 的注释）。
+ */
+export const RACCOON_OFFICE_PREFIX = '/api/web/office/v3'
 
 /**
  * 手机号传输层加密密钥。

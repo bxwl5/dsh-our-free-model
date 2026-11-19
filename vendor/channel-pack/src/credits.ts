@@ -162,6 +162,24 @@ export type ClaimOutcome =
        */
       unit?: 'token' | 'credit'
     })
+  /**
+   * ★ `extended`（2026-11-19 新增）：**没有新增积分，但把已有积分续了期**。
+   *
+   * 商汤小浣熊的每日 300 分是服务端按日自动发放的，默认当日 24:00 失效
+   * （账单 `expire_at` = 当日 23:59:59）；当天完成一次登录态动作后，该份
+   * 积分转为 7 天有效。所以「签到」在那里不产出新积分，只延长寿命。
+   *
+   * ⚠️ **不得映射成 `claimed`**：`claimed` 会渲染成 `+300 积分` 的绿色徽章，
+   * 让用户以为凭空多了 300 分 —— 实际余额一分未增。前端为它单列一组
+   * 「积分已延期」。
+   * ⚠️ **不得映射成 `already-claimed`**：那一组是「今天领过了」，而这里
+   * 今天恰恰是**第一次**把当日池转成 7 天池。
+   *
+   * 幂等约定（对齐 codearts 的「不报 failed 免得进重试」）：同一天第二次
+   * 及以后返回 `already-claimed`（`今日已延期`），故 `extended` 只在当天
+   * 首次出现 —— 判据见 `claimRaccoonDailyCheckin`。
+   */
+  | (ClaimOutcomeCommon & { kind: 'extended'; message: string; expiresAt?: string })
   | (ClaimOutcomeCommon & { kind: 'already-claimed'; message: string })
   | (ClaimOutcomeCommon & { kind: 'inactive'; message: string; actionRequired?: boolean })
   | (ClaimOutcomeCommon & { kind: 'failed'; code: number; message: string })

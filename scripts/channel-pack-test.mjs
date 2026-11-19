@@ -392,6 +392,9 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   await verifyCredentialFreshness()
   const { verifyRaccoonLogin } = await import('./raccoon-login-test.mjs')
   await verifyRaccoonLogin()
+  // 商汤「签到 = 积分续期」（2026-11-19）：幂等/extended/失败三条分支 + 汇总口径
+  const { verifyRaccoonDailyCheckin } = await import('./raccoon-daily-checkin-test.mjs')
+  await verifyRaccoonDailyCheckin()
  // OAuth 渠道后台登录失败必须让 login.poll 拿到可读原因（本用例只用
   // directLane 注入的本地替身上游，不出网）。
   const { verifyChannelOauthFailure } = await import('./channel-oauth-failure-test.mjs')
