@@ -72,7 +72,7 @@
 | 5 | `qodercn` · Qoder 中国版 | 浏览器授权（同上，读 `~/.qoder-cn`） | ✅ | ✅ 本机客户端解密目录 | ✅ | ✅ | ✅ 双桥 |
 | 6 | `trae` · TRAE | 浏览器授权（官方登录页，手机号） | ✅ | ✅ 远端 | ✅ | ✅ | ✅ 单桥 |
 | 7 | `cline` · Cline | 浏览器授权（Cline OAuth） | ✅ | ✅ 内嵌目录 + models.dev 远端补充 | ✅（单位 dollars） | ❌（无签到端点） | ✅ 双桥 |
-| 8 | `loomy` · Loomy | 本地页微信扫码；短信验证码为备用路径 | ✅ | ✅ 远端 | ✅ | ❌（一键签到已于 2026-11-06 移除） | ✅ 单桥 |
+| 8 | `loomy` · Loomy | **卡片内嵌短信验证码**（2026-11-20 起；微信扫码链路失效已下线，代码保留未接线） | ✅ | ✅ 远端 | ✅ | ❌（一键签到已于 2026-11-06 移除） | ✅ 单桥 |
 | 9 | `raccoon` · Raccoon Work | 本地页微信扫码 + 短信双路径（不依赖官方客户端回调） | ✅ | ✅ 远端 | ✅ | ✅ **积分续期**（不产新积分：把当日 300 分从「当日 24:00 清零」续成 7 天，产出 `extended`） | ✅ 双桥 |
 | 10 | `minimax` · MiniMax Code | OAuth 设备码 + PKCE | ✅（Anthropic Messages 协议族） | ✅ 远端 | ✅ | ✅ | ✅ 单桥 |
 | 11 | `zcode` · ZCode | 浏览器授权（官方 CLI 设备授权流 `/oauth/cli/init` → 轮询） | ✅（Anthropic Messages 协议族） | ✅ 静态白名单（远端接口保留） | ✅（单位 tokens） | ✅ | ✅ 双桥 |
@@ -90,7 +90,7 @@
 | 额度查询 | 点名集合：`codearts` `trae` `minimax` `commandcode` `autoclaw` `officeace` `antigravity` `cline` `loomy` `raccoon` `zcode` 有专用分支；`buddy` 系走 `productById()` 通用回落；`qoder` `qodercn` 无分支 |
 | 签到（claim） | **10 条**：codearts / buddy / qoder / qodercn / trae / minimax / zcode / officeace / autoclaw / **raccoon**（2026-11-19 新增；loomy 已于 2026-11-06 移除） | 无 claim：workbuddy / cline / antigravity / commandcode / loomy |
 | 图片（双桥） | 8 条：`buddy` `workbuddy` `qoder` `qodercn` `cline` `raccoon` `antigravity` `zcode` | 单桥 3 条：`trae` `loomy` `minimax`；未接 9 条 |
-| 粘贴型登录 | 纯粘贴 0 条；卡片内嵌 1 条（`autoclaw` 短信）；`loomy` `raccoon` 仍为本地页 | — |
+| 粘贴型登录 | 纯粘贴 0 条；卡片内嵌 **2 条**（`autoclaw` 短信、`loomy` 短信，2026-11-20 起共用同一套两段式 UI）；`raccoon` 仍为本地页 | — |
 
 ---
 

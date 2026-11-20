@@ -61663,6 +61663,101 @@ function buildChannelAccountRegistry(_io) {
   return new Map([...byId].map(([id, account]) => [id, Object.freeze(account)]));
 }
 
+// vendor/channel-pack/src/loomy-sms-login.ts
+var LOOMY_SMS_COOLDOWN_MS = 6e4;
+var LOOMY_SMS_LOGIN_TIMEOUT_MS = 5 * 6e4;
+function normalizeLoomyPhone(raw) {
+  const text = String(raw ?? "").replace(/[\s-]/g, "");
+  const digits = text.startsWith("+86") ? text.slice(3) : text.startsWith("86") && text.length === 13 ? text.slice(2) : text;
+  return /^1[3-9]\d{9}$/.test(digits) ? digits : "";
+}
+function startLoomySmsLoginFlow(options) {
+  const fetcher = options.fetcher ?? fetch;
+  const state = {
+    /** 已验证可用、已收到码的手机号；`''` = 尚未成功发码。 */
+    phone: "",
+    /** 该手机号对应的上游 msgid。 */
+    msgid: "",
+    /** 上次发码成功的时间戳（冷却判据）。 */
+    lastSentAt: 0
+  };
+  let resolveResult = () => {
+  };
+  let rejectResult = () => {
+  };
+  const result = new Promise((resolve2, reject) => {
+    resolveResult = resolve2;
+    rejectResult = reject;
+  });
+  result.catch(() => {
+  });
+  let settled = false;
+  const settleOk = (value) => {
+    if (settled) return;
+    settled = true;
+    resolveResult(value);
+  };
+  const settleErr = (error) => {
+    if (settled) return;
+    settled = true;
+    rejectResult(error);
+  };
+  const sendCode = async (phone) => {
+    const elapsed = Date.now() - state.lastSentAt;
+    if (state.lastSentAt !== 0 && elapsed < LOOMY_SMS_COOLDOWN_MS) {
+      const wait = Math.ceil((LOOMY_SMS_COOLDOWN_MS - elapsed) / 1e3);
+      return { ok: false, message: `\u53D1\u9001\u8FC7\u4E8E\u9891\u7E41\uFF0C\u8BF7 ${wait} \u79D2\u540E\u518D\u8BD5` };
+    }
+    const normalized = normalizeLoomyPhone(phone);
+    if (normalized === "") {
+      return { ok: false, message: "\u8BF7\u8F93\u5165\u6709\u6548\u7684 11 \u4F4D\u624B\u673A\u53F7\uFF08\u53EF\u5E26 +86\uFF09" };
+    }
+    try {
+      const msgid = await sendLoomySmsCode(normalized, options.product, fetcher);
+      state.phone = normalized;
+      state.msgid = msgid;
+      state.lastSentAt = Date.now();
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) };
+    }
+  };
+  const verify = async (code) => {
+    if (state.phone === "" || state.msgid === "") return { ok: false, message: "\u8BF7\u5148\u83B7\u53D6\u624B\u673A\u9A8C\u8BC1\u7801" };
+    const trimmed = typeof code === "string" ? code.trim() : "";
+    if (!/^\d{4,8}$/.test(trimmed)) return { ok: false, message: "\u8BF7\u8F93\u5165\u6536\u5230\u7684\u9A8C\u8BC1\u7801" };
+    try {
+      const login = await options.complete(
+        state.phone,
+        trimmed,
+        state.msgid,
+        options.refName === void 0 ? {} : { refName: options.refName }
+      );
+      settleOk(login);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) };
+    }
+  };
+  let closed = false;
+  const close = async () => {
+    if (closed) return;
+    closed = true;
+    settleErr(new Error("loomy: \u767B\u5F55\u6D41\u7A0B\u5DF2\u5173\u95ED"));
+  };
+  const timeoutMs = options.timeoutMs ?? LOOMY_SMS_LOGIN_TIMEOUT_MS;
+  const timer = setTimeout(() => {
+    settleErr(new Error(`loomy: \u767B\u5F55\u8D85\u65F6\uFF08${Math.round(timeoutMs / 1e3)} \u79D2\u5185\u672A\u5B8C\u6210\uFF09`));
+  }, timeoutMs);
+  timer.unref?.();
+  void result.catch(() => {
+  }).finally(() => {
+    clearTimeout(timer);
+    closed = true;
+  });
+  return { sendCode, verify, result, close };
+}
+
 // vendor/channel-pack/src/channel-pack-rpc.ts
 init_commandcode_product();
 init_autoclaw_product();
@@ -64401,6 +64496,8 @@ function defaultSchedule(fn, ms) {
 var CHANNEL_PACK_API_PATH = "/api/channel-pack";
 var AUTOCLAW_SEND_PATH = "/api/channel-pack/login/autoclaw/send";
 var AUTOCLAW_VERIFY_PATH = "/api/channel-pack/login/autoclaw/verify";
+var LOOMY_SMS_SEND_PATH = "/api/channel-pack/login/loomy/send";
+var LOOMY_SMS_VERIFY_PATH = "/api/channel-pack/login/loomy/verify";
 var CHANNEL_PACK_ENDPOINT = "channel-pack";
 function shortId() {
   const buf = new Uint8Array(4);
@@ -64642,6 +64739,40 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
   });
   connection.fetch.register({
     path: AUTOCLAW_VERIFY_PATH,
+    methods: ["POST"],
+    requestBody: "buffered",
+    async fetch(request2) {
+      if (request2.method !== "POST") return embeddedJson({ error: "method not allowed" }, 405);
+      const flowId = new URL(request2.url ?? "/", "http://127.0.0.1").searchParams.get("flow") ?? "";
+      const flow = flowId === "" ? void 0 : embeddedLoginFlows.get(flowId);
+      if (flow === void 0 || !("verify" in flow)) return embeddedJson({ error: "not found" }, 404);
+      let body = {};
+      try {
+        body = await request2.json();
+      } catch {
+      }
+      return embeddedJson(await flow.verify(typeof body.code === "string" ? body.code : ""));
+    }
+  });
+  connection.fetch.register({
+    path: LOOMY_SMS_SEND_PATH,
+    methods: ["POST"],
+    requestBody: "buffered",
+    async fetch(request2) {
+      if (request2.method !== "POST") return embeddedJson({ error: "method not allowed" }, 405);
+      const flowId = new URL(request2.url ?? "/", "http://127.0.0.1").searchParams.get("flow") ?? "";
+      const flow = flowId === "" ? void 0 : embeddedLoginFlows.get(flowId);
+      if (flow === void 0 || !("sendCode" in flow)) return embeddedJson({ error: "not found" }, 404);
+      let body = {};
+      try {
+        body = await request2.json();
+      } catch {
+      }
+      return embeddedJson(await flow.sendCode(typeof body.phone === "string" ? body.phone : ""));
+    }
+  });
+  connection.fetch.register({
+    path: LOOMY_SMS_VERIFY_PATH,
     methods: ["POST"],
     requestBody: "buffered",
     async fetch(request2) {
@@ -65183,24 +65314,20 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
           });
           return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } };
         } else if (provider === LOOMY.id) {
+          const flowId = shortId();
+          const flow = startLoomySmsLoginFlow({
+            product: loomy.product,
+            // 复用 LoomyAuth 的完整登录语义（换 session + 写凭据 + 回填账号池）。
+            complete: (phone, code, msgid, opts) => loomy.loginWithSmsCode(phone, code, msgid, { ...opts, accountId: id, pool }),
+            refName
+          });
           await addPlaceholderAccount(id, LOOMY.id, refName);
-          let started;
-          try {
-            started = await loomy.startWechatLogin();
-          } catch (error) {
-            void pool.removeAccount(id).catch(() => {
-            });
-            const reason = error instanceof Error ? error.message : String(error);
-            throw new Error(`\u65E0\u6CD5\u542F\u52A8 Loomy \u5FAE\u4FE1\u767B\u5F55\uFF08\u83B7\u53D6\u4E8C\u7EF4\u7801\u5931\u8D25\uFF09\uFF1A${reason}`);
-          }
-          started.result.then(async (login) => {
-            const result = await loomy.persistWechatLogin(login, { refName });
-            const credential = JSON.parse(result.access);
+          embeddedLoginFlows.set(flowId, flow);
+          flow.result.then(async (login) => {
+            const credential = JSON.parse(login.access);
             await pool.updateAccount(id, {
-              // 用手机号尾号让多账号可区分（Loomy 无独立昵称接口；
-              // 微信昵称可能有，优先用它）。
-              nickname: login.nickname !== void 0 && login.nickname.length > 0 ? login.nickname : credential.phone.length >= 4 ? `Loomy ${credential.phone.slice(-4)}` : id,
-              expiresAt: result.expires > 0 ? result.expires : void 0,
+              nickname: credential.phone.length >= 4 ? `Loomy ${credential.phone.slice(-4)}` : id,
+              expiresAt: login.expires > 0 ? login.expires : void 0,
               // ⚠️ 恒 false：Loomy 无续期端点。
               refreshable: false
             });
@@ -65214,12 +65341,12 @@ function registerChannelPackEndpoints(ctx, pool, codearts, buddy, workbuddy, qod
               ctx.logger?.warn?.(`[channel-pack] ${LOOMY.id} \u65B0\u624B\u4EFB\u52A1\u81EA\u52A8\u9886\u53D6\u5931\u8D25\uFF08\u4E0D\u5F71\u54CD\u767B\u5F55\uFF09\uFF1A${error instanceof Error ? error.message : String(error)}`);
             }
           }).catch((error) => {
-            ctx.logger.warn(`[channel-pack] background ${LOOMY.id} wechat login failed for ${id}: ${String(error)}`);
+            ctx.logger.warn(`[channel-pack] background ${LOOMY.id} sms login failed for ${id}: ${String(error)}`);
             recordLoginFailure(id, error);
             void pool.removeAccount(id).catch(() => {
             });
           });
-          return { ok: true, value: { accountId: id, loginKind: "loomy-wechat", flowId: started.flowId } };
+          return { ok: true, value: { accountId: id, loginKind: "loomy-sms", flowId } };
         } else if (provider === RACCOON.id) {
           await addPlaceholderAccount(id, RACCOON.id, refName);
           let raccoonStarted;

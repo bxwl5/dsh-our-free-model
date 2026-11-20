@@ -236,13 +236,6 @@ window.__ModuleLoader__.load({
         'chan.login.step1': '在浏览器中完成登录（若没有自动打开，点下面的按钮）。',
         'chan.login.step2': '登录成功后本页会自动完成，无需复制任何东西。',
         'chan.login.open': '打开登录页',
-        'chan.login.embedded.qrLoading': '正在获取二维码…',
-        'chan.login.embedded.qrHint': '请使用微信扫一扫，扫描二维码登录 Loomy',
-        'chan.login.embedded.qrScanDone': '已扫码，请在手机上确认；如需绑定手机号请在下方填写',
-        'chan.login.embedded.phoneBind': '该微信号未绑定手机号，请绑定后继续（或跳过用积分直接登录）',
-        'chan.login.embedded.smsSent': '验证码已发送',
-        'chan.login.embedded.smsSend': '发送验证码',
-        'chan.login.embedded.smsSkip': '跳过绑定，直接登录',
         'chan.login.embedded.phone': '手机号',
         'chan.login.embedded.phonePlaceholder': '11 位手机号',
         'chan.login.embedded.send': '发送验证码',
@@ -752,13 +745,6 @@ window.__ModuleLoader__.load({
         'chan.login.step1': 'Finish the sign-in in your browser (if it did not open, use the button below).',
         'chan.login.step2': 'This page completes by itself once the browser flow does — nothing to copy.',
         'chan.login.open': 'Open sign-in page',
-        'chan.login.embedded.qrLoading': 'Loading QR code…',
-        'chan.login.embedded.qrHint': 'Scan the QR code with WeChat to sign in to Loomy',
-        'chan.login.embedded.qrScanDone': 'Scanned — confirm on your phone; fill the form below if binding a phone is required',
-        'chan.login.embedded.phoneBind': 'This WeChat account has no phone bound — bind one to continue (or skip and sign in directly)',
-        'chan.login.embedded.smsSent': 'Code sent',
-        'chan.login.embedded.smsSend': 'Send code',
-        'chan.login.embedded.smsSkip': 'Skip binding, sign in directly',
         'chan.login.embedded.phone': 'Phone',
         'chan.login.embedded.phonePlaceholder': '11-digit phone number',
         'chan.login.embedded.send': 'Send code',
@@ -1093,10 +1079,6 @@ window.__ModuleLoader__.load({
    数据看板/运行日志等页（它们 pagetitle 有兄弟 pills 靠 auto margin 贴右）。 */
 .ofm_pagetitle.ofm_pagetitle_chan{flex:1;min-width:0}
 /* Loomy 卡片内嵌二维码（2026-11-07）：居中显示 + 手机号绑定表单区域。 */
-.ofm_qrwrap{display:flex;flex-direction:column;align-items:center;gap:8px}
-.ofm_qr{width:180px;height:180px;border-radius:10px;border:1px solid var(--dsw-alias-border-l1);background:#fff}
-.ofm_qrhint{font-size:11.5px;color:var(--dsw-alias-label-secondary);text-align:center;max-width:220px;line-height:1.5}
-.ofm_smsbind{display:flex;flex-direction:column;gap:6px;width:100%}
 
 .ofm_subrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0;width:100%}
 .ofm_subrow .ofm_pagesub{max-width:none}
@@ -3212,7 +3194,8 @@ window.__ModuleLoader__.load({
       { id: 'qodercn', name: 'Qoder 中国版', org: '阿里系', accent: '#7A6CF0', note: '中国版端点与模型池', login: 'browser' },
       { id: 'trae', name: 'TRAE', org: '字节', accent: '#00BFA6', note: '手机号登录', login: 'browser' },
       { id: 'cline', name: 'Cline', org: 'Cline', accent: '#5B5BD6', note: 'Cline 账号免费额度', login: 'browser' },
-      { id: 'loomy', name: 'Loomy', org: '讯飞', accent: '#2F6BFF', note: '微信扫码，或短信验证码备用（余额查询）', login: 'browser+sms' },
+      // 2026-11-20：扫码链路失效并下线，Loomy 只剩短信验证码登录。
+      { id: 'loomy', name: 'Loomy', org: '讯飞', accent: '#2F6BFF', note: '短信验证码登录（余额查询）', login: 'sms' },
       { id: 'raccoon', name: 'Raccoon', org: '商汤', accent: '#00A6A6', note: '手机号登录', login: 'browser' },
       { id: 'minimax', name: 'MiniMax Code', org: 'MiniMax', accent: '#E4007F', note: '设备码 + PKCE，每日签到', login: 'browser' },
       { id: 'zcode', name: 'ZCode', org: '智谱', accent: '#3B6EF6', note: '浏览器登录（需本机可开浏览器）', login: 'browser' },
@@ -3463,8 +3446,10 @@ window.__ModuleLoader__.load({
           // 卡片内嵌登录（2026-10-30）：autoclaw 短信不再弹本地页
           //（127.0.0.1 远程浏览器打不开），account.create 直接回 flowId 与二维码，
           // 由本卡片渲染并经 DSH 路由驱动。url 存在与否区分两种形态。
-          // 2026-11-07：loomy-wechat 加入卡片内嵌（二维码直出，不弹本地页）。
-          const loginKind = value?.loginKind === 'autoclaw-sms' || value?.loginKind === 'loomy-wechat'
+          // 2026-11-20：loomy 改为短信内嵌（扫码链路失效并下线）。
+          // 2026-11-20：Loomy 改为短信内嵌（扫码链路已失效并下线），
+          // 与 autoclaw 共用同一套两段式表单，仅端点前缀不同。
+          const loginKind = value?.loginKind === 'autoclaw-sms' || value?.loginKind === 'loomy-sms'
             ? value.loginKind
             : null
           setLogin({
@@ -3523,56 +3508,6 @@ window.__ModuleLoader__.load({
       }, [login, rpc, channel.id, t, onChanged, loadAccounts, loadCredits, loadBalances])
 
 
-      const [loomyQr, setLoomyQr] = useState('')
-      const [loomySmsNeeded, setLoomySmsNeeded] = useState(false)
-      const [loomyError, setLoomyError] = useState('')
-      useEffect(() => { if (login === null) { setLoomyQr(''); setLoomySmsNeeded(false); setLoomyError('') } }, [login === null])
-      // Loomy 卡片内嵌二维码轮询（2026-11-07）：拉一次二维码，随后 2.5s 轮询
-      // wechatPoll；need_phone 出绑定表单；done 走与 login.poll 相同的收尾。
-      useEffect(() => {
-        if (login === null || login.loginKind !== 'loomy-wechat' || login.flowId === '') return undefined
-        let alive = true
-        let qrLoaded = false
-        const finish = (success, reason) => {
-          if (!alive) return
-          setLogin(null)
-          if (success) {
-            flashNotice(t('chan.login.done').replace('{login}', ''))
-            notifyChanged()
-            void loadAccounts()
-            void loadCredits()
-            void loadBalances(true)
-          } else {
-            setNotice(t('chan.login.failed').replace('{reason}', reason ?? '未知原因'))
-          }
-        }
-        const tick = async () => {
-          if (!qrLoaded) {
-            try {
-              const qr = await rpc('loomy.wechatQr', { flowId: login.flowId })
-              if (alive && qr?.qrDataUrl) { setLoomyQr(String(qr.qrDataUrl)); qrLoaded = true }
-            } catch (error) { if (alive) setLoomyError(String(error?.message ?? error)); return }
-          }
-          try {
-            const outcome = await rpc('loomy.wechatPoll', { flowId: login.flowId })
-            if (!alive) return
-            if (outcome?.status === 'done') {
-              setLoomyQr(''); setLoomySmsNeeded(false); setLoomyError('')
-              finish(true, '')
-            } else if (outcome?.status === 'need_phone') {
-              setLoomySmsNeeded(true)
-            } else if (outcome?.status === 'error') {
-              setLoomyError(String(outcome.message ?? '轮询失败'))
-            }
-          } catch (error) {
-            // 流程不存在（过期/已收尾）→ 收尾，避免死轮询
-            if (alive && /不存在或已过期/.test(String(error?.message ?? error))) finish(false, String(error?.message ?? error))
-          }
-        }
-        void tick()
-        const timer = setInterval(tick, 2500)
-        return () => { alive = false; clearInterval(timer) }
-      }, [login, rpc, channel.id, t, notifyChanged, loadAccounts, loadCredits, loadBalances, flashNotice])
 
       // The pack's login is two-phase: `account.create` returns the URL to open
       // *immediately* (a popup opened after a 30-second await is blocked), then
@@ -3599,8 +3534,7 @@ window.__ModuleLoader__.load({
       }, [rpc])
       return { login, setLogin, startLogin,
                smsPhone, setSmsPhone, smsCode, setSmsCode, smsSentAt, setSmsSentAt,
-               smsBusy, setSmsBusy, smsMessage, setSmsMessage, smsTick,
-               loomyQr, loomySmsNeeded, loomyError }
+               smsBusy, setSmsBusy, smsMessage, setSmsMessage, smsTick }
     }
 
     function ChannelCard(props) {
@@ -3710,8 +3644,7 @@ window.__ModuleLoader__.load({
       // ── 登录两阶段（2026-11-06 审计 #22 拆分第一步）：state/effect 全在 hook 内，行为等价 ──
       const { login, setLogin, startLogin,
               smsPhone, setSmsPhone, smsCode, setSmsCode, smsSentAt, setSmsSentAt,
-              smsBusy, setSmsBusy, smsMessage, setSmsMessage, smsTick,
-              loomyQr, loomySmsNeeded, loomyError } =
+              smsBusy, setSmsBusy, smsMessage, setSmsMessage, smsTick } =
         useChannelLogin({ channel, rpc, post, t, onError, channelTransport, notifyChanged, onChanged,
                           loadAccounts, loadCredits, loadBalances, flashNotice, setOpen,
                           zcodeProvider, busy, setBusy, notice, setNotice })
@@ -4122,51 +4055,24 @@ window.__ModuleLoader__.load({
       // 引用未解构的 setSmsTick）——走针逻辑已由 useChannelLogin 内的同款 effect
       // 承担（3403-3408），该残留每秒抛一次未捕获 ReferenceError，已整段删除。
 
-      // Loomy 卡片内嵌二维码（2026-11-07）：qr data URL + 轮询状态 + 绑定手机号表单。
-      const embeddedLogin = login?.loginKind === 'autoclaw-sms' ? login : null
-      const loomyEmbedded = login?.loginKind === 'loomy-wechat' ? login : null
+      /**
+       * 卡片内嵌短信登录（2026-11-20 起 autoclaw 与 loomy 共用）。
+       *
+       * ⚠️ Loomy 的微信扫码 UI 已整段移除：扫码链路实测失效，用户明确不要再留。
+       *    `loomy-wechat-login.ts` 的后端实现仍在仓库里（将来恢复可切回），
+       *    但前端不再有二维码、轮询、绑定手机号表单三件套。
+       *
+       * 两个渠道的唯一差异是端点前缀（`/login/autoclaw/*` vs `/login/loomy/*`），
+       * 表单与交互完全相同，故共用一套，避免两份 UI 漂移。
+       */
+      const embeddedLogin = login?.loginKind === 'autoclaw-sms' || login?.loginKind === 'loomy-sms'
+        ? login
+        : null
+      /** 内嵌短信路由前缀（按 loginKind 选，其余逻辑共用）。 */
+      const smsRouteBase = embeddedLogin?.loginKind === 'loomy-sms' ? '/api/channel-pack/login/loomy' : '/api/channel-pack/login/autoclaw'
       const embeddedBody = (() => {
-        if (loomyEmbedded !== null) {
-          if (loomyQr === '') {
-            return h('div', { className: 'ofm_embedlogin' },
-              h('span', { className: 'ofm_note' }, loomyError !== '' ? loomyError : t('chan.login.embedded.qrLoading')))
-          }
-          return h('div', { className: 'ofm_embedlogin' },
-            h('div', { className: 'ofm_qrwrap' },
-              h('img', { className: 'ofm_qr', alt: 'Loomy 微信登录二维码', src: loomyQr }),
-              h('span', { className: 'ofm_qrhint' }, loomySmsNeeded ? t('chan.login.embedded.qrScanDone') : t('chan.login.embedded.qrHint')),
-              loomySmsNeeded
-                ? h('div', { className: 'ofm_smsbind' },
-                  h('span', { className: 'ofm_note' }, t('chan.login.embedded.phoneBind')),
-                  h('input', {
-                    className: 'ofm_input', type: 'tel', inputMode: 'numeric', maxLength: 14,
-                    placeholder: t('chan.login.embedded.phonePlaceholder'),
-                    value: smsPhone, onInput: event => setSmsPhone(event.target.value),
-                  }),
-                  h('div', { className: 'ofm_fieldrow' },
-                    h('button', {
-                      type: 'button', className: 'ofm_btn',
-                      disabled: smsBusy || smsPhone.trim() === '',
-                      onClick: async () => {
-                        setSmsBusy(true)
-                        try {
-                          await rpc('loomy.wechatSms', { flowId: loomyEmbedded.flowId, action: 'send_sms', phone: smsPhone.trim() })
-                          flashNotice(t('chan.login.embedded.smsSent'))
-                        } catch (error) { setLoomyError(String(error?.message ?? error)) } finally { setSmsBusy(false) }
-                      },
-                    }, t('chan.login.embedded.smsSend')),
-                    h('button', {
-                      type: 'button', className: 'ofm_btn', disabled: smsBusy,
-                      onClick: async () => {
-                        setSmsBusy(true)
-                        try { await rpc('loomy.wechatSms', { flowId: loomyEmbedded.flowId, action: 'skip' }); flashNotice(t('chan.login.done').replace('{login}', '')); setLogin(null) } catch (error) { setLoomyError(String(error?.message ?? error)) } finally { setSmsBusy(false) }
-                      },
-                    }, t('chan.login.embedded.smsSkip'))))
-                : null),
-            loomyError !== '' ? h('span', { className: 'ofm_note ofm_balanceerror' }, loomyError) : null)
-        }
         if (embeddedLogin === null) return null
-        // autoclaw 短信表单
+        // 两段式短信表单（autoclaw / loomy 共用）
         const waitSeconds = smsSentAt === 0 ? 0 : Math.max(0, 60 - Math.round((Date.now() - smsSentAt) / 1000))
         return h('div', { className: 'ofm_embedlogin' },
           h('label', { className: 'ofm_field' },
@@ -4191,7 +4097,7 @@ window.__ModuleLoader__.load({
                 try {
                   // 15s 超时兜底：api() 的 8s 兜底不覆盖这里的裸 fetch，
                   // 挂起会让 smsBusy 永久 true、按钮锁死（2026-11-01 审计）。
-                  const response = await fetch(`/api/channel-pack/login/autoclaw/send?flow=${encodeURIComponent(embeddedLogin.flowId)}`, {
+                  const response = await fetch(`${smsRouteBase}/send?flow=${encodeURIComponent(embeddedLogin.flowId)}`, {
                     method: 'POST', headers: { 'content-type': 'application/json' },
                     body: JSON.stringify({ phone: smsPhone }),
                     signal: AbortSignal.timeout(15_000),
@@ -4210,7 +4116,7 @@ window.__ModuleLoader__.load({
               setSmsBusy(true); setSmsMessage('')
               try {
                 // 同 send：15s 超时兜底，防止按钮永久锁死。
-                const response = await fetch(`/api/channel-pack/login/autoclaw/verify?flow=${encodeURIComponent(embeddedLogin.flowId)}`, {
+                const response = await fetch(`${smsRouteBase}/verify?flow=${encodeURIComponent(embeddedLogin.flowId)}`, {
                   method: 'POST', headers: { 'content-type': 'application/json' },
                   body: JSON.stringify({ code: smsCode }),
                   signal: AbortSignal.timeout(15_000),

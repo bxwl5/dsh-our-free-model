@@ -50,6 +50,7 @@ import {
   wechatSmsOf,
   type LoomyWechatFlowContext,
 } from './loomy-wechat-login.js'
+import { startLoomySmsLoginFlow, type LoomySmsLoginFlow } from './loomy-sms-login.js'
 import { buddyExpiringWindowDays } from './buddy-balance-rank.js'
 import { readCredits } from './commandcode-credits.js'
 import type { CreditPackage } from './credits.js'
@@ -274,6 +275,14 @@ export const CAPTCHA_CARRIER_PATH = '/api/channel-pack/captcha-carrier'
  */
 export const AUTOCLAW_SEND_PATH = '/api/channel-pack/login/autoclaw/send'
 export const AUTOCLAW_VERIFY_PATH = '/api/channel-pack/login/autoclaw/verify'
+/**
+ * Loomy 短信登录的两条内嵌路由（2026-11-20）。
+ *
+ * 与 autoclaw 同范式（两条**精确路径**，不靠前缀匹配 —— 见上方那段
+ * 「初版注册成一条前缀…不可用」的教训）：dsh 分发器按完整 pathname 精确匹配。
+ */
+export const LOOMY_SMS_SEND_PATH = '/api/channel-pack/login/loomy/send'
+export const LOOMY_SMS_VERIFY_PATH = '/api/channel-pack/login/loomy/verify'
 /** Gateway RPC 端点名（connection.rpc.call 的 endpoint 参数） */
 const CHANNEL_PACK_ENDPOINT = 'channel-pack'
 
@@ -774,7 +783,7 @@ function registerChannelPackEndpoints(
    * 不再有 127.0.0.1 本地页 —— 远程浏览器（NAS 场景）直接可用。
    * 键 = flowId（account.create 生成并返回给前端），值 = 流程对象。
    */
-  const embeddedLoginFlows = new Map<string, AutoclawLoginFlow>()
+  const embeddedLoginFlows = new Map<string, AutoclawLoginFlow | LoomySmsLoginFlow>()
 
   /**
    * 记录一条后台登录失败原因，供下一次 `login.poll` 读走。
@@ -981,6 +990,37 @@ function registerChannelPackEndpoints(
       let body: Record<string, unknown> = {}
       try { body = await request.json() as Record<string, unknown> } catch { /* 空/坏体按空处理 */ }
       return embeddedJson(await (flow as AutoclawLoginFlow).verify(typeof body.code === 'string' ? body.code : ''))
+    },
+  })
+
+  // ── Loomy 短信登录（2026-11-20，形状照抄 autoclaw） ─────────────────
+  connection.fetch.register({
+    path: LOOMY_SMS_SEND_PATH,
+    methods: ['POST'],
+    requestBody: 'buffered' as const,
+    async fetch(request: Request): Promise<Response> {
+      if (request.method !== 'POST') return embeddedJson({ error: 'method not allowed' }, 405)
+      const flowId = new URL(request.url ?? '/', 'http://127.0.0.1').searchParams.get('flow') ?? ''
+      const flow = flowId === '' ? undefined : embeddedLoginFlows.get(flowId)
+      if (flow === undefined || !('sendCode' in flow)) return embeddedJson({ error: 'not found' }, 404)
+      let body: Record<string, unknown> = {}
+      try { body = await request.json() as Record<string, unknown> } catch { /* 空/坏体按空处理 */ }
+      return embeddedJson(await (flow as LoomySmsLoginFlow).sendCode(typeof body.phone === 'string' ? body.phone : ''))
+    },
+  })
+
+  connection.fetch.register({
+    path: LOOMY_SMS_VERIFY_PATH,
+    methods: ['POST'],
+    requestBody: 'buffered' as const,
+    async fetch(request: Request): Promise<Response> {
+      if (request.method !== 'POST') return embeddedJson({ error: 'method not allowed' }, 405)
+      const flowId = new URL(request.url ?? '/', 'http://127.0.0.1').searchParams.get('flow') ?? ''
+      const flow = flowId === '' ? undefined : embeddedLoginFlows.get(flowId)
+      if (flow === undefined || !('verify' in flow)) return embeddedJson({ error: 'not found' }, 404)
+      let body: Record<string, unknown> = {}
+      try { body = await request.json() as Record<string, unknown> } catch { /* 空/坏体按空处理 */ }
+      return embeddedJson(await (flow as LoomySmsLoginFlow).verify(typeof body.code === 'string' ? body.code : ''))
     },
   })
 
@@ -1796,49 +1836,48 @@ function registerChannelPackEndpoints(
           })
           return { ok: true, value: { accountId: id, loginUrl: started.loginUrl } }
         } else if (provider === LOOMY.id) {
-          // Loomy 走**微信扫码**登录（与其余 provider 同为「两步式」）：
-          // 起本地服务器承载弹窗页（内联二维码 + 轮询 + 首次绑手机号表单），
-          // 立即返回 `loginUrl` 让前端 `window.open`。
-          //
-          // ⚠️ **真实缺陷**（用户报障「新建账号失败：Loomy 短信登录需要手机号」）：
-          // 早期实现要求 `account.create` **必须带 phone**，但表单要等它返回
-          // `loginMode:'sms'` 才渲染 —— 用户根本没机会输入手机号，直接报错，
-          // 表单永远出不来。**顺序死锁**。改用微信扫码后此矛盾消失：
-          // 手机号只在「首次扫码」时由弹窗页自己收集。
-          //
-          // ⚠️ 先登记**占位条目**（无凭据），使前端 `login.poll` 能立即看到该账号；
-          // 登录成功后再回填昵称/有效期。
+          /**
+           * Loomy 走**卡片内嵌短信登录**（2026-11-20 用户定稿）。
+           *
+           * ## 为什么放弃微信扫码
+           *
+           * 实测扫码链路已失效（`open.weixin.qq.com/connect/qrconnect` 在当前
+           * appid 下打不开），用户明确「扫码功能失效了，不要了，只留短信登录」。
+           * 微信流程代码保留在 `loomy-wechat-login.ts`（将来恢复可切回），
+           * 但**不再接线**：这里只创建短信 flow。
+           *
+           * ## 形状照抄 autoclaw
+           *
+           * `loginKind: 'loomy-sms'` + flowId，前端凭它渲染与 autoclaw 相同的
+           * 两段式表单（手机号 → 发码 60s 倒计时 → 验证码 → 登录），
+           * 经 `LOOMY_SMS_SEND_PATH` / `LOOMY_SMS_VERIFY_PATH` 驱动。
+           *
+           * ⚠️ 绝不在此处发短信：短信是真实副作用，只在用户显式点
+           *    「发送验证码」时触发（约束 ①）。
+           */
+          const flowId = shortId()
+          const flow = startLoomySmsLoginFlow({
+            product: loomy.product,
+            // 复用 LoomyAuth 的完整登录语义（换 session + 写凭据 + 回填账号池）。
+            complete: (phone, code, msgid, opts) =>
+              loomy.loginWithSmsCode(phone, code, msgid, { ...opts, accountId: id, pool }),
+            refName,
+          })
+          // 先登记占位条目（无凭据），使前端 login.poll 立刻看得到这个账号。
           await addPlaceholderAccount(id, LOOMY.id, refName)
 
-          let started
-          try {
-            started = await loomy.startWechatLogin()
-          } catch (error) {
-            // 取二维码 uuid 失败（网络/页面结构变化）：删掉占位条目，不留幽灵账号。
-            void pool.removeAccount(id).catch(() => {})
-            const reason = error instanceof Error ? error.message : String(error)
-            throw new Error(`无法启动 Loomy 微信登录（获取二维码失败）：${reason}`)
-          }
-
-          started.result.then(async (login) => {
-            const result = await loomy.persistWechatLogin(login, { refName })
-            const credential = JSON.parse(result.access) as LoomyCredential
+          embeddedLoginFlows.set(flowId, flow)
+          flow.result.then(async (login) => {
+            const credential = JSON.parse(login.access) as LoomyCredential
             await pool.updateAccount(id, {
-              // 用手机号尾号让多账号可区分（Loomy 无独立昵称接口；
-              // 微信昵称可能有，优先用它）。
-              nickname: login.nickname !== undefined && login.nickname.length > 0
-                ? login.nickname
-                : credential.phone.length >= 4
-                  ? `Loomy ${credential.phone.slice(-4)}`
-                  : id,
-              expiresAt: result.expires > 0 ? result.expires : undefined,
+              nickname: credential.phone.length >= 4
+                ? `Loomy ${credential.phone.slice(-4)}`
+                : id,
+              expiresAt: login.expires > 0 ? login.expires : undefined,
               // ⚠️ 恒 false：Loomy 无续期端点。
               refreshable: false,
             })
-            // 2026-11-07（用户定稿）：新手任务从「签到」移到「登录成功」——它是一次性
-            // 账号初始化奖励，天然属于登录时刻。此处幂等补领：已领的 skip、重复登录
-            // 零副作用（claimAll 内部按 tasks 状态跳过，且服务端幂等置位）。
-            // 失败只记 warn 不影响登录成果（积分可日后手动再领）。
+            // 新手任务在登录成功时幂等补领（一次性账号初始化奖励）。
             try {
               const onboarding = await loomy.claimOnboardingTasks(credential)
               const earned = onboarding.claimed.reduce((sum, row) => sum + row.points, 0)
@@ -1849,15 +1888,13 @@ function registerChannelPackEndpoints(
               ctx.logger?.warn?.(`[channel-pack] ${LOOMY.id} 新手任务自动领取失败（不影响登录）：${error instanceof Error ? error.message : String(error)}`)
             }
           }).catch((error: unknown) => {
-            ctx.logger.warn(`[channel-pack] background ${LOOMY.id} wechat login failed for ${id}: ${String(error)}`)
+            ctx.logger.warn(`[channel-pack] background ${LOOMY.id} sms login failed for ${id}: ${String(error)}`)
             recordLoginFailure(id, error)
             // 登录失败：移除占位条目，避免留下无凭据的幽灵账号
             void pool.removeAccount(id).catch(() => {})
           })
 
-          // 2026-11-07（用户）：卡片内嵌二维码——不再弹本地页；前端凭 loginKind
-          // 轮询 loomy.wechatQr / wechatPoll / wechatSms 渲染。
-          return { ok: true, value: { accountId: id, loginKind: 'loomy-wechat', flowId: started.flowId } }
+          return { ok: true, value: { accountId: id, loginKind: 'loomy-sms', flowId } }
         } else if (provider === RACCOON.id) {
           // raccoon 走**本地页承载**的微信扫码 / 短信双路径登录（与 Loomy 同型）：
           // `startLogin` 立即返回指向 127.0.0.1 的 `loginUrl`，后台 await 结果。
