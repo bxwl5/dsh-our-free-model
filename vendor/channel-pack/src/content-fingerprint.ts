@@ -745,6 +745,21 @@ export function scrubbedFetch(
  */
 export function installGlobalFetchScrub(): () => void {
   const original = globalThis.fetch as TaggedFetch
+  /**
+   * ⚠️ 捕获到的 `original` 必须真的是函数，否则**整条兜底链会中毒**
+   *（2026-11-21 真实故障：`this.fetchImpl is not a function`，症状是
+   *「trae 本轮运行失败」）。
+   *
+   * 为什么可能是坏值：本函数在插件 apply 里执行，热重载时新 fiber 先 mount、
+   * 旧 fiber 后 dispose；若上一代 disposer 已把 `globalThis.fetch` 还原成
+   * 它当初捕获的（可能已经是坏值的）引用，这里就会接到一个非函数。此时
+   * **不能再包一层**（包装体会把坏值透传给所有下游，包括 `?? fetch` 兜底的
+   * adapter），直接放弃安装即可 —— 清洗是尽力而为，不是功能依赖。
+   */
+  if (typeof original !== 'function') {
+    console.warn('[content-fingerprint] 全局 fetch 不是函数，跳过指纹清洗安装（避免污染兜底链）')
+    return () => {}
+  }
   // 2026-11-06 审计（P2）：此前「已装过就不再叠层 + 返回 noop disposer」有一个
   // 双实例时序洞——插件热重载时**新 fiber 先 mount、旧 fiber 后 dispose**：
   // 新 apply 撞「已装过」拿到 noop disposer → 旧 dispose 按自己的 generation
@@ -767,7 +782,9 @@ export function installGlobalFetchScrub(): () => void {
     // 只摘自己：若期间有更新一代的包装挂上，旧 disposer 不得把它还原。
     const current = globalThis.fetch as TaggedFetch
     if (typeof current === 'function' && current[GLOBAL_FETCH_SCRUB_TAG] === generation) {
-      globalThis.fetch = original as typeof fetch
+      // 只还原成**确实是函数**的引用：宁可留着当前这层包装，也不把非函数写回
+      // 全局（那会让之后所有 `options.fetchImpl ?? fetch` 的 adapter 一起中毒）。
+      if (typeof original === 'function') globalThis.fetch = original as typeof fetch
     }
   }
 }

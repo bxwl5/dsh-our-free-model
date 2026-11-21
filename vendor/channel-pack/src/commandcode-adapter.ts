@@ -41,6 +41,7 @@ import {
   type CommandCodeCredential,
 } from './commandcode.js'
 import { fetchModelCatalog } from './commandcode-auth.js'
+import { directFetch } from './direct-fetch.js'
 import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import {
   consumeOpenAiSse,
@@ -105,7 +106,7 @@ export class CommandCodeAdapter extends LlmAdapter {
   constructor(private readonly options: CommandCodeAdapterOptions) {
     super()
     this.product = options.product ?? COMMANDCODE
-    this.fetchImpl = options.fetchImpl ?? fetch
+    this.fetchImpl = options.fetchImpl ?? directFetch
   }
 
   providerInfo(provider: string): LlmProviderInfo {

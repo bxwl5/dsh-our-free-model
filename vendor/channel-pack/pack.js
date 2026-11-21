@@ -34179,6 +34179,11 @@ function scrubbedFetch(original, input, init) {
 }
 function installGlobalFetchScrub() {
   const original = globalThis.fetch;
+  if (typeof original !== "function") {
+    console.warn("[content-fingerprint] \u5168\u5C40 fetch \u4E0D\u662F\u51FD\u6570\uFF0C\u8DF3\u8FC7\u6307\u7EB9\u6E05\u6D17\u5B89\u88C5\uFF08\u907F\u514D\u6C61\u67D3\u515C\u5E95\u94FE\uFF09");
+    return () => {
+    };
+  }
   const generation = ++globalFetchGeneration;
   const wrapped = ((input, init) => {
     if (init !== void 0 && typeof init === "object" && SCRUBBED_INITS.has(init)) {
@@ -34192,7 +34197,7 @@ function installGlobalFetchScrub() {
   return () => {
     const current = globalThis.fetch;
     if (typeof current === "function" && current[GLOBAL_FETCH_SCRUB_TAG] === generation) {
-      globalThis.fetch = original;
+      if (typeof original === "function") globalThis.fetch = original;
     }
   };
 }
@@ -39149,7 +39154,7 @@ var BuddyAdapter = class _BuddyAdapter extends LlmAdapter2 {
     super();
     this.options = options;
     this.product = options.product ?? CODEBUDDY;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? directFetch;
     this.sessionId = options.sessionId ?? crypto.randomUUID().replace(/-/g, "");
     const fallback2 = this.product.fallbackModels ?? [];
     this.productFallbackIndex = new Map(fallback2.map((model) => [model.id, model]));
@@ -41416,7 +41421,7 @@ var QoderAdapter = class extends LlmAdapter3 {
     super();
     this.options = options;
     this.product = options.product ?? QODER;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? directFetch;
     this.fallbackIndex = new Map(
       (this.product.fallbackModels ?? []).map((model) => [model.id, model])
     );
@@ -43204,7 +43209,7 @@ var TraeAdapter = class extends LlmAdapter4 {
     super();
     this.options = options;
     this.product = options.product ?? TRAE;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? directFetch;
     this.fallbackIndex = new Map(
       (this.product.fallbackModels ?? []).map((model) => [model.id, model])
     );
@@ -44683,7 +44688,7 @@ var ClineAdapter = class extends LlmAdapter5 {
     super();
     this.options = options;
     this.product = options.product ?? CLINE;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? directFetch;
     this.loadModelsDev = options.loadModelsDev ?? makeClineModelsDevLoader({ fetcher: this.fetchImpl });
   }
   product;
@@ -45644,7 +45649,7 @@ var CommandCodeAdapter = class extends LlmAdapter6 {
     super();
     this.options = options;
     this.product = options.product ?? COMMANDCODE;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? directFetch;
   }
   product;
   fetchImpl;
@@ -46035,7 +46040,7 @@ var OfficeAceAdapter = class extends LlmAdapter7 {
     super();
     this.options = options;
     this.product = options.product ?? OFFICEACE;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? directFetch;
   }
   product;
   fetchImpl;
@@ -46436,7 +46441,7 @@ var AutoClawAdapter = class extends LlmAdapter8 {
     super();
     this.options = options;
     this.product = options.product ?? AUTOCLAW;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? directFetch;
   }
   product;
   fetchImpl;
@@ -46882,7 +46887,7 @@ var LoomyAdapter = class extends LlmAdapter9 {
     super();
     this.options = options;
     this.product = options.product ?? LOOMY;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? directFetch;
     this.fallbackIndex = new Map(this.product.fallbackModels.map((model) => [model.id, model]));
   }
   product;
@@ -47410,7 +47415,7 @@ var RaccoonAdapter = class extends LlmAdapter10 {
     super();
     this.options = options;
     this.product = options.product ?? RACCOON;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? directFetch;
     this.fallbackIndex = new Map(this.product.fallbackModels.map((model) => [model.id, model]));
   }
   product;
@@ -55840,7 +55845,7 @@ var ZcodeAuth = class extends Service9 {
     const product = options.product ?? ZCODE;
     super(ctx, options.serviceName ?? `${product.id}Auth`);
     this.product = product;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? directFetch;
     this.injectedPool = options.accountPool;
     this.captchaBackoff = new CaptchaBackoff({
       /**
@@ -57428,7 +57433,7 @@ var ZcodeAdapter = class extends LlmAdapter11 {
     super();
     this.options = options;
     this.product = options.product ?? ZCODE;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? directFetch;
     this.fallbackIndex = new Map(this.product.fallbackModels.map((model) => [model.id, model]));
     this.gate = options.gate ?? new ModelGate({
       serialize: this.product.serializeUpstream,
@@ -70503,7 +70508,7 @@ var MinimaxAdapter = class extends LlmAdapter13 {
     super();
     this.options = options;
     this.product = options.product ?? MINIMAX;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? directFetch;
   }
   product;
   remoteModels;
@@ -72062,7 +72067,7 @@ var OpencodeAdapter = class extends LlmAdapter14 {
   constructor(options) {
     super();
     this.options = options;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? directFetch;
   }
   fetchImpl;
   providerInfo(provider) {

@@ -25,6 +25,7 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { AccountPool, providerCatalogVisible } from './account-pool.js'
 import { reasoningRankOf } from './reasoning-ladder.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
+import { directFetch } from './direct-fetch.js'
 import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import {
   TRAE_MAX_CONTEXT_TOKENS,
@@ -630,7 +631,21 @@ export class TraeAdapter extends LlmAdapter {
   constructor(private readonly options: TraeAdapterOptions) {
     super()
     this.product = options.product ?? TRAE
-    this.fetchImpl = options.fetchImpl ?? fetch
+    /**
+     * ⚠️ 兜底用 `directFetch`，**不用裸 `fetch`**（2026-11-21 真实故障）。
+     *
+     * 裸 `fetch` 是运行期从 `globalThis.fetch` 解析的标识符，而本包会在
+     * `installGlobalFetchScrub()` 里**替换** `globalThis.fetch` 做指纹清洗；
+     * 插件热重载时旧 fiber 的 disposer 还会把捕获到的 `original` 还原回去。
+     * 一旦那条竞态把 `globalThis.fetch` 写成非函数，这里 `?? fetch` 兜底
+     * 拿到的就是那个坏值，之后 `this.fetchImpl(...)` 直接抛
+     * `this.fetchImpl is not a function` —— 症状是「trae 本轮运行失败」，
+     * 且只有它报，因为别的 adapter 早先已改用 `directFetch`。
+     *
+     * `directFetch` 是模块级稳定导出（自带独立 undici Agent、不经全局
+     * `fetch`；签名车道 body 不被改写），生命周期由宿主 close 管理。
+     */
+    this.fetchImpl = options.fetchImpl ?? directFetch
     this.fallbackIndex = new Map(
       (this.product.fallbackModels ?? []).map((model) => [model.id, model]),
     )

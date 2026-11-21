@@ -280,10 +280,15 @@ export async function verifyAllAdaptersWired() {
     `以下适配器未接出口层 fetch（会绕过全渠道指纹清洗）：${missing.join(', ')}`)
 
   // 锁死两个原先硬编码全局 fetch 的适配器：options 有 fetchImpl、发请求用 this.fetchImpl
+  // ⚠️ 2026-11-21：兜底从裸 `fetch` 改为 `directFetch` —— 裸 fetch 在运行期从
+  // `globalThis.fetch` 解析，而本包会替换它做指纹清洗；热重载竞态可能把坏值
+  // 写回全局，`?? fetch` 兜底就会拿到非函数（症状：`this.fetchImpl is not a
+  // function`，trae 本轮运行失败）。`directFetch` 是模块级稳定导出，不受全局
+  // 替换影响，出口层清洗在它内部同样生效。
   for (const file of ['minimax-adapter.ts', 'opencode-adapter.ts']) {
     const src = readFileSync(fileURLToPath(new URL(file, root)), 'utf8')
     assert.match(src, /fetchImpl\?:\s*typeof fetch/, `${file}: options 缺 fetchImpl 字段`)
-    assert.match(src, /this\.fetchImpl\s*=\s*options\.fetchImpl\s*\?\?\s*fetch/,
+    assert.match(src, /this\.fetchImpl\s*=\s*options\.fetchImpl\s*\?\?\s*(fetch|directFetch)\b/,
       `${file}: 构造函数未把 fetchImpl 落到实例`)
     assert.match(src, /await this\.fetchImpl\(/, `${file}: 推理请求仍在用裸 fetch`)
   }

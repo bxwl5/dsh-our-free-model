@@ -23,6 +23,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 
 import { OFFICEACE, type OfficeAceProduct } from './officeace-product.js'
+import { directFetch } from './direct-fetch.js'
 import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import { fetchTokenRates } from './officeace.js'
 import {
@@ -76,7 +77,7 @@ export class OfficeAceAdapter extends LlmAdapter {
   constructor(private readonly options: OfficeAceAdapterOptions) {
     super()
     this.product = options.product ?? OFFICEACE
-    this.fetchImpl = options.fetchImpl ?? fetch
+    this.fetchImpl = options.fetchImpl ?? directFetch
   }
 
   providerInfo(provider: string): LlmProviderInfo {

@@ -63,6 +63,7 @@ import type {
   StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import { AccountPool, providerCatalogVisible } from './account-pool.js'
+import { directFetch } from './direct-fetch.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
 import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import { collectImages, serializeMessages } from './openai-compat.js'
@@ -517,7 +518,7 @@ export class ZcodeAdapter extends LlmAdapter {
   constructor(private readonly options: ZcodeAdapterOptions) {
     super()
     this.product = options.product ?? ZCODE
-    this.fetchImpl = options.fetchImpl ?? fetch
+    this.fetchImpl = options.fetchImpl ?? directFetch
     this.fallbackIndex = new Map(this.product.fallbackModels.map((model) => [model.id, model]))
     this.gate = options.gate ?? new ModelGate({
       serialize: this.product.serializeUpstream,

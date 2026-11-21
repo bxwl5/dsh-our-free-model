@@ -43,6 +43,7 @@ import {
   type OpencodeErrorInfo, type OpencodeErrorKind, type OpencodeFallbackModel,
 } from './opencode-product.js'
 import { isTransportError } from './openai-compat.js'
+import { directFetch } from './direct-fetch.js'
 import { listIdentitySlots, type IdentitySlot } from './opencode-auth.js'
 import { deriveSessionId, opencodeHeaders, opencodeUserAgent } from './opencode.js'
 import { buildOpencodePayloadWithToolMap } from './opencode-messages.js'
@@ -251,7 +252,7 @@ export class OpencodeAdapter extends LlmAdapter {
 
   constructor(private readonly options: OpencodeAdapterOptions) {
     super()
-    this.fetchImpl = options.fetchImpl ?? fetch
+    this.fetchImpl = options.fetchImpl ?? directFetch
   }
 
   providerInfo(provider: string): LlmProviderInfo {

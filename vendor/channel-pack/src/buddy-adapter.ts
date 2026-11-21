@@ -18,6 +18,7 @@ import {
   ReasoningEffortId,
 } from '@deepseek-ai/dsh-llm'
 import { AccountPool, providerCatalogVisible } from './account-pool.js'
+import { directFetch } from './direct-fetch.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
 import { readModelCatalog, writeModelCatalogClosingNew } from './model-catalog-cache.js'
 import {
@@ -804,7 +805,7 @@ export class BuddyAdapter extends LlmAdapter {
     super()
     // 默认 CodeBuddy，保证既有行为完全不变。
     this.product = options.product ?? CODEBUDDY
-    this.fetchImpl = options.fetchImpl ?? fetch
+    this.fetchImpl = options.fetchImpl ?? directFetch
     this.sessionId = options.sessionId ?? crypto.randomUUID().replace(/-/g, '')
     const fallback = this.product.fallbackModels ?? []
     this.productFallbackIndex = new Map(fallback.map((model) => [model.id, model]))

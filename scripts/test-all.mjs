@@ -10,6 +10,7 @@
  *
  */
 import { spawn } from 'node:child_process'
+import { reapProcessGroup } from './lib/reap-process-group.mjs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -186,8 +187,19 @@ const SUITE_TIMEOUT_MS = 60_000
  */
 function runSuite(script, args) {
   return new Promise(resolve => {
+    /**
+     * `detached: true` 让套件成为**新进程组的组长**（pgid = 它的 pid）。
+     *
+     * 这是扫尾的前提：它派生的所有子孙默认继承该组，套件结束时可对整组
+     * SIGKILL，把浏览器、CLI、子服务等**任何**孤儿一并收掉 —— 而不是按
+     * 进程名去猜「哪个是浏览器」（第一版就是这么做的，范围太窄）。
+     *
+     * ⚠️ `detached` 在 POSIX 上等价于子进程内 setsid()：它不再收到终端的
+     *    Ctrl-C，故超时/中断路径必须靠下面的 reapProcessGroup 收尸。
+     */
     const child = spawn(process.execPath, [path.join(scriptsDir, script), ...args], {
       stdio: ['ignore', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32',
     })
     let stdout = ''
     let stderr = ''
@@ -202,11 +214,26 @@ function runSuite(script, args) {
     }
     child.stdout.on('data', chunk => forward('stdout', chunk))
     child.stderr.on('data', chunk => forward('stderr', chunk))
+    /**
+     * 超时先礼后兵，但**两级都必须打整组**。
+     *
+     * ⚠️ 只 `child.kill()` 只杀到组长：它派生的浏览器/子服务会变成孤儿继续跑
+     *    （2026-11-17 那棵 Chrome 树就是这么活下来的）。组内全杀才是真的收工。
+     */
+    const killGroup = signal => {
+      const pid = child.pid ?? 0
+      if (pid <= 1) return
+      try {
+        // 负 pid = 杀整个进程组（POSIX）；Windows 无进程组语义，退回单 pid
+        if (process.platform === 'win32') child.kill(signal)
+        else process.kill(-pid, signal)
+      } catch { /* 组已空/已退出：忽略 */ }
+    }
     const deadline = setTimeout(() => {
       if (child.exitCode !== null || child.signalCode !== null) return
       timedOut = true
-      child.kill()
-      forceKillTimer = setTimeout(() => child.kill('SIGKILL'), 500)
+      killGroup('SIGTERM')
+      forceKillTimer = setTimeout(() => killGroup('SIGKILL'), 500)
     }, SUITE_TIMEOUT_MS)
     child.once('error', error => {
       spawnError = error
@@ -214,6 +241,25 @@ function runSuite(script, args) {
     child.once('close', (status, signal) => {
       clearTimeout(deadline)
       if (forceKillTimer !== undefined) clearTimeout(forceKillTimer)
+      /**
+       * 孤儿进程扫尾（2026-11-20）。
+       *
+       * 事故：2026-11-17 的回归测试留下一棵无头 Chrome 树，挂了 2 天 8 小时、
+       * 累计吃掉约 3 小时 CPU。被测代码的 `dispose()` 是完整的，但**任何提前
+       * throw / 断言失败 / 超时被 SIGKILL 的路径都会跳过它**。
+       *
+       * 故收尸放在这里，以**进程组**为单位（`detached` 启动 ⇒ 组内全是本套件的
+       * 子孙），不按进程名猜：测出来的孤儿不只是浏览器，还有 CLI、子服务、
+       * 本地 HTTP 服务等。
+       *
+       * ⚠️ 只影响本套件新建的组：用户自己的浏览器、别的会话、系统服务都不在组里。
+       * ⚠️ 失败绝不影响测试结果：扫尾是卫生工作，不是断言。
+       */
+      try {
+        const reaped = reapProcessGroup(child.pid ?? 0)
+        const n = reaped.killed.length
+        if (n > 0) process.stdout.write(`      (reaped ${n} leftover process(es) from this suite)\n`)
+      } catch { /* 扫尾失败不改变套件结论 */ }
       resolve({ error: spawnError, signal, status, stdout, stderr, ms: Date.now() - started, timedOut })
     })
   })

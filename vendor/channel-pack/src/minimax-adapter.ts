@@ -40,6 +40,7 @@ import type {
 import type { Context } from '@deepseek-ai/cordis'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { providerCatalogVisible } from './account-pool.js'
+import { directFetch } from './direct-fetch.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
 import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import type { AccountPool } from './account-pool.js'
@@ -194,7 +195,7 @@ export class MinimaxAdapter extends LlmAdapter {
   constructor(private readonly options: MinimaxAdapterOptions) {
     super()
     this.product = options.product ?? MINIMAX
-    this.fetchImpl = options.fetchImpl ?? fetch
+    this.fetchImpl = options.fetchImpl ?? directFetch
   }
 
   providerInfo(provider: string): LlmProviderInfo {

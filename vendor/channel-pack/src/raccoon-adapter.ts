@@ -30,6 +30,7 @@ import type {
   StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import { AccountPool, providerCatalogVisible } from './account-pool.js'
+import { directFetch } from './direct-fetch.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
 import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import { nextUtc8DayStartMs } from './model-queue.js'
@@ -226,7 +227,7 @@ export class RaccoonAdapter extends LlmAdapter {
   constructor(private readonly options: RaccoonAdapterOptions) {
     super()
     this.product = options.product ?? RACCOON
-    this.fetchImpl = options.fetchImpl ?? fetch
+    this.fetchImpl = options.fetchImpl ?? directFetch
     this.fallbackIndex = new Map(this.product.fallbackModels.map((model) => [model.id, model]))
   }
 

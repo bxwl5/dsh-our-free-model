@@ -63,6 +63,7 @@ import { SerialQueue } from './serial-queue.js'
 import { TtlCache } from './ttl-cache.js'
 import { generateDeviceMid, runZcodeLogin, type ZcodeLoginProvider } from './zcode-login.js'
 import { fetchCodingPlanApiKey } from './zcode-transport.js'
+import { directFetch } from './direct-fetch.js'
 import {
   formatZcodeDiagnostic,
   formatZcodeUnusualActivityMessage,
@@ -308,7 +309,7 @@ export class ZcodeAuth extends Service {
     const product = options.product ?? ZCODE
     super(ctx, options.serviceName ?? `${product.id}Auth`)
     this.product = product
-    this.fetchImpl = options.fetchImpl ?? fetch
+    this.fetchImpl = options.fetchImpl ?? directFetch
     this.injectedPool = options.accountPool
     this.captchaBackoff = new CaptchaBackoff({
       /**

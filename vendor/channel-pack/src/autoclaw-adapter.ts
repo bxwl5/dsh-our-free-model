@@ -10,6 +10,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { ModelQuota } from './types.js'
+import { directFetch } from './direct-fetch.js'
 import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import type {
   GenerateOptions,
@@ -224,7 +225,7 @@ export class AutoClawAdapter extends LlmAdapter {
   constructor(private readonly options: AutoClawAdapterOptions) {
     super()
     this.product = options.product ?? AUTOCLAW
-    this.fetchImpl = options.fetchImpl ?? fetch
+    this.fetchImpl = options.fetchImpl ?? directFetch
   }
 
   providerInfo(provider: string): LlmProviderInfo {
