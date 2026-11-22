@@ -14,8 +14,13 @@ export function ChannelBrowser({ rpc, summary }: { rpc: Rpc; summary: Summary & 
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
-  const [auto, setAuto] = useState<{ enabled: boolean; running?: boolean; ranToday?: boolean }>()
+  const [auto, setAuto] = useState<{ enabled: boolean; running?: boolean; ranToday?: boolean; results?: Array<{ provider: string; accountId: string; accountName: string; outcome: string; amount?: number; unit?: string; message?: string }> }>()
   const [busy, setBusy] = useState(false)
+  /**
+   * 异常汇总（2026-11-22 从插件版移植）：限流/风控/验证受阻的账号清单。
+   * 数据源与插件版同一 RPC（`account.anomalies`）；没有条目时面板自己返回 null。
+   */
+  const [anomalies, setAnomalies] = useState<Array<{ provider?: string; accountId?: string; nickname?: string; reason?: string; until?: number }>>()
   /**
    * 账号轮询（**同一渠道内**多个账号之间怎么轮）—— 全局一项，对全部渠道生效。
    *
@@ -41,6 +46,9 @@ export function ChannelBrowser({ rpc, summary }: { rpc: Rpc; summary: Summary & 
     void reload()
     void rpc('usage.autoCheckin', {}).then(value => {
       if (mounted.current) setAuto(value.autoCheckin)
+    }).catch(() => {})
+    void rpc('account.anomalies', {}).then(value => {
+      if (mounted.current) setAnomalies(Array.isArray(value.anomalies) ? value.anomalies : [])
     }).catch(() => {})
     void rpc('account.getStrategy', {}).then(value => {
       if (mounted.current) setStrategy(value)
@@ -136,6 +144,14 @@ export function ChannelBrowser({ rpc, summary }: { rpc: Rpc; summary: Summary & 
       <div className="provider-grid">{rows.map(provider =>
         <shared.ChannelCard key={provider.id} channel={provider} status={statuses?.[provider.id]} rpc={rpc} t={t} onChanged={onChanged} onError={onError} />
       )}</div>
+      {/**
+        * 2026-11-22 从插件版移植的两块汇总板块（对齐 `ChannelsPage` 的卡片下方
+        * 布局）：异常汇总（限流/风控/验证受阻，有条目才出现）+ 签到结果表格
+        *（逐账号台账，无行时组件内部返回 null）。数据源与插件版同一 RPC，
+        * 面板组件直接复用 client.js 的实现 —— 不复制代码，避免两份漂移。
+        */}
+      {anomalies.length > 0 && <shared.AnomalyPanel anomalies={anomalies} channelName={(id: string) => providers.find(row => row.id === id)?.name ?? id} t={t} />}
+      <shared.CheckinPanel results={Array.isArray(auto?.results) ? auto.results : []} channelName={(id: string) => providers.find(row => row.id === id)?.name ?? id} t={t} />
       {rows.length === 0 && <Card className="channel-empty"><Search size={24} /><h2>没有匹配的渠道</h2><p>试试其他名称，或切换筛选条件。</p><Button variant="outline" onClick={() => { setSearch(''); setFilter('all') }}>重置筛选</Button></Card>}
     </>
   </>
