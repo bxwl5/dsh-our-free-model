@@ -20,7 +20,7 @@ export function ChannelBrowser({ rpc, summary }: { rpc: Rpc; summary: Summary & 
    * 异常汇总（2026-11-22 从插件版移植）：限流/风控/验证受阻的账号清单。
    * 数据源与插件版同一 RPC（`account.anomalies`）；没有条目时面板自己返回 null。
    */
-  const [anomalies, setAnomalies] = useState<Array<{ provider?: string; accountId?: string; nickname?: string; reason?: string; until?: number }>>()
+  const [anomalies, setAnomalies] = useState<Array<{ provider?: string; accountId?: string; nickname?: string; reason?: string; until?: number }>>([])
   /**
    * 账号轮询（**同一渠道内**多个账号之间怎么轮）—— 全局一项，对全部渠道生效。
    *
