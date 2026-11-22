@@ -457,17 +457,22 @@ export function rankLanAddresses(interfaces) {
   const seen = new Set()
   for (const [name, entries] of Object.entries(interfaces ?? {})) {
     for (const entry of entries ?? []) {
-      if (entry?.family !== 'IPv4' || entry.internal === true) continue
+      if (entry?.internal === true) continue
+      const isV6 = entry?.family === 'IPv6'
+      if (entry?.family !== 'IPv4' && !isV6) continue
       const address = String(entry.address ?? '')
       // `169.254.x.y` is APIPA: the DHCP offer never came, and the address means
-      // "this link is broken", not "dial me".
-      if (address === '' || address.startsWith('169.254.') || seen.has(address)) continue
+      // "this link is broken", not "dial me". `fe80::/10` is the v6 twin of that.
+      if (address === '' || address.startsWith('169.254.') || address.toLowerCase().startsWith('fe80:') || seen.has(address)) continue
+      // Global unicast v6 (`2000::/3`) 与 v4 同级排序；ULA `fc00::/7` 类似私网，
+      // 也列出（内网可达），只是排在 v4 之后让面板优先展示更容易抄写的 v4。
+      if (isV6) rows.push({ address, virtual: VIRTUAL_IFACE.test(String(name)), v6: true, sortKey: 1 })
+      else rows.push({ address, virtual: VIRTUAL_IFACE.test(String(name)), sortKey: 0 })
       seen.add(address)
-      rows.push({ address, virtual: VIRTUAL_IFACE.test(String(name)) })
     }
   }
-  // A stable sort keeps the OS's order inside each group.
-  rows.sort((a, b) => Number(a.virtual) - Number(b.virtual))
+  // A stable sort keeps the OS's order inside each group; v4 在前（好抄写），v6 在后。
+  rows.sort((a, b) => (Number(a.virtual) - Number(b.virtual)) || ((a.sortKey ?? 0) - (b.sortKey ?? 0)))
   return rows.map(row => row.address)
 }
 
@@ -734,15 +739,36 @@ export async function startLanRelay({ config, log = () => {}, onTrace = () => {}
   }
 
   const desired = config()
-  const host = String(desired.host ?? '').trim() || '0.0.0.0'
+  /**
+   * 缺省绑 **`::`（双栈）**：Node 默认 `ipv6Only: false`，一个 socket 同时接受
+   * IPv4 与 IPv6 连接（IPv4 以 mapped 形式进来）——局域网里 v4-only 的旧设备与
+   * v6-only 的新设备都能连上（2026-11-22 用户需求）。
+   *
+   * ⚠️ 回落：宿主内核禁了 IPv6（`net.ipv6.conf.*.disable_ipv6=1` 或容器无 v6）
+   * 时绑 `::` 会 EADDRNOTAVAIL / EAFNOSUPPORT —— 自动退回 `0.0.0.0`，
+   * 而不是把整个 LAN 功能搞挂。
+   */
+  const requestedHost = String(desired.host ?? '').trim() || '::'
+  let host = requestedHost
   const port = await new Promise((resolve, reject) => {
     const onError = error => reject(error)
     server.once('error', onError)
     const wanted = Number(desired.port)
-    server.listen(Number.isFinite(wanted) && wanted > 0 ? Math.trunc(wanted) : 0, host, () => {
-      server.off('error', onError)
-      server.on('error', error => log(`lan relay error: ${error?.message ?? error}`))
-      resolve(server.address()?.port ?? 0)
+    const attemptBind = (bindHost, isLast) => {
+      server.listen(Number.isFinite(wanted) && wanted > 0 ? Math.trunc(wanted) : 0, bindHost, () => {
+        server.off('error', onError)
+        server.on('error', error => log(`lan relay error: ${error?.message ?? error}`))
+        resolve(server.address()?.port ?? 0)
+      })
+    }
+    attemptBind(host)
+    server.once('error', error => {
+      // 双栈不可用（纯 v4 内核/容器）→ 退回 IPv4 通配再试一次
+      if (host === '::' && ['EADDRNOTAVAIL', 'EAFNOSUPPORT', 'EPFNOSUPPORT'].includes(String(error?.code))) {
+        log(`lan relay: dual-stack bind unavailable (${error?.code}); falling back to 0.0.0.0`)
+        host = '0.0.0.0'
+        attemptBind(host)
+      }
     })
   })
 

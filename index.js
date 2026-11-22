@@ -428,7 +428,9 @@ let channelRosterReadAt = 0
     const desired = settings.get().forward ?? {}
     const lan = desired.lan ?? {}
     const wanted = lan.enabled === true
-    const host = String(lan.host ?? '').trim() || '0.0.0.0'
+    // 缺省双栈 `::`（2026-11-22；startLanRelay 内有 v4 回落保护）。⚠️ 与 startLanRelay
+    // 的缺省必须一致，否则这里会因为 relay.host !== host 而反复重建中继。
+    const host = String(lan.host ?? '').trim() || '::'
     const port = Number.isFinite(Number(lan.port)) && Number(lan.port) > 0 ? Math.trunc(Number(lan.port)) : 0
     if (relay !== null && wanted && forward !== null && relay.host === host && relay.port === port) return
     if (relay === null && !wanted) return
@@ -460,7 +462,8 @@ let channelRosterReadAt = 0
           const currentLan = current.lan ?? {}
           return {
             enabled: currentLan.enabled === true,
-            host: String(currentLan.host ?? '').trim() || '0.0.0.0',
+            // 缺省双栈 `::`（与 startLanRelay 内的回落保护配合，2026-11-22）。
+            host: String(currentLan.host ?? '').trim() || '::',
             port: currentLan.port ?? 0,
             lanKey: relayKey(),
             localKey: forwardKey(),

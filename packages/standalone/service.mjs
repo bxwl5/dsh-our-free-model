@@ -176,7 +176,7 @@ export async function startStandalone({
       // 面板中继（同端口）。默认关 —— 面板带写权限，要不要暴露给同网段由用户定。
       panel: value.standaloneLanEnabled === true && value.standaloneLanPanel === true,
       running: relay !== undefined,
-      host: relay?.host ?? '0.0.0.0',
+      host: relay?.host ?? '::',
       requestedPort: value.standaloneLanPort ?? 0,
       port: relay?.port ?? null,
       addresses,
@@ -233,7 +233,7 @@ export async function startStandalone({
         const started = await startRelay({
           config: () => ({
             enabled: !stopped && stores.settings.get().enabled !== false && stores.settings.get().standaloneLanEnabled === true,
-            host: '0.0.0.0', port: wantedPort, targetPort,
+            host: '::', port: wantedPort, targetPort,
             lanKey: stores.settings.get().standaloneLanKey,
             localKey: stores.settings.get().forwardKey,
             // 面板中继开关（见 src/forward.js 的 isPanelPath）

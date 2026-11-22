@@ -50,7 +50,10 @@ const PANEL_PASSWORD = 'fixture-lan-password-4a7e'
 process.env.OFM_PASSWORD = PANEL_PASSWORD
 const relayStarts = []
 const startRelay = async ({ config, ...options }) => {
-  assert.equal(config().host, '0.0.0.0')
+  // 2026-11-22：缺省 host 改为双栈 `::`（startLanRelay 内有 v4 回落保护）。
+  // 替身仍强制把 relay 绑到 127.0.0.1 —— 测试只关心鉴权与转发语义，
+  // 不测内核双栈（那由 src/forward.js 的单测覆盖）。
+  assert.ok(['::', '0.0.0.0'].includes(config().host), `LAN 缺省 host 应为 '::' 或回落 '0.0.0.0'，实际 ${config().host}`)
   const relay = await startLanRelay({ ...options, config: () => ({ ...config(), host: '127.0.0.1' }) })
   assert.equal(relay.server.address().address, '127.0.0.1')
   relayStarts.push(relay)
@@ -174,6 +177,7 @@ try {
     assert.equal(result.lan.running, true)
     assert.equal(result.lan.requestedPort, 0)
     assert.ok(result.lan.port > 0)
+    // 替身把 relay 强制绑到 127.0.0.1（见 startRelay），故这里的展示值也是它。
     assert.equal(result.lan.host, '127.0.0.1')
     lanKey = (await management('/lan/key')).value.key
     assert.ok(lanKey && lanKey !== localKey)
