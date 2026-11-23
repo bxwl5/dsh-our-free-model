@@ -102,6 +102,16 @@ export interface ProviderAccountEntry {
    * 缺省/0 = 用凭据里派生的初始指纹。
    */
   opencodeFingerprintGeneration?: number
+  /**
+   * **B：每日请求用量（防封节奏，2026-11-19）**。
+   *
+   * `date` 是 UTC+8 的自然日（`YYYY-MM-DD`），`count` 是当日已消耗次数。
+   * 选号时据此把顶到 `dailyLimit` 的账号排到候选尾部；跨日由 `date` 键
+   * 自然重置（无需扫定时任务，读到旧日键时按新的一天计数）。
+   *
+   * 只记**成功交付**的请求，失败重试不消耗配额 —— 失败本就不该算作用量。
+   */
+  dailyUsage?: { date: string; count: number }
 }
 
 /** 账号详细状态（返回给 Client 展示） */

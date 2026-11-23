@@ -140,6 +140,11 @@ import { channelOfOptions } from './openai-gateway/channel.js'
  */
 export interface AnomalyClearingPool {
   clearAnomalyOnSuccess(accountId: string, modelId: string): Promise<number>
+  /**
+   * ★ B：记一次账号成功请求（防封节奏每日用量，2026-11-19）。
+   * 可选成员：单测桩只实现清异常，缺它时记账整段静默跳过（见流式包装处的守卫）。
+   */
+  recordAccountUse?(accountId: string, now?: number): Promise<void>
 }
 let anomalyPool: AnomalyClearingPool | undefined
 /**
@@ -475,6 +480,17 @@ async function* recordStreamInScope(
       && meta.modelId.length > 0 && anomalyPool !== undefined) {
       void anomalyPool.clearAnomalyOnSuccess(accountId, meta.modelId).catch(() => {
         /* 清异常标记失败不影响已成功的请求 */
+      })
+    }
+    /**
+     * ★ B：成功即记每日用量（防封节奏，2026-11-19）。
+     *
+     * 与清异常同一判据、同一接线点：只有真出内容的请求消耗配额。fire-and-forget
+     * + 吞错 —— 记账失败绝不反噬已成功的请求。账号池未注入（单测）时静默跳过。
+     */
+    if (failure === undefined && ttftMs > 0 && accountId.length > 0 && anomalyPool?.recordAccountUse !== undefined) {
+      void anomalyPool.recordAccountUse(accountId).catch(() => {
+        /* 记账失败不影响已成功的请求 */
       })
     }
   }

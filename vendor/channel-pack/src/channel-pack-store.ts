@@ -120,10 +120,90 @@ export interface ChannelPackState {
    * 只在 `accountStrategy[provider] === 'round-robin'` 时生效。
    */
   accountStickyLimit?: Record<string, number>
+  /**
+   * 「防封节奏」配置（2026-11-19 用户要求：防止账号被封，增加账号轮询机制）。
+   *
+   * 与账号策略同一条精神：全局一项（键同 {@link ACCOUNT_STRATEGY_GLOBAL_KEY}），
+   * 只在 `round-robin` 下生效；缺键 = 全部走 {@link DEFAULT_ANTI_BAN} 的默认值，
+   * 老文档升级后行为不变差（间隔/上限默认偏保守，用户可关）。
+   */
+  antiBan?: Record<string, AntiBanConfig>
 }
 
 /** 账号选择策略。 */
 export type AccountStrategy = 'sequential' | 'round-robin'
+
+/**
+ * 「防封节奏」配置（2026-11-19 用户要求：防止账号被封，增加账号轮询机制）。
+ *
+ * 四项各自独立、可单独关掉；只在 `round-robin` 下生效，`sequential` 行为不变。
+ * 全部数值在 {@link sanitizeAntiBan} 里夹紧，文档脏值不会炸选号。
+ */
+export interface AntiBanConfig {
+  /** A：同号两次请求的最小间隔（毫秒）。0 = 关闭 pacing。 */
+  minIntervalMs?: number
+  /**
+   * A：间隔抖动比例（0..0.9）。实际间隔 = minIntervalMs × (1 + rand × jitter)，
+   * 让请求节奏看起来不像机器人；0 = 不抖动。
+   */
+  jitter?: number
+  /** B：每个账号每自然日最多多少次请求。0 = 不限量。 */
+  dailyLimit?: number
+  /** C：sticky 名额用完换号时，是否在其余可用号里随机挑（false = 按原顺序 +1）。 */
+  randomRotation?: boolean
+  /**
+   * D：渠道级风控退避 —— 渠道里任一账号命中 3012 后，整个渠道进入
+   * 「降速模式」的时长（毫秒）；期内该渠道的 pacing 间隔 ×2。0 = 关闭。
+   */
+  riskBackoffMs?: number
+}
+
+/** 防封节奏默认值（2026-11-19 用户确认「全做」）：保守起步，宁慢勿封。 */
+export const DEFAULT_ANTI_BAN: Required<AntiBanConfig> = {
+  minIntervalMs: 3000,
+  jitter: 0.5,
+  dailyLimit: 100,
+  randomRotation: true,
+  riskBackoffMs: 5 * 60 * 1000,
+}
+
+/**
+ * 归一化防封节奏配置。
+ *
+ * 键同 {@link ACCOUNT_STRATEGY_GLOBAL_KEY}（全局一项）。逐字段夹紧：
+ * 间隔 0..10min、抖动 0..0.9、日限 0..10000、退避 0..24h；
+ * 非 object / 脏字段一律回落默认（不是丢弃整份配置 —— 单个脏键不该连累
+ * 用户设好的其它键）。
+ */
+export function sanitizeAntiBan(raw: unknown): Record<string, AntiBanConfig> {
+  const out: Record<string, AntiBanConfig> = {}
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return out
+  const value = (raw as Record<string, unknown>)[ACCOUNT_STRATEGY_GLOBAL_KEY]
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return out
+  const clampInt = (n: unknown, lo: number, hi: number): number | undefined => {
+    const v = typeof n === 'number' ? n : Number(n)
+    if (!Number.isFinite(v)) return undefined
+    return Math.min(hi, Math.max(lo, Math.trunc(v)))
+  }
+  const clampNum = (n: unknown, lo: number, hi: number): number | undefined => {
+    const v = typeof n === 'number' ? n : Number(n)
+    if (!Number.isFinite(v)) return undefined
+    return Math.min(hi, Math.max(lo, v))
+  }
+  const cfg: AntiBanConfig = {}
+  const minIntervalMs = clampInt((value as Record<string, unknown>).minIntervalMs, 0, 10 * 60 * 1000)
+  if (minIntervalMs !== undefined) cfg.minIntervalMs = minIntervalMs
+  const jitter = clampNum((value as Record<string, unknown>).jitter, 0, 0.9)
+  if (jitter !== undefined) cfg.jitter = jitter
+  const dailyLimit = clampInt((value as Record<string, unknown>).dailyLimit, 0, 10000)
+  if (dailyLimit !== undefined) cfg.dailyLimit = dailyLimit
+  const randomRotation = (value as Record<string, unknown>).randomRotation
+  if (randomRotation === true || randomRotation === false) cfg.randomRotation = randomRotation
+  const riskBackoffMs = clampInt((value as Record<string, unknown>).riskBackoffMs, 0, 24 * 60 * 60 * 1000)
+  if (riskBackoffMs !== undefined) cfg.riskBackoffMs = riskBackoffMs
+  out[ACCOUNT_STRATEGY_GLOBAL_KEY] = cfg
+  return out
+}
 
 /**
  * 轮询模式下的粘滞次数（每个账号连续用几次再换）。
@@ -177,6 +257,7 @@ const channelPackSchema = Schema.object({
   providerOrder: Schema.array(Schema.string()).default([]),
   accountStrategy: Schema.dict(Schema.any()).default({}),
   accountStickyLimit: Schema.dict(Schema.any()).default({}),
+  antiBan: Schema.dict(Schema.any()).default({}),
 })
 
 /**
@@ -364,6 +445,7 @@ class SettingsStore implements ChannelPackStore {
         providerOrder?: unknown
         accountStrategy?: unknown
         accountStickyLimit?: unknown
+        antiBan?: unknown
       }
       | undefined
     if (value === undefined || value === null) return undefined
@@ -379,6 +461,9 @@ class SettingsStore implements ChannelPackStore {
       // ★ 与 FileStore.load 同因（白名单重建，漏了就静默丢）；见那里的详细说明。
       accountStrategy: sanitizeAccountStrategy(value.accountStrategy),
       accountStickyLimit: sanitizeAccountSticky(value.accountStickyLimit),
+      // ★ 同上：settings 后端也是白名单重建，漏了 antiBan 就「拨了开关当场有效、
+      //   重启回默认」—— 与 accountStrategy 同款的静默丢字段坑。
+      antiBan: sanitizeAntiBan(value.antiBan),
     }
   }
 
@@ -404,6 +489,9 @@ class SettingsStore implements ChannelPackStore {
        */
       accountStrategy: state.accountStrategy ?? {},
       accountStickyLimit: state.accountStickyLimit ?? {},
+      // ★ 同上：settings 后端的 save 也是白名单，漏了 antiBan 会让防封设置
+      //   「当场生效、重启回默认」（与账号轮询同款的静默丢字段坑）。
+      antiBan: state.antiBan ?? {},
     })
   }
 }
@@ -570,6 +658,7 @@ class FileStore implements ChannelPackStore {
         providerOrder?: unknown
         accountStrategy?: unknown
         accountStickyLimit?: unknown
+        antiBan?: unknown
       }
       return {
         accounts: sanitizeAccounts(value.accounts),
@@ -594,6 +683,9 @@ class FileStore implements ChannelPackStore {
          */
         accountStrategy: sanitizeAccountStrategy(value.accountStrategy),
         accountStickyLimit: sanitizeAccountSticky(value.accountStickyLimit),
+        // ★ 防封节奏（2026-11-19）：与上面两个键同款白名单坑 —— load 漏了它
+        //   就是「设置页改了、重启全回默认」。sanitize 里脏值逐字段回落默认。
+        antiBan: sanitizeAntiBan(value.antiBan),
       }
     } catch (error) {
       this.logger?.warn(`[channel-pack] 读取 ${this.path} 失败，本次以空列表启动: ${String(error)}`)
