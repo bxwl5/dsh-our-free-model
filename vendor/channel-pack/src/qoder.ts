@@ -7,6 +7,26 @@
  * 协议依据：`docs/superpowers/specs/2026-09-19-qoder-provider-design.md` §2。
  */
 
+/**
+ * Qoder 会把「系统提示词以 Claude Code 身份行开头」的请求一律回
+ * `400 Cannot find model`（任何模型都这样）；把那一行换成 Claude Agent SDK 的
+ * 写法就能通过（magpie opencode-qoder-auth 0.2.72，2026-11-24 社区实测
+ * ByFanX on X）。
+ *
+ * ⚠️ **只改要发给 Qoder 的那份**：调用方（宿主）看到的 system 原样不动，
+ * 否则会污染会话历史与其它渠道。
+ * ⚠️ 白空格容忍：宿主写 `You  are Claude Code, ...`（多空格/换行）也要能命中。
+ * ⚠️ `running within the Claude Agent SDK` 是 Claude Code 的另一种 SDK 形态，
+ * 一并换成统一行 —— 否则换完还是「Claude Code 身份」，400 照旧。
+ */
+const QODER_CLAUDE_CODE_LINE = /You\s+are\s+Claude\s+Code,\s+Anthropic's\s+official\s+CLI\s+for\s+Claude(?:,\s+running\s+within\s+the\s+Claude\s+Agent\s+SDK)?\./g
+const QODER_AGENT_SDK_LINE = "You are a Claude agent, built on Anthropic's Claude Agent SDK."
+
+/** 把 Claude Code 身份行换成 Claude Agent SDK 行（只作用于发给 Qoder 的文本）。 */
+export function asAgentSDK(text: string): string {
+  return text.replace(QODER_CLAUDE_CODE_LINE, QODER_AGENT_SDK_LINE)
+}
+
 import { createHash, randomUUID, randomBytes } from 'node:crypto'
 import type { QoderProduct } from './qoder-product.js'
 

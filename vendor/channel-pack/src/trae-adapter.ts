@@ -1127,7 +1127,7 @@ export class TraeAdapter extends LlmAdapter {
     const body = JSON.stringify(bodyObj)
 
     // 4. 发送请求（401/403 时刷新一次凭据后重试）
-    let response = await this.send(credential, body, options)
+    let response = await this.send(credential, body, options, openaiBody as unknown as Record<string, unknown>)
     if (!response.ok && (response.status === 401 || response.status === 403)) {
       await this.options.refresh()
       // 与主路径一致：按本模型选号（跳过正在限流的账号）。
@@ -1136,7 +1136,7 @@ export class TraeAdapter extends LlmAdapter {
         throw new LlmError('trae: credential expired and refresh failed', 'AUTH', { status: response.status })
       }
       credential = refreshed
-      response = await this.send(credential, body, options)
+      response = await this.send(credential, body, options, openaiBody as unknown as Record<string, unknown>)
     }
     if (!response.ok) {
       let errorText = await response.text().catch(() => '')
@@ -1163,7 +1163,7 @@ export class TraeAdapter extends LlmAdapter {
           tried.add(next.entry.id)
           credential = next.credential as TraeCredential
           currentAccountId = next.entry.id
-          response = await this.send(credential, body, options)
+          response = await this.send(credential, body, options, openaiBody as unknown as Record<string, unknown>)
           if (response.ok) {
             yield* this.consumeSse(response, options)
             return
@@ -1242,7 +1242,7 @@ export class TraeAdapter extends LlmAdapter {
           triedStreamAccounts.add(next.entry.id)
           credential = next.credential as TraeCredential
           currentAccountId = next.entry.id
-          response = await this.send(credential, body, options)
+          response = await this.send(credential, body, options, openaiBody as unknown as Record<string, unknown>)
           if (!response.ok) {
             const text = await response.text().catch(() => '')
             const kind = classifyTraeError(response.status, text)
@@ -1260,7 +1260,7 @@ export class TraeAdapter extends LlmAdapter {
           && error.message.includes('upstream returned no events')
         if (!empty || attempt >= 1) throw error
         if (options.signal?.aborted) throw error
-        response = await this.send(credential, body, options)
+        response = await this.send(credential, body, options, openaiBody as unknown as Record<string, unknown>)
         if (!response.ok) {
           const text = await response.text().catch(() => '')
           throw new LlmError(`trae: ${errorDetail(text)}`, httpErrorCode(response.status), { status: response.status })
@@ -1269,13 +1269,53 @@ export class TraeAdapter extends LlmAdapter {
     }
   }
 
-  /** 发起一次 chat 请求；网络失败映射为可重试的 TRANSPORT 错误。 */
+  /**
+   * 发起一次 chat 请求；网络失败映射为可重试的 TRANSPORT 错误。
+   *
+   * ## 企业自定义模型走直连（2026-11-24，对齐 magpie 0.2.53）
+   *
+   * 当模型条目带 `customBase`（见 `TraeRemoteModel.customBase` 的判据）时，
+   * **不再**发往 `llm_utils_chat`，而是直接 POST 企业给的
+   * `base_url`（OpenAI chat/completions），`Authorization: Bearer <ak>`。
+   *
+   * 理由：`llm_utils_chat` 把这类模型**截断在 2000 tokens/轮**，而直连能跑满
+   * `max_tokens`（实测 32768，生成过 8274 / 12182 tokens）。
+   *
+   * ⚠️ 直连时**不注入** Trae 的 SOLO 头：企业端点认的是它自己的 AK，
+   *   多带 Trae 的 JWT/machine 头既无意义也可能被企业网关拒。
+   * ⚠️ 请求体要**转回 OpenAI 形态**：`llm_utils_chat` 的 SOLO 体（含
+   *   `config_name`、Trae 私有字段）企业端点不认识。
+   */
   private async send(
     credential: TraeCredential,
     body: string,
     options: GenerateOptions,
+    openaiBody?: Record<string, unknown>,
   ): Promise<Response> {
     this.sendCount += 1
+    const custom = this.remoteMeta.get(options.model)?.customBase
+    if (custom !== undefined && openaiBody !== undefined) {
+      // 企业端点只认 OpenAI 形态：模型名用它自己的 model_name。
+      const directBody = JSON.stringify({ ...openaiBody, model: custom.modelName, stream: true })
+      try {
+        return await this.fetchImpl(custom.url, {
+          method: 'POST',
+          headers: new Headers({
+            'content-type': 'application/json',
+            accept: 'text/event-stream',
+            authorization: `Bearer ${custom.ak}`,
+          }),
+          body: directBody,
+          signal: options.signal,
+        })
+      } catch (error) {
+        if (options.signal?.aborted) throw error
+        if (isTransportError(error)) {
+          throw new LlmError(`trae: transport error: ${errorMessage(error)}`, 'TRANSPORT', { cause: error as Error })
+        }
+        throw error
+      }
+    }
     const headers = new Headers(
       traeSOLOHeaders(credential, this.product, true, this.machineIdGeneration()),
     )

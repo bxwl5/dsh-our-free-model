@@ -398,6 +398,9 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   // Loomy 短信登录（2026-11-20 取代扫码）：归一/冷却/未发码/发码失败/成功路径
   const { verifyLoomySmsLogin } = await import('./loomy-sms-login-test.mjs')
   await verifyLoomySmsLogin()
+  // magpie 2026-11-24 的三个更新移植（qoder 身份行 / zcode 日内去重 / trae 直连）
+  const { verifyMagpieAlignment } = await import('./magpie-alignment-test.mjs')
+  await verifyMagpieAlignment()
  // OAuth 渠道后台登录失败必须让 login.poll 拿到可读原因（本用例只用
   // directLane 注入的本地替身上游，不出网）。
   const { verifyChannelOauthFailure } = await import('./channel-oauth-failure-test.mjs')

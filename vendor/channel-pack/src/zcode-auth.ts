@@ -163,6 +163,60 @@ export interface ZcodeAuthOptions {
 const CODING_PLAN_KEY_TIMEOUT_MS = 8_000
 
 /**
+ * 当日已处理 plan 的缓存（2026-11-24，对齐 magpie opencode-zcode-auth 0.1.69）。
+ *
+ * ## 解决什么
+ *
+ * 同一账号在**同一天**被多次触发签到时（自动签到补跑、用户手点、账本重试），
+ * 会重新拉一遍 plan 列表并逐个重发 —— 每个 plan 都白打一次上游。
+ * `claimDailyWith` 的注释里记着 `ZCODE_MAX_ATTEMPTS_PER_DAY = 2` 的补跑设计，
+ * 那条设计正确，但「补跑」不该把**已经领成功的 plan** 再领一次。
+ *
+ * ## magpie 的做法（照抄）
+ *
+ * 按「账号 + 北京日期」缓存已结算的 plan，只对**没处理过**的 plan 重试：
+ * `claimed` / `done` / `captcha` 三种结局算「已结算」，其余（失败/未开启）
+ * 允许当天再试。
+ *
+ * ## 为什么用 Map 而不是写盘
+ *
+ * 它只是进程内的去重窗口，跨重启丢失无害（重启后再领一次上游会如实回
+ * `already-claimed`，幂等）。写盘反而要处理并发与清理。
+ */
+const SETTLED_ZCODE_OUTCOMES = new Set(['claimed', 'done', 'captcha'])
+
+/** 账号 key → 北京时间日期 → 已结算的 plan 集合。 */
+const zcodeDaySettled = new Map<string, { day: string; plans: Set<string> }>()
+
+/** 北京时区的 `YYYY-MM-DD`（与上游投放口径一致，见 `auto-checkin` 的 today()）。 */
+function zcodeBeijingDay(nowMs: number = Date.now()): string {
+  return new Date(nowMs + 8 * 3600_000).toISOString().slice(0, 10)
+}
+
+/** 取某账号「今天已结算」的 plan 集合（跨日自动清空）。 */
+function zcodeSettledToday(key: string, nowMs: number = Date.now()): Set<string> {
+  const day = zcodeBeijingDay(nowMs)
+  const entry = zcodeDaySettled.get(key)
+  if (entry === undefined || entry.day !== day) {
+    const fresh = { day, plans: new Set<string>() }
+    zcodeDaySettled.set(key, fresh)
+    return fresh.plans
+  }
+  return entry.plans
+}
+
+/**
+ * 清空当日缓存（测试用；生产不需要 —— 跨日自动失效）。
+ *
+ * ⚠️ 与 magpie 的 `resetDayAnswers` 同用途：让测试能在同一进程内重复
+ * 验证「首次领取 / 当日去重」两条路径。
+ */
+export function resetZcodeDaySettled(): void {
+  zcodeDaySettled.clear()
+}
+
+
+/**
  * 给一个 promise 加超时（超时以异常形式抛出，交给调用方记录）。
  *
  * ⚠ `Promise.race` 会给**每一个**输入都挂上处理器，故原 promise 之后才
@@ -1332,7 +1386,28 @@ export class ZcodeAuth extends Service {
        */
 
       await reportZcodeActivation(credential, this.fetchImpl)
-      const plans = await fetchZcodeClaimablePlans(credential, this.fetchImpl)
+      const allPlans = await fetchZcodeClaimablePlans(credential, this.fetchImpl)
+      /**
+       * ★★ **日内去重**（2026-11-24，对齐 magpie opencode-zcode-auth 0.1.69）。
+       *
+       * 同一账号同一天可能被触发多次（自动签到补跑 `ZCODE_MAX_ATTEMPTS_PER_DAY=2`、
+       * 用户手点、账本重试）。每次都重拉 plan 并逐个重发 = 每个 plan 白打一次上游；
+       * 领成功的 plan 再领还会撞 `already-claimed`，在面板上制造噪音。
+       *
+       * 故按「账号 + 北京日期」记住**已结算**的 plan，
+       * 这一轮只处理没结算过的。三种结局算已结算（见 `SETTLED_ZCODE_OUTCOMES`），
+       * 失败/未开启仍允许当天再试 —— 与 magpie 的 `SETTLES` 集合一致。
+       *
+       * ⚠️ 账号 key 优先用池条目 id（`resolveClaimAccountId` 的同一口径），
+       *   拿不到才回落到凭据里的 uid/phone —— 否则多账号会共用一份缓存。
+       */
+      const dayKey = await this.resolveClaimAccountId(credential).catch(() => undefined)
+        ?? credential.user_id
+        // 老凭据可能没有 user_id（见 `ZcodeCredential.user_id` 注释）：
+        // 回落到 JWT 尾部做 key —— 同一凭据稳定即可，不追求跨登录一致。
+        ?? credential.zcode_jwt.slice(-16)
+      const settled = zcodeSettledToday(dayKey)
+      const plans = allPlans.filter((plan) => !settled.has(plan.planId))
       /**
        * ★★ 「没有可领 plan」**不能**记成 `already-claimed`（真实缺陷，2026-11-09）。
        *
@@ -1381,6 +1456,22 @@ export class ZcodeAuth extends Service {
        * ⚠️ 文案不写「已领 / 已签到」字样：面板与账本会把它们归到「今天办完了」。
        */
       if (plans.length === 0) {
+        /**
+         * 两种「空」必须区分（magpie 0.1.69 的同款处理）：
+         *
+         * - 上游确实没投放（`allPlans` 也是空）→ `inactive`，让账本 30 分钟后补跑；
+         * - 今天已经全部领过（`allPlans` 非空、过滤后为空）→ `already-claimed`，
+         *   如实告诉用户「今日已领」，而不是让它以为「上游还没发」。
+         *
+         * ⚠️ 旧版一律报 `inactive`，于是补跑时会对着已领完的账号再打两轮上游
+         *   （虽然幂等，但在面板上表现为「反复重试却什么也没发生」）。
+         */
+        if (allPlans.length > 0) {
+          return [{
+            kind: 'already-claimed',
+            message: `今日已领取（${allPlans.length} 个 plan 已结算）`,
+          }]
+        }
         return [{
           kind: 'inactive',
           message: '上游尚未投放今日额度（服务端按日投放，稍后自动重试）',
@@ -1430,6 +1521,8 @@ export class ZcodeAuth extends Service {
           plan, credential, accountId, mintCaptcha, captchaConfig, region,
         })
         outcomes.push(step.outcome)
+        // 只登记**已结算**的 plan；失败/未开启留在缓存外，当天可再试。
+        if (SETTLED_ZCODE_OUTCOMES.has(String(step.outcome.kind))) settled.add(plan.planId)
         if (!step.continueWithNextPlan) break
       }
       return outcomes

@@ -30,6 +30,7 @@ import { AccountPool, providerCatalogVisible } from './account-pool.js'
 import { directFetch } from './direct-fetch.js'
 import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import { isQoderExpired, type QoderCredential } from './qoder.js'
+import { asAgentSDK } from './qoder.js'
 import { QoderEncryptedInfer, type QoderInferMessage, type QoderInferRequest, type QoderInferTool, type QoderInferToolCall } from './qoder-wasm.js'
 import { unwrapQoderEnvelopeStream } from './qoder-envelope.js'
 import { QODER, type QoderFallbackModel, type QoderModelPromotion, type QoderProduct } from './qoder-product.js'
@@ -1034,8 +1035,14 @@ export class QoderAdapter extends LlmAdapter {
     //
     // 目录 key（`qfmodel` 等）只有这条路能用；公开端点是另一套通用名。
     const messages = serializeMessages(options.messages, imageUrls)
+    /**
+     * ⚠️ **必须换掉 Claude Code 身份行**（2026-11-24，对齐 magpie 0.2.72）：
+     * Qoder 对「system 以 Claude Code 身份行开头」的请求一律回
+     * `400 Cannot find model`，换成 Claude Agent SDK 的写法才能通过。
+     * 只改发给 Qoder 的这一份；调用方与其它渠道看到的 system 原样不动。
+     */
     const systemText = options.system !== undefined && options.system.length > 0
-      ? options.system
+      ? asAgentSDK(options.system)
       : undefined
 
     /** 最后一条 user 消息即本轮提问；其余作为历史。 */

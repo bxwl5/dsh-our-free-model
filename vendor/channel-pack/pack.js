@@ -40180,6 +40180,11 @@ import { LlmAdapter as LlmAdapter3, LlmError as LlmError6, ReasoningEffortId as 
 
 // vendor/channel-pack/src/qoder.ts
 import { createHash as createHash2, randomUUID, randomBytes as randomBytes2 } from "node:crypto";
+var QODER_CLAUDE_CODE_LINE = /You\s+are\s+Claude\s+Code,\s+Anthropic's\s+official\s+CLI\s+for\s+Claude(?:,\s+running\s+within\s+the\s+Claude\s+Agent\s+SDK)?\./g;
+var QODER_AGENT_SDK_LINE = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
+function asAgentSDK(text) {
+  return text.replace(QODER_CLAUDE_CODE_LINE, QODER_AGENT_SDK_LINE);
+}
 var QODER_REQUEST_TIMEOUT_MS = 3e4;
 var QODER_LOGIN_TIMEOUT_MS = 3e5;
 var QODER_POLL_INTERVAL_MS = 1e3;
@@ -41741,7 +41746,7 @@ var QoderAdapter = class extends LlmAdapter3 {
     }
     credential = await this.ensureUid(credential);
     const messages = serializeMessages(options.messages, imageUrls);
-    const systemText = options.system !== void 0 && options.system.length > 0 ? options.system : void 0;
+    const systemText = options.system !== void 0 && options.system.length > 0 ? asAgentSDK(options.system) : void 0;
     const userMessages = messages.filter((m) => m.role === "user");
     const lastUser = userMessages.at(-1);
     const userText = typeof lastUser?.content === "string" ? lastUser.content : Array.isArray(lastUser?.content) ? lastUser.content.filter((block) => block.type === "text").map((block) => String(block.text ?? "")).join("") : "";
@@ -42496,7 +42501,9 @@ function applyTraeRefresh(previous, exchange, nowMs = Date.now()) {
   };
 }
 function isTraeModelCallable(model) {
-  return model.isCustomModel !== true && model.isEnabled !== false;
+  if (model.isEnabled === false) return false;
+  if (model.isCustomModel !== true) return true;
+  return model.customBase !== void 0;
 }
 function readContextWindowField(entry) {
   const raw = entry.context_window_tokens ?? entry.ContextWindowTokens;
@@ -42646,8 +42653,40 @@ function parseTraeConfigEntry(entry, channel) {
     ...maxOutputTokens === void 0 ? {} : { maxOutputTokens },
     ...creditsRate === void 0 ? {} : { creditsRate },
     ...discount === void 0 ? {} : { originalCreditsRate: discount.originalRate },
-    ...discount?.endsAtSec === void 0 ? {} : { discountEndsAtSec: discount.endsAtSec }
+    ...discount?.endsAtSec === void 0 ? {} : { discountEndsAtSec: discount.endsAtSec },
+    ...(() => {
+      const c = parseCustomBase(entry);
+      return c === void 0 ? {} : { customBase: c };
+    })()
   };
+}
+function parseCustomBase(entry) {
+  const detail = entry.model_detail ?? entry.ModelDetail;
+  if (typeof detail !== "object" || detail === null) return void 0;
+  const d = detail;
+  const config = d.custom_config ?? d.CustomConfig;
+  if (typeof config !== "object" || config === null) return void 0;
+  const c = config;
+  if (c.status !== true) return void 0;
+  const authType = c.auth_type ?? c.AuthType;
+  if (authType !== 0 && authType !== "0") return void 0;
+  const provider = String(d.provider ?? d.Provider ?? entry.provider ?? "").trim();
+  if (provider !== "custom_openai_compatible") return void 0;
+  const modelName = String(d.model_name ?? d.ModelName ?? "").trim();
+  if (modelName.length === 0) return void 0;
+  const ak = typeof c.ak === "string" ? c.ak.trim() : "";
+  if (ak.length === 0) return void 0;
+  const raw = String(c.base_url ?? c.BaseUrl ?? "").trim();
+  if (raw.length === 0) return void 0;
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return void 0;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return void 0;
+  if (!/\/chat\/completions\/?$/.test(url.pathname)) return void 0;
+  return { url: url.toString(), ak, modelName };
 }
 function parseTraeBatchModelList(body, channelPriority = TRAE_CHANNELS) {
   if (typeof body !== "object" || body === null) return [];
@@ -43565,7 +43604,7 @@ var TraeAdapter = class extends LlmAdapter4 {
     }
     const bodyObj = transformToSOLOBody(openaiBody, void 0, this.channelFor(options.model));
     const body = JSON.stringify(bodyObj);
-    let response = await this.send(credential, body, options);
+    let response = await this.send(credential, body, options, openaiBody);
     if (!response.ok && (response.status === 401 || response.status === 403)) {
       await this.options.refresh();
       const refreshed = await this.options.resolveCredential(options.model);
@@ -43573,7 +43612,7 @@ var TraeAdapter = class extends LlmAdapter4 {
         throw new LlmError7("trae: credential expired and refresh failed", "AUTH", { status: response.status });
       }
       credential = refreshed;
-      response = await this.send(credential, body, options);
+      response = await this.send(credential, body, options, openaiBody);
     }
     if (!response.ok) {
       let errorText = await response.text().catch(() => "");
@@ -43600,7 +43639,7 @@ var TraeAdapter = class extends LlmAdapter4 {
           tried.add(next.entry.id);
           credential = next.credential;
           currentAccountId = next.entry.id;
-          response = await this.send(credential, body, options);
+          response = await this.send(credential, body, options, openaiBody);
           if (response.ok) {
             yield* this.consumeSse(response, options);
             return;
@@ -43653,7 +43692,7 @@ var TraeAdapter = class extends LlmAdapter4 {
           triedStreamAccounts.add(next.entry.id);
           credential = next.credential;
           currentAccountId = next.entry.id;
-          response = await this.send(credential, body, options);
+          response = await this.send(credential, body, options, openaiBody);
           if (!response.ok) {
             const text = await response.text().catch(() => "");
             const kind = classifyTraeError(response.status, text);
@@ -43667,7 +43706,7 @@ var TraeAdapter = class extends LlmAdapter4 {
         const empty = error instanceof LlmError7 && error.message.includes("upstream returned no events");
         if (!empty || attempt >= 1) throw error;
         if (options.signal?.aborted) throw error;
-        response = await this.send(credential, body, options);
+        response = await this.send(credential, body, options, openaiBody);
         if (!response.ok) {
           const text = await response.text().catch(() => "");
           throw new LlmError7(`trae: ${errorDetail4(text)}`, httpErrorCode4(response.status), { status: response.status });
@@ -43675,9 +43714,47 @@ var TraeAdapter = class extends LlmAdapter4 {
       }
     }
   }
-  /** 发起一次 chat 请求；网络失败映射为可重试的 TRANSPORT 错误。 */
-  async send(credential, body, options) {
+  /**
+   * 发起一次 chat 请求；网络失败映射为可重试的 TRANSPORT 错误。
+   *
+   * ## 企业自定义模型走直连（2026-11-24，对齐 magpie 0.2.53）
+   *
+   * 当模型条目带 `customBase`（见 `TraeRemoteModel.customBase` 的判据）时，
+   * **不再**发往 `llm_utils_chat`，而是直接 POST 企业给的
+   * `base_url`（OpenAI chat/completions），`Authorization: Bearer <ak>`。
+   *
+   * 理由：`llm_utils_chat` 把这类模型**截断在 2000 tokens/轮**，而直连能跑满
+   * `max_tokens`（实测 32768，生成过 8274 / 12182 tokens）。
+   *
+   * ⚠️ 直连时**不注入** Trae 的 SOLO 头：企业端点认的是它自己的 AK，
+   *   多带 Trae 的 JWT/machine 头既无意义也可能被企业网关拒。
+   * ⚠️ 请求体要**转回 OpenAI 形态**：`llm_utils_chat` 的 SOLO 体（含
+   *   `config_name`、Trae 私有字段）企业端点不认识。
+   */
+  async send(credential, body, options, openaiBody) {
     this.sendCount += 1;
+    const custom = this.remoteMeta.get(options.model)?.customBase;
+    if (custom !== void 0 && openaiBody !== void 0) {
+      const directBody = JSON.stringify({ ...openaiBody, model: custom.modelName, stream: true });
+      try {
+        return await this.fetchImpl(custom.url, {
+          method: "POST",
+          headers: new Headers({
+            "content-type": "application/json",
+            accept: "text/event-stream",
+            authorization: `Bearer ${custom.ak}`
+          }),
+          body: directBody,
+          signal: options.signal
+        });
+      } catch (error) {
+        if (options.signal?.aborted) throw error;
+        if (isTransportError4(error)) {
+          throw new LlmError7(`trae: transport error: ${errorMessage4(error)}`, "TRANSPORT", { cause: error });
+        }
+        throw error;
+      }
+    }
     const headers = new Headers(
       traeSOLOHeaders(credential, this.product, true, this.machineIdGeneration())
     );
@@ -55707,6 +55784,21 @@ function shouldFallbackToOtherChannel(status, body) {
 
 // vendor/channel-pack/src/zcode-auth.ts
 var CODING_PLAN_KEY_TIMEOUT_MS = 8e3;
+var SETTLED_ZCODE_OUTCOMES = /* @__PURE__ */ new Set(["claimed", "done", "captcha"]);
+var zcodeDaySettled = /* @__PURE__ */ new Map();
+function zcodeBeijingDay(nowMs = Date.now()) {
+  return new Date(nowMs + 8 * 36e5).toISOString().slice(0, 10);
+}
+function zcodeSettledToday(key, nowMs = Date.now()) {
+  const day2 = zcodeBeijingDay(nowMs);
+  const entry = zcodeDaySettled.get(key);
+  if (entry === void 0 || entry.day !== day2) {
+    const fresh = { day: day2, plans: /* @__PURE__ */ new Set() };
+    zcodeDaySettled.set(key, fresh);
+    return fresh.plans;
+  }
+  return entry.plans;
+}
 async function withTimeout(work, ms) {
   let timer;
   try {
@@ -56615,8 +56707,17 @@ var ZcodeAuth = class extends Service9 {
   async claimDailyWith(credential, mintCaptcha, captchaRegion) {
     try {
       await reportZcodeActivation(credential, this.fetchImpl);
-      const plans = await fetchZcodeClaimablePlans(credential, this.fetchImpl);
+      const allPlans = await fetchZcodeClaimablePlans(credential, this.fetchImpl);
+      const dayKey = await this.resolveClaimAccountId(credential).catch(() => void 0) ?? credential.user_id ?? credential.zcode_jwt.slice(-16);
+      const settled = zcodeSettledToday(dayKey);
+      const plans = allPlans.filter((plan) => !settled.has(plan.planId));
       if (plans.length === 0) {
+        if (allPlans.length > 0) {
+          return [{
+            kind: "already-claimed",
+            message: `\u4ECA\u65E5\u5DF2\u9886\u53D6\uFF08${allPlans.length} \u4E2A plan \u5DF2\u7ED3\u7B97\uFF09`
+          }];
+        }
         return [{
           kind: "inactive",
           message: "\u4E0A\u6E38\u5C1A\u672A\u6295\u653E\u4ECA\u65E5\u989D\u5EA6\uFF08\u670D\u52A1\u7AEF\u6309\u65E5\u6295\u653E\uFF0C\u7A0D\u540E\u81EA\u52A8\u91CD\u8BD5\uFF09"
@@ -56637,6 +56738,7 @@ var ZcodeAuth = class extends Service9 {
           region
         });
         outcomes.push(step.outcome);
+        if (SETTLED_ZCODE_OUTCOMES.has(String(step.outcome.kind))) settled.add(plan.planId);
         if (!step.continueWithNextPlan) break;
       }
       return outcomes;

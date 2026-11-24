@@ -646,6 +646,28 @@ export interface TraeRemoteModel {
   /** 输出上限（`maxOutputTokens`），取自 `model_detail_list[].max_tokens`。 */
   maxOutputTokens?: number
   /**
+   * ★ **企业自定义模型的直连配置**（2026-11-24，对齐 magpie opencode-trae-auth 0.2.53）。
+   *
+   * ## 为什么需要它
+   *
+   * Trae 的企业自定义模型（`provider === 'custom_openai_compatible'`）走
+   * `llm_utils_chat` 会被**截断在 2000 tokens/轮**（`TRAE_CUT`）；而 Trae 自己的
+   * 客户端对这类模型是**直接 POST 到企业给的 `base_url`**（一个 OpenAI
+   * chat/completions 端点），因此能跑满 `max_tokens`（实测 32768，生成过
+   * 8274 / 12182 tokens）。
+   *
+   * 来源：magpie `plugins#1366` 报告者 2026-11-24 的抓包
+   *（`tokenerpgw.asiainfo.com/erp/v1/chat/completions`）。
+   *
+   * ## 何时为 undefined
+   *
+   * 只有**完全确定可直连**时才填：provider 是 `custom_openai_compatible`、
+   * `custom_config.status === true`、`auth_type === 0`、`ak` 非空、
+   * `base_url` 是合法 URL 且路径像 chat/completions。任一不满足即 undefined
+   * —— 此时走原来的 `llm_utils_chat`（行为与升级前逐字节一致）。
+   */
+  customBase?: { url: string; ak: string; modelName: string }
+  /**
    * `display_config.is_custom_model` —— 该条目是**需用户自行配置的自定义模型**
    * （在 TRAE IDE 内绑定真实供应商后才可用）。
    *
@@ -819,7 +841,18 @@ export interface TraeReasoningConfig {
  * （见 {@link isTraeModelUsable} 的 `hideInternal`）。
  */
 export function isTraeModelCallable(model: TraeRemoteModel): boolean {
-  return model.isCustomModel !== true && model.isEnabled !== false
+  /**
+   * ⚠️ 2026-11-24：`isCustomModel === true` 不再是**否决**条件 —— 只要条目
+   * 解出了 `customBase`（企业自定义模型的直连配置完整），它就能调用
+   *（走直连而非 `llm_utils_chat`，因此不会撞 4001）。
+   *
+   * 旧结论「custom_model 一律 4001」的依据是「它们只能走 llm_utils_chat」，
+   * 而 magpie 0.2.53 证实 Trae 客户端对这类模型是直连企业端点。没有
+   * `customBase` 的 custom 条目仍然挡掉（行为与升级前一致）。
+   */
+  if (model.isEnabled === false) return false
+  if (model.isCustomModel !== true) return true
+  return model.customBase !== undefined
 }
 
 /**
@@ -1111,7 +1144,54 @@ function parseTraeConfigEntry(
     ...creditsRate === undefined ? {} : { creditsRate },
     ...discount === undefined ? {} : { originalCreditsRate: discount.originalRate },
     ...discount?.endsAtSec === undefined ? {} : { discountEndsAtSec: discount.endsAtSec },
+    ...(() => { const c = parseCustomBase(entry); return c === undefined ? {} : { customBase: c } })(),
   }
+}
+
+/**
+ * 从条目里解出**企业自定义模型的直连配置**。
+ *
+ * 判据严格照 magpie 0.2.53 的 `directOf`（少一条都会让「本该走
+ * `llm_utils_chat` 的普通模型」误走直连，那会直接 404）：
+ *
+ * | 条件 | 不满足时 |
+ * |---|---|
+ * | `custom_config` 是对象且 `status === true` | 不直连 |
+ * | `auth_type === 0`（只支持 Bearer） | 不直连 |
+ * | `provider === 'custom_openai_compatible'` | 不直连 |
+ * | `model_name` 非空、`ak` 非空 | 不直连 |
+ * | `base_url` 是合法 http(s) URL 且路径像 chat/completions | 不直连 |
+ *
+ * @returns 直连配置；任一条件不满足返回 `undefined`（调用方继续走原链路）。
+ */
+export function parseCustomBase(entry: Record<string, unknown>): { url: string; ak: string; modelName: string } | undefined {
+  const detail = entry.model_detail ?? entry.ModelDetail
+  if (typeof detail !== 'object' || detail === null) return undefined
+  const d = detail as Record<string, unknown>
+  const config = d.custom_config ?? d.CustomConfig
+  if (typeof config !== 'object' || config === null) return undefined
+  const c = config as Record<string, unknown>
+  if (c.status !== true) return undefined
+  const authType = c.auth_type ?? c.AuthType
+  if (authType !== 0 && authType !== '0') return undefined
+  const provider = String(d.provider ?? d.Provider ?? entry.provider ?? '').trim()
+  if (provider !== 'custom_openai_compatible') return undefined
+  const modelName = String(d.model_name ?? d.ModelName ?? '').trim()
+  if (modelName.length === 0) return undefined
+  const ak = typeof c.ak === 'string' ? c.ak.trim() : ''
+  if (ak.length === 0) return undefined
+  const raw = String(c.base_url ?? c.BaseUrl ?? '').trim()
+  if (raw.length === 0) return undefined
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    return undefined
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined
+  // 只认 chat/completions 形态：企业端点普遍是 `.../v1/chat/completions`。
+  if (!/\/chat\/completions\/?$/.test(url.pathname)) return undefined
+  return { url: url.toString(), ak, modelName }
 }
 
 /**
