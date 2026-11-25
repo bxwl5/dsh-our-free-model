@@ -129,8 +129,8 @@
     },
     {
       "path": "src/forward.js",
-      "size": 69252,
-      "sha256": "9fbc6e8bdb6e81841e696ee4dbfd2cd7fafeaab336a6fb2f579dbff764754536"
+      "size": 69783,
+      "sha256": "8cb0ce76c01573824b5d170e55d4fbe8fe79cca5d70a6985fccc78b6c380ccd3"
     },
     {
       "path": "src/http.js",
