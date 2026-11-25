@@ -524,7 +524,31 @@ export async function startStandalone({
       },
       publicModelRows: () => {
         const real = realCatalog()
-        return [...real, ...buildComboCatalog(combos(), real)]
+        /**
+         * ⚠️ **combo 行必须补 OpenAI 规范字段**（2026-11-25 实测修复）。
+         *
+         * `buildComboCatalog` 产出的是**原始 catalog 结构**（id/name/channel/
+         * combo/strategy/vision/contextWindow/maxOutput…），没有 `object` /
+         * `created` / `owned_by`；而 `core` / `channels` 的行都有这三个字段。
+         * 直接拼接的结果：22 行里只有这两条 combo 缺字段 —— 按 OpenAI 规范
+         * 解析 `/v1/models` 的客户端（Cherry Studio / LobeChat 等）遇到缺
+         * `object` 的行，可能整行丢弃或渲染成「未知模型」。
+         *
+         * 这里统一补齐，让每一行的字段集合一致；`name`/`contextWindow` 等
+         * 既有字段原样保留（combo 行的名里带「（路由）」后缀，客户端据此区分）。
+         */
+        const created = Math.floor(Date.now() / 1000)
+        const combosRows = buildComboCatalog(combos(), real).map(row => ({
+          ...row,
+          object: 'model',
+          created,
+          owned_by: 'our-free-model',
+          // 与 core / channels 的口径对齐：图片能力翻成模态数组（缺则 text）。
+          input_modalities: row.vision === true ? ['text', 'image'] : ['text'],
+          ...row.context_window === undefined && row.contextWindow !== undefined
+            ? { context_window: row.contextWindow } : {},
+        }))
+        return [...real, ...combosRows]
       },
       complete: (request, onChunk) => {
         const entry = comboEntryFor(request.model)

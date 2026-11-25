@@ -317,7 +317,13 @@ export async function bindForwardPort(server, { address, port, attempts = BIND_A
  * @param {() => {host: string, port: number, enabled: boolean, key: string}} options.config
  * @param {(request: object, onChunk: (chunk: object) => void) => Promise<object>} options.complete -
  *   runs one completion through the adapter and reports chunks as they arrive
- * @param {() => Array<{id: string, created: number, owned_by: string}>} options.modelRows
+ * @param {() => Array<{id: string, object: string, created: number, owned_by: string,
+ *   name?: string, description?: string, input_modalities?: string[],
+ *   context_window?: number, max_output_tokens?: number}>} options.modelRows
+ *   `/v1/models` 的行。**每条都应带 `object` / `created` / `owned_by`**（OpenAI
+ *   规范字段），名称与能力字段（`name` / `description` / `input_modalities` /
+ *   `context_window` / `max_output_tokens`）为可选扩展 —— 客户端据此渲染列表，
+ *   缺 `object` 可能整行被丢弃（2026-11-25 实测：独立版 combo 行曾缺这三个）。
  * @param {(message: string) => void} [options.log]
  * @param {(event: object) => void} [options.onTrace] - bounded request diagnostics, separate from warnings
  * @param {() => object} [options.health] - 健康应答由各产品入口注入，默认保持插件兼容。
