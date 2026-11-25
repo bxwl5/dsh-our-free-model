@@ -54,8 +54,8 @@
     },
     {
       "path": "src/adapter.js",
-      "size": 69610,
-      "sha256": "4399c389d95712e50ee6003716e5128b1a08631cd5027a3eb833786c21fd9a37"
+      "size": 70151,
+      "sha256": "bd9e9d704bfc575425fec20ea79919f2a5c5e5f5a578e7a84f950b93dc56b2c4"
     },
     {
       "path": "src/anthropic.js",
@@ -94,8 +94,8 @@
     },
     {
       "path": "src/core/completion.js",
-      "size": 9524,
-      "sha256": "2e551e671cce92d988079b768aebd0f20db6636861fc4aceb26e96622c42808d"
+      "size": 11343,
+      "sha256": "796406ed3bd23effbf5190f714a90085374e868c5f855b56500d349d4df54d80"
     },
     {
       "path": "src/core/runtime.js",
