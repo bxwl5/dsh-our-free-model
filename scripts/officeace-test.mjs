@@ -1,5 +1,15 @@
 /** OfficeAce：DPoP/两套签名/Basic 推理/轮询取码（读状态码）/凭据解析/PKCE 口径。 */
 import assert from 'node:assert/strict'
+
+/**
+ * 「未过期」配额用的到期时间（**相对现在推算**，2026-11-25 修）。
+ *
+ * ⚠️ 此前这里写死 `2026-11-24T22:47:17.496Z`，于是到了 2026-11-25 这个测试
+ * 自动变红 —— 那档 500 分被当成过期剔除，`total` 从 4600 掉到 4100。
+ * 这是**测试夹具的时间炸弹**，不是产品缺陷：改成相对时间后永久免疫。
+ * （对照组仍是硬编码的 `2020-01-01`，它就该是过期的，不会过期成别的。）
+ */
+const LIVE_EXPIRY = new Date(Date.now() + 30 * 24 * 3600_000).toISOString()
 import http from 'node:http'
 import crypto from 'node:crypto'
 
@@ -225,10 +235,10 @@ async function main() {
           skus: [{
             sku_code: 'officeace.personal.package.trial',
             sku_name: '个人体验版',
-            expired_time: '2026-11-24T22:47:17.496Z',
+            expired_time: LIVE_EXPIRY,
             quotas: [
-              { sku_attr_code: 'officeace_points', sku_value: '500', current_value: '100', expired_time: '2026-11-24T22:47:17.496Z' },
-              { sku_attr_code: 'online_search_count', sku_value: '200', current_value: '20', expired_time: '2026-11-24T22:47:17.496Z' },
+              { sku_attr_code: 'officeace_points', sku_value: '500', current_value: '100', expired_time: LIVE_EXPIRY },
+              { sku_attr_code: 'online_search_count', sku_value: '200', current_value: '20', expired_time: LIVE_EXPIRY },
               // 过期的配额不进剩余（officeace2api summarizeSubscription 同口径）
               { sku_attr_code: 'officeace_points', sku_value: '300', current_value: '0', expired_time: '2020-01-01T00:00:00Z' },
             ],
@@ -438,11 +448,11 @@ async function main() {
         subscribe_status: 'SUBSCRIBED',
         skus: [{
           sku_code: 'officeace.personal.package.trial', sku_name: '个人体验版',
-          expired_time: '2026-11-24T22:47:17.496Z',
+          expired_time: LIVE_EXPIRY,
           quotas: [
-            { sku_attr_code: 'officeace_points', sku_value: '500', current_value: '100', expired_time: '2026-11-24T22:47:17.496Z' },
+            { sku_attr_code: 'officeace_points', sku_value: '500', current_value: '100', expired_time: LIVE_EXPIRY },
             { sku_attr_code: 'officeace_points', sku_value: '300', current_value: '0', expired_time: '2020-01-01T00:00:00Z' },
-            { sku_attr_code: 'online_search_count', sku_value: '200', current_value: '20', expired_time: '2026-11-24T22:47:17.496Z' },
+            { sku_attr_code: 'online_search_count', sku_value: '200', current_value: '20', expired_time: LIVE_EXPIRY },
           ],
         }],
         bonus_skus: [
@@ -456,7 +466,7 @@ async function main() {
       assert.equal(snapshot.used, 100)
       assert.equal(snapshot.remaining, 4500, '剩余 = (500-100) + 4000 + 100')
       assert.equal(snapshot.planName, '个人体验版')
-      assert.equal(snapshot.planExpiresAt, Date.parse('2026-11-24T22:47:17.496Z'))
+      assert.equal(snapshot.planExpiresAt, Date.parse(LIVE_EXPIRY))
       assert.equal(snapshot.searchRemaining, 180, '联网搜索次数剩余 = 200-20')
       assert.equal(snapshot.packages.length, 3, '套餐 + 新用户 + 每日签到（过期奖励剔除）')
       assert.ok(snapshot.packages.some(p => p.name === '每日签到有礼' && p.remaining === 100))

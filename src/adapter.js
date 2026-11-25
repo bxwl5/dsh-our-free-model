@@ -1301,7 +1301,17 @@ function savingsFields(report) {
  * implied otherwise is how "why is it cut off at 8K when my ceiling is 32K" gets
  * asked.
  */
-function describe(entry, settings) {
+/**
+ * 模型的一句话描述（选择器与网关 `/v1/models` 共用同一口径）。
+ *
+ * ⚠️ **不要**在网关侧另写一份：插件选择器与网关必须对同一个模型说同样的话，
+ * 两份实现必然漂移（本仓库已有多处「两份名单/两套文案漂移」的真实缺陷）。
+ *
+ * @param {ModelEntry} entry catalog 行
+ * @param {object} [settings] 设置快照（读 `defaultMaxTokens`）
+ * @returns {string} 形如 `vision + text input · 200K context · thinking levels: low / high`
+ */
+export function describe(entry, settings) {
   const parts = [entry.vision ? 'vision + text input' : 'text input', `${Math.round(entry.contextWindow / 1024)}K context`]
   // A chain's own detail line: which models it will try, in order. Without it a
   // combo in the picker looks like one more model with no endpoint behind it.

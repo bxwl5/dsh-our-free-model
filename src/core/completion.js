@@ -1,4 +1,4 @@
-import { ROUTE_MAIN, ROUTE_REGION } from '../adapter.js'
+import { ROUTE_MAIN, ROUTE_REGION, describe } from '../adapter.js'
 import { toOpenAiUsage } from '../forward.js'
 import { carryFailure } from '../failure.js'
 import { effortsFor, defaultEffortFor } from '../effort.js'
@@ -11,16 +11,49 @@ export function routableModelIds(snapshot) {
   return membership
 }
 
+/**
+ * 网关 `/v1/models` 的行。
+ *
+ * ## 字段口径（2026-11-25 补齐）
+ *
+ * 此前只回 `id` / `object` / `created` / `owned_by`（外加两个私有扩展），
+ * **模型名称、描述、图片能力全部丢失** —— 调用方（Cherry Studio、LobeChat
+ * 这类按 `/v1/models` 建列表的客户端）只能看到一串 id，选模型时无法区分
+ * 「同名不同渠道」或「是否支持图片」。
+ *
+ * 现在按 OpenAI 生态常见扩展补上：
+ *
+ * | 字段 | 来源 | 说明 |
+ * |---|---|---|
+ * | `name` | `entry.name` | 展示名（客户端优先用它渲染） |
+ * | `description` | `describe(...)` | 与插件选择器**同一口径**（不另写文案） |
+ * | `input_modalities` | `entry.vision` | 图片能力（OpenAI 的 Responses 线用这个名字） |
+ * | `max_output_tokens` | `entry.maxOutput` | 上游声明的输出上限 |
+ *
+ * ⚠️ 只**新增**字段，不改既有字段名与值：已对接的客户端不受影响。
+ * ⚠️ 缺值一律不下发（`undefined` 键不进对象），与其余 provider 的约定一致。
+ */
 export function publicModelRows(snapshot) {
   const membership = routableModelIds(snapshot)
+  const created = Math.floor(Date.now() / 1000)
   return snapshot.catalog
     .filter(entry => membership.has(entry.id))
     .map(entry => {
       const efforts = effortsFor(entry, undefined, snapshot.settings.defaultMaxTokens)
       return {
         id: entry.id, object: 'model',
-        created: Math.floor(Date.now() / 1000), owned_by: 'our-free-model',
+        created, owned_by: 'our-free-model',
+        // 展示名：客户端据此渲染列表项；缺失时它们只能退回 id。
+        ...entry.name === undefined || entry.name === '' ? {} : { name: entry.name },
+        // 描述：与插件选择器同一函数（`describe`），保证两处说同样的话。
+        ...(() => {
+          const line = describe(entry, snapshot.settings)
+          return line === '' ? {} : { description: line }
+        })(),
+        // 图片能力：`vision` 是 catalog 的布尔位，这里翻成 OpenAI 的模态数组。
+        input_modalities: entry.vision === true ? ['text', 'image'] : ['text'],
         ...entry.contextWindow === undefined ? {} : { context_window: entry.contextWindow },
+        ...entry.maxOutput === undefined ? {} : { max_output_tokens: entry.maxOutput },
         ...efforts === undefined ? {} : {
           x_ofm_efforts: efforts.map(effort => effort.id),
           x_ofm_effort_default: defaultEffortFor(entry),
