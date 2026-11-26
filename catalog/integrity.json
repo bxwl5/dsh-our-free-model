@@ -64,8 +64,8 @@
     },
     {
       "path": "src/adapter.js",
-      "size": 70151,
-      "sha256": "bd9e9d704bfc575425fec20ea79919f2a5c5e5f5a578e7a84f950b93dc56b2c4"
+      "size": 70930,
+      "sha256": "bd54517b3aa427c6f76764c7474c8fb09997c3d949155ffd484d5be5a3d355ee"
     },
     {
       "path": "src/anthropic.js",
@@ -133,6 +133,11 @@
       "sha256": "96f18d376c062c2f47949dff9395db362b606beea74c9d3e2074c18e926e55c0"
     },
     {
+      "path": "src/environment.js",
+      "size": 7398,
+      "sha256": "329f1f25007ad4ab8bc69ae0b5f50fe3f414fc9c836673fc3c31d8f1845699d6"
+    },
+    {
       "path": "src/failure.js",
       "size": 2134,
       "sha256": "31e5da667667679b1b53b95e064f43d323cfd425db6e68feadd8ad3240bef7a8"
@@ -144,8 +149,8 @@
     },
     {
       "path": "src/http.js",
-      "size": 33988,
-      "sha256": "012b7f8d2410bfd187e05d1a4cbdd6cc09267f74348231f762d3e7b4d553a849"
+      "size": 34179,
+      "sha256": "17a832b9abd29d513b5edcd0177ebf0ca65922cf6f3372718dc4cf069a847a3c"
     },
     {
       "path": "src/image-pricing.d.ts",
@@ -169,8 +174,8 @@
     },
     {
       "path": "src/messages.js",
-      "size": 20565,
-      "sha256": "dbd90695fdf7cb48c165949b4b7c64e3f6f7450b700fcd520da1af0c4f6ffad8"
+      "size": 21421,
+      "sha256": "923bd76c24bd2ce7e171fd7b2ae319e040ed2c0b69b02fa10b093017e781b532"
     },
     {
       "path": "src/model-test.js",
@@ -324,8 +329,8 @@
     },
     {
       "path": "src/upstream.js",
-      "size": 27621,
-      "sha256": "87992adc63b841c7445a7f56fbb71306de9c0f0c6c57a2c4386847804eb33384"
+      "size": 32420,
+      "sha256": "6483397b5c9d40d33cea18fd2211617c6b7284ba00199f85618ee33996a4ffbb"
     },
     {
       "path": "vendor/channel-pack/LICENSE",
@@ -339,8 +344,8 @@
     },
     {
       "path": "vendor/channel-pack/pack.js",
-      "size": 3137740,
-      "sha256": "f9c10a2a0fedb1752317a188324aa8cf0df8a0e1df6ba5c383c0e3da6e5dc82c"
+      "size": 3170032,
+      "sha256": "6e0dbd2b5c1851ec6548bf4422b9d6e35f51e2e0397155edaa67952e0c9bead9"
     },
     {
       "path": "vendor/channel-pack/qoder-auth-wasm.wasm",
