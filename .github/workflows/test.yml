@@ -48,8 +48,14 @@ jobs:
       # Vite 自带 0.28.2），别合并成一条。
       - name: Make esbuild native binaries runnable
         run: |
-          chmod +x packages/standalone/node_modules/@esbuild/*/bin/esbuild
-          chmod +x packages/standalone/node_modules/vite/node_modules/@esbuild/*/bin/esbuild
+          # 通配不匹配时 shell 会把 glob 原样传给 chmod（然后非零退出），
+          # 所以每条都兜住：这里只求「有就补上执行位」，不该因为缺一个就红。
+          for dir in \
+            packages/standalone/node_modules/@esbuild \
+            packages/standalone/node_modules/vite/node_modules/@esbuild; do
+            [ -d "$dir" ] || continue
+            chmod +x "$dir"/*/bin/esbuild 2>/dev/null || true
+          done
       - name: Validate code or the complete main tree
         env:
           TEST_MODE: ${{ github.event_name == 'pull_request' && 'contributor' || 'all' }}
