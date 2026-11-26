@@ -18,6 +18,15 @@
  * 5. on any failure, restore the caches and the old registration — the swap
  *    ends with either the old version or the new one running, never neither.
  *
+ * ⚠️ **一个诚实的例外（2026-11-26 审计 P2-16）**：第 4 步的 dispose 有 8 秒上限
+ * （挂死的 disposer 会让 `isReloading()` 永久为真，热重载能力整体报废——这是当初
+ * 加超时的原因）。超时之后新版照常注册，于是**短时间内可能两代同时存在**，
+ * 违背上面那句「非旧即新」。实际影响是症状级的：两代各持同一份 `settings.json`
+ * 句柄与同一对监听端口，新版会因端口被旧代占住而落到兜底端口（页面地址漂移），
+ * 期间写入是「后写覆盖」而非损坏（`store.js` 走临时文件 + rename）。
+ * 现在这条路径**不再静默**：超时会在日志与 `last-reload` 诊断里如实标注
+ * `overlapped`，让「重载后端口怎么变了」有据可查。
+ *
  * The reload runs from a plain timer, outside the fiber being disposed, so the
  * disposal of the caller's own effects cannot cancel the swap mid-way.
  *
@@ -197,18 +206,29 @@ export function selfReload(ctx, options = {}) {
     }
     globalThis[Symbol.for('our-free-model.last-reload')] = { at: Date.now(), purged: backup.esm.size, busted }
 
+    /** 旧代是否在 8 秒内真正退净；false 表示两代短暂并存（见模块头注的例外）。 */
+    let overlapped = false
     try {
       registry.delete(previous)
       // dispose 加超时（任务 6）：挂死的 fiber 会让 isReloading() 永久为 true，
       // 热重载能力整体报废。超时后继续走（旧 fiber 的命运由内核接管），并如实记日志。
-      await Promise.race([
-        Promise.all(fibers.map(({ fiber }) => fiber.await())),
-        new Promise(resolve => setTimeout(resolve, 8000).unref?.()),
+      const disposed = await Promise.race([
+        Promise.all(fibers.map(({ fiber }) => fiber.await())).then(() => true),
+        new Promise(resolve => setTimeout(() => resolve(false), 8000).unref?.()),
       ])
+      if (disposed === false) {
+        overlapped = true
+        logger.warn?.('our-free-model: hot reload dispose 超过 8s，旧实例可能仍在退出（两代短暂并存；若出现端口漂移或重复请求，重启一次即可）')
+      }
     } catch (error) {
       // Old fibers are gone regardless; the new registration below is still the
       // right move — the error is logged, not propagated, to not skip it.
       logger.warn?.(`our-free-model: hot reload dispose reported ${error?.message ?? error}`)
+    }
+    if (overlapped) {
+      // `last-reload` 是设置页/诊断读的那份快照；上面赋值时还不知道会不会超时。
+      const diagnostic = globalThis[Symbol.for('our-free-model.last-reload')]
+      if (diagnostic !== undefined) diagnostic.overlapped = true
     }
 
     try {
@@ -223,8 +243,8 @@ export function selfReload(ctx, options = {}) {
         created.push(fresh)
       }
       await Promise.all(created.map(fiber => fiber.await()))
-      logger.info?.(`our-free-model: hot reload complete, ${created.length} fiber(s) re-registered`)
-      return { ok: true, version: String(replacement.version ?? ''), fibers: created.length }
+      logger.info?.(`our-free-model: hot reload complete, ${created.length} fiber(s) re-registered${overlapped ? '（旧代未在 8s 内退净）' : ''}`)
+      return { ok: true, version: String(replacement.version ?? ''), fibers: created.length, overlapped }
     } catch (error) {
       // The replacement failed to start. Put the old code back both on disk
       // (caller's job, via the updater's backup) and in the registry.
