@@ -92,6 +92,8 @@ async function verify() {
   const savedFetch = globalThis.fetch, sockets = new Set(), servers = [], transports = [], releases = [], seen = [], proxyCalls = []
   const waiters = new Map()
   let nextError, globalCalls = 0, activeNetwork, checks = 0
+  // 让夹具像真实上游那样「拒收 tool_stream」：400 + 正文提到该字段。
+  let refuseToolStream = false
   const frame = { choices: [{ delta: { content: 'fixture-ok' }, finish_reason: 'stop' }] }
   const sse = value => 'data: ' + JSON.stringify(value) + '\n\ndata: [DONE]\n\n'
   const watch = server => {
@@ -136,6 +138,9 @@ const canonicalQueryOf = (url) => [...url.searchParams.entries()]
     const valid = validSignature(req, body)
     seen.push({ valid, body: body.toString(), headers: req.headers, method: req.method, url: req.url })
     if (!valid) { res.writeHead(401); res.end(JSON.stringify({ error_code: 'APIG.0301', error_msg: 'verify ak sk signature fail' })); return }
+    if (refuseToolStream && req.url.endsWith('/chat/completions') && JSON.parse(body.toString()).tool_stream !== undefined) {
+      res.writeHead(400); res.end(JSON.stringify({ error_code: 'InferHub.4001.400', error_msg: 'unknown field tool_stream' })); return
+    }
     if (req.url.endsWith('/chat/completions')) {
       res.setHeader('content-type', 'text/event-stream')
       res.end(sse(nextError === undefined ? frame : { error_code: nextError, error_msg: 'benefit not found' })); nextError = undefined
@@ -202,6 +207,37 @@ const canonicalQueryOf = (url) => [...url.searchParams.entries()]
       const chunks = await collect(new CodeArtsAdapter(defaults).stream(options))
       assert.equal(globalCalls, before); assert.equal(seen.length, start + 1); assert.equal(seen.at(-1).valid, true)
       assert.ok(seen.at(-1).body.includes('中文签名')); assert.ok(chunks.some(row => row.type === 'block-end' && row.block?.text === 'fixture-ok'))
+      // magpie 0.3.25 口径（2026-11-23）：tool_stream **只给 GLM 系**，其余模型不得收到。
+      assert.equal(JSON.parse(seen.at(-1).body).tool_stream, undefined, 'deepseek-v4.1-flash 不得收到 tool_stream')
+    })
+    await check('tool_stream 仅 GLM 系注入；被 400 拒时拆字段重签重试一次', async () => {
+      const tools = [{ name: 'write', description: '写文件', parameters: { type: 'object', properties: { path: { type: 'string' } } } }]
+      // 非 GLM + 有工具：仍不发该字段（模型不认它，只会白挨一个 400）。
+      let start = seen.length
+      await collect(new CodeArtsAdapter(defaults).stream({ ...options, model: 'deepseek-v4.1-flash', tools }))
+      assert.equal(seen.length, start + 1)
+      assert.equal(JSON.parse(seen.at(-1).body).tool_stream, undefined, '非 GLM 模型不得收到 tool_stream')
+      assert.ok(Array.isArray(JSON.parse(seen.at(-1).body).tools), '工具本身照常发送')
+      // GLM + 有工具：必须注入（大参数写文件靠它分段流式）。
+      start = seen.length
+      await collect(new CodeArtsAdapter(defaults).stream({ ...options, model: 'glm-5.3-flash', tools }))
+      assert.equal(seen.length, start + 1)
+      assert.equal(JSON.parse(seen.at(-1).body).tool_stream, true, 'GLM 系 + 有工具 ⇒ 注入')
+      // GLM + **无**工具：没有参数要流式，不注入（与 magpie 判据逐字对齐）。
+      start = seen.length
+      await collect(new CodeArtsAdapter(defaults).stream({ ...options, model: 'glm-5.3-flash' }))
+      assert.equal(JSON.parse(seen.at(-1).body).tool_stream, undefined, '没有工具就不注入')
+      // 上游 400 提到 tool_stream：拆字段重发一次，且重签名仍然有效。
+      refuseToolStream = true
+      try {
+        start = seen.length
+        const chunks = await collect(new CodeArtsAdapter(defaults).stream({ ...options, model: 'glm-5.3-flash', tools }))
+        assert.equal(seen.length, start + 2, '拆字段后只重试一次')
+        assert.equal(JSON.parse(seen[start].body).tool_stream, true, '第一次带字段')
+        assert.equal(JSON.parse(seen[start + 1].body).tool_stream, undefined, '重试必须拆掉该字段')
+        assert.ok(seen.slice(start).every(row => row.valid), '拆字段后重新签名仍有效（body 变了必须重签）')
+        assert.ok(chunks.some(row => row.type === 'block-end' && row.block?.text === 'fixture-ok'))
+      } finally { refuseToolStream = false }
     })
     await check('模型目录、积分及认证服务的默认签名 GET 同样经过专用传输', async () => {
       const before = globalCalls, start = seen.length

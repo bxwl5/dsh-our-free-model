@@ -71,6 +71,19 @@ export interface AutoClawModelDisplay {
   quotaExhausted?: boolean
   /** 额度用完时上游给的说明（`forbiddenNotice.desc`，含「24 小时后重置」等）。 */
   quotaNotice?: string
+  /**
+   * **一次请求花多少积分**（上游目录的 `creditCostFactor`，magpie 0.2.27 的 `rate`）。
+   *
+   * 与 {@link AutoClawModelDisplay.creditLevel} 的区别：`creditLevel` 只是上游的
+   * 中文分档标签（`低`/`中`/`高`），**没有数字**；`rate` 是真正的数字成本，
+   * 供面板与 `routing=cheap` 比贵贱用。
+   *
+   * ⚠️ **不写死取值**（magpie 报告过 Auto `0.4`、Flash `0.5`、GLM-5.3/5.4 `2.25`，
+   * 只作参考）：一律从目录响应读 `creditCostFactor`。
+   * 缺失、非数字、非有限数或 ≤0 时**不设此字段**（`undefined`），**绝不填 0** ——
+   * magpie 旧版恒为 0，正是「面板与 cheap 路由分不出贵贱」的缺陷来源。
+   */
+  rate?: number
 }
 
 /** 兜底模型条目。 */

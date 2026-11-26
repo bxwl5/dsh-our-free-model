@@ -157,6 +157,10 @@ const suites = [
   ['codearts-body-too-large', 'codearts-body-too-large-test.mjs', []],
   ['codearts-no-benefit-channel', 'codearts-no-benefit-channel-test.mjs', []],
   ['buddy-schema-guard', 'buddy-schema-guard-test.mjs', []],
+  // 移植 magpie 的两条凭据续期修复（2026-11-26）：workbuddy 的提前续期
+  // （剩 10 天就续，1 小时 lead 未改）+ minimax「已花掉 refresh_token → 续期结果」
+  // 的进程内缓存（写盘失败后绝不再发旧 token；`invalid_grant` 只在无缓存命中时终态）。
+  ['refresh-ahead-minimax-cache', 'refresh-ahead-minimax-cache-test.mjs', []],
   ['trae-trace-relax', 'trae-trace-relax-test.mjs', []],
   ['gateway-source', 'gateway-source-test.mjs', []],
   ['commandcode', 'commandcode-test.mjs', []],

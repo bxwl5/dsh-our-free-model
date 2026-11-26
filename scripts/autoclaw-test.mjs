@@ -70,7 +70,17 @@ async function main() {
         // 目录端点认标准 Authorization（用 X-Authorization 会 401 Invalid token）。
         if (req.headers.authorization !== 'Bearer tok') return json(401, { error: 'Invalid token' })
         if (req.headers['x-authorization'] !== undefined) return json(401, { error: 'Invalid token' })
-        return json(200, { models: [{ id: 'autoglm-air', name: 'AutoGLM Air', contextWindow: 128000 }] })
+        return json(200, {
+          models: [
+            { id: 'autoglm-air', name: 'AutoGLM Air', contextWindow: 128000, creditCostFactor: 0.4 },
+            // 数字字符串也认（magpie 用 Number(raw.creditCostFactor)）。
+            { id: 'zai_glm-5.3', name: 'GLM-5.3', contextWindow: 128000, creditCostFactor: '2.25' },
+            // 缺失 / 非数字 / 0 / 负数 → 不设 rate（**不填 0**）。
+            { id: 'zai_auto-fast', name: 'Auto-Fast', contextWindow: 128000 },
+            { id: 'zai_glm-5.3-flash', name: 'GLM-5.3-Flash', creditCostFactor: 0 },
+            { id: 'zai_bad', name: 'Bad', creditCostFactor: 'n/a' },
+          ],
+        })
       }
       if (req.url === '/autoclaw-proxy/proxy/autoclaw/chat/completions') {
         if (req.headers['x-authorization'] !== 'Bearer tok') return json(401, {})
@@ -98,9 +108,16 @@ async function main() {
     // 不是增量」—— 兜底表独有的 id 不再补进来。
     const models = await adapter.listModels('autoclaw')
     const ids = models.map(m => m.id)
-    assert.deepEqual(ids, ['autoglm-air'], '只保留远端下发的那 1 条，不得从兜底表补')
+    assert.deepEqual(ids, ['autoglm-air', 'zai_glm-5.3', 'zai_auto-fast', 'zai_glm-5.3-flash', 'zai_bad'], '只保留远端下发的那几条，不得从兜底表补')
     assert.equal(models.find(m => m.id === 'autoglm-air').name, 'AutoGLM Air')
     assert.equal(new Set(ids).size, ids.length, '不得重复')
+    // rate = 目录里的 creditCostFactor（magpie 0.2.27）：缺失/非数字/0 → undefined，绝不填 0。
+    assert.equal(adapter.rateFor('autoglm-air'), 0.4, 'Auto 的 rate 来自目录 creditCostFactor')
+    assert.equal(adapter.rateFor('zai_glm-5.3'), 2.25, '数字字符串按 Number() 取')
+    assert.equal(adapter.rateFor('zai_auto-fast'), undefined, '目录缺失 creditCostFactor → rate 不设（不是 0）')
+    assert.equal(adapter.rateFor('zai_glm-5.3-flash'), undefined, 'creditCostFactor=0 → 不设 rate（缺陷正是恒 0）')
+    assert.equal(adapter.rateFor('zai_bad'), undefined, '非数字 creditCostFactor → 不设 rate')
+    assert.equal(adapter.rateFor('not-in-catalog'), undefined, '未知模型 → undefined')
     // 走的是 /autoclaw-proxy/proxy/autoclaw-model-config，且带标准 Authorization
     const catalogReq = seen.find(x => x.url === '/autoclaw-proxy/proxy/autoclaw-model-config')
     assert.ok(catalogReq !== undefined, '目录请求路径必须是 /autoclaw-proxy/proxy/autoclaw-model-config')

@@ -84,6 +84,7 @@
 
 import { applyFingerprint, baseModelId, endpointFor, mintRequestId, sessionForConversation, wireFor } from './upstream.js'
 import { toChatMessages, toClaudeMessages, toResponseInput, toToolDefs, repairToolPairing } from './messages.js'
+import { addEnvironmentToChat, statedTextsOfMessages } from './environment.js'
 import { CODE, UpstreamError, postStreamed } from './http.js'
 import { postKiloStreamed } from './kilo.js'
 import { finishReason, readStream, sanitizeUsage, windowTokens } from './stream.js'
@@ -1172,7 +1173,9 @@ export class FreeModelAdapter {
   }
 }
 
-function buildPayload(wire, modelId, messages, options, budget, resolveImage, warnings) {
+/** 上游的两条 wire 都要带 OpenCode 的 `<env>` 块（见 src/environment.js）；导出是给
+ * `scripts/free-lane-wire-test.mjs` 断言「组装出的 body」用的。 */
+export function buildPayload(wire, modelId, messages, options, budget, resolveImage, warnings) {
   if (wire === 'responses') {
     const input = toResponseInput(messages, resolveImage, warnings)
     return {
@@ -1184,7 +1187,9 @@ function buildPayload(wire, modelId, messages, options, budget, resolveImage, wa
     }
   }
   if (wire === 'messages') {
-    const shaped = toClaudeMessages(messages, resolveImage, warnings)
+    // 块加在 Messages 线唯一的那条 system 文本末尾（`toClaudeMessages` 的
+    // `environment: true`），已有同款块时不重复加。
+    const shaped = toClaudeMessages(messages, resolveImage, warnings, { environment: true })
     return {
       model: modelId,
       messages: shaped.messages,
@@ -1194,14 +1199,17 @@ function buildPayload(wire, modelId, messages, options, budget, resolveImage, wa
     }
   }
   const chat = toChatMessages(messages, resolveImage, warnings)
-  return {
+  const system = typeof options.system === 'string' && options.system !== '' ? options.system : ''
+  const body = {
     model: modelId,
-    messages: typeof options.system === 'string' && options.system !== ''
-      ? [{ role: 'system', content: options.system }, ...chat]
-      : chat,
+    messages: system === '' ? chat : [{ role: 'system', content: system }, ...chat],
     stream: true,
     max_tokens: budget,
   }
+  // Chat 线的 system 来自宿主的 `options.system`（不是投影结果），所以块在这里补：
+  // 落在**最后一条** system 消息末尾，body 里没有 system 时补一条只含块的。
+  addEnvironmentToChat(body, [...statedTextsOfMessages(chat), system])
+  return body
 }
 
 /**

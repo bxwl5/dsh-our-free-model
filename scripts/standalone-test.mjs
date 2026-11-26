@@ -296,7 +296,7 @@ try {
     assert.ok(anonymousRequests.some(req => req.method === 'GET'))
     assert.ok(anonymousRequests.filter(req => req.method === 'POST').length >= 4)
     for (const req of anonymousRequests) {
-      assert.equal(req.headers['user-agent'], 'opencode/latest/2.0.26/cli')
+      assert.equal(req.headers['user-agent'], 'opencode/latest/2.2.5/cli')
     }
   })
   await check('unknown models are refused before spending an upstream call', async () => {

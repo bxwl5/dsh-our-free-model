@@ -132,6 +132,150 @@ export function isMinimaxRefreshable(credential: MinimaxCredential): boolean {
 }
 
 /**
+ * 「已花掉的 refresh_token → 续期结果」的缓存保留时长：**30 天**。
+ *
+ * 数值照 magpie（minimax 插件）的 `KEEP_RENEWED_MS`：`30 * 24 * 3600 * 1000`。
+ */
+export const MINIMAX_RENEWED_KEEP_MS = 30 * 24 * 3_600_000
+
+/**
+ * **已花掉的 refresh_token → 它能换出的新凭据**（进程生命周期，永不落盘）。
+ *
+ * ## 为什么必须有它（真实缺陷路径）
+ *
+ * MiniMax 的 refresh_token **用一次即废**：续期成功那一刻旧值就作废。于是有这条
+ * 死路 —— 续期成功、但**写盘失败**（Windows 上凭据文件被另一个进程/杀软占用）：
+ *
+ * 1. 磁盘上留着的还是**已被上游消费**的旧 refresh_token；
+ * 2. 下一轮（30 分钟后或任何一个 RPC）读到的仍是旧值，再拿去换；
+ * 3. 上游回 `invalid_grant` → `refreshCredentialFor` 把它判成
+ *    「refresh_token 已失效，请重新登录」→ 账号被当成**终态**登出；
+ * 4. 而实际上新令牌一直在内存里、只是没写下去 —— 用户被要求重新登录整号。
+ *
+ * 有了这份缓存，第 2 步在**发请求之前**就能认出「这枚 token 本进程已经花过」，
+ * 直接把续期结果拿来用（并重试落盘），绝不会再把它发第二遍。
+ *
+ * ## 为什么要 30 天，而不是 magpie 早期的一分钟
+ *
+ * magpie 的注释记着这件事（`opencode-minimax-auth/index.mjs:941-951`）：早先
+ * 「落盘成功后才保留一分钟」，等于**默认写盘一定成功**；磁盘写失败时旧 token
+ * 会在一分钟后被原样重发，撞 `invalid_grant` 把账号登出。因为一枚 token 一旦
+ * 被 MiniMax 消费就**永远不会再有效**，所以「它换出的结果」对它的解释力应当
+ * 与进程同寿 —— magpie 把上限定成 30 天（`KEEP_RENEWED_MS`）。
+ *
+ * ## 与 `service.ts` 的串行队列（`SerialQueue`）的关系
+ *
+ * **无关，且不重叠**：那把锁防的是「多入口并发花同一枚 token」，本缓存防的是
+ * 「花过之后还拿旧值去花」。{@link MinimaxRenewedCache.renew} 内部另有
+ * in-flight 合并（同一枚 token 的并发请求共用一次网络），同样不改 `service.ts`
+ * 里 CodeArts 那套队列的语义。
+ */
+export class MinimaxRenewedCache {
+  /** 已花掉的 refresh_token → 它换出的凭据与记账时刻。 */
+  private readonly renewed = new Map<string, { credential: MinimaxCredential; atMs: number }>()
+  /** 在途续期：同一枚 token 的并发请求共用同一个 Promise（对齐 magpie 的 `renewing`）。 */
+  private readonly renewing = new Map<string, Promise<MinimaxCredential>>()
+
+  constructor(
+    private readonly keepMs = MINIMAX_RENEWED_KEEP_MS,
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  /**
+   * 顺着「已花掉的 refresh_token」链，取本进程见过的最新凭据。
+   *
+   * 对齐 magpie 的 `latest()`（最多跟 16 跳）：磁盘上可能是第 1 枚 token，
+   * 而本进程已经续过两轮 —— 直接照搬磁盘那份就会再烧一次已死的 token。
+   * 没命中任何一环时原样返回入参（引用不变），调用方据此判「有没有命中」。
+   */
+  latest(credential: MinimaxCredential): MinimaxCredential {
+    let current = credential
+    for (let hop = 0; hop < 16; hop += 1) {
+      const spent = current.refresh_token
+      if (typeof spent !== 'string' || spent.length === 0) break
+      const done = this.renewed.get(spent)
+      if (done === undefined || this.now() - done.atMs >= this.keepMs) break
+      const merged: MinimaxCredential = { ...current, ...done.credential }
+      // 结果与现值相同（或上游原样回吐）就别再绕圈，防死循环。
+      if (merged.access_token === current.access_token && merged.refresh_token === current.refresh_token) break
+      current = merged
+    }
+    return current
+  }
+
+  /** 这枚 refresh_token 是否**已经花过**且结果还在保留期内（命中即可免发请求）。 */
+  spent(credential: MinimaxCredential): boolean {
+    const token = credential.refresh_token
+    if (typeof token !== 'string' || token.length === 0) return false
+    const done = this.renewed.get(token)
+    return done !== undefined && this.now() - done.atMs < this.keepMs
+  }
+
+  /**
+   * 用 `credential` 的 refresh_token 换新令牌（同一枚并发合并成一次请求）。
+   *
+   * ⚠️ 结果为**续期响应本身**（含新 access/refresh/expires_at），调用方负责落盘。
+   * ⚠️ 登记发生在**`run` 成功之后、调用方落盘之前**：写盘失败不影响缓存
+   * （这正是本缓存存在的理由）；`run` 抛错则什么都不登记（失败可重试）。
+   */
+  async renew(
+    credential: MinimaxCredential,
+    run: (spentRefreshToken: string) => Promise<MinimaxCredential>,
+  ): Promise<MinimaxCredential> {
+    const spent = credential.refresh_token
+    if (typeof spent !== 'string' || spent.length === 0) {
+      throw new Error('凭据缺少 refresh_token，无法续期')
+    }
+    // 先认缓存：并发的另一条路径可能刚续完。
+    const running = this.renewing.get(spent)
+    if (running !== undefined) return running
+    if (this.spent(credential)) {
+      const done = this.renewed.get(spent)
+      if (done !== undefined) return done.credential
+    }
+    const task = (async () => {
+      const next = await run(spent)
+      this.forgetOld()
+      this.renewed.set(spent, { credential: next, atMs: this.now() })
+      return next
+    })().finally(() => {
+      this.renewing.delete(spent)
+    })
+    this.renewing.set(spent, task)
+    return task
+  }
+
+  /** 丢掉超出保留期的条目（对齐 magpie 的 `forgetOld()`；在每次登记前调用）。 */
+  forgetOld(): void {
+    const nowMs = this.now()
+    for (const [token, done] of this.renewed) {
+      if (nowMs - done.atMs >= this.keepMs) this.renewed.delete(token)
+    }
+  }
+
+  /** 已登记条数（观测 / 单测用）。 */
+  get size(): number {
+    return this.renewed.size
+  }
+
+  /** 清空（登出 / 单测用；进程重启时自然也是空的）。 */
+  clear(): void {
+    this.renewed.clear()
+    this.renewing.clear()
+  }
+}
+
+/**
+ * 进程级共享缓存（进程生命周期，不落盘）。
+ *
+ * 放成模块级单例而不是实例字段：`MinimaxAuth` 可能被多个 ctx（app / 定时器 /
+ * 多产品实例 minimax-code 与 minimax-code-global）各建一个，而 token 的
+ * 「已花掉」事实是**进程级**的 —— 实例字段会让另一份实例又去烧同一枚 token。
+ * 键用 refresh_token 本身，天然按账号隔离，多产品共用一张表也不会串。
+ */
+export const MINIMAX_RENEWED = new MinimaxRenewedCache()
+
+/**
  * 构造业务请求头。
  *
  * ⚠️ MiniMax 的业务端点**只需 Bearer**（实测签到 / 积分 / 目录均如此），

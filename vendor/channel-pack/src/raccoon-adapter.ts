@@ -34,7 +34,12 @@ import { directFetch } from './direct-fetch.js'
 import { RemoteCatalogGate } from './remote-catalog-gate.js'
 import { writeModelCatalogClosingNew, restoreModelCatalog } from './model-catalog-cache.js'
 import { nextUtc8DayStartMs } from './model-queue.js'
-import { isRaccoonExpired, type RaccoonCredential } from './raccoon.js'
+import {
+  isRaccoonExpired,
+  raccoonAccountKey,
+  raccoonSessionTurnHeaders,
+  type RaccoonCredential,
+} from './raccoon.js'
 import {
   RACCOON,
   RACCOON_DEFAULT_EFFORT,
@@ -476,6 +481,25 @@ export class RaccoonAdapter extends LlmAdapter {
       ...thinking !== undefined ? { extra_body: thinking } : {},
     })
 
+    /**
+     * 会话 / 轮次头（magpie 0.1.15 的 `X-RACCOON-Call-Kind` /
+     * `X-RACCOON-Session-ID` / `X-RACCOON-Turn-ID`）。
+     *
+     * ⚠️ **在重试循环之前算一次**（不是每发一次 `headers()` 重算）：
+     * - 会话 id 来自 `options.sessionId`（DSH 会话 id）或（账号 + 首条 user
+     *   消息）的确定性派生 —— 两者在本请求内都不该变，换号重试更不该让上游
+     *   以为是**另一个**会话；
+     * - 轮次号是 `options.messages` 里 user 轮次的序号，同一轮的多个工具步骤
+     *   同值（工具结果是 `role: 'tool'`，不进计数）。
+     *
+     * 派生规则见 `raccoon.ts` 的 `raccoonSessionTurnHeaders`。
+     */
+    const sessionHeaders = raccoonSessionTurnHeaders({
+      sessionId: options.sessionId === undefined ? undefined : String(options.sessionId),
+      account: raccoonAccountKey(credential, accountId || undefined),
+      messages: options.messages,
+    })
+
     const headers = (): Record<string, string> => ({
       Accept: 'text/event-stream',
       'Content-Type': 'application/json',
@@ -483,6 +507,7 @@ export class RaccoonAdapter extends LlmAdapter {
       'X-Org-Code': credential?.office_identity ?? '',
       'X-Raccoon-Language': 'zh',
       'X-Client-Platform': this.product.clientPlatform,
+      ...sessionHeaders,
     })
 
     /** 发送一次 chat 请求。 */

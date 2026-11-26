@@ -2688,9 +2688,9 @@ var require_dispatcher_base = __commonJS({
       }
       close(callback) {
         if (callback === void 0) {
-          return new Promise((resolve2, reject) => {
+          return new Promise((resolve3, reject) => {
             this.close((err, data) => {
-              return err ? reject(err) : resolve2(data);
+              return err ? reject(err) : resolve3(data);
             });
           });
         }
@@ -2728,9 +2728,9 @@ var require_dispatcher_base = __commonJS({
           err = null;
         }
         if (callback === void 0) {
-          return new Promise((resolve2, reject) => {
+          return new Promise((resolve3, reject) => {
             this.destroy(err, (err2, data) => {
-              return err2 ? reject(err2) : resolve2(data);
+              return err2 ? reject(err2) : resolve3(data);
             });
           });
         }
@@ -7682,12 +7682,12 @@ upgrade: ${upgrade}\r
           cb();
         }
       }
-      const waitForDrain = () => new Promise((resolve2, reject) => {
+      const waitForDrain = () => new Promise((resolve3, reject) => {
         assert(callback === null);
         if (socket[kError]) {
           reject(socket[kError]);
         } else {
-          callback = resolve2;
+          callback = resolve3;
         }
       });
       socket.on("close", onDrain).on("drain", onDrain);
@@ -9098,12 +9098,12 @@ var require_client_h2 = __commonJS({
           cb();
         }
       }
-      const waitForDrain = () => new Promise((resolve2, reject) => {
+      const waitForDrain = () => new Promise((resolve3, reject) => {
         assert(callback === null);
         if (socket[kError]) {
           reject(socket[kError]);
         } else {
-          callback = resolve2;
+          callback = resolve3;
         }
       });
       h2stream.on("close", onDrain).on("drain", onDrain);
@@ -9472,16 +9472,16 @@ var require_client = __commonJS({
         return this[kNeedDrain] < 2;
       }
       [kClose]() {
-        return new Promise((resolve2) => {
+        return new Promise((resolve3) => {
           if (this[kSize]) {
-            this[kClosedResolve] = resolve2;
+            this[kClosedResolve] = resolve3;
           } else {
-            resolve2(null);
+            resolve3(null);
           }
         });
       }
       [kDestroy](err) {
-        return new Promise((resolve2) => {
+        return new Promise((resolve3) => {
           const requests = this[kQueue].splice(this[kPendingIdx]);
           for (let i = 0; i < requests.length; i++) {
             const request2 = requests[i];
@@ -9494,7 +9494,7 @@ var require_client = __commonJS({
               this[kClosedResolve]();
               this[kClosedResolve] = null;
             }
-            resolve2(null);
+            resolve3(null);
           };
           if (this[kHTTPContext]) {
             this[kHTTPContext].destroy(err, callback);
@@ -9960,8 +9960,8 @@ var require_pool_base = __commonJS({
           }
           return Promise.all(closeAll);
         } else {
-          return new Promise((resolve2) => {
-            this[kClosedResolve] = resolve2;
+          return new Promise((resolve3) => {
+            this[kClosedResolve] = resolve3;
           });
         }
       }
@@ -12746,7 +12746,7 @@ var require_readable = __commonJS({
         if (this._readableState.closeEmitted) {
           return Promise.resolve(null);
         }
-        return new Promise((resolve2, reject) => {
+        return new Promise((resolve3, reject) => {
           if (this[kContentLength] && this[kContentLength] > limit || this[kBytesRead] > limit) {
             this.destroy(new AbortError());
           }
@@ -12760,11 +12760,11 @@ var require_readable = __commonJS({
               if (signal.aborted) {
                 reject(signal.reason ?? new AbortError());
               } else {
-                resolve2(null);
+                resolve3(null);
               }
             });
           } else {
-            this.on("close", resolve2);
+            this.on("close", resolve3);
           }
           this.on("error", noop).on("data", () => {
             if (this[kBytesRead] > limit) {
@@ -12792,7 +12792,7 @@ var require_readable = __commonJS({
     }
     function consume(stream, type) {
       assert(!stream[kConsume]);
-      return new Promise((resolve2, reject) => {
+      return new Promise((resolve3, reject) => {
         if (isUnusable(stream)) {
           const rState = stream._readableState;
           if (rState.destroyed && rState.closeEmitted === false) {
@@ -12807,7 +12807,7 @@ var require_readable = __commonJS({
             stream[kConsume] = {
               type,
               stream,
-              resolve: resolve2,
+              resolve: resolve3,
               reject,
               length: 0,
               body: []
@@ -12885,18 +12885,18 @@ var require_readable = __commonJS({
       return buffer;
     }
     function consumeEnd(consume2, encoding) {
-      const { type, body, resolve: resolve2, stream, length } = consume2;
+      const { type, body, resolve: resolve3, stream, length } = consume2;
       try {
         if (type === "text") {
-          resolve2(chunksDecode(body, length, encoding));
+          resolve3(chunksDecode(body, length, encoding));
         } else if (type === "json") {
-          resolve2(JSON.parse(chunksDecode(body, length, encoding)));
+          resolve3(JSON.parse(chunksDecode(body, length, encoding)));
         } else if (type === "arrayBuffer") {
-          resolve2(chunksConcat(body, length).buffer);
+          resolve3(chunksConcat(body, length).buffer);
         } else if (type === "blob") {
-          resolve2(new Blob(body, { type: stream[kContentType] }));
+          resolve3(new Blob(body, { type: stream[kContentType] }));
         } else if (type === "bytes") {
-          resolve2(chunksConcat(body, length));
+          resolve3(chunksConcat(body, length));
         }
         consumeFinish(consume2);
       } catch (err) {
@@ -13115,9 +13115,9 @@ var require_api_request = __commonJS({
     };
     function request2(opts, callback) {
       if (callback === void 0) {
-        return new Promise((resolve2, reject) => {
+        return new Promise((resolve3, reject) => {
           request2.call(this, opts, (err, data) => {
-            return err ? reject(err) : resolve2(data);
+            return err ? reject(err) : resolve3(data);
           });
         });
       }
@@ -13378,9 +13378,9 @@ var require_api_stream = __commonJS({
     };
     function stream(opts, factory2, callback) {
       if (callback === void 0) {
-        return new Promise((resolve2, reject) => {
+        return new Promise((resolve3, reject) => {
           stream.call(this, opts, factory2, (err, data) => {
-            return err ? reject(err) : resolve2(data);
+            return err ? reject(err) : resolve3(data);
           });
         });
       }
@@ -13680,9 +13680,9 @@ var require_api_upgrade = __commonJS({
     };
     function upgrade(opts, callback) {
       if (callback === void 0) {
-        return new Promise((resolve2, reject) => {
+        return new Promise((resolve3, reject) => {
           upgrade.call(this, opts, (err, data) => {
-            return err ? reject(err) : resolve2(data);
+            return err ? reject(err) : resolve3(data);
           });
         });
       }
@@ -13776,9 +13776,9 @@ var require_api_connect = __commonJS({
     };
     function connect(opts, callback) {
       if (callback === void 0) {
-        return new Promise((resolve2, reject) => {
+        return new Promise((resolve3, reject) => {
           connect.call(this, opts, (err, data) => {
-            return err ? reject(err) : resolve2(data);
+            return err ? reject(err) : resolve3(data);
           });
         });
       }
@@ -15245,7 +15245,7 @@ var require_snapshot_recorder = __commonJS({
   "node_modules/undici/lib/mock/snapshot-recorder.js"(exports, module) {
     "use strict";
     var { writeFile: writeFile2, readFile: readFile2, mkdir: mkdir2 } = __require("node:fs/promises");
-    var { dirname: dirname3, resolve: resolve2 } = __require("node:path");
+    var { dirname: dirname4, resolve: resolve3 } = __require("node:path");
     var { setTimeout: setTimeout2, clearTimeout: clearTimeout2 } = __require("node:timers");
     var { InvalidArgumentError, UndiciError } = require_errors();
     var { hashId, isUrlExcludedFactory, normalizeHeaders, createHeaderFilters } = require_snapshot_utils();
@@ -15461,7 +15461,7 @@ var require_snapshot_recorder = __commonJS({
           throw new InvalidArgumentError("Snapshot path is required");
         }
         try {
-          const data = await readFile2(resolve2(path2), "utf8");
+          const data = await readFile2(resolve3(path2), "utf8");
           const parsed = JSON.parse(data);
           if (Array.isArray(parsed)) {
             this.#snapshots.clear();
@@ -15490,8 +15490,8 @@ var require_snapshot_recorder = __commonJS({
         if (!path2) {
           throw new InvalidArgumentError("Snapshot path is required");
         }
-        const resolvedPath = resolve2(path2);
-        await mkdir2(dirname3(resolvedPath), { recursive: true });
+        const resolvedPath = resolve3(path2);
+        await mkdir2(dirname4(resolvedPath), { recursive: true });
         const data = Array.from(this.#snapshots.entries()).map(([hash, snapshot]) => ({
           hash,
           snapshot
@@ -23283,7 +23283,7 @@ var require_fetch = __commonJS({
         const hasTrailingQuestionMark = url.search.length === 0 && url.href[url.href.length - url.hash.length - 1] === "?";
         return dispatchWithProtocolPreference(body);
         function dispatchWithProtocolPreference(body2, allowH2) {
-          return new Promise((resolve2, reject) => agent.dispatch(
+          return new Promise((resolve3, reject) => agent.dispatch(
             {
               path: hasTrailingQuestionMark ? `${path2}?` : path2,
               origin: url.origin,
@@ -23366,7 +23366,7 @@ var require_fetch = __commonJS({
                   }
                 }
                 const onError = (err) => this.onResponseError(controller, err);
-                resolve2({
+                resolve3({
                   status,
                   statusText,
                   headersList,
@@ -23399,7 +23399,7 @@ var require_fetch = __commonJS({
                   fetchParams.controller.off("terminated", this.abort);
                 }
                 if (request2.mode === "websocket" && allowH2 !== false && error?.code === "UND_ERR_INFO" && error?.message === "HTTP/2: Extended CONNECT protocol not supported by server") {
-                  resolve2(dispatchWithProtocolPreference(body2, false));
+                  resolve3(dispatchWithProtocolPreference(body2, false));
                   return;
                 }
                 this.body?.destroy(error);
@@ -23418,7 +23418,7 @@ var require_fetch = __commonJS({
                 const rawHeaders = controller?.rawHeaders ?? [];
                 const headersList = new HeadersList();
                 appendHeadersListFromResponseHeaders(headersList, headers, rawHeaders);
-                resolve2({
+                resolve3({
                   status,
                   statusText: STATUS_CODES[status],
                   headersList,
@@ -28072,16 +28072,16 @@ async function resolveCredential(fetcher, product, apiKey, signal) {
   return credential;
 }
 async function bindLoopbackPort(server, port) {
-  return new Promise((resolve2) => {
+  return new Promise((resolve3) => {
     const onError = (error) => {
       server.removeListener("listening", onListening);
-      resolve2({ ok: false, error });
+      resolve3({ ok: false, error });
     };
     const onListening = () => {
       server.removeListener("error", onError);
       const address = server.address();
       const actual = typeof address === "object" && address !== null ? address.port : port;
-      resolve2({ ok: true, port: actual });
+      resolve3({ ok: true, port: actual });
     };
     server.once("error", onError);
     server.once("listening", onListening);
@@ -28113,8 +28113,8 @@ async function startCommandCodeLogin(options) {
   const state = randomUUID3();
   let resolveResult;
   let rejectResult;
-  const result = new Promise((resolve2, reject) => {
-    resolveResult = resolve2;
+  const result = new Promise((resolve3, reject) => {
+    resolveResult = resolve3;
     rejectResult = reject;
   });
   result.catch(() => {
@@ -28193,7 +28193,7 @@ async function startCommandCodeLogin(options) {
     if (closed) return;
     closed = true;
     server.closeAllConnections?.();
-    await new Promise((resolve2) => server.close(() => resolve2()));
+    await new Promise((resolve3) => server.close(() => resolve3()));
   };
   const timeoutMs = options.timeoutMs ?? COMMANDCODE_LOGIN_TIMEOUT_MS;
   let timeoutSettled = false;
@@ -28249,7 +28249,7 @@ async function fetchCredits(fetcher, product, credential, signal) {
     if (round > 0) {
       if (signal?.aborted) return void 0;
       if (lastStatus !== void 0 && lastStatus >= 400 && lastStatus < 500) return void 0;
-      await new Promise((resolve2) => setTimeout(resolve2, COMMANDCODE_CREDITS_RETRY_DELAY_MS));
+      await new Promise((resolve3) => setTimeout(resolve3, COMMANDCODE_CREDITS_RETRY_DELAY_MS));
       if (signal?.aborted) return void 0;
     }
     const result = await attempt();
@@ -28706,7 +28706,7 @@ async function pollAuthCode(fetcher, product, state, options = {}) {
     if (response.status === 404) throw new Error("OfficeAce\uFF1Astate \u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u53D1\u8D77\u767B\u5F55");
     if (response.status === 202) {
       void response.body?.cancel().catch(() => void 0);
-      await new Promise((resolve2) => setTimeout(resolve2, intervalMs));
+      await new Promise((resolve3) => setTimeout(resolve3, intervalMs));
       continue;
     }
     if (!response.ok) throw new Error(`OfficeAce\uFF1A\u53D6\u6388\u6743\u7801\u8FD4\u56DE HTTP ${response.status}`);
@@ -28971,8 +28971,8 @@ async function fetchTokenRates(fetcher, credential, options = {}) {
     }
     if (response !== void 0 && (response.ok || !retryableRateStatus(response.status))) break;
     if (attempt + 1 < TOKEN_RATES_ATTEMPTS) {
-      await new Promise((resolve2) => {
-        setTimeout(resolve2, TOKEN_RATES_RETRY_BASE_MS * (attempt + 1));
+      await new Promise((resolve3) => {
+        setTimeout(resolve3, TOKEN_RATES_RETRY_BASE_MS * (attempt + 1));
       });
       if (options.signal?.aborted === true) break;
     }
@@ -31087,10 +31087,10 @@ var init_webapi = __esm({
 });
 
 // vendor/channel-pack/src/oauth.ts
-import { createHash as createHash6, randomBytes as randomBytes4 } from "node:crypto";
+import { createHash as createHash7, randomBytes as randomBytes5 } from "node:crypto";
 function generatePkcePair() {
-  const codeVerifier = randomBytes4(48).toString("base64url");
-  const codeChallenge = createHash6("sha256").update(codeVerifier).digest("base64url");
+  const codeVerifier = randomBytes5(48).toString("base64url");
+  const codeChallenge = createHash7("sha256").update(codeVerifier).digest("base64url");
   return { codeVerifier, codeChallenge };
 }
 async function generateDpopKeyPair() {
@@ -31106,7 +31106,7 @@ async function signDpopJws(keyPair, htm, htu) {
     htm,
     htu,
     iat: Math.floor(Date.now() / 1e3),
-    jti: randomBytes4(32).toString("hex")
+    jti: randomBytes5(32).toString("hex")
   };
   return new SignJWT(payload).setProtectedHeader({ alg: "ES256", typ: "dpop+jwt", jwk: keyPair.publicKeyJwk }).sign(key);
 }
@@ -31216,7 +31216,7 @@ __export(login_exports, {
 });
 import { createServer as createServer2 } from "node:http";
 import { spawn } from "node:child_process";
-import { randomBytes as randomBytes5 } from "node:crypto";
+import { randomBytes as randomBytes6 } from "node:crypto";
 function expiresFromCredential(credential) {
   if (credential.expires_at) {
     const parsed = Date.parse(credential.expires_at);
@@ -31233,8 +31233,8 @@ function buildOAuthLoginUrl(port, pkce, ticketId) {
 function startOAuthCallbackServer(ticketId, pkce, keyPair, options) {
   let resolveResult;
   let rejectResult;
-  const result = new Promise((resolve2, reject) => {
-    resolveResult = resolve2;
+  const result = new Promise((resolve3, reject) => {
+    resolveResult = resolve3;
     rejectResult = reject;
   });
   const server = createServer2((request2, response) => {
@@ -31269,14 +31269,14 @@ function startOAuthCallbackServer(ticketId, pkce, keyPair, options) {
   return listenOnCallbackPort(server).then((port) => ({ port, server, result }));
 }
 function listenOnCallbackPort(server) {
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve3, reject) => {
     const tryListen = (port) => {
       server.once("error", reject);
       server.listen(port, "127.0.0.1", () => {
         const address = server.address();
         const assigned = typeof address === "object" && address ? address.port : 0;
         if (assigned >= MIN_CALLBACK_PORT) {
-          resolve2(assigned);
+          resolve3(assigned);
           return;
         }
         server.close(() => {
@@ -31289,7 +31289,7 @@ function listenOnCallbackPort(server) {
   });
 }
 async function startOAuthFlow(options = {}) {
-  const ticketId = randomBytes5(32).toString("hex");
+  const ticketId = randomBytes6(32).toString("hex");
   const pkce = generatePkcePair();
   const keyPair = await generateDpopKeyPair();
   const { port, server, result } = await startOAuthCallbackServer(ticketId, pkce, keyPair, options);
@@ -31298,7 +31298,7 @@ async function startOAuthFlow(options = {}) {
   const close = async () => {
     if (closed) return;
     closed = true;
-    await new Promise((resolve2) => server.close(() => resolve2()));
+    await new Promise((resolve3) => server.close(() => resolve3()));
   };
   const resultWithUrl = Promise.race([
     result,
@@ -31377,6 +31377,10 @@ import { credentialRef as credentialRef17 } from "@deepseek-ai/dsh-credentials";
 var REFRESH_LEAD_MS = 36e5;
 var REFRESH_RETRY_MS = 6e5;
 var REFRESH_ABNORMAL_NETWORK_RETRY_MS = 6e4;
+var REFRESH_AHEAD_MS = 10 * 864e5;
+var REFRESH_AHEAD_MIN_LIFE_MS = 2 * REFRESH_AHEAD_MS;
+var REFRESH_AHEAD_RETRY_MS = 6e4;
+var REFRESH_AHEAD_RETRY_MAX_MS = 30 * 6e4;
 function isAbnormalNetworkError(error) {
   const message2 = error instanceof Error ? error.message : String(error);
   return /fetch failed|ENOTFOUND|ECONNREFUSED|proxy|unresolved host|getaddrinfo/i.test(message2);
@@ -31394,6 +31398,48 @@ function computeFirstRefreshDelayMs(expiresAtMs, nowMs = Date.now()) {
   const delay2 = trigger.getTime() - nowMs;
   return delay2 > 0 ? delay2 : 0;
 }
+function isAheadRefreshDue(params) {
+  const { expiresAtMs, lifeMs, refreshExpiresAtMs } = params;
+  const nowMs = params.nowMs ?? Date.now();
+  if (expiresAtMs === void 0 || !Number.isFinite(expiresAtMs)) return false;
+  if (lifeMs === void 0 || !Number.isFinite(lifeMs) || lifeMs < REFRESH_AHEAD_MIN_LIFE_MS) return false;
+  if (refreshExpiresAtMs !== void 0 && Number.isFinite(refreshExpiresAtMs) && nowMs >= refreshExpiresAtMs) return false;
+  const left = expiresAtMs - nowMs;
+  return left > 0 && left <= REFRESH_AHEAD_MS;
+}
+function computeAheadRefreshDelayMs(expiresAtMs, lifeMs, nowMs = Date.now()) {
+  if (expiresAtMs === void 0 || !Number.isFinite(expiresAtMs)) return void 0;
+  if (lifeMs === void 0 || !Number.isFinite(lifeMs) || lifeMs < REFRESH_AHEAD_MIN_LIFE_MS) return void 0;
+  const opensAtMs = expiresAtMs - REFRESH_AHEAD_MS;
+  return opensAtMs > nowMs ? opensAtMs - nowMs : 0;
+}
+function aheadRetryDelayMs(failures) {
+  const times = Number.isFinite(failures) && failures >= 1 ? Math.floor(failures) : 1;
+  return Math.min(REFRESH_AHEAD_RETRY_MS * 2 ** (times - 1), REFRESH_AHEAD_RETRY_MAX_MS);
+}
+var AheadRetryGate = class {
+  held = /* @__PURE__ */ new Map();
+  /** 记一次失败，返回**下一次**该等多久（毫秒）。 */
+  fail(key, nowMs = Date.now()) {
+    const failures = (this.held.get(key)?.failures ?? 0) + 1;
+    const delayMs = aheadRetryDelayMs(failures);
+    this.held.set(key, { failures, untilMs: nowMs + delayMs });
+    return delayMs;
+  }
+  /** 该 refresh_token 是否仍在退避窗口内。 */
+  waiting(key, nowMs = Date.now()) {
+    const held = this.held.get(key);
+    return held !== void 0 && held.untilMs > nowMs;
+  }
+  /** 成功后清账：下次失败重新从 1 分钟起。 */
+  clear(key) {
+    this.held.delete(key);
+  }
+  /** 记账条数（观测 / 单测用）。 */
+  get size() {
+    return this.held.size;
+  }
+};
 var RefreshScheduler = class {
   constructor(refresh, onError = () => {
   }) {
@@ -31406,12 +31452,22 @@ var RefreshScheduler = class {
   generation = 0;
   /** 为在 `expiresAtMs` 过期的凭据安排下次刷新；`nowMs` 仅供测试注入。 */
   arm(expiresAtMs, nowMs = Date.now()) {
+    this.armAfter(computeFirstRefreshDelayMs(expiresAtMs, nowMs));
+  }
+  /**
+   * 按**显式延迟**武装下一次刷新（{@link arm} 与提前续期共用这一处）。
+   *
+   * 提前续期要的延迟由调用方算好（如「到剩 10 天那一刻」的毫秒数），而 `arm()` 的
+   * `now + 1h` 语义对 28 天寿命的令牌太晚（见 {@link REFRESH_AHEAD_MS}）。
+   * 语义与 {@link arm} 完全一致：推进代号、清掉旧定时器、`unref` 掉以免挂住进程。
+   */
+  armAfter(delayMs) {
     this.generation++;
     if (this.timer !== void 0) {
       clearTimeout(this.timer);
       this.timer = void 0;
     }
-    const delay2 = computeFirstRefreshDelayMs(expiresAtMs, nowMs);
+    const delay2 = Number.isFinite(delayMs) && delayMs > 0 ? delayMs : 0;
     this.timer = setTimeout(() => {
       void this.run();
     }, delay2);
@@ -33607,9 +33663,22 @@ var OPENCODE = {
   anonymousKey: "public",
   // ⚠️ 兜底 UA。**v2 形状**（`opencode/<channel>/<version>/<client>`，major ≥ 2）：
   // 旧的 `opencode/1.18.22` 自 2026-10-14 起被上游按名字拒掉（403 FreeTierError）。
-  // 接线层会用真机 `opencode --version` 的结果改写成同形状（`opencode.ts` 的
-  // `opencodeUserAgentForVersion`）。
-  defaultUserAgent: "opencode/latest/2.0.26/cli",
+  //
+  // ⚠️⚠️ **版本号本身也会过期**：2026-10-26 起上游对旧版本 UA 直接 429
+  // `FreeUsageLimitError`（无论 body 写什么），所以这里只是**兜底**：
+  // 接线层会先问 `versionUrl` 的最新版本、再与本机 `opencode --version`
+  // **取更新者**（见 `opencode.ts` 的 `resolveOpencodeUserAgent`）。
+  // 常量取 magpie 实测到的 `2.2.5`（@opencode/cli 2.2.5 真实发出的 UA）。
+  defaultUserAgent: "opencode/latest/2.2.5/cli",
+  /**
+   * 上游更新器端点：`{ version: '2.2.5' }`。
+   *
+   * ⚠️ 只采纳**更新**的版本：镜像/缓存可能回旧值，采信旧值等于把自己伪装成
+   * 过期客户端（上游立刻 429）。
+   */
+  versionUrl: "https://opencode.ai/update/api/latest/cli/npm",
+  /** 版本探测缓存 6 小时（与官方更新器的询问间隔同档）。 */
+  versionTtlMs: 6 * 60 * 60 * 1e3,
   /**
    * 模型能力元数据源（**远端**，能力的主来源）。
    *
@@ -33723,18 +33792,83 @@ function deriveSessionId() {
 }
 var lastSessionStamp = 0;
 var sessionSequence = 0;
-var OPENCODE_V2_UA = /^opencode\/[a-z0-9-]+\/(\d+)\.\d+\.\d+\/[a-z0-9-]+$/i;
-function opencodeUserAgent(override) {
-  const value = override?.trim();
-  if (value !== void 0 && value.length > 0 && OPENCODE_V2_UA.test(value)) return value;
-  return OPENCODE.defaultUserAgent;
-}
 function opencodeUserAgentForVersion(version) {
   const value = version?.trim();
-  if (value === void 0 || !/^\d+\.\d+\.\d+$/.test(value)) return void 0;
+  if (value === void 0 || !RELEASE_VERSION.test(value)) return void 0;
   const [major] = value.split(".");
   if (Number(major) < 2) return void 0;
   return `opencode/latest/${value}/cli`;
+}
+var RELEASE_VERSION = /^\d{1,4}\.\d{1,4}\.\d{1,6}$/;
+function opencodeVersionFromUserAgent(userAgent) {
+  const value = userAgent?.trim();
+  if (value === void 0) return void 0;
+  return /^opencode\/[a-z0-9-]+\/(\d+\.\d+\.\d+)\/[a-z0-9-]+$/i.exec(value)?.[1];
+}
+function isOpencodeVersionAtLeast(a, b) {
+  const x = a.split(".").map(Number);
+  const y = b.split(".").map(Number);
+  for (let i = 0; i < 3; i += 1) if (x[i] !== y[i]) return (x[i] ?? 0) > (y[i] ?? 0);
+  return true;
+}
+var FALLBACK_VERSION = opencodeVersionFromUserAgent(OPENCODE.defaultUserAgent) ?? "2.2.5";
+var VERSION_TIMEOUT_MS = 3e3;
+var VERSION_FAILURE_TTL_MS = 5 * 6e4;
+async function probeOpencodeVersion(fetchImpl, options = {}) {
+  const current = options.current?.trim() ?? "";
+  const baseline = RELEASE_VERSION.test(current) ? current : FALLBACK_VERSION;
+  const url = options.versionUrl ?? OPENCODE.versionUrl;
+  const timeout = AbortSignal.timeout(VERSION_TIMEOUT_MS);
+  const signal = options.signal === void 0 ? timeout : AbortSignal.any([timeout, options.signal]);
+  try {
+    const response = await fetchImpl(`${url}?current=${encodeURIComponent(baseline)}`, {
+      // ⚠️ `redirect: 'error'` 与官方更新器一致：被重定向说明读到的不是端点原文。
+      redirect: "error",
+      signal
+    });
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {
+      });
+      return void 0;
+    }
+    const body = await response.json();
+    const version = body?.version;
+    if (typeof version !== "string" || !RELEASE_VERSION.test(version)) return void 0;
+    return isOpencodeVersionAtLeast(version, baseline) && version !== baseline ? version : void 0;
+  } catch {
+    return void 0;
+  }
+}
+var versionProbe;
+async function cachedOpencodeVersion(fetchImpl, options = {}) {
+  const now = options.now ?? Date.now();
+  const ttlMs2 = options.ttlMs ?? OPENCODE.versionTtlMs;
+  const failureTtlMs = options.failureTtlMs ?? VERSION_FAILURE_TTL_MS;
+  if (versionProbe !== void 0) {
+    const age = now - versionProbe.at;
+    if (versionProbe.version !== void 0 ? age < ttlMs2 : age < failureTtlMs) return versionProbe.version;
+  }
+  const version = await probeOpencodeVersion(fetchImpl, options);
+  versionProbe = { at: now, ...version === void 0 ? {} : { version } };
+  return version;
+}
+function newestOpencodeUserAgent(...versions) {
+  let best = FALLBACK_VERSION;
+  for (const candidate of versions) {
+    const value = candidate?.trim();
+    if (value === void 0 || !RELEASE_VERSION.test(value)) continue;
+    if (Number(value.split(".")[0]) < 2) continue;
+    if (isOpencodeVersionAtLeast(value, best)) best = value;
+  }
+  return `opencode/latest/${best}/cli`;
+}
+async function resolveOpencodeUserAgent(fetchImpl, localUserAgent, options = {}) {
+  const local = opencodeVersionFromUserAgent(localUserAgent);
+  const remote = await cachedOpencodeVersion(fetchImpl, {
+    ...options,
+    ...local === void 0 ? {} : { current: local }
+  }).catch(() => void 0);
+  return newestOpencodeUserAgent(local, remote, FALLBACK_VERSION);
 }
 function opencodeHeaders(fingerprint, sessionId, userAgent) {
   return {
@@ -34278,16 +34412,16 @@ function buildSocks5Handshake(proxy) {
 }
 async function openSocks5Tunnel(proxy, host, port) {
   const parsed = new URL2(proxy.url);
-  const socket = await new Promise((resolve2, reject) => {
+  const socket = await new Promise((resolve3, reject) => {
     const s = netConnect({ host: parsed.hostname, port: Number(parsed.port) });
-    s.once("connect", () => resolve2(s));
+    s.once("connect", () => resolve3(s));
     s.once("error", reject);
   });
   const fail = (error) => {
     throw error;
   };
-  const write = (bytes) => new Promise((resolve2, reject) => {
-    socket.write(Buffer.from(bytes), (err) => err ? reject(err) : resolve2());
+  const write = (bytes) => new Promise((resolve3, reject) => {
+    socket.write(Buffer.from(bytes), (err) => err ? reject(err) : resolve3());
   });
   let leftover = Buffer.alloc(0);
   let pending;
@@ -34322,12 +34456,12 @@ async function openSocks5Tunnel(proxy, host, port) {
     detach();
     target?.reject(new Error("SOCKS5 \u4EE3\u7406\u5728\u63E1\u624B\u5B8C\u6210\u524D\u5173\u95ED\u4E86\u8FDE\u63A5"));
   };
-  const read = (n) => new Promise((resolve2, reject) => {
+  const read = (n) => new Promise((resolve3, reject) => {
     if (n <= 0) {
-      resolve2(new Uint8Array(0));
+      resolve3(new Uint8Array(0));
       return;
     }
-    pending = { n, resolve: resolve2, reject };
+    pending = { n, resolve: resolve3, reject };
     socket.on("data", onData);
     socket.once("error", onError);
     socket.once("close", onClose);
@@ -36918,6 +37052,20 @@ var CONTEXT_WINDOWS = /* @__PURE__ */ new Map([
   ["deepseek-v4-pro", 1048576],
   ["deepseek-v4.1-flash", 1e6]
 ]);
+var MULTIMODAL_MODELS = /* @__PURE__ */ new Set([
+  "deepseek-v4.1-flash-1017",
+  "glm-5.3-flash",
+  "deepseek-v4.1-flash",
+  "kimi-k3.1-pro",
+  "kimi-k3"
+]);
+function isCodeArtsMultimodalModel(id) {
+  const lower = id.toLowerCase();
+  return MULTIMODAL_MODELS.has(lower) || MULTIMODAL_MODELS.has(normalizeModelId(lower));
+}
+function codeartsInputModalities(id) {
+  return isCodeArtsMultimodalModel(id) ? ["text", "image"] : ["text"];
+}
 function serializeMessages2(messages) {
   return serializeMessages(messages, { reasoningContent: "always" });
 }
@@ -37002,9 +37150,15 @@ function isBodyTooLargeError(status, body) {
   if (status !== 401 && status !== 403 && status !== 413) return false;
   return /body\s+too\s+large/i.test(body);
 }
-function codeartsBodyTooLargeMessage(bytes) {
+var CODEARTS_INFERHUB_BODY_LIMIT_BYTES = 10 * 1e3 * 1e3;
+function isOverInferHubBodyLimit(bytes, detail) {
+  return bytes > CODEARTS_INFERHUB_BODY_LIMIT_BYTES && /InferHub\.001001005\b/.test(detail);
+}
+function codeartsBodyTooLargeMessage(bytes, limitBytes = CODEARTS_MAX_SIGNABLE_BODY_BYTES) {
   const mb = (bytes / 1024 / 1024).toFixed(1);
-  return `codearts: \u5355\u6B21\u8BF7\u6C42\u4F53 ${mb} MB\uFF0C\u8D85\u8FC7\u7F51\u5173\u53EF\u7B7E\u540D\u4E0A\u9650 ${CODEARTS_MAX_SIGNABLE_BODY_BYTES / 1024 / 1024} MB\uFF08\u591A\u56FE\u6216\u5F88\u957F\u7684\u5BF9\u8BDD\u6700\u5BB9\u6613\u649E\u4E0A\uFF09\u3002\u8BF7\u65B0\u5F00\u4E00\u4E2A\u5BF9\u8BDD\uFF0C\u6216\u51CF\u5C11\u672C\u8F6E\u7684\u56FE\u7247\u6570\u91CF\u540E\u91CD\u8BD5 \u2014\u2014 \u8FD9\u4E0D\u662F\u767B\u5F55\u8FC7\u671F\uFF0C\u51ED\u636E\u4E0D\u9700\u8981\u91CD\u65B0\u767B\u5F55\u3002`;
+  const limitMb = limitBytes / 1024 / 1024;
+  const limitText = Number.isInteger(limitMb) ? String(limitMb) : limitMb.toFixed(1);
+  return `codearts: \u5355\u6B21\u8BF7\u6C42\u4F53 ${mb} MB\uFF0C\u8D85\u8FC7\u7F51\u5173\u5355\u6B21\u8BF7\u6C42\u4E0A\u9650 ${limitText} MB\uFF08\u591A\u56FE\u6216\u5F88\u957F\u7684\u5BF9\u8BDD\u6700\u5BB9\u6613\u649E\u4E0A\uFF09\u3002\u8BF7\u65B0\u5F00\u4E00\u4E2A\u5BF9\u8BDD\uFF0C\u6216\u51CF\u5C11\u672C\u8F6E\u7684\u56FE\u7247\u6570\u91CF\u540E\u91CD\u8BD5 \u2014\u2014 \u8FD9\u4E0D\u662F\u767B\u5F55\u8FC7\u671F\uFF0C\u51ED\u636E\u4E0D\u9700\u8981\u91CD\u65B0\u767B\u5F55\u3002`;
 }
 function isAuthError(status, body) {
   if (isBodyTooLargeError(status, body)) return false;
@@ -37047,15 +37201,15 @@ function isUpstreamBusy(text) {
   return text.includes("TM.00000001") || /网络繁忙|服务繁忙|系统繁忙/i.test(text) || /service\s+(?:is\s+)?busy|try\s+again\s+later/i.test(text);
 }
 function delay(ms, signal) {
-  return new Promise((resolve2) => {
-    if (signal?.aborted) return resolve2();
+  return new Promise((resolve3) => {
+    if (signal?.aborted) return resolve3();
     const onAbort = () => {
       clearTimeout(timer);
-      resolve2();
+      resolve3();
     };
     const timer = setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
-      resolve2();
+      resolve3();
     }, ms);
     signal?.addEventListener("abort", onAbort, { once: true });
   });
@@ -37394,7 +37548,7 @@ var CodeArtsAdapter = class extends LlmAdapter {
     const visible = this.listAllModels();
     const disabled = this.options.accountPool?.disabledModelsFor(PROVIDER);
     const listed = disabled === void 0 || disabled.size === 0 ? visible : visible.filter((m) => !disabled.has(m.id));
-    return listed.map((m) => ({ provider: PROVIDER, id: m.id, name: m.name, inputModalities: ["text"] }));
+    return listed.map((m) => ({ provider: PROVIDER, id: m.id, name: m.name, inputModalities: codeartsInputModalities(m.id) }));
   }
   async resolveModel(provider, model, _signal) {
     await this.ensureRemoteModels();
@@ -37417,7 +37571,7 @@ var CodeArtsAdapter = class extends LlmAdapter {
   }
   async prepareCall(provider, model, signal) {
     return {
-      model: { ...await this.resolveModel(provider, model, signal), inputModalities: ["text"] },
+      model: { ...await this.resolveModel(provider, model, signal), inputModalities: codeartsInputModalities(model) },
       stream: (options) => this.stream(options)
     };
   }
@@ -37460,7 +37614,8 @@ var CodeArtsAdapter = class extends LlmAdapter {
       wireTools = void 0;
     }
     const scrubbedMessages = messages.map((message2) => scrubWireMessage(message2));
-    const body = JSON.stringify({
+    let toolStreamInjected = /^glm-/i.test(options.model) && wireTools !== void 0 && wireTools.length > 0;
+    const bodyFields = {
       model: options.model,
       messages: scrubbedMessages,
       stream: true,
@@ -37477,12 +37632,10 @@ var CodeArtsAdapter = class extends LlmAdapter {
       // 实测判据：`disabled` → reasoning_tokens 3/3 全为 0、正文仍正确；
       // `enabled` 与不传等价（服务端默认就开着），故「开启」档**不发**该字段。
       ...options.reasoningEffort === "off" ? { thinking: { type: "disabled" } } : {},
-      // 对齐 CodeArts Agent IDE 请求体（deveco-code 内核日志实证）：
       // tool_stream=true 让后端将超大工具调用参数（如大文件 file_write）
       // 分段流式传输，避免单次 SSE 事件过大导致连接被掐断
-      // （error decoding response body）。deepseek-v4 的 DSML 路径不受此
-      // 影响，保留该字段与 IDE 对齐。
-      tool_stream: true,
+      // （error decoding response body）。**仅 GLM 系注入**（判据见上）。
+      ...toolStreamInjected ? { tool_stream: true } : {},
       // 输出上限（对齐 deveco-code-rust 参考实现 codearts.rs 的 max_tokens 配置）：
       // 大文件 write 工具参数（如 1000-2000+ 行文档）需要数万 token 的生成空间，
       // 若沿用后端默认输出上限，参数 JSON 会在中途被截断成非法 JSON，harness
@@ -37491,8 +37644,9 @@ var CodeArtsAdapter = class extends LlmAdapter {
       // 显式传入的 options.maxTokens 优先，未设置时默认 65536。
       max_tokens: options.maxTokens ?? 65536,
       ...wireTools !== void 0 && wireTools.length > 0 ? { tools: wireTools } : {}
-    });
-    const bodyBytes = Buffer.byteLength(body, "utf8");
+    };
+    let body = JSON.stringify(bodyFields);
+    let bodyBytes = Buffer.byteLength(body, "utf8");
     if (bodyBytes > CODEARTS_MAX_SIGNABLE_BODY_BYTES) {
       throw new LlmError3(codeartsBodyTooLargeMessage(bodyBytes), "INVALID_REQUEST", { status: 413 });
     }
@@ -37532,7 +37686,7 @@ var CodeArtsAdapter = class extends LlmAdapter {
       });
       if (response.ok) {
         try {
-          yield* this.consumeSse(response, options);
+          yield* this.consumeSse(response, options, bodyBytes);
           break;
         } catch (error) {
           if (error instanceof SseQuotaExhaustedError) {
@@ -37573,10 +37727,24 @@ var CodeArtsAdapter = class extends LlmAdapter {
         const errorText = await response.text().catch(() => "");
         if (isBodyTooLargeError(response.status, errorText)) {
           throw new LlmError3(
-            codeartsBodyTooLargeMessage(Buffer.byteLength(body, "utf8")),
+            codeartsBodyTooLargeMessage(bodyBytes),
             "INVALID_REQUEST",
             { status: 413 }
           );
+        }
+        if (isOverInferHubBodyLimit(bodyBytes, errorText)) {
+          throw new LlmError3(
+            codeartsBodyTooLargeMessage(bodyBytes, CODEARTS_INFERHUB_BODY_LIMIT_BYTES),
+            "INVALID_REQUEST",
+            { status: 413 }
+          );
+        }
+        if (response.status === 400 && toolStreamInjected && /tool_stream/i.test(errorText)) {
+          toolStreamInjected = false;
+          delete bodyFields.tool_stream;
+          body = JSON.stringify(bodyFields);
+          bodyBytes = Buffer.byteLength(body, "utf8");
+          continue;
         }
         if (isAuthError(response.status, errorText) && !authRefreshed) {
           authRefreshed = true;
@@ -37680,7 +37848,7 @@ var CodeArtsAdapter = class extends LlmAdapter {
    * 错误抛 {@link SseQueueRetryError} 让外层重试循环按 TM.00001041 同等
    * 处理（10s 间隔重试整个 chat 请求）；不可重试错误抛普通 LlmError。
    */
-  async *consumeSse(response, options) {
+  async *consumeSse(response, options, bodyBytes) {
     if (!response.body) throw new LlmError3("codearts: empty model response body", "EMPTY_RESPONSE");
     const blocks = [];
     let nextIndex = 0;
@@ -37803,6 +37971,13 @@ var CodeArtsAdapter = class extends LlmAdapter {
           if (typeof data.error_code === "string" && data.error_code.length > 0 || data.error_code === 4004) {
             const errorCode = String(data.error_code);
             const message2 = typeof data.error_msg === "string" && data.error_msg.length > 0 ? data.error_msg : errorCode;
+            if (isOverInferHubBodyLimit(bodyBytes, `${errorCode} ${message2}`)) {
+              throw new LlmError3(
+                codeartsBodyTooLargeMessage(bodyBytes, CODEARTS_INFERHUB_BODY_LIMIT_BYTES),
+                "INVALID_REQUEST",
+                { status: 413 }
+              );
+            }
             if (isSseQuotaExhaustedErrorCode(errorCode, message2)) {
               throw new SseQuotaExhaustedError(errorCode, message2);
             }
@@ -38147,6 +38322,39 @@ function credentialExpiresAtMs(credential) {
     if (!Number.isNaN(parsed)) return parsed;
   }
   return jwtExpiresAtMs(credential.access_token);
+}
+function credentialRefreshExpiresAtMs(credential) {
+  const raw = credential.refresh_expires_at;
+  if (typeof raw !== "string" || raw.length === 0) return void 0;
+  if (/^\d+$/.test(raw)) {
+    const value = Number(raw);
+    return value > 1e12 ? value : value * 1e3;
+  }
+  const parsed = Date.parse(raw);
+  return Number.isNaN(parsed) ? void 0 : parsed;
+}
+function credentialLifeMs(credential) {
+  const issuedAtMs = jwtIssuedAtMs(credential.access_token);
+  const expiresAtMs = jwtExpiresAtMs(credential.access_token);
+  if (issuedAtMs === void 0 || expiresAtMs === void 0) return void 0;
+  const lifeMs = expiresAtMs - issuedAtMs;
+  return lifeMs > 0 ? lifeMs : void 0;
+}
+function buddyAheadRefreshDue(credential, nowMs = Date.now()) {
+  if (!isRefreshable(credential)) return false;
+  return isAheadRefreshDue({
+    expiresAtMs: credentialExpiresAtMs(credential),
+    lifeMs: credentialLifeMs(credential),
+    refreshExpiresAtMs: credentialRefreshExpiresAtMs(credential),
+    nowMs
+  });
+}
+function buddyRefreshArmDelayMs(credential, nowMs = Date.now()) {
+  const expiresAtMs = credentialExpiresAtMs(credential);
+  if (expiresAtMs === void 0) return void 0;
+  const aheadDelayMs = computeAheadRefreshDelayMs(expiresAtMs, credentialLifeMs(credential), nowMs);
+  if (aheadDelayMs !== void 0) return aheadDelayMs;
+  return computeFirstRefreshDelayMs(expiresAtMs, nowMs);
 }
 function jwtExpiresAtMs(token) {
   if (typeof token !== "string" || token.length === 0) return void 0;
@@ -39112,8 +39320,8 @@ function buddySaturationDelayMs(attempt) {
 }
 function sleepMs(ms) {
   if (ms <= 0) return Promise.resolve();
-  return new Promise((resolve2) => {
-    setTimeout(resolve2, ms);
+  return new Promise((resolve3) => {
+    setTimeout(resolve3, ms);
   });
 }
 function isTransportError3(error) {
@@ -41455,14 +41663,14 @@ var QoderAdapter = class extends LlmAdapter3 {
       return;
     }
     if (ms <= 0 || signal?.aborted === true) return;
-    await new Promise((resolve2) => {
+    await new Promise((resolve3) => {
       const onAbort = () => {
         clearTimeout(timer);
-        resolve2();
+        resolve3();
       };
       const timer = setTimeout(() => {
         signal?.removeEventListener("abort", onAbort);
-        resolve2();
+        resolve3();
       }, ms);
       signal?.addEventListener("abort", onAbort, { once: true });
     });
@@ -46454,6 +46662,22 @@ init_autoclaw_sms();
 var FIRST_TOKEN_TIMEOUT_MS3 = 3e5;
 var CHUNK_TIMEOUT_MS3 = 3e5;
 var REMOTE_MODELS_TTL_MS3 = 3e5;
+function catalogCreditFactors(value) {
+  const record = typeof value === "object" && value !== null && !Array.isArray(value) ? value : void 0;
+  const list = Array.isArray(value) ? value : Array.isArray(record?.models) ? record.models : Array.isArray(record?.data) ? record.data : void 0;
+  const rates = /* @__PURE__ */ new Map();
+  for (const raw of list ?? []) {
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) continue;
+    const item = raw;
+    const id = [item.id, item.model, item.name].find(
+      (candidate) => typeof candidate === "string" && candidate !== ""
+    );
+    if (id === void 0) continue;
+    const factor = Number(item.creditCostFactor);
+    if (Number.isFinite(factor) && factor > 0) rates.set(id, factor);
+  }
+  return rates;
+}
 var AUTO_CLAW_EFFORT_NAMES = {
   low: "\u4F4E",
   medium: "\u4E2D",
@@ -46539,7 +46763,13 @@ var AutoClawAdapter = class extends LlmAdapter8 {
           headers: autoClawCatalogHeaders(this.product, credential)
         });
         if (!response.ok) return;
-        const rows = parseModelConfig(await response.json().catch(() => void 0));
+        const body = await response.json().catch(() => void 0);
+        const rates = catalogCreditFactors(body);
+        const parsed = parseModelConfig(body);
+        const rows = parsed.map((row) => {
+          const rate = rates.get(row.id);
+          return rate === void 0 ? row : { ...row, rate };
+        });
         if (rows.length > 0) {
           this.remoteModels = rows;
           this.remoteModelsAt = Date.now();
@@ -46621,6 +46851,18 @@ var AutoClawAdapter = class extends LlmAdapter8 {
     const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels;
     const model = source.find((item) => item.id === modelId);
     return model === void 0 ? void 0 : autoClawQuota(model);
+  }
+  /**
+   * 该模型一次请求的积分成本（`rate`，供模型列表比贵贱 / `routing=cheap`）。
+   *
+   * ⚠️ **缺失即未知**：没有 `rate` 的模型返回 `undefined`，调用方不得当成 0
+   *（magpie 旧版恒为 0，`cheap` 路由因此永远选不出真正便宜的模型）。
+   * 兜底表不带成本数字，故走兜底表时这里一律 `undefined`。
+   */
+  rateFor(modelId) {
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels;
+    const model = source.find((item) => item.id === modelId);
+    return model?.rate;
   }
   /**
    * **强制**重新拉取远端目录（「重新获取模型」按钮），绕过 TTL。
@@ -47284,6 +47526,7 @@ function registerLoomyLlm(ctx, options) {
 import { LlmAdapter as LlmAdapter10, LlmError as LlmError14, ReasoningEffortId as ReasoningEffortId9 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/raccoon.ts
+import { createHash as createHash6 } from "node:crypto";
 var RACCOON_API_BASE = "https://xiaohuanxiong.com";
 var RACCOON_POINTS_PREFIX = "/api/web/points/v1";
 var RACCOON_DESKTOP_PREFIX = "/api/web/desktop/v1";
@@ -47353,6 +47596,66 @@ function raccoonHeaders(credential, opts = {}) {
   if (credential.device_id !== void 0 && credential.device_id.length > 0) {
     headers["X-Client-Device-ID"] = credential.device_id;
   }
+  return headers;
+}
+var RACCOON_CALL_KIND_SESSION_TURN = "session_turn";
+var RACCOON_SESSION_ID_MAX = 128;
+function raccoonUuidish(seed) {
+  const bytes = Buffer.from(createHash6("sha256").update(seed, "utf8").digest().subarray(0, 16));
+  bytes[6] = bytes[6] & 15 | 64;
+  bytes[8] = bytes[8] & 63 | 128;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+function raccoonMessageText(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.filter((block) => typeof block === "object" && block !== null && typeof block.text === "string").map((block) => block.text).join("");
+}
+function raccoonFirstUserText(messages) {
+  for (const message2 of messages) {
+    if (message2.role !== "user") continue;
+    const text = raccoonMessageText(message2.content).trim();
+    if (text.length > 0) return text;
+  }
+  return "";
+}
+function raccoonTurnIndex(messages) {
+  let turn = 0;
+  let previousWasUser = false;
+  for (const message2 of messages) {
+    const isUser = message2.role === "user";
+    if (isUser && !previousWasUser) turn += 1;
+    previousWasUser = isUser;
+  }
+  return turn;
+}
+function raccoonAccountKey(credential, accountId) {
+  for (const candidate of [credential?.office_identity, credential?.user_id, accountId]) {
+    const value = typeof candidate === "string" ? candidate.trim() : "";
+    if (value.length > 0) return value;
+  }
+  return "";
+}
+function raccoonSessionId(input) {
+  const hostSession = input.sessionId?.trim();
+  if (hostSession !== void 0 && hostSession.length > 0) {
+    return hostSession.slice(0, RACCOON_SESSION_ID_MAX);
+  }
+  const account = input.account?.trim();
+  const first = raccoonFirstUserText(input.messages);
+  if (account === void 0 || account.length === 0 || first.length === 0) return "";
+  return raccoonUuidish(`raccoon-session|${account}\0${first}`);
+}
+function raccoonSessionTurnHeaders(input) {
+  const headers = {
+    "X-RACCOON-Call-Kind": RACCOON_CALL_KIND_SESSION_TURN
+  };
+  const session = raccoonSessionId(input);
+  if (session.length === 0) return headers;
+  headers["X-RACCOON-Session-ID"] = session;
+  const turn = raccoonTurnIndex(input.messages);
+  if (turn > 0) headers["X-RACCOON-Turn-ID"] = `${session}-turn-${turn}`;
   return headers;
 }
 
@@ -47683,13 +47986,19 @@ var RaccoonAdapter = class extends LlmAdapter10 {
       //（连非法值都不报错）。不传档位时不发该字段，保持服务端默认（= 开）。
       ...thinking !== void 0 ? { extra_body: thinking } : {}
     });
+    const sessionHeaders = raccoonSessionTurnHeaders({
+      sessionId: options.sessionId === void 0 ? void 0 : String(options.sessionId),
+      account: raccoonAccountKey(credential, accountId || void 0),
+      messages: options.messages
+    });
     const headers = () => ({
       Accept: "text/event-stream",
       "Content-Type": "application/json",
       Authorization: `Bearer ${credential?.access_token ?? ""}`,
       "X-Org-Code": credential?.office_identity ?? "",
       "X-Raccoon-Language": "zh",
-      "X-Client-Platform": this.product.clientPlatform
+      "X-Client-Platform": this.product.clientPlatform,
+      ...sessionHeaders
     });
     const send = async () => {
       try {
@@ -47822,8 +48131,8 @@ var SerialQueue = class {
     this.pending += 1;
     const previous = this.tail;
     let release;
-    this.tail = new Promise((resolve2) => {
-      release = resolve2;
+    this.tail = new Promise((resolve3) => {
+      release = resolve3;
     });
     try {
       await this.awaitWithSignal(previous, options.signal);
@@ -47847,7 +48156,7 @@ var SerialQueue = class {
       return;
     }
     if (signal.aborted) throw new QueueAbortedError();
-    await new Promise((resolve2, reject) => {
+    await new Promise((resolve3, reject) => {
       const onAbort = () => {
         signal.removeEventListener("abort", onAbort);
         reject(new QueueAbortedError());
@@ -47856,7 +48165,7 @@ var SerialQueue = class {
       void promise.then(
         () => {
           signal.removeEventListener("abort", onAbort);
-          resolve2();
+          resolve3();
         },
         (error) => {
           signal.removeEventListener("abort", onAbort);
@@ -48556,8 +48865,8 @@ async function requestScopedModels(credential, headers, fetcher, signal, product
   }
 }
 function sleep(ms) {
-  return new Promise((resolve2) => {
-    setTimeout(resolve2, ms).unref?.();
+  return new Promise((resolve3) => {
+    setTimeout(resolve3, ms).unref?.();
   });
 }
 async function defaultOpenBrowser(url) {
@@ -48660,6 +48969,13 @@ var BuddyAuth = class extends Service3 {
   lastRefreshError;
   /** 登录会话是否仍处于活跃状态；logout()/stop() 置 false，防止在途刷新回写已登出凭据。 */
   active = true;
+  /**
+   * 提前续期（ahead）失败后的退避表（见 `refresh.ts` 的 {@link AheadRetryGate}）。
+   *
+   * 只服务 `refresh()` 这条单凭据定时器路径；批量路径（{@link refreshAll}）
+   * 本身每 30 分钟才跑一轮，天然就落在退避上限（30 分钟）上，不需要另记账。
+   */
+  aheadGate = new AheadRetryGate();
   /** 标记 refresh_token 已失效：停止重试，并向 status() 暴露 refreshable: false 与重新登录提示。 */
   markRefreshTokenInvalid() {
     this.refreshTokenInvalid = true;
@@ -48744,7 +49060,15 @@ var BuddyAuth = class extends Service3 {
       ...this.lastRefreshError === void 0 ? {} : { refreshError: this.lastRefreshError }
     };
   }
-  /** 静默续期：refresh_token 换取；无 refresh_token 时明确报错（由命令提示重新登录）。 */
+  /**
+   * 静默续期：refresh_token 换取；无 refresh_token 时明确报错（由命令提示重新登录）。
+   *
+   * 两条路径：
+   * - **提前续期**（ahead，{@link aheadRefresh}）：已进入「剩 10 天」窗口但**还没**到
+   *   1 小时 lead —— 28 天 access / 30 天 refresh 这对参数下，只等 1 小时 lead
+   *   会让 refresh_token 先死（理由见 `refresh.ts` 的 `REFRESH_AHEAD_MS`）；
+   * - 常规续期（临期 1 小时 / 已过期）：行为与改造前**逐字一致**。
+   */
   async refresh() {
     const ref = credentialRef4(this.credentialRefName);
     const resolved = await this.ctx.credentials.resolve(ref);
@@ -48753,6 +49077,11 @@ var BuddyAuth = class extends Service3 {
     if (!credential) throw new Error("\u51ED\u636E\u89E3\u6790\u5931\u8D25");
     if (!isRefreshable(credential)) {
       throw new RefreshTokenExpiredError2("\u65E0 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+    }
+    if (this.isAheadOnly(credential)) {
+      if (this.aheadGate.waiting(credential.refresh_token)) return;
+      await this.aheadRefresh(ref, credential);
+      return;
     }
     try {
       const refreshed = await this.refreshCredential(credential);
@@ -48764,6 +49093,62 @@ var BuddyAuth = class extends Service3 {
     } catch (error) {
       if (error instanceof RefreshTokenExpiredError2) this.markRefreshTokenInvalid();
       throw error;
+    }
+  }
+  /**
+   * 「这一轮是否属于**提前续期**」：已进入 10 天窗口、但离过期还有 1 小时以上。
+   *
+   * 剩下的 1 小时以内交给常规路径 —— 那条路径的重试语义（`RefreshScheduler`
+   * 的 10 分钟 / 1 分钟退避）与改造前完全一致，提前续期不能把它换个样。
+   */
+  isAheadOnly(credential) {
+    if (!buddyAheadRefreshDue(credential)) return false;
+    const expiresAtMs = credentialExpiresAtMs(credential);
+    if (expiresAtMs === void 0) return false;
+    return expiresAtMs - Date.now() > REFRESH_LEAD_MS;
+  }
+  /**
+   * 提前续期一次（ahead）：换令牌、落盘、按**新**令牌重新武装定时器。
+   *
+   * ## 失败路径（magpie `fresh()` / `aheadFailed` 的同形语义）
+   *
+   * - **非终态**（网络 / 5xx / 超时 / 落盘失败）：**不动登录态** —— 不标
+   *   `refreshTokenInvalid`、不写 `lastRefreshError`、不动账号池的 `refreshable`，
+   *   只记一行 warn 并按 1 分钟起翻倍、封顶 30 分钟退避重试。账号照常可用
+   *   （旧的 access token 还在，还有整整 10 天），没必要吓用户去重新登录。
+   * - **终态**（`RefreshTokenExpiredError`，后端明说 refresh_token 已失效）：
+   *   照既有语义标记失效 —— 那是事实，继续重试只会每 30 分钟刷一条日志。
+   *
+   * ⚠️ 刻意**不 throw**：`RefreshScheduler.run` 的 catch 会给非终态失败安排
+   * 10 分钟重试并回调 `onError`（后者会写 `lastRefreshError`）。这里自己接管
+   * 退避与调度，才能既保住「1 分钟起翻倍」的节奏，又让登录态原样不动。
+   */
+  async aheadRefresh(ref, credential) {
+    const spentToken = credential.refresh_token;
+    try {
+      const refreshed = await this.refreshCredential(credential);
+      if (!this.active) return;
+      await this.ctx.credentials.set(ref, JSON.stringify(refreshed));
+      this.aheadGate.clear(spentToken);
+      this.refreshTokenInvalid = false;
+      this.lastRefreshError = void 0;
+      const delayMs = buddyRefreshArmDelayMs(refreshed);
+      if (delayMs !== void 0) this.scheduler.armAfter(delayMs);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      if (error instanceof RefreshTokenExpiredError2) {
+        this.markRefreshTokenInvalid();
+        this.ctx.logger?.warn?.(
+          `[${this.product.id}] \u63D0\u524D\u7EED\u671F\u5931\u8D25\u4E14 refresh_token \u5DF2\u88AB\u540E\u7AEF\u5224\u5B9A\u5931\u6548\uFF0C\u9700\u91CD\u65B0\u767B\u5F55\uFF1A${detail}`
+        );
+        return;
+      }
+      const delayMs = this.aheadGate.fail(spentToken);
+      this.ctx.logger?.warn?.(
+        `[${this.product.id}] \u63D0\u524D\u7EED\u671F\u5931\u8D25\uFF08\u767B\u5F55\u6001\u4FDD\u6301\u4E0D\u53D8\uFF0C${Math.round(delayMs / 1e3)}s \u540E\u91CD\u8BD5\uFF09\uFF1A${detail}`
+      );
+      if (!this.active) return;
+      this.scheduler.armAfter(delayMs);
     }
   }
   /**
@@ -48855,6 +49240,10 @@ var BuddyAuth = class extends Service3 {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
+        if (buddyAheadRefreshDue(credential)) {
+          await this.refreshAccountCredential(entry.credentialRef, pool, entry.id);
+          continue;
+        }
         await refreshAccountWithReconcile({
           pool,
           provider: this.product.id,
@@ -48901,8 +49290,8 @@ var BuddyAuth = class extends Service3 {
       if (!resolved) return;
       const credential = parseCredential3(resolved.value);
       if (!credential || !isRefreshable(credential)) return;
-      const expiresAt = credentialExpiresAtMs(credential);
-      if (expiresAt !== void 0) this.scheduler.arm(expiresAt);
+      const delayMs = buddyRefreshArmDelayMs(credential);
+      if (delayMs !== void 0) this.scheduler.armAfter(delayMs);
     });
   }
   /** 从存储重载凭据，返回是否已过期（供 UI 判断是否需要提示重新登录）。 */
@@ -48956,7 +49345,7 @@ import { credentialRef as credentialRef5 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/qoder-oauth.ts
 function sleep2(ms, signal) {
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve3, reject) => {
     if (signal?.aborted === true) {
       reject(new Error("\u767B\u5F55\u5DF2\u53D6\u6D88"));
       return;
@@ -48967,7 +49356,7 @@ function sleep2(ms, signal) {
     };
     const timer = setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
-      resolve2();
+      resolve3();
     }, ms);
     signal?.addEventListener("abort", onAbort, { once: true });
   });
@@ -49641,7 +50030,7 @@ async function exchangeTraeCallback(callback, session, product, fetcher = fetch,
   return buildTraeCredential(exchange, userInfo, session, nowMs);
 }
 function listenOrReject(server, port, onError) {
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve3, reject) => {
     let settled = false;
     const onListenError = (error) => {
       if (settled) {
@@ -49658,7 +50047,7 @@ function listenOrReject(server, port, onError) {
       server.on("error", () => {
       });
       const address = server.address();
-      resolve2(typeof address === "object" && address !== null ? address.port : port);
+      resolve3(typeof address === "object" && address !== null ? address.port : port);
     });
   });
 }
@@ -49702,7 +50091,7 @@ async function startTraeLoginFlow(options) {
   let resultTimer;
   let rejectResult;
   let loginUrl = "";
-  const resultPromise = new Promise((resolve2, reject) => {
+  const resultPromise = new Promise((resolve3, reject) => {
     rejectResult = reject;
     resultTimer = setTimeout(() => {
       server.close();
@@ -49739,7 +50128,7 @@ async function startTraeLoginFlow(options) {
         res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
         res.end(`TRAE \u767B\u5F55\u6210\u529F\uFF1A${credential.nickname ?? credential.uid}\u3002\u53EF\u4EE5\u5173\u95ED\u6B64\u9875\u9762\u8FD4\u56DE\u9762\u677F\u3002`);
         server.close();
-        resolve2({
+        resolve3({
           access,
           expires,
           loginUrl,
@@ -49773,9 +50162,9 @@ async function startTraeLoginFlow(options) {
     // 关闭时**必须**同时清掉兜底超时定时器：否则用户在浏览器里点了取消、
     // 前端调 close() 之后，那个 10 分钟的定时器仍会挂着并最终 reject 一个
     // 无人消费的 Promise（未处理拒绝告警）。
-    close: () => new Promise((resolve2) => {
+    close: () => new Promise((resolve3) => {
       if (resultTimer) clearTimeout(resultTimer);
-      server.close(() => resolve2());
+      server.close(() => resolve3());
     })
   };
 }
@@ -49783,7 +50172,7 @@ async function startCallbackServer(port = TRAE_CALLBACK_PORT, _consoleHost, time
   const server = createServer3();
   let timer;
   let actualPort = port;
-  const result = new Promise((resolve2, reject) => {
+  const result = new Promise((resolve3, reject) => {
     server.on("request", (req, res) => {
       const url = req.url ?? "";
       if (!url.startsWith("/authorize")) {
@@ -49803,7 +50192,7 @@ async function startCallbackServer(port = TRAE_CALLBACK_PORT, _consoleHost, time
       res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
       res.end("\u5DF2\u6536\u5230 TRAE \u6388\u6743\uFF0C\u6B63\u5728\u6362\u53D6\u51ED\u636E\u2026\u53EF\u4EE5\u5173\u95ED\u6B64\u9875\u9762\u3002");
       server.close();
-      resolve2({ callback: parsed.info, port: actualPort });
+      resolve3({ callback: parsed.info, port: actualPort });
     });
     timer = setTimeout(() => {
       server.close();
@@ -50376,7 +50765,7 @@ var CLINE_DEVICE_AUTH_EXPIRES_MS = 3e5;
 var CLINE_DEVICE_AUTH_INTERVAL_MS = 5e3;
 var CLINE_POLL_MAX_FAILURES = 5;
 function sleep3(ms, signal) {
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve3, reject) => {
     if (signal?.aborted === true) {
       reject(new Error("\u767B\u5F55\u5DF2\u53D6\u6D88"));
       return;
@@ -50387,7 +50776,7 @@ function sleep3(ms, signal) {
     };
     const timer = setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
-      resolve2();
+      resolve3();
     }, ms);
     signal?.addEventListener("abort", onAbort, { once: true });
   });
@@ -50958,10 +51347,10 @@ import { credentialRef as credentialRef8 } from "@deepseek-ai/dsh-credentials";
 import { randomUUID as randomUUID6 } from "node:crypto";
 
 // vendor/channel-pack/src/loomy-sign.ts
-import { createHash as createHash7, createHmac, randomUUID as randomUUID5 } from "node:crypto";
+import { createHash as createHash8, createHmac, randomUUID as randomUUID5 } from "node:crypto";
 function loomyContentMd5(body) {
   if (body.length === 0) return "";
-  return createHash7("md5").update(body, "utf8").digest("base64");
+  return createHash8("md5").update(body, "utf8").digest("base64");
 }
 function escapeRfc3986(value) {
   return encodeURIComponent(value).replace(/!/g, "%21").replace(/'/g, "%27").replace(/\(/g, "%28").replace(/\)/g, "%29").replace(/\*/g, "%2A");
@@ -51295,8 +51684,8 @@ async function startLoomyWechatLoginFlow(options) {
   };
   let resolveResult;
   let rejectResult;
-  const result = new Promise((resolve2, reject) => {
-    resolveResult = resolve2;
+  const result = new Promise((resolve3, reject) => {
+    resolveResult = resolve3;
     rejectResult = reject;
   });
   result.catch(() => {
@@ -52287,15 +52676,15 @@ var RACCOON_LOGIN_PAGE_PATHS = {
 async function startRaccoonLoginFlow(options = {}) {
   const product = options.product ?? RACCOON;
   const fetcher = options.fetcher ?? fetch;
-  const { randomBytes: randomBytes13 } = await import("node:crypto");
+  const { randomBytes: randomBytes14 } = await import("node:crypto");
   const state = {
     // 64 位 hex（32 字节）—— 授权页对 loopback 回调的硬性要求。
-    oauthState: randomBytes13(32).toString("hex")
+    oauthState: randomBytes14(32).toString("hex")
   };
   let resolveResult;
   let rejectResult;
-  const result = new Promise((resolve2, reject) => {
-    resolveResult = resolve2;
+  const result = new Promise((resolve3, reject) => {
+    resolveResult = resolve3;
     rejectResult = reject;
   });
   result.catch(() => {
@@ -52341,8 +52730,8 @@ async function startRaccoonLoginFlow(options = {}) {
     if (closed) return;
     closed = true;
     settleErr(new Error("raccoon: \u767B\u5F55\u6D41\u7A0B\u5DF2\u5173\u95ED"));
-    await new Promise((resolve2) => {
-      server.close(() => resolve2());
+    await new Promise((resolve3) => {
+      server.close(() => resolve3());
     });
   };
   const timeoutMs = options.timeoutMs ?? RACCOON_LOGIN_TIMEOUT_MS;
@@ -52355,8 +52744,8 @@ async function startRaccoonLoginFlow(options = {}) {
     clearTimeout(timer);
     if (!closed) {
       closed = true;
-      void new Promise((resolve2) => {
-        server.close(() => resolve2());
+      void new Promise((resolve3) => {
+        server.close(() => resolve3());
       });
     }
   });
@@ -52428,7 +52817,7 @@ function writeJson(response, payload) {
   response.end(JSON.stringify(payload));
 }
 function listenOnRandomPort(server) {
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve3, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
@@ -52437,7 +52826,7 @@ function listenOnRandomPort(server) {
         reject(new Error("raccoon: \u672C\u5730\u767B\u5F55\u9875\u670D\u52A1\u5668\u672A\u80FD\u83B7\u5F97\u7AEF\u53E3"));
         return;
       }
-      resolve2(port);
+      resolve3(port);
     });
   });
 }
@@ -53662,8 +54051,8 @@ var CdpConnection = class {
   /** 发送一条 CDP 命令并等结果。 */
   send(method, params = {}, timeoutMs = 3e4) {
     const id = ++this.nextId;
-    return new Promise((resolve2, reject) => {
-      this.pending.set(id, { resolve: resolve2, reject });
+    return new Promise((resolve3, reject) => {
+      this.pending.set(id, { resolve: resolve3, reject });
       try {
         this.ws.send(JSON.stringify({ id, method, params }));
       } catch (error) {
@@ -53705,8 +54094,8 @@ try {
   };
 } catch (error) { /* \u5185\u6838\u65E0 WebGL \u65F6\u5FFD\u7565 */ }
 `;
-var sleep4 = (ms) => new Promise((resolve2) => {
-  const timer = setTimeout(resolve2, ms);
+var sleep4 = (ms) => new Promise((resolve3) => {
+  const timer = setTimeout(resolve3, ms);
   timer.unref?.();
 });
 function buildDomExpression() {
@@ -53827,16 +54216,16 @@ async function pickFreePort() {
   return 9300 + Math.floor(Math.random() * 500);
 }
 function isPortFree(port) {
-  return new Promise((resolve2) => {
+  return new Promise((resolve3) => {
     const server = createServer5();
-    server.once("error", () => resolve2(false));
+    server.once("error", () => resolve3(false));
     server.once("listening", () => {
-      server.close(() => resolve2(true));
+      server.close(() => resolve3(true));
     });
     try {
       server.listen(port, "127.0.0.1");
     } catch {
-      resolve2(false);
+      resolve3(false);
     }
   });
 }
@@ -54132,8 +54521,8 @@ var ZcodeCaptchaBrowser = class {
       );
     }
     const ws = new WebSocket(debuggerUrl);
-    await new Promise((resolve2, reject) => {
-      ws.addEventListener("open", () => resolve2(), { once: true });
+    await new Promise((resolve3, reject) => {
+      ws.addEventListener("open", () => resolve3(), { once: true });
       ws.addEventListener("error", () => reject(new Error("zcode: \u8FDE\u63A5\u6D4F\u89C8\u5668\u8C03\u8BD5\u7AEF\u53E3\u5931\u8D25")), { once: true });
     });
     this.browserWs = ws;
@@ -54376,7 +54765,7 @@ var ZcodeCaptchaBrowser = class {
       }
       ws = new WebSocket(target.webSocketDebuggerUrl);
       const connectTimeoutMs = this.options.connectTimeoutMs ?? 1e4;
-      await new Promise((resolve2, reject) => {
+      await new Promise((resolve3, reject) => {
         let settled = false;
         let timer;
         const cleanup = () => {
@@ -54395,7 +54784,7 @@ var ZcodeCaptchaBrowser = class {
           connectTimeoutMs
         );
         timer.unref?.();
-        ws?.addEventListener("open", () => done(resolve2), { once: true });
+        ws?.addEventListener("open", () => done(resolve3), { once: true });
         ws?.addEventListener("error", () => done(() => reject(new Error("zcode: \u8FDE\u63A5\u65B0\u9875\u9762\u5931\u8D25"))), { once: true });
         signal?.addEventListener("abort", onAbort, { once: true });
       });
@@ -54839,7 +55228,7 @@ var CaptchaCarrier = class {
 };
 
 // vendor/channel-pack/src/zcode-login.ts
-import { randomBytes as randomBytes6, randomUUID as randomUUID8 } from "node:crypto";
+import { randomBytes as randomBytes7, randomUUID as randomUUID8 } from "node:crypto";
 var ZCODE_ORIGIN = "https://zcode.z.ai";
 var ZCODE_OAUTH_CLI_INIT_URL = `${ZCODE_ORIGIN}/api/v1/oauth/cli/init`;
 var zcodeOauthCliPollUrl = (flowId) => `${ZCODE_ORIGIN}/api/v1/oauth/cli/poll/${encodeURIComponent(flowId)}`;
@@ -54852,7 +55241,7 @@ var ZcodeLoginError = class extends Error {
   }
 };
 function generateFlowSecret() {
-  return randomBytes6(32).toString("hex");
+  return randomBytes7(32).toString("hex");
 }
 function generateDeviceMid() {
   return randomUUID8();
@@ -54965,14 +55354,20 @@ async function pollZcodeLogin(flow, fetchImpl = fetch, appVersion = ZCODE_APP_VE
   const bigmodelAccessToken = pickToken(data.bigmodel);
   const zaiAccessToken = pickToken(data.zai);
   const userId = typeof data.user?.user_id === "string" ? data.user.user_id : typeof data.user?.id === "string" ? data.user.id : void 0;
-  if (zcodeJwt === void 0 || userId === void 0) {
-    return { kind: "failed", message: "\u8F6E\u8BE2\u54CD\u5E94\u7F3A\u5173\u952E\u5B57\u6BB5\uFF08token / user_id\uFF09" };
+  if (zcodeJwt === void 0) {
+    return {
+      kind: "failed",
+      message: "\u6388\u6743\u672A\u5B8C\u6210\uFF1A\u767B\u5F55\u8F6E\u8BE2\u8FD4\u56DE ready \u4F46\u6CA1\u6709 OAuth access token\uFF08data.token \u7F3A\u5931\uFF09\uFF1B\u8BF7\u91CD\u65B0\u767B\u5F55 ZCode"
+    };
   }
   if (bigmodelAccessToken === void 0 && zaiAccessToken === void 0) {
     return {
       kind: "failed",
-      message: "\u8F6E\u8BE2\u54CD\u5E94\u7F3A\u7B2C\u4E09\u65B9 access_token\uFF08data.zai \u4E0E data.bigmodel \u5747\u4E3A\u7A7A\uFF09"
+      message: "\u6388\u6743\u672A\u5B8C\u6210\uFF1A\u767B\u5F55\u8F6E\u8BE2\u8FD4\u56DE ready \u4F46\u6CA1\u6709 OAuth access token\uFF08data.zai \u4E0E data.bigmodel \u5747\u65E0 access_token\uFF09\uFF1B\u8BF7\u91CD\u65B0\u767B\u5F55 ZCode"
     };
+  }
+  if (userId === void 0) {
+    return { kind: "failed", message: "\u8F6E\u8BE2\u54CD\u5E94\u7F3A\u5173\u952E\u5B57\u6BB5\uFF08user_id\uFF09" };
   }
   const refreshRaw = data.bigmodel?.refresh_token ?? data.bigmodel?.refreshToken ?? data.zai?.refresh_token ?? data.zai?.refreshToken;
   const displayName = typeof data.user?.name === "string" && data.user.name.length > 0 ? data.user.name : typeof data.user?.email === "string" && data.user.email.length > 0 ? data.user.email : userId;
@@ -55008,8 +55403,8 @@ async function runZcodeLogin(options = {}) {
     if (outcome.kind === "failed") {
       throw new ZcodeLoginError(outcome.message, "denied");
     }
-    await new Promise((resolve2) => {
-      const timer = setTimeout(resolve2, intervalMs);
+    await new Promise((resolve3) => {
+      const timer = setTimeout(resolve3, intervalMs);
       timer.unref?.();
     });
   }
@@ -56111,8 +56506,8 @@ var ZcodeAuth = class extends Service9 {
     };
     let rejectUrl = () => {
     };
-    const urlPromise = new Promise((resolve2, reject) => {
-      resolveUrl = resolve2;
+    const urlPromise = new Promise((resolve3, reject) => {
+      resolveUrl = resolve3;
       rejectUrl = reject;
     });
     const result = (async () => {
@@ -57268,8 +57663,8 @@ function buildEnvironmentSection(options) {
 function isGitRepo(cwd) {
   try {
     const { existsSync: existsSync14 } = __require("node:fs");
-    const { join: join15 } = __require("node:path");
-    return existsSync14(join15(cwd, ".git"));
+    const { join: join16 } = __require("node:path");
+    return existsSync14(join16(cwd, ".git"));
   } catch {
     return false;
   }
@@ -57363,8 +57758,8 @@ var ModelGate = class {
     this.depth += 1;
     const previous = this.tail;
     let release;
-    this.tail = new Promise((resolve2) => {
-      release = resolve2;
+    this.tail = new Promise((resolve3) => {
+      release = resolve3;
     });
     try {
       await this.awaitWithSignal(previous, options.signal);
@@ -57408,7 +57803,7 @@ var ModelGate = class {
       return;
     }
     if (signal.aborted) throw new GateAbortedError();
-    await new Promise((resolve2, reject) => {
+    await new Promise((resolve3, reject) => {
       const onAbort = () => {
         signal.removeEventListener("abort", onAbort);
         reject(new GateAbortedError());
@@ -57417,7 +57812,7 @@ var ModelGate = class {
       void promise.then(
         () => {
           signal.removeEventListener("abort", onAbort);
-          resolve2();
+          resolve3();
         },
         (error) => {
           signal.removeEventListener("abort", onAbort);
@@ -57475,14 +57870,14 @@ async function acquireZcodeSlot(signal) {
     zcodeActiveRequests++;
     return;
   }
-  await new Promise((resolve2, reject) => {
+  await new Promise((resolve3, reject) => {
     let settled = false;
     const grant = () => {
       if (settled) return;
       settled = true;
       signal?.removeEventListener("abort", onAbort);
       zcodeActiveRequests++;
-      resolve2();
+      resolve3();
     };
     const onAbort = () => {
       if (settled) return;
@@ -58339,14 +58734,14 @@ function zcodeEntitlementErrorMessage(model, attemptedAccounts) {
 }
 async function defaultAdapterSleep(ms, signal) {
   if (ms <= 0) return;
-  await new Promise((resolve2, reject) => {
+  await new Promise((resolve3, reject) => {
     const onAbort = () => {
       clearTimeout(timer);
       reject(new LlmError15("zcode: \u9000\u907F\u7B49\u5F85\u671F\u95F4\u8BF7\u6C42\u5DF2\u53D6\u6D88", "TRANSPORT"));
     };
     const timer = setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
-      resolve2();
+      resolve3();
     }, ms);
     timer.unref?.();
     if (signal?.aborted === true) {
@@ -58548,11 +58943,11 @@ function toGatewayModelIds(groups, effortViews) {
 }
 async function collectGatewayEffortViews(llm, groups, onError) {
   const views = /* @__PURE__ */ new Map();
-  const resolve2 = llm?.resolveModelInfo;
-  if (typeof resolve2 !== "function") return views;
+  const resolve3 = llm?.resolveModelInfo;
+  if (typeof resolve3 !== "function") return views;
   await Promise.all(groups.flatMap(({ provider, models }) => models.map(async (model) => {
     try {
-      const info = await resolve2.call(llm, provider, model.id);
+      const info = await resolve3.call(llm, provider, model.id);
       const view = effortView(info?.reasoning?.efforts, info?.reasoning?.defaultEffort);
       if (view !== void 0) views.set(toOpenAiModelId(provider, model.id), view);
     } catch (error) {
@@ -59134,6 +59529,90 @@ function isMinimaxExpired(credential, nowMs = Date.now()) {
 function isMinimaxRefreshable(credential) {
   return typeof credential.refresh_token === "string" && credential.refresh_token.length > 0;
 }
+var MINIMAX_RENEWED_KEEP_MS = 30 * 24 * 36e5;
+var MinimaxRenewedCache = class {
+  constructor(keepMs = MINIMAX_RENEWED_KEEP_MS, now = Date.now) {
+    this.keepMs = keepMs;
+    this.now = now;
+  }
+  /** 已花掉的 refresh_token → 它换出的凭据与记账时刻。 */
+  renewed = /* @__PURE__ */ new Map();
+  /** 在途续期：同一枚 token 的并发请求共用同一个 Promise（对齐 magpie 的 `renewing`）。 */
+  renewing = /* @__PURE__ */ new Map();
+  /**
+   * 顺着「已花掉的 refresh_token」链，取本进程见过的最新凭据。
+   *
+   * 对齐 magpie 的 `latest()`（最多跟 16 跳）：磁盘上可能是第 1 枚 token，
+   * 而本进程已经续过两轮 —— 直接照搬磁盘那份就会再烧一次已死的 token。
+   * 没命中任何一环时原样返回入参（引用不变），调用方据此判「有没有命中」。
+   */
+  latest(credential) {
+    let current = credential;
+    for (let hop = 0; hop < 16; hop += 1) {
+      const spent = current.refresh_token;
+      if (typeof spent !== "string" || spent.length === 0) break;
+      const done = this.renewed.get(spent);
+      if (done === void 0 || this.now() - done.atMs >= this.keepMs) break;
+      const merged = { ...current, ...done.credential };
+      if (merged.access_token === current.access_token && merged.refresh_token === current.refresh_token) break;
+      current = merged;
+    }
+    return current;
+  }
+  /** 这枚 refresh_token 是否**已经花过**且结果还在保留期内（命中即可免发请求）。 */
+  spent(credential) {
+    const token = credential.refresh_token;
+    if (typeof token !== "string" || token.length === 0) return false;
+    const done = this.renewed.get(token);
+    return done !== void 0 && this.now() - done.atMs < this.keepMs;
+  }
+  /**
+   * 用 `credential` 的 refresh_token 换新令牌（同一枚并发合并成一次请求）。
+   *
+   * ⚠️ 结果为**续期响应本身**（含新 access/refresh/expires_at），调用方负责落盘。
+   * ⚠️ 登记发生在**`run` 成功之后、调用方落盘之前**：写盘失败不影响缓存
+   * （这正是本缓存存在的理由）；`run` 抛错则什么都不登记（失败可重试）。
+   */
+  async renew(credential, run) {
+    const spent = credential.refresh_token;
+    if (typeof spent !== "string" || spent.length === 0) {
+      throw new Error("\u51ED\u636E\u7F3A\u5C11 refresh_token\uFF0C\u65E0\u6CD5\u7EED\u671F");
+    }
+    const running2 = this.renewing.get(spent);
+    if (running2 !== void 0) return running2;
+    if (this.spent(credential)) {
+      const done = this.renewed.get(spent);
+      if (done !== void 0) return done.credential;
+    }
+    const task = (async () => {
+      const next = await run(spent);
+      this.forgetOld();
+      this.renewed.set(spent, { credential: next, atMs: this.now() });
+      return next;
+    })().finally(() => {
+      this.renewing.delete(spent);
+    });
+    this.renewing.set(spent, task);
+    return task;
+  }
+  /** 丢掉超出保留期的条目（对齐 magpie 的 `forgetOld()`；在每次登记前调用）。 */
+  forgetOld() {
+    const nowMs = this.now();
+    for (const [token, done] of this.renewed) {
+      if (nowMs - done.atMs >= this.keepMs) this.renewed.delete(token);
+    }
+  }
+  /** 已登记条数（观测 / 单测用）。 */
+  get size() {
+    return this.renewed.size;
+  }
+  /** 清空（登出 / 单测用；进程重启时自然也是空的）。 */
+  clear() {
+    this.renewed.clear();
+    this.renewing.clear();
+  }
+};
+var MINIMAX_RENEWED = new MinimaxRenewedCache();
 function minimaxHeaders(credential) {
   const headers = new Headers();
   headers.set("Authorization", `Bearer ${credential.access_token}`);
@@ -59581,12 +60060,12 @@ function parseRuntimeInfoOutput(out) {
 async function readFromRuntimeInfoAsync(override, account) {
   const exe = locateRuntimeInfo(override);
   if (exe === void 0) return void 0;
-  return await new Promise((resolve2) => {
+  return await new Promise((resolve3) => {
     let settled = false;
     const done = (value) => {
       if (settled) return;
       settled = true;
-      resolve2(value);
+      resolve3(value);
     };
     let child;
     try {
@@ -60588,7 +61067,7 @@ async function fetchTraeCreditBalance(credential, _product, fetcher = fetch) {
 }
 
 // vendor/channel-pack/src/antigravity.ts
-import { randomBytes as randomBytes7 } from "node:crypto";
+import { randomBytes as randomBytes8 } from "node:crypto";
 import { LlmError as LlmError16, ReasoningEffortId as ReasoningEffortId11 } from "@deepseek-ai/dsh-llm";
 var ANTIGRAVITY_ENDPOINT_DAILY = "https://daily-cloudcode-pa.googleapis.com";
 var ANTIGRAVITY_ENDPOINT_SANDBOX = "https://daily-cloudcode-pa.sandbox.googleapis.com";
@@ -60701,7 +61180,7 @@ function marshalAlphabetical(value) {
   return sortedStringify(value);
 }
 function newGeminiRequestId(nowMs = Date.now()) {
-  return `agent/${nowMs}/${randomBytes7(4).toString("hex")}`;
+  return `agent/${nowMs}/${randomBytes8(4).toString("hex")}`;
 }
 var ANTIGRAVITY_UPSTREAM_FLASH = "gemini-3.8-flash";
 var ANTIGRAVITY_BUDGET_LOW = 1e3;
@@ -61794,8 +62273,8 @@ function startLoomySmsLoginFlow(options) {
   };
   let rejectResult = () => {
   };
-  const result = new Promise((resolve2, reject) => {
-    resolveResult = resolve2;
+  const result = new Promise((resolve3, reject) => {
+    resolveResult = resolve3;
     rejectResult = reject;
   });
   result.catch(() => {
@@ -61883,8 +62362,8 @@ async function startAutoclawLoginFlow(options) {
   const state = { phone: "", lastSentAt: 0 };
   let resolveResult;
   let rejectResult;
-  const result = new Promise((resolve2, reject) => {
-    resolveResult = resolve2;
+  const result = new Promise((resolve3, reject) => {
+    resolveResult = resolve3;
     rejectResult = reject;
   });
   result.catch(() => {
@@ -63418,10 +63897,10 @@ async function importBackup(credentials, pool, raw) {
 
 // vendor/channel-pack/src/opencode-rpc.ts
 import { credentialRef as credentialRef13 } from "@deepseek-ai/dsh-credentials";
-import { randomBytes as randomBytes9 } from "node:crypto";
+import { randomBytes as randomBytes10 } from "node:crypto";
 
 // vendor/channel-pack/src/opencode-auth.ts
-import { randomBytes as randomBytes8 } from "node:crypto";
+import { randomBytes as randomBytes9 } from "node:crypto";
 function newAccountFingerprint(apiKey) {
   return { projectId: deriveProjectId(apiKey, 0), generation: 0 };
 }
@@ -63453,8 +63932,8 @@ function isAnonymousCredential(apiKey) {
 async function ensureDefaultAnonymousSlot(addEntry, writeCredential, listEntries, alreadyHasAnonymous) {
   try {
     if (alreadyHasAnonymous()) return "";
-    const id = `${OPENCODE.id}-anon-${randomBytes8(3).toString("hex")}`;
-    const refName = `OPENCODE_ANON_${randomBytes8(4).toString("hex").toUpperCase()}`;
+    const id = `${OPENCODE.id}-anon-${randomBytes9(3).toString("hex")}`;
+    const refName = `OPENCODE_ANON_${randomBytes9(4).toString("hex").toUpperCase()}`;
     await writeCredential(refName, JSON.stringify({
       api_key: OPENCODE.anonymousKey,
       nickname: "\u533F\u540D\u901A\u9053"
@@ -63521,8 +64000,8 @@ async function handleOpencodeRpc(ctx, pool, method, payload) {
       }
       case "opencode.addAnonymous": {
         const req = call.payload;
-        const id = `${OPENCODE.id}-anon-${randomBytes9(3).toString("hex")}`;
-        const refName = `OPENCODE_ANON_${randomBytes9(4).toString("hex").toUpperCase()}`;
+        const id = `${OPENCODE.id}-anon-${randomBytes10(3).toString("hex")}`;
+        const refName = `OPENCODE_ANON_${randomBytes10(4).toString("hex").toUpperCase()}`;
         const count2 = pool.listAccountsByProvider(OPENCODE.id).filter((a) => a.id.startsWith(`${OPENCODE.id}-anon-`)).length;
         const nickname = typeof req?.nickname === "string" && req.nickname.trim().length > 0 ? req.nickname.trim() : `\u533F\u540D\u901A\u9053 ${count2 + 1}`;
         await ctx.credentials.set(credentialRef13(refName), JSON.stringify({
@@ -64699,9 +65178,9 @@ async function collectGatewayCatalog(llm, providers, onError) {
     listProviders: () => providers,
     listModels: (provider) => llm.listModels(provider)
   };
-  const resolve2 = llm?.resolveModelInfo;
-  if (typeof resolve2 === "function") {
-    source.resolveModelInfo = (provider, model) => resolve2.call(llm, provider, model);
+  const resolve3 = llm?.resolveModelInfo;
+  if (typeof resolve3 === "function") {
+    source.resolveModelInfo = (provider, model) => resolve3.call(llm, provider, model);
   }
   const groups = await collectGatewayModels(source, onError);
   const views = await collectGatewayEffortViews(source, groups, onError);
@@ -67380,7 +67859,7 @@ import { join as join11 } from "node:path";
 
 // vendor/channel-pack/src/openai-gateway/auth.ts
 import { mkdirSync as mkdirSync9, readFileSync as readFileSync12, renameSync as renameSync8, writeFileSync as writeFileSync10, existsSync as existsSync11 } from "node:fs";
-import { randomBytes as randomBytes10 } from "node:crypto";
+import { randomBytes as randomBytes11 } from "node:crypto";
 import { join as join10 } from "node:path";
 var KEY_FILE = "api-key";
 var KEY_PATTERN2 = /^[A-Za-z0-9_-]{43}$/;
@@ -67400,7 +67879,7 @@ function loadOrCreateApiKey(home, env = process.env) {
       `\u7F51\u5173\u5BC6\u94A5\u6587\u4EF6\u5185\u5BB9\u5F02\u5E38\uFF08\u4E0D\u662F\u672C\u63D2\u4EF6\u751F\u6210\u7684\u5F62\u6001\uFF09\uFF1A${path2}\u3002\u53EF\u80FD\u662F\u88AB\u624B\u5DE5\u7F16\u8F91\u6216\u88AB\u5176\u5B83\u7A0B\u5E8F\u6539\u5199\uFF1B\u672C\u63D2\u4EF6\u4E0D\u4F1A\u9759\u9ED8\u66F4\u6362\u5B83\uFF0C\u5426\u5219\u5DF2\u914D\u7F6E\u7684\u5BA2\u6237\u7AEF\u4F1A\u5168\u90E8\u5931\u6548\u3002\u5982\u9700\u66F4\u6362\uFF1A\u5220\u9664\u8BE5\u6587\u4EF6\u540E\u91CD\u542F DSH\uFF08\u4F1A\u91CD\u65B0\u751F\u6210\uFF09\uFF0C\u6216\u6539\u7528 DSH_OPENAI_GATEWAY_API_KEY \u73AF\u5883\u53D8\u91CF\u3002`
     );
   }
-  const key = randomBytes10(32).toString("base64url");
+  const key = randomBytes11(32).toString("base64url");
   mkdirSync9(directory, { recursive: true });
   const temporary = `${path2}.${process.pid}.${Date.now()}.tmp`;
   writeFileSync10(temporary, key, { encoding: "utf8", mode: 384 });
@@ -67776,7 +68255,7 @@ function findCaseInsensitiveSuggestion(requested, catalog) {
 }
 
 // vendor/channel-pack/src/openai-gateway/responses.ts
-import { createHash as createHash8, randomUUID as randomUUID12 } from "node:crypto";
+import { createHash as createHash9, randomUUID as randomUUID12 } from "node:crypto";
 import { ReasoningEffortId as ReasoningEffortId13 } from "@deepseek-ai/dsh-llm";
 
 // vendor/channel-pack/src/openai-gateway/stream.ts
@@ -68096,7 +68575,7 @@ function chatPartsFromResponses(content) {
 function flatNamespaceToolName(namespace, name2) {
   const flat = `${namespace}__${name2}`;
   if (flat.length <= 64) return flat;
-  const digest = createHash8("sha256").update(flat).digest("hex").slice(0, 8);
+  const digest = createHash9("sha256").update(flat).digest("hex").slice(0, 8);
   return `${flat.slice(0, 55)}_${digest}`;
 }
 function responsesNamespaceToolMap(body) {
@@ -68776,7 +69255,7 @@ function jsonResponse(response, status, value) {
   response.end(body);
 }
 function readJson(request2, signal) {
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve3, reject) => {
     const chunks = [];
     let size = 0;
     let settled = false;
@@ -68816,7 +69295,7 @@ function readJson(request2, signal) {
       try {
         const value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
         if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("body must be an object");
-        resolve2(value);
+        resolve3(value);
       } catch {
         reject(new OpenAiGatewayError("request body must be valid JSON"));
       }
@@ -69058,7 +69537,7 @@ function createOpenAiGateway(options) {
       if (server !== void 0) return;
       const current = createServer6(requestHandler);
       server = current;
-      await new Promise((resolve2, reject) => {
+      await new Promise((resolve3, reject) => {
         const onError = (error) => {
           current.off("listening", onListening);
           server = void 0;
@@ -69068,7 +69547,7 @@ function createOpenAiGateway(options) {
           current.off("error", onError);
           const address = current.address();
           boundPort = typeof address === "object" && address !== null ? address.port : config.port;
-          resolve2();
+          resolve3();
         };
         current.once("error", onError);
         current.once("listening", onListening);
@@ -69084,8 +69563,8 @@ function createOpenAiGateway(options) {
       if (server === void 0) return;
       const current = server;
       server = void 0;
-      await new Promise((resolve2) => {
-        current.close(() => resolve2());
+      await new Promise((resolve3) => {
+        current.close(() => resolve3());
         current.closeAllConnections?.();
       });
       logger3.info("[openai-gateway] \u5DF2\u5173\u95ED");
@@ -69742,7 +70221,7 @@ import { Service as Service10 } from "@deepseek-ai/cordis";
 import { credentialRef as credentialRef15 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/minimax-oauth.ts
-import { createHash as createHash9, randomBytes as randomBytes11 } from "node:crypto";
+import { createHash as createHash10, randomBytes as randomBytes12 } from "node:crypto";
 var MinimaxLoginCancelledError = class extends Error {
   constructor(message2 = "\u7528\u6237\u53D6\u6D88\u4E86 MiniMax \u6388\u6743") {
     super(message2);
@@ -69841,8 +70320,8 @@ function parseMinimaxTokenGrant(payload, previousRefreshToken, product = MINIMAX
   };
 }
 function createMinimaxPkce() {
-  const codeVerifier = randomBytes11(32).toString("base64url");
-  const codeChallenge = createHash9("sha256").update(codeVerifier, "ascii").digest("base64url");
+  const codeVerifier = randomBytes12(32).toString("base64url");
+  const codeChallenge = createHash10("sha256").update(codeVerifier, "ascii").digest("base64url");
   return { codeVerifier, codeChallenge };
 }
 async function startMinimaxDeviceAuthorization(fetcher = fetch, product = MINIMAX) {
@@ -69953,6 +70432,17 @@ function parseMinimaxCredential(value) {
     return void 0;
   }
 }
+function isMinimaxRefreshTokenRejected(message2) {
+  return /invalid_grant|expired|revoked/i.test(message2);
+}
+async function rereadCredential(reread) {
+  if (reread === void 0) return void 0;
+  try {
+    return await reread();
+  } catch {
+    return void 0;
+  }
+}
 var MinimaxAuth = class extends Service10 {
   constructor(ctx, options = {}) {
     const product = options.product ?? MINIMAX;
@@ -70028,11 +70518,9 @@ var MinimaxAuth = class extends Service10 {
       throw new MinimaxRefreshTokenExpiredError("\u51ED\u636E\u7F3A\u5C11 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
     }
     try {
-      const next = await refreshMinimaxCredential(
-        credential.refresh_token,
-        this.fetchImpl,
-        this.product
-      );
+      const next = await this.refreshCredentialFor(credential, {
+        reread: () => this.resolveDefaultCredential()
+      });
       await this.ctx.credentials.set(credentialRef15(this.credentialRefName), JSON.stringify(next));
       this.lastRefreshError = void 0;
     } catch (error) {
@@ -70058,7 +70546,9 @@ var MinimaxAuth = class extends Service10 {
       throw new MinimaxRefreshTokenExpiredError("\u51ED\u636E\u7F3A\u5C11 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
     }
     if (pool === void 0) {
-      const next = await this.refreshCredentialFor(credential);
+      const next = await this.refreshCredentialFor(credential, {
+        reread: () => this.resolveCredentialAt(refName)
+      });
       await this.ctx.credentials.set(ref, JSON.stringify(next));
       return;
     }
@@ -70069,7 +70559,7 @@ var MinimaxAuth = class extends Service10 {
       accountId: accountId ?? "",
       credential,
       accessors: MINIMAX_EXPIRY_ACCESSORS,
-      refresh: (c) => this.refreshCredentialFor(c),
+      refresh: (c) => this.refreshCredentialFor(c, { reread: () => this.resolveCredentialAt(refName) }),
       save: (c) => this.ctx.credentials.set(ref, JSON.stringify(c)),
       warn: (message2) => this.ctx.logger?.warn?.(message2),
       info: (message2) => this.ctx.logger?.info?.(message2)
@@ -70102,6 +70592,32 @@ var MinimaxAuth = class extends Service10 {
           await pool.updateAccount(entry.id, { refreshable: false });
           continue;
         }
+        if (MINIMAX_RENEWED.spent(credential)) {
+          const healed = await this.refreshCredentialFor(credential, {
+            reread: () => this.resolveCredentialAt(entry.credentialRef)
+          });
+          try {
+            await this.ctx.credentials.set(ref, JSON.stringify(healed));
+          } catch (error) {
+            throw new SaveFailedError(
+              `[minimax] \u8D26\u53F7 ${entry.id} \u7EED\u671F\u540E\u843D\u76D8\u4ECD\u5931\u8D25: ${error instanceof Error ? error.message : String(error)}`
+            );
+          }
+          await syncAccountExpiry({
+            pool,
+            provider: this.product.id,
+            credential: healed,
+            accessors: MINIMAX_EXPIRY_ACCESSORS,
+            accountId: entry.id,
+            current: entry,
+            tag: `[${this.product.id}]`,
+            warn: (message2) => this.ctx.logger?.warn?.(message2)
+          });
+          this.ctx.logger?.info?.(
+            `[minimax] \u8D26\u53F7 ${entry.id} \u4E4B\u524D\u7EED\u671F\u6210\u529F\u7684\u51ED\u636E\u5DF2\u8865\u843D\u76D8\uFF08\u672A\u518D\u53D1\u7EED\u671F\u8BF7\u6C42\uFF09`
+          );
+          continue;
+        }
         await refreshAccountWithReconcile({
           pool,
           provider: this.product.id,
@@ -70110,7 +70626,9 @@ var MinimaxAuth = class extends Service10 {
           credential,
           accessors: MINIMAX_EXPIRY_ACCESSORS,
           current: entry,
-          refresh: (c) => this.refreshCredentialFor(c),
+          refresh: (c) => this.refreshCredentialFor(c, {
+            reread: () => this.resolveCredentialAt(entry.credentialRef)
+          }),
           save: (c) => this.ctx.credentials.set(ref, JSON.stringify(c)),
           warn: (message2) => this.ctx.logger?.warn?.(message2)
         });
@@ -70124,12 +70642,8 @@ var MinimaxAuth = class extends Service10 {
             `[minimax] \u8D26\u53F7 ${entry.id} \u7684 refresh_token \u5DF2\u5931\u6548\uFF0C\u5DF2\u6807\u8BB0\u4E3A\u4E0D\u53EF\u7EED\u671F\uFF08\u9700\u91CD\u65B0\u767B\u5F55\uFF09`
           );
         } else if (error instanceof SaveFailedError) {
-          try {
-            await pool.updateAccount(entry.id, { refreshable: false });
-          } catch {
-          }
           this.ctx.logger?.error?.(
-            `[minimax] \u8D26\u53F7 ${entry.id} \u7EED\u671F\u5DF2\u6210\u529F\u4F46\u51ED\u636E\u843D\u76D8\u5931\u8D25\uFF08\u9700\u91CD\u65B0\u767B\u5F55\uFF09: ${error instanceof Error ? error.message : String(error)}`
+            `[minimax] \u8D26\u53F7 ${entry.id} \u7EED\u671F\u5DF2\u6210\u529F\u4F46\u51ED\u636E\u843D\u76D8\u5931\u8D25\uFF0C\u4E0B\u4E00\u8F6E\u4F1A\u7528\u5185\u5B58\u4E2D\u7684\u7EED\u671F\u7ED3\u679C\u91CD\u8BD5\u843D\u76D8\uFF08\u8FDB\u7A0B\u91CD\u542F\u540E\u9700\u91CD\u65B0\u767B\u5F55\uFF09: ${error instanceof Error ? error.message : String(error)}`
           );
         } else {
           this.ctx.logger?.warn?.(
@@ -70143,23 +70657,54 @@ var MinimaxAuth = class extends Service10 {
    * 续期给定凭据（供 `refreshAccountWithReconcile` 的 `refresh` 回调）。
    *
    * ⚠️ **不落盘** —— 落盘由共享实现的 `save` 回调负责。
+   *
+   * ## 顺序契约（本方法最要紧的部分）
+   *
+   * MiniMax 的 refresh_token **用一次即废**，所以「发不发旧 token」这件事必须由
+   * 本进程的记账（{@link MINIMAX_RENEWED}）而不是磁盘决定：
+   *
+   * 1. **先认缓存**：这枚 refresh_token 本进程已经花过 ⇒ 结果直接在内存里，
+   *    原样返回，**一个请求都不发**。这正是「续期成功但写盘失败」的自愈路径 ——
+   *    磁盘上留着的旧 token 绝不会被重发一遍。
+   * 2. 没命中才真的续期；结果在落盘**之前**就登记进缓存（`MinimaxRenewedCache.renew`），
+   *    所以落盘失败不影响下一轮。
+   * 3. 上游回 `invalid_grant`（/ expired / revoked）时，**先看缓存、再重读磁盘**：
+   *    - 缓存里已有这枚 token 的结果（并发/其它路径刚续完）⇒ 直接采纳；
+   *    - 磁盘上已经换成了**另一枚** token（别的进程续过并落盘）⇒ 采纳那枚的结果；
+   *    - 两者都没有 ⇒ **才**判终态 `MinimaxRefreshTokenExpiredError`（需重新登录）。
+   *
+   * @param options.reread 重新读取「这枚凭据所在位置」的现值；缺省时终态判定只看进程缓存。
    */
-  async refreshCredentialFor(credential) {
+  async refreshCredentialFor(credential, options = {}) {
     if (!isMinimaxRefreshable(credential)) {
       throw new MinimaxRefreshTokenExpiredError("\u51ED\u636E\u7F3A\u5C11 refresh_token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
     }
+    const cached2 = MINIMAX_RENEWED.latest(credential);
+    if (cached2.access_token !== credential.access_token) return cached2;
     try {
-      return await refreshMinimaxCredential(
-        credential.refresh_token,
-        this.fetchImpl,
-        this.product
-      );
+      const next = await MINIMAX_RENEWED.renew(credential, (spentRefreshToken) => refreshMinimaxCredential(spentRefreshToken, this.fetchImpl, this.product));
+      return { ...credential, ...next };
     } catch (error) {
       const message2 = error instanceof Error ? error.message : String(error);
-      if (/invalid_grant|expired|revoked/i.test(message2)) {
-        throw new MinimaxRefreshTokenExpiredError("refresh_token \u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+      if (!isMinimaxRefreshTokenRejected(message2)) throw error;
+      const afterCache = MINIMAX_RENEWED.latest(credential);
+      if (afterCache.access_token !== credential.access_token) return afterCache;
+      const onDisk = await rereadCredential(options.reread);
+      if (onDisk !== void 0 && onDisk.refresh_token !== credential.refresh_token) {
+        const newer = MINIMAX_RENEWED.latest(onDisk);
+        if (newer.access_token !== onDisk.access_token) return newer;
       }
-      throw error;
+      throw new MinimaxRefreshTokenExpiredError("refresh_token \u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+    }
+  }
+  /** 读取指定 ref 下的当前凭据（`reread` 用；失败当「读不到」，不抛）。 */
+  async resolveCredentialAt(refName) {
+    try {
+      const resolved = await this.ctx.credentials.resolve(credentialRef15(refName));
+      if (!resolved) return void 0;
+      return parseMinimaxCredential(resolved.value);
+    } catch {
+      return void 0;
     }
   }
   /**
@@ -70887,7 +71432,7 @@ import { credentialRef as credentialRef16 } from "@deepseek-ai/dsh-credentials";
 
 // vendor/channel-pack/src/antigravity-oauth.ts
 import { createServer as createServer7 } from "node:http";
-import { randomBytes as randomBytes12 } from "node:crypto";
+import { randomBytes as randomBytes13 } from "node:crypto";
 var ANTIGRAVITY_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 var ANTIGRAVITY_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 var ANTIGRAVITY_USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v2/userinfo";
@@ -71087,14 +71632,14 @@ async function fetchGeminiUserInfo(accessToken, options = {}) {
 }
 var ANTIGRAVITY_CALLBACK_HTML = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>\u6388\u6743\u5B8C\u6210</title><style>body{font:15px/1.7 -apple-system,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f1115;color:#e6e8eb}.b{text-align:center}.k{font-size:34px;margin-bottom:8px}</style></head><body><div class="b"><div class="k">\u2713</div><div>\u6388\u6743\u5DF2\u5B8C\u6210\uFF0C\u53EF\u4EE5\u5173\u95ED\u6B64\u9875\u56DE\u5230\u9762\u677F\u3002</div></div></body></html>`;
 function pickFreePort2() {
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve3, reject) => {
     const probe = createServer7();
     probe.once("error", reject);
     probe.listen(0, "127.0.0.1", () => {
       const address = probe.address();
       const port = typeof address === "object" && address !== null ? address.port : 0;
       probe.close(() => {
-        if (port > 0) resolve2(port);
+        if (port > 0) resolve3(port);
         else reject(new Error("\u65E0\u6CD5\u5206\u914D\u56DE\u8C03\u7AEF\u53E3"));
       });
     });
@@ -71103,10 +71648,10 @@ function pickFreePort2() {
 async function listenCallback(handler, preferredPort) {
   const attempt = (port) => {
     const primary = createServer7(handler);
-    return new Promise((resolve2, reject) => {
+    return new Promise((resolve3, reject) => {
       primary.once("error", (error) => {
         if (error.code === "EADDRINUSE" && port !== 0) {
-          void pickFreePort2().then((next) => resolve2(attempt(next)), reject);
+          void pickFreePort2().then((next) => resolve3(attempt(next)), reject);
           return;
         }
         reject(error);
@@ -71116,10 +71661,10 @@ async function listenCallback(handler, preferredPort) {
         const assigned = typeof address === "object" && address !== null ? address.port : 0;
         const secondary = createServer7(handler);
         secondary.once("error", () => {
-          resolve2({ port: assigned, servers: [primary] });
+          resolve3({ port: assigned, servers: [primary] });
         });
         secondary.listen(assigned, "::1", () => {
-          resolve2({ port: assigned, servers: [primary, secondary] });
+          resolve3({ port: assigned, servers: [primary, secondary] });
         });
       });
     });
@@ -71127,13 +71672,13 @@ async function listenCallback(handler, preferredPort) {
   return attempt(preferredPort);
 }
 async function startGeminiOAuthFlow(options = {}) {
-  const state = randomBytes12(16).toString("hex");
+  const state = randomBytes13(16).toString("hex");
   let resolveCode = () => {
   };
   let rejectCode = () => {
   };
-  const codePromise = new Promise((resolve2, reject) => {
-    resolveCode = resolve2;
+  const codePromise = new Promise((resolve3, reject) => {
+    resolveCode = resolve3;
     rejectCode = reject;
   });
   const handler = (req, res) => {
@@ -71172,7 +71717,7 @@ async function startGeminiOAuthFlow(options = {}) {
     if (closed) return;
     closed = true;
     await Promise.all(
-      servers.map((server) => new Promise((resolve2) => server.close(() => resolve2())))
+      servers.map((server) => new Promise((resolve3) => server.close(() => resolve3())))
     );
   };
   const fetcher = options.fetcher ?? fetch;
@@ -71591,7 +72136,7 @@ var AntigravityAuth = class extends Service11 {
 };
 
 // vendor/channel-pack/src/antigravity-sigstore.ts
-import { createHash as createHash10 } from "node:crypto";
+import { createHash as createHash11 } from "node:crypto";
 import { existsSync as existsSync13, mkdirSync as mkdirSync11, readFileSync as readFileSync14, renameSync as renameSync10, writeFileSync as writeFileSync12 } from "node:fs";
 import { dirname as dirname2, join as join13 } from "node:path";
 var ANTIGRAVITY_SIG_FILE = "antigravity-sigs.json";
@@ -71599,7 +72144,7 @@ var ANTIGRAVITY_SIG_MAX_ENTRIES = 2e3;
 var SIG_KEY_BODY_LIMIT = 512;
 function antigravitySigKey(role, text) {
   const body = text.length > SIG_KEY_BODY_LIMIT ? text.slice(0, SIG_KEY_BODY_LIMIT) : text;
-  return createHash10("sha256").update(`${role}\0${body}`, "utf8").digest("hex").slice(0, 16);
+  return createHash11("sha256").update(`${role}\0${body}`, "utf8").digest("hex").slice(0, 16);
 }
 function antigravityToolSigKey(name2, argsJson) {
   return antigravitySigKey(`tool:${name2}`, argsJson);
@@ -71745,6 +72290,177 @@ function createGeminiSigStore(ctx) {
 
 // vendor/channel-pack/src/opencode-adapter.ts
 import { LlmAdapter as LlmAdapter14, LlmError as LlmError21, ReasoningEffortId as ReasoningEffortId15 } from "@deepseek-ai/dsh-llm";
+
+// vendor/channel-pack/src/opencode-environment.ts
+import { readFileSync as readFileSync15, realpathSync, statSync as statSync3 } from "node:fs";
+import { homedir as homedir6, tmpdir as tmpdir2 } from "node:os";
+import { dirname as dirname3, join as join14, resolve as resolve2 } from "node:path";
+var HAS_ENVIRONMENT = /<env>\r?\n {2}Working directory: [^\n]*\n[\s\S]*?<\/env>/;
+var SYSTEM_ROLES = /* @__PURE__ */ new Set(["system", "developer"]);
+function textOfContent(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((part) => {
+    if (typeof part !== "object" || part === null) return "";
+    const text = part.text;
+    return typeof text === "string" ? text : "";
+  }).join("\n");
+}
+function roleOf(message2) {
+  if (typeof message2 !== "object" || message2 === null) return "";
+  const role = message2.role;
+  return typeof role === "string" ? role : "";
+}
+var ABSOLUTE = String.raw`((?:~?/|[A-Za-z]:[\\/]|\\\\)[^\s\x60'"<>]*)`;
+var STATED_DIRECTORY = [
+  new RegExp(String.raw`<cwd>\s*${ABSOLUTE}\s*</cwd>`),
+  new RegExp(String.raw`working directory(?: is)?:?\s+\x60?${ABSOLUTE}`, "i")
+];
+function hasOpencodeEnvironment(text) {
+  return typeof text === "string" && HAS_ENVIRONMENT.test(text);
+}
+function statedDirectory(payload) {
+  const texts = [];
+  const system = payload.system;
+  if (typeof system === "string" && system.length > 0) texts.push(system);
+  const messages = Array.isArray(payload.messages) ? payload.messages : [];
+  for (const message2 of messages) {
+    if (SYSTEM_ROLES.has(roleOf(message2))) {
+      texts.push(textOfContent(message2.content));
+    }
+  }
+  for (const message2 of messages) {
+    if (roleOf(message2) === "user") texts.push(textOfContent(message2.content));
+  }
+  for (const text of texts) {
+    if (text.length === 0) continue;
+    for (const pattern of STATED_DIRECTORY) {
+      const found = pattern.exec(text)?.[1]?.replace(/[.,;:)\]]+$/, "");
+      if (found !== void 0 && found !== "" && found !== "/" && found !== "~/") return found;
+    }
+  }
+  return void 0;
+}
+function repository(directory) {
+  let dir = directory;
+  for (; ; ) {
+    const dotGit = join14(dir, ".git");
+    let stat;
+    try {
+      stat = statSync3(dotGit);
+    } catch {
+      stat = void 0;
+    }
+    if (stat !== void 0) {
+      try {
+        let common = dotGit;
+        if (stat.isFile()) {
+          const gitdir = /^gitdir:\s*(.+)$/m.exec(readFileSync15(dotGit, "utf8"))?.[1]?.trim();
+          if (gitdir === void 0) return void 0;
+          const own = resolve2(dir, gitdir);
+          try {
+            common = resolve2(own, readFileSync15(join14(own, "commondir"), "utf8").trim());
+          } catch {
+            common = own;
+          }
+        }
+        const config = readFileSync15(join14(common, "config"), "utf8");
+        const remotes = [...config.matchAll(/^\s*\[remote\s+"([^"]+)"\]([^[]*)/gm)].map((match) => ({
+          name: match[1],
+          url: /^\s*url\s*=\s*(.+)$/m.exec(match[2] ?? "")?.[1]
+        }));
+        const remote = remotes.find((candidate) => candidate.name === "origin") ?? remotes[0];
+        const remoteUrl = remote?.url;
+        if (remoteUrl === void 0) return { root: dir };
+        const normalized = remotePath(remoteUrl);
+        return normalized === void 0 ? { root: dir } : { root: dir, remote: normalized };
+      } catch {
+        return { root: dir };
+      }
+    }
+    const up = dirname3(dir);
+    if (up === dir) return void 0;
+    dir = up;
+  }
+}
+function remotePath(value) {
+  const input = value.trim();
+  if (input === "") return void 0;
+  const parts = (host, name2) => {
+    const path2 = name2.replace(/^\/+/, "").replace(/\.git\/?$/, "").replace(/\/+$/, "");
+    return host !== "" && path2 !== "" ? `${host.toLowerCase()}/${path2}` : void 0;
+  };
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(input)) {
+    try {
+      const url = new URL(input);
+      return url.protocol === "file:" ? void 0 : parts(url.hostname, url.pathname);
+    } catch {
+      return void 0;
+    }
+  }
+  const scp = /^([^@/:]+@)?([^/:]+):(.+)$/.exec(input);
+  return scp === null ? void 0 : parts(scp[2] ?? "", scp[3] ?? "");
+}
+function localDirectory(directory, home) {
+  const dir = directory.replace(/^~(?=\/|$)/, home);
+  try {
+    return realpathSync(dir);
+  } catch {
+    return dir;
+  }
+}
+function opencodeTmp() {
+  try {
+    return join14(realpathSync(tmpdir2()), "opencode");
+  } catch {
+    return join14(tmpdir2(), "opencode");
+  }
+}
+function buildOpencodeEnvironment(directory, options = {}) {
+  const home = options.home ?? homedir6();
+  const local = localDirectory(directory, home);
+  const repo = repository(local);
+  return [
+    "Here is some useful information about the environment you are running in:",
+    "<env>",
+    `  Working directory: ${directory}`,
+    `  Workspace root folder: ${repo !== void 0 && repo.root !== local ? repo.root : directory}`,
+    `  Is directory a git repo: ${repo === void 0 ? "no" : "yes"}`,
+    `  Platform: ${options.platform ?? process.platform}`,
+    `  Prefer ${options.tmp ?? opencodeTmp()} over generic system temporary directories such as /tmp; it is pre-created and approved for external access.`,
+    "</env>"
+  ].join("\n");
+}
+function withEnvironment(content, block) {
+  if (typeof content === "string") return content.length > 0 ? `${content}
+
+${block}` : block;
+  if (Array.isArray(content)) return [...content, { type: "text", text: block }];
+  return block;
+}
+function addOpencodeEnvironment(payload, options) {
+  if (options.slotKind !== "anonymous") return false;
+  const messages = Array.isArray(payload.messages) ? payload.messages : [];
+  if (hasOpencodeEnvironment(typeof payload.system === "string" ? payload.system : void 0)) return false;
+  if (messages.some((message2) => SYSTEM_ROLES.has(roleOf(message2)) && hasOpencodeEnvironment(textOfContent(message2.content)))) return false;
+  const home = options.home ?? homedir6();
+  const stated = statedDirectory(payload);
+  const directory = stated === void 0 ? home : stated.replace(/^~(?=\/|$)/, home);
+  const envOptions = { home };
+  if (options.platform !== void 0) envOptions.platform = options.platform;
+  if (options.tmp !== void 0) envOptions.tmp = options.tmp;
+  const block = buildOpencodeEnvironment(directory, envOptions);
+  let target;
+  for (const message2 of messages) {
+    if (roleOf(message2) === "system") target = message2;
+  }
+  if (target !== void 0) {
+    target.content = withEnvironment(target.content, block);
+    return true;
+  }
+  payload.messages = [{ role: "system", content: block }, ...messages];
+  return true;
+}
 
 // vendor/channel-pack/src/opencode-messages.ts
 var FREE_LANE_GATE_TOOLS = ["read", "shell"];
@@ -71968,9 +72684,9 @@ function buildOpencodePayloadWithToolMap(input) {
 
 // vendor/channel-pack/src/opencode-capability.ts
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { readFileSync as readFileSync15 } from "node:fs";
-import { homedir as homedir6 } from "node:os";
-import { join as join14 } from "node:path";
+import { readFileSync as readFileSync16 } from "node:fs";
+import { homedir as homedir7 } from "node:os";
+import { join as join15 } from "node:path";
 var MEASURED_IMAGE_OVERRIDES = {
   // 实测 2026-10-02：models.dev 标 `modalities.input: ["text"]`，
   // 但 1×1 PNG 的多模态请求真实返回 200（big-pickle 是最常用的免费模型）。
@@ -72030,8 +72746,8 @@ function normalizeEntry(id, raw) {
   };
 }
 function cacheFilePath() {
-  const home = process.env.DSH_HOME?.trim() || join14(homedir6(), ".dsh");
-  return join14(home, "cache", "opencode-capabilities.json");
+  const home = process.env.DSH_HOME?.trim() || join15(homedir7(), ".dsh");
+  return join15(home, "cache", "opencode-capabilities.json");
 }
 var memory = [];
 var cacheFileAt = 0;
@@ -72054,7 +72770,7 @@ function loadDiskCacheSync() {
   if (diskLoaded) return;
   diskLoaded = true;
   try {
-    const raw = readFileSync15(cacheFilePath(), "utf8");
+    const raw = readFileSync16(cacheFilePath(), "utf8");
     const parsed = JSON.parse(raw);
     if (parsed?.version === 3 && Array.isArray(parsed.entries) && parsed.entries.length > 0) {
       memory = parsed.entries;
@@ -72066,7 +72782,7 @@ function loadDiskCacheSync() {
 async function writeDiskCache(entries) {
   try {
     const path2 = cacheFilePath();
-    await mkdir(join14(path2, ".."), { recursive: true });
+    await mkdir(join15(path2, ".."), { recursive: true });
     const payload = { version: 3, at: Date.now(), entries };
     await writeFile(path2, JSON.stringify(payload), "utf8");
   } catch {
@@ -72426,8 +73142,14 @@ var OpencodeAdapter = class extends LlmAdapter14 {
       ...options.maxTokens !== void 0 ? { maxTokens: options.maxTokens } : {},
       ...effort.effort !== void 0 ? { reasoningEffort: effort.effort } : {}
     });
+    addOpencodeEnvironment(payload, { slotKind: slot.kind });
+    const userAgent = await resolveOpencodeUserAgent(
+      this.options.fetchVersion ?? this.fetchImpl,
+      slot.userAgent,
+      options.signal === void 0 ? {} : { signal: options.signal }
+    );
     const headers = {
-      ...opencodeHeaders(slot.fingerprint, sessionIdOf(options), opencodeUserAgent(slot.userAgent)),
+      ...opencodeHeaders(slot.fingerprint, sessionIdOf(options), userAgent),
       "content-type": "application/json",
       accept: "text/event-stream",
       authorization: `Bearer ${slot.apiKey}`
@@ -72507,9 +73229,9 @@ import { execFile as execFile2 } from "node:child_process";
 function lazyOpencodeUserAgent() {
   let pending;
   return () => {
-    pending ??= new Promise((resolve2) => {
+    pending ??= new Promise((resolve3) => {
       execFile2("opencode", ["--version"], { timeout: 2e3, windowsHide: true }, (_err, stdout) => {
-        resolve2(typeof stdout === "string" ? stdout : "");
+        resolve3(typeof stdout === "string" ? stdout : "");
       });
     }).then((out) => {
       const version = out.match(/(\d+\.\d+\.\d+)/)?.[1];

@@ -154,6 +154,44 @@ const CONTEXT_WINDOWS: ReadonlyMap<string, number> = new Map([
   ['deepseek-v4.1-flash', 1_000_000],
 ])
 
+/**
+ * 真正能看图的模型 —— **显式白名单**，不猜、不外推。
+ *
+ * 来源：magpie `opencode-codearts-auth` 0.3.25 的 `MULTIMODAL` 集合
+ * （2026-11-23 实测；同一份实测记录里，白名单外的模型收到图片会回
+ * `InferHub.001001020.406` "The request model is not multimodal"）。
+ *
+ * ⚠️ 为什么必须**声明为假**而不是留空：DSH 把 `inputModalities` 当作
+ *   「要不要把图片投影成文本占位符」的开关。留空 = 未知 = 图片被原样发出 ⇒
+ *   文本模型吃图报 406；声明 `image` 就必须真能看，否则等于谎报能力
+ *   （同 `zcode-adapter.ts:1025` 的注释）。故只有这 5 个 id 报 `image`。
+ */
+const MULTIMODAL_MODELS: ReadonlySet<string> = new Set([
+  'deepseek-v4.1-flash-1017',
+  'glm-5.3-flash',
+  'deepseek-v4.1-flash',
+  'kimi-k3.1-pro',
+  'kimi-k3',
+])
+
+/**
+ * 模型是否属于多模态白名单（大小写不敏感；额外按 {@link normalizeModelId}
+ * 去掉 4 位日期后缀再查一次，目录里出现过 `deepseek-v4.1-flash-1017`
+ * 这类带日期形态的 id）。
+ */
+export function isCodeArtsMultimodalModel(id: string): boolean {
+  const lower = id.toLowerCase()
+  return MULTIMODAL_MODELS.has(lower) || MULTIMODAL_MODELS.has(normalizeModelId(lower))
+}
+
+/**
+ * 播报给宿主的输入模态：白名单外一律 `['text']`（模型目录与
+ * `prepareCall` 共用同一判据，两边不可能各说一套）。
+ */
+export function codeartsInputModalities(id: string): readonly ('text' | 'image')[] {
+  return isCodeArtsMultimodalModel(id) ? ['text', 'image'] : ['text']
+}
+
 export interface CodeArtsAdapterOptions {
   credentialRef: CredentialRef
   resolveCredential: () => Promise<CodeArtsCredential | undefined>
@@ -499,15 +537,45 @@ export function isBodyTooLargeError(status: number, body: string): boolean {
 }
 
 /**
- * 「请求体超过 APIG 签名上限」的用户可见文案。
+ * InferHub（APIG 后面那一层）的请求体上限：**10 MB（十进制）**。
+ *
+ * 与上面的 12 MiB 是**两道闸**：先过 APIG 的 12 MiB 签名上限，过了以后
+ * InferHub 自己还嫌大 —— 但它不明说「太大」，而是回一个和**参数写错完全
+ * 同码**的 `InferHub.001001005.400` "The request param is invalid"
+ * （magpie 0.3.25 实测，2026-11-25：同一个 449 消息 / 23 张图的会话，
+ * 9.36 MB 正常回答、10.03 MB 被拒，直连网关、每个账号每次请求都一样）。
+ *
+ * ⚠️ 判据是**两个条件的合取**（体积 > 10 MB **且** 报文里带这个码）：
+ *   小体积的 001001005 是真参数错，得原样交给下游/用户，不能冒充「太大」。
+ */
+export const CODEARTS_INFERHUB_BODY_LIMIT_BYTES = 10 * 1000 * 1000
+
+/**
+ * 判断「过了 APIG、被 InferHub 按体积拒了」——归类为 413/请求过大。
+ *
+ * @param bytes - 本次请求体的字节数（与 {@link CODEARTS_INFERHUB_BODY_LIMIT_BYTES} 同单位）。
+ * @param detail - 错误报文/错误码文本（`error_code` 或整个响应体均可）。
+ */
+export function isOverInferHubBodyLimit(bytes: number, detail: string): boolean {
+  return bytes > CODEARTS_INFERHUB_BODY_LIMIT_BYTES && /InferHub\.001001005\b/.test(detail)
+}
+
+/**
+ * 「请求体超过网关上限」的用户可见文案 —— **两道闸共用这一套措辞**，
+ * 只有上限数字不同（12 MiB / APIG 签名；9.5 MiB / InferHub 参数层，见上）。
  *
  * 给的必须是**可操作**的两条出路（magpie 0.3.20 的口径），而不是把
  * 用户引去重新登录 —— 那对着这个原因是纯误导。
  */
-export function codeartsBodyTooLargeMessage(bytes: number): string {
+export function codeartsBodyTooLargeMessage(
+  bytes: number,
+  limitBytes: number = CODEARTS_MAX_SIGNABLE_BODY_BYTES,
+): string {
   const mb = (bytes / 1024 / 1024).toFixed(1)
-  return `codearts: 单次请求体 ${mb} MB，超过网关可签名上限 `
-    + `${CODEARTS_MAX_SIGNABLE_BODY_BYTES / 1024 / 1024} MB（多图或很长的对话最容易撞上）。`
+  const limitMb = limitBytes / 1024 / 1024
+  const limitText = Number.isInteger(limitMb) ? String(limitMb) : limitMb.toFixed(1)
+  return `codearts: 单次请求体 ${mb} MB，超过网关单次请求上限 `
+    + `${limitText} MB（多图或很长的对话最容易撞上）。`
     + '请新开一个对话，或减少本轮的图片数量后重试 —— 这不是登录过期，凭据不需要重新登录。'
 }
 
@@ -1202,7 +1270,8 @@ export class CodeArtsAdapter extends LlmAdapter {
     const listed = disabled === undefined || disabled.size === 0
       ? visible
       : visible.filter((m) => !disabled.has(m.id))
-    return listed.map((m) => ({ provider: PROVIDER, id: m.id, name: m.name, inputModalities: ['text'] as const }))
+    // 模态按模型判定（白名单见 `MULTIMODAL_MODELS`）；白名单外仍是 `['text']`。
+    return listed.map((m) => ({ provider: PROVIDER, id: m.id, name: m.name, inputModalities: codeartsInputModalities(m.id) }))
   }
 
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
@@ -1248,7 +1317,7 @@ export class CodeArtsAdapter extends LlmAdapter {
     signal?: AbortSignal,
   ): Promise<{ model: LlmResolvedModelInfo; stream: (options: GenerateOptions) => AsyncIterable<StreamChunk> }> {
     return {
-      model: { ...await this.resolveModel(provider, model, signal), inputModalities: ['text'] as const },
+      model: { ...await this.resolveModel(provider, model, signal), inputModalities: codeartsInputModalities(model) },
       stream: (options: GenerateOptions) => this.stream(options),
     }
   }
@@ -1323,7 +1392,24 @@ export class CodeArtsAdapter extends LlmAdapter {
     // 放在 `JSON.stringify` 之前，签的就是清洗后的字节 —— 签名与内容一致。
     // 只改 system / assistant（判据见 `content-fingerprint.ts`），user 原话不动。
     const scrubbedMessages = messages.map((message) => scrubWireMessage(message as { role?: unknown, content?: unknown }))
-    const body = JSON.stringify({
+    /**
+     * `tool_stream`（magpie 0.3.25 口径，2026-11-23）：**只给 GLM 系注入**。
+     *
+     * 理由：这个字段本是 GLM 自家能力 —— 它的工具参数边写边流（magpie 实测
+     * glm-5.3-flash 写 300 行：2247 帧、5.8s 就开始），用来躲开网关 60s
+     * 空闲断连。老实现「对所有模型无条件 true」有两处代价：
+     *   ① 该字段是**按模型门控**的服务端能力 —— magpie 只在 GLM 上发；
+     *      给别的模型白送一个自己用不上的参数，上游一收紧解析就会 400
+     *      （与本文件 `thinking` 那次「参数是我加的、模型不认」同型）；
+     *   ② deepseek-v4 走 DSML 通道（不走标准 `tool_calls`），该字段对它无效。
+     * 所以判据与 magpie 逐字对齐：`/^glm-/i` **且** 真的有工具要流式。
+     * 被模型拒了（400 + 正文提到 `tool_stream`）时再拆字段重试一次，
+     * 见下方错误分支 —— 那时工具参数一次性到达，不损坏语义。
+     */
+    let toolStreamInjected = /^glm-/i.test(options.model)
+      && wireTools !== undefined && wireTools.length > 0
+    /** 请求体字段对象：重试时需要**拆字段**（`tool_stream`），故留成可变对象。 */
+    const bodyFields: Record<string, unknown> = {
       model: options.model,
       messages: scrubbedMessages,
       stream: true,
@@ -1340,12 +1426,10 @@ export class CodeArtsAdapter extends LlmAdapter {
       // 实测判据：`disabled` → reasoning_tokens 3/3 全为 0、正文仍正确；
       // `enabled` 与不传等价（服务端默认就开着），故「开启」档**不发**该字段。
       ...options.reasoningEffort === 'off' ? { thinking: { type: 'disabled' } } : {},
-      // 对齐 CodeArts Agent IDE 请求体（deveco-code 内核日志实证）：
       // tool_stream=true 让后端将超大工具调用参数（如大文件 file_write）
       // 分段流式传输，避免单次 SSE 事件过大导致连接被掐断
-      // （error decoding response body）。deepseek-v4 的 DSML 路径不受此
-      // 影响，保留该字段与 IDE 对齐。
-      tool_stream: true,
+      // （error decoding response body）。**仅 GLM 系注入**（判据见上）。
+      ...toolStreamInjected ? { tool_stream: true } : {},
       // 输出上限（对齐 deveco-code-rust 参考实现 codearts.rs 的 max_tokens 配置）：
       // 大文件 write 工具参数（如 1000-2000+ 行文档）需要数万 token 的生成空间，
       // 若沿用后端默认输出上限，参数 JSON 会在中途被截断成非法 JSON，harness
@@ -1354,7 +1438,8 @@ export class CodeArtsAdapter extends LlmAdapter {
       // 显式传入的 options.maxTokens 优先，未设置时默认 65536。
       max_tokens: options.maxTokens ?? 65536,
       ...wireTools !== undefined && wireTools.length > 0 ? { tools: wireTools } : {},
-    })
+    }
+    let body = JSON.stringify(bodyFields)
     /**
      * ★ **发送前体量预检**（APIG 签名上限 12 MB，2026-11-15 对齐 magpie 0.3.20）
      *
@@ -1377,7 +1462,7 @@ export class CodeArtsAdapter extends LlmAdapter {
      * ⚠️ 只拒，**不裁剪**：图片/历史一条都不动。删掉用户自己发的东西会改变
      *   他要问的问题，那不是这个适配器该做的决定。
      */
-    const bodyBytes = Buffer.byteLength(body, 'utf8')
+    let bodyBytes = Buffer.byteLength(body, 'utf8')
     if (bodyBytes > CODEARTS_MAX_SIGNABLE_BODY_BYTES) {
       throw new LlmError(codeartsBodyTooLargeMessage(bodyBytes), 'INVALID_REQUEST', { status: 413 })
     }
@@ -1481,7 +1566,7 @@ export class CodeArtsAdapter extends LlmAdapter {
         // TPM 超限），而非 4xx——consumeSse 检测到可重试排队错误时抛
         // SseQueueRetryError，落入下方排队重试逻辑，与 TM.00001041 一致。
         try {
-          yield* this.consumeSse(response, options)
+          yield* this.consumeSse(response, options, bodyBytes)
           break
         } catch (error) {
           if (error instanceof SseQuotaExhaustedError) {
@@ -1550,10 +1635,38 @@ export class CodeArtsAdapter extends LlmAdapter {
          */
         if (isBodyTooLargeError(response.status, errorText)) {
           throw new LlmError(
-            codeartsBodyTooLargeMessage(Buffer.byteLength(body, 'utf8')),
+            codeartsBodyTooLargeMessage(bodyBytes),
             'INVALID_REQUEST',
             { status: 413 },
           )
+        }
+        /**
+         * 过了 APIG、被 **InferHub** 按体积拒（10 MB，magpie 0.3.25）：
+         * 它把「太大」说成 `InferHub.001001005.400` "The request param is invalid"
+         * —— 与「参数写错」同码，光看码会误判成用户参数问题，于是重试、刷新凭据
+         * 都没有意义，只会让用户以为是自己写错了。体积 > 10 MB 时它**就是**体积，
+         * 按 413/请求过大说，措辞与上面那条共用（见 `isOverInferHubBodyLimit`）。
+         */
+        if (isOverInferHubBodyLimit(bodyBytes, errorText)) {
+          throw new LlmError(
+            codeartsBodyTooLargeMessage(bodyBytes, CODEARTS_INFERHUB_BODY_LIMIT_BYTES),
+            'INVALID_REQUEST',
+            { status: 413 },
+          )
+        }
+        /**
+         * 400 且正文提到 `tool_stream` ⇒ 该模型不认这个字段（magpie 0.3.25
+         * 同款兜底）：**拆掉该字段重发一次**，工具参数改为一次性到达
+         * （语义不变，只是不再分段）。只试一次，避免拆完还失败时死循环；
+         * 拆字段后 `body` 变了，必须重算 `bodyBytes` 并**重新签名**——
+         * 外层 for(;;) 每轮都用当前 `body` 调 `signRequestHuawei`，天然满足。
+         */
+        if (response.status === 400 && toolStreamInjected && /tool_stream/i.test(errorText)) {
+          toolStreamInjected = false
+          delete bodyFields.tool_stream
+          body = JSON.stringify(bodyFields)
+          bodyBytes = Buffer.byteLength(body, 'utf8')
+          continue
         }
         if (isAuthError(response.status, errorText) && !authRefreshed) {
           authRefreshed = true
@@ -1699,6 +1812,8 @@ export class CodeArtsAdapter extends LlmAdapter {
   private async *consumeSse(
     response: Response,
     options: GenerateOptions,
+    /** 本次请求体字节数：判定「InferHub 按体积拒」（200 + 内嵌 001001005）。 */
+    bodyBytes: number,
   ): AsyncIterable<StreamChunk> {
     if (!response.body) throw new LlmError('codearts: empty model response body', 'EMPTY_RESPONSE')
     // 块组装状态：文本 / 推理 / 工具调用各自拥有唯一
@@ -1988,6 +2103,16 @@ export class CodeArtsAdapter extends LlmAdapter {
             // 界面零输出（用户报障「没反应」的直接原因）。
             // 现在两个判据已互斥（裸 `429` 已锚定为独立数字），这里的先后仍保留：
             // 它把「额度优先」表达成代码结构，防止后续再有人放宽 `429` 判据。
+            // ⚠️ 必须在额度/排队判据之前：001001005 与它们互斥，但当体积
+            // > 10 MB 时它的含义是「请求太大」（见 `isOverInferHubBodyLimit`），
+            // 得按 413 说，而不是当成用户把参数写错了。
+            if (isOverInferHubBodyLimit(bodyBytes, `${errorCode} ${message}`)) {
+              throw new LlmError(
+                codeartsBodyTooLargeMessage(bodyBytes, CODEARTS_INFERHUB_BODY_LIMIT_BYTES),
+                'INVALID_REQUEST',
+                { status: 413 },
+              )
+            }
             if (isSseQuotaExhaustedErrorCode(errorCode, message)) {
               throw new SseQuotaExhaustedError(errorCode, message)
             }

@@ -19,7 +19,7 @@
  *    不要把它实现成签到按钮 —— 见 `raccoon-credits.ts`。
  */
 
-import { createCipheriv, randomBytes } from 'node:crypto'
+import { createCipheriv, createHash, randomBytes } from 'node:crypto'
 
 /** API 基址。 */
 export const RACCOON_API_BASE = 'https://xiaohuanxiong.com'
@@ -269,5 +269,153 @@ export function raccoonHeaders(
   if (credential.device_id !== undefined && credential.device_id.length > 0) {
     headers['X-Client-Device-ID'] = credential.device_id
   }
+  return headers
+}
+
+// ── 会话 / 轮次头（magpie 0.1.15 移植） ─────────────────────────────────────
+//
+// 官方桌面端把**每条 chat 请求**都署名到「哪个会话的第几轮」：
+//
+//   X-RACCOON-Call-Kind: session_turn
+//   X-RACCOON-Session-ID: <整个会话恒定>
+//   X-RACCOON-Turn-ID:    <session>-turn-<n>   （同一轮的多个工具步骤同一个 n）
+//
+// 对应 magpie `opencode-raccoon-auth` 的 `sessionFor` / `turnOf` / `uuidish`。
+// 我们**只在 `GenerateOptions` 里拿得到 `sessionId`**（宿主 agent-loop 冻结在
+// 请求信封上的 `session.id`），没有 magpie 那种 `chat.headers` 钩子 ——
+// 所以「宿主给了就用它，没给就从账号 + 首条 user 消息派生」。
+
+/** `X-RACCOON-Call-Kind` 的取值（官方桌面端会话轮次）。 */
+export const RACCOON_CALL_KIND_SESSION_TURN = 'session_turn'
+
+/** 会话 id 的长度上限（照 magpie 的 `slice(0, 128)`）。 */
+const RACCOON_SESSION_ID_MAX = 128
+
+/**
+ * 造一个 **UUID v4 形状**的**确定性** id。
+ *
+ * 照 magpie 的 `uuidish()`：`sha256(seed)` 取前 16 字节，把第 7 字节高 4 位
+ * 改成 `4`（版本位）、第 9 字节高 2 位改成 `10`（变体位），再拼成
+ * `8-4-4-4-12`。官方桌面端的兜底会话 id 就是这个形状。
+ *
+ * ⚠ **不能用 `randomUUID()`** —— 那样每次请求都会换一个会话 id，
+ * 等于把「同一会话稳定」这条要求反过来做。
+ */
+export function raccoonUuidish(seed: string): string {
+  const bytes = Buffer.from(createHash('sha256').update(seed, 'utf8').digest().subarray(0, 16))
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80
+  const hex = bytes.toString('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+/** 一条消息里所有 `text` 块拼成的文本（拿不到就空串）。 */
+function raccoonMessageText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .filter((block): block is { text: string } =>
+      typeof block === 'object' && block !== null && typeof (block as { text?: unknown }).text === 'string')
+    .map((block) => block.text)
+    .join('')
+}
+
+/** 请求里**第一条** user 消息的文本（会话派生 seed 的一半）。 */
+export function raccoonFirstUserText(
+  messages: readonly { role: string; content: unknown }[],
+): string {
+  for (const message of messages) {
+    if (message.role !== 'user') continue
+    const text = raccoonMessageText(message.content).trim()
+    if (text.length > 0) return text
+  }
+  return ''
+}
+
+/**
+ * 本次请求是会话里的**第几个用户轮次**（从 1 开始；没有 user 消息返回 0）。
+ *
+ * ⚠ **连续的 user 消息只算一轮**（数的是「轮次起点」而不是裸条数）：
+ * 宿主会在用户消息后面补 user 角色的提醒/通知，`serializeMessages` 也会把
+ * 工具结果里的图片提成额外的 user 消息 —— 按裸条数计，同一轮的**第二个**
+ * 工具步骤就会被算成 `turn-2`，正是 magpie 明确要避免的。
+ *
+ * 工具结果是一等 `role: 'tool'` 消息，不进计数 ⇒ 同一轮的多个工具步骤
+ * 拿到同一个 `n`，用户再发一条消息才 +1。
+ */
+export function raccoonTurnIndex(
+  messages: readonly { role: string; content: unknown }[],
+): number {
+  let turn = 0
+  let previousWasUser = false
+  for (const message of messages) {
+    const isUser = message.role === 'user'
+    if (isUser && !previousWasUser) turn += 1
+    previousWasUser = isUser
+  }
+  return turn
+}
+
+/**
+ * 派生「账号」标识（会话派生 seed 的另一半）。
+ *
+ * 顺序：组织码 `office_identity`（个人账号是空串 → 跳过）→ 用户 id → 账号池 id。
+ * ⚠ 这些字段**不随续期变**（只有 `access_token` 会换），故续期/换 token 不会
+ * 把会话 id 改掉。
+ */
+export function raccoonAccountKey(
+  credential: Pick<RaccoonCredential, 'office_identity' | 'user_id'> | undefined,
+  accountId?: string,
+): string {
+  for (const candidate of [credential?.office_identity, credential?.user_id, accountId]) {
+    const value = typeof candidate === 'string' ? candidate.trim() : ''
+    if (value.length > 0) return value
+  }
+  return ''
+}
+
+/**
+ * 会话 id：**宿主给了就用宿主的**，没给才从（账号 + 首条 user 消息）派生。
+ *
+ * - 宿主路径：`GenerateOptions.sessionId`（DSH 会话 id）—— 一个 DSH 会话内恒定，
+ *   换账号/换模型/续期都不变，只有「新会话」才变。
+ * - 派生路径：`uuidish('raccoon-session|<账号>\0<首条 user 文本>')` —— 同一会话里
+ *   后续轮次的首条 user 消息不变 ⇒ 复用同一个 id。任一半缺失则返回空串
+ *   （宁可不发该头，也不发一个每次请求都变的 id）。
+ */
+export function raccoonSessionId(input: {
+  sessionId?: string | undefined
+  account?: string | undefined
+  messages: readonly { role: string; content: unknown }[]
+}): string {
+  const hostSession = input.sessionId?.trim()
+  if (hostSession !== undefined && hostSession.length > 0) {
+    return hostSession.slice(0, RACCOON_SESSION_ID_MAX)
+  }
+  const account = input.account?.trim()
+  const first = raccoonFirstUserText(input.messages)
+  if (account === undefined || account.length === 0 || first.length === 0) return ''
+  return raccoonUuidish(`raccoon-session|${account}\u0000${first}`)
+}
+
+/**
+ * 三个会话/轮次头（一次算齐，适配器直接在 `headers()` 里展开）。
+ *
+ * `X-RACCOON-Call-Kind` 恒发（官方桌面端也恒发）；会话 id 拿不到时退回
+ * 「只发 Call-Kind」（与 magpie 的 `if (session)` 同口径），绝不发假值。
+ */
+export function raccoonSessionTurnHeaders(input: {
+  sessionId?: string | undefined
+  account?: string | undefined
+  messages: readonly { role: string; content: unknown }[]
+}): Record<string, string> {
+  const headers: Record<string, string> = {
+    'X-RACCOON-Call-Kind': RACCOON_CALL_KIND_SESSION_TURN,
+  }
+  const session = raccoonSessionId(input)
+  if (session.length === 0) return headers
+  headers['X-RACCOON-Session-ID'] = session
+  const turn = raccoonTurnIndex(input.messages)
+  if (turn > 0) headers['X-RACCOON-Turn-ID'] = `${session}-turn-${turn}`
   return headers
 }

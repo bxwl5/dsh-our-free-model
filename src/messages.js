@@ -36,6 +36,7 @@
  * @module src/messages.js
  */
 
+import { statedTextsOfMessages, withEnvironment } from './environment.js'
 import { MAX_TOOL_NAME_LEN, baseModelId, restoreToolName } from './upstream.js'
 
 /** Content types an image lane can carry, matched against the verified media type. */
@@ -300,9 +301,12 @@ function claudeImageBlock(url, warnings) {
  * @param {HarnessMessage[]} messages
  * @param {(ref: object) => string|undefined} resolveImage
  * @param {string[]} warnings
- * @returns {Array<object>} Claude Messages 线消息（content block 数组）
+ * @param {{environment?: boolean}} [options] `environment`: 追加 OpenCode 的 `<env>` 块
+ *   （本车道上游的必需项，见 {@link module:src/environment.js}）。默认不加 —— 这个投影器
+ *   也被「把 Anthropic 请求原样转述」的路径复用，那条路不该多出一段块。
+ * @returns {{system?: string, messages: Array<object>}} Claude Messages 线（system + 消息）
  */
-export function toClaudeMessages(messages, resolveImage, warnings) {
+export function toClaudeMessages(messages, resolveImage, warnings, options = {}) {
   const out = []
   let systemText = ''
   // One turn per role, merged: the kernel's own Messages adapter concatenates a
@@ -361,7 +365,13 @@ export function toClaudeMessages(messages, resolveImage, warnings) {
     if (content.length === 0) continue
     push(message.role === 'assistant' ? 'assistant' : 'user', content)
   }
-  return { system: systemText || undefined, messages: out }
+  // ⚠️ `<env>` 块是上游身份校验的另一半（见 src/environment.js）：缺了它只给极小日
+  // 额度，用光就是 429。块追加在这条 system 文本的**末尾** —— 宿主自己的提示词（前缀
+  // 缓存的命中体）一个字节不动，只有尾部变长；已有同款块则不重复加。
+  return {
+    system: options.environment === true ? withEnvironment(systemText, statedTextsOfMessages(messages)) : systemText || undefined,
+    messages: out,
+  }
 }
 
 /** Project harness messages onto the OpenAI Responses input item list. */

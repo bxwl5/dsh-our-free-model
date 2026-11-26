@@ -582,6 +582,68 @@ async function verifySourceRegressions({ ctx, adapters, call, creds }) {
   console.log(`ok  source ${provider}: HTTP/SSE quota rotation, attribution, bounded retries, no replay after output/abort/5xx`)
   }
 
+  /**
+   * raccoon 会话 / 轮次头（magpie 0.1.15）：**真的发出去**才算移植完成。
+   *
+   * 判据（与官方桌面端同口径）：
+   * - `X-RACCOON-Call-Kind: session_turn` 恒发；
+   * - `X-RACCOON-Session-ID` 在整个 DSH 会话内恒定（宿主 sessionId 或派生值）；
+   * - `X-RACCOON-Turn-ID` = `<session>-turn-<n>`，**同一轮的多个工具步骤同 id**。
+   */
+  {
+    const seen = []
+    const raccoonOptions = {
+      credentialRef: 'FIXTURE',
+      resolveCredential: async () => ({
+        access_token: 'sess-token', refresh_token: 'refresh-sess-token', office_identity: '', user_id: 'u-sess',
+      }),
+      refresh: async () => { throw new Error('unexpected refresh') },
+      fetchImpl: async (_url, init) => {
+        seen.push(new Headers(init.headers))
+        return sse(frame({ content: 'ok' }))
+      },
+    }
+    const adapter = new RaccoonAdapter(raccoonOptions)
+    const userText = text => ({ role: 'user', content: [{ type: 'text', text }] })
+    const toolStep = id => ([
+      { role: 'assistant', content: [{ type: 'tool-call', id, name: 'read', arguments: '{}' }] },
+      { role: 'tool', toolCallId: id, content: [{ type: 'text', text: 'tool output' }] },
+    ])
+    const run = async messages => {
+      await collect(adapter.stream({
+        provider: 'raccoon', model: 'fixture-model', sessionId: 'sess-A', messages,
+      }))
+      return seen.at(-1)
+    }
+
+    const step1 = await run([userText('first question'), ...toolStep('call-1')])
+    const step2 = await run([userText('first question'), ...toolStep('call-1'), ...toolStep('call-2')])
+    const nextTurn = await run([userText('first question'), ...toolStep('call-1'), userText('second question')])
+    assert.equal(step1.get('x-raccoon-call-kind'), 'session_turn', 'Call-Kind 必须是 session_turn')
+    assert.equal(step1.get('x-raccoon-session-id'), 'sess-A', '宿主 sessionId 原样用作会话 id')
+    assert.equal(step1.get('x-raccoon-turn-id'), 'sess-A-turn-1')
+    assert.equal(step2.get('x-raccoon-session-id'), 'sess-A', '同一会话内会话 id 不变')
+    assert.equal(step2.get('x-raccoon-turn-id'), 'sess-A-turn-1', '同一轮的第二个工具步骤必须同 id')
+    assert.equal(nextTurn.get('x-raccoon-turn-id'), 'sess-A-turn-2', '用户再发一条才 +1')
+    assert.notEqual(step1.get('authorization'), null, '既有头不受影响')
+
+    // 宿主没给会话：按（账号 + 首条 user 消息）派生 UUID 形状，且跨请求稳定。
+    const derived = async messages => {
+      await collect(adapter.stream({ provider: 'raccoon', model: 'fixture-model', messages }))
+      return seen.at(-1)
+    }
+    const noSession1 = await derived([userText('first question'), ...toolStep('call-1')])
+    const noSession2 = await derived([userText('first question'), ...toolStep('call-1'), ...toolStep('call-2')])
+    const otherConversation = await derived([userText('another question')])
+    const derivedId = noSession1.get('x-raccoon-session-id')
+    assert.match(String(derivedId), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      '派生会话 id 是 UUID v4 形状')
+    assert.equal(noSession2.get('x-raccoon-session-id'), derivedId, '派生会话 id 不能每次请求都变')
+    assert.equal(noSession1.get('x-raccoon-turn-id'), `${derivedId}-turn-1`)
+    assert.notEqual(otherConversation.get('x-raccoon-session-id'), derivedId, '不同对话必须隔离')
+    console.log('ok  source raccoon: session/turn headers (Call-Kind, stable Session-ID, per-turn Turn-ID) go out on the wire')
+  }
+
   const originalFetch = globalThis.fetch
   const added = []
   try {

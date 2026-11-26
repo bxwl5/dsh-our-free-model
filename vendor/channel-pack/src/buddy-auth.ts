@@ -8,6 +8,8 @@
 import { Service, type Context } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialRef } from '@deepseek-ai/dsh-credentials'
 import {
+  buddyAheadRefreshDue,
+  buddyRefreshArmDelayMs,
   credentialExpiresAtMs,
   isExpired,
   isRefreshable,
@@ -19,7 +21,11 @@ import {
   runBuddyLoginFlow,
   type BuddyLoginFlowOptions,
 } from './buddy-oauth.js'
-import { RefreshScheduler } from './refresh.js'
+import {
+  AheadRetryGate,
+  REFRESH_LEAD_MS,
+  RefreshScheduler,
+} from './refresh.js'
 import type { BuddyCredential, BuddyRemoteModel } from './buddy.js'
 import { AccountPool } from './account-pool.js'
 import { CODEBUDDY, type BuddyProduct } from './product.js'
@@ -128,6 +134,13 @@ export class BuddyAuth extends Service {
   private lastRefreshError: string | undefined
   /** 登录会话是否仍处于活跃状态；logout()/stop() 置 false，防止在途刷新回写已登出凭据。 */
   private active = true
+  /**
+   * 提前续期（ahead）失败后的退避表（见 `refresh.ts` 的 {@link AheadRetryGate}）。
+   *
+   * 只服务 `refresh()` 这条单凭据定时器路径；批量路径（{@link refreshAll}）
+   * 本身每 30 分钟才跑一轮，天然就落在退避上限（30 分钟）上，不需要另记账。
+   */
+  private readonly aheadGate = new AheadRetryGate()
 
   constructor(
     ctx: Context,
@@ -234,7 +247,15 @@ export class BuddyAuth extends Service {
     }
   }
 
-  /** 静默续期：refresh_token 换取；无 refresh_token 时明确报错（由命令提示重新登录）。 */
+  /**
+   * 静默续期：refresh_token 换取；无 refresh_token 时明确报错（由命令提示重新登录）。
+   *
+   * 两条路径：
+   * - **提前续期**（ahead，{@link aheadRefresh}）：已进入「剩 10 天」窗口但**还没**到
+   *   1 小时 lead —— 28 天 access / 30 天 refresh 这对参数下，只等 1 小时 lead
+   *   会让 refresh_token 先死（理由见 `refresh.ts` 的 `REFRESH_AHEAD_MS`）；
+   * - 常规续期（临期 1 小时 / 已过期）：行为与改造前**逐字一致**。
+   */
   async refresh(): Promise<void> {
     const ref = credentialRef(this.credentialRefName)
     const resolved = await this.ctx.credentials.resolve(ref)
@@ -243,6 +264,13 @@ export class BuddyAuth extends Service {
     if (!credential) throw new Error('凭据解析失败')
     if (!isRefreshable(credential)) {
       throw new RefreshTokenExpiredError('无 refresh_token，请重新登录')
+    }
+    if (this.isAheadOnly(credential)) {
+      // 还在退避窗口内：这一轮什么都不做。**不能**落到下面的常规路径 ——
+      // 那会无视退避直接再打一次刷新接口，把 1 分钟起的退避变成「每轮都打」。
+      if (this.aheadGate.waiting(credential.refresh_token)) return
+      await this.aheadRefresh(ref, credential)
+      return
     }
     try {
       // 第 4 个参数是本实例的产品：WorkBuddy 续期时必须带自己的 UA，
@@ -260,6 +288,64 @@ export class BuddyAuth extends Service {
       // 供 /buddy-status 展示 refreshable: false 与重新登录提示。
       if (error instanceof RefreshTokenExpiredError) this.markRefreshTokenInvalid()
       throw error
+    }
+  }
+
+  /**
+   * 「这一轮是否属于**提前续期**」：已进入 10 天窗口、但离过期还有 1 小时以上。
+   *
+   * 剩下的 1 小时以内交给常规路径 —— 那条路径的重试语义（`RefreshScheduler`
+   * 的 10 分钟 / 1 分钟退避）与改造前完全一致，提前续期不能把它换个样。
+   */
+  private isAheadOnly(credential: BuddyCredential): boolean {
+    if (!buddyAheadRefreshDue(credential)) return false
+    const expiresAtMs = credentialExpiresAtMs(credential)
+    if (expiresAtMs === undefined) return false
+    return expiresAtMs - Date.now() > REFRESH_LEAD_MS
+  }
+
+  /**
+   * 提前续期一次（ahead）：换令牌、落盘、按**新**令牌重新武装定时器。
+   *
+   * ## 失败路径（magpie `fresh()` / `aheadFailed` 的同形语义）
+   *
+   * - **非终态**（网络 / 5xx / 超时 / 落盘失败）：**不动登录态** —— 不标
+   *   `refreshTokenInvalid`、不写 `lastRefreshError`、不动账号池的 `refreshable`，
+   *   只记一行 warn 并按 1 分钟起翻倍、封顶 30 分钟退避重试。账号照常可用
+   *   （旧的 access token 还在，还有整整 10 天），没必要吓用户去重新登录。
+   * - **终态**（`RefreshTokenExpiredError`，后端明说 refresh_token 已失效）：
+   *   照既有语义标记失效 —— 那是事实，继续重试只会每 30 分钟刷一条日志。
+   *
+   * ⚠️ 刻意**不 throw**：`RefreshScheduler.run` 的 catch 会给非终态失败安排
+   * 10 分钟重试并回调 `onError`（后者会写 `lastRefreshError`）。这里自己接管
+   * 退避与调度，才能既保住「1 分钟起翻倍」的节奏，又让登录态原样不动。
+   */
+  private async aheadRefresh(ref: CredentialRef, credential: BuddyCredential): Promise<void> {
+    const spentToken = credential.refresh_token
+    try {
+      const refreshed = await this.refreshCredential(credential)
+      if (!this.active) return
+      await this.ctx.credentials.set(ref, JSON.stringify(refreshed))
+      this.aheadGate.clear(spentToken)
+      this.refreshTokenInvalid = false
+      this.lastRefreshError = undefined
+      const delayMs = buddyRefreshArmDelayMs(refreshed)
+      if (delayMs !== undefined) this.scheduler.armAfter(delayMs)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      if (error instanceof RefreshTokenExpiredError) {
+        this.markRefreshTokenInvalid()
+        this.ctx.logger?.warn?.(
+          `[${this.product.id}] 提前续期失败且 refresh_token 已被后端判定失效，需重新登录：${detail}`,
+        )
+        return
+      }
+      const delayMs = this.aheadGate.fail(spentToken)
+      this.ctx.logger?.warn?.(
+        `[${this.product.id}] 提前续期失败（登录态保持不变，${Math.round(delayMs / 1000)}s 后重试）：${detail}`,
+      )
+      if (!this.active) return
+      this.scheduler.armAfter(delayMs)
     }
   }
 
@@ -359,6 +445,18 @@ export class BuddyAuth extends Service {
           await pool.updateAccount(entry.id, { refreshable: false })
           continue
         }
+        // **提前续期（ahead）**：已进入「剩 10 天」窗口就直接续，**不**经过
+        // `refreshAccountWithReconcile` 的 1 小时 lead 过滤 —— 对 28 天 access /
+        // 30 天 refresh 这对参数，等 1 小时 lead 会让 refresh_token 先死
+        //（判据与理由见 `refresh.ts` 的 REFRESH_AHEAD_MS）。短寿命账号不进这条
+        // 分支，仍走原来的对账 + lead 过滤，语义一字不改。
+        //
+        // 失败不在这里额外退避：批量路径本身每 30 分钟一轮，正好等于提前续期
+        // 退避的上限（30 分钟）；外层的 catch 也已经按「非终态只记日志」处理。
+        if (buddyAheadRefreshDue(credential)) {
+          await this.refreshAccountCredential(entry.credentialRef, pool, entry.id)
+          continue
+        }
         await refreshAccountWithReconcile({
           pool,
           provider: this.product.id,
@@ -413,8 +511,11 @@ export class BuddyAuth extends Service {
       if (!resolved) return
       const credential = parseCredential(resolved.value)
       if (!credential || !isRefreshable(credential)) return
-      const expiresAt = credentialExpiresAtMs(credential)
-      if (expiresAt !== undefined) this.scheduler.arm(expiresAt)
+      // 取「1 小时 lead」与「剩 10 天（提前续期）」中更早的那个：
+      // 短寿命 / 读不到寿命的凭据拿到的就是原来的 1 小时 lead，行为不变；
+      // 28 天寿命的 workbuddy 凭据则在第 18 天就把续期排上（理由见 refresh.ts）。
+      const delayMs = buddyRefreshArmDelayMs(credential)
+      if (delayMs !== undefined) this.scheduler.armAfter(delayMs)
     })
   }
 

@@ -21,7 +21,7 @@
  *
  * | 项 | v1（旧） | v2（现在） |
  * |---|---|---|
- * | User-Agent | `opencode/1.18.31` | `opencode/latest/2.0.26/cli` |
+ * | User-Agent | `opencode/1.18.31` | `opencode/latest/<最新版本>/cli`（见 {@link clientUserAgent}） |
  * | 请求头 | 带 `x-opencode-request` | **不带**（v1 专用头，带了即 403）；另加 `x-session-affinity` / `x-session-id` |
  * | 工具闸门 | `bash`/`glob`/`grep`/`read` 四个名字，各带至少一个 property | **`read` 与 `shell` 两个名字，且 description 与参数 schema 必须与官方客户端逐字一致** |
  * | `tool_choice` | 无工具时补 `none` | **`none` 即 403**，绝不下发 |
@@ -52,22 +52,135 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { DATA_DIR_NAME, resolveDshHome } from './store.js'
 
+/** The upstream the free lane really talks to. */
+const REAL_UPSTREAM = 'https://opencode.ai'
+
 /**
  * Overridable so the selftest can point the adapter at a dead port and exercise
  * the transport-failure path without touching the real free lane's quota.
  */
-export const UPSTREAM_BASE = process.env.OUR_FREE_MODEL_BASE ?? 'https://opencode.ai'
+export const UPSTREAM_BASE = process.env.OUR_FREE_MODEL_BASE ?? REAL_UPSTREAM
 
 /**
- * The client User-Agent the v2 gate fingerprints.
+ * The client User-Agent the v2 gate fingerprints — **fallback version only**.
  *
  * ⚠️ 形状是 `opencode/<channel>/<version>/<client>`，且 major 必须 ≥ 2；v1 的
  * `opencode/1.18.x` 自 2026-10-14 起被上游按名字拒掉（403 FreeTierError）。
  * ⚠️ 这个值**必须原样单独发出**：v2 的校验是整串匹配，任何前缀/后缀
  * （包括本插件的归属 UA）都会让它不再是「一个 v2 客户端」。归属因此只保留在
  * 其余车道（channel pack / Kilo），本车道发官方那一串。
+ *
+ * ⚠️ 版本号本身会腐坏：2026-10-26 起，`0.1.6`–`0.1.15` 那串旧 UA 无论请求体写什么
+ * 都换 429 FreeUsageLimitError。所以线上 UA 由 {@link clientUserAgent} 给 —— 它拿
+ * 上游更新接口说的最新版，这个常量只是「还没探测到」时的兜底
+ * （magpie 的实测值：`@opencode/cli` 2.2.5 在 2026-11-01 是 npm 上的 latest）。
  */
-export const CLIENT_UA = 'opencode/latest/2.0.26/cli'
+export const CLIENT_UA_VERSION = '2.2.5'
+export const CLIENT_UA = `opencode/latest/${CLIENT_UA_VERSION}/cli`
+
+/** Where OpenCode's own updater publishes the latest release. */
+const VERSION_PATH = '/update/api/latest/cli/npm'
+/** Ask at most this often; a failed probe waits just as long as a good one. */
+const VERSION_TTL_MS = 6 * 60 * 60 * 1000
+/** A release version, as the updater prints it. */
+const RELEASE_VERSION_RE = /^(\d{1,4})\.(\d{1,4})\.(\d{1,6})$/
+
+/**
+ * The version in use. `at === 0` means nothing has been probed yet: the lane
+ * sends {@link CLIENT_UA} until the first refresh lands, so the very first
+ * request is never delayed by a network round trip.
+ */
+const clientVersion = { version: CLIENT_UA_VERSION, at: 0, probing: false }
+
+/**
+ * The User-Agent to send, **synchronously**.
+ *
+ * The refresh is fired into the background on the same call (at most once per
+ * {@link VERSION_TTL_MS}, and never twice at once), so a request path never waits
+ * on it: before the first probe lands — and whenever the upstream cannot be
+ * asked — the string is {@link CLIENT_UA} unchanged.
+ */
+export function clientUserAgent() {
+  refreshClientVersionInBackground()
+  return `opencode/latest/${clientVersion.version}/cli`
+}
+
+/** Whether `candidate` is a release the lane may adopt over `current`. */
+function adoptableVersion(candidate, current) {
+  if (typeof candidate !== 'string') return false
+  const match = RELEASE_VERSION_RE.exec(candidate)
+  if (match === null) return false
+  // major ≥ 2: a 1.x token is the shape the upstream answers 429 to by name.
+  if (Number(match[1]) < 2) return false
+  if (candidate === current) return false
+  const [a, b] = [candidate.split('.').map(Number), current.split('.').map(Number)]
+  for (let i = 0; i < 3; i += 1) {
+    if (a[i] !== b[i]) return a[i] > b[i]
+  }
+  return false
+}
+
+function versionUrl() {
+  // Derived from the lane's own base: the updater is served by the same host.
+  return `${UPSTREAM_BASE}${VERSION_PATH}`
+}
+
+/**
+ * Ask the updater for the latest OpenCode release, adopting it when it is newer.
+ *
+ * Returns the version adopted, or `undefined` when nothing usable came back
+ * (offline, a non-2xx, a redirect, a malformed or stale mirror). Never throws.
+ *
+ * @param {string} [url] the updater endpoint (tests pass a fake one)
+ * @returns {Promise<string|undefined>}
+ */
+export async function refreshClientVersion(url = versionUrl()) {
+  const current = clientVersion.version
+  let candidate
+  try {
+    const response = await fetch(`${url}?current=${encodeURIComponent(current)}`, {
+      signal: AbortSignal.timeout(3000),
+      redirect: 'error',
+    })
+    if (!response.ok) {
+      await response.body?.cancel()
+      clientVersion.at = Date.now()
+      return undefined
+    }
+    candidate = (await response.json())?.version
+  } catch {
+    clientVersion.at = Date.now()
+    return undefined
+  }
+  // A failed or useless probe still counts as "asked": the next try is 6h away,
+  // not one per request.
+  clientVersion.at = Date.now()
+  if (!adoptableVersion(candidate, clientVersion.version)) return undefined
+  clientVersion.version = candidate
+  return candidate
+}
+
+/** Fire one refresh if the cache is stale; never blocks, never overlaps. */
+function refreshClientVersionInBackground() {
+  // ⚠️ 只在真正连上游时问：`OUR_FREE_MODEL_BASE` 被改写过（自测的 stub、独立部署的
+  // 镜像）就没有 OpenCode 的更新接口可问，既问不出东西，也会给那些按「每次请求」
+  // 记账的桩多塞一次 GET。此时车道一直用常量，与探测失败同一条路。
+  if (UPSTREAM_BASE !== REAL_UPSTREAM) return
+  if (clientVersion.probing) return
+  if (clientVersion.at !== 0 && Date.now() - clientVersion.at < VERSION_TTL_MS) return
+  clientVersion.probing = true
+  void refreshClientVersion().catch(() => undefined).finally(() => {
+    clientVersion.at = Date.now()
+    clientVersion.probing = false
+  })
+}
+
+/** Put the lane back on {@link CLIENT_UA} and hold the next probe (tests). */
+export function resetClientVersion() {
+  clientVersion.version = CLIENT_UA_VERSION
+  clientVersion.at = Date.now()
+  clientVersion.probing = false
+}
 const MAX_SESSION_LENGTH = 256
 const MAX_TOOL_NAME_LEN = 128
 const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
@@ -344,12 +457,14 @@ export function wireFor(modelId) {
  * - `x-session-affinity` / `x-session-id` 是 v2 新增的同值镜像；
  * - **不带 `x-opencode-request`** —— 那是 v1 专用头，v2 收到就回 403；
  * - `x-opencode-client: cli` 与官方 CLI 一致。
+ *
+ * `user-agent` 走 {@link clientUserAgent}（同步取值，后台刷新版本）；其余头不变。
  */
 export function gatewayHeaders({ session, stream, accept }) {
   const headers = {
     'content-type': 'application/json',
     'authorization': 'Bearer public',
-    'user-agent': CLIENT_UA,
+    'user-agent': clientUserAgent(),
     'x-opencode-client': 'cli',
     'x-opencode-session': session,
     'x-opencode-session-id': session,

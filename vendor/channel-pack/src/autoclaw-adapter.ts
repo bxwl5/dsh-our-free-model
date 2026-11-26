@@ -72,6 +72,45 @@ export interface AutoClawAdapterOptions {
  */
 const REMOTE_MODELS_TTL_MS = 300_000
 
+/**
+ * 目录响应里每个模型的**积分成本**（`creditCostFactor` → {@link AutoClawModelDisplay.rate}）。
+ *
+ * magpie 0.2.27 的改法（`opencode-autoclaw-auth` 的 `catalogEntry`）：
+ * ```js
+ * const factor = Number(raw.creditCostFactor)
+ * const creditFactor = Number.isFinite(factor) && factor > 0 ? factor : undefined
+ * ```
+ * 然后只在有值时给模型行加 `rate`。我们照抄这条**判据**，但**不照抄数字**
+ * （Auto `0.4` / Flash `0.5` / GLM-5.3、5.4 `2.25` 只是实测样本）。
+ *
+ * ⚠️ 兜底表**不带** `rate`：数字只认远端目录，缺失就是未知。
+ * ⚠️ 为什么在这里而不是 `autoclaw.ts` 的 `parseModelConfig`：本次移植的改动范围
+ * 只含 product/adapter；`parseModelConfig` 的同位置解析见交付说明的连带项。
+ */
+function catalogCreditFactors(value: unknown): Map<string, number> {
+  // 目录响应三种形态（与 `parseModelConfig` 同口径）：`models` / `data` / 顶层数组。
+  const record = typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown> : undefined
+  const list = Array.isArray(value) ? value
+    : Array.isArray(record?.models) ? record.models as unknown[]
+    : Array.isArray(record?.data) ? record.data as unknown[]
+    : undefined
+  const rates = new Map<string, number>()
+  for (const raw of list ?? []) {
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) continue
+    const item = raw as Record<string, unknown>
+    // id 口径必须与 `parseModelConfig` 一致（`id` → `model` → `name`）。
+    const id = [item.id, item.model, item.name].find(
+      (candidate): candidate is string => typeof candidate === 'string' && candidate !== '',
+    )
+    if (id === undefined) continue
+    const factor = Number(item.creditCostFactor)
+    // 0 / 负数 / NaN / Infinity / 缺失 一律视为「未知」，不设 rate（绝不填 0）。
+    if (Number.isFinite(factor) && factor > 0) rates.set(id, factor)
+  }
+  return rates
+}
+
 /** 思考档位的中文名（上游 `reasoningLevel` 的键）。 */
 const AUTO_CLAW_EFFORT_NAMES: Readonly<Record<string, string>> = {
   low: '低',
@@ -248,7 +287,19 @@ export class AutoClawAdapter extends LlmAdapter {
           headers: autoClawCatalogHeaders(this.product, credential),
         })
         if (!response.ok) return
-        const rows = parseModelConfig(await response.json().catch(() => undefined))
+        const body = await response.json().catch(() => undefined)
+        const rates = catalogCreditFactors(body)
+        const parsed = parseModelConfig(body)
+        /**
+         * 把目录里的 `creditCostFactor` 写进模型行的 `rate`（magpie 0.2.27）。
+         *
+         * 只改**有值**的行：没有 factor 的行保持原样（`rate` 缺失 = 未知），
+         * 不用 0 冒充。与 magpie 的 `...(entry.creditFactor !== undefined ? { rate } : {})` 同语义。
+         */
+        const rows = parsed.map((row) => {
+          const rate = rates.get(row.id)
+          return rate === undefined ? row : { ...row, rate }
+        })
         if (rows.length > 0) {
           /**
            * 用户 2026-10-27 拍板：远端目录**全量覆盖**兜底表，不再求并集。
@@ -352,6 +403,19 @@ export class AutoClawAdapter extends LlmAdapter {
     const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels
     const model = source.find((item) => item.id === modelId)
     return model === undefined ? undefined : autoClawQuota(model)
+  }
+
+  /**
+   * 该模型一次请求的积分成本（`rate`，供模型列表比贵贱 / `routing=cheap`）。
+   *
+   * ⚠️ **缺失即未知**：没有 `rate` 的模型返回 `undefined`，调用方不得当成 0
+   *（magpie 旧版恒为 0，`cheap` 路由因此永远选不出真正便宜的模型）。
+   * 兜底表不带成本数字，故走兜底表时这里一律 `undefined`。
+   */
+  rateFor(modelId: string): number | undefined {
+    const source = restoreModelCatalog(this.product.id, this.remoteModels) ?? this.product.fallbackModels
+    const model = source.find((item) => item.id === modelId)
+    return model?.rate
   }
 
   /**

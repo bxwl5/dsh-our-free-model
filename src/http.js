@@ -22,7 +22,7 @@
  * @module src/http.js
  */
 
-import { CLIENT_UA, UPSTREAM_BASE, gatewayHeaders, truncateSession } from './upstream.js'
+import { clientUserAgent, UPSTREAM_BASE, gatewayHeaders, truncateSession } from './upstream.js'
 import { egressFetch } from './egress.js'
 
 /** Harness-neutral failure codes (packages/llm/llm/src/error.ts vocabulary; CLIENT_ERROR extends it like CONFIG_DISABLED does). */
@@ -465,7 +465,9 @@ async function readRemainder(head, signal, timeoutMs = 300000) {
  * 车道上不再影响线上字节，参数保留是为了不动宿主 API 与调用方签名。
  */
 function userAgentWith(_attribution) {
-  return CLIENT_UA
+  // 版本号本身会腐坏（旧版一律 429），所以走 `clientUserAgent()`：同步取值，
+  // 版本探测在后台刷新，首个请求仍然用常量发出去。
+  return clientUserAgent()
 }
 
 export async function postStreamed({ path, body, session, attributionUserAgent, signal, onData, timeoutMs = 300000 }) {

@@ -146,10 +146,169 @@ export function opencodeUserAgent(override?: string): string {
  */
 export function opencodeUserAgentForVersion(version?: string): string | undefined {
   const value = version?.trim()
-  if (value === undefined || !/^\d+\.\d+\.\d+$/.test(value)) return undefined
+  if (value === undefined || !RELEASE_VERSION.test(value)) return undefined
   const [major] = value.split('.')
+  // ⚠️ major ≥ 2 才接受：1.x 形状被 v2 门禁按名字拒（见模块头）。
   if (Number(major) < 2) return undefined
   return `opencode/latest/${value}/cli`
+}
+
+/**
+ * 上游更新器认的版本号形状（`2.2.5`）。
+ *
+ * ⚠️ 段长上限不是装饰：`2026.11` 这类日期串、`2.2.5-rc1` 这类预发布串都
+ * 不是上游发的发行版号，接受它们等于发一个上游不认识的 UA。
+ */
+const RELEASE_VERSION = /^\d{1,4}\.\d{1,4}\.\d{1,6}$/
+
+/** 从 v2 UA 里取版本号（`opencode/latest/2.2.5/cli` → `2.2.5`）。 */
+export function opencodeVersionFromUserAgent(userAgent: string | undefined): string | undefined {
+  const value = userAgent?.trim()
+  if (value === undefined) return undefined
+  return /^opencode\/[a-z0-9-]+\/(\d+\.\d+\.\d+)\/[a-z0-9-]+$/i.exec(value)?.[1]
+}
+
+/**
+ * `a` 是否不低于 `b`（逐段比数字；相等也算「不低于」）。
+ *
+ * ⚠️ 不要用字符串比较：`2.10.0 < 2.9.0` 在字典序里成立，而它其实是更新的版本。
+ */
+export function isOpencodeVersionAtLeast(a: string, b: string): boolean {
+  const x = a.split('.').map(Number)
+  const y = b.split('.').map(Number)
+  for (let i = 0; i < 3; i += 1) if (x[i] !== y[i]) return (x[i] ?? 0) > (y[i] ?? 0)
+  return true
+}
+
+/** 兜底版本号（从产品常量派生，避免两处各写一个字面量）。 */
+const FALLBACK_VERSION = opencodeVersionFromUserAgent(OPENCODE.defaultUserAgent) ?? '2.2.5'
+
+/** 版本探测的 fetch 形状（注入以便单测离线）。 */
+export type OpencodeVersionFetcher = (input: string, init?: RequestInit) => Promise<Response>
+
+/** 版本探测超时（毫秒）：等不到就静默回退常量，不阻塞首个请求。 */
+const VERSION_TIMEOUT_MS = 3_000
+
+/** 探测失败后的缓存时长：避免离线时每个请求都白等 3 秒。 */
+const VERSION_FAILURE_TTL_MS = 5 * 60_000
+
+export interface OpencodeVersionProbeOptions {
+  /** 当前版本（决定「更新」的比较基线）。 */
+  current?: string
+  /** 探测端点；缺省用产品常量。 */
+  versionUrl?: string
+  /** 外部取消信号（探针自己再加 3 秒超时）。 */
+  signal?: AbortSignal
+}
+
+/**
+ * 问 `versionUrl?current=<当前>`：上游眼下最新的版本号，或 `undefined`。
+ *
+ * ## 为什么只采纳**更新**的版本
+ *
+ * 端点可能命中 CDN/镜像的旧响应，也可能被中间层改写。采信一个**更旧**的
+ * 版本等于把 UA 降级成过期客户端 —— 上游对过期 UA 直接 429，所以「读到了
+ * 旧值」和「读不到」必须走同一条路：回退当前版本。
+ *
+ * ⚠️ 任何失败（网络、非 2xx、JSON 形状不对、超时）都返回 `undefined`，
+ * **不抛错**：UA 只是伪装维度之一，探测失败不值得让整轮对话失败。
+ */
+export async function probeOpencodeVersion(
+  fetchImpl: OpencodeVersionFetcher,
+  options: OpencodeVersionProbeOptions = {},
+): Promise<string | undefined> {
+  const current = options.current?.trim() ?? ''
+  const baseline = RELEASE_VERSION.test(current) ? current : FALLBACK_VERSION
+  const url = options.versionUrl ?? OPENCODE.versionUrl
+  const timeout = AbortSignal.timeout(VERSION_TIMEOUT_MS)
+  const signal = options.signal === undefined ? timeout : AbortSignal.any([timeout, options.signal])
+  try {
+    const response = await fetchImpl(`${url}?current=${encodeURIComponent(baseline)}`, {
+      // ⚠️ `redirect: 'error'` 与官方更新器一致：被重定向说明读到的不是端点原文。
+      redirect: 'error',
+      signal,
+    })
+    if (!response.ok) {
+      // 不读体就让连接回收，避免句柄泄漏。
+      await response.body?.cancel().catch(() => {})
+      return undefined
+    }
+    const body = (await response.json()) as { version?: unknown }
+    const version = body?.version
+    if (typeof version !== 'string' || !RELEASE_VERSION.test(version)) return undefined
+    return isOpencodeVersionAtLeast(version, baseline) && version !== baseline ? version : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 带缓存的版本探测（模块级）。
+ *
+ * 成功按 `OPENCODE.versionTtlMs`（6 小时）缓存；失败按 5 分钟缓存 —— 后者
+ * 不是「省一次请求」，而是**别让离线环境每个请求都白等 3 秒**。
+ */
+let versionProbe: { at: number; version?: string } | undefined
+
+export async function cachedOpencodeVersion(
+  fetchImpl: OpencodeVersionFetcher,
+  options: OpencodeVersionProbeOptions & { ttlMs?: number; failureTtlMs?: number; now?: number } = {},
+): Promise<string | undefined> {
+  const now = options.now ?? Date.now()
+  const ttlMs = options.ttlMs ?? OPENCODE.versionTtlMs
+  const failureTtlMs = options.failureTtlMs ?? VERSION_FAILURE_TTL_MS
+  if (versionProbe !== undefined) {
+    const age = now - versionProbe.at
+    if (versionProbe.version !== undefined ? age < ttlMs : age < failureTtlMs) return versionProbe.version
+  }
+  const version = await probeOpencodeVersion(fetchImpl, options)
+  versionProbe = { at: now, ...version === undefined ? {} : { version } }
+  return version
+}
+
+/** 只给测试用：清掉模块级缓存。 */
+export function resetOpencodeVersionCache(): void {
+  versionProbe = undefined
+}
+
+/**
+ * 在若干候选版本里取**最高**的一个，拼成 v2 UA。
+ *
+ * 候选来源：本机 `opencode --version`、上游更新器、产品常量。
+ * ⇒「本机装的是 2.3.0 而上游最新是 2.2.5」与「本机没装而上游最新是 2.3.0」
+ * 两种情形都能拿到不旧于两者的 UA。
+ *
+ * ⚠️ 候选里出现 v1（major < 2）一律忽略：v1 UA 会被门禁按名字拒掉，
+ * 而**兜底常量本身就是 v2**，所以「忽略」比「回退 undefined」更安全。
+ */
+export function newestOpencodeUserAgent(...versions: readonly (string | undefined)[]): string {
+  let best = FALLBACK_VERSION
+  for (const candidate of versions) {
+    const value = candidate?.trim()
+    if (value === undefined || !RELEASE_VERSION.test(value)) continue
+    if (Number(value.split('.')[0]) < 2) continue
+    if (isOpencodeVersionAtLeast(value, best)) best = value
+  }
+  return `opencode/latest/${best}/cli`
+}
+
+/**
+ * 发请求前解析 UA：本机探测值 + 上游最新版本取更新者。
+ *
+ * ⚠️ 探测失败/超时时**静默**回退到「已拿到的那个版本」（最次是产品常量），
+ * 绝不因此让请求失败 —— UA 只影响伪装可信度，不影响请求本身能否成立。
+ */
+export async function resolveOpencodeUserAgent(
+  fetchImpl: OpencodeVersionFetcher,
+  localUserAgent?: string,
+  options: OpencodeVersionProbeOptions = {},
+): Promise<string> {
+  const local = opencodeVersionFromUserAgent(localUserAgent)
+  const remote = await cachedOpencodeVersion(fetchImpl, {
+    ...options,
+    ...local === undefined ? {} : { current: local },
+  }).catch(() => undefined)
+  return newestOpencodeUserAgent(local, remote, FALLBACK_VERSION)
 }
 
 /** 构造发往 Zen 的完整指纹头集（v2 形状）。 */

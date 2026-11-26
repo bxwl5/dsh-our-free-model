@@ -14,6 +14,12 @@
  * 本模块只放常量与纯函数（无网络、无存储），网络流程见 buddy-oauth.ts。
  */
 
+import {
+  computeAheadRefreshDelayMs,
+  computeFirstRefreshDelayMs,
+  isAheadRefreshDue,
+} from './refresh.js'
+
 // ── API 端点常量（逆向自 genie 扩展 product.json + index.js） ──
 
 /** 主 API 端点（product.json endpoint）。 */
@@ -170,6 +176,77 @@ export function credentialExpiresAtMs(credential: BuddyCredential): number | und
 }
 
 /**
+ * refresh_token 的过期时刻（毫秒）。
+ *
+ * 解析口径与 {@link credentialExpiresAtMs} 完全一致（毫秒/秒时间戳、ISO 8601），
+ * 但**不做 JWT 兜底**：refresh_token 不是 JWT，解不出来就是「读不到」。
+ * 提前续期（见 {@link buddyAheadRefreshDue}）要靠它判断「还值不值得续」。
+ */
+export function credentialRefreshExpiresAtMs(credential: BuddyCredential): number | undefined {
+  const raw = credential.refresh_expires_at
+  if (typeof raw !== 'string' || raw.length === 0) return undefined
+  if (/^\d+$/.test(raw)) {
+    const value = Number(raw)
+    return value > 1_000_000_000_000 ? value : value * 1000
+  }
+  const parsed = Date.parse(raw)
+  return Number.isNaN(parsed) ? undefined : parsed
+}
+
+/**
+ * 这枚 access_token **被签发时的寿命**（`exp - iat`，毫秒）；不是 JWT 或缺少
+ * `iat`/`exp` 时 `undefined`。
+ *
+ * 语义对齐 magpie 的 `lifeOf`（`workbuddy/index.mjs:299`）。提前续期必须靠它区分
+ * 「28 天的长寿命令牌」和「2 小时的短寿命令牌」—— 只按「剩多少」判断会让短寿命
+ * 凭据也在寿命中点被续一次，续完立刻又进窗口。
+ */
+export function credentialLifeMs(credential: BuddyCredential): number | undefined {
+  const issuedAtMs = jwtIssuedAtMs(credential.access_token)
+  const expiresAtMs = jwtExpiresAtMs(credential.access_token)
+  if (issuedAtMs === undefined || expiresAtMs === undefined) return undefined
+  const lifeMs = expiresAtMs - issuedAtMs
+  return lifeMs > 0 ? lifeMs : undefined
+}
+
+/**
+ * 该凭据是否需要**提前续期**（ahead）：28 天 access / 30 天 refresh 这对参数下，
+ * 「过期前 1 小时才续」会让 refresh_token 先死（理由见 `refresh.ts` 的
+ * {@link REFRESH_AHEAD_MS}）。
+ *
+ * 判据全部来自凭据本身（过期时刻、签发寿命、refresh 过期时刻），不发请求、不读池。
+ */
+export function buddyAheadRefreshDue(credential: BuddyCredential, nowMs = Date.now()): boolean {
+  if (!isRefreshable(credential)) return false
+  return isAheadRefreshDue({
+    expiresAtMs: credentialExpiresAtMs(credential),
+    lifeMs: credentialLifeMs(credential),
+    refreshExpiresAtMs: credentialRefreshExpiresAtMs(credential),
+    nowMs,
+  })
+}
+
+/**
+ * 下一次**自动续期**该等多久。
+ *
+ * - **长寿命**凭据（寿命 ≥ 20 天，见 `refresh.ts` 的 `REFRESH_AHEAD_MIN_LIFE_MS`）：
+ *   排在「剩 10 天」那一刻（{@link computeAheadRefreshDelayMs}；已进窗口就是 0）。
+ *   ⚠️ **不能**和 1 小时 lead 取小：那是「过期前 1 小时」，在**墙上时钟**上比
+ *   「剩 10 天」晚得多（剩 25 天时：提前续期还有 15 天，lead 还有 24 天 23 时）——
+ *   两者取小等于永远按 1 小时 lead 排，提前续期根本不会自己触发。
+ * - **短寿命**（或读不到寿命）凭据：就是原来的 1 小时 lead 延迟，行为与改造前**逐字一致**。
+ *
+ * 传 `undefined` 表示「读不到过期时刻，无法武装定时器」（调用方跳过武装）。
+ */
+export function buddyRefreshArmDelayMs(credential: BuddyCredential, nowMs = Date.now()): number | undefined {
+  const expiresAtMs = credentialExpiresAtMs(credential)
+  if (expiresAtMs === undefined) return undefined
+  const aheadDelayMs = computeAheadRefreshDelayMs(expiresAtMs, credentialLifeMs(credential), nowMs)
+  if (aheadDelayMs !== undefined) return aheadDelayMs
+  return computeFirstRefreshDelayMs(expiresAtMs, nowMs)
+}
+
+/**
  * 从 JWT 的 payload 读取 `exp`（秒）并换算为毫秒；非 JWT 或解析失败返回 undefined。
  * 仅做 base64url 解码，不验签——该值只用于展示与续期调度。
  */
@@ -303,8 +380,12 @@ function absoluteExpiryMs(
   return String(baseMs + relativeSeconds * 1000)
 }
 
-/** 从 JWT payload 读取 `iat`（秒）并换算为毫秒。 */
-function jwtIssuedAtMs(token: string): number | undefined {
+/**
+ * 从 JWT payload 读取 `iat`（秒）并换算为毫秒。
+ *
+ * 导出供 {@link credentialLifeMs} 计算「签发寿命」，提前续期靠它区分长/短命令牌。
+ */
+export function jwtIssuedAtMs(token: string): number | undefined {
   if (typeof token !== 'string' || token.length === 0) return undefined
   const parts = token.split('.')
   if (parts.length < 2) return undefined

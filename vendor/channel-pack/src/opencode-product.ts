@@ -38,6 +38,17 @@ export interface OpencodeProduct {
   readonly anonymousKey: string
   readonly defaultUserAgent: string
   /**
+   * 最新版本探测端点（**远端**）。
+   *
+   * 上游按 `User-Agent` 里的版本判定客户端新旧：旧版本一律 429
+   * `FreeUsageLimitError`（"Free models work in OpenCode"）。固定版本号会随
+   * 官方发版而变旧，所以按 opencode 自己的更新器口径问一次「当前最新是多少」
+   * —— 这正是官方 CLI 升级时读的那个端点（见 `opencode.ts` 的版本探测）。
+   */
+  readonly versionUrl: string
+  /** 版本探测结果的缓存时长（与官方更新器的 6 小时同档）。 */
+  readonly versionTtlMs: number
+  /**
    * 模型能力元数据源（**远端**，能力的主来源）。
    *
    * ⚠️ 不是 `/zen/v1/models` —— 实测它只返回 `id`/`object`/`created`/
@@ -68,9 +79,22 @@ export const OPENCODE: OpencodeProduct = {
   anonymousKey: 'public',
   // ⚠️ 兜底 UA。**v2 形状**（`opencode/<channel>/<version>/<client>`，major ≥ 2）：
   // 旧的 `opencode/1.18.22` 自 2026-10-14 起被上游按名字拒掉（403 FreeTierError）。
-  // 接线层会用真机 `opencode --version` 的结果改写成同形状（`opencode.ts` 的
-  // `opencodeUserAgentForVersion`）。
-  defaultUserAgent: 'opencode/latest/2.0.26/cli',
+  //
+  // ⚠️⚠️ **版本号本身也会过期**：2026-10-26 起上游对旧版本 UA 直接 429
+  // `FreeUsageLimitError`（无论 body 写什么），所以这里只是**兜底**：
+  // 接线层会先问 `versionUrl` 的最新版本、再与本机 `opencode --version`
+  // **取更新者**（见 `opencode.ts` 的 `resolveOpencodeUserAgent`）。
+  // 常量取 magpie 实测到的 `2.2.5`（@opencode/cli 2.2.5 真实发出的 UA）。
+  defaultUserAgent: 'opencode/latest/2.2.5/cli',
+  /**
+   * 上游更新器端点：`{ version: '2.2.5' }`。
+   *
+   * ⚠️ 只采纳**更新**的版本：镜像/缓存可能回旧值，采信旧值等于把自己伪装成
+   * 过期客户端（上游立刻 429）。
+   */
+  versionUrl: 'https://opencode.ai/update/api/latest/cli/npm',
+  /** 版本探测缓存 6 小时（与官方更新器的询问间隔同档）。 */
+  versionTtlMs: 6 * 60 * 60 * 1000,
   /**
    * 模型能力元数据源（**远端**，能力的主来源）。
    *

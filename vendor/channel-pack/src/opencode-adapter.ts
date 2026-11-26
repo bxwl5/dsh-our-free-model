@@ -45,7 +45,8 @@ import {
 import { isTransportError } from './openai-compat.js'
 import { directFetch } from './direct-fetch.js'
 import { listIdentitySlots, type IdentitySlot } from './opencode-auth.js'
-import { deriveSessionId, opencodeHeaders, opencodeUserAgent } from './opencode.js'
+import { deriveSessionId, opencodeHeaders, resolveOpencodeUserAgent } from './opencode.js'
+import { addOpencodeEnvironment } from './opencode-environment.js'
 import { buildOpencodePayloadWithToolMap } from './opencode-messages.js'
 import {
   getOpencodeCapabilitiesSync, opencodeEffortName, supportsOpencodeImage,
@@ -142,6 +143,14 @@ export interface OpencodeAdapterOptions {
   identitySlots: () => Promise<readonly IdentitySlot[]>
   /** 拉远端目录；缺省时直接用兜底表。 */
   fetchRemoteCatalog?: OpencodeCatalogFetcher
+  /**
+   * 版本探测用的 fetch（缺省复用 {@link fetchImpl}）。
+   *
+   * ⚠️ 只用于向 `OPENCODE.versionUrl` 问「最新版本是多少」（UA 走
+   * {@link resolveOpencodeUserAgent}）—— 上游对旧版本 UA 一律 429，固定常量
+   * 会随官方发版而失效。探测失败不走这条通道的重试/换槽逻辑，静默回退常量。
+   */
+  fetchVersion?: typeof fetch
   /** 用户模型黑名单。 */
   disabledModels?: () => ReadonlySet<string>
   /** 记录受限的副作用（切槽时由接线层提供）。 */
@@ -599,8 +608,20 @@ export class OpencodeAdapter extends LlmAdapter {
       ...options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {},
       ...effort.effort !== undefined ? { reasoningEffort: effort.effort } : {},
     })
+    // ⚠️ **只有匿名槽**补 OpenCode 自己的 `<env>` 块（`opencode-environment.ts`
+    // 的模块头解释了为什么这块是「不被 429」的必要条件，以及为什么目录必须
+    // 是真实绝对路径）。账号槽走认证通道，块纯属多余 ⇒ 一个字节都不动。
+    // ⚠️ 必须在 `JSON.stringify` **之前**：注入的是 body 本身。
+    addOpencodeEnvironment(payload, { slotKind: slot.kind })
+    // ⚠️ UA 里的版本号会过期：上游 2026-10-26 起对旧版本 UA 直接 429。
+    // 取「本机探测」与「上游最新」里的更新者；探测失败静默回退常量。
+    const userAgent = await resolveOpencodeUserAgent(
+      this.options.fetchVersion ?? this.fetchImpl,
+      slot.userAgent,
+      options.signal === undefined ? {} : { signal: options.signal },
+    )
     const headers: Record<string, string> = {
-      ...opencodeHeaders(slot.fingerprint, sessionIdOf(options), opencodeUserAgent(slot.userAgent)),
+      ...opencodeHeaders(slot.fingerprint, sessionIdOf(options), userAgent),
       'content-type': 'application/json',
       accept: 'text/event-stream',
       authorization: `Bearer ${slot.apiKey}`,

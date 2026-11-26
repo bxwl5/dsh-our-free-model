@@ -74,7 +74,89 @@ export async function verifyMagpieAlignment() {
     assert.equal(isTraeModelCallable({ id: 'd', name: 'd', isEnabled: false }), false, 'config_switch=false 仍挡')
   }
 
-  console.log('ok  magpie 对齐：qoder 身份行 / zcode 日内去重 / trae 直连判据')
+  // ── ⑤ raccoon 会话/轮次头（magpie raccoon 0.1.15） ──
+  {
+    const {
+      raccoonUuidish, raccoonTurnIndex, raccoonSessionId, raccoonSessionTurnHeaders,
+    } = await import('../vendor/channel-pack/src/raccoon.ts')
+    const userText = text => ({ role: 'user', content: [{ type: 'text', text }] })
+    const toolStep = id => ([
+      { role: 'assistant', content: [{ type: 'tool-call', id, name: 'read', arguments: '{}' }] },
+      { role: 'tool', toolCallId: id, content: [{ type: 'text', text: 'out' }] },
+    ])
+
+    // uuidish：UUID v4 形状 + 同 seed 同值（会话稳定的前提）
+    const shape = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    assert.match(raccoonUuidish('seed-a'), shape, 'uuidish 必须是 UUID v4 形状')
+    assert.equal(raccoonUuidish('seed-a'), raccoonUuidish('seed-a'), '同 seed 必须同值')
+    assert.notEqual(raccoonUuidish('seed-a'), raccoonUuidish('seed-b'), '不同 seed 必须不同值')
+
+    // 轮次号：工具步骤不加，用户消息才 +1
+    assert.equal(raccoonTurnIndex([]), 0, '没有 user 消息时无轮次')
+    assert.equal(raccoonTurnIndex([userText('q1')]), 1)
+    assert.equal(raccoonTurnIndex([userText('q1'), ...toolStep('c1')]), 1, '工具步骤不新增轮次')
+    assert.equal(raccoonTurnIndex([userText('q1'), ...toolStep('c1'), ...toolStep('c2')]), 1, '同一轮多个工具步骤同轮次')
+    assert.equal(raccoonTurnIndex([userText('q1'), ...toolStep('c1'), userText('q2')]), 2, '用户再发一条才 +1')
+    assert.equal(raccoonTurnIndex([
+      userText('q1'), { role: 'user', content: [{ type: 'text', text: '宿主补的提醒' }] }, ...toolStep('c1'),
+    ]), 1, '相邻的 user 补充消息不得算两轮')
+
+    // 会话 id：宿主给了优先；没给按（账号 + 首条 user 消息）派生
+    assert.equal(raccoonSessionId({ sessionId: 'sess-A', account: 'acc', messages: [] }), 'sess-A')
+    const derived = raccoonSessionId({ account: 'acc', messages: [userText('q1'), ...toolStep('c1')] })
+    assert.match(derived, shape, '派生会话 id 也是 UUID v4 形状')
+    assert.equal(derived, raccoonSessionId({ account: 'acc', messages: [userText('q1'), ...toolStep('c1'), ...toolStep('c2')] }),
+      '后续轮次必须复用同一个派生 id')
+    assert.notEqual(derived, raccoonSessionId({ account: 'acc', messages: [userText('q2')] }), '换对话必须换 id')
+    assert.notEqual(derived, raccoonSessionId({ account: 'acc-2', messages: [userText('q1')] }), '换账号必须换 id')
+    assert.equal(raccoonSessionId({ messages: [userText('q1')] }), '', '没有账号时不编造 id')
+    assert.equal(raccoonSessionId({ account: 'acc', messages: [] }), '', '没有首条 user 消息时不编造 id')
+
+    // 三个头的组合
+    const headers = raccoonSessionTurnHeaders({ sessionId: 'sess-A', messages: [userText('q1'), ...toolStep('c1')] })
+    assert.equal(headers['X-RACCOON-Call-Kind'], 'session_turn')
+    assert.equal(headers['X-RACCOON-Session-ID'], 'sess-A')
+    assert.equal(headers['X-RACCOON-Turn-ID'], 'sess-A-turn-1')
+    const noSession = raccoonSessionTurnHeaders({ messages: [userText('q1')] })
+    assert.equal(noSession['X-RACCOON-Session-ID'], undefined, '拿不到会话就不发该头（不编假值）')
+    assert.equal(noSession['X-RACCOON-Turn-ID'], undefined)
+    assert.equal(noSession['X-RACCOON-Call-Kind'], 'session_turn', 'Call-Kind 恒发')
+    // 超长会话 id 截断到 128（magpie 同口径）
+    const long = raccoonSessionTurnHeaders({ sessionId: 'x'.repeat(200), messages: [userText('q1')] })
+    assert.equal(long['X-RACCOON-Session-ID'].length, 128)
+  }
+
+  // ── ⑥ zcode 设备码轮询：ready 但没有 OAuth access token（magpie zcode 0.1.70） ──
+  {
+    const { pollZcodeLogin } = await import('../vendor/channel-pack/src/zcode-login.ts')
+    const flow = { flowId: 'flow-1', flowSecret: 'fixture-secret' }
+    const pollWith = data => pollZcodeLogin(flow, async () =>
+      new Response(JSON.stringify({ code: 0, data }), { status: 200 }))
+
+    const noOAuth = await pollWith({ status: 'ready', token: 'jwt', user: { user_id: 'u1' } })
+    assert.equal(noOAuth.kind, 'failed')
+    assert.match(noOAuth.message, /OAuth access token/, '必须点明缺的是 OAuth access token')
+    assert.match(noOAuth.message, /重新登录/, '必须给可执行出路')
+    assert.doesNotMatch(noOAuth.message, /缺关键字段|状态无法识别/, '不得落进泛化文案')
+
+    // magpie 的判定顺序：先判 ready 无 token，再看其他字段
+    const bothMissing = await pollWith({ status: 'ready', user: {} })
+    assert.match(bothMissing.message, /OAuth access token/, 'token 也缺时仍先报 OAuth 分支')
+
+    // 两个 token 位分别点出来（排障时不用去猜是哪一个缺）
+    const noJwt = await pollWith({ status: 'ready', user: { user_id: 'u1' }, zai: { access_token: 'zai-token' } })
+    assert.match(noJwt.message, /data\.token/, '缺 zcode JWT 时点名 data.token')
+    const noThirdParty = await pollWith({ status: 'ready', token: 'jwt', user: { user_id: 'u1' } })
+    assert.match(noThirdParty.message, /data\.zai 与 data\.bigmodel/, '缺第三方 token 时点名两个块')
+
+    // 正常 ready 不受影响（防过度触发）
+    const ok = await pollWith({ status: 'ready', token: 'jwt', user: { user_id: 'u1', name: 'n' }, zai: { access_token: 'zai-token' } })
+    assert.equal(ok.kind, 'ready')
+    assert.equal(ok.result.zaiAccessToken, 'zai-token')
+    assert.equal(ok.result.zcodeJwt, 'jwt')
+  }
+
+  console.log('ok  magpie 对齐：qoder 身份行 / zcode 日内去重 / trae 直连判据 / raccoon 会话头 / zcode 无 token 分支')
 }
 
 exitIfDirectRun(import.meta.url, () => verifyMagpieAlignment())

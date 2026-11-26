@@ -15,6 +15,7 @@ import type { AccountPool } from './account-pool.js'
 import {
   refreshAccountWithReconcile,
   SaveFailedError,
+  syncAccountExpiry,
   type ExpiryAccessors,
 } from './expiry-sync.js'
 import {
@@ -24,6 +25,7 @@ import {
   type MinimaxProduct,
 } from './minimax-product.js'
 import {
+  MINIMAX_RENEWED,
   fallbackToEntry,
   isMinimaxRefreshable,
   minimaxCredentialExpiresAtMs,
@@ -89,6 +91,33 @@ export function parseMinimaxCredential(value: string): MinimaxCredential | undef
       && typeof parsed.access_token === 'string' && parsed.access_token.length > 0
       ? parsed
       : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 上游的「这枚 refresh_token 不要了」判据（`invalid_grant` 等）。
+ *
+ * 与改造前的正则**逐字一致**（`/invalid_grant|expired|revoked/i`）：本修复只改
+ * 「命中之后先查缓存/磁盘再定终态」，不改哪些上游错误算拒绝。
+ */
+function isMinimaxRefreshTokenRejected(message: string): boolean {
+  return /invalid_grant|expired|revoked/i.test(message)
+}
+
+/**
+ * 重读一次凭据（终态判定的「自愈」环节）。
+ *
+ * 读存储本身失败（文件被占用等）时按「读不到」处理：此时终态判定只剩进程缓存，
+ * 与「没有 reread 能力」等价，绝不让一次读取异常把账号判死在更坏的分支上。
+ */
+async function rereadCredential(
+  reread: (() => Promise<MinimaxCredential | undefined>) | undefined,
+): Promise<MinimaxCredential | undefined> {
+  if (reread === undefined) return undefined
+  try {
+    return await reread()
   } catch {
     return undefined
   }
@@ -208,11 +237,13 @@ export class MinimaxAuth extends Service {
       throw new MinimaxRefreshTokenExpiredError('凭据缺少 refresh_token，请重新登录')
     }
     try {
-      const next = await refreshMinimaxCredential(
-        credential.refresh_token as string,
-        this.fetchImpl,
-        this.product,
-      )
+      // ⚠️ 走 {@link refreshCredentialFor} 而不是直接打 `refreshMinimaxCredential`：
+      // 这里也必须先认「本进程已花掉的 refresh_token」缓存，否则写盘失败后的下一轮
+      // 仍会把旧 token 发出去（见 `minimax.ts` 的 `MinimaxRenewedCache`）。
+      // `reread` 让终态判定能在「别处已经续过并落盘」时自愈。
+      const next = await this.refreshCredentialFor(credential, {
+        reread: () => this.resolveDefaultCredential(),
+      })
       await this.ctx.credentials.set(credentialRef(this.credentialRefName), JSON.stringify(next))
       this.lastRefreshError = undefined
     } catch (error) {
@@ -244,7 +275,9 @@ export class MinimaxAuth extends Service {
     }
     // 无账号池时退化为「直接续期 + 落盘」（单凭据路径）
     if (pool === undefined) {
-      const next = await this.refreshCredentialFor(credential)
+      const next = await this.refreshCredentialFor(credential, {
+        reread: () => this.resolveCredentialAt(refName),
+      })
       await this.ctx.credentials.set(ref, JSON.stringify(next))
       return
     }
@@ -255,7 +288,7 @@ export class MinimaxAuth extends Service {
       accountId: accountId ?? '',
       credential,
       accessors: MINIMAX_EXPIRY_ACCESSORS,
-      refresh: (c) => this.refreshCredentialFor(c),
+      refresh: (c) => this.refreshCredentialFor(c, { reread: () => this.resolveCredentialAt(refName) }),
       save: (c) => this.ctx.credentials.set(ref, JSON.stringify(c)),
       warn: (message) => this.ctx.logger?.warn?.(message),
       info: (message) => this.ctx.logger?.info?.(message),
@@ -290,6 +323,40 @@ export class MinimaxAuth extends Service {
           await pool.updateAccount(entry.id, { refreshable: false })
           continue
         }
+        // **补落盘**：上一轮「续期成功但写盘失败」的结果还留在进程缓存里。
+        //
+        // 这一步**不发任何请求**（`refreshCredentialFor` 第一步就命中缓存），只把
+        // 那份结果重试落盘。之所以要抢在 `refreshAccountWithReconcile` 的 lead 判据
+        // 之前，是因为磁盘上那枚旧凭据的 access token 可能还没临期 —— 光等判据
+        // 会让「已经拿到手的新令牌」干等最长一个 access 寿命才被写下去。
+        if (MINIMAX_RENEWED.spent(credential)) {
+          const healed = await this.refreshCredentialFor(credential, {
+            reread: () => this.resolveCredentialAt(entry.credentialRef),
+          })
+          try {
+            await this.ctx.credentials.set(ref, JSON.stringify(healed))
+          } catch (error) {
+            // 复用下面 SaveFailedError 分支的措辞与「不钉死账号」语义。
+            throw new SaveFailedError(
+              `[minimax] 账号 ${entry.id} 续期后落盘仍失败: `
+              + `${error instanceof Error ? error.message : String(error)}`,
+            )
+          }
+          await syncAccountExpiry({
+            pool,
+            provider: this.product.id,
+            credential: healed,
+            accessors: MINIMAX_EXPIRY_ACCESSORS,
+            accountId: entry.id,
+            current: entry,
+            tag: `[${this.product.id}]`,
+            warn: (message) => this.ctx.logger?.warn?.(message),
+          })
+          this.ctx.logger?.info?.(
+            `[minimax] 账号 ${entry.id} 之前续期成功的凭据已补落盘（未再发续期请求）`,
+          )
+          continue
+        }
         await refreshAccountWithReconcile({
           pool,
           provider: this.product.id,
@@ -298,7 +365,9 @@ export class MinimaxAuth extends Service {
           credential,
           accessors: MINIMAX_EXPIRY_ACCESSORS,
           current: entry,
-          refresh: (c) => this.refreshCredentialFor(c),
+          refresh: (c) => this.refreshCredentialFor(c, {
+            reread: () => this.resolveCredentialAt(entry.credentialRef),
+          }),
           save: (c) => this.ctx.credentials.set(ref, JSON.stringify(c)),
           warn: (message) => this.ctx.logger?.warn?.(message),
         })
@@ -313,15 +382,20 @@ export class MinimaxAuth extends Service {
             `[minimax] 账号 ${entry.id} 的 refresh_token 已失效，已标记为不可续期（需重新登录）`,
           )
         } else if (error instanceof SaveFailedError) {
-          // 落盘失败 = 一次性 refresh_token 已被上游消费，重试永远不可能成功，
-          // 按终态处理并明说「需重新登录」（与 ensureCredentialFresh ② 段同契约）。
-          try {
-            await pool.updateAccount(entry.id, { refreshable: false })
-          } catch {
-            // 忽略 updateAccount 本身的错误
-          }
+          // 落盘失败（Windows 上凭据文件被占用等）**不再是终态**。
+          //
+          // 旧契约的理由是「一次性 refresh_token 已被上游消费，重试永远不可能成功」
+          // —— 那句话只在「没有别处保存过续期结果」时成立。现在续期结果留在
+          // `MINIMAX_RENEWED`（进程内 30 天，见 `minimax.ts`），下一轮续期会**命中缓存**
+          // 直接拿到新令牌、只重试落盘这一步，绝不会再把旧 token 发出去。
+          // 因此这里刻意**不**写 `refreshable: false`：写下去等于把账号钉进「跳过」
+          // 名单（`refreshAll` 只处理 refreshable 的条目），自愈路径当场被封死。
+          //
+          // 仍按 error 级别报出来：连续写盘失败要有人看得见（重启后进程缓存消失，
+          // 那时磁盘上的旧 token 才真的没救 —— 会以 invalid_grant 终态收场）。
           this.ctx.logger?.error?.(
-            `[minimax] 账号 ${entry.id} 续期已成功但凭据落盘失败（需重新登录）: `
+            `[minimax] 账号 ${entry.id} 续期已成功但凭据落盘失败，`
+            + '下一轮会用内存中的续期结果重试落盘（进程重启后需重新登录）: '
             + `${error instanceof Error ? error.message : String(error)}`,
           )
         } else {
@@ -340,23 +414,63 @@ export class MinimaxAuth extends Service {
    * 续期给定凭据（供 `refreshAccountWithReconcile` 的 `refresh` 回调）。
    *
    * ⚠️ **不落盘** —— 落盘由共享实现的 `save` 回调负责。
+   *
+   * ## 顺序契约（本方法最要紧的部分）
+   *
+   * MiniMax 的 refresh_token **用一次即废**，所以「发不发旧 token」这件事必须由
+   * 本进程的记账（{@link MINIMAX_RENEWED}）而不是磁盘决定：
+   *
+   * 1. **先认缓存**：这枚 refresh_token 本进程已经花过 ⇒ 结果直接在内存里，
+   *    原样返回，**一个请求都不发**。这正是「续期成功但写盘失败」的自愈路径 ——
+   *    磁盘上留着的旧 token 绝不会被重发一遍。
+   * 2. 没命中才真的续期；结果在落盘**之前**就登记进缓存（`MinimaxRenewedCache.renew`），
+   *    所以落盘失败不影响下一轮。
+   * 3. 上游回 `invalid_grant`（/ expired / revoked）时，**先看缓存、再重读磁盘**：
+   *    - 缓存里已有这枚 token 的结果（并发/其它路径刚续完）⇒ 直接采纳；
+   *    - 磁盘上已经换成了**另一枚** token（别的进程续过并落盘）⇒ 采纳那枚的结果；
+   *    - 两者都没有 ⇒ **才**判终态 `MinimaxRefreshTokenExpiredError`（需重新登录）。
+   *
+   * @param options.reread 重新读取「这枚凭据所在位置」的现值；缺省时终态判定只看进程缓存。
    */
-  async refreshCredentialFor(credential: MinimaxCredential): Promise<MinimaxCredential> {
+  async refreshCredentialFor(
+    credential: MinimaxCredential,
+    options: { reread?: () => Promise<MinimaxCredential | undefined> } = {},
+  ): Promise<MinimaxCredential> {
     if (!isMinimaxRefreshable(credential)) {
       throw new MinimaxRefreshTokenExpiredError('凭据缺少 refresh_token，请重新登录')
     }
+    // ① 缓存命中：本进程已经花过这枚 token，结果就在内存里。
+    const cached = MINIMAX_RENEWED.latest(credential)
+    if (cached.access_token !== credential.access_token) return cached
     try {
-      return await refreshMinimaxCredential(
-        credential.refresh_token as string,
-        this.fetchImpl,
-        this.product,
-      )
+      const next = await MINIMAX_RENEWED.renew(credential, (spentRefreshToken) =>
+        refreshMinimaxCredential(spentRefreshToken, this.fetchImpl, this.product))
+      // 续期响应不含 nickname / account_id（`parseMinimaxTokenGrant` 只回令牌字段），
+      // 直接落盘会把展示名抹掉；合并回原凭据，缓存命中与真续期两条路径的返回值也就一致了。
+      return { ...credential, ...next }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      if (/invalid_grant|expired|revoked/i.test(message)) {
-        throw new MinimaxRefreshTokenExpiredError('refresh_token 已失效，请重新登录')
+      if (!isMinimaxRefreshTokenRejected(message)) throw error
+      // ② 上游说这枚 token 已失效 —— 但先别急着定终态（见方法注释第 3 条）。
+      const afterCache = MINIMAX_RENEWED.latest(credential)
+      if (afterCache.access_token !== credential.access_token) return afterCache
+      const onDisk = await rereadCredential(options.reread)
+      if (onDisk !== undefined && onDisk.refresh_token !== credential.refresh_token) {
+        const newer = MINIMAX_RENEWED.latest(onDisk)
+        if (newer.access_token !== onDisk.access_token) return newer
       }
-      throw error
+      throw new MinimaxRefreshTokenExpiredError('refresh_token 已失效，请重新登录')
+    }
+  }
+
+  /** 读取指定 ref 下的当前凭据（`reread` 用；失败当「读不到」，不抛）。 */
+  private async resolveCredentialAt(refName: string): Promise<MinimaxCredential | undefined> {
+    try {
+      const resolved = await this.ctx.credentials.resolve(credentialRef(refName))
+      if (!resolved) return undefined
+      return parseMinimaxCredential(resolved.value)
+    } catch {
+      return undefined
     }
   }
 

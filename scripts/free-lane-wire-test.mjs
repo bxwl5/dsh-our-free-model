@@ -5,9 +5,10 @@
  *
  * These are the things that changed and that a future edit can silently break:
  * the lane's base path, the four session headers, the shape *and encoding* of
- * the session id, the User-Agent (now the canonical v2 token and nothing else),
- * and the absence of the v1-only `x-opencode-request` header. The tool gate's
- * own contract lives in `fingerprint-test.mjs`.
+ * the session id, the User-Agent (now the canonical v2 token and nothing else,
+ * at the newest release the updater names), the OpenCode `<env>` block both wires
+ * must carry, and the absence of the v1-only `x-opencode-request` header. The
+ * tool gate's own contract lives in `fingerprint-test.mjs`.
  *
  * Run: node scripts/free-lane-wire-test.mjs
  */
@@ -37,6 +38,29 @@ const server = http.createServer((req, res) => {
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 server.unref()
+
+// A fake OpenCode updater: `/version/<answer>` says `{version: <answer>}`, and
+// `/version/error`, `/version/redirect` exercise the two failure shapes.
+const versionCalls = []
+const versionServer = http.createServer((req, res) => {
+  versionCalls.push(req.url)
+  const answer = decodeURIComponent(req.url.split('?')[0].replace(/^\/version\//, ''))
+  if (answer === 'redirect') {
+    res.writeHead(302, { location: '/version/9.9.9' })
+    res.end()
+    return
+  }
+  if (answer === 'error') {
+    res.writeHead(500, { 'content-type': 'application/json' })
+    res.end('{"error":"boom"}')
+    return
+  }
+  res.writeHead(200, { 'content-type': 'application/json' })
+  res.end(JSON.stringify({ version: answer }))
+})
+await new Promise(resolve => versionServer.listen(0, '127.0.0.1', resolve))
+versionServer.unref()
+const versionBase = `http://127.0.0.1:${versionServer.address().port}/version/`
 process.env.OUR_FREE_MODEL_BASE = `http://127.0.0.1:${server.address().port}`
 
 const up = await import('../src/upstream.js')
@@ -72,7 +96,7 @@ console.log('\n=== 2. the four v2 session headers, and no v1-only request header
   check('session id repeats it', headers['x-session-id'], session)
   // v1 sent `x-opencode-request`; v2 answers that header with 403 FreeTierError.
   check('no x-opencode-request', 'x-opencode-request' in headers, false)
-  check('the User-Agent is the canonical v2 token', headers['user-agent'], 'opencode/latest/2.0.26/cli')
+  check('the User-Agent is the canonical v2 token', headers['user-agent'], 'opencode/latest/2.2.5/cli')
   check('streaming accept', headers.accept, 'text/event-stream')
 }
 
@@ -175,6 +199,119 @@ console.log('\n=== 6. 目录请求与推理请求使用同一串 v2 UA ===')
   check('任何归属串都不再改变线上 UA', seen.at(-1).headers['user-agent'], up.CLIENT_UA)
 }
 
+console.log('\n=== 7. OpenCode\'s <env> block rides on both wires, verbatim ===')
+{
+  // Zen's free tier asks for the block as well as the UA (magpie, 2026-11):
+  // without it the day's allowance is tiny and 429 runs out before 00:00 UTC.
+  const { buildPayload } = await import('../src/adapter.js')
+  const workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'ofm-work-'))
+  const prompt = 'You are a coding agent.'
+  const told = { role: 'user', content: `The current working directory is \x60${workdir}\x60. Read task.md first.` }
+
+  const chat = buildPayload('chat', 'cat-jam-free', [told], { system: prompt }, 1024, undefined, [])
+  const chatSystem = chat.messages.find(message => message.role === 'system')
+  check('the chat body has a system turn', chatSystem === undefined ? undefined : chatSystem.role, 'system')
+  check('…it is the first turn', chat.messages[0].role, 'system')
+  check('…it carries <env>', /<env>/.test(chatSystem.content), true)
+  check('…with the two-space line the gate matches', /\n {2}Working directory: [^\n]*\n/.test(chatSystem.content), true)
+  check('…naming the directory the user stated', /  Working directory: ([^\n]+)/.exec(chatSystem.content)?.[1], workdir)
+  check('…and never the placeholder', /unknown/i.test(chatSystem.content), false)
+  check('…the host prompt is still the prefix', chatSystem.content.startsWith(`${prompt}\n\nHere is some useful information`), true)
+  check('…the block ends the system turn', chatSystem.content.trimEnd().endsWith('</env>'), true)
+  check('…with the temporary-directory line', / {2}Prefer .*\/opencode over generic system temporary directories such as \/tmp;/.test(chatSystem.content), true)
+  check('…and the user turn is untouched', /<env>/.test(String(chat.messages[1].content)), false)
+
+  // The Messages wire assembles its system text in messages.js, before the body.
+  const claude = buildPayload('messages', 'union-alpha', [
+    { role: 'system', content: prompt },
+    told,
+  ], {}, 1024, undefined, [])
+  check('the Messages wire carries the block too', /<env>/.test(claude.system ?? ''), true)
+  check('…naming the stated directory', /  Working directory: ([^\n]+)/.exec(claude.system ?? '')?.[1], workdir)
+  check('…and the host prompt is its prefix', (claude.system ?? '').startsWith(`${prompt}\n\n`), true)
+}
+
+console.log('\n=== 7b. a block that is already there is never doubled ===')
+{
+  const { buildPayload } = await import('../src/adapter.js')
+  const opencode = [
+    'Host prompt.',
+    '',
+    'Here is some useful information about the environment you are running in:',
+    '<env>',
+    '  Working directory: /opt/agent',
+    '  Workspace root folder: /opt/agent',
+    '  Is directory a git repo: no',
+    '  Platform: linux',
+    '  Prefer /tmp/opencode over generic system temporary directories such as /tmp; it is pre-created and approved for external access.',
+    '</env>',
+  ].join('\n')
+  const told = { role: 'user', content: 'Working directory: /opt/agent' }
+  // Through `options.system` (chat) and through a system message in the history (messages).
+  const chat = buildPayload('chat', 'cat-jam-free', [told], { system: opencode }, 1024, undefined, [])
+  const chatSystem = chat.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')
+  check('chat: one block, not two', (chatSystem.match(/<\/env>/g) ?? []).length, 1)
+  check('chat: the host block is kept as written', /  Working directory: \/opt\/agent/.test(chatSystem), true)
+  const carried = buildPayload('chat', 'cat-jam-free', [{ role: 'system', content: opencode }, told], {}, 1024, undefined, [])
+  check('chat: a system message that carries it is not doubled', (carried.messages.map(message => message.content).join('\n').match(/<\/env>/g) ?? []).length, 1)
+  const claude = buildPayload('messages', 'union-alpha', [{ role: 'system', content: opencode }, told], {}, 1024, undefined, [])
+  check('messages: one block, not two', ((claude.system ?? '').match(/<\/env>/g) ?? []).length, 1)
+}
+
+console.log('\n=== 7c. Claude Code\'s own <env> is not taken for OpenCode\'s ===')
+{
+  const { buildPayload } = await import('../src/adapter.js')
+  // Claude Code writes `Working directory:` with no indent, so the gate's own
+  // pattern does not match it: the lane's block still has to be added.
+  const claudeCode = 'You are Claude Code.\n\n<env>\nWorking directory: /opt/cc\nIs directory a git repo: yes\n</env>'
+  const chat = buildPayload('chat', 'cat-jam-free', [{ role: 'user', content: 'hi' }], { system: claudeCode }, 1024, undefined, [])
+  const content = chat.messages[0].content
+  check('the unindented block is not recognised', (content.match(/<\/env>/g) ?? []).length, 2)
+  check('…so the lane adds its own', /\n {2}Working directory: [^\n]*\n/.test(content), true)
+  check('…and the Claude Code text is untouched', content.startsWith(claudeCode), true)
+}
+
+console.log('\n=== 8. the User-Agent follows the newest release, else the constant ===')
+{
+  const probeCount = () => seen.filter(entry => entry.url?.startsWith('/update/api/latest/cli/npm')).length
+  up.resetClientVersion()
+  const probes = probeCount()
+  check('before any probe: the constant', up.clientUserAgent(), 'opencode/latest/2.2.5/cli')
+  check('…and gatewayHeaders sends the same', up.gatewayHeaders({ session: 'ses_0123456789abABCDEFGHIJKLMN', stream: true })['user-agent'], 'opencode/latest/2.2.5/cli')
+  // The background refresh only runs against the real upstream. This lane is
+  // pointed at a stub, so asking would be pointless — and the getter must stay
+  // silent, because it sits on the request path.
+  for (let i = 0; i < 3; i += 1) up.clientUserAgent()
+  await new Promise(resolve => setTimeout(resolve, 30))
+  check('a lane pointed at a stub asks the updater nothing', probeCount(), probes)
+  // The lane's own endpoint answers a body without a version: keep the constant.
+  check('a body without a version keeps the constant', await up.refreshClientVersion(), undefined)
+  check('the probe asks ?current=<the version in use>', seen.filter(entry => entry.url?.startsWith('/update/api/latest/cli/npm')).at(-1)?.url, '/update/api/latest/cli/npm?current=2.2.5')
+
+  // A newer release is adopted and sent at once.
+  check('a newer release is adopted', await up.refreshClientVersion(`${versionBase}2.5.0`), '2.5.0')
+  check('…and the lane sends it', up.clientUserAgent(), 'opencode/latest/2.5.0/cli')
+  check('…the probe carried the version in use', versionCalls.at(-1), '/version/2.5.0?current=2.2.5')
+
+  // Older, malformed, failed and redirected answers are all ignored.
+  check('a v1 release is never adopted', await up.refreshClientVersion(`${versionBase}1.19.0`), undefined)
+  check('…the UA is unchanged', up.clientUserAgent(), 'opencode/latest/2.5.0/cli')
+  check('a non-release string is refused', await up.refreshClientVersion(`${versionBase}2.5.0-beta`), undefined)
+  check('a two-part version is refused', await up.refreshClientVersion(`${versionBase}2.6`), undefined)
+  check('an error status changes nothing', await up.refreshClientVersion(`${versionBase}error`), undefined)
+  check('a redirect is not followed', await up.refreshClientVersion(`${versionBase}redirect`), undefined)
+  check('…and the adopted version still rides', up.clientUserAgent(), 'opencode/latest/2.5.0/cli')
+
+  // A warm cache (or a reset) never asks again.
+  up.resetClientVersion()
+  const warm = probeCount()
+  for (let i = 0; i < 3; i += 1) up.clientUserAgent()
+  await new Promise(resolve => setTimeout(resolve, 30))
+  check('a warm cache asks the updater nothing', probeCount(), warm)
+  check('reset puts the constant back', up.clientUserAgent(), 'opencode/latest/2.2.5/cli')
+}
+
+versionServer.close()
 server.close()
 fs.rmSync(scratch, { recursive: true, force: true })
 console.log(failures === 0 ? '\nall wire checks passed' : `\n${failures} wire check(s) failed`)

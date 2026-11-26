@@ -58,6 +58,10 @@ const {
   isBodyTooLargeError,
   codeartsBodyTooLargeMessage,
   CODEARTS_MAX_SIGNABLE_BODY_BYTES,
+  CODEARTS_INFERHUB_BODY_LIMIT_BYTES,
+  isOverInferHubBodyLimit,
+  codeartsInputModalities,
+  isCodeArtsMultimodalModel,
 } = await import('../vendor/channel-pack/src/llm-adapter.ts')
 
 let failures = 0
@@ -107,6 +111,41 @@ check('④ 文案给出可操作出路，且明说不需要重新登录', () => 
 
 check('④ 上限常量就是 12 MiB', () => {
   assert.equal(CODEARTS_MAX_SIGNABLE_BODY_BYTES, 12 * 1024 * 1024)
+})
+
+// ── ⑤ 过了 APIG，还有 InferHub 自己的 10 MB（magpie 0.3.25，2026-11-25）──
+check('⑤ InferHub 10 MB：只有「超体积 + 001001005」这一对才判成 413', () => {
+  assert.equal(CODEARTS_INFERHUB_BODY_LIMIT_BYTES, 10 * 1000 * 1000, '十进制 10 MB，照 magpie 实测定值')
+  const real = '{"error_code":"InferHub.001001005.400","error_msg":"The request param is invalid"}'
+  // 实测对照：9.36 MB 正常回答，10.03 MB 被拒 —— 就是体积。
+  assert.equal(isOverInferHubBodyLimit(9.36 * 1000 * 1000, real), false, '9.36 MB 不该判成过大')
+  assert.equal(isOverInferHubBodyLimit(10.03 * 1000 * 1000, real), true, '10.03 MB + 001001005 = 体积问题')
+  // ⚠️ 小体积的同码是**真参数错**，必须留给下游，不能冒充「太大」。
+  assert.equal(isOverInferHubBodyLimit(64 * 1024, real), false, '小请求的 001001005 是参数错')
+  assert.equal(isOverInferHubBodyLimit(20 * 1000 * 1000, 'InferHub.001001020.406 not multimodal'), false, '别的 InferHub 码不认')
+  assert.equal(isOverInferHubBodyLimit(20 * 1000 * 1000, ''), false, '空报文不认')
+})
+
+check('⑤ 两道闸用**同一套**措辞，只有上限数字不同', () => {
+  const inferhub = codeartsBodyTooLargeMessage(10.5 * 1000 * 1000, CODEARTS_INFERHUB_BODY_LIMIT_BYTES)
+  const apig = codeartsBodyTooLargeMessage(20 * 1024 * 1024)
+  assert.match(inferhub, /9\.5 MB/, 'InferHub 那道闸要报 10 MB（= 9.5 MiB）')
+  assert.match(inferhub, /新开一个对话|减少.*图片/, '同样是可操作出路')
+  assert.match(inferhub, /不需要重新登录/, '同样否认「登录过期」')
+  assert.equal(inferhub.replace(/[\d.]+ MB/g, ''), apig.replace(/[\d.]+ MB/g, ''), '除数字外逐字一致，不许造第二套措辞')
+})
+
+// ── ⑥ 多模态白名单（magpie 0.3.25 的 MULTIMODAL，2026-11-23 实测）──
+check('⑥ 只有白名单里的 5 个模型报 image，其余一律 text', () => {
+  for (const id of ['deepseek-v4.1-flash-1017', 'glm-5.3-flash', 'deepseek-v4.1-flash', 'kimi-k3.1-pro', 'kimi-k3']) {
+    assert.deepEqual(codeartsInputModalities(id), ['text', 'image'], id + ' 必须报 image')
+    assert.equal(isCodeArtsMultimodalModel(id.toUpperCase()), true, id + ' 大小写不敏感')
+  }
+  for (const id of ['deepseek-v4-flash', 'deepseek-v4-pro', 'GLM-5.2', 'openpangu-2.0-flash', 'kimi-k2']) {
+    assert.deepEqual(codeartsInputModalities(id), ['text'], id + ' 不得报 image（报了就等于谎报能力）')
+  }
+  // 带日期后缀的 id 按 normalizeModelId 也能命中白名单。
+  assert.deepEqual(codeartsInputModalities('kimi-k3-1103'), ['text', 'image'], '日期后缀不改变能力')
 })
 
 if (failures > 0) console.error(`codearts-body-too-large-test: ${failures} failure(s)`)

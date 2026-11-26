@@ -355,14 +355,33 @@ export async function pollZcodeLogin(
       ? data.user.id
       : undefined
 
-  if (zcodeJwt === undefined || userId === undefined) {
-    return { kind: 'failed', message: '轮询响应缺关键字段（token / user_id）' }
+  /**
+   * ⚠ 先判「ready 但**没有 OAuth access token**」（magpie 0.1.70 给同一分支加了
+   * 专文：`the poll answered ready without an OAuth access token; sign in again`）。
+   *
+   * 两个 token 位分别对应官方 ready 解析器的两条硬要求，缺任一条**都不能**建出
+   * 可用凭据：
+   * - `data.token`（zcode JWT）⇒ 我们唯一的推理凭据 `credential.zcode_jwt`；
+   * - `data.zai` / `data.bigmodel` 里的 `access_token` ⇒ 第三方身份（备用）。
+   *
+   * 这是**终态**：flow 已经跑完，再轮询不会长出 token 来。归进下面的「缺关键字段」
+   * 只会让用户对着泛化错误反复重试同一条链路，而唯一出路是**重新走一次登录**。
+   */
+  if (zcodeJwt === undefined) {
+    return {
+      kind: 'failed',
+      message: '授权未完成：登录轮询返回 ready 但没有 OAuth access token（data.token 缺失）；请重新登录 ZCode',
+    }
   }
   if (bigmodelAccessToken === undefined && zaiAccessToken === undefined) {
     return {
       kind: 'failed',
-      message: '轮询响应缺第三方 access_token（data.zai 与 data.bigmodel 均为空）',
+      message: '授权未完成：登录轮询返回 ready 但没有 OAuth access token（data.zai 与 data.bigmodel 均无 access_token）；请重新登录 ZCode',
     }
+  }
+
+  if (userId === undefined) {
+    return { kind: 'failed', message: '轮询响应缺关键字段（user_id）' }
   }
 
   const refreshRaw = data.bigmodel?.refresh_token ?? data.bigmodel?.refreshToken
