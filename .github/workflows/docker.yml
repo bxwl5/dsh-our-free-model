@@ -23,7 +23,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # `workflow_dispatch` 没有 tag，metadata-action 取不到 semver，所以版本号
       # 统一从 package.json 读，作为 OCI 标签的 org.opencontainers.image.version。
@@ -45,7 +45,7 @@ jobs:
       # 每个架构一套标签（后缀 -amd64 / -arm64）。合并成 index 在后面的
       # manifest 步骤里做，所以 :latest / :版本 最终仍是多架构引用。
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ghcr.io/${{ github.repository }}
           # suffix 加到**所有**标签上（含 latest）⇒ 产出 latest-amd64 /
@@ -69,7 +69,7 @@ jobs:
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
 
       - id: meta-arm64
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ghcr.io/${{ github.repository }}
           flavor: |
@@ -84,10 +84,10 @@ jobs:
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
 
       # arm64 走 QEMU 模拟。本镜像只做 COPY、不编译，所以模拟构造成本很低。
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -108,7 +108,7 @@ jobs:
       # ⚠️ 后缀由 metadata-action 的 `flavor: suffix` 生成，它作用于**该步**
       #   的 tags，所以每步只推自己架构的标签，不会互相覆盖。
       - id: build-amd64
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: ./Dockerfile
@@ -140,7 +140,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=amd64
 
       - id: build-arm64
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: ./Dockerfile

@@ -865,6 +865,108 @@ try {
     assert.equal(ac.mergeAccountResult(failedRow, { ...failedRow, message: '新原因' }).message, '新原因', '失败原因取最近一次')
   })
 
+  // ── 21-b. 结局强弱表只有一份 + extended 不被降级（2026-11-26）──
+  //
+  // 缺陷现场：`mergeAccountResult` 自写 `claimed 3 / already-claimed 2 /
+  // failed 1 / 其它 0`（**漏了 extended**），而 `aggregateAccountRows` 用
+  // `claimed 4 / extended 3 / already-claimed 2 / failed 1` —— 同一份上游结果
+  // 经两条路径得出不同结局。现统一走导出的 `outcomeRank`。
+  await check('outcomeRank 单一强弱表：extended 强于 already-claimed、弱于 claimed 且不被 failed/skipped 覆盖', async () => {
+    assert.equal(ac.outcomeRank('claimed'), 4, 'claimed 最强')
+    assert.equal(ac.outcomeRank('extended'), 3, 'extended 低于 claimed（没新额度）、高于 already-claimed（真做了事）')
+    assert.equal(ac.outcomeRank('already-claimed'), 2)
+    assert.equal(ac.outcomeRank('failed'), 1)
+    assert.equal(ac.outcomeRank('skipped'), 0, 'skipped 不参与升级')
+    assert.equal(ac.outcomeRank('stale'), 0, '账本专用结局兜底 0')
+    assert.equal(ac.outcomeRank('none'), 0)
+    assert.equal(ac.outcomeRank(undefined), 0)
+    assert.equal(ac.outcomeRank('脏数据'), 0, '未知值一律 0（不参与升级判断）')
+
+    const base = { provider: 'raccoon', accountId: 'a', accountName: 'a', unit: 'credit' }
+    const extendedRow = { ...base, outcome: 'extended', amount: 0, message: '积分已延期' }
+    const failedRow = { ...base, outcome: 'failed', amount: 0, message: '上游 502' }
+    const skippedRow = { ...base, outcome: 'skipped', amount: 0 }
+    const alreadyRow = { ...base, outcome: 'already-claimed', amount: 0, message: '今日已延期' }
+
+    assert.equal(ac.mergeAccountResult(undefined, extendedRow).outcome, 'extended', '空 + extended ⇒ 原样')
+    assert.equal(ac.mergeAccountResult(extendedRow, failedRow).outcome, 'extended', '⚠️ extended 不被后来的 failed 覆盖')
+    assert.equal(ac.mergeAccountResult(extendedRow, skippedRow).outcome, 'extended', '⚠️ extended 不被 skipped 覆盖')
+    assert.equal(ac.mergeAccountResult(extendedRow, alreadyRow).outcome, 'extended', '⚠️ extended 不被「今日已延期」降级')
+    assert.equal(ac.mergeAccountResult(alreadyRow, extendedRow).outcome, 'extended', '当天再续期是更强的事实 ⇒ 换成 extended')
+    assert.equal(ac.mergeAccountResult(failedRow, extendedRow).outcome, 'extended', '失败后当天续期成功 ⇒ extended')
+    assert.equal(ac.mergeAccountResult(extendedRow, extendedRow).outcome, 'extended', '同级 extended 保留新的（到期时间/文案更新）')
+    // 聚合路径必须与合并路径同一口径（同一账号两条 outcome 时取更强的那个）
+    const rows = ac.aggregateAccountRows('raccoon', [
+      { accountId: 'a', nickname: 'a', outcome: { kind: 'extended', message: '积分已延期' } },
+      { accountId: 'a', nickname: 'a', outcome: { kind: 'already-claimed', message: '今日已延期' } },
+    ])
+    assert.equal(rows.length, 1, '同一账号聚合成一行')
+    assert.equal(rows[0].outcome, 'extended', '⚠️ 聚合与合并必须同口径：extended 不被 already-claimed 盖掉')
+  })
+
+  // ── 21-c. 续期（extended）的账本结局与汇总文案（2026-11-26）──
+  //
+  // 缺陷现场：账本写 `lastOutcome: summary.claimed > 0 ? 'claimed' :
+  // 'already-claimed'`，于是「今天第一次续期」被谎报成「今天已领」，
+  // 而逐账号明细与渠道行文案写的是「积分已延期」。
+  await check('extended 续期：账本记 extended（不谎报今天已领）、渠道行说「积分已延期」', async () => {
+    const rowsOf = (rows, over = {}) => ({
+      results: rows,
+      summary: {
+        claimed: 0, totalCredit: 0, alreadyClaimed: 0, inactive: 0, failed: 0, coversToday: 0,
+        extended: 0, totalByUnit: { credit: 0, token: 0 }, ...over,
+      },
+    })
+    const h = harness({
+      providers: ['raccoon'],
+      responses: { raccoon: [summary({ extended: 1, coversToday: 1 })] },
+      now: at0900,
+    })
+    await h.engine.runIfDue()
+    assert.equal(h.ledger('raccoon').status, 'done', 'extended 覆盖今天 ⇒ 记完成，当日不再重跑')
+    assert.equal(h.ledger('raccoon').lastOutcome, 'extended', '⚠️ 今天第一次续期必须记 extended，不是 already-claimed')
+    assert.match(h.ledger('raccoon').lastText ?? '', /积分已延期/, '账本文案要说清「积分已延期」')
+    assert.ok(!(h.ledger('raccoon').lastText ?? '').includes('无可领'), '⚠️ 纯续期不得显示「无可领」')
+    assert.match(h.store.peek().lastResult, /积分已延期/, '整轮摘要（describeRun）也要报出续期')
+    assert.ok(!h.store.peek().lastResult.includes('没有需要领取的账号'), '⚠️ 纯续期不得落进「没有需要领取的账号」兜底')
+    // 明细表口径：extended 行不能带金额
+    assert.equal(h.store.peek().results.length, 0, '自动签到那一轮不在这里记明细（由 RPC 出口记）')
+
+    // 明细表口径：extended 行必须能通过文档归一化（`RESULT_OUTCOMES` 白名单），
+    // 否则当轮界面正常、回读后整行消失。
+    const kept = ac.sanitizeAutoCheckin({
+      results: [{ provider: 'raccoon', accountId: 'r-1', accountName: '小浣熊', outcome: 'extended', amount: 0, unit: 'credit', message: '积分已延期' }],
+      resultsDay: ac.utc8DateString(at0900),
+    })
+    assert.equal(kept.results.length, 1, '⚠️ extended 必须在 RESULT_OUTCOMES 白名单里（回读不许丢整行）')
+    assert.equal(kept.results[0].outcome, 'extended')
+
+    // 同日手动再点一次：上游回「今日已延期」（already-claimed）不得把 extended 降级
+    await h.engine.recordClaimResult('raccoon', rowsOf(
+      [{ accountId: 'r-1', nickname: '小浣熊', outcome: { kind: 'extended', message: '积分已延期' } }],
+      { extended: 1, coversToday: 1 },
+    ))
+    assert.equal(h.store.peek().providers.raccoon?.lastOutcome, 'extended', '手动续期同样记 extended')
+    assert.equal(
+      h.store.peek().results.find((entry) => entry.accountId === 'r-1')?.outcome,
+      'extended',
+      '明细行的 outcome 必须是 extended（不是 claimed）',
+    )
+    await h.engine.recordClaimResult('raccoon', rowsOf(
+      [{ accountId: 'r-1', nickname: '小浣熊', outcome: { kind: 'already-claimed', message: '今日已延期' } }],
+      { alreadyClaimed: 1, coversToday: 1 },
+    ))
+    assert.equal(h.store.peek().providers.raccoon?.lastOutcome, 'extended', '⚠️ 同日再调不得把 extended 降级为 already-claimed')
+    assert.equal(
+      h.store.peek().results.find((entry) => entry.accountId === 'r-1')?.outcome,
+      'extended',
+      '⚠️ 明细行同样不得被「今日已延期」降级（合并走同一份 outcomeRank）',
+    )
+    const row = h.store.peek().channels.find((entry) => entry.provider === 'raccoon')
+    assert.ok(row !== undefined, '渠道行必须存在')
+    assert.match(row.text, /积分已延期/, '⚠️ 渠道行要保留「积分已延期」（旧缺陷：显示「今日已领」或「无可领」）')
+  })
+
   // ── 22. 空投放（inactive）必须走 30 分钟重试，不能被记成「今天办完了」──
   //
   // 真实缺陷（2026-11-09 用户报「签到又失败、而且这次没拉起浏览器」）：
@@ -917,7 +1019,7 @@ try {
     assert.match(h2.ledger('zcode').lastText, /今日已放弃/, '面板要能看出今天不再补救')
   })
 
-  console.log(`auto-checkin-ledger: ${checks} 组断言通过（失败渠道补跑 / 非今日轮次 / 刷新前 inactive 不烧额度 / 重跑上限 / 旧格式兼容 / 全失败不记日 / 跳过不重试 / 补跑排定 / 纯函数边界 / running 反馈 / 常量漂移 / 计数过滤 / 逐账号明细聚合 / 明细容错 / 全天累计 / 合并规则 / 手动签到回填渠道状态 / zcode 签到窗口 / 渠道间日界隔离 / 结果行不重复 / zcode 额度恢复点 23:00 / 空投放 30 分钟重试）`)
+  console.log(`auto-checkin-ledger: ${checks} 组断言通过（失败渠道补跑 / 非今日轮次 / 刷新前 inactive 不烧额度 / 重跑上限 / 旧格式兼容 / 全失败不记日 / 跳过不重试 / 补跑排定 / 纯函数边界 / running 反馈 / 常量漂移 / 计数过滤 / 逐账号明细聚合 / 明细容错 / 全天累计 / 合并规则 / 唯一强弱表 outcomeRank / extended 续期账本 / 手动签到回填渠道状态 / zcode 签到窗口 / 渠道间日界隔离 / 结果行不重复 / zcode 额度恢复点 23:00 / 空投放 30 分钟重试）`)
 } finally {
   hooks.deregister()
   fs.rmSync(scratch, { recursive: true, force: true })

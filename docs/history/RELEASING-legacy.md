@@ -1,15 +1,19 @@
 # 发布与公告（仓库主人）
 
+> **历史文档（2026-11 归档）**：文中引用的 7 个脚本路径均已删除，照做会在第一条命令撞墙，不代表现行流程。
+> 现行发布只有两步：`node scripts/refresh-integrity.mjs` + 更新 `catalog/` 里的 revision（见 `docs/release-pipeline-gap.md`）。
+> 行号说明：本文件正文相对归档前版本整体下移 4 行；外部文档（如 `release-pipeline-gap.md`）引用的行号按归档前编号。
+
 这份文档面向维护者，不属于发布内容：`package.json` 的 `files` 不含 `docs/`，所以它
-不会被安装到用户机器上，也不出现在 [`README.md`](../README.md) 里——README 只讲使用者
+不会被安装到用户机器上，也不出现在 [`README.md`](../../README.md) 里——README 只讲使用者
 需要知道的事。
 
 > ⚠️ 曾经的「`feed/` 目录 + 推送即发布」链路已在 `95657a7` 整体删除，见
-> [`release-pipeline-gap.md`](release-pipeline-gap.md)。当前仓库里与发布记录相关的
+> [`release-pipeline-gap.md`](../release-pipeline-gap.md)。当前仓库里与发布记录相关的
 > 可执行动作只有两个：`node scripts/refresh-integrity.mjs` 与 catalog revision 的两步提交。
 
 普通贡献者与维护者的检查分工、受保护的签名补丁准备流程见
-[`contributor-ci-signing.md`](contributor-ci-signing.md)。贡献者运行
+[`contributor-ci-signing.md`](../contributor-ci-signing.md)。贡献者运行
 `npm run test:contributor`；main 合并前必须通过 `.github/workflows/test.yml` 的三个 job
 （`offline` / `typecheck` / `standalone-frontend`）。默认 `npm test` 仍包含完整发布校验。
 不要让贡献者持有发布私钥。
@@ -43,7 +47,7 @@
 > ⚠️ **当前仓库没有发布工具链。** `feed/`、`scripts/build-manifest.mjs`、`scripts/live-audit.mjs`、
 > `scripts/release-e2e.mjs`、`scripts/prepare-release.mjs`、`src/feed.js`、`src/updater.js` 与
 > `.github/workflows/prepare-release.yml` 均已在 `95657a7` **整体删除**。完整缺口、影响与 A/B/C
-> 三档恢复方案见 [`release-pipeline-gap.md`](release-pipeline-gap.md)。
+> 三档恢复方案见 [`release-pipeline-gap.md`](../release-pipeline-gap.md)。
 >
 > 下文原先的第 2/3/5/6 步（重签清单、清单校验、CDN purge、live-audit 复核）**都不可执行**；
 > 保留历史描述只为解释「为什么曾经要求两步提交」，不要照着跑。
@@ -206,11 +210,11 @@ CDN 上 `…@main/index.js` 仍返回 v1.3.0 的 56 999 字节——清单声明
 
 This document is for maintainers and is not part of the release: `package.json`'s
 `files` does not include `docs/`, so it never reaches an installed copy and never
-appears in [`README_EN.md`](../README_EN.md). The `feed/` directory and its
+appears in [`README_EN.md`](../../README_EN.md). The `feed/` directory and its
 "pushing is publishing" chain were removed in `95657a7`; what remains is the
-`catalog/` record — see [`release-pipeline-gap.md`](release-pipeline-gap.md).
+`catalog/` record — see [`release-pipeline-gap.md`](../release-pipeline-gap.md).
 
-See [`contributor-ci-signing.md`](contributor-ci-signing.md) for contributor
+See [`contributor-ci-signing.md`](../contributor-ci-signing.md) for contributor
 checks and protected signature preparation. Contributors run
 `npm run test:contributor`; maintainers must pass the three jobs in
 `.github/workflows/test.yml` (`offline` / `typecheck` / `standalone-frontend`) before
@@ -248,7 +252,7 @@ become code execution.
 > `scripts/build-manifest.mjs`, `scripts/live-audit.mjs`, `scripts/release-e2e.mjs`,
 > `scripts/prepare-release.mjs`, `src/feed.js`, `src/updater.js` and
 > `.github/workflows/prepare-release.yml` were all deleted in `95657a7`. See
-> [`release-pipeline-gap.md`](release-pipeline-gap.md) for the full gap and the
+> [`release-pipeline-gap.md`](../release-pipeline-gap.md) for the full gap and the
 > A/B/C recovery options. Steps 2/3/5/6 of the old block below cannot run.
 
 After changing published content, only two actions exist:

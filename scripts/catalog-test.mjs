@@ -117,7 +117,7 @@ check('source revision is a full commit sha', /^[0-9a-f]{40}$/.test(source.revis
 // content" is both truthful (committing the records alone changes no published
 // byte) and satisfiable (the refresh commit touches only catalog/, so the
 // pointer it must match does not move under it). The refresh step is part of
-// the release runbook in docs/RELEASING.md.
+// the release runbook in docs/history/RELEASING-legacy.md.
 const contentRevision = contributor ? null : spawnLastContentRevision()
 if (contentRevision !== null) check('source revision is the last commit that touched the release content', source.revision, contentRevision)
 else console.log(contributor

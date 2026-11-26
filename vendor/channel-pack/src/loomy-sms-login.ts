@@ -37,6 +37,7 @@
  */
 import type { LoomyProduct } from './loomy-product.js'
 import { sendLoomySmsCode } from './loomy-oauth.js'
+import { directFetch } from './direct-fetch.js'
 import type { LoomyLoginResult } from './loomy-auth.js'
 
 /**
@@ -95,7 +96,16 @@ export function startLoomySmsLoginFlow(options: {
   /** 超时覆盖（测试用）。 */
   timeoutMs?: number
 }): LoomySmsLoginFlow {
-  const fetcher = options.fetcher ?? fetch
+  /**
+   * ⚠️ 兜底必须是 **`directFetch`（包内 undici + 出口层）**，不是全局 `fetch`
+   * （2026-11-26 迁移，本文件是全仓同类调用里最后一处 `?? fetch`）。
+   *
+   * 2026-11-21 的真实故障就是这类兜底的后果：`this.fetchImpl is not a function`
+   * —— 全局 `fetch` 在某些宿主里不存在/被别的插件改坏，而本插件在构造函数里
+   * 捕获的 `fetchImpl` 一旦是 `undefined` 就永远是 `undefined`。`directFetch`
+   * 走包内 undici，并仍然尊重用户代理与插件出口，不读 `globalThis.fetch`。
+   */
+  const fetcher = options.fetcher ?? directFetch
   const state = {
     /** 已验证可用、已收到码的手机号；`''` = 尚未成功发码。 */
     phone: '',
@@ -127,6 +137,9 @@ export function startLoomySmsLoginFlow(options: {
   }
 
   const sendCode = async (phone: string): Promise<{ ok: boolean; message?: string }> => {
+    // ⚠️ 流程已结束（超时 / 用户关闭 / 已登录成功）后**一律拒绝**：
+    // 短信是真实副作用，卡片已经显示「已取消」时还去打上游是错的。
+    if (settled) return { ok: false, message: '登录流程已结束' }
     const elapsed = Date.now() - state.lastSentAt
     if (state.lastSentAt !== 0 && elapsed < LOOMY_SMS_COOLDOWN_MS) {
       const wait = Math.ceil((LOOMY_SMS_COOLDOWN_MS - elapsed) / 1000)
@@ -150,6 +163,16 @@ export function startLoomySmsLoginFlow(options: {
   }
 
   const verify = async (code: string): Promise<{ ok: boolean; message?: string }> => {
+    /**
+     * ⚠️ **必须挡在 `options.complete(...)` 之前**（2026-11-26 修复，真实缺陷）：
+     * 超时或用户点「关闭」之后 `settled` 已为真，`settleOk` 只会把结果丢掉 ——
+     * 但 `complete` 是**带副作用**的（换 session、写凭据落盘、回填账号池）。
+     * 于是出现「前端显示已取消，账号其实已登录」的分裂状态。
+     *
+     * 判据是 `settled` 而不是 `closed`：登录成功后再次 `verify` 也必须被拒
+     * （同一流程只能完成一次）。
+     */
+    if (settled) return { ok: false, message: '登录流程已结束' }
     if (state.phone === '' || state.msgid === '') return { ok: false, message: '请先获取手机验证码' }
     const trimmed = typeof code === 'string' ? code.trim() : ''
     if (!/^\d{4,8}$/.test(trimmed)) return { ok: false, message: '请输入收到的验证码' }

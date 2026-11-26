@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 const { buildStats } = await import('../src/core/stats.js')
-const { readChannelUsage, mergeChannelStats, resolveChannelLedgerPath } = await import('../src/core/channel-usage.js')
+const { readChannelUsage, mergeChannelStats, resolveChannelLedgerPath, ledgerDayToDayKey } = await import('../src/core/channel-usage.js')
 
 const scratch = mkdtempSync(path.join(tmpdir(), 'ofm-channel-usage-'))
 const ledgerPath = path.join(scratch, 'token-ledger.json')
@@ -137,3 +137,40 @@ console.log('channel-usage: 7 组断言通过（台账聚合 / 容错 / 口径 /
   assert.notEqual(hostRow.tps, hostOnly.tps, '合并后必须重算速度，不能原样继承单侧的值')
 }
 console.log('ok  合并行速度/首字延迟同源（渠道独有行有值、同名行按合计重算）')
+
+// ── 9. 台账日键 → 本机日历键：钉住「已知近似」，别顺手改成位移口径 ──────────
+//
+// `ledgerDayToDayKey` 把 UTC+8 算术日还原成该日 12:00 UTC+8（= 04:00Z），
+// 再按**本机日历**取 dayKey —— 这是一个近似映射，不是严格换算。
+// 已知事实（2026-11-26 实测）：本机偏移 ≥ −4h 时映射回同一日；
+// 偏移 < −4h（UTC−5 及以西，含 America/Los_Angeles）时**整日前移一天**。
+// 这条断言把该行为钉住：将来若有人「修好」成零位移的口径，这里会失败，
+// 从而必须显式承认一次看板数字位移的产品决策。
+{
+  const savedTZ = process.env.TZ
+  try {
+    process.env.TZ = 'Asia/Shanghai'
+    assert.equal(ledgerDayToDayKey('2026-10-30'), '2026-10-30', 'UTC+8 本机：正午落在同一日')
+
+    // 注释里写的窗口边界：偏移 ≥ −4h 同一天，< −4h 整日前移。
+    // `Etc/GMT±N` 的名字与符号相反（Etc/GMT+4 = UTC−4，Etc/GMT+5 = UTC−5）。
+    process.env.TZ = 'Etc/GMT+4'
+    assert.equal(ledgerDayToDayKey('2026-10-30'), '2026-10-30', 'UTC−4 仍是同一日（窗口东侧边界）')
+    process.env.TZ = 'Etc/GMT+5'
+    assert.equal(ledgerDayToDayKey('2026-10-30'), '2026-10-29', 'UTC−5 越界 ⇒ 整日前移一天')
+
+    process.env.TZ = 'America/Los_Angeles'
+    // 先证明运行时切换 TZ 真的生效（Date 的本地日历跟着走），否则下面的断言可能是空转。
+    assert.equal(new Date(Date.UTC(2026, 9, 30, 4)).getDate(), 29, 'TZ 切换必须影响本机日历')
+    assert.equal(
+      ledgerDayToDayKey('2026-10-30'),
+      '2026-10-29',
+      '已知近似：04:00Z 在 UTC−7 的本机日历上是 10-29 ⇒ 台账 2026-10-30 整日前移一天（保留历史口径，不做零位移「修正」）',
+    )
+  } finally {
+    if (savedTZ === undefined) delete process.env.TZ
+    else process.env.TZ = savedTZ
+  }
+  assert.equal(ledgerDayToDayKey('2026-10-24'), '2026-10-24', 'TZ 已复原')
+}
+console.log('ok  台账日键换算：UTC+8 同日照旧；America/Los_Angeles 下整日前移（已知近似，已钉住）')

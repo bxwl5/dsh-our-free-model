@@ -50,6 +50,8 @@ const base = `http://127.0.0.1:${upstream.address().port}`
 process.env.OUR_FREE_MODEL_BASE = base
 process.env.OUR_FREE_MODEL_KILO_BASE = base
 const { startStandalone } = await import('../packages/standalone/service.mjs')
+// 限速器/密码口径直接测**真实现**（导出函数 + 可注入时钟，避免等真实时间）。
+const { createLoginThrottle, normalizeSourceAddress, panelPasswordState } = await import('../packages/standalone/management.mjs')
 let service
 let cookie
 let key
@@ -109,6 +111,45 @@ const login = async body => {
 }
 
 try {
+  await check('登录限速器：来源与全局双维度滑动窗口，可注入时钟', () => {
+    let clock = 1_000
+    const throttle = createLoginThrottle({ now: () => clock })
+    for (let index = 0; index < 4; index++) {
+      assert.equal(throttle.check('10.0.0.1').allowed, true, `第 ${index + 1} 次检查应放行`)
+      throttle.fail('10.0.0.1')
+    }
+    assert.deepEqual(throttle.snapshot('10.0.0.1'), { source: 4, global: 4, windowMs: 60_000 })
+    assert.equal(throttle.check('10.0.0.1').allowed, true, '第 5 次失败前仍放行')
+    throttle.fail('10.0.0.1')
+    const blocked = throttle.check('10.0.0.1')
+    assert.equal(blocked.allowed, false)
+    assert.equal(blocked.scope, 'source')
+    assert.ok(blocked.retryAfterMs > 0 && blocked.retryAfterMs <= 60_000)
+    assert.equal(throttle.check('10.0.0.2').allowed, true, '其他来源不受影响')
+    throttle.reset('10.0.0.1')
+    assert.equal(throttle.check('10.0.0.1').allowed, true, '成功登录清零该来源')
+    throttle.fail('10.0.0.3')
+    clock += 60_000
+    assert.equal(throttle.snapshot('10.0.0.3').source, 0, '窗口外失败自动过期')
+    const globalThrottle = createLoginThrottle({ now: () => clock, sourceLimit: 100, globalLimit: 3 })
+    for (let index = 0; index < 3; index++) globalThrottle.fail(`source-${index}`)
+    const globalBlocked = globalThrottle.check('fresh-source')
+    assert.equal(globalBlocked.allowed, false, '全局阈值命中后新来源也要拒绝')
+    assert.equal(globalBlocked.scope, 'global')
+  })
+  await check('来源地址归一化覆盖 IPv6 映射与 zone id', () => {
+    assert.equal(normalizeSourceAddress('::ffff:127.0.0.1'), '127.0.0.1')
+    assert.equal(normalizeSourceAddress('::FFFF:192.168.1.9'), '192.168.1.9')
+    assert.equal(normalizeSourceAddress('fe80::1%eth0'), 'fe80::1')
+    assert.equal(normalizeSourceAddress('::1'), '::1')
+    assert.equal(normalizeSourceAddress(''), 'unknown')
+  })
+  await check('OFM_PASSWORD 只用 trim 判未设置，比较保留原值', () => {
+    assert.deepEqual(panelPasswordState('  secret  '), { password: '  secret  ', required: true, padded: true })
+    assert.equal(panelPasswordState('   ').required, false, '纯空白视作未设置（既有语义不变）')
+    assert.equal(panelPasswordState('').required, false)
+    assert.deepEqual(panelPasswordState(null), { password: '', required: false, padded: false })
+  })
   await check('macOS 与 Windows 固定启动器安全引用路径，令牌只经 stdin 复制', verifyLoginLaunchers)
   // /login/terminal 已删除（决策三，2026-11-19）：端点消失本身值得钉住，
   // 防止有人把它加回来 —— 那会是重新引入一个免鉴权的本地动作触发面。
@@ -158,6 +199,10 @@ try {
     const health = await (await request('/health')).json()
     assert.equal(health.product, 'standalone')
     assert.equal(health.capabilities.webUi, true)
+    // 健康响应要暴露真实子组件状态（渠道 ready 是常态，不是致命）。
+    assert.equal(health.ok, true)
+    assert.equal(health.channels.state, 'ready')
+    assert.equal(health.channels.error, '')
   })
   await check('所有管理数据和操作要求登录，OPTIONS 不放行跨域', async () => {
     for (const route of ['summary', 'stats', 'key']) assert.equal((await request(`/api/management/${route}`, { cookie: '' })).status, 401)
@@ -233,6 +278,14 @@ try {
     assert.equal(malformed.status, 400)
     assert.equal((await request('/api/management/settings', { body: {}, headers: { 'content-type': 'text/plain' } })).status, 415)
     assert.equal((await request('/api/management/settings', { body: { huge: 'x'.repeat(17000) } })).status, 413)
+  })
+  await check('超大请求体排干后仍能收到 413（不因异步迭代器提前退出而重置连接）', async () => {
+    // 真实 1MB body：旧实现超限直接 throw，`for await` 提前 return 会销毁
+    // socket；客户端可能只看到 ECONNRESET。现在先 drain 再回 413。
+    const response = await request('/api/management/session', { cookie: '', body: { padding: 'x'.repeat(1024 * 1024) } })
+    assert.equal(response.status, 413)
+    assert.equal(response.headers.get('connection'), 'close')
+    assert.match(await response.text(), /请求内容过大/)
   })
   await check('设置保存后立即落盘，推理暂停时管理页面可恢复服务', async () => {
     const patch = { enabled: false, exposeRegionModels: false, streamRecovery: false, standaloneProbe: true, defaultMaxTokens: 8192, probeIntervalMinutes: 12 }
@@ -365,6 +418,28 @@ try {
     assert.equal((await request('/api/management/summary')).status, 401)
     cookie = await login({ password: PANEL_PASSWORD })
   })
+  await check('HTTPS 反代登录加 Secure，明文 HTTP 保持可用并如实返回 transportInsecure', async () => {
+    // 明文（本机 / --lan-panel）不能加 Secure，否则浏览器不回传 Cookie 就登不上。
+    const plain = await request('/api/management/session', { cookie: '', body: { password: PANEL_PASSWORD } })
+    assert.equal(plain.status, 200)
+    assert.equal((await plain.json()).transportInsecure, true)
+    assert.equal(/; Secure/i.test(plain.headers.get('set-cookie') ?? ''), false)
+    // 经 HTTPS 反代（x-forwarded-proto: https）才加 Secure。
+    const secure = await request('/api/management/session', {
+      cookie: '', body: { password: PANEL_PASSWORD }, headers: { 'x-forwarded-proto': 'https' },
+    })
+    assert.equal(secure.status, 200)
+    assert.equal((await secure.json()).transportInsecure, false)
+    assert.match(secure.headers.get('set-cookie'), /; Secure/i)
+    // 清除 Cookie 的属性必须与设置处一致（HTTPS 下也要 Secure）。
+    const secureCookie = secure.headers.get('set-cookie').split(';')[0]
+    const cleared = await request('/api/management/logout', {
+      cookie: secureCookie, body: {}, headers: { 'x-forwarded-proto': 'https' },
+    })
+    assert.equal(cleared.status, 200)
+    assert.match(cleared.headers.get('set-cookie'), /Max-Age=0/)
+    assert.match(cleared.headers.get('set-cookie'), /; Secure/i)
+  })
   await check('重启保留设置与密钥但清除会话，新的登录链接独立生成', async () => {
     const oldUrl = service.managementUrl
     const previousPort = service.port
@@ -415,6 +490,60 @@ try {
       assert.equal(oldHandle._destroyed, true)
     } finally {
       globalThis.setTimeout = nativeTimeout
+    }
+  })
+  /**
+   * 以下两个用例各自**新建实例**：限速器是每实例内存态，公开测试里不该
+   * 靠放宽生产阈值来通过；新实例也避免把 429 状态带到主实例的后续登录。
+   */
+  await check('连续密码错误触发 429（Retry-After + 限速日志不含密码）', async () => {
+    const warnings = []
+    const limited = await startStandalone({
+      dataDir: path.join(scratch, 'rate-limit'), port: 0, refresh: false,
+      logger: { warn: message => warnings.push(String(message)) },
+    })
+    try {
+      const attempt = password => fetch(limited.url + '/api/management/session', {
+        method: 'POST', headers: { 'content-type': 'application/json', connection: 'close' },
+        body: JSON.stringify({ password }), signal: AbortSignal.timeout(10000),
+      })
+      for (let index = 0; index < 5; index++) {
+        assert.equal((await attempt('definitely-wrong-password')).status, 401, `第 ${index + 1} 次错误密码应是 401`)
+      }
+      const blocked = await attempt('definitely-wrong-password')
+      assert.equal(blocked.status, 429)
+      assert.match(await blocked.text(), /稍后重试/)
+      assert.ok(Number(blocked.headers.get('retry-after')) >= 1, '429 应带 Retry-After')
+      // 锁定期内**正确密码**也不能绕过（否则限速形同虚设）。
+      assert.equal((await attempt(PANEL_PASSWORD)).status, 429)
+      assert.ok(warnings.some(message => message.includes('登录限速')), '命中限速必须打 warn')
+      assert.equal(warnings.some(message => message.includes('definitely-wrong-password')), false, '日志绝不能包含密码')
+    } finally { await limited.close() }
+  })
+  await check('OFM_PASSWORD 含首尾空格时按原值登录并打出口径提示', async () => {
+    const previous = process.env.OFM_PASSWORD
+    const padded = '  padded-panel-password  '
+    const warnings = []
+    process.env.OFM_PASSWORD = padded
+    let paddedService
+    try {
+      paddedService = await startStandalone({
+        dataDir: path.join(scratch, 'padded-password'), port: 0, refresh: false,
+        logger: { warn: message => warnings.push(String(message)) },
+      })
+      const attempt = password => fetch(paddedService.url + '/api/management/session', {
+        method: 'POST', headers: { 'content-type': 'application/json', connection: 'close' },
+        body: JSON.stringify({ password }), signal: AbortSignal.timeout(10000),
+      })
+      assert.equal((await attempt(padded)).status, 200, '原值（含首尾空格）必须能登录')
+      // trim 后的值不是密码本身 —— 与「未设置」判定无关，必须 401。
+      assert.equal((await attempt(padded.trim())).status, 401)
+      assert.ok(warnings.some(message => message.includes('首尾空格')), '启动时提示已按原值比较')
+      assert.equal(warnings.some(message => message.includes('padded-panel-password')), false)
+    } finally {
+      await paddedService?.close()
+      if (previous === undefined) delete process.env.OFM_PASSWORD
+      else process.env.OFM_PASSWORD = previous
     }
   })
 } finally {

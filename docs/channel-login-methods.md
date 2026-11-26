@@ -1,6 +1,6 @@
 # 渠道登录方式矩阵
 
-> 一句话：15 个账号渠道里，**18 个的登录全自动完成**（浏览器/本地页/短信码/扫码，不需要手抄凭据），
+> 一句话：15 个账号渠道里，**15 个的登录全部自动完成**（浏览器/本地页/短信码/扫码，不需要手抄凭据），
 > **`loomy` 于 2026-11-20 改为纯短信验证码登录**（微信扫码链路失效已下线）；纯粘贴登录形态已全部移除。本文的「一键」指：点「添加账号」后只需在浏览器内完成授权，
 > 插件自己把 token 收回来，**不需要手动复制任何东西**。
 
@@ -15,7 +15,7 @@
 | 5 | `qodercn` | 同 `qoder`（同族不同端点） | ✅ | 浏览器点授权/选账号 | 否 | 同上 |
 | 6 | `trae` | 浏览器授权 → 本地回调 | ✅ | 浏览器登录 | 是 | `trae-oauth.ts:99,263` |
 | 7 | `cline` | WorkOS 设备码轮询 | ✅ | 浏览器点授权 | 否 | `cline-oauth.ts:178,230` |
-| 8 | `antigravity` | Google OAuth → 本地回调 | ✅ | Google 登录 | 是 | `antigravity-auth.ts:4`、`antigravity-oauth.ts:103` |（原名 `gemini`，2026-11-01 改名）|
+| 8 | `antigravity` | Google OAuth → 本地回调（原名 `gemini`，2026-11-01 改名） | ✅ | Google 登录 | 是 | `antigravity-auth.ts:4`、`antigravity-oauth.ts:103` |
 | 9 | `minimax` | OAuth 设备码 + PKCE | ✅ | 浏览器点授权 | 否 | `minimax-oauth.ts:72,113` |
 | 10 | `zcode` | 服务端中介的设备授权 + 轮询 | ✅ | 浏览器登录 | 否 | `zcode-login.ts:1-40` |
 | 11 | `commandcode` | 浏览器 OAuth → 本地回调（5959 起，最多 10 个） | ✅ | 浏览器登录 | 是 | `commandcode-auth.ts:12`、`commandcode-product.ts:139` |

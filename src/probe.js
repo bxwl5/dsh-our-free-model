@@ -199,10 +199,19 @@ export async function detectEgress({ signal, timeoutMs = 8000 } = {}) {
     signal?.addEventListener('abort', relayAbort, { once: true })
     try {
       const response = await egressFetch(source.url, { signal: controller.signal, redirect: 'error', headers: { accept: 'application/json' } })
-      if (!response.ok) continue
+      // 不要的响应体必须排水/取消（2026-11-26）：原先这两处 `continue` 里
+      // body 既没读也没 cancel，echo 回了一个非 JSON 的 200 / 非 2xx 之后
+      // 连接就悬在那里，直到 GC 或对端超时。
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => {})
+        continue
+      }
       const payload = await response.json()
       const ip = source.pick(payload)
-      if (typeof ip !== 'string' || ip === '') continue
+      if (typeof ip !== 'string' || ip === '') {
+        await response.body?.cancel().catch(() => {})
+        continue
+      }
       const country = source.extra?.(payload)
       return { ip, ...country === undefined ? {} : { country: String(country) } }
     } catch {

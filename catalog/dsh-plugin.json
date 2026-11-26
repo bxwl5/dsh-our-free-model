@@ -15,6 +15,10 @@
     "repository": "https://github.com/Ebony-Vinyl/dsh-our-free-model",
     "revision": "cece55aea3ea878d6187cf7f625089ab77a464cf"
   },
+  "x-distribution": {
+    "repository": "https://github.com/bxwl5/dsh-our-free-model",
+    "note": "本仓库是 source.repository 的派生**分发源**：`id` 与 `source.repository` 保留上游身份（插件 id 一变更就会打断既有安装的升级），而实际发布物（npm 包、GHCR 镜像、macOS dmg）全部由本仓库构建。按 source.repository 去找 2.5.7-priv.2 是找不到的 —— 上游没有这个版本。"
+  },
   "x-ecosystem-packaging": {
     "adapterIsolation": "adapter/kernel.js is the only module that may import @deepseek-ai/*; enforced by scripts/catalog-test.mjs",
     "managedInstallation": "set distribution=managed (bundle config or settings.json) to stand down the hot reload (the former feed self-updater/announcements were removed in 95657a7)",

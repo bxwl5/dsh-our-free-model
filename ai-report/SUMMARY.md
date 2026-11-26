@@ -1,5 +1,7 @@
 # 自动化优化执行总结（SUMMARY）
 
+> 📌 本目录是 **2026-11 的审查快照**，不是当前缺陷清单。怎么看条目是否已修、已确认关闭的清单，见 [`ai-report/README.md`](README.md)。
+
 日期：2026-11-19（任务 0→6 依序执行）
 执行环境：本地仓库 `/media/kuye/128G/DSH/github工作区/临时项目/our-free-model`，Node 20.15.1 + DSH Tauri runtime（测试运行器）。
 

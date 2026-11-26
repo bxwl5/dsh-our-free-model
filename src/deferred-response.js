@@ -7,12 +7,24 @@ export function deferStreamResponse(res, heartbeatMs) {
   let timer
   const clear = () => { clearTimeout(timer); timer = undefined }
   const commit = () => {
-    if (!pending || res.destroyed) return
+    if (!pending) return
+    /**
+     * 已断开的响应不能写，但状态必须一起释放（2026-11-26 修复）。
+     *
+     * 原先这里是 `if (!pending || res.destroyed) return`：destroyed 时 `pending`
+     * 与 `buffered writes` / `head` 永不释放，`dispose()` 又只清定时器 ——
+     * 一整个回合的缓冲（可能到 64KB 未提交的 writes）就这么挂在闭包里直到
+     * 条目被回收。现在 destroyed 分支同样走清零路径，只是不碰 socket。
+     */
+    const headArgs = head
+    const buffered = writes
     pending = false
     clear()
-    if (head) res.writeHead(...head)
-    for (const row of writes) res.write(...row)
     writes = []
+    head = undefined
+    if (res.destroyed === true) return
+    if (headArgs) res.writeHead(...headArgs)
+    for (const row of buffered) res.write(...row)
   }
   const response = new Proxy(res, {
     get(target, key) {

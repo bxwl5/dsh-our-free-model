@@ -19,9 +19,17 @@ Thumbs.db
 scripts/eac-vault-mint.mjs
 
 # Gateway deployment secrets (self-hosted form) never get committed.
-worker/.env
+.env
+.env.*
+!.env.example
 c3099.txt
 stats.json
+
+# 独立版 / Docker 的本地数据目录（2026-11-26）：`docker-compose.yml` 默认把它落在
+# 仓库旁边的 `./ofm-data`，里面是**明文**渠道凭据、API Key、LAN Key、账号池与
+# Token 账本。一条 `docker compose up` 就能生成，必须挡住 `git add -A`。
+ofm-data/
+.ofm-data/
 
 # 本地代码索引及工具状态，不进入仓库。
 .aoci/
@@ -43,3 +51,7 @@ packages/desktop/src-tauri/.node-license-cache/
 packages/desktop/node_modules/
 
 _audit/
+
+# 构建脚本 --check 模式的临时产物（进程异常退出时才会残留）
+vendor/channel-pack/.pack.check-*.js
+vendor/channel-pack/.testkit.check-*.js

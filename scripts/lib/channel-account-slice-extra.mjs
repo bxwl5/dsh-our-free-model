@@ -184,8 +184,11 @@ function expectedClaimResultRows(accounts) {
 /** computeClaimSummary() 对 N 条 failed outcome 的逐字汇总（:424-463）。 */
 function expectedFailedSummary(n) {
   return {
+    // 2026-11-26：`extended`（积分续期）加入汇总后，这里必须跟着补 —— 该守卫是
+    // deepStrictEqual 逐字比对，少一个字段就红（`claimed`/`totalCredit` 仍不计，
+    // 续期不产生新额度）。
     claimed: 0, totalCredit: 0, alreadyClaimed: 0, inactive: 0, failed: n,
-    coversToday: 0, totalByUnit: { token: 0, credit: 0 },
+    extended: 0, coversToday: 0, totalByUnit: { token: 0, credit: 0 },
   }
 }
 

@@ -36,3 +36,12 @@ worker
 
 *.log
 .DS_Store
+
+# 桌面壳整目录（2026-11-26）：镜像只要独立服务。`packages/desktop/src-tauri/resources/`
+# 与 `target/` 是**本机构建产物**（当前 Node 可执行文件 + 许可证 + 后端核心 + 前端），
+# 一旦构建过桌面端，上下文会从 ~5 MB 膨胀到 GB 级并全部传给 builder。
+packages/desktop
+
+# compose 默认的数据目录（明文凭据）；镜像不打包用户数据。
+ofm-data
+.ofm-data

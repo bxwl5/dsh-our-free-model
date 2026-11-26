@@ -12,6 +12,19 @@ const PREFIX = '/api/management'
 const BOOTSTRAP_MS = 10 * 60_000
 const SESSION_MS = 8 * 60 * 60_000
 const MAX_BODY_BYTES = 16 * 1024
+/**
+ * 登录限速（审计 P1）：`/session` 此前**零限速** —— 唯一 429 是
+ * `sessions.size >= 64`，那只限制「已有会话数」，猜密码可以无限打。
+ *
+ * 内存级滑动窗口、双维度（来源 IP + 全局），不引依赖：
+ * - 每来源 5 次失败 / 分钟（局域网单机场景，够用且不误伤）；
+ * - 全局 30 次失败 / 分钟（防止换 IP 横向打）；
+ * - **只有密码错误才计数**，成功登录清零该来源；
+ * - 阈值与时钟都可通过 `createLoginThrottle` 注入，测试无需等真实时间。
+ */
+const LOGIN_WINDOW_MS = 60_000
+const LOGIN_SOURCE_LIMIT = 5
+const LOGIN_GLOBAL_LIMIT = 30
 const ASSETS = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
 ])
@@ -33,21 +46,52 @@ function matches(actual, expected) {
   return left.length === right.length && crypto.timingSafeEqual(left, right)
 }
 
-async function readBody(req, limit = MAX_BODY_BYTES) {
-  if (!String(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
-    throw fail(415, '请求必须使用 application/json')
-  }
-  let bytes = 0
-  const chunks = []
-  for await (const chunk of req) {
-    bytes += chunk.length
-    if (bytes > limit) throw fail(413, '请求内容过大')
-    chunks.push(chunk)
-  }
-  let value
-  try { value = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { throw fail(400, '请求不是有效 JSON') }
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw fail(400, '请求必须是 JSON 对象')
-  return value
+/**
+ * 读请求体（审计 P3）——超限后必须**排干**再回 413。
+ *
+ * 旧实现用 `for await` + 超限直接 `throw`：异步迭代器提前 `return` 会销毁
+ * `IncomingMessage`（进而销毁 socket），413 可能写不回去，客户端只看到连接
+ * 重置而不是状态码。现在改成事件式读取：超限后不再缓存，但让 `data` 事件
+ *（`req.resume()` 等价语义）把剩余数据流完，再在 `end` 时拒绝，保证响应
+ * 一定送得出去。调用方（handleRequest）对 413 还会显式带 `Connection: close`。
+ */
+function readBody(req, limit = MAX_BODY_BYTES) {
+  const contentType = String(req.headers['content-type'] ?? '').toLowerCase()
+  if (!contentType.startsWith('application/json')) return Promise.reject(fail(415, '请求必须使用 application/json'))
+  return new Promise((resolve, reject) => {
+    let bytes = 0
+    let overflowed = false
+    let settled = false
+    const chunks = []
+    const finish = fn => value => { if (!settled) { settled = true; fn(value) } }
+    const done = finish(resolve)
+    const stop = finish(reject)
+    req.on('data', chunk => {
+      bytes += chunk.length
+      if (bytes > limit) {
+        // 丢弃已缓存的片段，继续消费（不再 push）—— drain 完再回 413。
+        if (!overflowed) { overflowed = true; chunks.length = 0 }
+        req.resume()
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.once('end', () => {
+      if (overflowed) { stop(fail(413, '请求内容过大')); return }
+      let value
+      try { value = JSON.parse(Buffer.concat(chunks).toString('utf8')) }
+      catch { stop(fail(400, '请求不是有效 JSON')); return }
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        stop(fail(400, '请求必须是 JSON 对象'))
+        return
+      }
+      done(value)
+    })
+    req.once('error', error => stop(error))
+    // 客户端中途断开（未完整传完）：别让 handler 永远挂着；
+    // 响应写不出去由上层 `res.destroyed` 判定兜住。
+    req.once('close', () => { if (!req.complete) stop(fail(400, '请求已中断')) })
+  })
 }
 
 function validateSettings(patch) {
@@ -98,8 +142,94 @@ export function managementSettings(value) {
   }
 }
 
+/**
+ * 面板密码的唯一口径（导出给 `service.mjs` 打启动日志，避免两处各写一份 trim）。
+ *
+ * ⚠️ 审计 P3：旧实现 `String(OFM_PASSWORD).trim()` 当密码 —— 带首尾空格的
+ * 口令**永远登不上**，纯空格又会被当成「未设置」而直接免认证。
+ * 现在：`trim() === ''` 只用于判定「是否设置」，比较一律用**原值**。
+ */
+export function panelPasswordState(value = process.env.OFM_PASSWORD) {
+  const raw = String(value ?? '')
+  return { password: raw, required: raw.trim() !== '', padded: raw !== raw.trim() }
+}
+
+/**
+ * 归一化限速用的来源地址：`::ffff:127.0.0.1` → `127.0.0.1`，
+ * 丢掉 IPv6 的 zone id，其余（含 `::1`）原样保留。
+ */
+export function normalizeSourceAddress(value) {
+  const raw = String(value ?? '').trim().toLowerCase()
+  if (raw === '') return 'unknown'
+  const address = raw.includes('%') ? raw.slice(0, raw.indexOf('%')) : raw
+  return address.startsWith('::ffff:') && address.includes('.') ? address.slice(7) : address
+}
+
+/**
+ * 内存级登录失败滑动窗口（无依赖）。
+ *
+ * @param {{ now?: () => number, windowMs?: number, sourceLimit?: number, globalLimit?: number }} [options]
+ */
+export function createLoginThrottle({
+  now = () => Date.now(), windowMs = LOGIN_WINDOW_MS,
+  sourceLimit = LOGIN_SOURCE_LIMIT, globalLimit = LOGIN_GLOBAL_LIMIT,
+} = {}) {
+  /** 只记录**失败**时间戳，成功登录由 `reset` 清掉本来源。 */
+  const failures = new Map()
+  const globalFailures = []
+  const prune = (list, at) => {
+    while (list.length > 0 && at - list[0] >= windowMs) list.shift()
+    return list
+  }
+  const active = source => prune(failures.get(source) ?? [], now())
+  return {
+    /**
+     * @returns {{allowed: boolean, scope?: 'source'|'global', retryAfterMs?: number}}
+     */
+    check(source) {
+      const at = now()
+      prune(globalFailures, at)
+      const own = active(source)
+      if (own.length >= sourceLimit) {
+        return { allowed: false, scope: 'source', retryAfterMs: Math.max(0, own[0] + windowMs - at) }
+      }
+      if (globalFailures.length >= globalLimit) {
+        return { allowed: false, scope: 'global', retryAfterMs: Math.max(0, globalFailures[0] + windowMs - at) }
+      }
+      return { allowed: true }
+    },
+    fail(source) {
+      const at = now()
+      let own = failures.get(source)
+      if (own === undefined) { own = []; failures.set(source, own) }
+      prune(own, at).push(at)
+      prune(globalFailures, at).push(at)
+      // 来源数有界：窗口内已无失败的条目顺手回收，避免长期运行的 Map 膨胀。
+      if (failures.size > 64) {
+        for (const [key, list] of failures) if (prune(list, at).length === 0) failures.delete(key)
+      }
+    },
+    reset(source) { failures.delete(source) },
+    /** 只读快照，供测试/诊断确认窗口状态。 */
+    snapshot(source) {
+      const at = now()
+      return { source: active(source).length, global: prune(globalFailures, at).length, windowMs }
+    },
+  }
+}
+
+/** 判断请求是否经 HTTPS（反代 `x-forwarded-proto` 或直连 TLS）。 */
+function secureRequest(req) {
+  if (req.socket?.encrypted === true) return true
+  const forwarded = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim().toLowerCase()
+  return forwarded === 'https'
+}
+
 /** 管理读写要求鉴权；登录恢复仅允许同源页面触发固定本机动作。 */
-export function createManagement({ stores, runtime, channels, info, onSettingsChanged }) {
+export function createManagement({
+  stores, runtime, channels, info, onSettingsChanged,
+  logger = console, loginThrottle = createLoginThrottle(),
+}) {
   // loginTerminal / openLoginTerminal 已随 /login/terminal 路由删除（决策三）；
   // login-terminal.mjs 文件与测试保留为实现库，不进运行路径。
   let bootstrap = { token: crypto.randomBytes(32).toString('base64url'), until: Date.now() + BOOTSTRAP_MS }
@@ -130,7 +260,13 @@ export function createManagement({ stores, runtime, channels, info, onSettingsCh
     const parts = String(req.headers.cookie ?? '').split(';')
     return parts.map(value => value.trim()).find(value => value.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1)
   }
-  const clearCookie = () => `${cookieName}=; Path=${PREFIX}; HttpOnly; SameSite=Strict; Max-Age=0`
+  /**
+   * Cookie 属性与下发处**同一份**（审计 P2）：HTTPS 反代进来的请求加
+   * `Secure`；局域网明文 HTTP 不加 —— 否则浏览器根本不会回传 Cookie，
+   * 用户在 `--lan-panel` 下反而登不上。
+   */
+  const cookieAttributes = req => secureRequest(req) ? '; Secure' : ''
+  const clearCookie = req => `${cookieName}=; Path=${PREFIX}; HttpOnly; SameSite=Strict; Max-Age=0${cookieAttributes(req)}`
   const pruneSessions = () => {
     for (const [id, until] of sessions) if (until <= Date.now()) sessions.delete(id)
   }
@@ -156,9 +292,13 @@ export function createManagement({ stores, runtime, channels, info, onSettingsCh
    * ⚠️ 只有**空值 / 纯空白**才算未设置 —— 别的都当成真实密码（哪怕很短），
    *   不做长度校验：容器里 `-e OFM_PASSWORD=x` 也应当按用户本意生效。
    */
-  const panelPassword = String(process.env.OFM_PASSWORD ?? '').trim()
+  const { password: panelPassword, required: panelPasswordRequired, padded: panelPasswordPadded } = panelPasswordState()
+  if (panelPasswordRequired && panelPasswordPadded) {
+    // 不含密码本身，只说明比较口径。
+    logger.warn?.('our-free-model standalone: OFM_PASSWORD 含首尾空格，已按原值比较（含首尾空格）')
+  }
   /** 登录页是否需要密码框。同时用于 `/auth` 这个**免认证**接口。 */
-  const passwordRequired = () => panelPassword !== ''
+  const passwordRequired = () => panelPasswordRequired
   const authenticated = req => {
     // 未设密码 = 不认证任何人，也放行所有人（用户明确要求「直接不需要认证」）。
     if (!passwordRequired()) return true
@@ -228,6 +368,19 @@ export function createManagement({ stores, runtime, channels, info, onSettingsCh
       return
     }
     if (method === 'POST' && pathname === `${PREFIX}/session`) {
+      const source = normalizeSourceAddress(req.socket?.remoteAddress)
+      const limit = loginThrottle.check(source)
+      if (!limit.allowed) {
+        /**
+         * 命中限速：先排水再回 429，避免客户端还在上传时连接被重置。
+         * ⚠️ 日志只写来源与限速维度，**绝不写请求体**（里面是密码）。
+         */
+        req.resume()
+        logger.warn?.(`管理面登录限速：来源 ${source} ${limit.scope === 'global' ? '全局' : '失败次数'}超限，拒绝本次尝试`)
+        throw Object.assign(fail(429, '登录尝试过于频繁，请稍后重试'), {
+          retryAfter: Math.max(1, Math.ceil(limit.retryAfterMs / 1000)),
+        })
+      }
       const body = await readBody(req)
       const validBootstrap = bootstrap !== null && bootstrap.until > Date.now() && matches(body.bootstrapToken, bootstrap.token)
       /**
@@ -241,15 +394,20 @@ export function createManagement({ stores, runtime, channels, info, onSettingsCh
         || matches(body.password, panelPassword)
         || matches(body.key, panelPassword)
       if (!validBootstrap && !passwordOk) {
+        // 失败计数**只在真正尝试了密码**时累加（bootstrap 链接失效不计入，
+        // 它是 256bit 随机串，猜不出来）。成功登录会在下面清零该来源。
+        if (passwordRequired() && (body.password !== undefined || body.key !== undefined)) loginThrottle.fail(source)
         throw fail(401, passwordRequired() ? '密码不正确' : '登录链接已失效')
       }
       pruneSessions()
       if (sessions.size >= 64) throw fail(429, '管理会话过多，请稍后重试')
       if (validBootstrap) bootstrap = null
+      loginThrottle.reset(source)
       const id = crypto.randomBytes(32).toString('base64url')
       sessions.set(id, Date.now() + SESSION_MS)
-      json(res, 200, { ok: true }, {
-        'set-cookie': `${cookieName}=${id}; Path=${PREFIX}; HttpOnly; SameSite=Strict; Max-Age=${SESSION_MS / 1000}`,
+      const secure = secureRequest(req)
+      json(res, 200, { ok: true, transportInsecure: !secure }, {
+        'set-cookie': `${cookieName}=${id}; Path=${PREFIX}; HttpOnly; SameSite=Strict; Max-Age=${SESSION_MS / 1000}${cookieAttributes(req)}`,
       })
       return
     }
@@ -257,7 +415,7 @@ export function createManagement({ stores, runtime, channels, info, onSettingsCh
     if (method === 'POST' && pathname === `${PREFIX}/logout`) {
       await readBody(req)
       sessions.delete(cookie(req))
-      json(res, 200, { ok: true }, { 'set-cookie': clearCookie() })
+      json(res, 200, { ok: true }, { 'set-cookie': clearCookie(req) })
     } else if (method === 'GET' && pathname === `${PREFIX}/summary`) {
       json(res, 200, summary())
     } else if (method === 'GET' && pathname === `${PREFIX}/stats`) {
@@ -447,9 +605,19 @@ export function createManagement({ stores, runtime, channels, info, onSettingsCh
         }
       } else {
         try { await route(req, res, pathname) } catch (error) {
-          if (!res.destroyed && !res.headersSent) json(res, error.statusCode ?? 500, {
-            error: error.statusCode ? error.message : '管理操作失败，请查看服务日志',
-          })
+          if (!res.destroyed && !res.headersSent) {
+            /**
+             * 413（请求体超限）与 429（登录限速）显式 `Connection: close`：
+             * 这两种场景客户端通常还有未发完/未读的数据，主动断连比让
+             * keep-alive 半途复用更可预期。429 另带 `Retry-After`。
+             */
+            const headers = {}
+            if (error.retryAfter !== undefined) headers['retry-after'] = String(error.retryAfter)
+            if (error.statusCode === 413 || error.statusCode === 429) headers.connection = 'close'
+            json(res, error.statusCode ?? 500, {
+              error: error.statusCode ? error.message : '管理操作失败，请查看服务日志',
+            }, headers)
+          }
         }
       }
       return true

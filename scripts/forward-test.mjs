@@ -1268,6 +1268,171 @@ await checkAsync('synthesized assistant rows carry a complete model source (issu
   assert.deepEqual(call, { type: 'tool-call', id: 'call_1', name: 'read', arguments: '{"f":1}' })
 })
 
+// ── the LAN relay's dual-stack bind: one state machine, one listener ─────────
+/**
+ * Stand-in for the relay's `http.Server`, so a test can drive the bind failures
+ * the kernel only produces on machines without a working IPv6 stack
+ * (`EADDRNOTAVAIL` / `EAFNOSUPPORT` / `EPFNOSUPPORT`) — this host's stack is fine,
+ * so the fallback would otherwise stay untested.
+ *
+ * It deliberately copies Node's EventEmitter contract for `'error'`: with no
+ * listener attached, `emit('error')` **throws**. That throw is exactly the
+ * uncaughtException a listener-less `listen()` would cause, so a regression that
+ * leaves the fallback bind unguarded fails here instead of passing quietly.
+ */
+class FakeBindServer {
+  /** @param {(attempt:number, host:string) => {ok?:true}|{code:string}|{silent?:true}} script */
+  constructor(script) {
+    this.script = script
+    this.attempts = []
+    this.errorListeners = []
+    this.listening = false
+    this.nextPort = 43210
+  }
+  on(event, listener) { if (event === 'error') this.errorListeners.push(listener); return this }
+  off(event, listener) { if (event === 'error') this.errorListeners = this.errorListeners.filter(item => item !== listener); return this }
+  once(event, listener) {
+    const wrapper = (...args) => { this.off(event, wrapper); listener(...args) }
+    return this.on(event, wrapper)
+  }
+  emit(event, error) {
+    if (event !== 'error') return
+    const listeners = [...this.errorListeners]
+    if (listeners.length === 0) throw error
+    for (const listener of listeners) listener(error)
+  }
+  address() { return { address: this.attempts.at(-1)?.host ?? '', family: 'IPv4', port: this.nextPort } }
+  listen(port, host, callback) {
+    this.attempts.push({ port, host })
+    const step = this.script(this.attempts.length, host, port)
+    process.nextTick(() => {
+      if (step.silent === true) return
+      if (step.ok === true) { this.listening = true; this.nextPort += 1; callback(); return }
+      this.listening = false
+      this.emit('error', Object.assign(new Error(`${host}: ${step.code}`), { code: step.code }))
+    })
+  }
+  close(callback) { this.listening = false; process.nextTick(() => callback?.()); return this }
+  closeAllConnections() {}
+}
+
+/** Run `startLanRelay` against `fake` by swapping the one `http.createServer` it calls. */
+async function startRelayOnFake(fake, config, log) {
+  const real = http.createServer
+  http.createServer = () => fake
+  try {
+    return await startLanRelay({ config: () => ({ enabled: true, host: '::', port: 0, lanKey: 'k-test', localKey: 'k-test', targetPort: 1, ...config }), log })
+  } finally {
+    http.createServer = real
+  }
+}
+
+await checkAsync('a dual-stack fallback that succeeds returns the host it actually bound', async () => {
+  // 2026-11-26 回归点：旧实现的 promise 在第一个 error 监听里已经 rejected，
+  // 回落 bind 成功后 startLanRelay 仍然抛出 ⇒ handle 拿不到、端口却已经 listening。
+  const logged = []
+  const fake = new FakeBindServer(attempt => attempt === 1 ? { code: 'EADDRNOTAVAIL' } : { ok: true })
+  const relay = await startRelayOnFake(fake, {}, line => logged.push(line))
+  assert.equal(relay.server, fake, 'handle 引用的是同一个 server')
+  assert.equal(relay.host, '0.0.0.0', '返回的 host 必须是实际绑定的 host，不是请求的 ::')
+  assert.equal(relay.port, 43211, '端口来自握手成功的那个 socket')
+  assert.deepEqual(fake.attempts.map(item => item.host), ['::', '0.0.0.0'], '先试双栈、只回落一次')
+  assert.ok(logged.some(line => line.includes('falling back to 0.0.0.0')), '回落必须留日志')
+  assert.equal(fake.errorListeners.length, 1, '成功后只剩常驻日志监听')
+  fake.emit('error', Object.assign(new Error('late'), { code: 'ECONNRESET' }))
+  assert.ok(logged.some(line => line.startsWith('lan relay error:')), '常驻监听保留「lan relay error:」那句')
+  await relay.close()
+  assert.equal(fake.listening, false, 'close() 必须关掉仍在 listening 的 server')
+})
+
+await checkAsync('a failed fallback rejects through the same path instead of leaving a bare listen()', async () => {
+  // 旧实现的两个 `once('error')` 都已消费，回落那次 listen 没有任何 error
+  // 监听器：再失败就是 uncaughtException（本替身的 emit 会真的抛出来）。
+  const fake = new FakeBindServer(() => ({ code: 'EAFNOSUPPORT' }))
+  const outcome = await startRelayOnFake(fake).then(handle => ({ handle }), error => ({ error }))
+  assert.equal(outcome.handle, undefined, '回落也失败时不能假装成功')
+  assert.equal(outcome.error?.code, 'EAFNOSUPPORT', '上抛的是回落那次 bind 的错误')
+  assert.equal(fake.attempts.length, 2, '回落只重试一次，不无限循环')
+  assert.equal(fake.listening, false)
+  assert.equal(fake.errorListeners.length, 1, '失败后仍有一个监听器兜住后续错误')
+  fake.emit('error', Object.assign(new Error('late'), { code: 'EADDRNOTAVAIL' }))
+})
+
+await checkAsync('a bind error outside the fallback set rejects on the first attempt', async () => {
+  const fake = new FakeBindServer(() => ({ code: 'EADDRINUSE' }))
+  const outcome = await startRelayOnFake(fake, { port: 1234 }).then(handle => ({ handle }), error => ({ error }))
+  assert.equal(outcome.handle, undefined)
+  assert.equal(outcome.error?.code, 'EADDRINUSE')
+  assert.equal(fake.attempts.length, 1, 'EADDRINUSE 不是回落条件，不要重试')
+  assert.equal(fake.attempts[0].host, '::')
+  assert.equal(fake.attempts[0].port, 1234, '配置的端口要传下去')
+})
+
+// ── the failure body of a non-2xx answer is read under the same budget ───────
+/**
+ * 2026-11-26 回归点：`postStreamed` 的错误分支原先是裸 `await response.text()`，
+ * `timeoutMs` / `signal` 都管不到它 —— 上游「先回头部、body 卡住」时调用方永不
+ * 返回（`/refresh`、`/reprobe`、15 分钟轮询一起挂住）。这里用全局 fetch 替身造
+ * 一个「头部到了、body 不再给字节」的 5xx，直接把这一支钉住。
+ */
+const withFetchStub = async (stub, fn) => {
+  const realFetch = globalThis.fetch
+  // watchdog 的 timeout 是 unref 的：测试里没有真实 socket 撑着事件循环，
+  // 需要一个 ref 的定时器把事件循环 keep alive 到断言结束。
+  const keepAlive = setTimeout(() => {}, 5000)
+  globalThis.fetch = stub
+  try { return await fn() } finally {
+    globalThis.fetch = realFetch
+    clearTimeout(keepAlive)
+  }
+}
+
+await checkAsync('a stalled non-2xx body is classified TIMEOUT instead of hanging the caller', async () => {
+  const { postStreamed, CODE } = await import('../src/http.js')
+  const encoder = new TextEncoder()
+  const stalled = () => new Response(
+    new ReadableStream({ start(controller) { controller.enqueue(encoder.encode('{"error":{"message":"serv')) } }),
+    { status: 503, headers: { 'content-type': 'application/json' } },
+  )
+  const startedAt = Date.now()
+  await withFetchStub(async () => stalled(), async () => {
+    await assert.rejects(
+      postStreamed({ path: '/v1/chat/completions', body: {}, session: 's-test', timeoutMs: 120 }),
+      error => {
+        assert.equal(error.code, CODE.timeout, `卡住的错误体必须分类为 TIMEOUT，实际 ${error?.code}`)
+        assert.equal(error.status, 503, '超时结论仍要带上游状态码')
+        return true
+      },
+    )
+  })
+  assert.ok(Date.now() - startedAt < 4000, 'timeoutMs 必须真的生效（旧实现会挂到天荒地老）')
+})
+
+await checkAsync('a readable non-2xx body still classifies by its status and envelope', async () => {
+  const { postStreamed, CODE } = await import('../src/http.js')
+  await withFetchStub(async () => new Response(
+    JSON.stringify({ error: { type: 'FreeUsageLimitError', message: 'usage limit reached' } }),
+    { status: 429, headers: { 'content-type': 'application/json' } },
+  ), async () => {
+    await assert.rejects(
+      postStreamed({ path: '/v1/chat/completions', body: {}, session: 's-test', timeoutMs: 500 }),
+      error => (assert.equal(error.code, CODE.quota), true),
+    )
+  })
+})
+
+await checkAsync('an aborted caller reading a non-2xx body reports ABORTED, not TIMEOUT', async () => {
+  const { postStreamed, CODE } = await import('../src/http.js')
+  const controller = new AbortController()
+  controller.abort()
+  await withFetchStub(async () => new Response('nope', { status: 500 }), async () => {
+    await assert.rejects(
+      postStreamed({ path: '/v1/chat/completions', body: {}, session: 's-test', timeoutMs: 500, signal: controller.signal }),
+      error => (assert.equal(error.code, CODE.aborted), true),
+    )
+  })
+})
+
 for (const server of openServers) await server.close()
 for (const server of occupants) await releaseWhenIdle(server)
 if (failures > 0) console.error(`forward-test: ${failures} failure(s)`)

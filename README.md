@@ -10,7 +10,7 @@
   <img alt="许可证" src="https://img.shields.io/badge/license-MIT-263146?style=flat-square">
   <img alt="零依赖" src="https://img.shields.io/badge/dependencies-zero-4b6fff?style=flat-square">
   <img alt="无构建步骤" src="https://img.shields.io/badge/build%20step-none-7da1de?style=flat-square">
-  <img alt="适配内核" src="https://img.shields.io/badge/dsh-0.1.5--0.1.7--rc.2-2f6f4f?style=flat-square">
+  <img alt="适配内核" src="https://img.shields.io/badge/dsh-0.1.2--0.2.0-2f6f4f?style=flat-square">
 
 </div>
 

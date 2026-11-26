@@ -3023,9 +3023,25 @@ function registerChannelPackEndpoints(
            *「+300」绿色徽章，与事实不符；前端为 `extended` 单列一组
            *「积分已延期」。幂等：当天续过之后再调返回 `already-claimed`
            *（判据取账单，见 `claimRaccoonDailyCheckin`）。
+           *
+           * ## ⚠️ 必须显式 `precheckStatus: false`（2026-11-26 修复）
+           *
+           * 小浣熊**没有**独立的「今日签到状态」端点，`claimRaccoonDailyCheckin`
+           * 自己查账单判幂等（是 7 天窗口还是当日清零态）。不传这个字段时
+           * `collectClaimResults` 会走**默认** `fetchStatus` —— 那是 Buddy 系的
+           * `fetchCheckinStatus(credential, product, fetcher)`，它会把**小浣熊
+           * 凭据**发给 **buddy** 的签到状态端点。此前只因 `product` 是 `undefined`
+           * 先在内部抛 TypeError 被吞成 `{ok:false}` 才「碰巧」没把凭据发出去，
+           * 纯属巧合，不是设计。
+           *
+           * 现在两处都补上：这里显式传 `false`；`collectClaimResults` 里对
+           * 「没传 false + 走默认 fetchStatus + product 为 undefined」直接抛错，
+           * 不再静默降级（参照 autoclaw / officeace 分支的同款传法）。
            */
           const value = await collectClaimResults<RaccoonCredential, undefined>(accounts, undefined, {
             resolve: (ref) => ctx.credentials.resolve(ref),
+            // 领取流程自带幂等判断（账单里的 expire_at），外部预检会打错端点。
+            precheckStatus: false,
             claim: (credential) => raccoon.claimDailyCheckin(credential),
             warn: (msg) => ctx.logger?.warn?.(msg),
           })

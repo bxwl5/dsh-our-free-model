@@ -133,14 +133,23 @@ const base = { port: 0, refresh: false, logger: { warn() {} }, startRelay }
 // ── ②③④⑤⑥ 开启后 ────────────────────────────────────────
 {
   const dataDir = path.join(scratch, 'panel-on')
+  const warnings = []
   const service = await startStandalone({
     ...base, dataDir, lanEnabled: true, lanPanel: true, lanPort: 0,
+    logger: { warn: message => warnings.push(String(message)) },
   })
   try {
     await service.ready
     const saved = JSON.parse(fs.readFileSync(service.keyFile, 'utf8'))
     const url = `http://127.0.0.1:${service.lan.port}`
     assert.equal(service.lan.panel, true, 'lanPanel 开启后 lan.panel 应为 true')
+    await check('②b 未设密码 + 面板中继：启动日志必须有明确风险提示', async () => {
+      // 用户明确要求「局域网内部署不设密码不影响」，因此**不拒绝启动**，
+      // 只要求在启动日志里说清「同网段任何设备都能改管理面」。
+      assert.ok(warnings.some(message => /OFM_PASSWORD/.test(message) && /同网段/.test(message)),
+        `启动日志应含面板风险提示，实际：${JSON.stringify(warnings)}`)
+      assert.equal(warnings.some(message => /padded|fixture-panel-password/.test(message)), false)
+    })
 
     await check('② 开启后：静态面板可访问', async () => {
       const home = await request(url, '/')

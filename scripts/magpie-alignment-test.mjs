@@ -3,7 +3,7 @@
  *
  * | 来源 | 移植点 |
  * |---|---|
- * | qoder 0.2.72 | `asAgentSDK`：Claude Code 身份行 → Agent SDK 行（修 400） |
+ * | qoder 0.2.72 | ~~`asAgentSDK`：Claude Code 身份行 → Agent SDK 行（修 400）~~ **2026-11-26 已撤销**：全渠道指纹清洗在适配器之前就改写了同一句，适配器的正则锚点永远匹配不到，等于空转。见 `vendor/channel-pack/src/qoder-adapter.ts` 的 systemText 注释 |
  * | zcode 0.1.69 | 日内签到去重（`resetZcodeDaySettled` / `SETTLED_ZCODE_OUTCOMES`） |
  * | trae 0.2.53 | `parseCustomBase`：企业自定义模型直连判据 |
  */
@@ -11,19 +11,13 @@ import assert from 'node:assert/strict'
 import { exitIfDirectRun } from './lib/direct-run.mjs'
 
 export async function verifyMagpieAlignment() {
-  // ── ① qoder asAgentSDK ──
+  // ── ① qoder asAgentSDK ──（2026-11-26 撤销：清洗在适配器之前，改写在真实链路上
+  //    恒不命中，留着只会让人以为修过。这里改成钉住「它确实已经不在了」。）
   {
-    const { asAgentSDK } = await import('../vendor/channel-pack/src/qoder.ts')
-    // ⚠️ 真实形态是「You are Claude Code, ...」—— 不是「You are a helpful assistant, ...」
-    const STD = "You are Claude Code, Anthropic's official CLI for Claude."
-    const SDK = "You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK."
-    const out = asAgentSDK(STD)
-    assert.ok(!/You\s+are\s+Claude\s+Code/.test(out), '标准身份行必须被换掉')
-    assert.match(out, /built on Anthropic's Claude Agent SDK\./, '换成 Agent SDK 写法')
-    assert.ok(!/running within the Claude Agent SDK/.test(asAgentSDK(SDK)), 'SDK 形态也要归一')
-    // 多空格/换行同样命中；无关文本原样返回
-    assert.ok(!/You\s+are\s+Claude\s+Code/.test(asAgentSDK("You  are   Claude Code,\n Anthropic's official CLI for Claude.")))
-    assert.equal(asAgentSDK('plain text'), 'plain text', '不含身份行必须原样')
+    const mod = await import('../vendor/channel-pack/src/qoder.ts')
+    assert.equal(mod.asAgentSDK, undefined, 'asAgentSDK 应已撤销（否则空转逻辑回到仓库里）')
+    const adapter = await import('../vendor/channel-pack/src/qoder-adapter.ts')
+    assert.equal(typeof adapter.registerQoderLlm, 'function', '适配器仍应导出')
   }
 
   // ── ② zcode 日内去重 ──

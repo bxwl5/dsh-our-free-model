@@ -10,7 +10,7 @@
   <img alt="license" src="https://img.shields.io/badge/license-MIT-263146?style=flat-square">
   <img alt="zero dependencies" src="https://img.shields.io/badge/dependencies-zero-4b6fff?style=flat-square">
   <img alt="build step" src="https://img.shields.io/badge/build%20step-none-7da1de?style=flat-square">
-  <img alt="dsh kernels" src="https://img.shields.io/badge/dsh-0.1.5--0.1.7--rc.2-2f6f4f?style=flat-square">
+  <img alt="dsh kernels" src="https://img.shields.io/badge/dsh-0.1.2--0.2.0-2f6f4f?style=flat-square">
 
 </div>
 
@@ -78,7 +78,7 @@ models is on the **API access** page inside the dashboard; you don't configure i
 | Channel | Sign-in | Chat |
 |---|---|---|
 | CodeArts / CodeBuddy / WorkBuddy | browser | ✅ |
-| Qoder / Qoder CN / TRAE / Cline / Gemini | browser | ✅ |
+| Qoder / Qoder CN / TRAE / Cline / Antigravity (formerly Gemini) | browser | ✅ |
 | Loomy / Raccoon / MiniMax Code / ZCode | browser | ✅ |
 | Command Code | browser (auto callback) | ✅ |
 | OfficeAce | browser (polling) | ✅ |

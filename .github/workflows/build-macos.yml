@@ -8,6 +8,11 @@ on:
     tags:
       - 'v*'
 
+# 两个 tag 构建并发时，`gh release upload --clobber` 会抢同一个 release。
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
@@ -19,10 +24,16 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-      - uses: dtolnay/rust-toolchain@stable
+      # 2026-11-26：此处此前用 `@stable` —— 一个**可移动分支**，比 `@v5` 一类
+      # 浮动 tag 更不可控：分支被改写时，任何一次 tag 构建都会在自己带
+      # `contents: write` 的 runner 上执行任意代码，而它的产物直接进 release。
+      # 钉 SHA（= 2026-11-26 时 stable 指向的提交），版本仍由 with.toolchain 决定。
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable 分支 @ 2026-11-26
+        with:
+          toolchain: stable
       - name: Install dependencies
         run: |
-          npm install
+          npm ci --ignore-scripts
           npm --prefix packages/standalone ci
           node scripts/build-standalone-ui.mjs
           npm --prefix packages/desktop ci --ignore-scripts

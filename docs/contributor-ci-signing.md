@@ -62,7 +62,7 @@ GitHub 的 `offline` 与 `typecheck` 是代码检查。（2026-11-07 校正：�
 4. 使用保留候选提交历史的普通 merge。Squash 或 rebase 会改变内容 commit SHA，
    破坏目录 revision 的约定；不得在签名完成后改变合并方式。
 
-首次引入本流程时，工作流还未进入 main，维护者先按 `RELEASING.md` 的本地签名方法
+首次引入本流程时，工作流还未进入 main，维护者先按 `history/RELEASING-legacy.md` 的本地签名方法
 完成当前 PR 的清单与目录记录，并跑完整测试；之后才能从 main 启动新流程。
 
 ## 为审查完的候选准备签名
@@ -110,7 +110,7 @@ git commit -m "准备已审查候选的发布签名与目录记录"
 
 维护者将签名提交送回原 PR 分支，或建立包含原贡献提交和签名提交的整合分支/PR；
 贡献者仍无需私钥。待 GitHub 三个检查全绿后按普通 merge 合入 main。
-候选源码、版本或 main 再变化时重新准备，不沿用旧补丁。按 `RELEASING.md`
+候选源码、版本或 main 再变化时重新准备，不沿用旧补丁。按 `history/RELEASING-legacy.md`
 继续 tag、CDN purge 和安装用户视角的 live audit。
 
 ## 安全边界与验收限制

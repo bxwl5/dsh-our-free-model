@@ -300,6 +300,72 @@ async function headRead(reader, signal, deadline) {
 }
 
 /**
+ * Read a non-2xx body as text under the same watchdog discipline as the 2xx path.
+ *
+ * The failure body is data that is about to be thrown away, so this is allowed to
+ * give up: the deadline is one budget for the whole body (not refreshed per
+ * chunk, unlike `readRemainder`'s idle timeout) — a gateway that dribbles an
+ * error document forever must not hold the probe loop hostage. Whatever the
+ * outcome, the body is drained-by-cancel on the way out so a half-read error
+ * response never leaves a socket hanging.
+ *
+ * @param {Response} response
+ * @param {AbortSignal} [signal]
+ * @param {number} timeoutMs
+ * @returns {Promise<string>}
+ */
+async function readFailureBody(response, signal, timeoutMs) {
+  const body = response?.body
+  if (body === null || body === undefined) return ''
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  const status = response.status
+  const deadline = deadlineFor(timeoutMs)
+  let text = ''
+  let finished = false
+  try {
+    while (true) {
+      const row = await failureBodyRead(reader, signal, deadline, status)
+      if (row.done === true) { finished = true; break }
+      if (row.value !== undefined) text += decoder.decode(row.value, { stream: true })
+    }
+    return text + decoder.decode()
+  } finally {
+    if (!finished) await reader.cancel().catch(() => {})
+    try { reader.releaseLock?.() } catch { /* pending read is still unwinding */ }
+  }
+}
+
+/**
+ * One bounded read of a failure body: `headRead`'s deadline + abort race, with
+ * its own message so a stalled *error* body is never reported as a stalled
+ * answer (the two call for different handling upstream).
+ */
+async function failureBodyRead(reader, signal, deadline, status) {
+  if (signal?.aborted === true) throw new UpstreamError('request aborted', CODE.aborted)
+  let timer
+  let onAbort
+  const pending = reader.read()
+  const halted = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new UpstreamError(
+      `our-free-model: upstream answered HTTP ${status} and then stalled while sending its error body`,
+      CODE.timeout, { status })), Math.max(0, deadline - Date.now()))
+    timer.unref?.()
+    // Not cancelling here: the caller's `finally` cancels the reader, and a
+    // cancel racing the pending read would settle it as `{done:true}` first.
+    onAbort = () => reject(new UpstreamError('request aborted', CODE.aborted))
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+  try {
+    return await Promise.race([pending, halted])
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', onAbort)
+    pending.catch(() => {})
+  }
+}
+
+/**
  * Turn a head that was already read, plus the reader that follows it, back into
  * one byte stream. Used by the free lane's retry/continuation path.
  */
@@ -418,7 +484,29 @@ export async function postStreamed({ path, body, session, attributionUserAgent, 
 
   const setRetry = retryAfter(response.headers.get('retry-after'))
   if (!response.ok) {
-    const text = await response.text().catch(() => '')
+    /**
+     * 错误体读取必须和 2xx 一侧同样受 `timeoutMs` 与 `signal` 约束
+     * （2026-11-26 修复）。
+     *
+     * 原先这里是裸 `await response.text()`：上游「先回头部、body 卡住」时
+     * `postStreamed` 永不返回 ⇒ `probeModel` 不返回 ⇒ `probeRound` /
+     * `catalogRefresh` 永久非空，`/refresh`、`/reprobe` 与 15 分钟轮询一起
+     * 挂死（下面 `readHead` / `readSse` / `readRemainder` 都早有 watchdog，
+     * 唯独这一支漏了）。
+     *
+     * 分类：卡住 → `CODE.timeout`（**不能**伪装成「按状态码分类」的普通拒绝：
+     * 超时与 4xx/5xx 是两类事实）；调用方 abort → `CODE.aborted`。其余读错误
+     * （头部已到、取 body 时连接被上游断开）保留旧语义 —— 错误体读不到就按
+     * 状态码分类，别让一次读失败改写 429/凭据这类更有行动价值的结论。
+     */
+    let text = ''
+    try {
+      text = await readFailureBody(response, signal, timeoutMs)
+    } catch (error) {
+      if (signal?.aborted === true || error?.name === 'AbortError') throw new UpstreamError('request aborted', CODE.aborted)
+      if (error instanceof UpstreamError && error.code === CODE.timeout) throw error
+      text = ''
+    }
     let payload
     try { payload = JSON.parse(text) } catch { payload = { error: { message: text.slice(0, 300) || `HTTP ${response.status}` } } }
     throw classifyFailure(response.status, payload, setRetry)

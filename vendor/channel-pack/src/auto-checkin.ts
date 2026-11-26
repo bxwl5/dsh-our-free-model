@@ -214,8 +214,15 @@ export interface AutoCheckinProviderLedger {
   attempts: number
   /** 最后一次尝试的时刻（毫秒）；0 = 今天还没跑过。 */
   lastAt: number
-  /** 最后一次尝试的结局（供「下次为什么还要跑」与面板展示）。 */
-  lastOutcome: 'claimed' | 'already-claimed' | 'stale' | 'failed' | 'skipped' | 'error' | 'none'
+  /**
+   * 最后一次尝试的结局（供「下次为什么还要跑」与面板展示）。
+   *
+   * - `extended`（2026-11-26）：**积分续期**（当前只有商汤小浣熊）—— 没领到
+   *   新积分，但把当日积分续成了 7 天窗口。它**必须**与 `already-claimed` 分开：
+   *   记录时若写成 `already-claimed`，账本就等于谎报「今天已领」，而当天恰恰是
+   *   第一次续期（用户看到明细写「积分已延期」、账本写「今天已领」，两处矛盾）。
+   */
+  lastOutcome: 'claimed' | 'extended' | 'already-claimed' | 'stale' | 'failed' | 'skipped' | 'error' | 'none'
   /** 最后一次尝试的短结果（如 `2 个 +200积分` / `出错` / `非今日轮次`）。 */
   lastText: string
 }
@@ -385,7 +392,7 @@ function sanitizeResults(raw: unknown): AutoCheckinAccountResult[] {
 /** 账本 `status` 的合法值（脏数据一律回落到 `pending`，见 `sanitizeProviders`）。 */
 const LEDGER_STATUSES: ReadonlyArray<AutoCheckinProviderLedger['status']> = ['done', 'pending', 'given-up', 'skipped']
 /** 账本 `lastOutcome` 的合法值。 */
-const LEDGER_OUTCOMES: ReadonlyArray<AutoCheckinProviderLedger['lastOutcome']> = ['claimed', 'already-claimed', 'stale', 'failed', 'skipped', 'error', 'none']
+const LEDGER_OUTCOMES: ReadonlyArray<AutoCheckinProviderLedger['lastOutcome']> = ['claimed', 'extended', 'already-claimed', 'stale', 'failed', 'skipped', 'error', 'none']
 
 /**
  * 归一化逐渠道账本（丢非法项、钳计数、截断文本）。
@@ -899,6 +906,15 @@ interface RunTotals {
    */
   totalByUnit: Record<'token' | 'credit', number>
   alreadyClaimed: number
+  /**
+   * ★ **积分续期**的账号数（2026-11-26，来自 `summary.extended`）。
+   *
+   * 与 `alreadyClaimed` 分开计数：续期是「今天第一次，但没产出新额度」，
+   * 报成「今天已领」会让汇总文案凭空少说一句「积分已延期」（真实缺陷：
+   * 纯续期那一天 `parts.length === 0` ⇒ 整轮说「没有需要领取的账号」，而
+   * 明细表格显示「积分已延期」，两处自相矛盾）。
+   */
+  extended: number
   inactive: number
   failed: number
   /**
@@ -924,7 +940,7 @@ interface RunTotals {
 }
 
 function emptyTotals(): RunTotals {
-  return { providers: 0, claimed: 0, totalCredit: 0, totalByUnit: { token: 0, credit: 0 }, alreadyClaimed: 0, inactive: 0, failed: 0, coversToday: 0, skipped: 0, errors: 0, givenUp: 0 }
+  return { providers: 0, claimed: 0, totalCredit: 0, totalByUnit: { token: 0, credit: 0 }, alreadyClaimed: 0, extended: 0, inactive: 0, failed: 0, coversToday: 0, skipped: 0, errors: 0, givenUp: 0 }
 }
 
 /**
@@ -999,6 +1015,11 @@ export function describeRun(totals: RunTotals): string {
     parts.push(`${totals.claimed} 个账号领取成功${amounts === null ? '' : `（${amounts}）`}`)
   }
   if (totals.alreadyClaimed > 0) parts.push(`${totals.alreadyClaimed} 个今天已领`)
+  // ★ 积分续期（2026-11-26）：与 `describeChannel` 同一句措辞。不报它的话，
+  //   纯续期那一天所有分句都不成立 ⇒ 用户只看到「没有需要领取的账号」，
+  //   而明细表格里明明写着「积分已延期」。
+  //   `?? 0` 兼容旧宿主（RunTotals 的这一栏是新增的）。
+  if ((totals.extended ?? 0) > 0) parts.push(`${totals.extended} 个积分已延期`)
   // ⚠️ 声称「领取成功 / 今天已领」之前先自问一句：这些痕迹是不是**今天这一轮**的？
   // Qoder 在 10:00（UTC+8）刷新前领到的是**昨天那条**的补领 —— 报「领取成功」没错，
   // 但**不能**让用户以为今天的事办完了（那正是缺陷 B 的界面表现）。故这里显式标注，
@@ -1051,6 +1072,8 @@ export function describeRun(totals: RunTotals): string {
  * ## 聚合规则
  *
  * - 有 `claimed` ⇒ 该账号记 `claimed`，数量**相加**（多个 plan 的收益都是真领到的）；
+ * - 否则有 `extended` ⇒ `extended`（2026-11-19 商汤续期：做了事但没新额度，
+ *   按 {@link outcomeRank} 弱于 claimed、强于 already-claimed）；
  * - 否则有 `already-claimed` ⇒ `already-claimed`；
  * - 否则有 `failed` ⇒ `failed`（带上第一条失败原因）；
  * - 都没有 ⇒ `skipped`（`inactive` 落这里：今天没东西可领，不是异常）。
@@ -1059,6 +1082,69 @@ export function describeRun(totals: RunTotals): string {
  * （由同一渠道产出），跨单位相加才是真错误 —— 而那是 `totalCredit` 的历史问题，
  * 本函数不做跨账号/跨渠道求和，故不涉及。
  */
+/**
+ * ★ **结局强弱表 —— 全局唯一一份**（2026-11-26，真实缺陷）。
+ *
+ * 这个仓库里「哪种结局信息量更高」曾有两份**互不一致**的实现：
+ * `mergeAccountResult` 用 `claimed 3 / already-claimed 2 / failed 1 / 其它 0`
+ * （漏了 `extended`），`aggregateAccountRows` 用
+ * `claimed 4 / extended 3 / already-claimed 2 / failed 1 / 其它 0`，
+ * 且后者的注释还写着「两处必须一致」。两份不一致的后果是：同一份上游结果经
+ * 「聚合」与「合并」两条路径得出不同结局（表格说「积分已延期」，账本说
+ * 「今天已领」）。故抽成**单一导出函数**，三处（`mergeAccountResult` /
+ * `aggregateAccountRows` / `recordClaimResult` 的账本升级判断）无条件共用。
+ *
+ * 口径（**不要再各写一份**）：
+ *
+ * | 值 | 强弱 | 理由 |
+ * |---|---|---|
+ * | `claimed` | 4 | 真领到新额度，信息量最高 |
+ * | `extended` | 3 | 真做了事（续期），但**没有**新额度 ⇒ 低于 claimed |
+ * | `already-claimed` | 2 | 说明今天早先已处理过，比失败强 |
+ * | `failed` | 1 | 有结论的异常，比「无可领」强 |
+ * | `skipped` / `inactive` / `stale` / `none` / `error` / undefined / 未知值 | 0 | 兜底：不比任何有结论的结局强 |
+ *
+ * ⚠️ 入参放宽成 `string | undefined`：调用方既传逐账号明细的
+ * `AutoCheckinResultOutcome`，也传账本的 `lastOutcome`（多出 `stale` /
+ * `none` / `error` 三种），必要时还传脏数据（文档回读前的原始字符串）。
+ * **未知值一律 0**，与 `sanitizeProviders` 的「脏值不参与升级判断」同取向。
+ */
+export function outcomeRank(value: string | undefined): number {
+  switch (value) {
+    case 'claimed': return 4
+    case 'extended': return 3
+    case 'already-claimed': return 2
+    case 'failed': return 1
+    default: return 0
+  }
+}
+
+/**
+ * 一轮 `claimAll` 的汇总 ⇒ 账本 `lastOutcome` 该记什么（**唯一实现**）。
+ *
+ * 取本轮**最强**的那个逐账号结局，强弱用 {@link outcomeRank}：`extended`
+ * 必须排在 `already-claimed` 之前 —— 否则「今天第一次续期」（商汤小浣熊）
+ * 会被记成「今天已领」，与逐账号明细里的「积分已延期」自相矛盾。
+ *
+ * ⚠️ 自动签到（`performRun`）与手动领取（`recordClaimResult`）**共用**本函数：
+ * 两条路径写出来的账本必须长得一样，否则同一个渠道会被两种方式改成两个结局。
+ *
+ * ⚠️ `extended` 是可选字段（兼容尚未上报它的旧宿主响应）；`?? 0` 只表示
+ * 「没上报就当没有」，不会伪造一个 `extended`。
+ */
+function outcomeOfSummary(summary: {
+  claimed: number
+  extended?: number
+  alreadyClaimed: number
+}): AutoCheckinProviderLedger['lastOutcome'] {
+  // 顺序即强弱（见 `outcomeRank`）：先 claimed，再 extended，兜底 already-claimed。
+  // 兜底必然成立：调用方只在 `coversToday > 0` 时才用它，而覆盖面只可能来自
+  // 这三种结局（见 `computeClaimSummary` 的 coversToday 计数）。
+  if (summary.claimed > 0) return 'claimed'
+  if ((summary.extended ?? 0) > 0) return 'extended'
+  return 'already-claimed'
+}
+
 /**
  * 把「本轮的一条账号结果」合并进**当天已有**的结果里（全天累计）。
  *
@@ -1075,13 +1161,17 @@ export function describeRun(totals: RunTotals): string {
  *
  * | 已有 | 新来 | 结果 | 理由 |
  * |---|---|---|---|
- * | `claimed` | `already-claimed` / `failed` / `skipped` | **保留 claimed** | 已经领到的事实不会因为再点一次而消失 |
+ * | `claimed` | `extended` / `already-claimed` / `failed` / `skipped` | **保留 claimed** | 已经领到的事实不会因为再点一次而消失 |
  * | `claimed` | `claimed` | 金额**相加** | 同一天多个 plan / 多次可领的都算真实收益 |
+ * | `extended` | `already-claimed` / `failed` / `skipped` | **保留 extended** | 今天确实续过期了，后面那次「已领」抹不掉这个事实 |
+ * | `extended` | `extended` | 保留**新**的 | 同一天重复续期，到期时间/文案以最近一次为准 |
+ * | `already-claimed` / `failed` / `skipped` | `extended` | 换成 `extended` | 续期是今天真做过的动作，比「已领/失败/无可领」信息更足 |
  * | `already-claimed` | `claimed` | 换成 `claimed` | 说明这一轮真领到了 |
  * | `failed` / `skipped` | `claimed` | 换成 `claimed` | 失败后补领成功 |
  * | `failed` | `failed` | 保留**新**的 | 失败原因更新为最近一次的（更贴近现状） |
  * | `skipped` | `failed` | 换成 `failed` | 有结论比「无可领」信息更足 |
  *
+ * ⚠️ 强弱**只看** {@link outcomeRank}（唯一一份表），不要在这里再写一遍三元链。
  * ⚠️ 金额只在 `claimed + claimed` 时相加：其余情形要么不是收益，要么是
  * 同一笔的重复上报（如「已领」不带金额），相加会虚增。
  */
@@ -1090,10 +1180,11 @@ export function mergeAccountResult(
   incoming: AutoCheckinAccountResult,
 ): AutoCheckinAccountResult {
   if (previous === undefined) return incoming
-  const rank = (value: AutoCheckinResultOutcome): number =>
-    value === 'claimed' ? 3 : value === 'already-claimed' ? 2 : value === 'failed' ? 1 : 0
-  const before = rank(previous.outcome)
-  const after = rank(incoming.outcome)
+  // ⚠️ 强弱只看唯一一份表（`outcomeRank`）；此前这里自写了一条 `claimed 3 /
+  //   already-claimed 2 / failed 1 / 其它 0` 的三元链，漏了 `extended`，
+  //   与 `aggregateAccountRows` 那份（claimed 4 / extended 3 / …）不一致。
+  const before = outcomeRank(previous.outcome)
+  const after = outcomeRank(incoming.outcome)
   // 新来的更强 ⇒ 换掉（但金额不叠加：这是「同一笔的另一种说法」，不是新增收益）。
   if (after > before) return { ...incoming }
   // 完全同级：claimed + claimed 是真收益，金额相加；其余保留新的（原因/文案更新）。
@@ -1137,14 +1228,14 @@ export function aggregateAccountRows(
       })
       continue
     }
-    // 优先级：claimed > already-claimed > failed > skipped
+    // 优先级只看**唯一一份**强弱表 `outcomeRank`：
+    // claimed(4) > extended(3) > already-claimed(2) > failed(1) > 其它(0)。
     // `extended` 排在 `claimed` 之下、`already-claimed` 之上：它确实做了事
     // （续了期），但没产出新额度，故不该盖过真正的领取成功。
-    const rank = (value: AutoCheckinResultOutcome): number =>
-      value === 'claimed' ? 4
-        : value === 'extended' ? 3
-          : value === 'already-claimed' ? 2 : value === 'failed' ? 1 : 0
-    if (rank(mapped) > rank(previous.outcome)) {
+    // ⚠️ 这里曾自写一份 `claimed 4 / extended 3 / already-claimed 2 / failed 1`
+    //   的三元链，而 `mergeAccountResult` 那份漏了 `extended` 且 claimed 是 3
+    //   —— 两份不一致 ⇒ 同一份上游结果经两条路径得出不同结局（2026-11-26 修复）。
+    if (outcomeRank(mapped) > outcomeRank(previous.outcome)) {
       byAccount.set(key, {
         ...previous,
         outcome: mapped,
@@ -1172,6 +1263,15 @@ export function describeChannel(summary: {
   claimed: number
   totalCredit: number
   alreadyClaimed: number
+  /**
+   * ★ **积分续期**的账号数（2026-11-26，见 `RpcCreditsClaimSummary.extended`）。
+   *
+   * 可选是为了兼容尚未上报该字段的旧宿主响应（与 `coversToday` 同一思路）。
+   * **但它必须参与分句**：漏掉它时，纯续期那一天的另外四栏全是 0 ⇒
+   * `parts.length === 0` ⇒ 渠道行显示「无可领」，而明细表格显示「积分已延期」
+   * （真实缺陷，本句就是修法）。
+   */
+  extended?: number
   inactive: number
   failed: number
   /** 见 `RpcCreditsClaimSummary.coversToday`；缺省按 `claimed+alreadyClaimed` 兜底。 */
@@ -1194,6 +1294,11 @@ export function describeChannel(summary: {
     parts.push(amounts === null ? `${summary.claimed} 个领取成功` : `${summary.claimed} 个 ${amounts}`)
   }
   if (summary.alreadyClaimed > 0) parts.push(`${summary.alreadyClaimed} 个今天已领`)
+  // ★ 积分续期（2026-11-26）：文案契约「积分已延期」与前端
+  //   `chan.checkin.extended` / `chan.auto.summaryExtended` 逐字一致；
+  //   同日再次调用上游回 `already-claimed`（文案「今日已延期」），走上面那句
+  //   「今天已领」而不是这一句 —— 两句必须能分辨。
+  if ((summary.extended ?? 0) > 0) parts.push(`${summary.extended} 个积分已延期`)
   if (summary.failed > 0) parts.push(`${summary.failed} 个失败`)
   if (summary.inactive > 0) parts.push(`${summary.inactive} 个未开启`)
   if (parts.length === 0) return '无可领'
@@ -1507,6 +1612,9 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
       totals.totalByUnit.credit += Number(byUnit.credit) || 0
       totals.totalByUnit.token += Number(byUnit.token) || 0
       totals.alreadyClaimed += summary.alreadyClaimed
+      // ★ 积分续期（2026-11-26）：`?? 0` 兼容尚未上报该字段的旧宿主响应
+      //   （缺字段 ≠ 0 —— 这里只是不累加，不会伪造「有续期」）。
+      totals.extended += summary.extended ?? 0
       totals.inactive += summary.inactive
       totals.failed += summary.failed
       // ⚠️ 记账口径**只认**这一项：渠道用 `coversToday` 自己声明「这条痕迹是不是
@@ -1525,7 +1633,11 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
         ledgers = withLedger(ledgers, provider, {
           ...base,
           status: 'done',
-          lastOutcome: summary.claimed > 0 ? 'claimed' : 'already-claimed',
+          // 结局取本轮**最强**的那个（claimed > extended > already-claimed）。
+          // ⚠️ 此前只判 `claimed > 0 ? 'claimed' : 'already-claimed'`，于是
+          //   「今天第一次续期」被写成 `already-claimed` —— 账本谎报「今天已领」，
+          //   而明细表格写的是「积分已延期」（2026-11-26 修复）。
+          lastOutcome: outcomeOfSummary(summary),
           lastText: text,
         })
         continue
@@ -1822,11 +1934,10 @@ export function createAutoCheckin(deps: AutoCheckinDeps): AutoCheckin {
        * 退回「1 个今天已领」，看起来像刚才那笔没了（与 `mergeAccountResult` 同一条
        * 语义，两处必须一致，否则表格说领到了、状态行说没领到）。
        */
-      const rankOf = (outcome: AutoCheckinProviderLedger['lastOutcome'] | undefined): number =>
-        outcome === 'claimed' ? 3 : outcome === 'already-claimed' ? 2 : outcome === 'failed' ? 1 : 0
-      const incomingOutcome: AutoCheckinProviderLedger['lastOutcome'] =
-        summary.claimed > 0 ? 'claimed' : 'already-claimed'
-      const keepPrevious = sameDay === true && rankOf(previousLedger?.lastOutcome) > rankOf(incomingOutcome)
+      const incomingOutcome: AutoCheckinProviderLedger['lastOutcome'] = outcomeOfSummary(summary)
+      // ⚠️ 强弱只看唯一一份表（`outcomeRank`）。这里曾自写第四条三元链
+      //   （`claimed 3 / already-claimed 2 / failed 1`）且漏了 `extended`。
+      const keepPrevious = sameDay === true && outcomeRank(previousLedger?.lastOutcome) > outcomeRank(incomingOutcome)
       const ledger: AutoCheckinProviderLedger = {
         day,
         status: 'done',

@@ -14,3 +14,23 @@
 *.gif binary
 *.ico binary
 *.wasm binary
+# 2026-11-26：`* text=auto` 的内容探测对这两种格式只是「碰巧」判成二进制，
+# `git add --renormalize` 一类批量操作会重新走探测。显式声明更稳。
+*.icns binary
+*.bmp  binary
+
+# ── 构建产物（2026-11-26）───────────────────────────────────────────────────────
+#
+# 以下文件由脚本生成、自带「请勿手改」横幅，但体积在百 KB～3 MB 之间：
+#   · 不标 linguist-generated 时 GitHub 按源码渲染，仓库语言排行被生成 JS 主导；
+#   · 不标 -diff 时每次重打包的提交在 PR 里都是数 MB 不可 review 的 diff。
+# 想看 diff 就临时删掉本段，或 `git diff --text` 强制。
+#
+# 生成者：scripts/build-channel-pack.mjs → scripts/build-standalone-channels.mjs
+#         → scripts/build-standalone-ui.mjs（Vite）→ scripts/refresh-integrity.mjs
+vendor/channel-pack/pack.js                  linguist-generated=true -diff
+vendor/channel-pack/testkit.js               linguist-generated=true -diff
+packages/standalone/channels/business.mjs    linguist-generated=true -diff
+packages/standalone/web/*.js                 linguist-generated=true
+packages/standalone/web/*.css                linguist-generated=true
+packages/standalone/web/assets.json          linguist-generated=true

@@ -210,6 +210,28 @@ export async function collectClaimResults<TCredential = BuddyCredential, TProduc
       ))
   // 默认保留预检（CodeBuddy 系需要）；LobsterAI 显式传 false 跳过。
   const precheck = deps.precheckStatus !== false
+  /**
+   * ★ **编程错误守卫**（2026-11-26，真实缺陷的修法之一）：
+   * 「没传 `precheckStatus: false`」+「没注入 `fetchStatus`」+「`product` 是
+   * `undefined`」三者同时成立时，走到的是**默认** `fetchStatus` —— 那是
+   * Buddy 系的 `fetchCheckinStatus(credential, product, fetcher)`，它拿**本渠道**
+   * 的凭据去调 **buddy** 的签到状态端点，只因 `product` 为 `undefined` 先在内部
+   * 抛 TypeError 才「碰巧」没把凭据发出去（`raccoon` 分支此前就是这样）。
+   *
+   * 这是**静默降级**：真实错误被吞成逐账号 `{ ok: false }`，看起来像「上游失败」，
+   * 而根因是调用约定写漏了一个字段。故这里直接**抛错**（编程错误要响，不要被
+   * 逐账号 try 吃成失败）。合法形态有两条，都不触发本守卫：
+   * - 跳过预检：显式 `precheckStatus: false`（领取流程自带状态判断）；
+   * - 真的需要预检：注入自己的 `fetchStatus`（如 minimax 的
+   *   `fetchMinimaxSigninStatus`），此时 `product` 可以仍是 `undefined`。
+   */
+  if (precheck && deps.fetchStatus === undefined && (product as unknown) === undefined) {
+    throw new Error(
+      'collectClaimResults: product 为 undefined 却使用了默认 fetchStatus（Buddy 系实现），'
+      + '会把本渠道凭据发到错误的签到状态端点。请显式传 precheckStatus: false（领取流程自带状态判断）'
+      + '或注入本渠道自己的 fetchStatus。',
+    )
+  }
   const results: RpcCreditsClaimAllResponse['results'] = []
   const outcomes: ClaimOutcome[] = []
   for (const entry of accounts) {
@@ -322,6 +344,7 @@ export async function collectCreditBalances<TCredential = BuddyCredential, TProd
 export function computeClaimSummary(outcomes: readonly ClaimOutcome[]): RpcCreditsClaimSummary {
   const summary: RpcCreditsClaimSummary = {
     claimed: 0, totalCredit: 0, alreadyClaimed: 0, inactive: 0, failed: 0, coversToday: 0,
+    extended: 0,
     totalByUnit: { token: 0, credit: 0 },
   }
   for (const outcome of outcomes) {
@@ -351,7 +374,10 @@ export function computeClaimSummary(outcomes: readonly ClaimOutcome[]): RpcCredi
          *   `setting_info` 幂等，但白白多打请求）。这条与 `already-claimed`
          *   的处理同构。
          * - **不计 `alreadyClaimed`**：那不是「之前领过」，今天恰恰是第一次。
+         * - **单独计 `extended`**（2026-11-26）：汇总层要有这一栏才说得清
+         *   「今天做了什么」—— 否则纯续期那一天渠道行会说「无可领」。
          */
+        summary.extended += 1
         if (outcome.coversToday !== false) summary.coversToday += 1
         break
       case 'inactive':

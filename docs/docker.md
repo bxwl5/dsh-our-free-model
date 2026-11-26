@@ -34,7 +34,10 @@ docker run -d --name ofm \
   ghcr.io/bxwl5/dsh-our-free-model:latest
 ```
 
-CLI 参数可以直传（镜像用 `ENTRYPOINT node cli.mjs` + `CMD --port 18900`）。
+CLI 参数可以直传：镜像的 `ENTRYPOINT` 是入口脚本 `/usr/local/bin/ofm-entrypoint.sh`
+（`Dockerfile:86-87`），`CMD ["--port", "18900"]` 只是默认参数，`docker run 镜像 --lan`
+会原样交给 CLI。root→node 降权 + `/data` chown 由入口脚本完成；要交互 shell 用
+`--entrypoint sh`。
 
 ### 给局域网用（推荐组合）
 
@@ -134,6 +137,9 @@ docker run … ghcr.io/bxwl5/dsh-our-free-model:latest \
 
 局域网设备直接开 `http://<宿主机IP>:18901/`，无需任何隧道。鉴权模式见上文
 「面板密码：两种形态」——不设 `OFM_PASSWORD` 就是打开即用。
+
+⚠️ 风险提示：开了面板中继而没设 `OFM_PASSWORD` 时，同网段任何设备都能访问面板与管理
+API；内网可信时可以不设，公共/共享网络请务必设（该中继不做来源 IP 白名单，见「已知限制」）。
 
 ### 2. SSH 隧道（不想暴露面板时）
 

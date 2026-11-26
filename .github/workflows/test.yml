@@ -32,6 +32,24 @@ jobs:
         with:
           node-version: 22
       - run: npm install --ignore-scripts
+      # 产物新鲜度门禁（scripts/artifact-freshness-test.mjs）要**真的重建** pack.js
+      # 与独立端页面才能逐字节比对，因此需要 esbuild 与 vite。此前它们只从
+      # root devDependencies 找 —— 而那里根本没有 esbuild，`--ignore-scripts` 也
+      # 装不出平台二进制，于是那两道 check 在 CI 里**恒为「跳过」**，把
+      # 「改了 vendor/channel-pack/src 忘重打包」这一类事故原样放行
+      # （2026-11-25 run 45524879215 的日志实证）。独立端的 devDependencies 正好
+      # 同时提供 esbuild 0.25.9 与 vite。
+      - name: Install build toolchain for artifact gates
+        run: npm ci --prefix packages/standalone --ignore-scripts
+      # `--ignore-scripts` 不会跑 esbuild 的 postinstall，所以 `esbuild/bin/esbuild`
+      # 这层包装不存在 —— 门禁改用平台包里的原生二进制（`ESBUILD_BINARY_PATH`）。
+      # npm 解包一般已带 0755，但这里显式补一次，免得镜像/umask 差异让它变成
+      # 「找不到工具链 → 跳过 → 假绿」。两处是**不同版本**（pack 用 0.25.9，
+      # Vite 自带 0.28.2），别合并成一条。
+      - name: Make esbuild native binaries runnable
+        run: |
+          chmod +x packages/standalone/node_modules/@esbuild/*/bin/esbuild
+          chmod +x packages/standalone/node_modules/vite/node_modules/@esbuild/*/bin/esbuild
       - name: Validate code or the complete main tree
         env:
           TEST_MODE: ${{ github.event_name == 'pull_request' && 'contributor' || 'all' }}

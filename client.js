@@ -262,6 +262,10 @@ window.__ModuleLoader__.load({
         'chan.strategy.sub': '同一渠道内的多个账号轮流使用，每个账号连续 10 次后切换 · 与「路由」的渠道轮询无关 · 本机设置',
         'chan.strategy.switch': '开启账号轮询（每号连续 10 次）',
         'chan.claim.none': '今天没有可领取的积分。',
+        // 2026-11-26：小浣熊的「续期」轮次没有新增额度、只延长到期时间。
+        // 没有这一条时它会落到上面那句「今天没有可领取的积分」，与明细表里的
+        // 「积分已延期」互相打脸（同一轮里两句话说的是相反的事）。
+        'chan.claim.extended': '积分已续期（{count} 个账号）—— 本轮没有新增额度，只延长了到期时间。',
         'chan.model.free': '免费额度',
         'chan.model.dead': '已下架',
         'chan.model.hidden': '已隐藏',
@@ -763,6 +767,7 @@ window.__ModuleLoader__.load({
         'chan.strategy.sub': 'Rotate between accounts inside one channel, 10 requests per account · unrelated to route rotation between channels · per device',
         'chan.strategy.switch': 'Enable account rotation (10 per account)',
         'chan.claim.none': 'Nothing to claim today.',
+        'chan.claim.extended': 'Points extended for {count} account(s) — no new credit this round, only the expiry date moved.',
         'chan.model.free': 'Free quota',
         'chan.model.dead': 'Retired',
         'chan.model.hidden': 'Hidden',
@@ -3791,12 +3796,17 @@ window.__ModuleLoader__.load({
           const value = await rpc('credits.claimAll', { provider: channel.id }, RPC_TIMEOUT.bench)
           const summary = value?.summary ?? value
           const claimed = Number(summary?.claimed ?? 0)
+          // `extended` 是「今天续了期但没进新额度」的轮次（小浣熊每日签到）。
+          // 它不是失败，也不该被当成「无可领」。
+          const extended = Number(summary?.extended ?? 0)
           const credit = Number(summary?.totalCredit ?? 0)
           const failed = (value?.results ?? []).filter(row => row.outcome?.kind === 'failed')
           const successText = t('chan.claim.result').replace('{count}', String(claimed)).replace('{credit}', String(credit))
           const failureText = t('chan.claim.failed').replace('{reason}', failed.map(row => row.outcome.message).join('；'))
+          const extendedText = t('chan.claim.extended').replace('{count}', String(extended))
           setNotice(failed.length > 0 ? claimed > 0 ? `${successText}；${failureText}` : failureText
-            : claimed > 0 ? successText : t('chan.claim.none'))
+            : claimed > 0 ? successText
+              : extended > 0 ? extendedText : t('chan.claim.none'))
           // 台账是「今日已领」徽标的唯一来源，领完必须立刻重读，否则徽标要等
           // 下一次 45 秒轮询才出现。
           void loadCredits(); void loadBalances(true); void onAutoRefresh?.()

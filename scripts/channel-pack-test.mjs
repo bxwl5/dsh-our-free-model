@@ -200,7 +200,7 @@ try {
   // 卡片上的「模型数量」读 provider.status 的 models.total；autoclaw 必须能给出
   // 目录，否则卡片显示「—」——与其它渠道不一致（本次回归）。
   {
-    // 全部 20 个账号渠道都必须能报出模型目录 —— 缺 listAllModels 的渠道卡片会显示「—」。
+    // 全部 15 个账号渠道都必须能报出模型目录 —— 缺 listAllModels 的渠道卡片会显示「—」。
     const allProviders = [
       'codearts', 'buddy', 'workbuddy', 'qoder', 'qodercn', 'trae', 'cline',
       'antigravity', 'loomy', 'raccoon', 'minimax', 'zcode', 'commandcode', 'officeace',

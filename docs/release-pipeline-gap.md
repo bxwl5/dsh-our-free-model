@@ -4,12 +4,13 @@
 > 行号；凡是当前不存在的工具、目录、密钥，都明确标为「缺」，不描述其行为。
 >
 > 编写时的基线：`main` @ `93dafa4`（`package.json` 版本 `2.5.7-priv.2`）。
-> 相关的既有文档：[`RELEASING.md`](RELEASING.md)（约 410 行，含中英双语）、
+> 相关的既有文档：[`history/RELEASING-legacy.md`](history/RELEASING-legacy.md)（约 410 行，含中英双语；
+> 2026-11 归档，下文引用的行号按归档前编号，正文整体下移 4 行）、
 > [`contributor-ci-signing.md`](contributor-ci-signing.md)（123 行）。
 
 ## 0. 一句话结论
 
-`docs/RELEASING.md` 描述的是一条**已经不存在的**发布链路：它引用的
+`docs/RELEASING-legacy.md` 描述的是一条**已经不存在的**发布链路：它引用的
 `feed/`、`scripts/build-manifest.mjs`、`scripts/live-audit.mjs`、`scripts/release-e2e.mjs`、
 `scripts/prepare-release.mjs`、`src/feed.js`、`src/updater.js`、`.github/workflows/prepare-release.yml`
 在本仓库里**全部没有**（实测：磁盘与 `git ls-files` 均无）。这些文件连同「公告中心 / 插件升级」
@@ -17,7 +18,7 @@
 被一并删除，`README.md:6` 的副标题也写着「已移除 EAC 协付、公告/升级/赞助/聚合功能」。
 
 **所以当前真正可执行的发布动作只有一个：刷新 catalog 的 revision 字段。**
-`docs/RELEASING.md` 里其余步骤（重签清单、`--check`、live audit、CDN purge、tag/Release 脚本）
+`docs/RELEASING-legacy.md` 里其余步骤（重签清单、`--check`、live audit、CDN purge、tag/Release 脚本）
 现在一条也跑不了 —— 不是「跑起来会失败」，而是脚本文件本身不存在。
 
 ---
@@ -71,7 +72,7 @@ driftCount = 11（另 2 个文件已不存在）
 
 `catalog/dsh-plugin.json` 的 `source.revision` 与 `catalog/provenance.json` 的
 `subject.sourceRevision` 记录「最近一次触及发布内容的 commit」，比较对象**刻意不是 HEAD**。
-规则写在 `docs/RELEASING.md:96-108`（中文）/ `docs/RELEASING.md:294-311`（英文），
+规则写在 `docs/RELEASING-legacy.md:96-108`（中文）/ `docs/RELEASING-legacy.md:294-311`（英文），
 实现是 `catalog-test.mjs:112-116` + `catalog-test.mjs:166-172`：
 
 ```js
@@ -104,7 +105,7 @@ execFileSync('git', ['log', '-1', '--format=%H', '--', 'package.json', ...(pkg.f
 
 `test.yml:3-5` 的注释已经写明：「This repository ships no in-app updater and no signed
 manifest, so there is no release-signing job — the release records under `catalog/` are
-verified by `catalog-test.mjs` instead.」—— CI 是**知情**的，只是 `RELEASING.md` 没跟上。
+verified by `catalog-test.mjs` instead.」—— CI 是**知情**的，只是 `RELEASING-legacy.md` 没跟上。
 
 `.github/workflows/build-macos.yml` 与发布清单无关：它只构建 macOS `.dmg` 并作为
 GitHub Release 的**非官方社区构件**上传（`build-macos.yml:1-6` 注释、`release_tag` 带
@@ -147,11 +148,11 @@ GitHub Release 的**非官方社区构件**上传（`build-macos.yml:1-6` 注释
 | `feed/` 目录 | 磁盘无、`git ls-files` 无。`feed/manifest.json`、`feed/announcements.json` 都不存在 |
 | 发布私钥 | 仓库里从来没有过（正确）。但**连公钥也没有**：`PINNED_MANIFEST_PUBLIC_KEY`（原值 `MCowBQYDK2VwAyEAeLdSVwYFyazc2PIBC0oLsvo4LghGEQz9iXIl3CqRuXI=`，见 `git show d857f8e:src/updater.js:77`）随 `src/updater.js` 一起消失。全仓库 `grep -rn "BEGIN PUBLIC KEY\|createPublicKey\|verifyManifestSignature"` 无命中 |
 | Environment `release-signing` | `contributor-ci-signing.md:47-51` 要求创建，但对应的 workflow（`prepare-release.yml`、`release-sign.yml`）已被删除，没有承载者 |
-| `release-readiness` 检查 | `RELEASING.md:11`、`RELEASING.md:78-85` 把它当作必需检查；实际 `test.yml` 只有 `offline`/`typecheck`/`standalone-frontend` 三个 job，`package.json:26` 的 `test:release` 只是本地脚本，不是 CI 门禁 |
+| `release-readiness` 检查 | `RELEASING-legacy.md:11`、`RELEASING-legacy.md:78-85` 把它当作必需检查；实际 `test.yml` 只有 `offline`/`typecheck`/`standalone-frontend` 三个 job，`package.json:26` 的 `test:release` 只是本地脚本，不是 CI 门禁 |
 
 ### 2.3 文档自身的矛盾
 
-`docs/RELEASING.md` 有 40 处引用不存在的文件或检查（`build-manifest.mjs`、`live-audit.mjs`、
+`docs/RELEASING-legacy.md` 有 40 处引用不存在的文件或检查（`build-manifest.mjs`、`live-audit.mjs`、
 `release-e2e.mjs`、`prepare-release.mjs`、`feed/*`、`release-readiness`）。
 `docs/contributor-ci-signing.md` 有 6 处。这两份文档现在**不能照着做**，
 应视为「上游 2.5.7 的设计记录」而非操作手册。
@@ -194,7 +195,7 @@ C 档是「恢复签名与受保护签名流程」。每档都列出可执行命
    职责和 §3.1 第 2 步重复。
 
 4. **两步提交不变**：A 档产出的 `catalog/integrity.json` 属于 `catalog/`，
-   按 `RELEASING.md:106-107` 的规则它**不移动** revision 指针，因此不需要额外刷新 commit。
+   按 `RELEASING-legacy.md:106-107` 的规则它**不移动** revision 指针，因此不需要额外刷新 commit。
 
 验收命令：
 
@@ -232,7 +233,7 @@ node scripts/test-all.mjs --mode release    # 只跑 catalog + release-bytes
      refresh-revision.mjs # 自动写两处 revision
    ```
 
-2. **命令序列**（与 `RELEASING.md:40-55` 对齐，但只写当前能跑的）
+2. **命令序列**（与 `RELEASING-legacy.md:40-55` 对齐，但只写当前能跑的）
 
    ```bash
    # 1) 改版本：package.json 的 version、两份 README 的本地 tarball 版本号、
@@ -274,9 +275,9 @@ node scripts/test-all.mjs --mode release    # 只跑 catalog + release-bytes
 
    | 项 | 位置 | 说明 |
    | --- | --- | --- |
-   | 私钥（Ed25519 PEM） | 仓库外安全目录 + GitHub Environment `release-signing` 的 `RELEASE_MANIFEST_PRIVATE_KEY`（**PEM 内容**，非路径） | `RELEASING.md:57-63` 已明确两种用法不要混用：本地 CLI 的 `--key` 收**路径**，受保护 workflow 收**内容** |
+   | 私钥（Ed25519 PEM） | 仓库外安全目录 + GitHub Environment `release-signing` 的 `RELEASE_MANIFEST_PRIVATE_KEY`（**PEM 内容**，非路径） | `RELEASING-legacy.md:57-63` 已明确两种用法不要混用：本地 CLI 的 `--key` 收**路径**，受保护 workflow 收**内容** |
    | 公钥 | 编译进 `src/updater.js` 的 `PINNED_MANIFEST_PUBLIC_KEY`（原值见 §2.2） | 只读、随代码走；换钥等于换信任根，必须与「旧客户端仍能验旧签名」一起评估 |
-   | 占位签名 | **禁止** | `RELEASING.md:61-63`：「没有既有私钥时拒绝写入……不得提交占位签名或替换公钥」 |
+   | 占位签名 | **禁止** | `RELEASING-legacy.md:61-63`：「没有既有私钥时拒绝写入……不得提交占位签名或替换公钥」 |
 
    B 档在**没有**拿到既有私钥之前，`build-manifest.mjs` 应当拒绝写 `feed/manifest.json`
    （原实现的 `refusing to write an unsigned manifest` 行为），但**允许**写
@@ -306,12 +307,12 @@ node scripts/test-all.mjs --mode release    # 只跑 catalog + release-bytes
 | 风险 | 触发条件 | 后果 | 缓解 |
 | --- | --- | --- | --- |
 | **摘要漂移继续累积** | 现在就是这样 | `catalog/integrity.json` 已错 11 个文件。若将来有生态目录（Mojobox）按它审计，会判定发布物被篡改 | A 档：把 `--check` 接进门禁，让漂移在提交前红 |
-| **按 `RELEASING.md` 操作而卡死** | 维护者照文档执行第 2 步 | `node scripts/build-manifest.mjs` → `MODULE_NOT_FOUND`，发布流程当场中断，可能被误判为「环境坏了」 | 先修文档（本文 §1、§2 即材料），或在 `RELEASING.md` 顶部加一条「本文引用的工具已随 95657a7 删除，见 release-pipeline-gap.md」 |
+| **按 `RELEASING-legacy.md` 操作而卡死** | 维护者照文档执行第 2 步 | `node scripts/build-manifest.mjs` → `MODULE_NOT_FOUND`，发布流程当场中断，可能被误判为「环境坏了」 | 先修文档（本文 §1、§2 即材料），或在 `RELEASING-legacy.md` 顶部加一条「本文引用的工具已随 95657a7 删除，见 release-pipeline-gap.md」 |
 | **误把 `2.5.7` 的 `integrity.json` 当成当前版本的记录** | 有人用 `integrity.json` 的 `version` 字段判断发布状态 | 版本号与 `package.json` 的 `2.5.7-priv.2` 不符，结论错误 | A 档第 3 步：让 `catalog-test` 检查 `integrity.version === pkg.version` |
 | **恢复升级器但私钥丢失** | B 档拿到代码、拿不到既有私钥 | 若擅自换钥，**所有旧客户端的升级路径同时失效**（旧客户端只认 pin 在代码里的公钥） | 无私钥时 `build-manifest` 只写 `integrity.json`、拒绝写清单；换钥必须单独评估并保留旧公钥验证分支 |
 | **`MAX_FILES = 80` 上限** | 发布文件数从 65 继续增长 | 超过 80 后清单被 `parseManifest` 拒绝，升级器整体不可用 | 继续把大块源码 bundle 成单文件（`index.js:715-720` 的既有做法）；把文件数纳入 `--check` 的输出 |
 | **`typecheck` 覆盖面被误读** | 有人以为 CI 绿 = 类型安全 | `tsconfig.json` 的 `include` 只有 `adapter/**/*`；`vendor/channel-pack/src/*.ts` 的 `tsc` 需要 `@types/node`（仓库 `devDependencies` 未装，本机实测借用外部 `@types/node` 才能跑） | 文档写明覆盖面；不要把 `typecheck` 当发布门禁 |
-| **CDN 缓存分裂态** | 恢复 `feed/` 后仍靠 jsDelivr `@main` | `RELEASING.md:149-191` 记录过「新清单配旧文件」会让 `stageRelease` 校验失败、该网络用户升级不到 | 恢复 `live-audit.mjs`；purge 整树 + 按路径逐个 purge；或直接走固定 SHA 取件（`RELEASING.md:110-137`） |
+| **CDN 缓存分裂态** | 恢复 `feed/` 后仍靠 jsDelivr `@main` | `RELEASING-legacy.md:149-191` 记录过「新清单配旧文件」会让 `stageRelease` 校验失败、该网络用户升级不到 | 恢复 `live-audit.mjs`；purge 整树 + 按路径逐个 purge；或直接走固定 SHA 取件（`RELEASING-legacy.md:110-137`） |
 
 ### 4.2 回退路径
 
@@ -319,16 +320,16 @@ node scripts/test-all.mjs --mode release    # 只跑 catalog + release-bytes
   `git checkout -- catalog/integrity.json`。不改运行期代码，无数据迁移。
 - **B 档**：`git revert` 恢复升级器的那个 commit；`feed/` 目录随 commit 一起消失。
   已安装客户端会回到「检查更新失败」而不是「装坏」——升级器在校验失败时保留旧安装
-  （`RELEASING.md:141`、`RELEASING.md:169-170` 的既有行为）。
+  （`RELEASING-legacy.md:141`、`RELEASING-legacy.md:169-170` 的既有行为）。
 - **C 档**：按 `contributor-ci-signing.md:119-123` 的既有回退：停用 workflow、删除
   Environment Secret、继续用本地既有私钥 + 完整测试。已签名的清单仍按原公钥验证，
   **不需要用户数据迁移**。
-- **文档回退**：本文与 `RELEASING.md` 冲突时，以**代码与测试的实际行为**为准
+- **文档回退**：本文与 `RELEASING-legacy.md` 冲突时，以**代码与测试的实际行为**为准
   （`catalog-test.mjs` 的 178 行 + `test-all.mjs` 的 suite 表）。
 
 ### 4.3 建议的落地顺序
 
-1. 先在 `RELEASING.md` 顶部加一条指向本文的提示（一行，零风险）；
+1. 先在 `docs/history/RELEASING-legacy.md` 顶部加一条指向本文的提示（一行，零风险）——**已办**（2026-11 归档头注）；
 2. 做 A 档（`build-manifest.mjs --check` + 门禁 + `integrity.version` 断言），
    跑 `node scripts/test-all.mjs --mode release` 确认绿；
 3. 决定是否恢复升级器。**不恢复就到此为止**——A 档已经让记录说真话；

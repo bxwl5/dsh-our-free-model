@@ -755,27 +755,58 @@ export async function startLanRelay({ config, log = () => {}, onTrace = () => {}
    * 而不是把整个 LAN 功能搞挂。
    */
   const requestedHost = String(desired.host ?? '').trim() || '::'
+  /**
+   * 回落必须是**同一个 promise 上的一次状态迁移**，不能是两个各说各话的
+   * `once('error')`（2026-11-26 修复）。
+   *
+   * 旧实现：先注册的 `onError`（`reject`）与后注册的回落监听器**都会执行**，
+   * promise 在第一个里已经 rejected ⇒ 回落 bind 即使成功，`startLanRelay`
+   * 照样抛出、`handle` 不返回，而 server 已经 listening、无引用可 close
+   * （端口占死，后续 `syncRelay` 全 EADDRINUSE）。更糟的是两个 `once` 都已
+   * 消费，回落那次 `listen` 没有任何 error 监听器，再失败就是 uncaughtException。
+   *
+   * 现在：
+   * - 首次错误且 code ∈ 回落集合、请求的是 `'::'` ⇒ 记日志、host 改成
+   *   `'0.0.0.0'`、重新 listen，**promise 保持 pending**（同一个 handler 还在）；
+   * - 其余情况（含回落之后再次失败）一律走同一个 `reject`；
+   * - 成功时摘掉状态机，换上常驻日志监听（保留下面的 `lan relay error:`）；
+   * - `close()` 对仍在 listening 的 server 兜底关闭。
+   */
   let host = requestedHost
+  const FALLBACK_CODES = ['EADDRNOTAVAIL', 'EAFNOSUPPORT', 'EPFNOSUPPORT']
+  const wanted = Number(desired.port)
   const port = await new Promise((resolve, reject) => {
-    const onError = error => reject(error)
-    server.once('error', onError)
-    const wanted = Number(desired.port)
-    const attemptBind = (bindHost, isLast) => {
-      server.listen(Number.isFinite(wanted) && wanted > 0 ? Math.trunc(wanted) : 0, bindHost, () => {
-        server.off('error', onError)
-        server.on('error', error => log(`lan relay error: ${error?.message ?? error}`))
+    let settled = false
+    const report = error => log(`lan relay error: ${error?.message ?? error}`)
+    /** 收尾：无论成功还是最终失败，状态机只在这一处摘掉。 */
+    const settle = () => {
+      if (settled) return
+      settled = true
+      server.off('error', onError)
+      server.on('error', report)
+    }
+    function attemptBind() {
+      server.listen(Number.isFinite(wanted) && wanted > 0 ? Math.trunc(wanted) : 0, host, () => {
+        settle()
         resolve(server.address()?.port ?? 0)
       })
     }
-    attemptBind(host)
-    server.once('error', error => {
-      // 双栈不可用（纯 v4 内核/容器）→ 退回 IPv4 通配再试一次
-      if (host === '::' && ['EADDRNOTAVAIL', 'EAFNOSUPPORT', 'EPFNOSUPPORT'].includes(String(error?.code))) {
-        log(`lan relay: dual-stack bind unavailable (${error?.code}); falling back to 0.0.0.0`)
+    function onError(error) {
+      // 已 settle 之后才来的错误（如运行期 socket 故障）只落日志。
+      if (settled) { report(error); return }
+      const code = String(error?.code ?? '')
+      if (host === '::' && FALLBACK_CODES.includes(code)) {
+        log(`lan relay: dual-stack bind unavailable (${code}); falling back to 0.0.0.0`)
         host = '0.0.0.0'
-        attemptBind(host)
+        // 同一个 handler 仍在监听：这次再失败会落到下面的 reject，不会裸奔。
+        attemptBind()
+        return
       }
-    })
+      settle()
+      reject(error)
+    }
+    server.on('error', onError)
+    attemptBind()
   })
 
   return {
@@ -783,7 +814,13 @@ export async function startLanRelay({ config, log = () => {}, onTrace = () => {}
     port,
     host,
     close: () => new Promise(resolve => {
+      /**
+       * 兜底关闭：bind 已经失败过的 server 不是 listening，`close()` 只会
+       * 以 ERR_SERVER_NOT_RUNNING 回调——这里直接 resolve，不把一次「没东西
+       * 可关」当成错误；仍在 listening 的则等它真正关掉再 resolve。
+       */
       server.closeAllConnections?.()
+      if (server.listening !== true) { resolve(); return }
       server.close(() => resolve())
     }),
   }

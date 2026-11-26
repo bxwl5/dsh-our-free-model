@@ -243,7 +243,14 @@ export function createModelRuntime({
         logger.warn?.(`our-free-model turn failed: ${record.model} — ${record.message.slice(0, 300)}`)
       }
     },
-    warn: message => logger.warn?.(message) ?? logger.log?.(message),
+    /**
+     * ⚠️ 三元而不是 `??`（2026-11-26 修复）：`logger.warn` 由
+     * `index.js:createDiagnosticLogger` 产出，恒返回 `undefined`，所以
+     * `logger.warn?.(message) ?? logger.log?.(message)` 的右侧**必然**执行
+     * —— 同一句话既走 `warn` 又走 `log`，每条 warn 打两遍。
+     * 这里要的是「有 warn 就只用 warn」，不是 nullish 兜底。
+     */
+    warn: message => logger.warn ? logger.warn(message) : logger.log?.(message),
     /**
      * ★ `log` 是**独立依赖**，不能省（真实缺陷，2026-11-10）。
      *
@@ -285,12 +292,19 @@ export function createModelRuntime({
       const value = await shared
       if (disposed) return value
       /**
-       * 共享刷新满足不了本次要求时**继续等下一轮**，绝不跌出循环重跑
-       * （2026-11-19 审计 🔴#5）。原实现条件不满足时跌到 while 外再起
-       * 一轮完整 listing+kilo+channel，启动刷新 / 手动探测 / 定时轮询
-       * 撞车时同一瞬间跑两遍，白白多花上游配额（probe 段有 probeRound
-       * 幂等兜底，重复的是 listing 与渠道扫描段）。
-       * 循环条件保证：只要还有在途刷新就蹭它；没有在途时才自己起一轮。
+       * ⚠️ 这里**没有**「共享刷新不满足要求就继续等下一轮」的去重保证
+       * （2026-11-26 注释纠偏，行为未改）。
+       *
+       * `await shared` 返回时，owner 的 `finally` 已经把 `catalogRefresh`
+       * 置回 null（除非等待期间恰好又有别的调用起了新一轮），因此 `continue`
+       * 通常只会再判一次 `while (catalogRefresh !== null)` —— 结果为 false，
+       * 直接跌出循环，由**本次调用自己**再起一轮完整刷新（listing + kilo +
+       * 渠道扫描）。这是刻意的：`force`/`probe` 要的是真探测/重扫，蹭一个
+       * 不带 force 的共享刷新满足不了它，此时重复 listing 与渠道扫描是可接受
+       * 代价（probe 段有 probeRound 幂等兜底）。
+       *
+       * `continue` 唯一的作用是：如果等待期间正好有**新一轮**在途，就接着蹭
+       * 它，而不是在它还没结束时并排再起第三轮。
        */
       if ((force && !sharedForced) || (probe && !sharedProbed)) {
         await Promise.resolve()

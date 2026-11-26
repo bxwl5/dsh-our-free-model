@@ -439,6 +439,24 @@ export interface RpcCreditsClaimSummary {
   inactive: number
   failed: number
   /**
+   * ★ **积分续期**（`ClaimOutcome.kind === 'extended'`）的条数（2026-11-26）。
+   *
+   * 当前只有商汤小浣熊产出它：签到 = 把当日 300 分从「当日 24:00 失效」续成
+   * 7 天窗口，**余额一分未增**，故它既不算 `claimed`（会渲染成「今日领取 +300」）
+   * 也不算 `alreadyClaimed`（今天恰恰是第一次）。但**必须单独上报**：
+   *
+   * - 汇总层（`describeRun` / 渠道行 `describeChannel`）若只有
+   *   claimed/alreadyClaimed/failed/inactive 四栏，纯续期那一天会全部为 0 ⇒
+   *   `parts.length === 0` ⇒ 渠道行显示「无可领」，而明细表格显示「积分已延期」，
+   *   两处自相矛盾（真实缺陷，本字段就是修法）；
+   * - 账本层（`AutoCheckinProviderLedger.lastOutcome`）需要它把「今天第一次续期」
+   *   记成 `extended`，而不是谎报成「今天已领」。
+   *
+   * ⚠️ 恒存在（没有续期时为 `0`），与 {@link totalByUnit} 同一条理由：
+   * 可选字段会让「宿主旧版本没这个字段」与「本次真的没有续期」混为一谈。
+   */
+  extended: number
+  /**
    * 其中**能证明「今天这一轮已被处理」**的条数（`claimed` + `alreadyClaimed`
    * 里 `coversToday !== false` 的那些）。
    *

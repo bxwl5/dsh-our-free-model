@@ -8,7 +8,7 @@ import { generateKey, rankLanAddresses, startForwardServer, startLanRelay } from
 import { isLoopbackHost } from '../../src/trust.js'
 import { isModelHidden } from '../../src/store.js'
 import { commitsAnswer } from '../../src/adapter.js'
-import { createManagement } from './management.mjs'
+import { createManagement, panelPasswordState } from './management.mjs'
 import { createChannelRuntime } from './channels/runtime.mjs'
 import {
   COMBO_CHANNEL, isComboEntry, normalizeCombos, buildComboCatalog,
@@ -561,7 +561,7 @@ export async function startStandalone({
       },
     }
     management = createManagement({
-      stores, runtime, channels,
+      stores, runtime, channels, logger,
       info: () => ({
         product: PRODUCT, version: VERSION, dataDir,
         baseUrl: `http://${host === '::1' ? '[::1]' : host}:${listener?.port ?? requestedPort}`,
@@ -580,10 +580,28 @@ export async function startStandalone({
       // 同上：延迟读取，确保拿到 combo 包装后的 complete。
       complete: (request, onChunk) => runtime.complete(request, onChunk),
       modelRows: () => runtime.publicModelRows(),
-      health: () => ({
-        ok: true, service: PRODUCT, product: 'standalone', version: VERSION,
-        capabilities: { anonymous: true, kilo: true, accountChannels: true, webUi: true },
-      }),
+      /**
+       * 健康响应必须暴露**真实子组件状态**（审计 P2）：此前恒为
+       * `{ok:true}`，渠道 Worker 死了容器也照样 healthy。
+       *
+       * ⚠️ HTTP 状态**永远是 200**：Dockerfile 的 HEALTHCHECK 只读 `r.ok`
+       * （HTTP 状态），而渠道「不是 ready」是常态（要用户登录才 ready）。
+       * 若按 ready 判 503，容器会无限重启 —— 用户明确要避免。
+       *
+       * 判据：只有渠道 Worker **明确 failed 且不可恢复**（`channels.state()`
+       * 的 `failed` 来自 worker `error`/异常退出，运行期不会自愈）时，
+       * 响应体 `ok` 才为 false（HTTP 仍 200）。免费模型、管理面、渠道路由
+       * 之外的功能仍可用，因此不判为进程级致命、不触发容器重启。
+       */
+      health: () => {
+        const channelState = channels?.state?.() ?? { state: 'unknown' }
+        return {
+          ok: channelState.state !== 'failed',
+          service: PRODUCT, product: 'standalone', version: VERSION,
+          capabilities: { anonymous: true, kilo: true, accountChannels: true, webUi: true },
+          channels: channelState,
+        }
+      },
       handleRequest: management.handleRequest,
       log: message => logger.warn?.(`our-free-model standalone: ${message}`),
     })
@@ -591,6 +609,15 @@ export async function startStandalone({
     settings.update({ standalonePort: listener.port })
     settings.flush()
     await reconcileRelay()
+    /**
+     * 风险提示（只有一条 warn，**不改启动语义**）：
+     * 用户明确说过局域网内部署「不开启面板密码不影响」，所以这里不拒绝启动、
+     * 也不改变 `authenticated()`「未设密码 = 放行所有人」的既有语义，只在
+     * 「面板中继真的跑起来了 + 没设 OFM_PASSWORD」时把风险打进启动日志。
+     */
+    if (lanState().panel && lanState().running && !panelPasswordState().required) {
+      logger.warn?.('our-free-model standalone: 面板中继已开启（--lan-panel）但未设置 OFM_PASSWORD：同网段任何设备都可访问并修改管理面，建议设置密码。')
+    }
 
     function scheduleRefresh() {
       clearTimeout(timer)
@@ -640,15 +667,33 @@ export async function startStandalone({
       },
     }
   } catch (error) {
+    /**
+     * 启动失败清理（审计 P2）：任何一步 reject 都不能挡住后面的步骤，
+     * **`releaseLock()` 必须执行** —— 否则数据目录会被一个启动失败的
+     * 进程锁住，修好配置也起不来（测试 `failed-boot` 覆盖了这个契约）。
+     *
+     * 旧实现 `await relayChanges` 无保护：它一旦 reject，`closeRelay` /
+     * `listener.close` / `channels.close` / `releaseLock` 全部跳过。
+     * 现在：先单独等 relayChanges（它的失败只记 warn），其余步骤
+     * `Promise.allSettled` 并行收尾，最后无条件释放锁；抛出的仍是原始错误。
+     */
     stopped = true
     clearTimeout(timer)
-    management?.dispose()
-    runtime?.dispose()
-    await relayChanges
-    await closeRelay()
-    if (listener) await listener.close()
-    await channels?.close()
-    try { stores?.dispose() } finally { await releaseLock() }
+    const warnCleanup = (step, reason) => logger.warn?.(`our-free-model standalone: 启动失败清理 ${step} 未完成（${reason?.message ?? reason}）`)
+    try { management?.dispose() } catch (disposeError) { warnCleanup('management.dispose', disposeError) }
+    try { runtime?.dispose() } catch (disposeError) { warnCleanup('runtime.dispose', disposeError) }
+    try { await relayChanges } catch (relayError) { warnCleanup('relayChanges', relayError) }
+    const steps = [['closeRelay', () => closeRelay()]]
+    if (listener) steps.push(['listener.close', () => listener.close()])
+    if (channels) steps.push(['channels.close', () => channels.close()])
+    const results = await Promise.allSettled(steps.map(([, step]) => Promise.resolve().then(step)))
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') warnCleanup(steps[index][0], result.reason)
+    })
+    try { stores?.dispose() } catch (disposeError) { warnCleanup('stores.dispose', disposeError) }
+    finally {
+      try { await releaseLock() } catch (releaseError) { warnCleanup('releaseLock', releaseError) }
+    }
     throw error
   }
 }

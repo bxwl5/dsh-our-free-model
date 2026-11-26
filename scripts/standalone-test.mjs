@@ -132,6 +132,34 @@ try {
       assert.equal(second.stats.get().days.privateDay, undefined)
     } finally { first.dispose(); second.dispose() }
   })
+  await check('渠道 Worker 只继承白名单环境变量，业务用到的变量一个不漏', async () => {
+    const { CHANNEL_ENV_KEYS, channelWorkerEnv } = await import('../packages/standalone/channels/runtime.mjs')
+    const source = fs.readFileSync(new URL('../packages/standalone/channels/business.mjs', import.meta.url), 'utf8')
+    const used = new Set()
+    // 渠道包有三种读法：process.env.X / env.X（函数形参默认 process.env）/
+    // env["X"] 与代理辅助函数 envValue("X")。全部纳入，否则漏一个就改变行为。
+    for (const pattern of [
+      /process\.env\.([A-Za-z_][A-Za-z0-9_]*)/g,
+      /\benv\.([A-Z_][A-Z0-9_]*)\b/g,
+      /\benv\[["']([A-Z_][A-Z0-9_()]*?)["']\]/g,
+      /\benvValue\(["']([A-Z_][A-Z0-9_]*?)["']\)/g,
+    ]) for (const match of source.matchAll(pattern)) used.add(match[1])
+    assert.ok(used.size > 0)
+    for (const name of used) assert.ok(CHANNEL_ENV_KEYS.includes(name), `business.mjs 读取 ${name}，但白名单漏了`)
+    const env = channelWorkerEnv({
+      PATH: '/usr/bin', TZ: 'Asia/Shanghai', HOME: '/home/u',
+      OFM_PASSWORD: 'must-not-leak', UNLISTED_SECRET: 'must-not-leak',
+      DSH_TRAE_MAX_MODE: 'turbo', HTTP_PROXY: 'http://proxy:8080',
+    }, path.join(scratch, 'env-whitelist'))
+    assert.equal(env.PATH, '/usr/bin')
+    assert.equal(env.TZ, 'Asia/Shanghai')
+    assert.equal(env.HOME, '/home/u')
+    assert.equal(env.DSH_TRAE_MAX_MODE, 'turbo')
+    assert.equal(env.HTTP_PROXY, 'http://proxy:8080')
+    assert.equal(env.OFM_PASSWORD, undefined, '面板密码绝不能进入渠道 Worker')
+    assert.equal(env.UNLISTED_SECRET, undefined, '白名单外变量不得继承')
+    assert.equal(env.OFM_CODEARTS_CACHE_DIR, path.join(scratch, 'env-whitelist', 'channel-pack', 'codearts-cache'))
+  })
   await check('routable binds and invalid ports fail before creating data', async () => {
     const invalidDir = path.join(scratch, 'invalid')
     await assert.rejects(startStandalone({ dataDir: invalidDir, host: '0.0.0.0' }), /loopback/)
@@ -183,6 +211,9 @@ try {
     assert.equal(response.status, 200)
     assert.equal(health.product, 'standalone')
     assert.equal(health.capabilities.accountChannels, true)
+    // 健康响应带真实渠道状态；HTTP 仍 200（渠道未 ready 不算致命）。
+    assert.equal(health.channels.state, 'ready')
+    assert.equal(health.ok, true)
     await listingStarted
     assert.equal(kiloCalls, 0)
   })

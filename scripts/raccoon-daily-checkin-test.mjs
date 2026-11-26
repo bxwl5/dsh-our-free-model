@@ -111,21 +111,107 @@ export async function verifyRaccoonDailyCheckin() {
     assert.equal(summary.coversToday, 2, 'extended 必须计入「今天已处理」，否则每 30 分钟重复签到')
     assert.equal(summary.claimed, 1, 'extended 不得计入 claimed')
     assert.equal(summary.totalCredit, 600, 'extended 不得把积分算进总额（余额未增）')
+    assert.equal(summary.extended, 1, 'extended 必须在汇总层单独计数（2026-11-26）')
+  }
+
+  // ④-b 小浣熊「一轮只有续期」的汇总口径（2026-11-26 真实缺陷的回归钉子）
+  //
+  // 缺陷现场：汇总层没有 extended 这一栏 ⇒ 四个计数全 0 ⇒ 渠道行
+  // `parts.length === 0` ⇒ 显示「无可领」，而逐账号明细写着「积分已延期」。
+  {
+    const helpers = await import('../vendor/channel-pack/src/credits-helpers.ts')
+    const ac = await import('../vendor/channel-pack/src/auto-checkin.ts')
+    const summary = helpers.computeClaimSummary([{ kind: 'extended', message: '积分已延期' }])
+    assert.equal(summary.extended, 1, 'extended 必须单独计数')
+    assert.equal(summary.claimed, 0, '续期不是领取，不得计入 claimed')
+    assert.equal(summary.alreadyClaimed, 0, '今天第一次续期不是「之前领过」')
+    assert.equal(summary.coversToday, 1, '续期确实处理了今天这一轮')
+    const text = ac.describeChannel(summary)
+    assert.match(text, /积分已延期/, '渠道行必须说清「积分已延期」')
+    assert.ok(!text.includes('无可领'), '⚠️ 纯续期不得掉进「无可领」兜底（旧缺陷）')
+    assert.equal(text, '1 个积分已延期', `渠道行文案契约：「N 个积分已延期」，实际是「${text}」`)
+    // 账本结局——自动签到那一轮（`describeRun` 是整轮摘要，也要报出来）
+    const runText = ac.describeRun({
+      providers: 1, claimed: 0, totalCredit: 0, totalByUnit: { credit: 0, token: 0 },
+      alreadyClaimed: 0, extended: 1, inactive: 0, failed: 0, coversToday: 1,
+      skipped: 0, errors: 0, givenUp: 0,
+    })
+    assert.match(runText, /积分已延期/, '整轮摘要也要报出续期')
+    assert.ok(!runText.includes('没有需要领取的账号'), '⚠️ 纯续期不得落进「没有需要领取的账号」兜底（旧缺陷）')
   }
 
   // ⑤ 展示态映射：extended 必须映射到自己的组，不能落到 claimed
+  //
+  // ⚠️ 原用例调的是不存在的 `autoCheckinRowsFromOutcomes?.(...)`（可选调用 ⇒
+  //    永远 undefined ⇒ 整段断言被跳过）。2026-11-26 改调真实的
+  //    `aggregateAccountRows`（它才是逐账号明细的产出函数）。
   {
     const ac = await import('../vendor/channel-pack/src/auto-checkin.ts')
-    const rows = ac.autoCheckinRowsFromOutcomes?.('raccoon', [
+    const rows = ac.aggregateAccountRows('raccoon', [
       { accountId: 'a1', nickname: '账号一', outcome: { kind: 'extended', message: '积分已延期' } },
     ])
-    if (rows !== undefined) {
-      assert.equal(rows[0].outcome, 'extended', 'extended 不得被折叠成其他展示态')
-      assert.equal(rows[0].amount, 0, 'extended 不产生金额')
-    }
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].outcome, 'extended', 'extended 不得被折叠成其他展示态')
+    assert.equal(rows[0].amount, 0, 'extended 不产生金额')
   }
 
-  console.log('ok  raccoon 每日签到：幂等分支/续期分支/失败分支 + 汇总与展示态口径')
+  // ⑥ 结局强弱表只有一份（2026-11-26：此前 merge/aggregate/record 三份不一致）
+  {
+    const ac = await import('../vendor/channel-pack/src/auto-checkin.ts')
+    assert.equal(ac.outcomeRank('claimed'), 4, 'claimed 最强')
+    assert.equal(ac.outcomeRank('extended'), 3, 'extended 低于 claimed、高于 already-claimed')
+    assert.equal(ac.outcomeRank('already-claimed'), 2)
+    assert.equal(ac.outcomeRank('failed'), 1)
+    assert.equal(ac.outcomeRank('skipped'), 0, 'skipped 不参与升级')
+    assert.equal(ac.outcomeRank('stale'), 0, '账本专用结局同样兜底 0')
+    assert.equal(ac.outcomeRank(undefined), 0)
+    const extendedRow = { provider: 'raccoon', accountId: 'a1', accountName: '账号一', outcome: 'extended', amount: 0, unit: 'credit', message: '积分已延期' }
+    assert.equal(
+      ac.mergeAccountResult(extendedRow, { ...extendedRow, outcome: 'failed', message: '上游 502' }).outcome,
+      'extended',
+      '⚠️ extended 不被后来的 failed 覆盖（旧实现把 extended 记成 0 强，任何结局都能盖掉它）',
+    )
+  }
+
+  // ⑦ 编程错误守卫：product 缺省却走默认 fetchStatus ⇒ 抛错，不静默降级
+  //
+  // 小浣熊分支此前就是这种形态（漏传 `precheckStatus: false`）：默认
+  // `fetchStatus` 会把 raccoon 凭据发给 **buddy** 的签到状态端点，只因 `product`
+  // 为 undefined 先抛 TypeError 才碰巧没发出请求。现在必须显式失败。
+  {
+    const helpers = await import('../vendor/channel-pack/src/credits-helpers.ts')
+    await assert.rejects(
+      () => helpers.collectClaimResults([], undefined, { resolve: async () => undefined }),
+      /precheckStatus/,
+      '⚠️ product 为 undefined + 默认 fetchStatus + 未跳过预检 ⇒ 必须抛编程错误',
+    )
+    const skipped = await helpers.collectClaimResults([], undefined, {
+      resolve: async () => undefined,
+      precheckStatus: false,
+    })
+    assert.equal(skipped.results.length, 0)
+    assert.equal(skipped.summary.extended, 0, '空账号池的汇总也要带上恒存在的 extended 栏')
+    // 注入自己的 fetchStatus（minimax 形态）时 product 缺省是合法的，不得抛错
+    const injected = await helpers.collectClaimResults([], undefined, {
+      resolve: async () => undefined,
+      fetchStatus: async () => null,
+    })
+    assert.equal(injected.results.length, 0)
+  }
+
+  // ⑧ RPC 分支契约（静态）：小浣熊的 claimAll 必须显式传 precheckStatus: false
+  {
+    const { readFile } = await import('node:fs/promises')
+    const source = await readFile(new URL('../vendor/channel-pack/src/channel-pack-rpc.ts', import.meta.url), 'utf8')
+    const start = source.indexOf('if (req.provider === RACCOON.id) {')
+    const end = source.indexOf('if (req.provider === MINIMAX.id) {', start)
+    assert.ok(start > 0 && end > start, '必须能定位 raccoon 分支')
+    const branch = source.slice(start, end)
+    assert.match(branch, /collectClaimResults<RaccoonCredential, undefined>/)
+    assert.match(branch, /precheckStatus: false/, '⚠️ 小浣熊分支必须跳过 buddy 式的状态预检（参照 autoclaw/officeace）')
+  }
+
+  console.log('ok  raccoon 每日签到：幂等分支/续期分支/失败分支 + 汇总与展示态口径 + 强弱表/预检守卫/RPC 契约')
 }
 
 exitIfDirectRun(import.meta.url, () => verifyRaccoonDailyCheckin())

@@ -11,8 +11,12 @@ const scriptDir = dirname(fileURLToPath(import.meta.url))
 const packageRoot = resolve(scriptDir, '..')
 
 /** 源 → 目标（相对 packageRoot）。 */
+// 2026-11-26：源文件放在包根（本仓库发布的正是那一份，`pack.js` 运行时按
+// `dirname(import.meta.url)` 在自身旁边解析它）。此前 `src/` 下还有一份**字节
+// 完全相同**的副本（sha256 6419471e…），两份并存只会让人改错文件，已删除；
+// 这里改成从包根取，重新 vendor 时把上游二进制放到包根即可。
 const ASSETS = [
-  ['src/qoder-auth-wasm.wasm', 'lib/qoder-auth-wasm.wasm'],
+  ['qoder-auth-wasm.wasm', 'lib/qoder-auth-wasm.wasm'],
 ]
 
 for (const [from, to] of ASSETS) {

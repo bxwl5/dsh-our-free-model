@@ -29,25 +29,64 @@ function parseAdoptableChannels() {
   return new Set([...match[1].matchAll(/^ {2}'?([a-z][a-z0-9-]*)'?: \{/gm)].map(([, id]) => id))
 }
 
-/** 文档总表：id → 一键档位（'✅' | '⚠️' | '❌'）。 */
-function parseDocTiers() {
-  const doc = read('docs/channel-login-methods.md')
+/**
+ * 文档总表：id → 一键档位（'✅' | '⚠️' | '❌'）。
+ *
+ * 顺带钉住表体列数：以前 `antigravity` 那行多写了一个 `|`，把旁注挤成第 9 列，
+ * 而旧解析只看前几列，所以档位照样对得上、漂移却没人发现 —— 这里改成
+ * 「表体每行的 `|` 段数必须等于表头」。
+ */
+function parseDocTiers(doc) {
+  const lines = doc.split('\n')
+  const headerIndex = lines.findIndex(line => /^\|\s*#\s*\|\s*provider\s*\|/.test(line))
+  assert.ok(headerIndex !== -1, '文档总表表头（`| # | provider | … |`）不见了')
+  const headerSegments = lines[headerIndex].split('|').length
   const tiers = new Map()
-  for (const line of doc.split('\n')) {
-    const cells = line.split('|').map(cell => cell.trim())
-    if (cells.length < 6) continue
-    const idMatch = /^`([a-z0-9-]+)`$/.exec(cells[2])
+  for (let index = headerIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index]
+    if (!line.startsWith('|')) break
+    const cells = line.split('|')
+    assert.equal(
+      cells.length,
+      headerSegments,
+      `文档总表第 ${index + 1} 行的 \`|\` 段数（${cells.length}）与表头（${headerSegments}）不一致：${line.slice(0, 80)}`,
+    )
+    const idMatch = /^`([a-z0-9-]+)`$/.exec(cells[2].trim())
     if (idMatch === null) continue
-    tiers.set(idMatch[1], cells[4])
+    tiers.set(idMatch[1], cells[4].trim())
   }
   return tiers
+}
+
+/**
+ * 正文里自报的渠道数字必须等于渠道总数。
+ *
+ * 只认三种明确口径，避免误伤「12 个渠道原先失败只写日志」「22/22 渠道可见」这类
+ * 讲别的事的句子；每种口径至少要出现一次，防止统计句被整段删掉。
+ */
+const CHANNEL_COUNT_PATTERNS = [
+  { pattern: /(\d+)\s*个账号渠道/g, phrase: '「N 个账号渠道」' },
+  { pattern: /(\d+)\s*个的登录/g, phrase: '「N 个的登录」' },
+  { pattern: /共\s*(\d+)\s*个渠道/g, phrase: '「共 N 个渠道」' },
+]
+
+function assertDocChannelCounts(doc, total) {
+  let hits = 0
+  for (const { pattern, phrase } of CHANNEL_COUNT_PATTERNS) {
+    for (const [, digits] of doc.matchAll(pattern)) {
+      hits += 1
+      assert.equal(Number(digits), total, `文档里的 ${phrase} 写成 ${digits}，渠道总数是 ${total}`)
+    }
+  }
+  assert.ok(hits > 0, '文档里找不到任何「N 个账号渠道 / N 个的登录」式统计句，首句或统计行被删了')
 }
 
 const CLIENT_TO_TIER = { browser: '✅', 'browser+sms': '⚠️', cookie: '❌', token: '❌', sms: '✅' }
 
 const client = parseClientLogins()
 const adoptable = parseAdoptableChannels()
-const doc = parseDocTiers()
+const docSource = read('docs/channel-login-methods.md')
+const doc = parseDocTiers(docSource)
 
 // ── 1) 界面声明本身：15 张卡片（2026-11-05 起五渠道移除），取值都在已知集合内 ──
 assert.equal(client.size, 15, `CHANNEL_PROVIDERS 应为 15 条，实际 ${client.size}`)
@@ -80,8 +119,9 @@ for (const [id, login] of client) {
 const counts = { '✅': 0, '⚠️': 0, '❌': 0 }
 for (const tier of doc.values()) counts[tier] += 1
 const stats = `一键 ${counts['✅']} / 半自动 ${counts['⚠️']} / 纯粘贴 ${counts['❌']}`
-assert.ok(
-  read('docs/channel-login-methods.md').includes(stats),
-  `文档缺少与当前一致的统计行：${stats}`,
-)
-console.log(`ok  channel-login-methods: ${client.size} 渠道，${stats}；文档/界面/粘贴表三方一致`)
+assert.ok(docSource.includes(stats), `文档缺少与当前一致的统计行：${stats}`)
+
+// ── 5) 正文自报的渠道数字必须等于渠道总数（口径来自 client.js 的 CHANNEL_PROVIDERS）──
+assertDocChannelCounts(docSource, client.size)
+
+console.log(`ok  channel-login-methods: ${client.size} 渠道，${stats}；文档/界面/粘贴表三方一致，正文数字与表体列数已钉住`)

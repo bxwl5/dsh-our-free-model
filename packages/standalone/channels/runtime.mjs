@@ -3,12 +3,77 @@ import { Worker } from 'node:worker_threads'
 import { foldForwardOutcome } from '../../../src/core/completion.js'
 import { recordTurn, recordUsage } from '../../../src/store.js'
 
+/**
+ * 渠道 Worker 的环境变量**白名单**（审计 P2）。
+ *
+ * 旧实现 `{ ...process.env }` 把整份环境（含 `OFM_PASSWORD`）继承给 Worker：
+ * 渠道包是随仓库分发的三方打包产物，任何一处 `console.log(process.env)`
+ * 或错误上报都会把管理面密码带出去。改成按需透传。
+ *
+ * 清单来源：扫 `channels/business.mjs`（渠道包实际运行体）与 `worker.mjs` 里
+ * `process.env.X`、`env.X`、`env["X"]`、`envValue("X")` 四种读法，把**用到**的
+ * 全列进来 —— 少一个就会改变渠道行为（超时、缓存目录、代理、凭据位置）。
+ * `scripts/standalone-test.mjs` 用同样的四种正则做回归校验。
+ *
+ * ⚠️ `OFM_PASSWORD` **永不透传**；新增渠道环境变量时同步补这份清单。
+ */
+export const CHANNEL_ENV_KEYS = [
+  // 运行时基础
+  'PATH', 'TZ', 'LANG', 'LC_ALL', 'NODE_ENV',
+  // 账户 / 凭据位置（credentials.mjs 与渠道包各自按平台读）
+  'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'SystemRoot',
+  'PROGRAMFILES', 'PROGRAMFILES(X86)', 'SCOOP', 'SCOOP_GLOBAL', 'XDG_DATA_HOME', 'XDG_DATA_DIRS',
+  // 独立端数据目录
+  'OFM_HOME', 'DSH_HOME',
+  // 代理（大写到小写都要，Undici 与渠道包分别读不同形态；ALL_PROXY 是回退项）
+  'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'ALL_PROXY',
+  'http_proxy', 'https_proxy', 'no_proxy', 'all_proxy',
+  // 渠道缓存 / 本机浏览器
+  'OFM_CODEARTS_CACHE_DIR', 'ZCODE_CHROME_PATH',
+  // 渠道包内部开关 / 超时（business.mjs 实际读取）
+  'CI', 'JEST_WORKER_ID', 'UNDICI_NO_WASM_SIMD',
+  'DSH_HIDE_MODELS_WITHOUT_ACCOUNT', 'DSH_REASONING_LOOP_GUARD',
+  'DSH_REASONING_LOOP_AUTO_RESUME', 'DSH_REASONING_LOOP_AUTO_RESUME_MAX',
+  'DSH_COURSE_LEAK_STRIP', 'DSH_THINK_LEAK_STRIP', 'DSH_DEAD_MODEL_TTL_DAYS',
+  'DSH_OPENAI_GATEWAY_ENABLED', 'DSH_OPENAI_GATEWAY_PORT', 'DSH_OPENAI_GATEWAY_API_KEY',
+  'DSH_BUDDY_EXPIRING_WINDOW_DAYS',
+  'DSH_CHANNEL_PACK_AUTO_CHECKIN_DELAY_MS', 'DSH_CHANNEL_PACK_BADGE_TTL_MS',
+  'DSH_ZCODE_CAPTCHA_BACKOFF', 'DSH_ZCODE_CAPTCHA_POOL',
+  'DSH_ZCODE_CAPTCHA_POOL_TTL_MS', 'DSH_ZCODE_CAPTCHA_QUEUE',
+  'DSH_CODEARTS_SSE_FIRST_TOKEN_TIMEOUT_MS', 'DSH_CODEARTS_SSE_CHUNK_TIMEOUT_MS',
+  'DSH_BUDDY_SSE_FIRST_TOKEN_TIMEOUT_MS', 'DSH_BUDDY_SSE_CHUNK_TIMEOUT_MS', 'DSH_BUDDY_SATURATION_DELAY_MS',
+  'DSH_QODER_QUEUE_TIMEOUT_MS', 'DSH_QODER_QUEUE_STALL_MS',
+  'DSH_QODER_SSE_FIRST_TOKEN_TIMEOUT_MS', 'DSH_QODER_SSE_CHUNK_TIMEOUT_MS',
+  'DSH_TRAE_CHANNELS', 'DSH_TRAE_MAX_MODE', 'DSH_TRAE_MAX_MODELS',
+  'DSH_TRAE_HIDE_INTERNAL', 'DSH_TRAE_MAX_COMPLETION_TOKENS',
+  'DSH_TRAE_SSE_FIRST_TOKEN_TIMEOUT_MS', 'DSH_TRAE_SSE_CHUNK_TIMEOUT_MS', 'DSH_TRAE_ROTATE_MACHINE_ID',
+  'DSH_CLINE_SSE_FIRST_TOKEN_TIMEOUT_MS', 'DSH_CLINE_SSE_CHUNK_TIMEOUT_MS',
+  'DSH_LOOMY_FIRST_TOKEN_TIMEOUT_MS', 'DSH_LOOMY_CHUNK_TIMEOUT_MS',
+  'DSH_RACCOON_FIRST_TOKEN_TIMEOUT_MS', 'DSH_RACCOON_CHUNK_TIMEOUT_MS',
+  'DSH_ZCODE_MAX_CONCURRENCY', 'DSH_ZCODE_SSE_IDLE_TIMEOUT_MS', 'DSH_ZCODE_REQUEST_TIMEOUT_MS',
+  // 渠道自己的令牌 / 运行时信息 / 内置 OAuth 客户端
+  'QODER_MACHINE_TOKEN_PATH', 'QODER_RUNTIME_INFO',
+  'CMDC_PAK_GOOGLE_CLIENT_ID', 'CMDC_PAK_GOOGLE_CLIENT_SECRET',
+]
+
+/** 按白名单构造 Worker 环境；`OFM_CODEARTS_CACHE_DIR` 恒定以本实例数据目录为准。 */
+export function channelWorkerEnv(env = process.env, dataDir) {
+  const output = {}
+  for (const name of CHANNEL_ENV_KEYS) {
+    if (name === 'OFM_PASSWORD') continue // 显式排除（防御性：清单里永远不该出现）
+    const value = env[name]
+    if (typeof value === 'string') output[name] = value
+  }
+  output.OFM_CODEARTS_CACHE_DIR = path.join(dataDir, 'channel-pack', 'codearts-cache')
+  return output
+}
+
 /** 一实例一 Worker，避免原渠道业务的模块单例串目录、串账号。 */
 export async function createChannelRuntime({ dataDir, logger = console, stats }) {
   const worker = new Worker(new URL('./worker.mjs', import.meta.url), {
     workerData: { dataDir },
     execArgv: process.execArgv.filter(arg => !arg.startsWith('--input-type')),
-    env: { ...process.env, OFM_CODEARTS_CACHE_DIR: path.join(dataDir, 'channel-pack', 'codearts-cache') },
+    env: channelWorkerEnv(process.env, dataDir),
   })
   const pending = new Map()
   let sequence = 0

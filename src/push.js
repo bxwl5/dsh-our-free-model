@@ -28,7 +28,19 @@ export function createPushHub({ logger = console, heartbeatMs = HEARTBEAT_MS } =
     heartbeat = setInterval(() => {
       for (const res of clients) {
         if (res.writableEnded === true || res.destroyed === true) { clients.delete(res); continue }
-        res.write(': ping\n\n')
+        /**
+         * `write()` 会**同步**抛（ERR_STREAM_DESTROYED、ERR_STREAM_WRITE_AFTER_END、
+         * 或对端在 writeHead 之后直接断开的 EPIPE）。心跳跑在 `setInterval`
+         * 回调里，没有 try/catch 就是 uncaughtException，整个宿主进程陪葬
+         * （同文件 `sendTo` 早就包了，这里漏了：2026-11-26 修复）。
+         * 与 `sendTo` 一致：移除该客户端 + debug 记录，下一拍继续服务其余连接。
+         */
+        try {
+          res.write(': ping\n\n')
+        } catch (error) {
+          clients.delete(res)
+          logger.debug?.(`our-free-model push: dropped client on heartbeat (${error?.message ?? error})`)
+        }
       }
       if (clients.size === 0) stopHeartbeat()
     }, heartbeatMs)

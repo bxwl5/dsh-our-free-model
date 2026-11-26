@@ -32,7 +32,7 @@
     "managedInstallation": "distribution=managed stands both channels down; the distributing pack owns update timing and bytes"
   },
   "integrity": {
-    "releaseManifest": "feed/manifest.json",
+    "releaseManifest": "catalog/integrity.json",
     "catalogDigests": "catalog/integrity.json",
     "algorithm": "sha256",
     "normalization": "LF-normalized bytes (.gitattributes * text=auto eol=lf), matching what a git blob serves"

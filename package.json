@@ -29,6 +29,8 @@
     "typecheck:channels": "tsc --noEmit -p vendor/channel-pack/tsconfig.json"
   },
   "files": [
+    "README.md",
+    "README_EN.md",
     "index.js",
     "client.js",
     "adapter",

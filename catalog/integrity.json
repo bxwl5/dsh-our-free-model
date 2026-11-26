@@ -8,6 +8,16 @@
       "sha256": "4d5f97c83545b2159926df06d3210a266d2b7f900e27f7b3e8e576caf753e828"
     },
     {
+      "path": "README.md",
+      "size": 3026,
+      "sha256": "1785f15c4644bbb4d8cfebf862b43479f3acb1945f0cd3acdeb0a1958f45c329"
+    },
+    {
+      "path": "README_EN.md",
+      "size": 3040,
+      "sha256": "91ba966d077148ac201a63c5797650c06a9e0a99d7010884d2933b912ec42612"
+    },
+    {
       "path": "adapter/dsh-llm.d.ts",
       "size": 431,
       "sha256": "db211ac5cddea3851b775e79db8b9fb676551b9f3ef43583e96232b02faef999"

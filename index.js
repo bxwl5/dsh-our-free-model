@@ -182,8 +182,17 @@ export function apply(ctx, config) {
 
   /** `managed` stands down everything that would rewrite the installed bytes. */
   const distribution = distributionOf(config, settings)
-  // （终审 A6：原 `const managed = distribution === 'managed'` 零消费已删——
-  // managed 语义承诺「停用热重载/公告/自更新」未实现，属 t6 待实现项而非死变量。）
+  /**
+   * `managed` 的真实含义（2026-11-26 补齐）：
+   *
+   * 分发包安装时**字节归包管理器所有**，两个写者写同一个安装目录会毁掉安装。
+   * 此前这句承诺只写在文档里 —— `reloadFromDisk`、`syncWatcher`、`POST /reload`
+   * 都不看 `distribution`，于是一次热重载就会用旧模块缓存回滚覆盖分发包目录。
+   *
+   * 判据只认显式配置（`distributionOf` 的默认值是 `self`），所以自装的用户
+   * 行为一字不变；只有真被分发包装过、显式声明 `managed` 的实例才会被挡住。
+   */
+  const managed = distribution === 'managed'
 
   let forward = null
   let forwardError = ''
@@ -854,6 +863,7 @@ let channelRosterReadAt = 0
    * 同步调用会 dispose 正在处理该请求的 fiber，响应发不出去。
    */
   async function reloadFromDisk() {
+    if (managed) throw new Error('managed 安装由包管理器拥有字节，热重载已停用（distribution=managed）')
     if (isReloading()) throw new Error('a reload is already in progress')
     const result = await selfReload(ctx, {
       logger, packageUrl: PKG_URL.href, entryUrl: ENTRY_URL,
@@ -865,7 +875,8 @@ let channelRosterReadAt = 0
   /** 文件变化自动热重载（默认关，设置页开关控制）。 */
   let watcher = undefined
   function syncWatcher() {
-    const wanted = settings.get().autoReloadWatch === true
+    // managed 下连监视器都不装：它唯一的作用就是触发重载。
+    const wanted = settings.get().autoReloadWatch === true && !managed
     if (wanted && watcher === undefined) {
       watcher = watchPackage(PKG_DIR, {
         logger,
