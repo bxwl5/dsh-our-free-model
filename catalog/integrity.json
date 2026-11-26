@@ -199,8 +199,8 @@
     },
     {
       "path": "src/reload.js",
-      "size": 12984,
-      "sha256": "924619110cc6632589f73d2805058319324d692e612d78bfa690e16e2fc531e3"
+      "size": 14583,
+      "sha256": "25f41dc8ff2622c64b58c61ba098095e3569525d4d87e9511c140c8aaa93923e"
     },
     {
       "path": "src/route/classify.js",
