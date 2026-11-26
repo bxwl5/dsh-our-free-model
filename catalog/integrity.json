@@ -9,13 +9,13 @@
     },
     {
       "path": "README.md",
-      "size": 3026,
-      "sha256": "1785f15c4644bbb4d8cfebf862b43479f3acb1945f0cd3acdeb0a1958f45c329"
+      "size": 3020,
+      "sha256": "1ed057994d8af24f09b5e0d006948f8477963b607611367069896446861984a4"
     },
     {
       "path": "README_EN.md",
-      "size": 3040,
-      "sha256": "91ba966d077148ac201a63c5797650c06a9e0a99d7010884d2933b912ec42612"
+      "size": 3057,
+      "sha256": "f0751bdc957f71d30e86f94ca9bd24b73a242146025398b2257018b6342e9c8e"
     },
     {
       "path": "adapter/dsh-llm.d.ts",
@@ -29,8 +29,8 @@
     },
     {
       "path": "client.js",
-      "size": 472272,
-      "sha256": "01900b99008dbf1cb346c54da75de0757a293ca5e3061888a88da9d2081dbe22"
+      "size": 473213,
+      "sha256": "f8924dcc698627baed79f4b4361a22447647ee26fb28dfe8e03ab813e2b6f920"
     },
     {
       "path": "cordis.patch.yml",
@@ -44,8 +44,8 @@
     },
     {
       "path": "index.js",
-      "size": 95943,
-      "sha256": "50bceb9afc2180c9ade36ee2b4f1df2847b4c94f5b07bb099c55a2b83e8783d5"
+      "size": 96604,
+      "sha256": "6db54617ebe5430bb3c362adae52fc5ca3a49fa828d07bf51b9ff0f86c56cffb"
     },
     {
       "path": "locale/en.json",
@@ -59,8 +59,8 @@
     },
     {
       "path": "package.json",
-      "size": 2858,
-      "sha256": "bb09e062b71d3e9b8f20f84c0ac94f173afc61f86cbc779ee8f0887187b60162"
+      "size": 2895,
+      "sha256": "ff0593250b4f130df3df54152260b40c2f4c53d27323acbf7c7ae13db2273298"
     },
     {
       "path": "src/adapter.js",
@@ -99,8 +99,8 @@
     },
     {
       "path": "src/core/channel-usage.js",
-      "size": 14723,
-      "sha256": "6d23da1de8d79a1ee3b3d15d0336f5c6ef5d2f567e4a8ed50a809ca50f9113ae"
+      "size": 15815,
+      "sha256": "44d2e178b15c8511faa3509177383dceb12bff78da8ed077ae1a92da097cc1ce"
     },
     {
       "path": "src/core/completion.js",
@@ -109,8 +109,8 @@
     },
     {
       "path": "src/core/runtime.js",
-      "size": 30777,
-      "sha256": "fc0563dc4e7e22ea6f65a7ce6d77d54b2c62ce5f427b1e5e4502825fdeccba56"
+      "size": 31655,
+      "sha256": "c2966bf64649793046432b69ca70f8b3768abfa8ad236c09b963a42e7dbcfc85"
     },
     {
       "path": "src/core/stats.js",
@@ -119,8 +119,8 @@
     },
     {
       "path": "src/deferred-response.js",
-      "size": 1639,
-      "sha256": "6a2cd40fc63a1a18e36be7ce32ca86aeae117eb2e06185879a2b38d451664fae"
+      "size": 2237,
+      "sha256": "9a4ea1104da6f025788b74667142886813fa2818273d45b689f545fb86b13b1b"
     },
     {
       "path": "src/effort.js",
@@ -139,13 +139,13 @@
     },
     {
       "path": "src/forward.js",
-      "size": 69783,
-      "sha256": "8cb0ce76c01573824b5d170e55d4fbe8fe79cca5d70a6985fccc78b6c380ccd3"
+      "size": 71656,
+      "sha256": "e988f4db6c3b681463cd243879bda983cbcc91d7333828a1e8a5db10ab883ff6"
     },
     {
       "path": "src/http.js",
-      "size": 30105,
-      "sha256": "458e8a9e7c0ac440f80f31a6de5eccd2dfdb2a534f576ead43f2f0cc7ade6886"
+      "size": 33988,
+      "sha256": "012b7f8d2410bfd187e05d1a4cbdd6cc09267f74348231f762d3e7b4d553a849"
     },
     {
       "path": "src/image-pricing.d.ts",
@@ -184,13 +184,13 @@
     },
     {
       "path": "src/probe.js",
-      "size": 11210,
-      "sha256": "c62035e49f2e8791310547970a5f32d71b4d1a1d11bcc21ebdb6b54f5747fe31"
+      "size": 11602,
+      "sha256": "85521d8ef53265876c9ec9f95449da52166d185cb77d3f3373cd58e8e99959f2"
     },
     {
       "path": "src/push.js",
-      "size": 3210,
-      "sha256": "0e99ad2094a005846a98da69f51b0546e96dbd12b6e2448747ebaf61a987f2dd"
+      "size": 3894,
+      "sha256": "e20e35d4da4eaf36344f65e66486da594d77c96af62e663eec972d87d1887729"
     },
     {
       "path": "src/recovery.js",
@@ -339,8 +339,8 @@
     },
     {
       "path": "vendor/channel-pack/pack.js",
-      "size": 3136503,
-      "sha256": "b800cea89a63008f49638b25464c42a3e7ecb9f4efbe615d05dc1d7de0e296a6"
+      "size": 3137740,
+      "sha256": "f9c10a2a0fedb1752317a188324aa8cf0df8a0e1df6ba5c383c0e3da6e5dc82c"
     },
     {
       "path": "vendor/channel-pack/qoder-auth-wasm.wasm",
