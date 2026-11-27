@@ -109,8 +109,8 @@
     },
     {
       "path": "src/core/runtime.js",
-      "size": 33233,
-      "sha256": "02f239bc388cacf90025392a855c13e6351c4090342e603a4171f471d7015ab2"
+      "size": 33723,
+      "sha256": "245be64d652e40cecb86ef6dd501070b220f4197b9486f1cd2c771c2522b3e6a"
     },
     {
       "path": "src/core/stats.js",
