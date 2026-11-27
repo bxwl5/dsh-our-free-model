@@ -494,7 +494,13 @@ export function createModelRuntime({
   async function refreshAvailability(force = false) {
     if (disposed) return {}
     if (!force) return {} // 自动探测已关闭（见 runProbeRound 的头注）：不烧免费额度
-    if (probeBackoffUntil > Date.now()) return {}
+    /**
+     * ⚠️ **force 不退还避**（2026-11-27 修）：退避（`probeBackoffUntil`）是给
+     * *自动*轮次用的节流器；这条改动曾把它套到 force 头上，于是「重新探测」按钮
+     * 在 429 退避窗口里直接哑火 —— 与日志里「the reprobe button forces a round」
+     * 和「手动路径行为不变」的承诺相反。现在 `!force` 已在上一条提前返回，
+     * 自动侧根本走不到这里；force 一律立即开一轮（结果仍会刷新退避状态）。
+     */
     // TTL 缓存门：非 force 且结果足够新 → 直接复用（含 in-flight 共享）。
     // `at` 由 runProbeRound 在每轮结束时写入，重启后从磁盘恢复，天然跨进程存活。
     if (!force) {

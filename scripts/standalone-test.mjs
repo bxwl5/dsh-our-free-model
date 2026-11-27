@@ -411,11 +411,12 @@ try {
       assert.equal(turns.length, before + 1, '退避已到期，15 分钟周期仍不探测免费车道（自动探测已关闭）')
       await probeService.runtime.refreshCatalog({ probe: true, force: true })
       assert.equal(turns.length, before + 2, '退避到期后手动强制探测应恢复（这一轮又拿到 429）')
-      // 第二轮全 429 把退避翻倍到 60 分钟：手动按钮在这段时间里同样不烧额度。
+      // 第二轮全 429 把退避翻倍到 60 分钟 —— 但**手动按钮不受退避约束**：
+      // 退避是给自动轮次的节流器，手动探测点了就该真的跑（2026-11-27 修）。
       await probeService.runtime.refreshCatalog({ probe: true, force: true })
-      assert.equal(turns.length, before + 2, '新一轮退避内手动强制探测也不发请求')
+      assert.equal(turns.length, before + 3, '退避窗口内手动强制探测仍应发请求（手动不受退避约束）')
       await runPeriod()
-      assert.equal(turns.length, before + 2, '周期任务不受新的退避状态影响：它本来就不探测')
+      assert.equal(turns.length, before + 3, '周期任务不受退避状态影响：它本来就不探测')
     } finally {
       await probeService?.close()
       globalThis.setTimeout = nativeTimeout
