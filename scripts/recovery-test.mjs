@@ -22,6 +22,8 @@ const server = http.createServer((req, res) => {
     }
     const body = JSON.parse(Buffer.concat(pieces).toString('utf8'))
     if (forwardScenario !== undefined && !JSON.stringify(body).includes(TASK)) {
+      // 只有探测会发「不带 TASK」的生成请求，所以这个计数器数到的就是探测次数。
+      forwardScenario.probes += 1
       res.writeHead(200, { 'content-type': 'text/event-stream' })
       res.end(chatFrames('healthy local boot probe'))
       return
@@ -666,7 +668,7 @@ try {
       distribution: 'managed', forward: { enabled: true, host: '127.0.0.1', port: 0 },
     }))
     process.env.DSH_HOME = home
-    const scenario = { answers, models: [model], requests: [], responses: new Set(), timers: [], closed: 0 }
+    const scenario = { answers, models: [model], requests: [], responses: new Set(), timers: [], closed: 0, probes: 0 }
     forwardScenario = scenario
     const ctx = fakeContext({ inject, mounted: ['llm', 'webServer'] })
     let api
@@ -677,10 +679,13 @@ try {
         return api !== undefined
       }, { what: '本地插件设置 API', timeoutMs: 3000 })
       let summary
+      // 2026-11-27 新契约：启动刷新不再自动探测免费车道（可用性沿用上一次的持久化
+      // 快照），所以这里等的是「清单已含本模型 + Forward 已开」，不再是 probedAt。
       await until(async () => {
         summary = await callRoute(api, 'GET', '/api/our-free-model/summary')
-        return summary.json?.settings?.forward?.running === true && summary.json?.probedAt > 0
-      }, { what: '启动探测完成并开启 Forward', timeoutMs: 3000 })
+        return summary.json?.settings?.forward?.running === true
+          && (summary.json?.catalog ?? []).some(row => row.id === model)
+      }, { what: '启动刷新完成并开启 Forward', timeoutMs: 3000 })
       const port = summary.json.settings.forward.actualPort
       const key = JSON.parse(fs.readFileSync(path.join(dataDir, 'settings.json'), 'utf8')).forwardKey
       const headers = { authorization: `Bearer ${key}`, 'content-type': 'application/json' }
@@ -692,7 +697,7 @@ try {
         }, { what: `${count} 条物理请求统计落盘`, timeoutMs: 3000 })
         return saved
       }
-      await fn({ scenario, headers, base: `http://127.0.0.1:${port}`, savedStats })
+      await fn({ scenario, headers, base: `http://127.0.0.1:${port}`, savedStats, probedAt: summary.json?.probedAt ?? 0 })
     } finally {
       if (api) await callRoute(api, 'POST', '/api/our-free-model/settings', { forward: { enabled: false } })
       for (const dispose of ctx.__disposers.reverse()) dispose()
@@ -704,6 +709,17 @@ try {
       fs.rmSync(home, { recursive: true, force: true })
     }
   }
+  // ── 自动探测已关闭（2026-11-27 用户决定）──────────────────────────────────
+  // 钉子：启动刷新**不再**探测免费车道，可用性沿用上一次的持久化快照。boot 一次
+  // 探测请求都不发，summary 的 `probedAt` 也还是 0 —— 否则下面每条 Forward 用例
+  // 都会悄悄靠一轮启动探测铺好判决。
+  await check('启动刷新不再自动探测免费车道', async () => {
+    await withForward([], async ({ scenario, probedAt }) => {
+      assert.equal(scenario.probes, 0, '启动不得发出探测请求')
+      assert.equal(probedAt, 0, '可用性应沿用上一次的持久化快照')
+    })
+  })
+
   const requestBody = stream => ({ model, messages: [{ role: 'user', content: TASK }], stream, max_tokens: 4096, reasoning_effort: 'deep' })
   const usageCounters = usage => ({ prompt_tokens: usage.prompt_tokens, completion_tokens: usage.completion_tokens, total_tokens: usage.total_tokens })
   const ssePayloads = raw => raw.split('\n').filter(line => line.startsWith('data: ')).map(line => line.slice(6))

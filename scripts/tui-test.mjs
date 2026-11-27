@@ -93,7 +93,18 @@ await until(() => ctx.__captured.serverRoutes.length >= 2, { what: 'the dashboar
 check('the settings API mounts when the service does', ctx.__captured.serverRoutes.map(route => route.path).sort(),
   ['/api/our-free-model', '/api/our-free-model/events'])
 
-await until(() => fs.existsSync(path.join(scratch, 'our-free-model', 'availability.json')), { what: 'the boot probe to land' })
+// 2026-11-27 新契约：启动刷新**不再**探测免费车道（`refreshCatalog({probe:false,
+// force:true})`），可用性沿用上一次的持久化快照。所以这里等的是清单落地，不再
+// 等「探测落地」；等到了再钉一条反向断言 —— 启动没有留下任何可用性快照。
+await until(async () => (await adapter.listModels(ROUTE_MAIN)).map(model => model.id).sort().join(',')
+  === 'mimo-v2.6-flash-free,space-bunny-free', { what: 'the boot listing to land', timeoutMs: 5000 })
+const availabilityFile = path.join(scratch, 'our-free-model', 'availability.json')
+check('the boot refresh lists the lane without probing it', fs.existsSync(availabilityFile), false)
+// 手动路径仍然探测：宿主的「检测模型」按钮（`registerModelDiscovery`）走 force，
+// 一次就够——无浏览器半的组装里它同样在工作。
+await ctx.__captured.discovery()
+check('a manual model discovery still probes the lane and leaves a verdict per model',
+  Object.keys(JSON.parse(fs.readFileSync(availabilityFile, 'utf8')).results ?? {}).length, 2)
 
 const models = await adapter.listModels(ROUTE_MAIN)
 check('the picker still gets its models', models.map(model => model.id).sort(), ['mimo-v2.6-flash-free', 'space-bunny-free'])

@@ -88,9 +88,25 @@ await until(() => api() !== undefined, { what: 'the settings API route' })
 const ids = models => models.map(model => model.id)
 const advertised = async route => ids(await adapter.listModels(route))
 
+// 2026-11-27 新契约：自动启动**不再**探测免费车道（可用性沿用上一次的持久化
+// 快照）。所以这里先等清单落地，并钉一条反向断言 —— 启动这一轮一次探测请求都
+// 没发、也没留下可用性快照；判决由宿主的「检测模型」按钮跑出来（模型发现回调
+// 就是手动 force 那一路）。
+const availabilityFile = path.join(scratch, 'our-free-model', 'availability.json')
+await until(async () => {
+  const rows = (await callRoute(api(), 'GET', '/api/our-free-model/summary')).json?.catalog ?? []
+  return LISTING.every(id => rows.some(row => row.id === id))
+}, { what: 'the boot listing to land' }).catch(error => {
+  console.log(`FAIL ${error.message}\nlogs: ${ctx.__logs.join(' | ')}\nrequests seen by the stub: ${stub.requests.length}`)
+  process.exit(1)
+})
+check('the boot refresh lists the lane without probing it', stub.requests.length, 0)
+check('and leaves no availability snapshot behind', fs.existsSync(availabilityFile), false)
+
 // Every probe in the round has to have landed before the verdicts mean anything.
+await ctx.__captured.discovery()
 await until(() => {
-  const store = JSON.parse(fs.readFileSync(path.join(scratch, 'our-free-model', 'availability.json'), 'utf8'))
+  const store = JSON.parse(fs.readFileSync(availabilityFile, 'utf8'))
   return Object.keys(store.results ?? {}).length >= LISTING.length && store.at > 0
 }, { what: 'a full probe round' }).catch(error => {
   console.log(`FAIL ${error.message}\nlogs: ${ctx.__logs.join(' | ')}\nrequests seen by the stub: ${stub.requests.length}`)

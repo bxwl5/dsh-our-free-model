@@ -1267,7 +1267,10 @@ let channelRosterReadAt = 0
       // topology event and the upgrade marker below down with it, reported as
       // a single "startup refresh failed" line.
       try {
-        await refreshCatalog({ probe: true, force: true })
+        // 2026-11-27：`probe: false` —— 启动不再自动探测免费车道（用户决定：
+        // 手动探测保留、自动探测全关）。列表照旧刷新（force 只为跳过 TTL），
+        // 可用性沿用上一次的持久化快照，等用户按「重新探测」或真实调用。
+        await refreshCatalog({ probe: false, force: true })
       } catch (error) {
         logger.warn?.(`our-free-model: startup refresh failed (${error?.message ?? error})`)
       }

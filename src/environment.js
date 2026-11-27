@@ -169,6 +169,23 @@ export function withEnvironment(systemText, texts) {
 }
 
 /**
+ * 把块补进 Responses 的 `instructions`（那是它的 system 通道）。
+ *
+ * ⚠️ 2026-11-27：原先只补了 chat 与 messages 两条 wire，**responses 一条漏了** ——
+ * 免费车道里走 responses 的模型因此一直缺块，等于白改。判据同 chat：块已在
+ * （`instructions` 或任一 input system 项）就不重复加。
+ */
+export function addEnvironmentToResponses(body, texts) {
+  const instructions = typeof body?.instructions === 'string' ? body.instructions : ''
+  const input = Array.isArray(body?.input) ? body.input : []
+  const carried = input.some(item => HAS_ENVIRONMENT.test(textOfContent(item?.content)))
+  if (carried || HAS_ENVIRONMENT.test(instructions)) return body
+  const block = environmentBlock(statedDirectory(texts) ?? os.homedir())
+  body.instructions = instructions === '' ? block : `${instructions}\n\n${block}`
+  return body
+}
+
+/**
  * Put OpenCode's block on a **Chat** wire body, in place.
  *
  * The block goes at the end of the *last* system message, so the body keeps one

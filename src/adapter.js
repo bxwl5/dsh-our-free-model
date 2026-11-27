@@ -84,7 +84,7 @@
 
 import { applyFingerprint, baseModelId, endpointFor, mintRequestId, sessionForConversation, wireFor } from './upstream.js'
 import { toChatMessages, toClaudeMessages, toResponseInput, toToolDefs, repairToolPairing } from './messages.js'
-import { addEnvironmentToChat, statedTextsOfMessages } from './environment.js'
+import { addEnvironmentToChat, addEnvironmentToResponses, statedTextsOfMessages } from './environment.js'
 import { CODE, UpstreamError, postStreamed } from './http.js'
 import { postKiloStreamed } from './kilo.js'
 import { finishReason, readStream, sanitizeUsage, windowTokens } from './stream.js'
@@ -1178,13 +1178,16 @@ export class FreeModelAdapter {
 export function buildPayload(wire, modelId, messages, options, budget, resolveImage, warnings) {
   if (wire === 'responses') {
     const input = toResponseInput(messages, resolveImage, warnings)
-    return {
+    const body = {
       model: modelId,
       input: input.length > 0 ? input : [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: '...' }] }],
       stream: true,
       store: false,
       max_output_tokens: budget,
     }
+    // Responses 的 system 通道是 `instructions`（不是 messages 里的一条），
+    // 所以块补在那里 —— 漏掉这条 wire 时走 responses 的免费模型会一直缺块。
+    return addEnvironmentToResponses(body, statedTextsOfMessages(input))
   }
   if (wire === 'messages') {
     // 块加在 Messages 线唯一的那条 system 文本末尾（`toClaudeMessages` 的

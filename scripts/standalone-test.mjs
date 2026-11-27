@@ -253,7 +253,11 @@ try {
     const before = listingCalls
     const listingOnly = service.runtime.refreshCatalog({ probe: false })
     await listingStarted
-    const probed = service.runtime.refreshCatalog({ probe: true })
+    // 2026-11-27 新契约：自动探测已关闭，探测只能由**手动 force** 路径触发
+    // （面板「重新探测」、`POST /refresh`、宿主的「检测模型」按钮）。原意不
+    // 变：一次探测请求不能被在途的「只刷清单」刷新吞掉，也不能为了探一个免费
+    // 模型把 Kilo 的模型挨个拨一遍。
+    const probed = service.runtime.refreshCatalog({ probe: true, force: true })
     unhold()
     holdListing = undefined
     await Promise.all([listingOnly, probed])
@@ -292,8 +296,12 @@ try {
     assert.equal(kilo.status, 200)
     assert.equal((await kilo.json()).choices[0].message.content, 'kilo-ok')
   })
-  await check('独立服务的目录、探测和推理都带 v2 客户端指纹', () => {
+  await check('独立服务的目录、探测和推理都带 v2 客户端指纹', async () => {
+    // 探测这一步现在要**手动 force** 才发生（自动路径已关闭）：本用例自己跑
+    // 一轮，别借着别的用例留下的 POST 计数过线，否则它测的就不是「探测带指纹」。
+    await service.runtime.refreshCatalog({ probe: true, force: true })
     assert.ok(anonymousRequests.some(req => req.method === 'GET'))
+    // ≥4 = 清单 GET 之外，探测 1 次 + 三次推理（chat 非流式 / chat 流式 / responses）。
     assert.ok(anonymousRequests.filter(req => req.method === 'POST').length >= 4)
     for (const req of anonymousRequests) {
       assert.equal(req.headers['user-agent'], 'opencode/latest/2.2.5/cli')
@@ -396,12 +404,18 @@ try {
       await runPeriod()
       assert.equal(listingCalls, listingsBefore + 1, '退避期间仍刷新模型清单')
       assert.equal(turns.length, before + 1, '15 分钟周期不得绕过 30 分钟退避')
+      // 2026-11-27 新契约：周期（自动路径）**永不**探测免费车道，所以「到期恢复」
+      // 只能由手动 force 验证；这一轮的周期刷新同时钉一条反向断言 —— 退避明明
+      // 已经到期，它照样不发探测请求（关掉的是自动路径本身，不是只有退避）。
       await runPeriod()
-      assert.equal(turns.length, before + 2, '退避到期后应恢复探测')
+      assert.equal(turns.length, before + 1, '退避已到期，15 分钟周期仍不探测免费车道（自动探测已关闭）')
       await probeService.runtime.refreshCatalog({ probe: true, force: true })
-      assert.equal(turns.length, before + 3, '手动强制刷新可以绕过退避')
+      assert.equal(turns.length, before + 2, '退避到期后手动强制探测应恢复（这一轮又拿到 429）')
+      // 第二轮全 429 把退避翻倍到 60 分钟：手动按钮在这段时间里同样不烧额度。
+      await probeService.runtime.refreshCatalog({ probe: true, force: true })
+      assert.equal(turns.length, before + 2, '新一轮退避内手动强制探测也不发请求')
       await runPeriod()
-      assert.equal(turns.length, before + 3, '手动强制刷新后周期任务仍遵守新的退避')
+      assert.equal(turns.length, before + 2, '周期任务不受新的退避状态影响：它本来就不探测')
     } finally {
       await probeService?.close()
       globalThis.setTimeout = nativeTimeout

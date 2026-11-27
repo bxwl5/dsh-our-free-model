@@ -267,14 +267,16 @@ export function createModelRuntime({
      */
     log: message => logger.warn?.(message),
     onRegionBlocked: () => {
-      if (disposed || reprobeTimer !== undefined) return
-      reprobeTimer = setTimeout(() => {
-        reprobeTimer = undefined
-        if (!disposed) void refreshAvailability(true).catch(error => {
-          logger.warn?.(`our-free-model: region reprobe failed (${error?.message ?? error})`)
-        })
-      }, 4000)
-      reprobeTimer.unref?.()
+      /**
+       * 2026-11-27：**不再自动重探**（用户决定：手动探测保留、自动探测全关）。
+       * 这条路径本来是「被地区拦了就 4 秒后自己再探一轮」，但一轮 = 免费车道
+       * 全部模型各一次真实生成，而额度按出口 IP 按日结算 —— 自动重探只会更快
+       * 把额度烧光；地区限制也不会因为 4 秒后的重试而消失。
+       * 需要时用面板的「重新探测」按钮（走 force 路径）。
+       */
+      if (disposed) return false
+      logger.warn?.('our-free-model: the lane reported a region block; automatic reprobe is off — use the reprobe button when you want a fresh verdict')
+      return false
     },
   })
 
@@ -433,7 +435,19 @@ export function createModelRuntime({
    * 持久化的 `availability.at` 就是缓存时间戳 —— 重启后照样生效，不另设存储。
    */
   const PROBE_CACHE_TTL_MS = 10 * 60_000
-  async function runProbeRound() {
+  /**
+   * 是否让**自动**轮次探测免费车道（默认否，2026-11-27 用户决定）。
+   *
+   * 为什么必须关：`probeable` 那道 filter 已经把渠道/combo/kilo 全排掉了，
+   * 剩下的就是免费车道自己的模型（今天 11 个）。而免费车道的额度是按**出口 IP
+   * 按日**结算的 —— 一轮探测 = 11 次真实生成，10 分钟一轮就是**一天上千次**，
+   * 把用户自己那条车道的当日额度先喝光，然后面板上全部显示「不可用」。
+   * 也就是说：自动探测在烧它自己要测量的那桶水。
+   *
+   * 现在：定时器 / 启动 / egress 变化这些**自动**路径一律不探免费车道（结果沿用
+   * 上一次的持久化快照），只有「重新探测」按钮（force）和手动测试会真的发请求。
+   */
+  async function runProbeRound(probeFreeLane = false) {
     // The absorbed channels get no per-model probes: their verdicts would be
     // spent against a different gateway than the one that serves them, and a
     // roster the listing named is advertised as-is (its health is the listing
@@ -441,7 +455,9 @@ export function createModelRuntime({
     // has no endpoint of its own: probing one would send the chain's own id to
     // the free lane as a model name, spending quota to collect a verdict about
     // nothing.
-    const probeable = catalog.filter(entry => !isKiloEntry(entry) && !isComboEntry(entry) && !isChannelEntry(entry))
+    const probeable = probeFreeLane
+      ? catalog.filter(entry => !isKiloEntry(entry) && !isComboEntry(entry) && !isChannelEntry(entry))
+      : []
     const results = await probeCatalog(probeable, { attributionUserAgent, signal: lifetime.signal }, (id, result) => {
       if (disposed) return
       availability.edit(value => ({
@@ -477,7 +493,8 @@ export function createModelRuntime({
   }
   async function refreshAvailability(force = false) {
     if (disposed) return {}
-    if (!force && probeBackoffUntil > Date.now()) return {}
+    if (!force) return {} // 自动探测已关闭（见 runProbeRound 的头注）：不烧免费额度
+    if (probeBackoffUntil > Date.now()) return {}
     // TTL 缓存门：非 force 且结果足够新 → 直接复用（含 in-flight 共享）。
     // `at` 由 runProbeRound 在每轮结束时写入，重启后从磁盘恢复，天然跨进程存活。
     if (!force) {
@@ -485,7 +502,7 @@ export function createModelRuntime({
       if (Date.now() - cachedAt < PROBE_CACHE_TTL_MS) return {}
     }
     if (probeRound !== null) return probeRound
-    const round = runProbeRound()
+    const round = runProbeRound(force)
     probeRound = round
     try { return await round } finally { if (probeRound === round) probeRound = null }
   }
@@ -501,8 +518,9 @@ export function createModelRuntime({
     if (changed) {
       availability.update({ egress: seen })
       availability.flush()
-      logger.info?.(`our-free-model: egress changed to ${seen.ip}${seen.country ? ` (${seen.country})` : ''}; re-probing availability`)
-      await refreshAvailability(true)
+      // 2026-11-27：出口 IP 变了**不再自动重探**（自动探测全关，理由同上）。
+      // 出口变化会改变上游看到的身份，值得让用户知道 —— 只记日志。
+      logger.info?.(`our-free-model: egress changed to ${seen.ip}${seen.country ? ` (${seen.country})` : ''}; automatic reprobe is off — use the reprobe button if you want fresh verdicts`)
     }
     return true
   }
