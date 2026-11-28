@@ -176,12 +176,30 @@ export function phoneFromUserId(userId: string | undefined): string | undefined 
  *   客户端也只是一个发 `3.17.2` 的客户端。故这是一个**协议常量**，
  *   不能指望「用户升级了官方客户端就自动对上」。
  */
-export const ZCODE_APP_VERSION_FALLBACK = '3.20.9'
+export const ZCODE_APP_VERSION_FALLBACK = '4.0.0'
 
-/** 服务端接受「下发每日活动额度」的最低版本（含，2026-11-03 实测 3.17.2 有投放）。 */
-export const ZCODE_APP_VERSION_MIN = '3.17.2'
-/** 服务端接受该额度的最高次版本（`3.20.x` 是实测上限，含）。 */
-export const ZCODE_APP_VERSION_MAX_MINOR = 20
+/**
+ * 服务端接受「下发每日活动额度」的最低版本（含）。
+ *
+ * ## ⚠ 2026-11-28 实测：门槛从 3.x 抬到 **4.0.0**
+ *
+ * 用户报「别人签到成功了、我们领不到」。三个账号逐一对比（同一 JWT、同一设备、
+ * 同一时刻 19:3x 北京时间，只换 `X-ZCode-App-Version`）：
+ *
+ * | 版本 | `marketing/touch` 的 deliveries |
+ * |---|---|
+ * | 3.17.2 | `0`（空） |
+ * | 3.20.9 | `0`（空，且其中两个账号被 429） |
+ * | **4.0.0** | **`1` —— 三个账号都拿到 `zcode-v3-start-plan-1127`** |
+ *
+ * 也就是说 2026-11-03 那条「4.0.0 也被拒」的结论**已被上游推翻**：现在只有
+ * 声明 4.x 的客户端才会收到投放。旧代码还显式把 4.x 钳回 3.20.9
+ * （见 {@link resolveZcodeAppVersion} 的「只认 3.x」），于是**每一天都是空投放**、
+ * 面板报「未开启」，而实际额度一直在那儿等着。
+ */
+export const ZCODE_APP_VERSION_MIN = '4.0.0'
+/** 允许的最高主版本（`4.x` 是当前官方线；再往上未实测前一律钳回兜底）。 */
+export const ZCODE_APP_VERSION_MAX_MAJOR = 4
 
 /** 解析 `3.16.3` / `v3.16.3` / `3.16.3-beta.1` 的前三段；解析不出返回 undefined。 */
 function parseAppVersion(value: string): [number, number, number] | undefined {
@@ -218,11 +236,11 @@ export function resolveZcodeAppVersion(stored?: string): string {
   if (parsed === undefined) return ZCODE_APP_VERSION_FALLBACK
   const [major, minor, patch] = parsed
   const minParsed = parseAppVersion(ZCODE_APP_VERSION_MIN) as [number, number, number]
-  // 只认 3.x：4.0.0 实测同样拿不到活动额度（大版本被拒）。
+  // 2026-11-28：只认 **4.x**。3.x 实测拿不到投放（见 ZCODE_APP_VERSION_MIN 的表）。
   if (major !== minParsed[0]) return ZCODE_APP_VERSION_FALLBACK
+  if (major > ZCODE_APP_VERSION_MAX_MAJOR) return ZCODE_APP_VERSION_FALLBACK
   if (minor < minParsed[1]) return ZCODE_APP_VERSION_FALLBACK
   if (minor === minParsed[1] && patch < minParsed[2]) return ZCODE_APP_VERSION_FALLBACK
-  if (minor > ZCODE_APP_VERSION_MAX_MINOR) return ZCODE_APP_VERSION_FALLBACK
   return trimmed
 }
 
